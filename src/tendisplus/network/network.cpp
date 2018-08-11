@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include "glog/logging.h"
 #include "tendisplus/network/network.h"
 
 namespace tendisplus {
@@ -37,11 +38,11 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
 void NetworkAsio::doAccept() {
     _acceptor->async_accept([this](std::error_code ec, tcp::socket socket) {
         if (!_isRunning.load(std::memory_order_relaxed)) {
-            std::cout << "acceptCb, server is shuting down" << std::endl;
+            LOG(INFO) << "acceptCb, server is shuting down";
             return;
         }
         if (ec) {
-            std::cout << "acceptCb errorcode:" << ec.message() << std::endl;
+            LOG(WARNING) << "acceptCb errorcode:" << ec.message();
             // we log this error, but dont return
         }
 
@@ -60,10 +61,9 @@ Status NetworkAsio::run() {
             try {
                 _acceptCtx->run();
             } catch (const std::exception& ex) {
-                std::cerr<< "accept failed:" << ex.what() << std::endl;
-                assert(0);
+                LOG(FATAL) << "accept failed:" << ex.what();
             } catch (...) {
-                std::cerr<< "unknown exception" << std::endl;
+                LOG(FATAL) << "unknown exception";
                 assert(0);
             }
         }
