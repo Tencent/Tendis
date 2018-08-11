@@ -11,7 +11,7 @@ Status::Status(Status&& other)
 }
 
 bool Status::ok() const {
-    return _code == ErrorCodes::OK;
+    return _code == ErrorCodes::ERR_OK;
 }
 
 std::string Status::toString() const {

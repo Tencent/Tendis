@@ -6,7 +6,7 @@
 namespace tendisplus {
 // IndependentMethod is a test case - here, we have 2 tests for this 1 test case
 TEST(Status, Common) {
-    auto s = Expected<std::string>(ErrorCodes::INTERNAL_ERROR, "test");
+    auto s = Expected<std::string>(ErrorCodes::ERR_INTERNAL, "test");
     EXPECT_EQ(s.ok(), false);
     EXPECT_EQ(s.status().toString(), "test");
     auto s1 = makeExpected<std::string>("test");
@@ -26,7 +26,7 @@ TEST(StatusWith, nonDefaultConstructible) {
     auto v = makeExpected<A>(1);
     EXPECT_EQ(v.value()._x, 1);
 
-    auto vv = Expected<A>(ErrorCodes::INTERNAL_ERROR, "foo");
+    auto vv = Expected<A>(ErrorCodes::ERR_INTERNAL, "foo");
     EXPECT_EQ(vv.ok(), false);
 }
 

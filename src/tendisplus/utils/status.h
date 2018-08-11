@@ -11,8 +11,9 @@
 namespace tendisplus {
 
 enum class ErrorCodes {
-    OK,
-    INTERNAL_ERROR,
+    ERR_OK,
+    ERR_NETWORK,
+    ERR_INTERNAL,
 };
 
 class Status {
@@ -44,7 +45,7 @@ class Expected {
         :_status(other) {
     }
     explicit Expected(T t)
-        :_data(std::move(t)), _status(Status(ErrorCodes::OK, "")) {
+        :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }
     const T& value() const {
         return *_data;
