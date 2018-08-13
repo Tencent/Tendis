@@ -4,7 +4,7 @@
 #include "gtest/gtest.h"
 
 namespace tendisplus {
-// IndependentMethod is a test case - here, we have 2 tests for this 1 test case
+
 TEST(Status, Common) {
     auto s = Expected<std::string>(ErrorCodes::ERR_INTERNAL, "test");
     EXPECT_EQ(s.ok(), false);

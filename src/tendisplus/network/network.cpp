@@ -1,12 +1,18 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <algorithm>
 #include "glog/logging.h"
 #include "tendisplus/network/network.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
 using asio::ip::tcp;
+
+constexpr size_t REDIS_IOBUF_LEN = (1024*16);
+constexpr size_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
+constexpr size_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
 NetworkAsio::NetworkAsio()
     :_acceptCtx(std::make_unique<asio::io_context>()),
@@ -25,11 +31,11 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
     _acceptor->open(ep.protocol());
     _acceptor->set_option(tcp::acceptor::reuse_address(true));
     _acceptor->non_blocking(true, ec);
-    if (ec) {
+    if (ec.value()) {
         return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
     _acceptor->bind(ep, ec);
-    if (ec) {
+    if (ec.value()) {
         return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -41,7 +47,7 @@ void NetworkAsio::doAccept() {
             LOG(INFO) << "acceptCb, server is shuting down";
             return;
         }
-        if (ec) {
+        if (ec.value()) {
             LOG(WARNING) << "acceptCb errorcode:" << ec.message();
             // we log this error, but dont return
         }
@@ -74,6 +80,237 @@ Status NetworkAsio::run() {
     // _acceptor->listen(BACKLOG);
     doAccept();
     return {ErrorCodes::ERR_OK, ""};
+}
+
+NetSession::NetSession(std::shared_ptr<NetworkAsio> net, tcp::socket sock,
+            bool initSock)
+        :_close_after_rsp(false),
+         _netIface(net),
+         _state(State::Created),
+         _sock(std::move(sock)),
+         _queryBuf(std::vector<char>()),
+         _queryBufPos(0),
+         _multibulklen(0),
+         _bulkLen(-1),
+         _args(std::vector<std::string>()),
+         _respBuf(std::vector<char>()) {
+    if (initSock) {
+        std::error_code ec;
+        _sock.non_blocking(true, ec);
+        assert(ec.value() == 0);
+        _sock.set_option(tcp::no_delay(true));
+        _sock.set_option(asio::socket_base::keep_alive(true));
+        // TODO(deyukong): keep-alive params
+    }
+}
+
+void NetSession::setState(State s) {
+    _state.store(s, std::memory_order_relaxed);
+}
+
+void NetSession::schedule() {
+}
+
+void NetSession::start() {
+}
+
+void NetSession::replyAndClose(const std::string& s) {
+    _close_after_rsp = true;
+
+    std::stringstream ss;
+    ss << "-ERR " << s << "\r\n";
+    const std::string& s1 = ss.str();
+
+    std::copy(s1.begin(), s1.end(), std::back_inserter(_respBuf));
+    setState(State::DrainRsp);
+    schedule();
+}
+
+// NOTE(deyukong): mainly port from redis::networking.c,
+// func:processMultibulkBuffer, the unportable part (long long, int and so on)
+// are all from the redis source code, quite ugly.
+// FIXME(deyukong): rewrite into a more c++ like code.
+void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
+    if (ec) {
+        LOG(WARNING) << "drainReqCallback:" << ec.message();
+        setState(State::End);
+        schedule();
+        return;
+    }
+
+    assert(_state.load(std::memory_order_relaxed) == State::DrainReq);
+
+    _queryBufPos += actualLen;
+    _queryBuf[_queryBufPos] = 0;
+    if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
+        replyAndClose("Protocol error: too big mbulk count string");
+        return;
+    }
+    char *newLine = nullptr;
+    long long ll;  // NOLINT(runtime/int)
+    int pos = 0;
+    int ok = 0;
+    if (_multibulklen == 0) {
+        newLine = strchr(_queryBuf.data(), '\r');
+        if (newLine == nullptr) {
+            if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+                replyAndClose("Protocol error: too big mbulk count string");
+                return;
+            }
+            // not complete line
+            schedule();
+            return;
+        }
+        if (newLine - _queryBuf.data() > _queryBufPos - 2) {
+            // not complete line
+            schedule();
+            return;
+        }
+        if (_queryBuf[0] != '*') {
+            replyAndClose("Protocol error: only support multilen proto");
+            return;
+        }
+        char *newStart = _queryBuf.data() + 1;
+        ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
+        if (!ok || ll > 1024*1024) {
+            replyAndClose("Protocol error: invalid multibulk length");
+            return;
+        }
+        pos = newLine-_queryBuf.data()+2;
+        if (ll <= 0) {
+            shiftQueryBuf(pos, -1);
+            schedule();
+            return;
+        }
+        _multibulklen = ll;
+    }
+    assert(_multibulklen > 0);
+
+    while (_multibulklen) {
+        if (_bulkLen == -1) {
+            newLine = strchr(_queryBuf.data()+pos, '\r');
+            if (newLine == nullptr) {
+                if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+                    replyAndClose("Protocol error: too big bulk count string");
+                    return;
+                }
+                break;
+            }
+            if (newLine - _queryBuf.data() > _queryBufPos - 2) {
+                break;
+            }
+            if (_queryBuf.data()[pos] != '$') {
+                std::stringstream s;
+                s << "Protocol error: expected '$', got '"
+                  << _queryBuf.data()[pos] << "'";
+                replyAndClose(s.str());
+                return;
+            }
+            char *newStart = _queryBuf.data()+pos+1;
+            ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
+            if (!ok || ll < 0 || ll > 512*1024*1024) {
+                replyAndClose("Protocol error: invalid bulk length");
+                return;
+            }
+            pos += newLine-(_queryBuf.data()+pos)+2;
+            // the optimization of ll >= REDIS_MBULK_BIG_ARG
+            // is not ported from redis
+            _bulkLen = ll;
+        }
+        if (_queryBufPos - pos < _bulkLen + 2) {
+            // not complete
+            break;
+        } else {
+            _args.push_back(std::string(_queryBuf.data() + pos, _bulkLen));
+            pos += _bulkLen+2;
+            _bulkLen = -1;
+            _multibulklen -= 1;
+        }
+    }
+    if (pos != 0) {
+        shiftQueryBuf(pos, -1);
+    }
+    if (_multibulklen == 0) {
+        setState(State::Process);
+    }
+    schedule();
+}
+
+// NOTE(deyukong): an O(n) impl of array shifting, an alternative to sdsrange,
+// which also has O(n) time-complexity
+void NetSession::shiftQueryBuf(ssize_t start, ssize_t end) {
+    if (_queryBufPos == 0) {
+        return;
+    }
+    int64_t newLen = 0;
+    if (start < 0) {
+        start = _queryBufPos + start;
+        if (start < 0) {
+            start = 0;
+        }
+    }
+    if (end < 0) {
+        end = _queryBufPos + end;
+        if (end < 0) {
+            end = 0;
+        }
+    }
+    newLen = (start > end) ? 0 : (end-start+1);
+    if (newLen != 0) {
+        if (start >= _queryBufPos) {
+            newLen = 0;
+        } else if (end >= _queryBufPos) {
+            end = _queryBufPos - 1;
+            newLen = (start > end) ? 0 : (end - start) + 1;
+        }
+    } else {
+        start = 0;
+    }
+    if (start && newLen) {
+        memmove(_queryBuf.data(), _queryBuf.data() + start, newLen);
+    }
+    _queryBuf[newLen] = 0;
+    _queryBufPos = newLen;
+}
+
+void NetSession::drainReq() {
+    if (_queryBufPos != 0) {
+        // pipelined request
+        // TODO(deyukong): stat-count pipelined requests
+        drainReqCallback(std::error_code(), 0);
+        return;
+    }
+
+    // we may do a sync-read to reduce async-callbacks
+    size_t wantLen = REDIS_IOBUF_LEN;
+    // here we use >= than >, so the last element will always be 0,
+    // it's convinent for c-style string search
+    if (wantLen + _queryBufPos >= _queryBuf.size()) {
+        // the fill should be as fast as memset in 02 mode, refer to here
+        // NOLINT(whitespace/line_length) https://stackoverflow.com/questions/8848575/fastest-way-to-reset-every-value-of-stdvectorint-to-0)
+        _queryBuf.resize((wantLen + _queryBufPos)*2, 0);
+    }
+
+    // TODO(deyukong): I believe async_read_some wont callback if no
+    // readable-event is set on the fd or this callback will be a deadloop
+    // it needs futher tests
+    _sock.
+        async_read_some(asio::buffer(_queryBuf.data() + _queryBufPos, wantLen),
+        [this](const std::error_code& ec, size_t actualLen) {
+            drainReqCallback(ec, actualLen);
+        });
+}
+
+void NetSession::forwardState() {
+    if (_state.load(std::memory_order_relaxed) == State::Created) {
+        setState(State::DrainReq);
+    }
+    auto currState = _state.load(std::memory_order_relaxed);
+    switch (currState) {
+        case State::DrainReq:
+            drainReq();
+            break;
+    }
 }
 
 }  // namespace tendisplus
