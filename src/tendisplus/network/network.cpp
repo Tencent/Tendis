@@ -16,7 +16,6 @@ constexpr size_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
 NetworkAsio::NetworkAsio()
     :_acceptCtx(std::make_unique<asio::io_context>()),
-     _workCtx(std::make_unique<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
      _isRunning(false) {
@@ -51,7 +50,10 @@ void NetworkAsio::doAccept() {
             LOG(WARNING) << "acceptCb errorcode:" << ec.message();
             // we log this error, but dont return
         }
-
+        _server->addSession(
+            std::move(
+                std::make_unique<NetSession>(
+                    _server, std::move(socket), true)));
         // TODO(deyukong): enqueue
         doAccept();
     });
@@ -70,7 +72,6 @@ Status NetworkAsio::run() {
                 LOG(FATAL) << "accept failed:" << ex.what();
             } catch (...) {
                 LOG(FATAL) << "unknown exception";
-                assert(0);
             }
         }
     });
@@ -82,10 +83,10 @@ Status NetworkAsio::run() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-NetSession::NetSession(std::shared_ptr<NetworkAsio> net, tcp::socket sock,
+NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
             bool initSock)
         :_close_after_rsp(false),
-         _netIface(net),
+         _server(server),
          _state(State::Created),
          _sock(std::move(sock)),
          _queryBuf(std::vector<char>()),
@@ -109,9 +110,13 @@ void NetSession::setState(State s) {
 }
 
 void NetSession::schedule() {
+    _server->schedule([this]() {
+        stepState();
+    });
 }
 
 void NetSession::start() {
+    stepState();
 }
 
 void NetSession::replyAndClose(const std::string& s) {
@@ -301,7 +306,7 @@ void NetSession::drainReq() {
         });
 }
 
-void NetSession::forwardState() {
+void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
         setState(State::DrainReq);
     }
@@ -309,7 +314,7 @@ void NetSession::forwardState() {
     switch (currState) {
         case State::DrainReq:
             drainReq();
-            break;
+            return;
     }
 }
 

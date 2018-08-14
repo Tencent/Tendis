@@ -7,10 +7,12 @@
 #include <string>
 #include <vector>
 #include "asio.hpp"
+#include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
 #include "gtest/gtest_prod.h"
 
 namespace tendisplus {
+class ServerEntry;
 class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
  public:
     NetworkAsio();
@@ -21,8 +23,8 @@ class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
     void stop();
  private:
     void doAccept();
+    std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
-    std::unique_ptr<asio::io_context> _workCtx;
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
     std::unique_ptr<std::thread> _acceptThd;
     std::atomic<bool> _isRunning;
@@ -31,7 +33,7 @@ class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
 // represent a ingress tcp-connection
 class NetSession {
  public:
-    NetSession(std::shared_ptr<NetworkAsio> net, asio::ip::tcp::socket sock,
+    NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
         bool initSock);
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
@@ -39,7 +41,7 @@ class NetSession {
     std::string getLocalRepr() const;
     void start();
     void drainReq();
-    void forwardState();
+    void stepState();
     enum class State {
         Created,
         DrainReq,
@@ -57,7 +59,7 @@ class NetSession {
     void drainReqCallback(const std::error_code& ec, size_t actualLen);
     virtual void schedule();
     bool _close_after_rsp;
-    std::shared_ptr<NetworkAsio> _netIface;
+    std::shared_ptr<ServerEntry> _server;
     std::atomic<State> _state;
     asio::ip::tcp::socket _sock;
     std::vector<char> _queryBuf;

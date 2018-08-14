@@ -30,3 +30,4 @@ add_subdirectory(src/thirdparty//glog-0.3.5)
 
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
+add_subdirectory(src/tendisplus/server)
