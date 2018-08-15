@@ -122,6 +122,15 @@ void NetSession::start() {
     stepState();
 }
 
+const std::vector<std::string>& NetSession::getArgs() const {
+    return _args;
+}
+
+void NetSession::setOkRsp() {
+    const std::string s = "+OK\r\n";
+    std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
+}
+
 void NetSession::setRspAndClose(const std::string& s) {
     _closeAfterRsp = true;
 
@@ -313,6 +322,44 @@ uint64_t NetSession::getConnId() const {
     return _connId;
 }
 
+void NetSession::processReq() {
+    _server->processReq(_connId);
+    _state.store(State::DrainRsp, std::memory_order_relaxed);
+    schedule();
+}
+
+void NetSession::drainRsp() {
+    asio::async_write(_sock, asio::buffer(_respBuf.data(), _respBuf.size()),
+        [this](const std::error_code& ec, size_t actualLen) {
+            drainRspCallback(ec, actualLen);
+    });
+}
+
+void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
+    if (ec) {
+        LOG(WARNING) << "drainReqCallback:" << ec.message();
+        setState(State::End);
+        schedule();
+        return;
+    }
+    if (actualLen != _respBuf.size()) {
+        LOG(FATAL) << "conn:" << _connId << ",data:" << _respBuf.data()
+            << ",actualLen:" << actualLen << ",bufsize:" << _respBuf.size()
+            << ",invalid drainRsp len";
+    }
+    if (_closeAfterRsp) {
+        setState(State::End);
+        schedule();
+        return;
+    }
+    setState(State::DrainReq);
+    schedule();
+}
+
+void NetSession::endSession() {
+    _server->endSession(_connId);
+}
+
 void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
         setState(State::DrainReq);
@@ -323,8 +370,17 @@ void NetSession::stepState() {
             drainReq();
             return;
         case State::Process:
-            _server->processReq(_connId);
+            processReq();
             return;
+        case State::DrainRsp:
+            drainRsp();
+            return;
+        case State::End:
+            endSession();
+            return;
+        default:
+            LOG(FATAL) << "connId:" << _connId << ",invalid state:"
+                << int32_t(currState);
     }
 }
 

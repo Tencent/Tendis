@@ -43,8 +43,13 @@ class NetSession {
     std::string getLocalRepr() const;
     uint64_t getConnId() const;
     void start();
-    void drainReq();
-    void stepState();
+    const std::vector<std::string>& getArgs() const;
+    void setOkRsp();
+
+    // normal clients
+    // Created -> [DrainReq]+ -> Process -> DrainRsp -> [DrainReq]+
+    // clients with bad input
+    // Created -> [DrainReq]+ -> DrainRsp(with _closeAfterRsp set) -> End
     enum class State {
         Created,
         DrainReq,
@@ -56,11 +61,32 @@ class NetSession {
  private:
     FRIEND_TEST(NetSession, drainReqInvalid);
     FRIEND_TEST(NetSession, Completed);
-    virtual void setState(State s);
-    virtual void setRspAndClose(const std::string&);
-    void shiftQueryBuf(ssize_t start, ssize_t end);
+
+    // read data from socket
+    void drainReq();
     void drainReqCallback(const std::error_code& ec, size_t actualLen);
-    virtual void schedule();
+
+    // send data to tcpbuff
+    void drainRsp();
+    void drainRspCallback(const std::error_code& ec, size_t actualLen);
+
+    // close session, and the socket(by raii)
+    void endSession();
+
+    // handle msg parsed from drainReqCallback
+    void processReq();
+
+    // schedule related functions
+    void stepState();
+    void setState(State s);
+    void schedule();
+
+    // network is ok, but client's msg is not ok, reply and close
+    void setRspAndClose(const std::string&);
+
+    // utils to shift parsed partial params from _queryBuf
+    void shiftQueryBuf(ssize_t start, ssize_t end);
+
     uint64_t _connId;
     bool _closeAfterRsp;
     std::shared_ptr<ServerEntry> _server;

@@ -22,6 +22,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         _executor->schedule(std::forward<fn>(task));
     }
     void addSession(std::unique_ptr<NetSession> sess);
+    void endSession(uint64_t connId);
     void processReq(uint64_t connId);
  private:
     std::mutex _mutex;
