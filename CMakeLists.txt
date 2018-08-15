@@ -5,7 +5,7 @@ project (TENDIS_PLUS)
 message(${CMAKE_CXX_COMPILER})
 if(CMAKE_COMPILER_IS_GNUCC)
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.5)
-        message(FATAL_ERROR "g++ version ${CMAKE_CXX_COMPILER_VERSION}, Require at least gcc-4.8, \
+        message(FATAL_ERROR "g++ version ${CMAKE_CXX_COMPILER_VERSION}, Require at least gcc-5.5, \
         you may remove CMakeCache.txt and run export CXX=/path/to/your/prefered/cxx_compiler before run cmake \
         to solve this problem")
     endif()
@@ -20,14 +20,19 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
+
+# NOTE(deyukong): donot include gtest headers here, include gtest in subdir
+# because thirdparty/rocksdb puts gtest in its own thirdparty, caution of conflict
+#include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
 
 # thirdparty code
 add_subdirectory(src/thirdparty/googletest-release-1.8.0)
-add_subdirectory(src/thirdparty//glog-0.3.5)
+add_subdirectory(src/thirdparty/glog-0.3.5)
+add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
 
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)
+

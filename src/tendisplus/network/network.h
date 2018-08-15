@@ -9,7 +9,7 @@
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
-#include "gtest/gtest_prod.h"
+#include "gtest/gtest.h"
 
 namespace tendisplus {
 class ServerEntry;
@@ -22,7 +22,9 @@ class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
     Status run();
     void stop();
  private:
+    // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
+    uint64_t _connCreated;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
@@ -34,11 +36,12 @@ class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
 class NetSession {
  public:
     NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
-        bool initSock);
+        uint64_t connid, bool initSock);
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
     std::string getRemoteRepr() const;
     std::string getLocalRepr() const;
+    uint64_t getConnId() const;
     void start();
     void drainReq();
     void stepState();
@@ -54,11 +57,12 @@ class NetSession {
     FRIEND_TEST(NetSession, drainReqInvalid);
     FRIEND_TEST(NetSession, Completed);
     virtual void setState(State s);
-    virtual void replyAndClose(const std::string&);
+    virtual void setRspAndClose(const std::string&);
     void shiftQueryBuf(ssize_t start, ssize_t end);
     void drainReqCallback(const std::error_code& ec, size_t actualLen);
     virtual void schedule();
-    bool _close_after_rsp;
+    uint64_t _connId;
+    bool _closeAfterRsp;
     std::shared_ptr<ServerEntry> _server;
     std::atomic<State> _state;
     asio::ip::tcp::socket _sock;

@@ -15,7 +15,9 @@ constexpr size_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
 constexpr size_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
 NetworkAsio::NetworkAsio()
-    :_acceptCtx(std::make_unique<asio::io_context>()),
+    :_connCreated(0),
+     _server(nullptr),
+     _acceptCtx(std::make_unique<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
      _isRunning(false) {
@@ -53,7 +55,7 @@ void NetworkAsio::doAccept() {
         _server->addSession(
             std::move(
                 std::make_unique<NetSession>(
-                    _server, std::move(socket), true)));
+                    _server, std::move(socket), ++_connCreated, true)));
         // TODO(deyukong): enqueue
         doAccept();
     });
@@ -84,8 +86,9 @@ Status NetworkAsio::run() {
 }
 
 NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
-            bool initSock)
-        :_close_after_rsp(false),
+            uint64_t connid, bool initSock)
+        :_connId(connid),
+         _closeAfterRsp(false),
          _server(server),
          _state(State::Created),
          _sock(std::move(sock)),
@@ -119,8 +122,8 @@ void NetSession::start() {
     stepState();
 }
 
-void NetSession::replyAndClose(const std::string& s) {
-    _close_after_rsp = true;
+void NetSession::setRspAndClose(const std::string& s) {
+    _closeAfterRsp = true;
 
     std::stringstream ss;
     ss << "-ERR " << s << "\r\n";
@@ -148,7 +151,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     _queryBufPos += actualLen;
     _queryBuf[_queryBufPos] = 0;
     if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
-        replyAndClose("Protocol error: too big mbulk count string");
+        setRspAndClose("Protocol error: too big mbulk count string");
         return;
     }
     char *newLine = nullptr;
@@ -159,7 +162,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         newLine = strchr(_queryBuf.data(), '\r');
         if (newLine == nullptr) {
             if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
-                replyAndClose("Protocol error: too big mbulk count string");
+                setRspAndClose("Protocol error: too big mbulk count string");
                 return;
             }
             // not complete line
@@ -172,13 +175,13 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             return;
         }
         if (_queryBuf[0] != '*') {
-            replyAndClose("Protocol error: only support multilen proto");
+            setRspAndClose("Protocol error: only support multilen proto");
             return;
         }
         char *newStart = _queryBuf.data() + 1;
         ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
         if (!ok || ll > 1024*1024) {
-            replyAndClose("Protocol error: invalid multibulk length");
+            setRspAndClose("Protocol error: invalid multibulk length");
             return;
         }
         pos = newLine-_queryBuf.data()+2;
@@ -196,7 +199,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             newLine = strchr(_queryBuf.data()+pos, '\r');
             if (newLine == nullptr) {
                 if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
-                    replyAndClose("Protocol error: too big bulk count string");
+                    setRspAndClose("Protocol error: too big bulk count string");
                     return;
                 }
                 break;
@@ -208,13 +211,13 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
                 std::stringstream s;
                 s << "Protocol error: expected '$', got '"
                   << _queryBuf.data()[pos] << "'";
-                replyAndClose(s.str());
+                setRspAndClose(s.str());
                 return;
             }
             char *newStart = _queryBuf.data()+pos+1;
             ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
             if (!ok || ll < 0 || ll > 512*1024*1024) {
-                replyAndClose("Protocol error: invalid bulk length");
+                setRspAndClose("Protocol error: invalid bulk length");
                 return;
             }
             pos += newLine-(_queryBuf.data()+pos)+2;
@@ -306,6 +309,10 @@ void NetSession::drainReq() {
         });
 }
 
+uint64_t NetSession::getConnId() const {
+    return _connId;
+}
+
 void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
         setState(State::DrainReq);
@@ -314,6 +321,9 @@ void NetSession::stepState() {
     switch (currState) {
         case State::DrainReq:
             drainReq();
+            return;
+        case State::Process:
+            _server->processReq(_connId);
             return;
     }
 }

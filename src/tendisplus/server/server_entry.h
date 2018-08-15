@@ -4,6 +4,7 @@
 #include <vector>
 #include <utility>
 #include <memory>
+#include <map>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -21,10 +22,11 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         _executor->schedule(std::forward<fn>(task));
     }
     void addSession(std::unique_ptr<NetSession> sess);
+    void processReq(uint64_t connId);
  private:
     std::mutex _mutex;
     std::unique_ptr<NetworkAsio> _network;
-    std::vector<std::unique_ptr<NetSession>> _sessions;
+    std::map<uint64_t, std::unique_ptr<NetSession>> _sessions;
     std::unique_ptr<WorkerPool> _executor;
 };
 }  // namespace tendisplus
