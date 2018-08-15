@@ -35,4 +35,4 @@ add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)
-
+add_subdirectory(src/tendisplus/benchmark)
