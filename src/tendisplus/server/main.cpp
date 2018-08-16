@@ -1,5 +1,5 @@
-#include <iostream>
 #include <unistd.h>
+#include <iostream>
 #include <utility>
 #include <memory>
 
@@ -11,20 +11,17 @@ namespace tendisplus {
 
 static std::shared_ptr<ServerEntry> gServer(nullptr);
 
-void usage() {
-    std::cout<< "./tendisplus configfile" << std::endl;
-}
-
+}  // namespace tendisplus
 
 static void shutdown(int sigNum) {
     LOG(INFO) << "signal:" << sigNum << " caught, begin shutdown server";
-    assert(gServer);
-    gServer->stop();
+    assert(tendisplus::gServer);
+    tendisplus::gServer->stop();
 }
 
 static void waitForExit() {
-    assert(gServer);
-    gServer->waitStopComplete();
+    assert(tendisplus::gServer);
+    tendisplus::gServer->waitStopComplete();
 }
 
 static void setupSignals() {
@@ -46,15 +43,16 @@ static void setupSignals() {
     assert(sigaction(SIGINT, &exits, nullptr) == 0);
 }
 
-}  // namespace tendisplus
+static void usage() {
+    std::cout<< "./tendisplus configfile" << std::endl;
+}
 
 int main(int argc, char *argv[]) {
-    using namespace tendisplus;
     if (argc != 2) {
         usage();
         return 0;
     }
-    auto params = std::make_shared<ServerParams>();
+    auto params = std::make_shared<tendisplus::ServerParams>();
     auto s = params->parseFile(argv[1]);
     if (!s.ok()) {
         LOG(FATAL) << "parse config failed:" << s.toString();
@@ -83,8 +81,8 @@ int main(int argc, char *argv[]) {
     }
     ::google::InitGoogleLogging("tendisplus");
 
-    gServer = std::make_shared<ServerEntry>();
-    s = gServer->startup(params);
+    tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();
+    s = tendisplus::gServer->startup(params);
     if (!s.ok()) {
         LOG(FATAL) << "server startup failed:" << s.toString();
     }

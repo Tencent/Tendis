@@ -1,4 +1,5 @@
 #include <fstream>
+#include <memory>
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -13,7 +14,7 @@ TEST(ServerParams, Common) {
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
     myfile << "logdir ./\n";
-    myfile.close();    
+    myfile.close();
     const auto guard = MakeGuard([] {
         remove("a.cfg");
     });
