@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unistd.h>
+#include <utility>
 #include <memory>
 
 #include "tendisplus/server/server_params.h"
@@ -8,7 +9,7 @@
 
 namespace tendisplus {
 
-static ServerEntry *gServer = nullptr;
+static std::shared_ptr<ServerEntry> gServer(nullptr);
 
 void usage() {
     std::cout<< "./tendisplus configfile" << std::endl;
@@ -53,16 +54,19 @@ int main(int argc, char *argv[]) {
         usage();
         return 0;
     }
+    auto params = std::make_shared<ServerParams>();
+    auto s = params->parseFile(argv[1]);
+    if (!s.ok()) {
+        LOG(FATAL) << "parse config failed:" << s.toString();
+    } else {
+        LOG(INFO) << "start server with cfg:" << params->toString();
+    }
+
     if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
         // NOTE(deyukong): it should rarely fail.
         // but if code reaches here, cerr may have been redirected to
         // /dev/null and nothing printed.
         LOG(FATAL) << "daemonlize failed:" << errno;
-    }
-    auto params = std::make_shared<ServerParams>();
-    auto s = params->parseFile(argv[1]);
-    if (!s.ok()) {
-        LOG(FATAL) << "parse config failed:" << s.toString();
     }
 
     // Log messages at or above this level. Again, the numbers of severity
@@ -79,7 +83,7 @@ int main(int argc, char *argv[]) {
     }
     ::google::InitGoogleLogging("tendisplus");
 
-    gServer = new ServerEntry();
+    gServer = std::make_shared<ServerEntry>();
     s = gServer->startup(params);
     if (!s.ok()) {
         LOG(FATAL) << "server startup failed:" << s.toString();

@@ -6,6 +6,10 @@
 
 namespace tendisplus {
 
+WorkerPool::WorkerPool()
+    :_isRuning(false),
+     _ioCtx(std::make_unique<asio::io_context>()) {
+}
 
 void WorkerPool::consumeTasks(size_t idx) {
     LOG(INFO) << "net workerthread:" << idx << " starts";
@@ -57,6 +61,7 @@ Status WorkerPool::startup(size_t poolsize) {
         } (i));
         _threads.emplace_back(std::move(thd));
     }
+    _isRuning.store(true, std::memory_order_relaxed);
     return {ErrorCodes::ERR_OK, ""};
 }
 

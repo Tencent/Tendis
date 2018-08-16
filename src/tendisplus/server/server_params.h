@@ -10,6 +10,7 @@ class ServerParams {
  public:
     ServerParams();
     Status parseFile(const std::string& filename);
+    std::string toString() const;
     std::string bindIp;
     uint16_t port;
     std::string logLevel;

@@ -24,6 +24,16 @@ static std::string trim(const std::string& str) {
   return trim_left(trim_right(str));
 }
 
+std::string ServerParams::toString() const {
+    std::stringstream ss;
+    ss << "\nbindIp:" << bindIp
+        << ",\nport:" << port
+        << ",\nlogLevel:" << logLevel
+        << ",\nlogDir:" << logDir
+        << std::endl;
+    return ss.str();
+}
+
 Status ServerParams::parseFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {

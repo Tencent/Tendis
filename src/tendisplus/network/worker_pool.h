@@ -15,7 +15,7 @@ namespace tendisplus {
 // It's better to adaptively resize thread-pool by pressure
 class WorkerPool {
  public:
-    WorkerPool() = default;
+    WorkerPool();
     WorkerPool(const WorkerPool&) = delete;
     WorkerPool(WorkerPool&&) = delete;
     Status startup(size_t poolSize);
@@ -29,9 +29,9 @@ class WorkerPool {
     void stop();
 
  private:
+    void consumeTasks(size_t idx);
     std::mutex _mutex;
     std::atomic<bool> _isRuning;
-    void consumeTasks(size_t idx);
     // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;
     std::vector<std::thread> _threads;

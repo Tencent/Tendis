@@ -19,7 +19,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     ServerEntry();
     ServerEntry(const ServerEntry&) = delete;
     ServerEntry(ServerEntry&&) = delete;
-    Status startup(std::shared_ptr<ServerParams> cfg);
+    Status startup(const std::shared_ptr<ServerParams>& cfg);
     template <typename fn>
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));

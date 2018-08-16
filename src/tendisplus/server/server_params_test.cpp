@@ -12,7 +12,7 @@ TEST(ServerParams, Common) {
     myfile << "bind 127.0.0.1\n";
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
-    myfile << "logDir ./\n";
+    myfile << "logdir ./\n";
     myfile.close();    
     const auto guard = MakeGuard([] {
         remove("a.cfg");

@@ -14,7 +14,7 @@ ServerEntry::ServerEntry()
          _executor(nullptr) {
 }
 
-Status ServerEntry::startup(std::shared_ptr<ServerParams> cfg) {
+Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
     _network = std::make_unique<NetworkAsio>(shared_from_this());
     auto s = _network->prepare(cfg->bindIp, cfg->port);
@@ -25,6 +25,7 @@ Status ServerEntry::startup(std::shared_ptr<ServerParams> cfg) {
     if (!s.ok()) {
         return s;
     }
+
     _executor = std::make_unique<WorkerPool>();
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
@@ -34,6 +35,8 @@ Status ServerEntry::startup(std::shared_ptr<ServerParams> cfg) {
     if (!s.ok()) {
         return s;
     }
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -103,6 +106,7 @@ void ServerEntry::stop() {
     _executor->stop();
     _sessions.clear();
     LOG(INFO) << "server stops complete...";
+    _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
 }
 
