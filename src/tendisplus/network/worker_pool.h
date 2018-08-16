@@ -34,7 +34,7 @@ class WorkerPool {
     void consumeTasks(size_t idx);
     // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;
-    std::vector<std::thread::id> _threads;
+    std::vector<std::thread> _threads;
 };
 
 }  // namespace tendisplus

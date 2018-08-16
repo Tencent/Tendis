@@ -14,6 +14,7 @@ enum class ErrorCodes {
     ERR_OK,
     ERR_NETWORK,
     ERR_INTERNAL,
+    ERR_PARSEOPT,
 };
 
 class Status {
@@ -21,6 +22,7 @@ class Status {
     Status(const ErrorCodes& code, const std::string& reason);
     Status(const Status& other) = default;
     Status(Status&& other);
+    Status& operator=(const Status& other) = default;
     ~Status();
     bool ok() const;
     std::string toString() const;

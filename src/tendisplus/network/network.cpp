@@ -14,9 +14,9 @@ constexpr size_t REDIS_IOBUF_LEN = (1024*16);
 constexpr size_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
 constexpr size_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
-NetworkAsio::NetworkAsio()
+NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server)
     :_connCreated(0),
-     _server(nullptr),
+     _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
@@ -59,6 +59,13 @@ void NetworkAsio::doAccept() {
         // TODO(deyukong): enqueue
         doAccept();
     });
+}
+
+void NetworkAsio::stop() {
+    LOG(INFO) << "network-asio begin stops...";
+    _isRunning.store(false, std::memory_order_relaxed);
+    _acceptThd->join();
+    LOG(INFO) << "network-asio begin stops complete...";
 }
 
 Status NetworkAsio::run() {
@@ -110,6 +117,14 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
 
 void NetSession::setState(State s) {
     _state.store(s, std::memory_order_relaxed);
+}
+
+std::string NetSession::getRemoteRepr() const {
+    return _sock.remote_endpoint().address().to_string();
+}
+
+std::string NetSession::getLocalRepr() const {
+    return _sock.local_endpoint().address().to_string();
 }
 
 void NetSession::schedule() {

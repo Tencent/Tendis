@@ -13,9 +13,9 @@
 
 namespace tendisplus {
 class ServerEntry;
-class NetworkAsio: public std::enable_shared_from_this<NetworkAsio> {
+class NetworkAsio {
  public:
-    NetworkAsio();
+    explicit NetworkAsio(std::shared_ptr<ServerEntry> server);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
     Status prepare(const std::string& ip, const uint16_t port);

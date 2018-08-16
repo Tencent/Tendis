@@ -13,7 +13,7 @@ void WorkerPool::consumeTasks(size_t idx) {
         std::lock_guard<std::mutex> lk(_mutex);
         const auto& thd_id = std::this_thread::get_id();
         for (auto v = _threads.begin(); v != _threads.end(); v++) {
-            if (*v == thd_id) {
+            if (v->get_id() == thd_id) {
                 _threads.erase(v);
                 LOG(INFO) << "thd:" << thd_id << ",idx:"
                     << idx << "clean and exit";
@@ -38,6 +38,13 @@ void WorkerPool::consumeTasks(size_t idx) {
 }
 
 void WorkerPool::stop() {
+    LOG(INFO) << "workerPool begins to stop...";
+    _isRuning.store(false, std::memory_order_relaxed);
+    _ioCtx->stop();
+    for (auto& t : _threads) {
+        t.join();
+    }
+    LOG(INFO) << "workerPool stops complete...";
 }
 
 Status WorkerPool::startup(size_t poolsize) {
@@ -48,8 +55,7 @@ Status WorkerPool::startup(size_t poolsize) {
                 consumeTasks(idx);
             };
         } (i));
-        _threads.emplace_back(thd.get_id());
-        thd.detach();
+        _threads.emplace_back(std::move(thd));
     }
 }
 

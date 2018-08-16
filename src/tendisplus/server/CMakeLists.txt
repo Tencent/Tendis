@@ -1,5 +1,8 @@
-#add_executable(network_test network_test.cpp)
-#target_link_libraries(network_test network gtest_main)
-
 add_library(server server_entry.cpp)
 target_link_libraries(server status network nwp)
+
+add_library(server_params server_params.cpp)
+target_link_libraries(server_params status glog)
+
+add_library(tendisplus main.cpp)
+target_link_libraries(tendisplus server_params server)
