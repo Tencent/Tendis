@@ -17,20 +17,23 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+# thirdparty code
+# do not set unnecessary flags before thirdparty dirs
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z -g")
+add_subdirectory(src/thirdparty/googletest-release-1.8.0)
+add_subdirectory(src/thirdparty/glog-0.3.5)
+add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
+
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra -Werror")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
 # NOTE(deyukong): donot include gtest headers here, include gtest in subdir
 # because thirdparty/rocksdb puts gtest in its own thirdparty, caution of conflict
-#include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
-
-# thirdparty code
-add_subdirectory(src/thirdparty/googletest-release-1.8.0)
-add_subdirectory(src/thirdparty/glog-0.3.5)
-add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
 
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)

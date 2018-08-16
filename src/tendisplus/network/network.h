@@ -93,7 +93,7 @@ class NetSession {
     std::atomic<State> _state;
     asio::ip::tcp::socket _sock;
     std::vector<char> _queryBuf;
-    size_t _queryBufPos;
+    ssize_t _queryBufPos;
     int64_t _multibulklen;
     int64_t _bulkLen;
     std::vector<std::string> _args;

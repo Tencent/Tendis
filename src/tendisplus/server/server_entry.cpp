@@ -1,5 +1,6 @@
 #include <utility>
 #include <memory>
+#include <algorithm>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"

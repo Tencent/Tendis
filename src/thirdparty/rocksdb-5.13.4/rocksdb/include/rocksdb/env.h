@@ -807,6 +807,8 @@ class Directory {
   virtual Status Fsync() = 0;
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const {
+    (void)id;
+    (void)max_size;
     return 0;
   }
 };

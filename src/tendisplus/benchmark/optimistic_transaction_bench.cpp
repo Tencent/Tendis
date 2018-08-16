@@ -24,6 +24,8 @@ uint32_t intRand() {
 }
 
 void run1(PDB txn_db, uint32_t nkeys, int idx, PATOM succ, PATOM confl) {
+    (void)idx;
+    (void)confl;
     while (true) {
         rocksdb::WriteOptions write_options;
         uint32_t randnum = intRand() % nkeys;
@@ -36,6 +38,7 @@ void run1(PDB txn_db, uint32_t nkeys, int idx, PATOM succ, PATOM confl) {
 }
 
 void run(PDB txn_db, uint32_t nkeys, int idx, PATOM succ, PATOM confl) {
+    (void)idx;
     while (true) {
         rocksdb::WriteOptions write_options;
         rocksdb::Transaction* txn = txn_db->BeginTransaction(write_options);
@@ -93,7 +96,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::thread> threads;
     auto succ_updates = std::make_shared<std::atomic<uint64_t>>(0);
     auto conflict_updates = std::make_shared<std::atomic<uint64_t>>(0);
-    for (int i = 0; i < thread_num; i++) {
+    for (size_t i = 0; i < thread_num; i++) {
         threads.emplace_back(std::thread(run1, std::ref(pdb), key_num,
             i, std::ref(succ_updates), std::ref(conflict_updates)));
     }

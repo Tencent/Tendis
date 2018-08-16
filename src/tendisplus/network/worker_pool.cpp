@@ -57,6 +57,7 @@ Status WorkerPool::startup(size_t poolsize) {
         } (i));
         _threads.emplace_back(std::move(thd));
     }
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 }  // namespace tendisplus

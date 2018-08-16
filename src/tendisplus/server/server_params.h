@@ -1,6 +1,8 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 
+#include <string>
+
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
@@ -9,9 +11,9 @@ class ServerParams {
     ServerParams();
     Status parseFile(const std::string& filename);
     std::string bindIp;
-    std::string logLevel;
-    std::string logFile;
     uint16_t port;
+    std::string logLevel;
+    std::string logDir;
 };
 }  // namespace tendisplus
 

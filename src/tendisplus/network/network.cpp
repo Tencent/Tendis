@@ -10,9 +10,9 @@ namespace tendisplus {
 
 using asio::ip::tcp;
 
-constexpr size_t REDIS_IOBUF_LEN = (1024*16);
-constexpr size_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
-constexpr size_t REDIS_INLINE_MAX_SIZE = (1024*64);
+constexpr ssize_t REDIS_IOBUF_LEN = (1024*16);
+constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
+constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
 NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server)
     :_connCreated(0),

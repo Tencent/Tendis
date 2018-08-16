@@ -2,6 +2,7 @@
 #include <sstream>
 #include <fstream>
 #include <vector>
+#include <string>
 
 #include "glog/logging.h"
 #include "tendisplus/utils/status.h"
@@ -16,7 +17,7 @@ static std::string trim_left(const std::string& str) {
 
 static std::string trim_right(const std::string& str) {
   const std::string pattern = " \f\n\r\t\v";
-  return str.substr(0,str.find_last_not_of(pattern) + 1);
+  return str.substr(0, str.find_last_not_of(pattern) + 1);
 }
 
 static std::string trim(const std::string& str) {
@@ -61,12 +62,32 @@ Status ServerParams::parseFile(const std::string& filename) {
                 return {ErrorCodes::ERR_PARSEOPT, ex.what()};
             }
         }
+
+        if (tokens[0] == "loglevel") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
+            }
+            if (tokens[1] != "debug" && tokens[1] != "verbose"
+                    && tokens[1] != "notice" && tokens[1] != "warning") {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
+            }
+            logLevel = tokens[1];
+        }
+        if (tokens[0] == "logdir") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid logdir configure"};
+            }
+            logDir = tokens[1];
+        }
     }
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 ServerParams::ServerParams()
         :bindIp("127.0.0.1"),
-         port(8903) {
+         port(8903),
+         logLevel(""),
+         logDir("./") {
 }
 
 

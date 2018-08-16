@@ -4,5 +4,5 @@ target_link_libraries(server status network nwp)
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog)
 
-add_library(tendisplus main.cpp)
+add_executable(tendisplus main.cpp)
 target_link_libraries(tendisplus server_params server)

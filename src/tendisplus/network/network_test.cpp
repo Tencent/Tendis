@@ -38,7 +38,7 @@ TEST(NetSession, Completed) {
     sess.drainReqCallback(std::error_code(), 1);
     EXPECT_EQ(sess._state.load(), NetSession::State::Process);
     EXPECT_EQ(sess._closeAfterRsp, false);
-    EXPECT_EQ(sess._args.size(), 2);
+    EXPECT_EQ(sess._args.size(), size_t(2));
     EXPECT_EQ(sess._args[0], "foo");
     EXPECT_EQ(sess._args[1], "bar");
 }

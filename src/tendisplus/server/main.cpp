@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unistd.h>
+#include <memory>
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"
@@ -10,7 +11,7 @@ namespace tendisplus {
 static ServerEntry *gServer = nullptr;
 
 void usage() {
-    std::cout<< "./bin configfile" << std::endl;
+    std::cout<< "./tendisplus configfile" << std::endl;
 }
 
 
@@ -44,7 +45,10 @@ static void setupSignals() {
     assert(sigaction(SIGINT, &exits, nullptr) == 0);
 }
 
+}  // namespace tendisplus
+
 int main(int argc, char *argv[]) {
+    using namespace tendisplus;
     if (argc != 2) {
         usage();
         return 0;
@@ -60,6 +64,21 @@ int main(int argc, char *argv[]) {
     if (!s.ok()) {
         LOG(FATAL) << "parse config failed:" << s.toString();
     }
+
+    // Log messages at or above this level. Again, the numbers of severity
+    // levels INFO, WARNING, ERROR, and FATAL are 0, 1, 2, and 3,
+    // respectively. refer to http://rpg.ifi.uzh.ch/docs/glog.html
+    FLAGS_minloglevel = 0;
+    if (params->logLevel == "debug" || params->logLevel == "verbose") {
+        FLAGS_v = 1;
+    } else {
+        FLAGS_v = 0;
+    }
+    if (params->logDir != "") {
+        FLAGS_log_dir = params->logDir;
+    }
+    ::google::InitGoogleLogging("tendisplus");
+
     gServer = new ServerEntry();
     s = gServer->startup(params);
     if (!s.ok()) {
@@ -70,4 +89,4 @@ int main(int argc, char *argv[]) {
     LOG(INFO) << "server exits";
 }
 
-}  // namespace tendisplus
+
