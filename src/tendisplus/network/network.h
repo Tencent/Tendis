@@ -9,13 +9,26 @@
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/atomic_utility.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
+
 class ServerEntry;
+
+struct NetworkMatrix {
+    Atom<uint64_t> stickPackets{0};
+    Atom<uint64_t> connCreated{0};
+    Atom<uint64_t> connReleased{0};
+    Atom<uint64_t> invalidPackets{0};
+    NetworkMatrix operator -(const NetworkMatrix& right);
+    std::string toString() const;
+};
+
 class NetworkAsio {
  public:
-    explicit NetworkAsio(std::shared_ptr<ServerEntry> server);
+    explicit NetworkAsio(std::shared_ptr<ServerEntry> server,
+            std::shared_ptr<NetworkMatrix> matrix);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
     Status prepare(const std::string& ip, const uint16_t port);
@@ -30,13 +43,14 @@ class NetworkAsio {
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
     std::unique_ptr<std::thread> _acceptThd;
     std::atomic<bool> _isRunning;
+    std::shared_ptr<NetworkMatrix> _matrix;
 };
 
 // represent a ingress tcp-connection
 class NetSession {
  public:
     NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
-        uint64_t connid, bool initSock);
+        uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix);
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
     std::string getRemoteRepr() const;
@@ -98,6 +112,7 @@ class NetSession {
     int64_t _bulkLen;
     std::vector<std::string> _args;
     std::vector<char> _respBuf;
+    std::shared_ptr<NetworkMatrix> _matrix;
 };
 
 }  // namespace tendisplus

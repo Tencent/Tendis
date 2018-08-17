@@ -10,7 +10,8 @@ namespace tendisplus {
 TEST(NetSession, drainReqInvalid) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NetSession sess(nullptr, std::move(socket), 1, false);
+    NetSession sess(nullptr, std::move(socket),
+        1, false, std::make_shared<NetworkMatrix>());
     sess.setState(NetSession::State::DrainReq);
     const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
     std::copy(s.begin(), s.end(), std::back_inserter(sess._queryBuf));
@@ -25,7 +26,8 @@ TEST(NetSession, Completed) {
     std::string s = "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r";
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NetSession sess(nullptr, std::move(socket), 1, false);
+    NetSession sess(nullptr, std::move(socket),
+        1, false, std::make_shared<NetworkMatrix>());
     sess.setState(NetSession::State::DrainReq);
     sess._queryBuf.resize(128, 0);
     for (auto& c : s) {

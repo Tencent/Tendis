@@ -44,7 +44,7 @@ static void setupSignals() {
 }
 
 static void usage() {
-    std::cout<< "./tendisplus configfile" << std::endl;
+    std::cout<< "./tendisplus [configfile]" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -79,6 +79,7 @@ int main(int argc, char *argv[]) {
     if (params->logDir != "") {
         FLAGS_log_dir = params->logDir;
     }
+    FLAGS_logbufsecs = 1;
     ::google::InitGoogleLogging("tendisplus");
 
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();

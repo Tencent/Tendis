@@ -1,4 +1,5 @@
 #include <functional>
+#include <string>
 #include "glog/logging.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/network/worker_pool.h"
@@ -6,9 +7,29 @@
 
 namespace tendisplus {
 
-WorkerPool::WorkerPool()
+std::string PoolMatrix::toString() const {
+    std::stringstream ss;
+    ss << "\ninQueue\t" << inQueue
+        << "\nexecuted\t" << executed
+        << "\nqueueTime\t" << queueTime
+        << "\nexecuteTime\t" << executeTime;
+    return ss.str();
+}
+
+PoolMatrix PoolMatrix::operator-(const PoolMatrix& right) {
+    PoolMatrix result;
+    // inQueue is a state, donot handle it
+    result.inQueue = inQueue;
+    result.executed = executed - right.executed;
+    result.queueTime = queueTime - right.queueTime;
+    result.executeTime = executeTime - right.executeTime;
+    return result;
+}
+
+WorkerPool::WorkerPool(std::shared_ptr<PoolMatrix> poolMatrix)
     :_isRuning(false),
-     _ioCtx(std::make_unique<asio::io_context>()) {
+     _ioCtx(std::make_unique<asio::io_context>()),
+     _matrix(poolMatrix) {
 }
 
 void WorkerPool::consumeTasks(size_t idx) {
@@ -18,9 +39,8 @@ void WorkerPool::consumeTasks(size_t idx) {
         const auto& thd_id = std::this_thread::get_id();
         for (auto v = _threads.begin(); v != _threads.end(); v++) {
             if (v->get_id() == thd_id) {
-                _threads.erase(v);
                 LOG(INFO) << "thd:" << thd_id << ",idx:"
-                    << idx << "clean and exit";
+                    << idx << ",clean and exit";
                 return;
             }
         }
