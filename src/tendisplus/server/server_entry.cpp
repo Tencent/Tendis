@@ -5,6 +5,8 @@
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/commands/command.h"
 
 namespace tendisplus {
 
@@ -79,7 +81,7 @@ void ServerEntry::endSession(uint64_t connId) {
     _sessions.erase(it);
 }
 
-void ServerEntry::processReq(uint64_t connId) {
+void ServerEntry::processRequest(uint64_t connId) {
     NetSession *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
@@ -95,7 +97,17 @@ void ServerEntry::processReq(uint64_t connId) {
             LOG(FATAL) << "conn:" << connId << ",null in servermap";
         }
     }
-    sess->setOkRsp();
+    auto status = Command::precheck(sess);
+    if (!status.ok()) {
+        sess->setResponse(redis_port::errorReply(status.toString()));
+        return;
+    }
+    auto expect = Command::runSessionCmd(sess);
+    if (!expect.ok()) {
+        sess->setResponse(redis_port::errorReply(expect.status().toString()));
+        return;
+    }
+    sess->setResponse(expect.value());
 }
 
 // full-time matrix collect

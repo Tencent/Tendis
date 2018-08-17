@@ -58,8 +58,7 @@ class NetSession {
     uint64_t getConnId() const;
     void start();
     const std::vector<std::string>& getArgs() const;
-    void setOkRsp();
-
+    void setResponse(const std::string& s);
     // normal clients
     // Created -> [DrainReq]+ -> Process -> DrainRsp -> [DrainReq]+
     // clients with bad input

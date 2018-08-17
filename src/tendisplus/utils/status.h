@@ -15,6 +15,7 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_INTERNAL,
     ERR_PARSEOPT,
+    ERR_PARSEPKT,
 };
 
 class Status {
@@ -46,7 +47,9 @@ class Expected {
     explicit Expected(const Status& other)
         :_status(other) {
     }
-    explicit Expected(T t)
+    // here we ignore "explicit" to make return two types
+    // Status/T possible. It's more convinent to use
+    Expected(T t)  // NOLINT(runtime/explicit)
         :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }
     const T& value() const {

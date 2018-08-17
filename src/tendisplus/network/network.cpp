@@ -158,19 +158,14 @@ const std::vector<std::string>& NetSession::getArgs() const {
     return _args;
 }
 
-void NetSession::setOkRsp() {
-    const std::string s = "+OK\r\n";
+void NetSession::setResponse(const std::string& s) {
     std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
 }
 
 void NetSession::setRspAndClose(const std::string& s) {
     _closeAfterRsp = true;
 
-    std::stringstream ss;
-    ss << "-ERR " << s << "\r\n";
-    const std::string& s1 = ss.str();
-
-    std::copy(s1.begin(), s1.end(), std::back_inserter(_respBuf));
+    setResponse(redis_port::errorReply(s));
     setState(State::DrainRsp);
     schedule();
 }
@@ -365,7 +360,7 @@ uint64_t NetSession::getConnId() const {
 }
 
 void NetSession::processReq() {
-    _server->processReq(_connId);
+    _server->processRequest(_connId);
     _state.store(State::DrainRsp, std::memory_order_relaxed);
     schedule();
 }
