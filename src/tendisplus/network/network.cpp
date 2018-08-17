@@ -14,13 +14,33 @@ constexpr ssize_t REDIS_IOBUF_LEN = (1024*16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
-NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server)
+std::string NetworkMatrix::toString() const {
+    std::stringstream ss;
+    ss << "\nstickPackets\t" << stickPackets
+        << "\nconnCreated\t" << connCreated
+        << "\nconnReleased\t" << connReleased
+        << "\ninvalidPackets\t" << invalidPackets;
+    return ss.str();
+}
+
+NetworkMatrix NetworkMatrix::operator-(const NetworkMatrix& right) {
+    NetworkMatrix result;
+    result.stickPackets = stickPackets - right.stickPackets;
+    result.connCreated = connCreated - right.connCreated;
+    result.connReleased = connReleased - right.connReleased;
+    result.invalidPackets = invalidPackets - right.invalidPackets;
+    return result;
+}
+
+NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
+        std::shared_ptr<NetworkMatrix> matrix)
     :_connCreated(0),
      _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
-     _isRunning(false) {
+     _isRunning(false),
+     _matrix(matrix) {
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
@@ -33,12 +53,6 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
     if (ec.value()) {
         return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
-    /*
-    _acceptor->bind(ep, ec);
-    if (ec.value()) {
-        return {ErrorCodes::ERR_NETWORK, ec.message()};
-    }
-    */
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -55,8 +69,9 @@ void NetworkAsio::doAccept() {
         _server->addSession(
             std::move(
                 std::make_unique<NetSession>(
-                    _server, std::move(socket), ++_connCreated, true)));
-        // TODO(deyukong): enqueue
+                    _server, std::move(socket), ++_connCreated,
+                    true, _matrix)));
+        ++_matrix->connCreated;
         doAccept();
     });
 }
@@ -64,6 +79,7 @@ void NetworkAsio::doAccept() {
 void NetworkAsio::stop() {
     LOG(INFO) << "network-asio begin stops...";
     _isRunning.store(false, std::memory_order_relaxed);
+    _acceptCtx->stop();
     _acceptThd->join();
     LOG(INFO) << "network-asio begin stops complete...";
 }
@@ -93,7 +109,7 @@ Status NetworkAsio::run() {
 }
 
 NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
-            uint64_t connid, bool initSock)
+    uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix)
         :_connId(connid),
          _closeAfterRsp(false),
          _server(server),
@@ -104,7 +120,8 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
          _multibulklen(0),
          _bulkLen(-1),
          _args(std::vector<std::string>()),
-         _respBuf(std::vector<char>()) {
+         _respBuf(std::vector<char>()),
+         _matrix(matrix) {
     if (initSock) {
         std::error_code ec;
         _sock.non_blocking(true, ec);
@@ -175,6 +192,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     _queryBufPos += actualLen;
     _queryBuf[_queryBufPos] = 0;
     if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
+        ++_matrix->invalidPackets;
         setRspAndClose("Protocol error: too big mbulk count string");
         return;
     }
@@ -186,6 +204,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         newLine = strchr(_queryBuf.data(), '\r');
         if (newLine == nullptr) {
             if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+                ++_matrix->invalidPackets;
                 setRspAndClose("Protocol error: too big mbulk count string");
                 return;
             }
@@ -199,12 +218,14 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             return;
         }
         if (_queryBuf[0] != '*') {
+            ++_matrix->invalidPackets;
             setRspAndClose("Protocol error: only support multilen proto");
             return;
         }
         char *newStart = _queryBuf.data() + 1;
         ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
         if (!ok || ll > 1024*1024) {
+            ++_matrix->invalidPackets;
             setRspAndClose("Protocol error: invalid multibulk length");
             return;
         }
@@ -223,6 +244,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             newLine = strchr(_queryBuf.data()+pos, '\r');
             if (newLine == nullptr) {
                 if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+                    ++_matrix->invalidPackets;
                     setRspAndClose("Protocol error: too big bulk count string");
                     return;
                 }
@@ -233,6 +255,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             }
             if (_queryBuf.data()[pos] != '$') {
                 std::stringstream s;
+                ++_matrix->invalidPackets;
                 s << "Protocol error: expected '$', got '"
                   << _queryBuf.data()[pos] << "'";
                 setRspAndClose(s.str());
@@ -241,6 +264,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             char *newStart = _queryBuf.data()+pos+1;
             ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
             if (!ok || ll < 0 || ll > 512*1024*1024) {
+                ++_matrix->invalidPackets;
                 setRspAndClose("Protocol error: invalid bulk length");
                 return;
             }
@@ -264,6 +288,9 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     }
     if (_multibulklen == 0) {
         setState(State::Process);
+    }
+    if (_queryBufPos != 0) {
+        ++_matrix->stickPackets;
     }
     schedule();
 }
@@ -372,6 +399,9 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
 }
 
 void NetSession::endSession() {
+    ++_matrix->connReleased;
+    // NOTE(deyukong): endSession will call destructor
+    // never write any codes after endSession
     _server->endSession(_connId);
 }
 

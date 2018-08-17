@@ -1,6 +1,7 @@
 #include <utility>
 #include <memory>
 #include <algorithm>
+#include <chrono>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -11,12 +12,15 @@ ServerEntry::ServerEntry()
         :_isRunning(false),
          _isStopped(true),
          _network(nullptr),
-         _executor(nullptr) {
+         _executor(nullptr),
+         _netMatrix(std::make_shared<NetworkMatrix>()),
+         _poolMatrix(std::make_shared<PoolMatrix>()),
+         _ftmcThd(nullptr) {
 }
 
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
-    _network = std::make_unique<NetworkAsio>(shared_from_this());
+    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
     auto s = _network->prepare(cfg->bindIp, cfg->port);
     if (!s.ok()) {
         return s;
@@ -26,7 +30,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    _executor = std::make_unique<WorkerPool>();
+    _executor = std::make_unique<WorkerPool>(_poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
@@ -37,6 +41,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
     _isRunning.store(true, std::memory_order_relaxed);
     _isStopped.store(false, std::memory_order_relaxed);
+
+    _ftmcThd = std::make_unique<std::thread>([this] {
+        ftmc();
+    });
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -90,6 +98,31 @@ void ServerEntry::processReq(uint64_t connId) {
     sess->setOkRsp();
 }
 
+// full-time matrix collect
+void ServerEntry::ftmc() {
+    using namespace std::chrono_literals;  // NOLINT(build/namespaces)
+    LOG(INFO) << "server ftmc thread starts";
+    auto oldNetMatrix = *_netMatrix;
+    auto oldPoolMatrix = *_poolMatrix;
+    while (_isRunning.load(std::memory_order_relaxed)) {
+        auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
+        auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
+        oldNetMatrix = *_netMatrix;
+        oldPoolMatrix = *_poolMatrix;
+        LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
+        LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
+
+        std::unique_lock<std::mutex> lk(_mutex);
+        bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
+            return _isRunning.load(std::memory_order_relaxed) == false;
+        });
+        if (ok) {
+            LOG(INFO) << "server ftmc thread exits";
+            return;
+        }
+    }
+}
+
 void ServerEntry::waitStopComplete() {
     std::unique_lock<std::mutex> lk(_mutex);
     _eventCV.wait(lk, [this] {
@@ -99,12 +132,17 @@ void ServerEntry::waitStopComplete() {
 }
 
 void ServerEntry::stop() {
+    if (_isRunning.load(std::memory_order_relaxed) == false) {
+        LOG(INFO) << "server is stopping, plz donot kill again";
+        return;
+    }
     LOG(INFO) << "server begins to stop...";
-    std::lock_guard<std::mutex> lk(_mutex);
     _isRunning.store(false, std::memory_order_relaxed);
+    _eventCV.notify_all();
     _network->stop();
     _executor->stop();
     _sessions.clear();
+    _ftmcThd->join();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();

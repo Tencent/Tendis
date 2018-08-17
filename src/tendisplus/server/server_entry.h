@@ -13,6 +13,8 @@
 namespace tendisplus {
 class NetSession;
 class NetworkAsio;
+class NetworkMatrix;
+class PoolMatrix;
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
@@ -31,6 +33,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void waitStopComplete();
 
  private:
+    void ftmc();
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
     // _isRunning = false && _isStopped = true -> stop complete
@@ -41,6 +44,10 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<NetworkAsio> _network;
     std::map<uint64_t, std::unique_ptr<NetSession>> _sessions;
     std::unique_ptr<WorkerPool> _executor;
+
+    std::shared_ptr<NetworkMatrix> _netMatrix;
+    std::shared_ptr<PoolMatrix> _poolMatrix;
+    std::unique_ptr<std::thread> _ftmcThd;
 };
 }  // namespace tendisplus
 
