@@ -1,12 +1,11 @@
 #ifndef SRC_TENDISPLUS_UTILS_STATUS_H_
 #define SRC_TENDISPLUS_UTILS_STATUS_H_
 
-#include <experimental/optional>
 #include <utility>
 #include <string>
 #include <memory>
-// TODO(deyukong): this include maybe not portable
 #include <type_traits>
+#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 
@@ -68,7 +67,7 @@ class Expected {
     }
 
  private:
-    std::experimental::optional<T> _data;
+    optional<T> _data;
     Status _status;
 };
 

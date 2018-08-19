@@ -15,6 +15,10 @@ class ServerParams {
     uint16_t port;
     std::string logLevel;
     std::string logDir;
+
+    std::string storageEngine;
+    std::string dbPath;
+    uint64_t  rocksBlockcacheMB;
 };
 }  // namespace tendisplus
 

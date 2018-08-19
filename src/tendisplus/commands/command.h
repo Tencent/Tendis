@@ -12,6 +12,7 @@ class Command {
  public:
     using CmdMap = std::map<std::string, Command*>;
     explicit Command(const std::string& name);
+    virtual ~Command() = default;
     virtual Expected<std::string> run(NetSession *sess) = 0;
     virtual ssize_t arity() const = 0;
     virtual int32_t firstkey() const = 0;

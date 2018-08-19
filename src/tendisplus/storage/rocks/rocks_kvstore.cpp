@@ -1,6 +1,10 @@
 #include <memory>
 #include <utility>
 #include <string>
+#include <sstream>
+#include "glog/logging.h"
+#include "rocksdb/table.h"
+#include "rocksdb/filter_policy.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
@@ -47,19 +51,75 @@ void RocksOptTxn::ensureTxn() {
     // We must set_snapshot manually.
     // if set_snapshot == false, the RC-level is guaranteed.
     // if set_snapshot == true, the RR-level is guaranteed.
+    // Of course we need RR-level, not RC-level.
 
-    // refer to rocks' document, even if set_snapshot is set,
+    // refer to rocks' document, even if set_snapshot == true,
     // the uncommitted data in this txn's writeBatch are still
-    // visible to reads.
+    // visible to reads, and this behavior is what we need.
     txnOpts.set_snapshot = true;
     _txn.reset(_db->BeginTransaction(writeOpts, txnOpts));
     assert(_txn);
 }
 
 RocksKVStore::RocksKVStore(const std::string& id,
-            const std::shared_ptr<ServerParams>& cfg)
-        :KVStore(id) {
-    (void)cfg;
+            const std::shared_ptr<ServerParams>& cfg,
+            std::shared_ptr<rocksdb::Cache> blockCache)
+        :KVStore(id),
+         _db(nullptr),
+         _stats(rocksdb::CreateDBStatistics()) {
+    rocksdb::Options options;
+    rocksdb::BlockBasedTableOptions table_options;
+    table_options.block_cache = blockCache;
+    table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
+    table_options.block_size = 16 * 1024;  // 16KB
+    table_options.format_version = 2;
+    // let index and filters pining in mem forever
+    table_options.cache_index_and_filter_blocks = false;
+    options.table_factory.reset(
+        rocksdb::NewBlockBasedTableFactory(table_options));
+    options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
+    // level_0 max size: 8*64MB = 512MB
+    options.level0_slowdown_writes_trigger = 8;
+    options.max_write_buffer_number = 4;
+    options.max_background_compactions = 8;
+    options.max_background_flushes = 2;
+    options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
+    options.level_compaction_dynamic_level_bytes = true;
+    // level_1 max size: 512MB, in fact, things are more complex
+    // since we set level_compaction_dynamic_level_bytes = true
+    options.max_bytes_for_level_base = 512 * 1024 * 1024;  // 512 MB
+    options.max_open_files = -1;
+    // if we have no 'empty reads', we can disable bottom
+    // level's bloomfilters
+    options.optimize_filters_for_hits = false;
+    // TODO(deyukong): we should have our own compaction factory
+    // options.compaction_filter_factory.reset(
+    //     new PrefixDeletingCompactionFilterFactory(this));
+    options.enable_thread_tracking = true;
+    options.compression_per_level.resize(7);
+    options.compression_per_level[0] = rocksdb::kNoCompression;
+    options.compression_per_level[1] = rocksdb::kNoCompression;
+    options.compression_per_level[2] = rocksdb::kSnappyCompression;
+    options.compression_per_level[3] = rocksdb::kSnappyCompression;
+    options.compression_per_level[4] = rocksdb::kSnappyCompression;
+    options.compression_per_level[5] = rocksdb::kSnappyCompression;
+    options.compression_per_level[6] = rocksdb::kSnappyCompression;
+    options.statistics = _stats;
+    options.create_if_missing = true;
+
+    std::stringstream ss;
+    ss << cfg->dbPath << "/" << id;
+    std::string dbname = ss.str();
+    options.wal_dir = dbname + "/journal";
+    options.max_total_wal_size = uint64_t(4294967296);  // 4GB
+    rocksdb::OptimisticTransactionDB *tmpDb;
+    auto status = rocksdb::OptimisticTransactionDB::Open(
+        options, dbname, &tmpDb);
+    if (!status.ok()) {
+        LOG(FATAL) << "opendb:" << dbname
+                    << ", failed info:" << status.ToString();
+    }
+    _db.reset(tmpDb);
 }
 
 Expected<std::string> RocksOptTxn::getKV(const std::string& key) {

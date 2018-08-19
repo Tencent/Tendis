@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <iostream>
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "tendisplus/server/server_params.h"
@@ -15,6 +16,7 @@ class RocksOptTxn: public Transaction {
     explicit RocksOptTxn(rocksdb::OptimisticTransactionDB *db);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
+    virtual ~RocksOptTxn() = default;
     Status commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
@@ -33,7 +35,9 @@ class RocksOptTxn: public Transaction {
 class RocksKVStore: public KVStore {
  public:
     RocksKVStore(const std::string& id,
-        const std::shared_ptr<ServerParams>& cfg);
+        const std::shared_ptr<ServerParams>& cfg,
+        std::shared_ptr<rocksdb::Cache> blockCache);
+    virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<std::string> getKV(const std::string& key, Transaction* txn) final;
     Status setKV(const std::string& key, const std::string& val,
@@ -42,6 +46,7 @@ class RocksKVStore: public KVStore {
 
  private:
     std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;
+    std::shared_ptr<rocksdb::Statistics> _stats;
 };
 
 }  // namespace tendisplus
