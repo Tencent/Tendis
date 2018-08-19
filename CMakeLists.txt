@@ -82,8 +82,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
-# NOTE(deyukong): donot include gtest headers here, include gtest in subdir
-# because thirdparty/rocksdb puts gtest in its own thirdparty, caution of conflict
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
