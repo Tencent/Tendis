@@ -4,17 +4,23 @@
 #include <stdint.h>
 #include <cstdlib>
 #include <vector>
+#include <utility>
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
+using VarintDecodeResult = std::pair<uint64_t, size_t>;
+
 std::vector<uint8_t> varintEncode(uint64_t val);
 
-uint64_t varintDecodeFwd(uint8_t *input, size_t maxSize);
+Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,
+        size_t maxSize);
 
 // NOTE(deyukong): if you have a buff, named p, with size = maxSize
 // you should write varintDecodeRvs(p+maxSize, maxSize)
 // donot write varintDecodeRvs(p, maxSize)
-uint64_t varintDecodeRvs(uint8_t *input, size_t maxSize);
+Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t *input,
+        size_t maxSize);
 
 }  // namespace tendisplus
 

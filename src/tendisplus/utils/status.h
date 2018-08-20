@@ -17,6 +17,7 @@ enum class ErrorCodes {
     ERR_PARSEPKT,
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
+    ERR_DECODE,
 };
 
 class Status {
