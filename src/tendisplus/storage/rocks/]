@@ -1,2 +1,0 @@
-add_library(rocks_kvstore STATIC kvstore.cpp)
-target_link_libraries(kvstore status)
