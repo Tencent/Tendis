@@ -21,7 +21,7 @@ RecordType char2Rt(char t);
 
 // ********************* key format ***********************************
 // DBID + Type + PK + SK + len(PK) + len(SK) + 8B reserved
-// DBID is varint32 in little endian
+// DBID is a varint32 in little endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE
 // PK is primarykey, its length is described in len(PK)
@@ -54,6 +54,7 @@ class Record {
     static Expected<std::unique_ptr<Record>> decode(const std::string& key,
         const std::string& value);
     KV encode() const;
+    bool operator ==(const Record& other) const;
 
  private:
     uint32_t _dbId;

@@ -203,6 +203,9 @@ Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
     }
     offset = expt.value().second;
     ttl = expt.value().first;
+
+    // NOTE(deyukong): value must not be empty
+    // so we use >= rather than > here
     if (offset >= value.size()) {
         std::stringstream ss;
         ss << "marshaled value content of key" << key;
@@ -217,6 +220,16 @@ Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
         sk,
         rawValue,
         ttl);
+}
+
+bool Record::operator==(const Record& other) const {
+    return _dbId == other._dbId &&
+            _type == other._type &&
+            _pk == other._pk &&
+            _sk == other._sk &&
+            _reserved == other._reserved &&
+            _ttl == other._ttl &&
+            _value == other._value;
 }
 
 }  // namespace tendisplus
