@@ -2,6 +2,7 @@
 #include <memory>
 #include <algorithm>
 #include <chrono>
+#include <string>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -15,6 +16,7 @@ ServerEntry::ServerEntry()
          _isStopped(true),
          _network(nullptr),
          _executor(nullptr),
+         _segmentMgr(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _ftmcThd(nullptr) {
@@ -22,6 +24,26 @@ ServerEntry::ServerEntry()
 
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
+
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
+
+    // kvstore init
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
+    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        std::stringstream ss;
+        ss << i;
+        std::string dbId = ss.str();
+        _kvstores.emplace_back(std::unique_ptr<KVStore>(
+            new RocksKVStore(dbId, cfg, blockCache)));
+    }
+
+    // segment mgr
+    _segmentMgr = std::unique_ptr<SegmentMgr>(
+        new SegmentMgrFnvHash64(_kvstores));
+
+    // network listener
     _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
     auto s = _network->prepare(cfg->bindIp, cfg->port);
     if (!s.ok()) {
@@ -32,6 +54,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    // network executePool
     _executor = std::make_unique<WorkerPool>(_poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
@@ -41,13 +64,16 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     if (!s.ok()) {
         return s;
     }
-    _isRunning.store(true, std::memory_order_relaxed);
-    _isStopped.store(false, std::memory_order_relaxed);
 
+    // server stats monitor
     _ftmcThd = std::make_unique<std::thread>([this] {
         ftmc();
     });
     return {ErrorCodes::ERR_OK, ""};
+}
+
+const SegmentMgr* ServerEntry::getSegmentMgr() const {
+    return _segmentMgr.get();
 }
 
 void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {

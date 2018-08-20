@@ -92,6 +92,7 @@ Status ServerParams::parseFile(const std::string& filename) {
             }
             dbPath = tokens[1];
         } else if (tokens[0] == "storage") {
+            // currently only support rocks engine
             if (tokens.size() != 2 || tokens[1] != "rocks") {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid storage configure"};
             }

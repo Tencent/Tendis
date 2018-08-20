@@ -9,6 +9,9 @@
 
 namespace tendisplus {
 
+class KVStore;
+using PStore = std::shared_ptr<KVStore>;
+
 class Transaction {
  public:
     Transaction() = default;

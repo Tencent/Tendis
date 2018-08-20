@@ -81,7 +81,7 @@ set(WARN_C_ONLY
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
-
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")

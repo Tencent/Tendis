@@ -48,7 +48,7 @@ Record::Record()
      _type(RecordType::RT_INVALID),
      _pk(""),
      _sk(""),
-     _reserved(0),
+     _fmtVsn(0),
      _ttl(0),
      _value("") {
 }
@@ -58,12 +58,12 @@ Record::Record(Record&& o)
          _type(o._type),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
-         _reserved(o._reserved),
+         _fmtVsn(o._fmtVsn),
          _ttl(o._ttl),
          _value(std::move(o._value)) {
     o._dbId = 0;
     o._type = RecordType::RT_INVALID;
-    o._reserved = 0;
+    o._fmtVsn = 0;
     o._ttl = 0;
 }
 
@@ -83,7 +83,7 @@ Record::Record(uint32_t dbid, RecordType type, const std::string& pk,
      _type(type),
      _pk(pk),
      _sk(sk),
-     _reserved(0),
+     _fmtVsn(0),
      _ttl(ttl),
      _value(val) {
 }
@@ -115,9 +115,9 @@ Record::KV Record::encode() const {
     key.insert(key.end(), lenSK.rbegin(), lenSK.rend());
 
     // reserved
-    const uint8_t *p = reinterpret_cast<const uint8_t*>(&_reserved);
-    static_assert(sizeof(_reserved) == 8, "invalid _reserved size");
-    key.insert(key.end(), p, p + (sizeof(_reserved)));
+    const uint8_t *p = reinterpret_cast<const uint8_t*>(&_fmtVsn);
+    static_assert(sizeof(_fmtVsn) == 1, "invalid fmtversion size");
+    key.insert(key.end(), p, p + (sizeof(_fmtVsn)));
 
 
     // --------value encoding
@@ -138,7 +138,7 @@ Record::KV Record::encode() const {
 
 Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
         const std::string& value) {
-    constexpr size_t rsvd = sizeof(uint64_t);
+    constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
     size_t rvsOffset = 0;
     uint64_t pkLen = 0;
@@ -227,7 +227,7 @@ bool Record::operator==(const Record& other) const {
             _type == other._type &&
             _pk == other._pk &&
             _sk == other._sk &&
-            _reserved == other._reserved &&
+            _fmtVsn == other._fmtVsn &&
             _ttl == other._ttl &&
             _value == other._value;
 }

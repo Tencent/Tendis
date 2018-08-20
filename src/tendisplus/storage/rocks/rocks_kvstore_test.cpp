@@ -32,7 +32,7 @@ static std::shared_ptr<ServerParams> genParams() {
 TEST(RocksKVStore, Common) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
-    EXPECT_TRUE(filesystem::create_directory("db/0"));
+    // EXPECT_TRUE(filesystem::create_directory("db/0"));
     EXPECT_TRUE(filesystem::create_directory("log"));
     const auto guard = MakeGuard([] {
         filesystem::remove_all("./log");

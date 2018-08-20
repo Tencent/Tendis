@@ -39,7 +39,7 @@ class GetCommand: public Command {
         if (!s.ok()) {
             return {ErrorCodes::ERR_PARSEPKT, s.status().toString()};
         }
-        return std::string("dummyValue");
+        return std::string("dummy");
     }
 } getCommand;
 

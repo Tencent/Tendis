@@ -20,7 +20,7 @@ char rt2Char(RecordType t);
 RecordType char2Rt(char t);
 
 // ********************* key format ***********************************
-// DBID + Type + PK + SK + len(PK) + len(SK) + 8B reserved
+// DBID + Type + PK + SK + len(PK) + len(SK) + 1B reserved
 // DBID is a varint32 in little endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE
@@ -28,7 +28,7 @@ RecordType char2Rt(char t);
 // SK is secondarykey, its length is described in len(SK)
 // len(PK) and len(SK) are varint32 stored in bigendian, so we can read
 // from the end backwards.
-// the last 8B are reserved.
+// the last 1B are reserved.
 // ********************* value format *********************************
 // TTL + UserValue
 // TTL is a varint64
@@ -36,6 +36,7 @@ RecordType char2Rt(char t);
 class Record {
  public:
     using KV = std::pair<std::string, std::string>;
+    using TRSV = uint8_t;
     Record();
     Record(const Record&) = default;
     // we should not rely on default move constructor.
@@ -61,7 +62,7 @@ class Record {
     RecordType _type;
     std::string _pk;
     std::string _sk;
-    uint64_t _reserved;
+    TRSV _fmtVsn;
     uint64_t _ttl;
     std::string _value;
 };
