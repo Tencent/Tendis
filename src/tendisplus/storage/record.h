@@ -33,29 +33,24 @@ RecordType char2Rt(char t);
 // TTL + UserValue
 // TTL is a varint64
 // ********************************************************************
-class Record {
+
+class RecordKey {
  public:
-    using KV = std::pair<std::string, std::string>;
     using TRSV = uint8_t;
-    Record();
-    Record(const Record&) = default;
+    RecordKey();
+    RecordKey(const RecordKey&) = default;
     // we should not rely on default move constructor.
     // refer to the manual, int types have no move constructor
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
-    Record(Record&&);
-    Record(RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val);
-    Record(RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val, uint64_t ttl);
-    Record(uint32_t dbid, RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val);
-    Record(uint32_t dbid, RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val, uint64_t ttl);
-    static Expected<std::unique_ptr<Record>> decode(const std::string& key,
-        const std::string& value);
-    KV encode() const;
-    bool operator ==(const Record& other) const;
+    RecordKey(RecordKey&&);
+    RecordKey(RecordType type, const std::string& pk,
+        const std::string& sk);
+    RecordKey(uint32_t dbid, RecordType type, const std::string& pk,
+        const std::string& sk);
+    std::string encode() const;
+    static Expected<RecordKey> decode(const std::string& key);
+    bool operator==(const RecordKey& other) const;
 
  private:
     uint32_t _dbId;
@@ -63,8 +58,44 @@ class Record {
     std::string _pk;
     std::string _sk;
     TRSV _fmtVsn;
+};
+
+class RecordValue {
+ public:
+    RecordValue();
+    RecordValue(const RecordValue&) = default;
+
+    // we should not rely on default move constructor.
+    // refer to the manual, int types have no move constructor
+    // so copy constructor is applied, the move-from object will
+    // be in a dangling state
+    RecordValue(RecordValue&&);
+    explicit RecordValue(const std::string& val, uint64_t ttl = 0);
+    std::string encode() const;
+    static Expected<RecordValue> decode(const std::string& value);
+    bool operator==(const RecordValue& other) const;
+
+ private:
     uint64_t _ttl;
     std::string _value;
+};
+
+class Record {
+ public:
+    using KV = std::pair<std::string, std::string>;
+    Record();
+    Record(const Record&) = default;
+    Record(Record&&);
+    Record(const RecordKey& key, const RecordValue& value);
+    Record(RecordKey&& key, RecordValue&& value);
+    static Expected<Record> decode(const std::string& key,
+            const std::string& value);
+    KV encode() const;
+    bool operator==(const Record& other) const;
+
+ private:
+    RecordKey _key;
+    RecordValue _value;
 };
 
 }  // namespace tendisplus

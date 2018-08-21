@@ -35,11 +35,29 @@ class GetCommand: public Command {
         return 1;
     }
     Expected<std::string> run(NetSession *sess) final {
-        auto s = parse(sess);
+        return std::string("abc");
+        /*
+        Expected<GetParams> s = parse(sess);
         if (!s.ok()) {
-            return {ErrorCodes::ERR_PARSEPKT, s.status().toString()};
+            return {s.status().code(), s.status().toString()};
         }
-        return std::string("dummy");
+
+        PStore kvstore = getStore(sess, s.value().key);
+        auto ptxn = kvStore->createTransaction();
+        if (!ptxn.ok()) {
+            return {s.status().code(), s.status().toString()};
+        }
+        std::unique_ptr<Transaction> txn = ptxn.value();
+        Expected<std::string> eValue = kvstore->getKV(s.value().key, txn);
+        if (!eValue.ok()) {
+            const Status& status = eValue.status();
+            if (status.code() == ErrorCodes::ERR_NOTFOUND) {
+                return fmtNull();
+            }
+            return {s.status().code(), s.status().toString()};
+        }
+        return fmtBulk(eValue.value());
+        */
     }
 } getCommand;
 

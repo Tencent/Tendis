@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "asio.hpp"
+#include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/atomic_utility.h"
@@ -59,6 +60,7 @@ class NetSession {
     void start();
     const std::vector<std::string>& getArgs() const;
     void setResponse(const std::string& s);
+    std::shared_ptr<ServerEntry> getServerEntry() const;
     // normal clients
     // Created -> [DrainReq]+ -> Process -> DrainRsp -> [DrainReq]+
     // clients with bad input
@@ -111,6 +113,7 @@ class NetSession {
     int64_t _bulkLen;
     std::vector<std::string> _args;
     std::vector<char> _respBuf;
+    std::unique_ptr<SessionCtx> _ctx;
     std::shared_ptr<NetworkMatrix> _matrix;
 };
 

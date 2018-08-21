@@ -42,4 +42,45 @@ Expected<std::string> Command::runSessionCmd(NetSession *sess) {
     return it->second->run(sess);
 }
 
+PStore Command::getStore(NetSession *sess, const std::string& key) {
+    auto server = sess->getServerEntry();
+    if (!server) {
+        LOG(FATAL) << "BUG: get server from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+    auto segMgr = server->getSegmentMgr();
+    if (!segMgr) {
+        LOG(FATAL) << "BUG: get segMgr from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+    auto kvStore = segMgr->calcInstance(key);
+    if (!kvStore) {
+        LOG(FATAL) << "BUG: get kvstore from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+    return kvStore;
+}
+
+std::string Command::fmtErr(const std::string& s) {
+    std::stringstream ss;
+    ss << "-ERR " << s << "\r\n";
+    return ss.str();
+}
+
+std::string Command::fmtNull() {
+    return "$-1\r\n";
+}
+
+std::string Command::fmtBulk(const std::string& s) {
+    std::stringstream ss;
+    ss << "$" << s.size() << "\r\n" << s << "\r\n";
+    return ss.str();
+}
+
 }  // namespace tendisplus

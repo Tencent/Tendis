@@ -43,52 +43,40 @@ RecordType char2Rt(char t) {
     }
 }
 
-Record::Record()
+RecordKey::RecordKey()
     :_dbId(0),
      _type(RecordType::RT_INVALID),
      _pk(""),
      _sk(""),
-     _fmtVsn(0),
-     _ttl(0),
-     _value("") {
+     _fmtVsn(0) {
 }
 
-Record::Record(Record&& o)
+RecordKey::RecordKey(RecordKey&& o)
         :_dbId(o._dbId),
          _type(o._type),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
-         _fmtVsn(o._fmtVsn),
-         _ttl(o._ttl),
-         _value(std::move(o._value)) {
+         _fmtVsn(o._fmtVsn) {
     o._dbId = 0;
     o._type = RecordType::RT_INVALID;
     o._fmtVsn = 0;
-    o._ttl = 0;
 }
 
-Record::Record(RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val)
-    :Record(0, type, pk, sk, val, 0) {
+RecordKey::RecordKey(uint32_t dbid, RecordType type,
+    const std::string& pk, const std::string& sk)
+        :_dbId(dbid),
+         _type(type),
+         _pk(pk),
+         _sk(sk),
+         _fmtVsn(0) {
 }
 
-Record::Record(RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val, uint64_t ttl)
-    :Record(0, type, pk, sk, val, ttl) {
+RecordKey::RecordKey(RecordType type, const std::string& pk,
+    const std::string& sk)
+        :RecordKey(0, type, pk, sk) {
 }
 
-Record::Record(uint32_t dbid, RecordType type, const std::string& pk,
-        const std::string& sk, const std::string& val, uint64_t ttl)
-    :_dbId(dbid),
-     _type(type),
-     _pk(pk),
-     _sk(sk),
-     _fmtVsn(0),
-     _ttl(ttl),
-     _value(val) {
-}
-
-Record::KV Record::encode() const {
+std::string RecordKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
 
@@ -119,25 +107,11 @@ Record::KV Record::encode() const {
     static_assert(sizeof(_fmtVsn) == 1, "invalid fmtversion size");
     key.insert(key.end(), p, p + (sizeof(_fmtVsn)));
 
-
-    // --------value encoding
-    // TTL
-    std::vector<uint8_t> value;
-    value.reserve(128);
-    auto ttlBytes = varintEncode(_ttl);
-
-    // Value
-    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
-    value.insert(value.end(), _value.begin(), _value.end());
-
-    return {std::string(reinterpret_cast<const char *>(
-                key.data()), key.size()),
-            std::string(reinterpret_cast<const char *>(
-                value.data()), value.size())};
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
 }
 
-Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
-        const std::string& value) {
+Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
     size_t rvsOffset = 0;
@@ -147,9 +121,6 @@ Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
     RecordType type = RecordType::RT_INVALID;
     std::string pk = "";
     std::string sk = "";
-
-    uint64_t ttl = 0;
-    std::string rawValue = "";
 
     // dbid
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
@@ -195,41 +166,113 @@ Expected<std::unique_ptr<Record>> Record::decode(const std::string& key,
     pk = std::string(key.c_str() + offset, pkLen);
     sk = std::string(key.c_str() + offset + pkLen, skLen);
 
-    // value
-    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
-    expt = varintDecodeFwd(valueCstr, value.size());
-    if (!expt.ok()) {
-        return {expt.status().code(), expt.status().toString()};
-    }
-    offset = expt.value().second;
-    ttl = expt.value().first;
-
-    // NOTE(deyukong): value must not be empty
-    // so we use >= rather than > here
-    if (offset >= value.size()) {
-        std::stringstream ss;
-        ss << "marshaled value content of key" << key;
-        return {ErrorCodes::ERR_DECODE, ss.str()};
-    }
-    rawValue = std::string(value.c_str() + offset, value.size() - offset);
-
-    return std::make_unique<Record>(
-        dbid,
-        type,
-        pk,
-        sk,
-        rawValue,
-        ttl);
+    // dont bother about copies. move-constructor or at least RVO
+    // will handle everything.
+    return RecordKey(dbid, type, pk, sk);
 }
 
-bool Record::operator==(const Record& other) const {
+bool RecordKey::operator==(const RecordKey& other) const {
     return _dbId == other._dbId &&
             _type == other._type &&
             _pk == other._pk &&
             _sk == other._sk &&
-            _fmtVsn == other._fmtVsn &&
-            _ttl == other._ttl &&
-            _value == other._value;
+            _fmtVsn == other._fmtVsn;
+}
+
+RecordValue::RecordValue()
+    :_ttl(0),
+     _value("") {
+}
+
+RecordValue::RecordValue(RecordValue&& o)
+        :_ttl(o._ttl),
+         _value(std::move(o._value)) {
+    o._ttl = 0;
+}
+
+RecordValue::RecordValue(const std::string& val, uint64_t ttl)
+        :_ttl(ttl),
+         _value(val) {
+}
+
+std::string RecordValue::encode() const {
+    // --------value encoding
+    // TTL
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    auto ttlBytes = varintEncode(_ttl);
+
+    // Value
+    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
+    value.insert(value.end(), _value.begin(), _value.end());
+
+    return std::string(reinterpret_cast<const char *>(
+        value.data()), value.size());
+}
+
+Expected<RecordValue> RecordValue::decode(const std::string& value) {
+    // value
+    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+    auto expt = varintDecodeFwd(valueCstr, value.size());
+    if (!expt.ok()) {
+        return {expt.status().code(), expt.status().toString()};
+    }
+    size_t offset = expt.value().second;
+    uint64_t ttl = expt.value().first;
+
+    // NOTE(deyukong): value must not be empty
+    // so we use >= rather than > here
+    if (offset >= value.size()) {
+        return {ErrorCodes::ERR_DECODE, "marshaled value content"};
+    }
+    std::string rawValue = std::string(value.c_str() + offset,
+        value.size() - offset);
+    return RecordValue(rawValue, ttl);
+}
+
+bool RecordValue::operator==(const RecordValue& other) const {
+    return _ttl == other._ttl && _value == other._value;
+}
+
+Record::Record()
+    :_key(RecordKey()),
+     _value(RecordValue()) {
+}
+
+Record::Record(Record&& o)
+    :_key(std::move(o._key)),
+     _value(std::move(o._value)) {
+}
+
+Record::Record(const RecordKey& key, const RecordValue& value)
+    :_key(key),
+     _value(value) {
+}
+
+Record::Record(RecordKey&& key, RecordValue&& value)
+    :_key(std::move(key)),
+     _value(std::move(value)) {
+}
+
+Record::KV Record::encode() const {
+    return {_key.encode(), _value.encode()};
+}
+
+Expected<Record> Record::decode(const std::string& key,
+        const std::string& value) {
+    auto e = RecordKey::decode(key);
+    if (!e.ok()) {
+        return {e.status().code(), e.status().toString()};
+    }
+    auto e1 = RecordValue::decode(value);
+    if (!e1.ok()) {
+        return {e1.status().code(), e1.status().toString()};
+    }
+    return Record(e.value(), e1.value());
+}
+
+bool Record::operator==(const Record& other) const {
+    return _key == other._key && _value == other._value;
 }
 
 }  // namespace tendisplus

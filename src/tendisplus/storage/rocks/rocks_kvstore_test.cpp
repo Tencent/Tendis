@@ -50,20 +50,31 @@ TEST(RocksKVStore, Common) {
     EXPECT_EQ(eTxn2.ok(), true);
     auto txn1 = std::move(eTxn1.value());
     auto txn2 = std::move(eTxn2.value());
-    auto s = kvstore->setKV("a", "txn1", txn1.get());
+    auto s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "a", ""),
+            RecordValue("txn1")),
+        txn1.get());
     EXPECT_EQ(s.ok(), true);
-    auto e = kvstore->getKV("a", txn1.get());
+    auto e = kvstore->getKV(
+        RecordKey(RecordType::RT_KV, "a", ""),
+        txn1.get());
     EXPECT_EQ(e.ok(), true);
-    EXPECT_EQ(e.value(), "txn1");
-    e = kvstore->getKV("a", txn2.get());
-    EXPECT_EQ(e.status().code(), ErrorCodes::ERR_NOTFOUND);
-    s = kvstore->setKV("a", "txn2", txn2.get());
+    EXPECT_EQ(e.value(), RecordValue("txn1"));
+
+    auto e1 = kvstore->getKV(
+        RecordKey(RecordType::RT_KV, "a", ""),
+        txn2.get());
+    EXPECT_EQ(e1.status().code(), ErrorCodes::ERR_NOTFOUND);
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "a", ""),
+            RecordValue("txn2")),
+        txn2.get());
     s = txn2->commit();
     EXPECT_EQ(s.ok(), true);
     s = txn1->commit();
     EXPECT_EQ(s.code(), ErrorCodes::ERR_COMMIT_RETRY);
-    txn1.reset();
-    txn2.reset();
 }
 
 }  // namespace tendisplus

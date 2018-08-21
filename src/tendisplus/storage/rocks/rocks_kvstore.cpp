@@ -158,21 +158,24 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
     return std::unique_ptr<Transaction>(new RocksOptTxn(_db.get()));
 }
 
-Expected<std::string> RocksKVStore::getKV(const std::string& key,
-        Transaction* txn) {
-    // TODO(deyukong): statstics
-    return txn->getKV(key);
+Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
+        Transaction *txn) {
+    Expected<std::string> s = txn->getKV(key.encode());
+    if (!s.ok()) {
+        return {s.status().code(), s.status().toString()};
+    }
+    return RecordValue::decode(s.value());
 }
 
-Status RocksKVStore::setKV(const std::string& key, const std::string& val,
-        Transaction* txn) {
+Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
-    return txn->setKV(key, val);
+    Record::KV pair = kv.encode();
+    return txn->setKV(pair.first, pair.second);
 }
 
-Status RocksKVStore::delKV(const std::string& key, Transaction *txn) {
+Status RocksKVStore::delKV(const RecordKey& key, Transaction *txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
-    return txn->delKV(key);
+    return txn->delKV(key.encode());
 }
 
 }  // namespace tendisplus

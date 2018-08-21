@@ -39,10 +39,9 @@ class RocksKVStore: public KVStore {
         std::shared_ptr<rocksdb::Cache> blockCache);
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
-    Expected<std::string> getKV(const std::string& key, Transaction* txn) final;
-    Status setKV(const std::string& key, const std::string& val,
-        Transaction* txn) final;
-    Status delKV(const std::string& key, Transaction* txn) final;
+    Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
+    Status setKV(const Record& kv, Transaction* txn) final;
+    Status delKV(const RecordKey& key, Transaction* txn) final;
 
  private:
     std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;

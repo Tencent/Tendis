@@ -121,6 +121,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
          _bulkLen(-1),
          _args(std::vector<std::string>()),
          _respBuf(std::vector<char>()),
+         _ctx(std::make_unique<SessionCtx>()),
          _matrix(matrix) {
     if (initSock) {
         std::error_code ec;
@@ -398,6 +399,10 @@ void NetSession::endSession() {
     // NOTE(deyukong): endSession will call destructor
     // never write any codes after endSession
     _server->endSession(_connId);
+}
+
+std::shared_ptr<ServerEntry> NetSession::getServerEntry() const {
+    return _server;
 }
 
 void NetSession::stepState() {

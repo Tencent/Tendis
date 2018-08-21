@@ -130,7 +130,7 @@ void ServerEntry::processRequest(uint64_t connId) {
     }
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
-        sess->setResponse(redis_port::errorReply(expect.status().toString()));
+        sess->setResponse(Command::fmtErr(expect.status().toString()));
         return;
     }
     sess->setResponse(expect.value());

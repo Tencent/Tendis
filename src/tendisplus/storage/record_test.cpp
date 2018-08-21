@@ -44,9 +44,9 @@ std::string overflip(const std::string& s) {
     std::vector<uint8_t> buf;
     buf.insert(buf.end(), s.begin(), s.end());
     size_t size = buf.size();
-    auto ori1 = buf[size-9];
-    while (ori1 == buf[size-9]) {
-        buf[size-9] = genRand() % 256;
+    auto ori1 = buf[size-2];
+    while (ori1 == buf[size-2]) {
+        buf[size-2] = genRand() % 256;
     }
     return std::string(
         reinterpret_cast<const char *>(buf.data()), buf.size());
@@ -54,28 +54,32 @@ std::string overflip(const std::string& s) {
 
 TEST(Record, Common) {
     srand(time(NULL));
-    for (size_t i = 0; i < 100000; i++) {
+    for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         auto type = randomType();
         auto pk = randomStr(false);
         auto sk = randomStr(true);
         uint32_t ttl = genRand();
         auto val = randomStr(false);
-        auto rcd = Record(dbid, type, pk, sk, val, ttl);
+        auto rk = RecordKey(dbid, type, pk, sk);
+        auto rv = RecordValue(val, ttl);
+        auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);
         EXPECT_TRUE(prcd1.ok());
-        EXPECT_EQ(*prcd1.value(), rcd);
+        EXPECT_EQ(prcd1.value(), rcd);
     }
 
-    for (size_t i = 0; i < 100000; i++) {
+    for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         auto type = randomType();
         auto pk = randomStr(false);
         auto sk = randomStr(true);
         uint32_t ttl = genRand();
         auto val = randomStr(false);
-        auto rcd = Record(dbid, type, pk, sk, val, ttl);
+        auto rk = RecordKey(dbid, type, pk, sk);
+        auto rv = RecordValue(val, ttl);
+        auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(overflip(kv.first), kv.second);
         EXPECT_EQ(prcd1.status().code(), ErrorCodes::ERR_DECODE);

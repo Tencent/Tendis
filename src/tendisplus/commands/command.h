@@ -20,6 +20,13 @@ class Command {
     virtual int32_t keystep() const = 0;
     static Status precheck(NetSession *sess);
     static Expected<std::string> runSessionCmd(NetSession *sess);
+    // where should I put this function ?
+    static PStore getStore(NetSession *sess, const std::string&);
+
+    static std::string fmtErr(const std::string& s);
+    static std::string fmtNull();
+    static std::string fmtBulk(const std::string& s);
+
  private:
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
