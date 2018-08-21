@@ -10,6 +10,8 @@ class SessionCtx {
     SessionCtx();
     SessionCtx(const SessionCtx&) = delete;
     SessionCtx(SessionCtx&&) = delete;
+    bool authed() const;
+    uint32_t getDbId() const;
 
  private:
     bool _authed;

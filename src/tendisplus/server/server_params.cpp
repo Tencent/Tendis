@@ -99,13 +99,19 @@ Status ServerParams::parseFile(const std::string& filename) {
         } else if (tokens[0] == "rocks.blockcachemb") {
             if (tokens.size() != 2) {
                 return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid rocks.blockcache congigure"};
+                    "invalid rocks.blockcache configure"};
             }
             try {
                 rocksBlockcacheMB = std::stoi(tokens[1]);
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEOPT, ex.what()};
             }
+        } else if (tokens[0] == "requirepass") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid requirepass configure"};
+            }
+            requirepass = tokens[1];
         }
     }
     return {ErrorCodes::ERR_OK, ""};

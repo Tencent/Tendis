@@ -18,6 +18,7 @@ class Command {
     virtual int32_t firstkey() const = 0;
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
+    const std::string& getName() const;
     static Status precheck(NetSession *sess);
     static Expected<std::string> runSessionCmd(NetSession *sess);
     // where should I put this function ?

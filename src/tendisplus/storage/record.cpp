@@ -111,6 +111,10 @@ std::string RecordKey::encode() const {
                 key.data()), key.size());
 }
 
+std::string RecordKey::getPrimaryKey() const {
+    return _pk;
+}
+
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
@@ -228,6 +232,10 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     std::string rawValue = std::string(value.c_str() + offset,
         value.size() - offset);
     return RecordValue(rawValue, ttl);
+}
+
+std::string RecordValue::getValue() const {
+    return _value;
 }
 
 bool RecordValue::operator==(const RecordValue& other) const {

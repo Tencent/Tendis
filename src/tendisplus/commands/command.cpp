@@ -12,6 +12,10 @@ Command::Command(const std::string& name)
     _commands[name] = this;
 }
 
+const std::string& Command::getName() const {
+    return _name;
+}
+
 Status Command::precheck(NetSession *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
@@ -30,6 +34,19 @@ Status Command::precheck(NetSession *sess) {
         ss << "wrong number of arguments for '" << args[0] << "' command";
         return {ErrorCodes::ERR_PARSEPKT, ss.str()};
     }
+
+    auto server = sess->getServerEntry();
+    if (!server) {
+        LOG(FATAL) << "BUG: get server from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+
+    if (server->requirepass() != "" && it->second->getName() != "auth") {
+        return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
+    }
+
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -68,6 +85,9 @@ PStore Command::getStore(NetSession *sess, const std::string& key) {
 }
 
 std::string Command::fmtErr(const std::string& s) {
+    if (s.size() != 0 && s[0] == '-') {
+        return s;
+    }
     std::stringstream ss;
     ss << "-ERR " << s << "\r\n";
     return ss.str();

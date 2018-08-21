@@ -19,7 +19,8 @@ ServerEntry::ServerEntry()
          _segmentMgr(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
-         _ftmcThd(nullptr) {
+         _ftmcThd(nullptr),
+         _requirepass("") {
 }
 
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
@@ -27,6 +28,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     _isRunning.store(true, std::memory_order_relaxed);
     _isStopped.store(false, std::memory_order_relaxed);
+
+    _requirepass = cfg->requirepass;
 
     // kvstore init
     auto blockCache =
@@ -74,6 +77,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
 const SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
+}
+
+const std::string& ServerEntry::requirepass() const {
+    return _requirepass;
 }
 
 void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {

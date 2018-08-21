@@ -61,6 +61,8 @@ class NetSession {
     const std::vector<std::string>& getArgs() const;
     void setResponse(const std::string& s);
     std::shared_ptr<ServerEntry> getServerEntry() const;
+    SessionCtx *getCtx() const;
+
     // normal clients
     // Created -> [DrainReq]+ -> Process -> DrainRsp -> [DrainReq]+
     // clients with bad input

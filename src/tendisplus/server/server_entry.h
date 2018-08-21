@@ -5,6 +5,7 @@
 #include <utility>
 #include <memory>
 #include <map>
+#include <string>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -35,6 +36,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
+    const std::string& requirepass() const;
 
  private:
     void ftmc();
@@ -54,6 +56,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<PoolMatrix> _poolMatrix;
     std::unique_ptr<std::thread> _ftmcThd;
+
+    std::string _requirepass;
 };
 }  // namespace tendisplus
 

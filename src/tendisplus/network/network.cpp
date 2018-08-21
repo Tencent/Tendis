@@ -405,6 +405,10 @@ std::shared_ptr<ServerEntry> NetSession::getServerEntry() const {
     return _server;
 }
 
+SessionCtx* NetSession::getCtx() const {
+    return _ctx.get();
+}
+
 void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
         setState(State::DrainReq);

@@ -1,4 +1,6 @@
 #include <string>
+#include <utility>
+#include <memory>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 
@@ -35,29 +37,32 @@ class GetCommand: public Command {
         return 1;
     }
     Expected<std::string> run(NetSession *sess) final {
-        return std::string("abc");
-        /*
-        Expected<GetParams> s = parse(sess);
-        if (!s.ok()) {
-            return {s.status().code(), s.status().toString()};
+        Expected<GetParams> params = parse(sess);
+        if (!params.ok()) {
+            return {params.status().code(), params.status().toString()};
         }
 
-        PStore kvstore = getStore(sess, s.value().key);
-        auto ptxn = kvStore->createTransaction();
+        PStore kvstore = getStore(sess, params.value().key);
+        auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
-            return {s.status().code(), s.status().toString()};
+            return {params.status().code(), params.status().toString()};
         }
-        std::unique_ptr<Transaction> txn = ptxn.value();
-        Expected<std::string> eValue = kvstore->getKV(s.value().key, txn);
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        SessionCtx *pCtx = sess->getCtx();
+        assert(pCtx);
+
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
+                params.value().key, "");
+        Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
         if (!eValue.ok()) {
             const Status& status = eValue.status();
             if (status.code() == ErrorCodes::ERR_NOTFOUND) {
                 return fmtNull();
             }
-            return {s.status().code(), s.status().toString()};
+            return {status.code(), status.toString()};
         }
-        return fmtBulk(eValue.value());
-        */
+        return fmtBulk(eValue.value().getValue());
     }
 } getCommand;
 

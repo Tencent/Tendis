@@ -48,6 +48,7 @@ class RecordKey {
         const std::string& sk);
     RecordKey(uint32_t dbid, RecordType type, const std::string& pk,
         const std::string& sk);
+    std::string getPrimaryKey() const;
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
     bool operator==(const RecordKey& other) const;
@@ -70,6 +71,7 @@ class RecordValue {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
+    std::string getValue() const;
     explicit RecordValue(const std::string& val, uint64_t ttl = 0);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
