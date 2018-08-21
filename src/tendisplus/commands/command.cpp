@@ -97,6 +97,10 @@ std::string Command::fmtNull() {
     return "$-1\r\n";
 }
 
+std::string Command::fmtOK() {
+    return "+OK\r\n";
+}
+
 std::string Command::fmtBulk(const std::string& s) {
     std::stringstream ss;
     ss << "$" << s.size() << "\r\n" << s << "\r\n";

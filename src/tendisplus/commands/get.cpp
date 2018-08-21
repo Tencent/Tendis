@@ -7,7 +7,6 @@
 namespace tendisplus {
 
 struct GetParams {
- public:
     std::string key;
 };
 
@@ -24,18 +23,23 @@ class GetCommand: public Command {
         }
         return GetParams{args[1]};
     }
+
     ssize_t arity() const {
         return 2;
     }
+
     int32_t firstkey() const {
         return 1;
     }
+
     int32_t lastkey() const {
         return 1;
     }
+
     int32_t keystep() const {
         return 1;
     }
+
     Expected<std::string> run(NetSession *sess) final {
         Expected<GetParams> params = parse(sess);
         if (!params.ok()) {

@@ -26,7 +26,10 @@ class Command {
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();
+    static std::string fmtOK();
     static std::string fmtBulk(const std::string& s);
+
+    static constexpr int32_t RETRY_CNT = 3;
 
  private:
     const std::string _name;
