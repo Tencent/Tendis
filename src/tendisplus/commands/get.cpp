@@ -43,13 +43,13 @@ class GetCommand: public Command {
     Expected<std::string> run(NetSession *sess) final {
         Expected<GetParams> params = parse(sess);
         if (!params.ok()) {
-            return {params.status().code(), params.status().toString()};
+            return params.status();
         }
 
         PStore kvstore = getStore(sess, params.value().key);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
-            return {params.status().code(), params.status().toString()};
+            return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
@@ -64,7 +64,7 @@ class GetCommand: public Command {
             if (status.code() == ErrorCodes::ERR_NOTFOUND) {
                 return fmtNull();
             }
-            return {status.code(), status.toString()};
+            return status;
         }
         return fmtBulk(eValue.value().getValue());
     }

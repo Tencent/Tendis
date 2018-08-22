@@ -35,8 +35,9 @@ class Command {
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.
-    static CmdMap _commands;
 };
+
+std::map<std::string, Command*>& commandMap();
 
 }  // namespace tendisplus
 

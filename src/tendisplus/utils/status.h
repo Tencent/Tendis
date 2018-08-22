@@ -47,11 +47,11 @@ class Expected {
     Expected(ErrorCodes code, const std::string& reason)
         :_status(Status(code, reason)) {
     }
-    explicit Expected(const Status& other)
-        :_status(other) {
-    }
     // here we ignore "explicit" to make return two types
     // Status/T possible. It's more convinent to use
+    Expected(const Status& other)  // NOLINT(runtime/explicit)
+        :_status(other) {
+    }
     Expected(T t)  // NOLINT(runtime/explicit)
         :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }

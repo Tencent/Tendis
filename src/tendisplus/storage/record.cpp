@@ -130,7 +130,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
     auto expt = varintDecodeFwd(keyCstr + offset, key.size());
     if (!expt.ok()) {
-        return {expt.status().code(), expt.status().toString()};
+        return expt.status();
     }
     offset += expt.value().second;
     dbid = expt.value().first;
@@ -144,7 +144,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     const uint8_t *p = keyCstr + key.size() - rsvd - 1;
     expt = varintDecodeRvs(p, key.size() - rsvd - offset);
     if (!expt.ok()) {
-        return {expt.status().code(), expt.status().toString()};
+        return expt.status();
     }
     rvsOffset += expt.value().second;
     skLen = expt.value().first;
@@ -153,7 +153,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     p = keyCstr + key.size() - rsvd - 1 - rvsOffset;
     expt = varintDecodeRvs(p, key.size() - rsvd - offset - rvsOffset);
     if (!expt.ok()) {
-        return {expt.status().code(), expt.status().toString()};
+        return expt.status();
     }
     rvsOffset += expt.value().second;
     pkLen = expt.value().first;
@@ -219,7 +219,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
     auto expt = varintDecodeFwd(valueCstr, value.size());
     if (!expt.ok()) {
-        return {expt.status().code(), expt.status().toString()};
+        return expt.status();
     }
     size_t offset = expt.value().second;
     uint64_t ttl = expt.value().first;
@@ -270,11 +270,11 @@ Expected<Record> Record::decode(const std::string& key,
         const std::string& value) {
     auto e = RecordKey::decode(key);
     if (!e.ok()) {
-        return {e.status().code(), e.status().toString()};
+        return e.status();
     }
     auto e1 = RecordValue::decode(value);
     if (!e1.ok()) {
-        return {e1.status().code(), e1.status().toString()};
+        return e1.status();
     }
     return Record(e.value(), e1.value());
 }

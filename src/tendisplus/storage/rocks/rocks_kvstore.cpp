@@ -6,6 +6,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 RocksOptTxn::RocksOptTxn(rocksdb::OptimisticTransactionDB *db)
@@ -17,6 +18,8 @@ Status RocksOptTxn::commit() {
     if (_txn == nullptr) {
         return {ErrorCodes::ERR_OK, ""};
     }
+    TEST_SYNC_POINT("RocksOptTxn::commit()::1");
+    TEST_SYNC_POINT("RocksOptTxn::commit()::2");
     auto s = _txn->Commit();
     if (s.ok()) {
         return {ErrorCodes::ERR_OK, ""};
@@ -162,7 +165,7 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
         Transaction *txn) {
     Expected<std::string> s = txn->getKV(key.encode());
     if (!s.ok()) {
-        return {s.status().code(), s.status().toString()};
+        return s.status();
     }
     return RecordValue::decode(s.value());
 }

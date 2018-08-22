@@ -5,11 +5,14 @@
 
 namespace tendisplus {
 
-Command::CmdMap Command::_commands = {};
+std::map<std::string, Command*>& commandMap() {
+    static std::map<std::string, Command*> map = {};
+    return map;
+}
 
 Command::Command(const std::string& name)
         :_name(name) {
-    _commands[name] = this;
+    commandMap()[name] = this;
 }
 
 const std::string& Command::getName() const {
@@ -21,8 +24,8 @@ Status Command::precheck(NetSession *sess) {
     if (args.size() == 0) {
         LOG(FATAL) << "BUG: sess " << sess->getRemoteRepr() << " len 0 args";
     }
-    auto it = _commands.find(args[0]);
-    if (it == _commands.end()) {
+    auto it = commandMap().find(args[0]);
+    if (it == commandMap().end()) {
         std::stringstream ss;
         ss << "unknown command '" << args[0] << "'";
         return {ErrorCodes::ERR_PARSEPKT, ss.str()};
@@ -52,8 +55,8 @@ Status Command::precheck(NetSession *sess) {
 
 Expected<std::string> Command::runSessionCmd(NetSession *sess) {
     const auto& args = sess->getArgs();
-    auto it = _commands.find(args[0]);
-    if (it == _commands.end()) {
+    auto it = commandMap().find(args[0]);
+    if (it == commandMap().end()) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
     return it->second->run(sess);

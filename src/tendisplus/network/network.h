@@ -59,7 +59,9 @@ class NetSession {
     uint64_t getConnId() const;
     void start();
     const std::vector<std::string>& getArgs() const;
+    void setArgs(const std::vector<std::string>&);
     void setResponse(const std::string& s);
+    const std::vector<char>& getResponse() const;
     std::shared_ptr<ServerEntry> getServerEntry() const;
     SessionCtx *getCtx() const;
 
@@ -78,7 +80,7 @@ class NetSession {
  private:
     FRIEND_TEST(NetSession, drainReqInvalid);
     FRIEND_TEST(NetSession, Completed);
-
+    FRIEND_TEST(Command, common);
     // read data from socket
     void drainReq();
     void drainReqCallback(const std::error_code& ec, size_t actualLen);

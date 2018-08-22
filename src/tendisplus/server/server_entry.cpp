@@ -23,6 +23,16 @@ ServerEntry::ServerEntry()
          _requirepass("") {
 }
 
+void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
+    // TODO(deyukong): assert mutex held
+    _kvstores = o;
+}
+
+void ServerEntry::installSegMgrInLock(std::unique_ptr<SegmentMgr> o) {
+    // TODO(deyukong): assert mutex held
+    _segmentMgr = std::move(o);
+}
+
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
@@ -34,17 +44,20 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // kvstore init
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
+    std::vector<PStore> tmpStores;
     for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
         std::stringstream ss;
         ss << i;
         std::string dbId = ss.str();
-        _kvstores.emplace_back(std::unique_ptr<KVStore>(
+        tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(dbId, cfg, blockCache)));
     }
+    installStoresInLock(tmpStores);
 
     // segment mgr
-    _segmentMgr = std::unique_ptr<SegmentMgr>(
+    auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
         new SegmentMgrFnvHash64(_kvstores));
+    installSegMgrInLock(std::move(tmpSegMgr));
 
     // network listener
     _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);

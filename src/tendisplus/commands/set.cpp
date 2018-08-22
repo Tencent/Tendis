@@ -10,8 +10,14 @@
 namespace tendisplus {
 
 constexpr int32_t REDIS_SET_NO_FLAGS = 0;
+
+// set if not exists
 constexpr int32_t REDIS_SET_NX = (1<<0);
+
+// set if exists
 constexpr int32_t REDIS_SET_XX = (1<<1);
+
+// set and expire if not exists
 constexpr int32_t REDIS_SET_NXEX = (1<<2);
 
 struct SetParams {
@@ -44,9 +50,12 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         Expected<RecordValue> eValue = store->getKV(key, txn);
         if ((!eValue.ok()) &&
                 eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return {eValue.status().code(), eValue.status().toString()};
+            return eValue.status();
         }
         bool exists = (eValue.status().code() == ErrorCodes::ERR_OK);
+        LOG(INFO) << flags << ' ' << exists
+                << ' ' << (flags & REDIS_SET_NX && exists)
+                << ' ' << (flags & REDIS_SET_XX && (!exists));
         if ((flags & REDIS_SET_NX && exists) ||
                 (flags & REDIS_SET_XX && (!exists)) ||
                 (flags & REDIS_SET_NXEX && exists)) {
@@ -58,9 +67,12 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
     Record kv(key, val);
     Status status = store->setKV(kv, txn);
     if (status.ok()) {
+        status = txn->commit();
+    }
+    if (status.ok()) {
         return okReply == "" ? Command::fmtOK() :okReply;
     } else {
-        return {status.code(), status.toString()};
+        return status;
     }
 }
 
@@ -68,6 +80,7 @@ class SetCommand: public Command {
  public:
     SetCommand()
         :Command("set") {
+        LOG(INFO) << "here called";
     }
 
     Expected<SetParams> parse(NetSession *sess) const {
@@ -122,13 +135,13 @@ class SetCommand: public Command {
     Expected<std::string> run(NetSession *sess) final {
         Expected<SetParams> params = parse(sess);
         if (!params.ok()) {
-            return {params.status().code(), params.status().toString()};
+            return params.status();
         }
 
         PStore kvstore = getStore(sess, params.value().key);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
-            return {params.status().code(), params.status().toString()};
+            return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
@@ -143,14 +156,18 @@ class SetCommand: public Command {
             ts = nsSinceEpoch() / 1000000 + params.value().expire;
         }
         RecordValue rv(params.value().value, ts);
-        // TODO(deyukong): make sure it's meaningful to retry on the same
-        // transaction object
+
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.value().flags,
                     rk, rv, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
+            ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         }
         return setGeneric(kvstore, txn.get(), params.value().flags,
             rk, rv, "", "");

@@ -155,12 +155,21 @@ void NetSession::start() {
     stepState();
 }
 
+void NetSession::setArgs(const std::vector<std::string>& args) {
+    _args = args;
+}
+
 const std::vector<std::string>& NetSession::getArgs() const {
     return _args;
 }
 
 void NetSession::setResponse(const std::string& s) {
+    _respBuf.clear();
     std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
+}
+
+const std::vector<char>& NetSession::getResponse() const {
+    return _respBuf;
 }
 
 void NetSession::setRspAndClose(const std::string& s) {

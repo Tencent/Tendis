@@ -33,6 +33,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void addSession(std::unique_ptr<NetSession> sess);
     void endSession(uint64_t connId);
     void processRequest(uint64_t connId);
+    void installStoresInLock(const std::vector<PStore>&);
+    void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
