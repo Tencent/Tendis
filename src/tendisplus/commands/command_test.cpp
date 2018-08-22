@@ -1,9 +1,12 @@
 #include <fstream>
 #include <utility>
+#include <memory>
+#include <vector>
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/sync_point.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/server/server_params.h"
@@ -53,6 +56,31 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtOK());
 }
 
+void testSetRetry(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+    NetSession sess1(svr, std::move(socket1), 1, false, nullptr);
+
+    uint32_t cnt = 0;
+    SyncPoint::GetInstance()->EnableProcessing();
+    SyncPoint::GetInstance()->SetCallBack(
+        "setGeneric::SetKV::1", [&](void* arg) {
+            ++cnt;
+            if (cnt % 2 == 1) {
+                sess1.setArgs({"set", "a", "1"});
+                auto expect = Command::runSessionCmd(&sess1);
+                EXPECT_TRUE(expect.ok());
+                EXPECT_EQ(expect.value(), Command::fmtOK());
+            }
+        });
+
+    sess.setArgs({"set", "a", "1"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(cnt, uint32_t(6));
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_COMMIT_RETRY);
+}
+
 TEST(Command, common) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -79,6 +107,7 @@ TEST(Command, common) {
             new SegmentMgrFnvHash64(tmpStores));
     server->installSegMgrInLock(std::move(segMgr));
     testSet(server);
+    testSetRetry(server);
 }
 
 }  // namespace tendisplus

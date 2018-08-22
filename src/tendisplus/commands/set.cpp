@@ -5,6 +5,7 @@
 #include <cctype>
 #include <clocale>
 #include "glog/logging.h"
+#include "tendisplus/utils/sync_point.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -53,9 +54,6 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
             return eValue.status();
         }
         bool exists = (eValue.status().code() == ErrorCodes::ERR_OK);
-        LOG(INFO) << flags << ' ' << exists
-                << ' ' << (flags & REDIS_SET_NX && exists)
-                << ' ' << (flags & REDIS_SET_XX && (!exists));
         if ((flags & REDIS_SET_NX && exists) ||
                 (flags & REDIS_SET_XX && (!exists)) ||
                 (flags & REDIS_SET_NXEX && exists)) {
@@ -66,6 +64,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
     // TODO(deyukong): eliminate this copy
     Record kv(key, val);
     Status status = store->setKV(kv, txn);
+    TEST_SYNC_POINT("setGeneric::SetKV::1");
     if (status.ok()) {
         status = txn->commit();
     }
