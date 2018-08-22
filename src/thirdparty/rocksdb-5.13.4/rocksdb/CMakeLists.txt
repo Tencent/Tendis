@@ -45,7 +45,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules/")
 
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
-option(WITH_SNAPPY "build with SNAPPY" OFF)
+option(WITH_SNAPPY "build with SNAPPY" ON)
 option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 if(MSVC)
@@ -79,6 +79,7 @@ else()
   endif()
 
   if(WITH_SNAPPY)
+    message("WITH_SNAPPY on, plz ensure you have installed libsnappy on your machine")
     find_package(snappy REQUIRED)
     add_definitions(-DSNAPPY)
     include_directories(${SNAPPY_INCLUDE_DIR})
@@ -789,7 +790,7 @@ if(NOT WIN32 OR ROCKSDB_INSTALL_ON_WINDOWS)
   )
 endif()
 
-option(WITH_TESTS "build with tests" ON)
+option(WITH_TESTS "build with tests" OFF)
 if(WITH_TESTS)
   set(TESTS
         cache/cache_test.cc

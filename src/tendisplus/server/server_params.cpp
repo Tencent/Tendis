@@ -30,6 +30,9 @@ std::string ServerParams::toString() const {
         << ",\nport:" << port
         << ",\nlogLevel:" << logLevel
         << ",\nlogDir:" << logDir
+        << ",\nstorageEngine:" << storageEngine
+        << ",\ndbPath:" << dbPath
+        << ",\nrocksBlockCacheMB:" << rocksBlockcacheMB
         << std::endl;
     return ss.str();
 }
@@ -55,14 +58,12 @@ Status ServerParams::parseFile(const std::string& filename) {
         }
         if (tokens.size() == 0) {
             continue;
-        }
-        if (tokens[0] == "bind") {
+        } else if (tokens[0] == "bind") {
             if (tokens.size() != 2) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid bind configure"};
             }
             bindIp = tokens[1];
-        }
-        if (tokens[0] == "port") {
+        } else if (tokens[0] == "port") {
             if (tokens.size() != 2) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid port configure"};
             }
@@ -71,9 +72,7 @@ Status ServerParams::parseFile(const std::string& filename) {
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEOPT, ex.what()};
             }
-        }
-
-        if (tokens[0] == "loglevel") {
+        } else if (tokens[0] == "loglevel") {
             if (tokens.size() != 2) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
             }
@@ -82,12 +81,37 @@ Status ServerParams::parseFile(const std::string& filename) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
             }
             logLevel = tokens[1];
-        }
-        if (tokens[0] == "logdir") {
+        } else if (tokens[0] == "logdir") {
             if (tokens.size() != 2) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid logdir configure"};
             }
             logDir = tokens[1];
+        } else if (tokens[0] == "dir") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid dir configure"};
+            }
+            dbPath = tokens[1];
+        } else if (tokens[0] == "storage") {
+            // currently only support rocks engine
+            if (tokens.size() != 2 || tokens[1] != "rocks") {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid storage configure"};
+            }
+        } else if (tokens[0] == "rocks.blockcachemb") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid rocks.blockcache configure"};
+            }
+            try {
+                rocksBlockcacheMB = std::stoi(tokens[1]);
+            } catch (std::exception& ex) {
+                return {ErrorCodes::ERR_PARSEOPT, ex.what()};
+            }
+        } else if (tokens[0] == "requirepass") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid requirepass configure"};
+            }
+            requirepass = tokens[1];
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -97,7 +121,10 @@ ServerParams::ServerParams()
         :bindIp("127.0.0.1"),
          port(8903),
          logLevel(""),
-         logDir("./") {
+         logDir("./"),
+         storageEngine("rocks"),
+         dbPath("./db"),
+         rocksBlockcacheMB(4096) {
 }
 
 

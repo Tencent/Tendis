@@ -121,6 +121,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
          _bulkLen(-1),
          _args(std::vector<std::string>()),
          _respBuf(std::vector<char>()),
+         _ctx(std::make_unique<SessionCtx>()),
          _matrix(matrix) {
     if (initSock) {
         std::error_code ec;
@@ -154,23 +155,27 @@ void NetSession::start() {
     stepState();
 }
 
+void NetSession::setArgs(const std::vector<std::string>& args) {
+    _args = args;
+}
+
 const std::vector<std::string>& NetSession::getArgs() const {
     return _args;
 }
 
-void NetSession::setOkRsp() {
-    const std::string s = "+OK\r\n";
+void NetSession::setResponse(const std::string& s) {
+    _respBuf.clear();
     std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
+}
+
+const std::vector<char>& NetSession::getResponse() const {
+    return _respBuf;
 }
 
 void NetSession::setRspAndClose(const std::string& s) {
     _closeAfterRsp = true;
 
-    std::stringstream ss;
-    ss << "-ERR " << s << "\r\n";
-    const std::string& s1 = ss.str();
-
-    std::copy(s1.begin(), s1.end(), std::back_inserter(_respBuf));
+    setResponse(redis_port::errorReply(s));
     setState(State::DrainRsp);
     schedule();
 }
@@ -365,7 +370,7 @@ uint64_t NetSession::getConnId() const {
 }
 
 void NetSession::processReq() {
-    _server->processReq(_connId);
+    _server->processRequest(_connId);
     _state.store(State::DrainRsp, std::memory_order_relaxed);
     schedule();
 }
@@ -403,6 +408,14 @@ void NetSession::endSession() {
     // NOTE(deyukong): endSession will call destructor
     // never write any codes after endSession
     _server->endSession(_connId);
+}
+
+std::shared_ptr<ServerEntry> NetSession::getServerEntry() const {
+    return _server;
+}
+
+SessionCtx* NetSession::getCtx() const {
+    return _ctx.get();
 }
 
 void NetSession::stepState() {

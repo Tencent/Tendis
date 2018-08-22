@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include <limits.h>
 #include "tendisplus/utils/redis_port.h"
 
@@ -68,6 +70,12 @@ int string2ll(const char *s, size_t slen, long long *value) { // (NOLINT/int)
     if (value != NULL) *value = v;
   }
   return 1;
+}
+
+std::string errorReply(const std::string& s) {
+    std::stringstream ss;
+    ss << "-ERR " << s << "\r\n";
+    return ss.str();
 }
 
 }  // namespace redis_port

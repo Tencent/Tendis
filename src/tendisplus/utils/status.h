@@ -1,12 +1,11 @@
 #ifndef SRC_TENDISPLUS_UTILS_STATUS_H_
 #define SRC_TENDISPLUS_UTILS_STATUS_H_
 
-#include <experimental/optional>
 #include <utility>
 #include <string>
 #include <memory>
-// TODO(deyukong): this include maybe not portable
 #include <type_traits>
+#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 
@@ -15,6 +14,11 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_INTERNAL,
     ERR_PARSEOPT,
+    ERR_PARSEPKT,
+    ERR_COMMIT_RETRY,
+    ERR_NOTFOUND,
+    ERR_DECODE,
+    ERR_AUTH,
 };
 
 class Status {
@@ -43,10 +47,12 @@ class Expected {
     Expected(ErrorCodes code, const std::string& reason)
         :_status(Status(code, reason)) {
     }
-    explicit Expected(const Status& other)
+    // here we ignore "explicit" to make return two types
+    // Status/T possible. It's more convinent to use
+    Expected(const Status& other)  // NOLINT(runtime/explicit)
         :_status(other) {
     }
-    explicit Expected(T t)
+    Expected(T t)  // NOLINT(runtime/explicit)
         :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }
     const T& value() const {
@@ -63,7 +69,7 @@ class Expected {
     }
 
  private:
-    std::experimental::optional<T> _data;
+    optional<T> _data;
     Status _status;
 };
 
