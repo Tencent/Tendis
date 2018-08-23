@@ -15,11 +15,12 @@ using PStore = std::shared_ptr<KVStore>;
 
 class Transaction {
  public:
+    using CommitId = uint64_t;
     Transaction() = default;
     Transaction(const Transaction&) = delete;
     Transaction(Transaction&&) = delete;
     virtual ~Transaction() = default;
-    virtual Status commit() = 0;
+    virtual Expected<CommitId> commit() = 0;
     virtual Status rollback() = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key, const std::string& val) = 0;

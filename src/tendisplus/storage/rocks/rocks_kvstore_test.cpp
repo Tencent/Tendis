@@ -48,21 +48,30 @@ TEST(RocksKVStore, Common) {
     auto eTxn2 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
     EXPECT_EQ(eTxn2.ok(), true);
-    auto txn1 = std::move(eTxn1.value());
-    auto txn2 = std::move(eTxn2.value());
-    auto s = kvstore->setKV(
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+
+    std::set<uint64_t> uncommitted = kvstore->getUncommittedTxns();
+    EXPECT_NE(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn1.get())->getTxnId()),
+        uncommitted.end());
+    EXPECT_NE(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn2.get())->getTxnId()),
+        uncommitted.end());
+
+    Status s = kvstore->setKV(
         Record(
             RecordKey(RecordType::RT_KV, "a", ""),
             RecordValue("txn1")),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
-    auto e = kvstore->getKV(
+    Expected<RecordValue> e = kvstore->getKV(
         RecordKey(RecordType::RT_KV, "a", ""),
         txn1.get());
     EXPECT_EQ(e.ok(), true);
     EXPECT_EQ(e.value(), RecordValue("txn1"));
 
-    auto e1 = kvstore->getKV(
+    Expected<RecordValue> e1 = kvstore->getKV(
         RecordKey(RecordType::RT_KV, "a", ""),
         txn2.get());
     EXPECT_EQ(e1.status().code(), ErrorCodes::ERR_NOTFOUND);
@@ -71,10 +80,18 @@ TEST(RocksKVStore, Common) {
             RecordKey(RecordType::RT_KV, "a", ""),
             RecordValue("txn2")),
         txn2.get());
-    s = txn2->commit();
-    EXPECT_EQ(s.ok(), true);
-    s = txn1->commit();
-    EXPECT_EQ(s.code(), ErrorCodes::ERR_COMMIT_RETRY);
+
+    Expected<Transaction::CommitId> exptCommitId = txn2->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+    exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.status().code(), ErrorCodes::ERR_COMMIT_RETRY);
+    uncommitted = kvstore->getUncommittedTxns();
+    EXPECT_EQ(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn1.get())->getTxnId()),
+        uncommitted.end());
+    EXPECT_EQ(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn2.get())->getTxnId()),
+        uncommitted.end());
 }
 
 }  // namespace tendisplus

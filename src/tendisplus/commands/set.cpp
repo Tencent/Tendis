@@ -65,14 +65,14 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
     Record kv(key, val);
     Status status = store->setKV(kv, txn);
     TEST_SYNC_POINT("setGeneric::SetKV::1");
-    if (status.ok()) {
-        status = txn->commit();
-    }
-    if (status.ok()) {
-        return okReply == "" ? Command::fmtOK() :okReply;
-    } else {
+    if (!status.ok()) {
         return status;
     }
+    Expected<Transaction::CommitId> exptCommit = txn->commit();
+    if (!exptCommit.ok()) {
+        return exptCommit.status();
+    }
+    return okReply == "" ? Command::fmtOK() : okReply;
 }
 
 class SetCommand: public Command {

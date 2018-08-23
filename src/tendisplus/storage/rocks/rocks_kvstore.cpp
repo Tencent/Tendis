@@ -7,14 +7,26 @@
 #include "rocksdb/filter_policy.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
-RocksOptTxn::RocksOptTxn(rocksdb::OptimisticTransactionDB *db)
-        :_txn(nullptr),
-         _db(db) {
+RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
+        :_txnId(txnId),
+         _txn(nullptr),
+         _store(store),
+         _done(false) {
 }
 
-Status RocksOptTxn::commit() {
+Expected<Transaction::CommitId> RocksOptTxn::commit() {
+    if (_done) {
+        LOG(FATAL) << "BUG: reusing RocksOptTxn";
+    }
+    _done = true;
+
+    const auto guard = MakeGuard([this] {
+        _store->removeUncommited(_txnId);
+    });
+
     if (_txn == nullptr) {
         return {ErrorCodes::ERR_OK, ""};
     }
@@ -22,7 +34,7 @@ Status RocksOptTxn::commit() {
     TEST_SYNC_POINT("RocksOptTxn::commit()::2");
     auto s = _txn->Commit();
     if (s.ok()) {
-        return {ErrorCodes::ERR_OK, ""};
+        return _txnId;
     } else if (s.IsBusy() || s.IsTryAgain()) {
         return {ErrorCodes::ERR_COMMIT_RETRY, s.ToString()};
     } else {
@@ -31,6 +43,15 @@ Status RocksOptTxn::commit() {
 }
 
 Status RocksOptTxn::rollback() {
+    if (_done) {
+        LOG(FATAL) << "BUG: reusing RocksOptTxn";
+    }
+    _done = true;
+
+    const auto guard = MakeGuard([this] {
+        _store->removeUncommited(_txnId);
+    });
+
     if (_txn == nullptr) {
         return {ErrorCodes::ERR_OK, ""};
     }
@@ -60,8 +81,23 @@ void RocksOptTxn::ensureTxn() {
     // the uncommitted data in this txn's writeBatch are still
     // visible to reads, and this behavior is what we need.
     txnOpts.set_snapshot = true;
-    _txn.reset(_db->BeginTransaction(writeOpts, txnOpts));
+    auto db = _store->getUnderlayerDB();
+    if (!db) {
+        LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
+    }
+    _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
     assert(_txn);
+}
+
+uint64_t RocksOptTxn::getTxnId() const {
+    return _txnId;
+}
+
+RocksOptTxn::~RocksOptTxn() {
+    if (_done) {
+        return;
+    }
+    _store->removeUncommited(_txnId);
 }
 
 RocksKVStore::RocksKVStore(const std::string& id,
@@ -158,7 +194,41 @@ Status RocksOptTxn::delKV(const std::string& key) {
 }
 
 Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
-    return std::unique_ptr<Transaction>(new RocksOptTxn(_db.get()));
+    uint64_t txnId = _nextTxnSeq.fetch_add(1);
+    auto ret = std::unique_ptr<Transaction>(new RocksOptTxn(this, txnId));
+    std::lock_guard<std::mutex> lk(_mutex);
+    addUnCommitedTxnInLock(txnId);
+    return std::move(ret);
+}
+
+rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
+    return _db.get();
+}
+
+void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
+    // TODO(deyukong): need a better mutex mechnism to assert held
+    if (_uncommitted_txns.find(txnId) != _uncommitted_txns.end()) {
+        LOG(FATAL) << "BUG: txnid:" << txnId << " double add uncommitted";
+    }
+    _uncommitted_txns.insert(txnId);
+}
+
+void RocksKVStore::removeUncommited(uint64_t txnId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    removeUncommitedInLock(txnId);
+}
+
+std::set<uint64_t> RocksKVStore::getUncommittedTxns() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _uncommitted_txns;
+}
+
+void RocksKVStore::removeUncommitedInLock(uint64_t txnId) {
+    // TODO(deyukong): need a better mutex mechnism to assert held
+    if (_uncommitted_txns.find(txnId) == _uncommitted_txns.end()) {
+        LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
+    }
+    _uncommitted_txns.erase(txnId);
 }
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
