@@ -36,9 +36,6 @@ void ServerEntry::installSegMgrInLock(std::unique_ptr<SegmentMgr> o) {
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    _isRunning.store(true, std::memory_order_relaxed);
-    _isStopped.store(false, std::memory_order_relaxed);
-
     _requirepass = cfg->requirepass;
 
     // kvstore init
@@ -80,6 +77,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     if (!s.ok()) {
         return s;
     }
+
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
 
     // server stats monitor
     _ftmcThd = std::make_unique<std::thread>([this] {

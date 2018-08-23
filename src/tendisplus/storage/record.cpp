@@ -19,6 +19,8 @@ char rt2Char(RecordType t) {
             return 'L';
         case RecordType::RT_LIST_ELE:
             return 'l';
+        case RecordType::RT_BINLOG:
+            return 'B';
         default:
             LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
@@ -36,6 +38,8 @@ RecordType char2Rt(char t) {
             return RecordType::RT_LIST_META;
         case 'l':
             return RecordType::RT_LIST_ELE;
+        case 'B':
+            return RecordType::RT_BINLOG;
         default:
             LOG(FATAL) << "invalid recordchar:" << t;
             // never reaches here, void compiler complain
@@ -76,6 +80,15 @@ RecordKey::RecordKey(RecordType type, const std::string& pk,
         :RecordKey(0, type, pk, sk) {
 }
 
+RecordKey::RecordKey(uint32_t dbid, RecordType type,
+        std::string&& pk, std::string&& sk)
+    :_dbId(dbid),
+     _type(type),
+     _pk(std::move(pk)),
+     _sk(std::move(sk)),
+     _fmtVsn(0) {
+}
+
 std::string RecordKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
@@ -111,7 +124,7 @@ std::string RecordKey::encode() const {
                 key.data()), key.size());
 }
 
-std::string RecordKey::getPrimaryKey() const {
+const std::string& RecordKey::getPrimaryKey() const {
     return _pk;
 }
 
@@ -199,6 +212,11 @@ RecordValue::RecordValue(const std::string& val, uint64_t ttl)
          _value(val) {
 }
 
+RecordValue::RecordValue(std::string&& val, uint64_t ttl)
+        :_ttl(ttl),
+         _value(std::move(val)) {
+}
+
 std::string RecordValue::encode() const {
     // --------value encoding
     // TTL
@@ -234,7 +252,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     return RecordValue(rawValue, ttl);
 }
 
-std::string RecordValue::getValue() const {
+const std::string& RecordValue::getValue() const {
     return _value;
 }
 
@@ -281,6 +299,239 @@ Expected<Record> Record::decode(const std::string& key,
 
 bool Record::operator==(const Record& other) const {
     return _key == other._key && _value == other._value;
+}
+
+ReplLogKey::ReplLogKey()
+        :_txnId(0),
+         _localId(0),
+         _flag(ReplFlag::REPL_GROUP_MID),
+         _timestamp(0),
+         _reserved(0) {
+}
+
+ReplLogKey::ReplLogKey(ReplLogKey&& o)
+        :_txnId(o._txnId),
+         _localId(o._localId),
+         _flag(o._flag),
+         _timestamp(o._timestamp),
+         _reserved(o._reserved) {
+    o._txnId = 0;
+    o._localId = 0;
+    o._flag = ReplFlag::REPL_GROUP_MID;
+    o._timestamp = 0;
+    o._reserved = 0;
+}
+
+ReplLogKey::ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
+        uint32_t timestamp, uint8_t reserved)
+    :_txnId(txnid),
+     _localId(localid),
+     _flag(flag),
+     _timestamp(timestamp),
+     _reserved(reserved) {
+}
+
+Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
+    Expected<RecordKey> rk = RecordKey::decode(rawKey);
+    if (!rk.ok()) {
+        return rk.status();
+    }
+    const std::string& key = rk.value().getPrimaryKey();
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    if (key.size() != sizeof(_txnId) + sizeof(_localId) + sizeof(_flag)
+            + sizeof(_timestamp) + sizeof(_reserved)) {
+        return {ErrorCodes::ERR_DECODE, "invalid keylen"};
+    }
+
+    uint64_t txnid = 0;
+    uint16_t localid = 0;
+    ReplFlag flag = ReplFlag::REPL_GROUP_MID;
+    uint32_t timestamp = 0;
+    uint8_t reserved = 0;
+    size_t offset = 0;
+
+    // txnid
+    for (size_t i = 0; i < sizeof(txnid); i++) {
+        txnid = (txnid << 8)|keyCstr[i];
+    }
+    offset += sizeof(txnid);
+
+    // localid
+    localid = (keyCstr[offset] << 8)|keyCstr[offset+1];
+    offset += sizeof(localid);
+
+    // flag
+    flag = static_cast<ReplFlag>((keyCstr[offset] << 8)|keyCstr[offset+1]);
+    offset += sizeof(flag);
+
+    // timestamp
+    for (size_t i = 0; i < sizeof(_timestamp); i++) {
+        timestamp = (timestamp << 8)|keyCstr[offset+i];
+    }
+    offset += sizeof(timestamp);
+
+    // reserved
+    reserved = keyCstr[key.size()-1];
+
+    return ReplLogKey(txnid, localid, flag, timestamp, reserved);
+}
+
+std::string ReplLogKey::encode() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&_txnId);
+    for (size_t i = 0; i < sizeof(_txnId); i++) {
+        key.emplace_back(txnBuf[sizeof(_txnId)-1-i]);
+    }
+    key.emplace_back(_localId>>8);
+    key.emplace_back(_localId&0xff);
+    key.emplace_back(static_cast<uint16_t>(_flag)>>8);
+    key.emplace_back(static_cast<uint16_t>(_flag)&0xff);
+    const uint8_t *tsBuf = reinterpret_cast<const uint8_t*>(&_timestamp);
+    for (size_t i = 0; i < sizeof(_timestamp); i++) {
+        key.emplace_back(tsBuf[sizeof(_timestamp)-1-i]);
+    }
+    key.emplace_back(_reserved);
+    std::string partial(reinterpret_cast<const char *>(key.data()), key.size());
+    RecordKey tmpRk(0, RecordType::RT_BINLOG, std::move(partial), "");
+    return tmpRk.encode();
+}
+
+bool ReplLogKey::operator==(const ReplLogKey& o) const {
+    return _txnId == o._txnId &&
+            _localId == o._localId &&
+            _flag == o._flag &&
+            _timestamp == o._timestamp &&
+            _reserved == o._reserved;
+}
+
+ReplLogKey& ReplLogKey::operator=(const ReplLogKey& o) {
+    if (this == &o) {
+        return *this;
+    }
+    _txnId = o._txnId;
+    _localId = o._localId;
+    _flag = o._flag;
+    _timestamp = o._timestamp;
+    _reserved = o._reserved;
+    return *this;
+}
+
+ReplLogValue::ReplLogValue()
+        :_op(ReplOp::REPL_OP_NONE),
+         _key(""),
+         _val("") {
+}
+
+ReplLogValue::ReplLogValue(ReplLogValue&& o)
+        :_op(o._op),
+         _key(std::move(o._key)),
+         _val(std::move(o._val)) {
+    o._op = ReplOp::REPL_OP_NONE;
+}
+
+ReplLogValue::ReplLogValue(ReplOp op, const std::string& key,
+        const std::string& val)
+    :_op(op),
+     _key(key),
+     _val(val) {
+}
+
+Expected<ReplLogValue> ReplLogValue::decode(const std::string& rawVal) {
+    Expected<RecordValue> exptVal = RecordValue::decode(rawVal);
+    if (!exptVal.ok()) {
+        return exptVal.status();
+    }
+    const std::string& o = exptVal.value().getValue();
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(o.c_str());
+    if (o.size() <= sizeof(_op)) {
+        return {ErrorCodes::ERR_DECODE, "invalid replvalue len"};
+    }
+    size_t offset = 0;
+    uint8_t op = valCstr[0];
+    std::string key;
+    std::string val;
+    offset += sizeof(uint8_t);
+
+    auto expt = varintDecodeFwd(valCstr + offset, o.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    if (offset + expt.value().first >= o.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid replvalue len"};
+    }
+
+    key = std::string(o.c_str() + offset, expt.value().first);
+    offset += expt.value().first;
+
+    expt = varintDecodeFwd(valCstr + offset, o.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    if (offset + expt.value().first != o.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid replvalue len"};
+    }
+    val = std::string(o.c_str() + offset, expt.value().first);
+    return ReplLogValue(static_cast<ReplOp>(op), key, val);
+}
+
+std::string ReplLogValue::encode() const {
+    std::vector<uint8_t> val;
+    val.reserve(128);
+    val.emplace_back(static_cast<uint8_t>(_op));
+    auto keyBytes = varintEncode(_key.size());
+    val.insert(val.end(), keyBytes.begin(), keyBytes.end());
+    val.insert(val.end(), _key.begin(), _key.end());
+    auto valBytes = varintEncode(_val.size());
+    val.insert(val.end(), valBytes.begin(), valBytes.end());
+    val.insert(val.end(), _val.begin(), _val.end());
+    std::string partial(reinterpret_cast<const char *>(val.data()), val.size());
+    RecordValue tmpRv(std::move(partial));
+    return tmpRv.encode();
+}
+
+bool ReplLogValue::operator==(const ReplLogValue& o) const {
+    return _op == o._op &&
+            _key == o._key &&
+            _val == o._val;
+}
+
+ReplLog::ReplLog()
+        :_key(ReplLogKey()),
+         _val(ReplLogValue()) {
+}
+
+ReplLog::ReplLog(ReplLog&& o)
+        :_key(std::move(o._key)),
+         _val(std::move(o._val)) {
+}
+
+ReplLog::ReplLog(const ReplLogKey& key, const ReplLogValue& value)
+        :_key(key),
+         _val(value) {
+}
+
+ReplLog::ReplLog(ReplLogKey&& key, ReplLogValue&& val)
+        :_key(std::move(key)),
+         _val(std::move(val)) {
+}
+
+Expected<ReplLog> decode(const std::string& key, const std::string& val) {
+    auto e = ReplLogKey::decode(key);
+    if (!e.ok()) {
+        return e.status();
+    }
+    auto e1 = ReplLogValue::decode(val);
+    if (!e1.ok()) {
+        return e1.status();
+    }
+    return ReplLog(std::move(e.value()), std::move(e1.value()));
+}
+
+bool ReplLog::operator==(const ReplLog& o) const {
+    return _key == o._key && _val == o._val;
 }
 
 }  // namespace tendisplus

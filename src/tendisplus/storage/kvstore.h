@@ -41,6 +41,17 @@ class KVStore {
     std::string _id;
 };
 
+/*
+class Catalog {
+ public:
+    Catalog();
+    virtual ~Catalog() = default;
+    virtual Expected<
+
+ private std::unique_ptr<KVStore> _store;
+};
+*/
+
 }  // namespace tendisplus
 
 #endif   // SRC_TENDISPLUS_STORAGE_KVSTORE_H_

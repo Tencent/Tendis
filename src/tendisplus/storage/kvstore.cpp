@@ -3,7 +3,7 @@
 namespace tendisplus {
 
 KVStore::KVStore(const std::string& id)
-    :_id(id) {
+     :_id(id) {
 }
 
 }  // namespace tendisplus
