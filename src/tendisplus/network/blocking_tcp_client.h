@@ -1,0 +1,32 @@
+#ifndef SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_
+#define SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_
+
+#include <string>
+#include <chrono>
+#include "asio.hpp"
+#include "tendisplus/utils/status.h"
+
+namespace tendisplus {
+class BlockingTcpClient {
+ public:
+    explicit BlockingTcpClient(size_t maxBufSize);
+    Status connect(const std::string& host, uint16_t port,
+        std::chrono::seconds timeout);
+    Expected<std::string> readLine(std::chrono::seconds timeout);
+    Status writeLine(const std::string& line, std::chrono::seconds timeout);
+
+ private:
+    void checkDeadLine(const asio::error_code& ec);
+    std::mutex _mutex;
+    bool _inited;
+    asio::io_context _ctx;
+    asio::ip::tcp::socket _socket;
+    asio::steady_timer _deadline;
+    asio::streambuf _inputBuf;
+    static constexpr std::chrono::seconds MAX_TIMEOUT_SEC =
+        std::chrono::seconds(3153600000U);
+};
+
+}  // namespace tendisplus
+
+#endif  // SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_

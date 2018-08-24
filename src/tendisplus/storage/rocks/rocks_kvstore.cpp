@@ -106,6 +106,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
         :KVStore(id),
          _db(nullptr),
          _stats(rocksdb::CreateDBStatistics()) {
+    // TODO(deyukong): initialize _nextTxnSeq
     rocksdb::Options options;
     rocksdb::BlockBasedTableOptions table_options;
     table_options.block_cache = blockCache;

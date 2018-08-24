@@ -40,6 +40,8 @@ ReplFlag randomReplFlag() {
             return ReplFlag::REPL_GROUP_END;
         default:
             assert(0);
+            // void compiler complain
+            return ReplFlag::REPL_GROUP_MID;
     }
 }
 
@@ -53,6 +55,8 @@ ReplOp randomReplOp() {
             return ReplOp::REPL_OP_DEL;
         default:
             assert(0);
+            // void compiler complain
+            return ReplOp::REPL_OP_NONE;
     }
 }
 

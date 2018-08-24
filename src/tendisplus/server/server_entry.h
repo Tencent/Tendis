@@ -12,19 +12,21 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/storage/kvstore.h"
-#include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/storage/catalog.h"
 
 namespace tendisplus {
 class NetSession;
 class NetworkAsio;
 class NetworkMatrix;
 class PoolMatrix;
+class Catalog;
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
     ServerEntry();
     ServerEntry(const ServerEntry&) = delete;
     ServerEntry(ServerEntry&&) = delete;
+    Catalog* getCatalog();
     Status startup(const std::shared_ptr<ServerParams>& cfg);
     template <typename fn>
     void schedule(fn&& task) {
@@ -35,6 +37,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void processRequest(uint64_t connId);
     void installStoresInLock(const std::vector<PStore>&);
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
+    void installCatalog(std::unique_ptr<Catalog>);
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
@@ -54,6 +57,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::vector<PStore> _kvstores;
+    std::unique_ptr<Catalog> _catalog;
 
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<PoolMatrix> _poolMatrix;

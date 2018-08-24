@@ -8,6 +8,7 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
 
@@ -17,6 +18,7 @@ ServerEntry::ServerEntry()
          _network(nullptr),
          _executor(nullptr),
          _segmentMgr(nullptr),
+         _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _ftmcThd(nullptr),
@@ -33,10 +35,25 @@ void ServerEntry::installSegMgrInLock(std::unique_ptr<SegmentMgr> o) {
     _segmentMgr = std::move(o);
 }
 
+void ServerEntry::installCatalog(std::unique_ptr<Catalog> o) {
+    _catalog = std::move(o);
+}
+
+Catalog* ServerEntry::getCatalog() {
+    return _catalog.get();
+}
+
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
     _requirepass = cfg->requirepass;
+
+    // catalog init
+    auto catalog = std::make_unique<Catalog>(
+        std::move(std::unique_ptr<KVStore>(
+            new RocksKVStore("catalog", cfg, nullptr)))
+    );
+    installCatalog(std::move(catalog));
 
     // kvstore init
     auto blockCache =
@@ -58,7 +75,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // network listener
     _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
-    auto s = _network->prepare(cfg->bindIp, cfg->port);
+    Status s = _network->prepare(cfg->bindIp, cfg->port);
     if (!s.ok()) {
         return s;
     }

@@ -28,7 +28,7 @@ struct NetworkMatrix {
 
 class NetworkAsio {
  public:
-    explicit NetworkAsio(std::shared_ptr<ServerEntry> server,
+    NetworkAsio(std::shared_ptr<ServerEntry> server,
             std::shared_ptr<NetworkMatrix> matrix);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
@@ -54,6 +54,7 @@ class NetSession {
         uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix);
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
+    virtual ~NetSession() = default;
     std::string getRemoteRepr() const;
     std::string getLocalRepr() const;
     uint64_t getConnId() const;
@@ -77,6 +78,13 @@ class NetSession {
         End,
     };
 
+ protected:
+    // schedule related functions
+    virtual void schedule();
+    virtual void stepState();
+    virtual void setState(State s);
+
+
  private:
     FRIEND_TEST(NetSession, drainReqInvalid);
     FRIEND_TEST(NetSession, Completed);
@@ -94,11 +102,6 @@ class NetSession {
 
     // handle msg parsed from drainReqCallback
     void processReq();
-
-    // schedule related functions
-    void stepState();
-    void setState(State s);
-    void schedule();
 
     // network is ok, but client's msg is not ok, reply and close
     void setRspAndClose(const std::string&);
