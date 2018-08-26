@@ -46,7 +46,7 @@ Status Command::precheck(NetSession *sess) {
                     << sess->getRemoteRepr() << " empty";
     }
 
-    if (server->requirepass() != "" && it->second->getName() != "auth") {
+    if (*server->requirepass() != "" && it->second->getName() != "auth") {
         return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
     }
 

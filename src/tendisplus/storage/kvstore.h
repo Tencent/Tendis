@@ -1,6 +1,7 @@
 #ifndef SRC_TENDISPLUS_STORAGE_KVSTORE_H_
 #define SRC_TENDISPLUS_STORAGE_KVSTORE_H_
 
+#include <limits>
 #include <string>
 #include <utility>
 #include <memory>
@@ -25,6 +26,9 @@ class Transaction {
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key, const std::string& val) = 0;
     virtual Status delKV(const std::string& key) = 0;
+    static constexpr uint64_t MAX_VALID_TXNID
+        = std::numeric_limits<uint64_t>::max()/2;
+    static constexpr uint64_t MIN_VALID_TXNID = 0;
 };
 
 class KVStore {

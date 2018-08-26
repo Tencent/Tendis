@@ -22,7 +22,8 @@ ServerEntry::ServerEntry()
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _ftmcThd(nullptr),
-         _requirepass("") {
+         _requirepass(nullptr),
+         _masterauth(nullptr) {
 }
 
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
@@ -46,13 +47,13 @@ Catalog* ServerEntry::getCatalog() {
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    _requirepass = cfg->requirepass;
+    _requirepass = std::make_shared<std::string>(cfg->requirepass);
+    _masterauth = std::make_shared<std::string>(cfg->masterauth);
 
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore("catalog", cfg, nullptr)))
-    );
+            new RocksKVStore("catalog", cfg, nullptr))));
     installCatalog(std::move(catalog));
 
     // kvstore init
@@ -109,8 +110,14 @@ const SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
 }
 
-const std::string& ServerEntry::requirepass() const {
+const std::shared_ptr<std::string> ServerEntry::requirepass() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
+}
+
+const std::shared_ptr<std::string> ServerEntry::masterauth() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _masterauth;
 }
 
 void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {

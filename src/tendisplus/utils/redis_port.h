@@ -2,6 +2,7 @@
 #define SRC_TENDISPLUS_UTILS_REDIS_PORT_H_
 
 #include <iostream>
+#include <vector>
 #include <string>
 
 namespace tendisplus {
@@ -15,6 +16,8 @@ int string2ll(const char *s, size_t slen, long long *value); // (NOLINT/int)
 
 std::string errorReply(const std::string& s);
 
+// port from redis source code, sds.cpp::sdssplitargs
+std::vector<std::string> splitargs(const std::string& lineStr);
 }  // namespace redis_port
 }  // namespace tendisplus
 

@@ -110,7 +110,8 @@ Status NetworkAsio::run() {
 
 NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
     uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix)
-        :_connId(connid),
+        :_reqType(RedisReqType::REDIS_REQ_UNKNOWN),
+         _connId(connid),
          _closeAfterRsp(false),
          _server(server),
          _state(State::Created),
@@ -180,27 +181,62 @@ void NetSession::setRspAndClose(const std::string& s) {
     schedule();
 }
 
-// NOTE(deyukong): mainly port from redis::networking.c,
-// func:processMultibulkBuffer, the unportable part (long long, int and so on)
-// are all from the redis source code, quite ugly.
-// FIXME(deyukong): rewrite into a more c++ like code.
-void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
-    if (ec) {
-        LOG(WARNING) << "drainReqCallback:" << ec.message();
-        setState(State::End);
+void NetSession::processInlineBuffer() {
+    char *newline = nullptr;
+    std::vector<std::string> argv;
+    std::string aux;
+    size_t querylen;
+
+    /* Search for end of line */
+    newline = strchr(_queryBuf.data(), '\n');
+
+    /* Nothing to do without a \r\n */
+    if (newline == NULL) {
+        if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+            ++_matrix->invalidPackets;
+            setRspAndClose("Protocol error: too big inline request");
+            return;
+        }
         schedule();
         return;
     }
 
-    assert(_state.load(std::memory_order_relaxed) == State::DrainReq);
+    /* Handle the \r\n case. */
+    if (newline && newline != _queryBuf.data() && *(newline-1) == '\r') {
+        newline--;
+    }
 
-    _queryBufPos += actualLen;
-    _queryBuf[_queryBufPos] = 0;
-    if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
-        ++_matrix->invalidPackets;
-        setRspAndClose("Protocol error: too big mbulk count string");
+    /* Split the input buffer up to the \r\n */
+    querylen = newline-(_queryBuf.data());
+    aux = std::string(_queryBuf.data(), querylen);
+    argv = redis_port::splitargs(aux);
+    if (argv.size() == 0) {
+        setRspAndClose("Protocol error: unbalanced quotes in request");
         return;
     }
+
+    /* Leave data after the first line of the query in the buffer */
+    shiftQueryBuf(querylen+2, -1);
+
+    if (_args.size() != 0) {
+        LOG(FATAL) << "BUG: _args.size:" << _args.size() << " not empty";
+    }
+
+    for (auto& v : argv) {
+        if (v.length() != 0) {
+            _args.emplace_back(v);
+        }
+    }
+
+    setState(State::Process);
+    schedule();
+}
+
+// NOTE(deyukong): mainly port from redis::networking.c,
+// func:processMultibulkBuffer, the unportable part (long long, int and so on)
+// are all from the redis source code, quite ugly.
+// FIXME(deyukong): rewrite into a more c++ like code.
+void NetSession::processMultibulkBuffer() {
     char *newLine = nullptr;
     long long ll;  // NOLINT(runtime/int)
     int pos = 0;
@@ -223,8 +259,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
             return;
         }
         if (_queryBuf[0] != '*') {
-            ++_matrix->invalidPackets;
-            setRspAndClose("Protocol error: only support multilen proto");
+            LOG(FATAL) << "multiBulk first char not *";
             return;
         }
         char *newStart = _queryBuf.data() + 1;
@@ -298,6 +333,45 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         ++_matrix->stickPackets;
     }
     schedule();
+}
+
+void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
+    if (ec) {
+        LOG(WARNING) << "drainReqCallback:" << ec.message();
+        setState(State::End);
+        schedule();
+        return;
+    }
+
+    assert(_state.load(std::memory_order_relaxed) == State::DrainReq);
+
+    if (actualLen == 0) {
+        LOG(WARNING) << "connId:" << _connId << ", remote:" << getRemoteRepr()
+            << ", got zero len on drainReqCallback!";
+        return;
+    }
+
+    _queryBufPos += actualLen;
+    _queryBuf[_queryBufPos] = 0;
+    if (_queryBufPos > REDIS_MAX_QUERYBUF_LEN) {
+        ++_matrix->invalidPackets;
+        setRspAndClose("Closing client that reached max query buffer length");
+        return;
+    }
+    if (_reqType == RedisReqType::REDIS_REQ_UNKNOWN) {
+        if (_queryBuf[0] == '*') {
+            _reqType = RedisReqType::REDIS_REQ_MULTIBULK;
+        } else {
+            _reqType = RedisReqType::REDIS_REQ_INLINE;
+        }
+    }
+    if (_reqType == RedisReqType::REDIS_REQ_MULTIBULK) {
+        processMultibulkBuffer();
+    } else if (_reqType == RedisReqType::REDIS_REQ_INLINE) {
+        processInlineBuffer();
+    } else {
+        LOG(FATAL) << "unknown request type";
+    }
 }
 
 // NOTE(deyukong): an O(n) impl of array shifting, an alternative to sdsrange,

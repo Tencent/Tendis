@@ -41,7 +41,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
-    const std::string& requirepass() const;
+
+    const std::shared_ptr<std::string> requirepass() const;
+    const std::shared_ptr<std::string> masterauth() const;
 
  private:
     void ftmc();
@@ -50,7 +52,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     // _isRunning = false && _isStopped = true -> stop complete
     std::atomic<bool> _isRunning;
     std::atomic<bool> _isStopped;
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
     std::map<uint64_t, std::unique_ptr<NetSession>> _sessions;
@@ -63,7 +65,11 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<PoolMatrix> _poolMatrix;
     std::unique_ptr<std::thread> _ftmcThd;
 
-    std::string _requirepass;
+    // NOTE(deyukong):
+    // return string's reference have race conditions if changed during
+    // runtime. return by value is quite costive.
+    std::shared_ptr<std::string> _requirepass;
+    std::shared_ptr<std::string> _masterauth;
 };
 }  // namespace tendisplus
 

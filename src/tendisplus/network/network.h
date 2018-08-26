@@ -17,6 +17,12 @@ namespace tendisplus {
 
 class ServerEntry;
 
+enum class RedisReqType: std::uint8_t {
+    REDIS_REQ_UNKNOWN = 0,
+    REDIS_REQ_INLINE = 1,
+    REDIS_REQ_MULTIBULK = 2,
+};
+
 struct NetworkMatrix {
     Atom<uint64_t> stickPackets{0};
     Atom<uint64_t> connCreated{0};
@@ -92,6 +98,8 @@ class NetSession {
     // read data from socket
     void drainReq();
     void drainReqCallback(const std::error_code& ec, size_t actualLen);
+    void processMultibulkBuffer();
+    void processInlineBuffer();
 
     // send data to tcpbuff
     void drainRsp();
@@ -109,6 +117,7 @@ class NetSession {
     // utils to shift parsed partial params from _queryBuf
     void shiftQueryBuf(ssize_t start, ssize_t end);
 
+    RedisReqType _reqType;
     uint64_t _connId;
     bool _closeAfterRsp;
     std::shared_ptr<ServerEntry> _server;

@@ -1,6 +1,7 @@
 #include <sstream>
 #include <utility>
 #include <memory>
+#include <string>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -9,6 +10,26 @@
 #include "tendisplus/storage/catalog.h"
 
 namespace tendisplus {
+
+StoreMeta::StoreMeta()
+    :StoreMeta(0, "", 0, -1, 0, ReplState::REPL_NONE) {
+}
+
+StoreMeta::StoreMeta(uint32_t id_, const std::string& syncFromHost_,
+                uint16_t syncFromPort_, int32_t syncFromId_,
+                uint64_t binlogId_, ReplState replState_)
+    :id(id_),
+     syncFromHost(syncFromHost_),
+     syncFromPort(syncFromPort_),
+     syncFromId(syncFromId_),
+     binlogId(binlogId_),
+     replState(replState_) {
+}
+
+std::unique_ptr<StoreMeta> StoreMeta::copy() const {
+    return std::move(std::unique_ptr<StoreMeta>(
+        new StoreMeta(*this)));
+}
 
 Catalog::Catalog(std::unique_ptr<KVStore> store)
     :_store(std::move(store)) {
@@ -21,12 +42,28 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
+
     writer.Key("Version");
     writer.String("1");
+
     writer.Key("syncFromHost");
     writer.String(meta.syncFromHost);
+
+    writer.Key("syncFromPort");
+    writer.Uint64(meta.syncFromPort);
+
+    writer.Key("syncFromId");
+    writer.Uint64(meta.syncFromId);
+
+    writer.Key("binlogId");
+    writer.Uint64(meta.binlogId);
+
+    writer.Key("replState");
+    writer.Uint64(static_cast<uint8_t>(meta.replState));
+
     writer.Key("id");
     writer.Uint64(meta.id);
+
     RecordValue rv(sb.GetString());
 
     auto exptxn = _store->createTransaction();
@@ -44,8 +81,8 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
     return txn->commit().status();
 }
 
-Expected<StoreMeta> Catalog::getStoreMeta(uint32_t idx) {
-    StoreMeta result;
+Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
+    auto result = std::make_unique<StoreMeta>();
     std::stringstream ss;
     ss << "store_" << idx;
     RecordKey rk(0, RecordType::RT_META, ss.str(), "");
@@ -71,12 +108,31 @@ Expected<StoreMeta> Catalog::getStoreMeta(uint32_t idx) {
     }
 
     assert(doc.IsObject());
+
     assert(doc.HasMember("syncFromHost"));
     assert(doc["syncFromHost"].IsString());
-    result.syncFromHost = doc["syncFromHost"].GetString();
+    result->syncFromHost = doc["syncFromHost"].GetString();
+
+    assert(doc.HasMember("syncFromPort"));
+    assert(doc["syncFromPort"].IsUint64());
+    result->syncFromPort = static_cast<uint16_t>(
+        doc["syncFromPort"].GetUint64());
+
     assert(doc.HasMember("id"));
     assert(doc["id"].IsUint64());
-    result.id = doc["id"].GetUint64();
+    result->id = doc["id"].GetUint64();
+
+    assert(doc.HasMember("syncFromId"));
+    assert(doc["syncFromId"].IsUint64());
+    result->syncFromId = static_cast<uint32_t>(doc["syncFromId"].GetUint64());
+
+    assert(doc.HasMember("binlogId"));
+    assert(doc["binlogId"].IsUint64());
+    result->binlogId = static_cast<uint64_t>(doc["binlogId"].GetUint64());
+
+    assert(doc.HasMember("replState"));
+    assert(doc["replState"].IsUint64());
+    result->replState = static_cast<ReplState>(doc["replState"].GetUint64());
 
     return result;
 }

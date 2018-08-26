@@ -23,6 +23,7 @@ class BlockingTcpClient {
     asio::ip::tcp::socket _socket;
     asio::steady_timer _deadline;
     asio::streambuf _inputBuf;
+    // a hundred year later
     static constexpr std::chrono::seconds MAX_TIMEOUT_SEC =
         std::chrono::seconds(3153600000U);
 };

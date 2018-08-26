@@ -112,6 +112,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                     "invalid requirepass configure"};
             }
             requirepass = tokens[1];
+        } else if (tokens[0] == "masterauth") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid masterauth configure"};
+            }
+            masterauth = tokens[1];
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -124,7 +130,9 @@ ServerParams::ServerParams()
          logDir("./"),
          storageEngine("rocks"),
          dbPath("./db"),
-         rocksBlockcacheMB(4096) {
+         rocksBlockcacheMB(4096),
+         requirepass(""),
+         masterauth("") {
 }
 
 
