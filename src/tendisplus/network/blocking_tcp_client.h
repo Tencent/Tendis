@@ -13,7 +13,10 @@ class BlockingTcpClient {
     Status connect(const std::string& host, uint16_t port,
         std::chrono::seconds timeout);
     Expected<std::string> readLine(std::chrono::seconds timeout);
+    Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
     Status writeLine(const std::string& line, std::chrono::seconds timeout);
+    Status writeData(const std::string& data, std::chrono::seconds timeout);
+    size_t getReadBufSize() const { return _inputBuf.size(); }
 
  private:
     void checkDeadLine(const asio::error_code& ec);

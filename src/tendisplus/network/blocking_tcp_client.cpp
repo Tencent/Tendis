@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <sstream>
 #include <iostream>
 #include <string>
@@ -96,10 +97,60 @@ Expected<std::string> BlockingTcpClient::readLine(
     return line;
 }
 
-Status BlockingTcpClient::writeLine(const std::string& line,
+// TODO(deyukong): unittest read after read_until works as expected
+// TODO(deyukong): reduce copy times
+Expected<std::string> BlockingTcpClient::read(size_t bufSize,
         std::chrono::seconds timeout) {
-    std::string data = line + "\r\n";
+    if (bufSize > _inputBuf.max_size()) {
+        return {ErrorCodes::ERR_NETWORK, "read size can't exceed bufsize"};
+    }
 
+    _deadline.expires_from_now(timeout);
+
+    // Set up the variable that receives the result of the asynchronous
+    // operation. The error code is set to would_block to signal that the
+    // operation is incomplete. Asio guarantees that its asynchronous
+    // operations will never fail with would_block, so any other value in
+    // ec indicates completion.
+    asio::error_code ec = asio::error::would_block;
+
+    size_t remain = bufSize > _inputBuf.size() ?
+            bufSize - _inputBuf.size() : 0;
+
+    if (remain > 0) {
+        asio::async_read(_socket, _inputBuf, asio::transfer_exactly(remain),
+            [&ec](const asio::error_code& oec, size_t) {
+                ec = oec;
+            });
+
+        // Block until the asynchronous operation has completed.
+        do {
+            _ctx.run_one();
+        } while (ec == asio::error::would_block);
+
+        if (ec) {
+            return {ErrorCodes::ERR_NETWORK, ec.message()};
+        }
+    }
+
+    size_t inputBufSize = _inputBuf.size();
+    assert(inputBufSize >= bufSize);
+
+    std::string result;
+    result.resize(bufSize);
+    std::istream is(&_inputBuf);
+    is.read(&result[0], bufSize);
+
+    assert(inputBufSize == _inputBuf.size() + bufSize);
+
+    // supress compile complain
+    (void)inputBufSize;
+
+    return result;
+}
+
+Status BlockingTcpClient::writeData(const std::string& data,
+        std::chrono::seconds timeout) {
     _deadline.expires_from_now(timeout);
 
     // Set up the variable that receives the result of the asynchronous
@@ -122,6 +173,13 @@ Status BlockingTcpClient::writeLine(const std::string& line,
         return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
     return {ErrorCodes::ERR_OK, ""};
+}
+
+Status BlockingTcpClient::writeLine(const std::string& line,
+        std::chrono::seconds timeout) {
+    std::string line1 = line;
+    line1.append("\r\n");
+    return writeData(line1, timeout);
 }
 
 void BlockingTcpClient::checkDeadLine(const asio::error_code& ec) {
