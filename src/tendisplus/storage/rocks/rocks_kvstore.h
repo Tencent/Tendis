@@ -51,7 +51,12 @@ class RocksKVStore: public KVStore {
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
     Status setKV(const Record& kv, Transaction* txn) final;
+    Status setKV(const RecordKey& key, const RecordValue& val, Transaction* txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
+    Status clear() final;
+    bool isRunning() const final;
+    Status stop() final;
+    Status restart() final;
     void removeUncommited(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
     std::set<uint64_t> getUncommittedTxns() const;
@@ -59,9 +64,14 @@ class RocksKVStore: public KVStore {
  private:
     void addUnCommitedTxnInLock(uint64_t txnId);
     void removeUncommitedInLock(uint64_t txnId);
+    rocksdb::Options options();
     mutable std::mutex _mutex;
+
+    bool _isRunning;
     std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;
     std::shared_ptr<rocksdb::Statistics> _stats;
+    std::shared_ptr<rocksdb::Cache> _blockCache;
+
     std::atomic<uint64_t> _nextTxnSeq;
     // NOTE(deyukong): sorted data-structure is required here.
     // we rely on the data order to maintain active txns' watermark.

@@ -100,16 +100,10 @@ RocksOptTxn::~RocksOptTxn() {
     _store->removeUncommited(_txnId);
 }
 
-RocksKVStore::RocksKVStore(const std::string& id,
-            const std::shared_ptr<ServerParams>& cfg,
-            std::shared_ptr<rocksdb::Cache> blockCache)
-        :KVStore(id),
-         _db(nullptr),
-         _stats(rocksdb::CreateDBStatistics()) {
-    // TODO(deyukong): initialize _nextTxnSeq
+rocksdb::Options RocksKVStore::options() {
     rocksdb::Options options;
     rocksdb::BlockBasedTableOptions table_options;
-    table_options.block_cache = blockCache;
+    table_options.block_cache = _blockCache;
     table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
     table_options.block_size = 16 * 1024;  // 16KB
     table_options.format_version = 2;
@@ -147,19 +141,67 @@ RocksKVStore::RocksKVStore(const std::string& id,
     options.statistics = _stats;
     options.create_if_missing = true;
 
-    std::stringstream ss;
-    ss << cfg->dbPath << "/" << id;
-    std::string dbname = ss.str();
-    options.wal_dir = dbname + "/journal";
     options.max_total_wal_size = uint64_t(4294967296);  // 4GB
+    return options;
+}
+
+bool RocksKVStore::isRunning() const {
+    std::lock_guard<std::mutex> lk(_mutex); 
+    return _isRunning;
+}
+
+Status RocksKVStore::stop() {
+    std::lock_guard<std::mutex> lk(_mutex); 
+    if (_uncommitted_txns.size() != 0) {
+        return {ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive"};
+    }
+    _isRunning = false;
+    _db.reset();
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::clear() {
+    std::lock_guard<std::mutex> lk(_mutex); 
+    if (_isRunning) {
+        return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
+    }
+    auto n = filesystem::remove_all(dbPath() + "/" + dbId());
+    LOG(INFO) << "dbId:" << dbId() << "cleared " << n << " files/dirs";
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::restart() {
+    // TODO(deyukong): initialize _nextTxnSeq
+    std::lock_guard<std::mutex> lk(_mutex); 
+    if (_isRunning) {
+        return {ErrorCodes::ERR_INTERNAL, "already running"};
+    }
     rocksdb::OptimisticTransactionDB *tmpDb;
+    rocksdb::Options dbOpts = options();
+    std::string dbname = dbPath() + "/" + dbId();
     auto status = rocksdb::OptimisticTransactionDB::Open(
-        options, dbname, &tmpDb);
+        dbOpts, dbname, &tmpDb);
     if (!status.ok()) {
-        LOG(FATAL) << "opendb:" << dbname
-                    << ", failed info:" << status.ToString();
+        return {ErrorCodes::ERR_INTERNAL, status.ToString()};
     }
     _db.reset(tmpDb);
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+RocksKVStore::RocksKVStore(const std::string& id,
+            const std::shared_ptr<ServerParams>& cfg,
+            std::shared_ptr<rocksdb::Cache> blockCache)
+        :KVStore(id, cfg->dbPath),
+         _isRunning(true),
+         _db(nullptr),
+         _stats(rocksdb::CreateDBStatistics()),
+         _blockCache(blockCache) {
+    Status s = restart();
+    if (!s.ok()) {
+        LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
+                    << ", failed info:" << s.toString();
+    }
 }
 
 Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
@@ -198,6 +240,9 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
     uint64_t txnId = _nextTxnSeq.fetch_add(1);
     auto ret = std::unique_ptr<Transaction>(new RocksOptTxn(this, txnId));
     std::lock_guard<std::mutex> lk(_mutex);
+    if (!_isRunning) {
+        return {ErrorCodes::ERR_INTERNAL, "db stopped!"};
+    }
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);
 }
@@ -229,6 +274,9 @@ void RocksKVStore::removeUncommitedInLock(uint64_t txnId) {
     if (_uncommitted_txns.find(txnId) == _uncommitted_txns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
     }
+    if (!_isRunning) {
+        LOG(FATAL) << "BUG: _uncommitted_txns not empty after stopped";
+    }
     _uncommitted_txns.erase(txnId);
 }
 
@@ -239,6 +287,11 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
         return s.status();
     }
     return RecordValue::decode(s.value());
+}
+
+Status RocksKVStore::setKV(const RecordKey& key, const RecordValue& value,
+        Transaction *txn) {
+    return txn->setKV(key.encode(), value.encode());
 }
 
 Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {

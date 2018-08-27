@@ -28,6 +28,10 @@ PStore SegmentMgrFnvHash64::calcInstance(const std::string& key) const {
     return _instances[segId % _instances.size()];
 }
 
+PStore SegmentMgrFnvHash64::getInstanceById(uint32_t id) const {
+    return _instances[id];
+}
+
 std::vector<PStore> SegmentMgrFnvHash64::calcInstances(
         const std::string& beginKey, const std::string& endKey) const {
     return _instances;

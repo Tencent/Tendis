@@ -280,6 +280,14 @@ Record::Record(RecordKey&& key, RecordValue&& value)
      _value(std::move(value)) {
 }
 
+const RecordKey& Record::getRecordKey() const {
+    return _key;
+}
+
+const RecordValue& Record::getRecordValue() const {
+    return _value;
+}
+
 Record::KV Record::encode() const {
     return {_key.encode(), _value.encode()};
 }
@@ -477,6 +485,18 @@ Expected<ReplLogValue> ReplLogValue::decode(const std::string& rawVal) {
     return ReplLogValue(static_cast<ReplOp>(op), key, val);
 }
 
+const std::string& ReplLogValue::getOpKey() const {
+    return _key;
+}
+
+const std::string& ReplLogValue::getOpValue() const {
+    return _val;
+}
+
+ReplOp ReplLogValue::getOp() const {
+    return _op;
+}
+
 std::string ReplLogValue::encode() const {
     std::vector<uint8_t> val;
     val.reserve(128);
@@ -516,6 +536,14 @@ ReplLog::ReplLog(const ReplLogKey& key, const ReplLogValue& value)
 ReplLog::ReplLog(ReplLogKey&& key, ReplLogValue&& val)
         :_key(std::move(key)),
          _val(std::move(val)) {
+}
+
+const ReplLogKey& ReplLog::getReplLogKey() const {
+    return _key;
+}
+
+const ReplLogValue& ReplLog::getReplLogValue() const {
+    return _val;
 }
 
 Expected<ReplLog> decode(const std::string& key, const std::string& val) {

@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <list>
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/network/blocking_tcp_client.h"
@@ -58,9 +59,17 @@ class ReplManager {
     void controlRoutine();
     void fetchRoutine(uint32_t idx);
     BlockingTcpClient *ensureClient(uint32_t idx);
-    void startFullSync(std::unique_ptr<StoreMeta> metaSnapshot);
+    void startFullSync(const StoreMeta& metaSnapshot);
+    void changeReplState(uint32_t idx, ReplState state,
+        uint64_t binlogId, bool persist);
+    Expected<uint64_t> fetchBinlog(const StoreMeta&);
+    Status applySingleTxn(uint32_t storeId, uint64_t txnId,
+        const std::list<ReplLog>& ops);
 
  private:
+    void changeReplStateInLock(uint32_t idx, ReplState state,
+        uint64_t binlogId, bool persist);
+
     std::mutex _mutex;
     std::atomic<bool> _isRunning;
     std::shared_ptr<ServerEntry> _svr;

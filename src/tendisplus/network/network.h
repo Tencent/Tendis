@@ -17,14 +17,14 @@ namespace tendisplus {
 
 class ServerEntry;
 
-enum class RedisReqType: std::uint8_t {
+enum class RedisReqMode: std::uint8_t {
     REDIS_REQ_UNKNOWN = 0,
     REDIS_REQ_INLINE = 1,
     REDIS_REQ_MULTIBULK = 2,
 };
 
 struct NetworkMatrix {
-    Atom<uint64_t> stickPackets{0};
+    Atom<uint64_t> stickyPackets{0};
     Atom<uint64_t> connCreated{0};
     Atom<uint64_t> connReleased{0};
     Atom<uint64_t> invalidPackets{0};
@@ -117,7 +117,9 @@ class NetSession {
     // utils to shift parsed partial params from _queryBuf
     void shiftQueryBuf(ssize_t start, ssize_t end);
 
-    RedisReqType _reqType;
+    // cleanup state for next request
+    void resetMultiBulkCtx();
+
     uint64_t _connId;
     bool _closeAfterRsp;
     std::shared_ptr<ServerEntry> _server;
@@ -125,8 +127,12 @@ class NetSession {
     asio::ip::tcp::socket _sock;
     std::vector<char> _queryBuf;
     ssize_t _queryBufPos;
+
+    // contexts for RedisReqMode::REDIS_REQ_MULTIBULK
+    RedisReqMode _reqType;
     int64_t _multibulklen;
     int64_t _bulkLen;
+
     std::vector<std::string> _args;
     std::vector<char> _respBuf;
     std::unique_ptr<SessionCtx> _ctx;

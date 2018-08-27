@@ -94,6 +94,8 @@ class Record {
     Record(Record&&);
     Record(const RecordKey& key, const RecordValue& value);
     Record(RecordKey&& key, RecordValue&& value);
+    const RecordKey& getRecordKey() const;
+    const RecordValue& getRecordValue() const;
     static Expected<Record> decode(const std::string& key,
             const std::string& value);
     KV encode() const;
@@ -144,6 +146,7 @@ class ReplLogKey {
     ReplLogKey& operator=(const ReplLogKey&);
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
+    ReplFlag getFlag() const { return _flag; }
 
  private:
     uint64_t _txnId;
@@ -159,6 +162,9 @@ class ReplLogValue {
     ReplLogValue(const ReplLogValue&) = default;
     ReplLogValue(ReplLogValue&&);
     ReplLogValue(ReplOp op, const std::string&, const std::string&);
+    const std::string& getOpKey() const;
+    const std::string& getOpValue() const;
+    ReplOp getOp() const;
     static Expected<ReplLogValue> decode(const std::string&);
     std::string encode() const;
     bool operator==(const ReplLogValue&) const;
@@ -177,6 +183,8 @@ class ReplLog {
     ReplLog(ReplLog&&);
     ReplLog(const ReplLogKey& key, const ReplLogValue& value);
     ReplLog(ReplLogKey&& key, ReplLogValue&& value);
+    const ReplLogKey& getReplLogKey() const;
+    const ReplLogValue& getReplLogValue() const;
     static Expected<ReplLog> decode(const std::string& key,
             const std::string& value);
     KV encode() const;

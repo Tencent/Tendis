@@ -16,7 +16,7 @@ constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
 
 std::string NetworkMatrix::toString() const {
     std::stringstream ss;
-    ss << "\nstickPackets\t" << stickPackets
+    ss << "\nstickyPackets\t" << stickyPackets
         << "\nconnCreated\t" << connCreated
         << "\nconnReleased\t" << connReleased
         << "\ninvalidPackets\t" << invalidPackets;
@@ -25,7 +25,7 @@ std::string NetworkMatrix::toString() const {
 
 NetworkMatrix NetworkMatrix::operator-(const NetworkMatrix& right) {
     NetworkMatrix result;
-    result.stickPackets = stickPackets - right.stickPackets;
+    result.stickyPackets = stickyPackets - right.stickyPackets;
     result.connCreated = connCreated - right.connCreated;
     result.connReleased = connReleased - right.connReleased;
     result.invalidPackets = invalidPackets - right.invalidPackets;
@@ -110,14 +110,14 @@ Status NetworkAsio::run() {
 
 NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
     uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix)
-        :_reqType(RedisReqType::REDIS_REQ_UNKNOWN),
-         _connId(connid),
+         :_connId(connid),
          _closeAfterRsp(false),
          _server(server),
          _state(State::Created),
          _sock(std::move(sock)),
          _queryBuf(std::vector<char>()),
          _queryBufPos(0),
+         _reqType(RedisReqMode::REDIS_REQ_UNKNOWN),
          _multibulklen(0),
          _bulkLen(-1),
          _args(std::vector<std::string>()),
@@ -330,7 +330,7 @@ void NetSession::processMultibulkBuffer() {
         setState(State::Process);
     }
     if (_queryBufPos != 0) {
-        ++_matrix->stickPackets;
+        ++_matrix->stickyPackets;
     }
     schedule();
 }
@@ -358,16 +358,16 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         setRspAndClose("Closing client that reached max query buffer length");
         return;
     }
-    if (_reqType == RedisReqType::REDIS_REQ_UNKNOWN) {
+    if (_reqType == RedisReqMode::REDIS_REQ_UNKNOWN) {
         if (_queryBuf[0] == '*') {
-            _reqType = RedisReqType::REDIS_REQ_MULTIBULK;
+            _reqType = RedisReqMode::REDIS_REQ_MULTIBULK;
         } else {
-            _reqType = RedisReqType::REDIS_REQ_INLINE;
+            _reqType = RedisReqMode::REDIS_REQ_INLINE;
         }
     }
-    if (_reqType == RedisReqType::REDIS_REQ_MULTIBULK) {
+    if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
         processMultibulkBuffer();
-    } else if (_reqType == RedisReqType::REDIS_REQ_INLINE) {
+    } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
         processInlineBuffer();
     } else {
         LOG(FATAL) << "unknown request type";
@@ -409,6 +409,12 @@ void NetSession::shiftQueryBuf(ssize_t start, ssize_t end) {
     }
     _queryBuf[newLen] = 0;
     _queryBufPos = newLen;
+}
+
+void NetSession::resetMultiBulkCtx() {
+    _reqType = RedisReqMode::REDIS_REQ_UNKNOWN;
+    _multibulklen = 0;
+    _bulkLen = -1;
 }
 
 void NetSession::drainReq() {
@@ -473,6 +479,9 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
         schedule();
         return;
     }
+
+    // clean reqMode and counters for multibulk mode
+    resetMultiBulkCtx();
     setState(State::DrainReq);
     schedule();
 }
@@ -480,7 +489,7 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
 void NetSession::endSession() {
     ++_matrix->connReleased;
     // NOTE(deyukong): endSession will call destructor
-    // never write any codes after endSession
+    // never write any codes after _server->endSession
     _server->endSession(_connId);
 }
 
@@ -494,6 +503,8 @@ SessionCtx* NetSession::getCtx() const {
 
 void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
+        assert(_reqType == REDIS_REQ_UNKNOWN);
+        assert(_multibulklen == 0 && _bulkLen == -1);
         setState(State::DrainReq);
     }
     auto currState = _state.load(std::memory_order_relaxed);
