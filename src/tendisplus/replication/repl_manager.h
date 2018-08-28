@@ -53,10 +53,12 @@ class ReplManager {
     explicit ReplManager(std::shared_ptr<ServerEntry> svr);
     Status startup();
     void stop();
-    void supplyFullSync(asio::ip::tcp::socket);
+    void supplyFullSync(asio::ip::tcp::socket, uint32_t storeId);
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
+    void supplyFullSyncRoutine(std::unique_ptr<BlockingTcpClient> client,
+            uint32_t storeId);
     void controlRoutine();
     void fetchRoutine(uint32_t idx);
     BlockingTcpClient *ensureClient(uint32_t idx);

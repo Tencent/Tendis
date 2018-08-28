@@ -124,35 +124,39 @@ class server {
 };
 
 TEST(BlockingTcpClient, Common) {
-    BlockingTcpClient cli(128);
+    auto ioCtx  = std::make_shared<asio::io_context>();
+    auto ioCtx1 = std::make_shared<asio::io_context>();
+    /*
+    BlockingTcpClient cli(ioCtx, 128);
     Status s = cli.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
     s = cli.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
     EXPECT_EQ(s.toString(), "already inited sock");
+    */
+    server svr(*ioCtx, 54321);
 
-    asio::io_context io_context;
-    server svr(io_context, 54321);
-
-    std::thread thd([&io_context] {
-        io_context.run();
+    std::thread thd([&ioCtx] {
+        asio::io_context::work work(*ioCtx);
+        ioCtx->run();
+    });
+    std::thread thd1([&ioCtx1] {
+        asio::io_context::work work(*ioCtx1);
+        ioCtx1->run();
     });
 
-    BlockingTcpClient cli1(128);
-    s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+    BlockingTcpClient cli1(ioCtx1, 128);
+    Status s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
     s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
     EXPECT_EQ(s.toString(), "already inited sock");
-
     s = cli1.writeLine("hello world\r\n hello world1\r\n trailing",
         std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
-
     Expected<std::string> exps = cli1.readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), "hello world");
-
     exps = cli1.readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), " hello world1");
@@ -174,15 +178,17 @@ TEST(BlockingTcpClient, Common) {
     EXPECT_FALSE(exps.ok());
 
     // more than max buf size
-    BlockingTcpClient cli2(4);
+    BlockingTcpClient cli2(ioCtx1, 4);
     s = cli2.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
     s = cli2.writeLine("hello world", std::chrono::seconds(1));
     exps = cli2.readLine(std::chrono::seconds(3));
     EXPECT_FALSE(exps.ok());
 
-    io_context.stop();
+    ioCtx->stop();
+    ioCtx1->stop();
     thd.join();
+    thd1.join();
 }
 
 }  // namespace tendisplus

@@ -36,7 +36,7 @@ class WorkerPool {
     void schedule(fn&& task) {
         int64_t enQueueTs = nsSinceEpoch();
         ++_matrix->inQueue;
-        auto taskWrap = [this, mytask = std::move(task), enQueueTs] {
+        auto taskWrap = [this, mytask = std::move(task), enQueueTs] () mutable {
             int64_t outQueueTs = nsSinceEpoch();
             _matrix->queueTime += outQueueTs - enQueueTs;
             --_matrix->inQueue;
@@ -45,7 +45,12 @@ class WorkerPool {
             _matrix->executeTime += endExeTs - outQueueTs;
             ++_matrix->executed;
         };
-        _ioCtx->post(std::move(taskWrap));
+        asio::post(*_ioCtx, std::move(taskWrap));
+        // NOTE(deyukong): use asio::post rather than ctx.post, the latter one
+        // only support copyable callbacks. which means you cannot use a lambda
+        // which captures unique_Ptr as params
+        // refer to here: https://github.com/boostorg/asio/issues/61
+        // _ioCtx->post(std::move(taskWrap));
     }
     void stop();
 

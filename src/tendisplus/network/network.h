@@ -8,6 +8,7 @@
 #include <vector>
 #include "asio.hpp"
 #include "tendisplus/network/session_ctx.h"
+#include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/atomic_utility.h"
@@ -38,6 +39,9 @@ class NetworkAsio {
             std::shared_ptr<NetworkMatrix> matrix);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
+    std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf);
+    std::unique_ptr<BlockingTcpClient> createBlockingClient(
+        asio::ip::tcp::socket, size_t readBuf);
     Status prepare(const std::string& ip, const uint16_t port);
     Status run();
     void stop();
@@ -47,8 +51,10 @@ class NetworkAsio {
     uint64_t _connCreated;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
+    std::shared_ptr<asio::io_context> _rwCtx;
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
     std::unique_ptr<std::thread> _acceptThd;
+    std::vector<std::thread> _rwThreads;
     std::atomic<bool> _isRunning;
     std::shared_ptr<NetworkMatrix> _matrix;
 };

@@ -47,6 +47,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
     const ReplManager* getReplManager() const;
+    NetworkAsio* getNetwork();
 
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;

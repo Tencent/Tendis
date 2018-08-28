@@ -32,9 +32,20 @@ class Transaction {
     static constexpr uint64_t MIN_VALID_TXNID = 0;
 };
 
+class BackupInfo {
+ public:
+    BackupInfo() = default;
+    Transaction::CommitId getCommitId() const;
+    const std::map<std::string, uint64_t>& getFileList() const;
+    void setCommitId(const Transaction::CommitId&);
+    void setFileList(const std::map<std::string, uint64_t>&);
+ private:
+    Transaction::CommitId _commitId;
+    std::map<std::string, uint64_t> _fileList;
+};
+
 class KVStore {
  public:
-    using BackupInfo = std::map<std::string, uint64_t>;
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }

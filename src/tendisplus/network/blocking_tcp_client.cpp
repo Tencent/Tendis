@@ -9,10 +9,27 @@
 
 namespace tendisplus {
 
-BlockingTcpClient::BlockingTcpClient(size_t maxBufSize)
+BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
+                asio::ip::tcp::socket socket,
+                size_t maxBufSize)
+        :_inited(true),
+         _ctx(ctx),
+         _socket(std::move(socket)),
+         _deadline(*ctx),
+         _inputBuf(maxBufSize) {
+    if (&(_socket.get_io_context()) != &(*ctx)) {
+        LOG(FATAL) << " cannot transfer socket between ioctx";
+    }
+    _deadline.expires_from_now(MAX_TIMEOUT_SEC);
+    checkDeadLine(asio::error_code());
+}
+
+BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
+                size_t maxBufSize)
         :_inited(false),
-         _socket(_ctx),
-         _deadline(_ctx),
+         _ctx(ctx),
+         _socket(*_ctx),
+         _deadline(*_ctx),
          _inputBuf(maxBufSize) {
     _deadline.expires_from_now(MAX_TIMEOUT_SEC);
     checkDeadLine(asio::error_code());
@@ -30,7 +47,7 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
     std::stringstream ss;
     ss << port;
     asio::ip::tcp::resolver::results_type endpoints =
-        asio::ip::tcp::resolver(_ctx).resolve(host, ss.str());
+        asio::ip::tcp::resolver(*_ctx).resolve(host, ss.str());
 
     _deadline.expires_from_now(timeout);
 
@@ -42,15 +59,14 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
     asio::error_code ec = asio::error::would_block;
 
     asio::async_connect(_socket, endpoints,
-        [&ec](const std::error_code& oec, asio::ip::tcp::endpoint) {
+        [this, &ec](const std::error_code& oec, asio::ip::tcp::endpoint) {
             ec = oec;
+            _cv.notify_one();
         });
 
-    // Block until the asynchronous operation has completed.
-    do {
-        _ctx.run_one();
-    } while (ec == asio::error::would_block);
-
+    std::unique_lock<std::mutex> lk(_mutex);
+    _cv.wait(lk);
+    _deadline.expires_from_now(MAX_TIMEOUT_SEC);
     // Determine whether a connection was successfully established. The
     // deadline actor may have had a chance to run and close our socket, even
     // though the connect operation notionally succeeded. Therefore we must
@@ -74,14 +90,15 @@ Expected<std::string> BlockingTcpClient::readLine(
     asio::error_code ec = asio::error::would_block;
 
     asio::async_read_until(_socket, _inputBuf, "\n",
-        [&ec](const asio::error_code& oec, size_t) {
+        [this, &ec](const asio::error_code& oec, size_t) {
             ec = oec;
+            _cv.notify_one();
         });
 
     // Block until the asynchronous operation has completed.
-    do {
-        _ctx.run_one();
-    } while (ec == asio::error::would_block);
+    std::unique_lock<std::mutex> lk(_mutex);
+    _cv.wait(lk);
+    _deadline.expires_from_now(MAX_TIMEOUT_SEC);
 
     if (ec) {
         return {ErrorCodes::ERR_NETWORK, ec.message()};
@@ -119,14 +136,15 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
 
     if (remain > 0) {
         asio::async_read(_socket, _inputBuf, asio::transfer_exactly(remain),
-            [&ec](const asio::error_code& oec, size_t) {
+            [this, &ec](const asio::error_code& oec, size_t) {
                 ec = oec;
+                _cv.notify_one();
             });
 
         // Block until the asynchronous operation has completed.
-        do {
-            _ctx.run_one();
-        } while (ec == asio::error::would_block);
+        std::unique_lock<std::mutex> lk(_mutex);
+        _cv.wait(lk);
+        _deadline.expires_from_now(MAX_TIMEOUT_SEC);
 
         if (ec) {
             return {ErrorCodes::ERR_NETWORK, ec.message()};
@@ -161,13 +179,14 @@ Status BlockingTcpClient::writeData(const std::string& data,
     asio::error_code ec = asio::error::would_block;
 
     asio::async_write(_socket, asio::buffer(data),
-        [&ec](const asio::error_code& oec, size_t) {
+        [this, &ec](const asio::error_code& oec, size_t) {
             ec = oec;
+            _cv.notify_one();
         });
 
-    do {
-        _ctx.run_one();
-    } while (ec == asio::error::would_block);
+    std::unique_lock<std::mutex> lk(_mutex);
+    _cv.wait(lk);
+    _deadline.expires_from_now(MAX_TIMEOUT_SEC);
 
     if (ec) {
         return {ErrorCodes::ERR_NETWORK, ec.message()};
@@ -183,6 +202,7 @@ Status BlockingTcpClient::writeLine(const std::string& line,
 }
 
 void BlockingTcpClient::checkDeadLine(const asio::error_code& ec) {
+    std::lock_guard<std::mutex> lk(_mutex);
     bool needClose = false;
     if (ec && ec != asio::error::operation_aborted) {
         LOG(WARNING) << "tcpclient check_deadline err:" << ec.message();
@@ -203,49 +223,3 @@ void BlockingTcpClient::checkDeadLine(const asio::error_code& ec) {
 }
 
 }  // namespace tendisplus
-
-/*
-//----------------------------------------------------------------------
-
-int main(int argc, char* argv[])
-{
-  try
-  {
-    if (argc != 4)
-    {
-      std::cerr << "Usage: blocking_tcp <host> <port> <message>\n";
-      return 1;
-    }
-
-    client c;
-    c.connect(argv[1], argv[2], boost::posix_time::seconds(10));
-
-    boost::posix_time::ptime time_sent =
-      boost::posix_time::microsec_clock::universal_time();
-
-    c.write_line(argv[3], boost::posix_time::seconds(10));
-
-    for (;;)
-    {
-      std::string line = c.read_line(boost::posix_time::seconds(10));
-
-      // Keep going until we get back the line that was sent.
-      if (line == argv[3])
-        break;
-    }
-
-    boost::posix_time::ptime time_received =
-      boost::posix_time::microsec_clock::universal_time();
-
-    std::cout << "Round trip time: ";
-    std::cout << (time_received - time_sent).total_microseconds();
-    std::cout << " microseconds\n";
-  }
-  catch (std::exception& e)
-  {
-    std::cerr << "Exception: " << e.what() << "\n";
-  }
-
-  return 0;
-}
-*/

@@ -118,7 +118,7 @@ BlockingTcpClient *ReplManager::ensureClient(uint32_t idx) {
             _fetchMeta[idx]->syncFromPort);
     }();
 
-    auto client = std::make_unique<BlockingTcpClient>(64*1024*1024);
+    auto client = _svr->getNetwork()->createBlockingClient(64*1024*1024);
     Status s = client->connect(
         source.first,
         source.second,
@@ -174,7 +174,109 @@ void ReplManager::changeReplState(uint32_t idx, ReplState state,
     changeReplStateInLock(idx, state, binlogId, persist);
 }
 
-void ReplManager::supplyFullSync(asio::ip::tcp::socket sock) {
+void ReplManager::supplyFullSyncRoutine(
+            std::unique_ptr<BlockingTcpClient> client, uint32_t storeId) {
+
+    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    assert(store);
+    if (!store->isRunning()) {
+        client->writeLine("-ERR store is not running", std::chrono::seconds(1));
+        return;
+    }
+
+    Expected<BackupInfo> bkInfo = store->backup();
+    if (!bkInfo.ok()) {
+        std::stringstream ss;
+        ss << "-ERR backup failed:" << bkInfo.status().toString();
+        client->writeLine(ss.str(), std::chrono::seconds(1));
+        return;
+    }
+
+    auto guard = MakeGuard([this, store, storeId]() {
+        Status s = store->releaseBackup();
+        if (!s.ok()) {
+            LOG(ERROR) << "supplyFullSync end clean store:"
+                    << storeId << " error:" << s.toString();
+        }
+    });
+
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+    for (const auto& kv : bkInfo.value().getFileList()) {
+        writer.Key(kv.first.c_str());
+        writer.Uint64(kv.second);
+    }
+    writer.EndObject();
+    Status s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
+    if (!s.ok()) {
+        LOG(ERROR) << "store:" << storeId << " writeLine failed"
+                    << s.toString();
+        return;
+    }
+
+    std::string readBuf;
+    readBuf.reserve(size_t(20ULL*1024*1024));  // 20MB
+    for (auto& fileInfo : bkInfo.value().getFileList()) {
+        s = client->writeLine(fileInfo.first, std::chrono::seconds(1));
+        if (!s.ok()) {
+            LOG(ERROR) << "write fname:" << fileInfo.first
+                        << " to client failed:" << s.toString();
+            return;
+        }
+        std::string fname = store->backupDir() + "/" + fileInfo.first;
+        auto myfile = std::ifstream(fname, std::ios::binary);
+        if (!myfile.is_open()) {
+            LOG(ERROR) << "open file:" << fname << " for read failed";
+            return;
+        }
+        size_t remain = fileInfo.second;
+        while (remain) {
+            size_t batchSize = std::min(remain, readBuf.capacity());
+            readBuf.resize(batchSize);
+            remain -= batchSize;
+            myfile.read(&readBuf[0], batchSize);
+            if (!myfile) {
+                LOG(ERROR) << "read file:" << fname
+                            << " failed with err:" << strerror(errno);
+                return;
+            }
+            s = client->writeData(readBuf, std::chrono::seconds(1));
+            if (!s.ok()) {
+                LOG(ERROR) << "write bulk to client failed:" << s.toString();
+                return;
+            }
+        }
+    }
+    std::stringstream  ss;
+    ss << "FULLSYNCDONE " << bkInfo.value().getCommitId();
+    s = client->writeLine(ss.str(), std::chrono::seconds(1));
+    if (!s.ok()) {
+        LOG(ERROR) << "write FULLSYNCDONE to client failed:" << s.toString();
+        return;
+    }
+    Expected<std::string> reply = client->readLine(std::chrono::seconds(1));
+    if (!reply.ok()) {
+        LOG(ERROR) << "read FULLSYNCDONE reply failed:" << reply.status().toString();
+    } else {
+        LOG(INFO) << "read FULLSYNCDONE reply:" << reply.value();
+    }
+}
+
+void ReplManager::supplyFullSync(asio::ip::tcp::socket sock, uint32_t storeId) {
+    auto client = _svr->getNetwork()->createBlockingClient(
+            std::move(sock), 64*1024*1024);
+
+    // NOTE(deyukong): this judge is not precise
+    // even it's not full at this time, it can be full during schedule.
+    if (isFullSupplierFull()) {
+        client->writeLine("-ERR workerpool full", std::chrono::seconds(1));
+        return;
+    }
+
+    _fullSupplier->schedule([this, storeId, client(std::move(client))]() mutable {
+        supplyFullSyncRoutine(std::move(client), storeId);
+    });
 }
 
 void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {

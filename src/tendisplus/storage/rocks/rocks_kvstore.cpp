@@ -259,7 +259,7 @@ Status RocksKVStore::releaseBackup() {
 
 // this function guarantees that if backup is failed, 
 // there should be no remaining dirs left to clean.
-Expected<KVStore::BackupInfo> RocksKVStore::backup() {
+Expected<BackupInfo> RocksKVStore::backup() {
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_hasBackup) {
@@ -294,6 +294,7 @@ Expected<KVStore::BackupInfo> RocksKVStore::backup() {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
     BackupInfo result;
+    std::map<std::string, uint64_t> flist;
     try {
         for (auto& p: filesystem::recursive_directory_iterator(backupDir())) {
             const filesystem::path& path = p.path();
@@ -301,12 +302,15 @@ Expected<KVStore::BackupInfo> RocksKVStore::backup() {
             // assert path with backupDir prefix
             assert(path.string().find(backupDir()) == 0);
             std::string relative = path.string().erase(0, backupDir().size());
-            result[relative] = filesize;
+            flist[relative] = filesize;
         }
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
     succ = true;
+    result.setFileList(flist);
+    result.setCommitId(0);
+    // TODO(deyukong): fulfill commitId
     return result;
 }
 

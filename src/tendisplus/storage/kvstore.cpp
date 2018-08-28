@@ -14,4 +14,20 @@ KVStore::KVStore(const std::string& id, const std::string& path)
     }
 }
 
+void BackupInfo::setCommitId(const Transaction::CommitId& id) {
+    _commitId = id;
+}
+
+void BackupInfo::setFileList(const std::map<std::string, uint64_t>& fl) {
+    _fileList = fl;
+}
+
+Transaction::CommitId BackupInfo::getCommitId() const {
+    return _commitId;
+}
+
+const std::map<std::string, uint64_t>& BackupInfo::getFileList() const {
+    return _fileList;
+}
+
 }  // namespace tendisplus

@@ -37,10 +37,22 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
     :_connCreated(0),
      _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
+     _rwCtx(std::make_shared<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
      _isRunning(false),
      _matrix(matrix) {
+}
+
+std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
+        size_t readBuf) {
+    return std::move(std::make_unique<BlockingTcpClient>(_rwCtx, readBuf));
+}
+
+std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
+        asio::ip::tcp::socket socket, size_t readBuf) {
+    return std::move(std::make_unique<BlockingTcpClient>(
+        _rwCtx, std::move(socket), readBuf));
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
@@ -57,7 +69,7 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
 }
 
 void NetworkAsio::doAccept() {
-    _acceptor->async_accept([this](std::error_code ec, tcp::socket socket) {
+    auto cb = [this](const std::error_code& ec, tcp::socket socket) {
         if (!_isRunning.load(std::memory_order_relaxed)) {
             LOG(INFO) << "acceptCb, server is shuting down";
             return;
@@ -73,7 +85,8 @@ void NetworkAsio::doAccept() {
                     true, _matrix)));
         ++_matrix->connCreated;
         doAccept();
-    });
+    };
+    _acceptor->async_accept(*_rwCtx, std::move(cb));
 }
 
 void NetworkAsio::stop() {
@@ -81,6 +94,9 @@ void NetworkAsio::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _acceptCtx->stop();
     _acceptThd->join();
+    for (auto& v : _rwThreads) {
+        v.join();
+    }
     LOG(INFO) << "network-asio begin stops complete...";
 }
 
@@ -100,6 +116,28 @@ Status NetworkAsio::run() {
             }
         }
     });
+
+    size_t cpuNum = std::thread::hardware_concurrency();
+    if (cpuNum == 0) {
+        return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
+    }
+    for (size_t i = 0; i < std::max(size_t(4), cpuNum/4); ++i) {
+        std::thread thd([this] {
+            // TODO(deyukong): set threadname for debug/profile
+            while (_isRunning.load(std::memory_order_relaxed)) {
+                // if no work-gurad, the run() returns immediately if no other tasks
+                asio::io_context::work work(*_rwCtx);
+                try {
+                    _rwCtx->run();
+                } catch (const std::exception& ex) {
+                    LOG(FATAL) << "read/write thd failed:" << ex.what();
+                } catch (...) {
+                    LOG(FATAL) << "unknown exception";
+                }
+            }
+        });
+        _rwThreads.emplace_back(std::move(thd));
+    }
 
     // TODO(deyukong): acceptor needs no explicitly listen.
     // but only through listen can we configure backlog.

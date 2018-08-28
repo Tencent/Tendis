@@ -114,6 +114,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+NetworkAsio* ServerEntry::getNetwork() {
+    return _network.get();
+}
+
 const ReplManager* ServerEntry::getReplManager() const {
     return _replMgr.get();
 }
@@ -187,7 +191,11 @@ bool ServerEntry::processRequest(uint64_t connId) {
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
         // NOTE(deyukong): this connect will be closed after supplyFullSync
-        _replMgr->supplyFullSync(sess->borrowConn());
+        std::vector<std::string> args = sess->getArgs();
+        // we have called precheck, it should have 2 args
+        assert(args.size() == 2);
+        uint32_t storeId = std::stoi(args[1]);
+        _replMgr->supplyFullSync(sess->borrowConn(), storeId);
         return false;
     }
     auto expect = Command::runSessionCmd(sess);

@@ -64,6 +64,8 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
     writer.Key("id");
     writer.Uint64(meta.id);
 
+    writer.EndObject();
+
     RecordValue rv(sb.GetString());
 
     auto exptxn = _store->createTransaction();

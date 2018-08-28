@@ -9,7 +9,9 @@
 namespace tendisplus {
 class BlockingTcpClient {
  public:
-    explicit BlockingTcpClient(size_t maxBufSize);
+    BlockingTcpClient(std::shared_ptr<asio::io_context> ctx, size_t maxBufSize);
+    BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
+        asio::ip::tcp::socket, size_t maxBufSize);
     Status connect(const std::string& host, uint16_t port,
         std::chrono::seconds timeout);
     Expected<std::string> readLine(std::chrono::seconds timeout);
@@ -21,8 +23,9 @@ class BlockingTcpClient {
  private:
     void checkDeadLine(const asio::error_code& ec);
     std::mutex _mutex;
+    std::condition_variable _cv;
     bool _inited;
-    asio::io_context _ctx;
+    std::shared_ptr<asio::io_context> _ctx;
     asio::ip::tcp::socket _socket;
     asio::steady_timer _deadline;
     asio::streambuf _inputBuf;
