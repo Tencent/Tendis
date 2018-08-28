@@ -546,7 +546,7 @@ const ReplLogValue& ReplLog::getReplLogValue() const {
     return _val;
 }
 
-Expected<ReplLog> decode(const std::string& key, const std::string& val) {
+Expected<ReplLog> ReplLog::decode(const std::string& key, const std::string& val) {
     auto e = ReplLogKey::decode(key);
     if (!e.ok()) {
         return e.status();

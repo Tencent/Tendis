@@ -32,6 +32,11 @@ WorkerPool::WorkerPool(std::shared_ptr<PoolMatrix> poolMatrix)
      _matrix(poolMatrix) {
 }
 
+bool WorkerPool::isFull() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _matrix->inQueue.get() >= _threads.size();
+}
+
 void WorkerPool::consumeTasks(size_t idx) {
     LOG(INFO) << "net workerthread:" << idx << " starts";
     const auto guard = MakeGuard([this, idx] {

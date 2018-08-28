@@ -31,6 +31,7 @@ class WorkerPool {
     WorkerPool(const WorkerPool&) = delete;
     WorkerPool(WorkerPool&&) = delete;
     Status startup(size_t poolSize);
+    bool isFull() const;
     template <typename fn>
     void schedule(fn&& task) {
         int64_t enQueueTs = nsSinceEpoch();
@@ -50,7 +51,7 @@ class WorkerPool {
 
  private:
     void consumeTasks(size_t idx);
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::atomic<bool> _isRuning;
     // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;

@@ -6,6 +6,7 @@
 #include <utility>
 #include <memory>
 #include <iostream>
+#include <map>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
 
@@ -33,25 +34,36 @@ class Transaction {
 
 class KVStore {
  public:
+    using BackupInfo = std::map<std::string, uint64_t>;
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }
     const std::string& dbId() const { return _id; }
+    const std::string backupDir() const { return _backupDir; }
     virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
         Transaction* txn) = 0;
     virtual Status setKV(const RecordKey&, const RecordValue&, Transaction*) = 0;
     virtual Status setKV(const Record& kv, Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+
+    // remove all data in db
     virtual Status clear() = 0;
     virtual bool isRunning() const = 0;
     virtual Status stop() = 0;
-    virtual Status restart() = 0;
+    virtual Status restart(bool restore = false) = 0;
+
+    // backup related apis, allows only one backup at a time
+    // backup and return the filename<->filesize pair
+    virtual Expected<BackupInfo> backup() = 0;
+    virtual Status releaseBackup() = 0;
+
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
     static constexpr size_t INSTANCE_NUM = size_t(100);
  private:
     const std::string _id;
     const std::string _dbPath;
+    const std::string _backupDir;
 };
 
 }  // namespace tendisplus

@@ -152,6 +152,10 @@ void NetSession::schedule() {
     });
 }
 
+asio::ip::tcp::socket NetSession::borrowConn() {
+    return std::move(_sock);
+}
+
 void NetSession::start() {
     stepState();
 }
@@ -450,9 +454,14 @@ uint64_t NetSession::getConnId() const {
 }
 
 void NetSession::processReq() {
-    _server->processRequest(_connId);
-    _state.store(State::DrainRsp, std::memory_order_relaxed);
-    schedule();
+    bool continueSched = _server->processRequest(_connId);
+    if (!continueSched) {
+        _state.store(State::End);
+        schedule();
+    } else {
+        _state.store(State::DrainRsp, std::memory_order_relaxed);
+        schedule();
+    }
 }
 
 void NetSession::drainRsp() {

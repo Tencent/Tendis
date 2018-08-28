@@ -6,6 +6,7 @@
 #include <clocale>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -33,15 +34,6 @@ struct SetParams {
     int32_t flags;
     uint64_t expire;
 };
-
-std::string toLower(const std::string& s) {
-    std::string result = s;
-    std::transform(result.begin(),
-        result.end(),
-        result.begin(),
-        tolower);
-    return result;
-}
 
 Expected<std::string> setGeneric(PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
@@ -79,7 +71,6 @@ class SetCommand: public Command {
  public:
     SetCommand()
         :Command("set") {
-        LOG(INFO) << "here called";
     }
 
     Expected<SetParams> parse(NetSession *sess) const {

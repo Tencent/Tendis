@@ -5,6 +5,8 @@
 #include "glog/logging.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
+#include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/options.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -171,21 +173,53 @@ Status RocksKVStore::clear() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::restart() {
+Status RocksKVStore::restart(bool restore) {
     // TODO(deyukong): initialize _nextTxnSeq
     std::lock_guard<std::mutex> lk(_mutex); 
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
+    std::string dbname = dbPath() + "/" + dbId();
+    if (restore) {
+        rocksdb::BackupEngine* bkEngine = nullptr;
+        auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
+            rocksdb::BackupableDBOptions(backupDir()),
+            &bkEngine);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
+        pBkEngine.reset(bkEngine);
+        std::vector<rocksdb::BackupInfo> backupInfo;
+        pBkEngine->GetBackupInfo(&backupInfo);
+        if (backupInfo.size() != 1) {
+            LOG(FATAL) << "BUG: backup cnt:" << backupInfo.size()
+                << " != 1";
+        }
+        s = pBkEngine->RestoreDBFromLatestBackup(dbname, dbname);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+    }
+
+    try {
+        if (filesystem::exists(backupDir())) {
+            LOG(WARNING) << backupDir() << " exists, remove it";
+            filesystem::remove_all(backupDir());
+        }
+    } catch (const std::exception& ex) {
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
+    }
+
     rocksdb::OptimisticTransactionDB *tmpDb;
     rocksdb::Options dbOpts = options();
-    std::string dbname = dbPath() + "/" + dbId();
     auto status = rocksdb::OptimisticTransactionDB::Open(
         dbOpts, dbname, &tmpDb);
     if (!status.ok()) {
         return {ErrorCodes::ERR_INTERNAL, status.ToString()};
     }
     _db.reset(tmpDb);
+    _isRunning = true;
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -193,15 +227,87 @@ RocksKVStore::RocksKVStore(const std::string& id,
             const std::shared_ptr<ServerParams>& cfg,
             std::shared_ptr<rocksdb::Cache> blockCache)
         :KVStore(id, cfg->dbPath),
-         _isRunning(true),
+         _isRunning(false),
+         _hasBackup(false),
          _db(nullptr),
          _stats(rocksdb::CreateDBStatistics()),
          _blockCache(blockCache) {
-    Status s = restart();
+    Status s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
                     << ", failed info:" << s.toString();
     }
+}
+
+Status RocksKVStore::releaseBackup() {
+    try {
+        if (!filesystem::exists(backupDir())) {
+            return {ErrorCodes::ERR_OK, ""};
+        }
+        filesystem::remove_all(backupDir());
+    } catch (const std::exception& ex) {
+        LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
+    }
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_hasBackup) {
+            _hasBackup = false;
+        }
+        return {ErrorCodes::ERR_OK, ""};
+    }
+}
+
+// this function guarantees that if backup is failed, 
+// there should be no remaining dirs left to clean.
+Expected<KVStore::BackupInfo> RocksKVStore::backup() {
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_hasBackup) {
+            return {ErrorCodes::ERR_INTERNAL, "already have backup"};
+        }
+        _hasBackup = true;
+    }
+    bool succ = false;
+    rocksdb::BackupEngine* bkEngine;
+    auto guard = MakeGuard([this, &succ]() {
+        if (succ) {
+            return;
+        }
+        try {
+            if (!filesystem::exists(backupDir())) {
+                return;
+            }
+            filesystem::remove_all(backupDir());
+        } catch (const std::exception& ex) {
+            LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
+        }
+    });
+    auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
+            rocksdb::BackupableDBOptions(backupDir()), &bkEngine);
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
+    pBkEngine.reset(bkEngine);
+    s = pBkEngine->CreateNewBackup(_db->GetBaseDB());
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    BackupInfo result;
+    try {
+        for (auto& p: filesystem::recursive_directory_iterator(backupDir())) {
+            const filesystem::path& path = p.path();
+            size_t filesize = filesystem::file_size(path);
+            // assert path with backupDir prefix
+            assert(path.string().find(backupDir()) == 0);
+            std::string relative = path.string().erase(0, backupDir().size());
+            result[relative] = filesize;
+        }
+    } catch (const std::exception& ex) {
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
+    }
+    succ = true;
+    return result;
 }
 
 Expected<std::string> RocksOptTxn::getKV(const std::string& key) {

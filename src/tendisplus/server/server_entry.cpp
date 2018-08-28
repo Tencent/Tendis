@@ -18,6 +18,7 @@ ServerEntry::ServerEntry()
          _network(nullptr),
          _executor(nullptr),
          _segmentMgr(nullptr),
+         _replMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -96,6 +97,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    // replication
+    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    s = _replMgr->startup();
+    if (!s.ok()) {
+        return s;
+    }
+
     _isRunning.store(true, std::memory_order_relaxed);
     _isStopped.store(false, std::memory_order_relaxed);
 
@@ -104,6 +112,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         ftmc();
     });
     return {ErrorCodes::ERR_OK, ""};
+}
+
+const ReplManager* ServerEntry::getReplManager() const {
+    return _replMgr.get();
 }
 
 const SegmentMgr* ServerEntry::getSegmentMgr() const {
@@ -130,7 +142,7 @@ void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
     // TODO(deyukong): max conns
 
 
-    // NOTE(deyukong): god's first driving force
+    // NOTE(deyukong): first driving force
     sess->start();
     uint64_t id = sess->getConnId();
     if (_sessions.find(id) != _sessions.end()) {
@@ -151,12 +163,12 @@ void ServerEntry::endSession(uint64_t connId) {
     _sessions.erase(it);
 }
 
-void ServerEntry::processRequest(uint64_t connId) {
+bool ServerEntry::processRequest(uint64_t connId) {
     NetSession *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
-            return;
+            return false;
         }
         auto it = _sessions.find(connId);
         if (it == _sessions.end()) {
@@ -167,17 +179,24 @@ void ServerEntry::processRequest(uint64_t connId) {
             LOG(FATAL) << "conn:" << connId << ",null in servermap";
         }
     }
-    auto status = Command::precheck(sess);
-    if (!status.ok()) {
-        sess->setResponse(redis_port::errorReply(status.toString()));
-        return;
+    auto expCmdName = Command::precheck(sess);
+    if (!expCmdName.ok()) {
+        sess->setResponse(redis_port::errorReply(expCmdName.value()));
+        return true;
+    }
+    if (expCmdName.value() == "fullsync") {
+        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        // NOTE(deyukong): this connect will be closed after supplyFullSync
+        _replMgr->supplyFullSync(sess->borrowConn());
+        return false;
     }
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
         sess->setResponse(Command::fmtErr(expect.status().toString()));
-        return;
+        return true;
     }
     sess->setResponse(expect.value());
+    return true;
 }
 
 // full-time matrix collect

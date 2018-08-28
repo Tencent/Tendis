@@ -56,6 +56,10 @@ class Atom {
         return *this;
     }
 
+    T get() const {
+        return _data.load(RLX);
+    }
+
     friend std::ostream& operator<<(std::ostream& os, const Atom& v) {
         os << v._data;
         return os;

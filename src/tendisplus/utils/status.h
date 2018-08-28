@@ -19,6 +19,7 @@ enum class ErrorCodes {
     ERR_NOTFOUND,
     ERR_DECODE,
     ERR_AUTH,
+    ERR_BUSY,
 };
 
 class Status {

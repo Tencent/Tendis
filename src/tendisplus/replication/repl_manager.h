@@ -53,6 +53,7 @@ class ReplManager {
     explicit ReplManager(std::shared_ptr<ServerEntry> svr);
     Status startup();
     void stop();
+    void supplyFullSync(asio::ip::tcp::socket);
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
@@ -65,6 +66,7 @@ class ReplManager {
     Expected<uint64_t> fetchBinlog(const StoreMeta&);
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
+    bool isFullSupplierFull() const;
 
  private:
     void changeReplStateInLock(uint32_t idx, ReplState state,
@@ -79,12 +81,18 @@ class ReplManager {
     std::vector<std::unique_ptr<StoreMeta>> _fetchMeta;
     std::vector<std::unique_ptr<BlockingTcpClient>> _fetchClients;
 
+    // slave side incr-sync threadpool
     std::unique_ptr<WorkerPool> _fetcher;
-    std::unique_ptr<WorkerPool> _supplier;
+    // slave side full-sync threadpool
+    std::unique_ptr<WorkerPool> _fullFetcher;
+    // master side full-sync threadpool
+    std::unique_ptr<WorkerPool> _fullSupplier;
+
     std::thread _controller;
 
     std::shared_ptr<PoolMatrix> _fetcherMatrix;
-    std::shared_ptr<PoolMatrix> _supplierMatrix;
+    std::shared_ptr<PoolMatrix> _fullFetcherMatrix;
+    std::shared_ptr<PoolMatrix> _fullSupplierMatrix;
 };
 
 }  // namespace tendisplus

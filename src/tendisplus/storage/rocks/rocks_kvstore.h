@@ -53,10 +53,15 @@ class RocksKVStore: public KVStore {
     Status setKV(const Record& kv, Transaction* txn) final;
     Status setKV(const RecordKey& key, const RecordValue& val, Transaction* txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
+
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
-    Status restart() final;
+    Status restart(bool restore = false) final;
+
+    Expected<BackupInfo> backup() final;
+    Status releaseBackup() final;
+
     void removeUncommited(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
     std::set<uint64_t> getUncommittedTxns() const;
@@ -68,6 +73,7 @@ class RocksKVStore: public KVStore {
     mutable std::mutex _mutex;
 
     bool _isRunning;
+    bool _hasBackup;
     std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;
     std::shared_ptr<rocksdb::Statistics> _stats;
     std::shared_ptr<rocksdb::Cache> _blockCache;

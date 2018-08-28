@@ -1,5 +1,5 @@
 add_library(server server_entry.cpp)
-target_link_libraries(server status network nwp time_util commands rocks_kvstore segment_mgr catalog)
+target_link_libraries(server status network nwp time_util commands rocks_kvstore segment_mgr catalog repl_manager)
 
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)

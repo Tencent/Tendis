@@ -64,6 +64,7 @@ class NetSession {
     std::string getRemoteRepr() const;
     std::string getLocalRepr() const;
     uint64_t getConnId() const;
+    asio::ip::tcp::socket borrowConn();
     void start();
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);

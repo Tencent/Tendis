@@ -12,6 +12,7 @@
 #include "rapidjson/error/en.h"
 #include "glog/logging.h"
 #include "tendisplus/replication/repl_manager.h"
+#include "tendisplus/storage/record.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 
@@ -21,7 +22,8 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
         :_isRunning(false),
          _svr(svr),
          _fetcherMatrix(std::make_shared<PoolMatrix>()),
-         _supplierMatrix(std::make_shared<PoolMatrix>()) {
+         _fullFetcherMatrix(std::make_shared<PoolMatrix>()),
+         _fullSupplierMatrix(std::make_shared<PoolMatrix>()) {
 }
 
 Status ReplManager::startup() {
@@ -84,11 +86,14 @@ Status ReplManager::startup() {
         return s;
     }
 
-    _supplier = std::make_unique<WorkerPool>(_supplierMatrix);
-    s = _supplier->startup(std::max(POOL_SIZE, cpuNum/2));
+    _fullFetcher = std::make_unique<WorkerPool>(_fullFetcherMatrix);
+    s = _fullFetcher->startup(std::max(POOL_SIZE, cpuNum/2));
     if (!s.ok()) {
         return s;
     }
+
+    _fullSupplier = std::make_unique<WorkerPool>(_fullSupplierMatrix);
+    s = _fullSupplier->startup(std::max(POOL_SIZE, cpuNum/2));
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::thread([this]() {
@@ -169,6 +174,9 @@ void ReplManager::changeReplState(uint32_t idx, ReplState state,
     changeReplStateInLock(idx, state, binlogId, persist);
 }
 
+void ReplManager::supplyFullSync(asio::ip::tcp::socket sock) {
+}
+
 void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
 
@@ -185,10 +193,10 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
         std::lock_guard<std::mutex> lk(_mutex);
         if (rollback) {
-            _fetchClients[metaSnapshot.id].reset();
             changeReplStateInLock(metaSnapshot.id, ReplState::REPL_CONNECT,
                 Transaction::MAX_VALID_TXNID+1, false);
         }
+        _fetchClients[metaSnapshot.id].reset();
     });
 
     std::stringstream ss;
@@ -246,26 +254,42 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
             << " failed:" << clearStatus.toString();
     }
 
-    std::string fPrefix =  store->dbPath() + "/" + store->dbId();
+    auto backupExists = [store]() -> Expected<bool> {
+        std::error_code ec;
+        bool exists = filesystem::exists(filesystem::path(store->backupDir()), ec);
+        if (ec) {
+            return {ErrorCodes::ERR_INTERNAL, ec.message()};
+        }
+        return exists;
+    }();
+    if (!backupExists.ok() || backupExists.value()) {
+        LOG(FATAL) << "store:" << metaSnapshot.id << " backupDir exists";
+    }
+
     const std::map<std::string, size_t>& flist = expFlist.value();
-    std::set<std::string> finished_files;
+
+    std::set<std::string> finishedFiles;
     while (true) {
-        if (finished_files.size() == flist.size()) {
+        if (finishedFiles.size() == flist.size()) {
             break;
         }
         Expected<std::string> s = client->readLine(std::chrono::seconds(1));
         if (!s.ok()) {
             return;
         }
-        if (finished_files.find(s.value()) != finished_files.end()) {
+        if (finishedFiles.find(s.value()) != finishedFiles.end()) {
             LOG(FATAL) << "BUG: fullsync " << s.value() << " retransfer";
         }
         if (flist.find(s.value()) == flist.end()) {
             LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
         }
-        std::string fullFileName = fPrefix + "/" + s.value();
+        std::string fullFileName = store->backupDir() + "/" + s.value();
+        filesystem::path fileDir = filesystem::path(fullFileName).remove_filename();
+        if (!filesystem::exists(fileDir)) {
+            filesystem::create_directories(fileDir);
+        }
         auto myfile = std::fstream(fullFileName,
-                std::ios::out|std::ios::binary);
+                    std::ios::out|std::ios::binary);
         if (!myfile.is_open()) {
             LOG(ERROR) << "open file:" << fullFileName << " for write failed";
             return;
@@ -289,7 +313,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
             }
         }
         LOG(INFO) << "fullsync file:" << fullFileName << " transfer done";
-        finished_files.insert(s.value());
+        finishedFiles.insert(s.value());
     }
 
     Expected<std::string> expDone = client->readLine(std::chrono::seconds(1));
@@ -313,6 +337,12 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         LOG(ERROR) << "reply fullsync done failed:"
             << expDoneReplyStatus.toString();
         return;
+    }
+
+    Status restartStatus = store->restart(true);
+    if (!restartStatus.ok()) {
+        LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
+            << " failed:" << restartStatus.toString();
     }
 
     changeReplState(metaSnapshot.id, ReplState::REPL_CONNECTED, binlogId, true);
@@ -496,6 +526,10 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     return {ErrorCodes::ERR_OK, ""};
 }
 
+bool ReplManager::isFullSupplierFull() const {
+    return _fullSupplier->isFull();
+}
+
 void ReplManager::fetchRoutine(uint32_t i) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, i] {
@@ -537,18 +571,31 @@ void ReplManager::controlRoutine() {
     using namespace std::chrono_literals;  // (NOLINT)
     while (_isRunning.load(std::memory_order_relaxed)) {
         {
-            std::lock_guard<std::mutex> lk(_mutex);
-            for (size_t i = 0; i < _fetchStatus.size(); i++) {
-                if (!_fetchStatus[i]->isRunning
-                        && SCLOCK::now() >= _fetchStatus[i]->nextSchedTime) {
-                    _fetchStatus[i]->isRunning = true;
-                    _fetcher->schedule([this, i]() {
-                        fetchRoutine(i);
-                    });
-                }
+        std::lock_guard<std::mutex> lk(_mutex);
+        for (size_t i = 0; i < _fetchStatus.size(); i++) {
+            if (_fetchStatus[i]->isRunning
+                    || SCLOCK::now() < _fetchStatus[i]->nextSchedTime) {
+                continue;
+            }
+            _fetchStatus[i]->isRunning = true;
+            // NOTE(deyukong): we dispatch fullsync/incrsync jobs into
+            // different pools.
+            if (_fetchMeta[i]->replState == ReplState::REPL_CONNECT) {
+                _fullFetcher->schedule([this, i]() {
+                    fetchRoutine(i);
+                });
+            } else if (_fetchMeta[i]->replState == ReplState::REPL_CONNECTED) {
+                _fetcher->schedule([this, i]() {
+                    fetchRoutine(i);
+                });
+            } else if (_fetchMeta[i]->replState == ReplState::REPL_TRANSFER) {
+                LOG(FATAL) << "fetcher:" << i
+                    << " REPL_TRANSFER should not be visitable";
+            } else {  // REPL_NONE
+                // nothing to do with REPL_NONE
             }
         }
-
+        }
         std::this_thread::sleep_for(1s);
     }
 }
@@ -559,7 +606,8 @@ void ReplManager::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _controller.join();
     _fetcher->stop();
-    _supplier->stop();
+    _fullFetcher->stop();
+    _fullSupplier->stop();
     LOG(WARNING) << "repl manager stops succ";
 }
 
