@@ -54,6 +54,8 @@ class ReplManager {
     Status startup();
     void stop();
     void supplyFullSync(asio::ip::tcp::socket, uint32_t storeId);
+    Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
+            uint32_t sourceStoreId);
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
@@ -63,18 +65,17 @@ class ReplManager {
     void fetchRoutine(uint32_t idx);
     BlockingTcpClient *ensureClient(uint32_t idx);
     void startFullSync(const StoreMeta& metaSnapshot);
-    void changeReplState(uint32_t idx, ReplState state,
-        uint64_t binlogId, bool persist);
+    void changeReplState(const StoreMeta&, bool persist);
     Expected<uint64_t> fetchBinlog(const StoreMeta&);
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
     bool isFullSupplierFull() const;
 
  private:
-    void changeReplStateInLock(uint32_t idx, ReplState state,
-        uint64_t binlogId, bool persist);
+    void changeReplStateInLock(const StoreMeta&, bool persist);
 
     std::mutex _mutex;
+    std::condition_variable _cv;
     std::atomic<bool> _isRunning;
     std::shared_ptr<ServerEntry> _svr;
 

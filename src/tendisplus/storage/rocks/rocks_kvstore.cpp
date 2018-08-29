@@ -26,6 +26,7 @@ Expected<Transaction::CommitId> RocksOptTxn::commit() {
     _done = true;
 
     const auto guard = MakeGuard([this] {
+        _txn.reset();
         _store->removeUncommited(_txnId);
     });
 
@@ -51,6 +52,7 @@ Status RocksOptTxn::rollback() {
     _done = true;
 
     const auto guard = MakeGuard([this] {
+        _txn.reset();
         _store->removeUncommited(_txnId);
     });
 
@@ -99,6 +101,7 @@ RocksOptTxn::~RocksOptTxn() {
     if (_done) {
         return;
     }
+    _txn.reset();
     _store->removeUncommited(_txnId);
 }
 
@@ -298,6 +301,10 @@ Expected<BackupInfo> RocksKVStore::backup() {
     try {
         for (auto& p: filesystem::recursive_directory_iterator(backupDir())) {
             const filesystem::path& path = p.path();
+            if (!filesystem::is_regular_file(p)) {
+                LOG(INFO) << "backup ignore:" << p.path();
+                continue;
+            }
             size_t filesize = filesystem::file_size(path);
             // assert path with backupDir prefix
             assert(path.string().find(backupDir()) == 0);

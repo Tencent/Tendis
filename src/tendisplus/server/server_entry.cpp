@@ -118,7 +118,7 @@ NetworkAsio* ServerEntry::getNetwork() {
     return _network.get();
 }
 
-const ReplManager* ServerEntry::getReplManager() const {
+ReplManager* ServerEntry::getReplManager() {
     return _replMgr.get();
 }
 

@@ -26,6 +26,34 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
          _fullSupplierMatrix(std::make_shared<PoolMatrix>()) {
 }
 
+Status ReplManager::changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
+            uint32_t sourceStoreId) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    LOG(INFO) << "wait for store:" << storeId << " to yield work";
+    // NOTE(deyukong): we must wait for the target to stop before change meta,
+    // or the meta may be rewrited
+    _cv.wait(lk, [this, storeId] { return !_fetchStatus[storeId]->isRunning; });
+    LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
+    assert(!_fetchStatus[i]->isRunning);
+
+    if (storeId >= _fetchMeta.size()) {
+        return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
+    }
+    if (ip != "") {
+        if (_fetchMeta[storeId]->syncFromHost != "") {
+            return {ErrorCodes::ERR_BUSY, "explicit set sync source empty before change it"};
+        }
+    }
+    auto newMeta = _fetchMeta[storeId]->copy();
+    newMeta->replState = ReplState::REPL_NONE;
+    newMeta->syncFromHost = ip;
+    newMeta->syncFromPort = port;
+    newMeta->syncFromId = sourceStoreId;
+    newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+    changeReplState(*newMeta, true);
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 Status ReplManager::startup() {
     std::lock_guard<std::mutex> lk(_mutex);
     Catalog *catalog = _svr->getCatalog();
@@ -153,25 +181,21 @@ BlockingTcpClient *ReplManager::ensureClient(uint32_t idx) {
     }
 }
 
-void ReplManager::changeReplStateInLock(uint32_t idx, ReplState state,
-        uint64_t binlogId, bool persist) {
+void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta, bool persist) {
     // TODO(deyukong): mechanism to assert mutex held
-    auto nowState = _fetchMeta[idx]->copy();
-    nowState->replState = state;
-    nowState->binlogId = binlogId;
     if (persist) {
         Catalog *catalog = _svr->getCatalog();
-        Status s = catalog->setStoreMeta(*nowState);
+        Status s = catalog->setStoreMeta(storeMeta);
         if (!s.ok()) {
             LOG(FATAL) << "setStoreMeta failed:" << s.toString();
         }
     }
+    _fetchMeta[storeMeta.id] = std::move(storeMeta.copy());
 }
 
-void ReplManager::changeReplState(uint32_t idx, ReplState state,
-        uint64_t binlogId, bool persist) {
+void ReplManager::changeReplState(const StoreMeta& storeMeta, bool persist) {
     std::lock_guard<std::mutex> lk(_mutex);
-    changeReplStateInLock(idx, state, binlogId, persist);
+    changeReplStateInLock(storeMeta, persist);
 }
 
 void ReplManager::supplyFullSyncRoutine(
@@ -295,8 +319,10 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
         std::lock_guard<std::mutex> lk(_mutex);
         if (rollback) {
-            changeReplStateInLock(metaSnapshot.id, ReplState::REPL_CONNECT,
-                Transaction::MAX_VALID_TXNID+1, false);
+            auto newMeta = metaSnapshot.copy();
+            newMeta->replState = ReplState::REPL_CONNECT;
+            newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+            changeReplStateInLock(*newMeta, false);
         }
         _fetchClients[metaSnapshot.id].reset();
     });
@@ -315,8 +341,10 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         return;
     }
 
-    changeReplState(metaSnapshot.id, ReplState::REPL_TRANSFER,
-        Transaction::MAX_VALID_TXNID+1, false);
+    auto newMeta = metaSnapshot.copy();
+    newMeta->replState = ReplState::REPL_TRANSFER;
+    newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+    changeReplState(*newMeta, false);
 
     auto expFlist = [&s]() -> Expected<std::map<std::string, size_t>> {
         rapidjson::Document doc;
@@ -447,7 +475,11 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
             << " failed:" << restartStatus.toString();
     }
 
-    changeReplState(metaSnapshot.id, ReplState::REPL_CONNECTED, binlogId, true);
+    newMeta = metaSnapshot.copy();
+    newMeta->replState = ReplState::REPL_CONNECTED;
+    newMeta->binlogId = binlogId;
+    changeReplState(*newMeta, true);
+
     rollback = false;
 
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync Done";
@@ -455,6 +487,9 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
 
 // TODO(deyukong): fixme, remove the long long int
 Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
+    // if we reach here, we should have something to do. caller should guarantee this
+    assert(metaSnapshot.syncFromHost != "");
+
     constexpr size_t suggestBatch = 1024;
     auto client = ensureClient(metaSnapshot.id);
     if (client == nullptr) {
@@ -571,8 +606,10 @@ Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
     }
 
     if (arrayNum > 0) {
-        changeReplState(metaSnapshot.id, ReplState::REPL_CONNECTED,
-                binlogGroup.rbegin()->first+1, true);
+        auto newMeta = metaSnapshot.copy();
+        newMeta->replState = ReplState::REPL_CONNECTED;
+        newMeta->binlogId = binlogGroup.rbegin()->first+1;
+        changeReplState(*newMeta, true);
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -636,15 +673,16 @@ void ReplManager::fetchRoutine(uint32_t i) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, i] {
         std::lock_guard<std::mutex> lk(_mutex);
+        assert(_fetchStatus[i]->isRunning);
         _fetchStatus[i]->isRunning = false;
         _fetchStatus[i]->nextSchedTime = nextSched;
+        _cv.notify_all();
     });
 
     std::unique_ptr<StoreMeta> metaSnapshot = [this, i]() {
         std::lock_guard<std::mutex> lk(_mutex);
         return std::move(_fetchMeta[i]->copy());
     }();
-    assert(!metaSnapshot->isRunning);
 
     if (metaSnapshot->syncFromHost == "") {
         // if master is nil, try sched after 1 second
