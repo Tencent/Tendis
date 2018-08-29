@@ -1,10 +1,10 @@
-#include <assert.h>
 #include <time.h>
 #include <cstdlib>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
@@ -39,7 +39,7 @@ ReplFlag randomReplFlag() {
         case 2:
             return ReplFlag::REPL_GROUP_END;
         default:
-            assert(0);
+            INVARIANT(0);
             // void compiler complain
             return ReplFlag::REPL_GROUP_MID;
     }
@@ -54,7 +54,7 @@ ReplOp randomReplOp() {
         case 2:
             return ReplOp::REPL_OP_DEL;
         default:
-            assert(0);
+            INVARIANT(0);
             // void compiler complain
             return ReplOp::REPL_OP_NONE;
     }

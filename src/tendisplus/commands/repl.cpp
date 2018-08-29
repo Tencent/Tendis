@@ -7,6 +7,7 @@
 #include "glog/logging.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -69,9 +70,9 @@ class SlaveofCommand: public Command {
     // slaveof ip port myStoreId sourceStoreId
     Expected<std::string> run(NetSession *sess) final {
         const auto& args = sess->getArgs();
-        assert(args.size() >= 3);
+        INVARIANT(args.size() >= size_t(3));
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
-        assert(svr);
+        INVARIANT(svr != nullptr);
         if (toLower(args[1]) == "no" && toLower(args[2]) == "one") {
             if (args.size() == 4) {
                 uint64_t storeId = 0;

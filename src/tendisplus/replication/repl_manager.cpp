@@ -15,6 +15,7 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -34,7 +35,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip, uint32_t 
     // or the meta may be rewrited
     _cv.wait(lk, [this, storeId] { return !_fetchStatus[storeId]->isRunning; });
     LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
-    assert(!_fetchStatus[i]->isRunning);
+    INVARIANT(!_fetchStatus[storeId]->isRunning);
 
     if (storeId >= _fetchMeta.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
@@ -79,7 +80,7 @@ Status ReplManager::startup() {
         }
     }
 
-    assert(_fetchMeta.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_fetchMeta.size() == KVStore::INSTANCE_NUM);
 
     for (size_t i = 0; i < _fetchMeta.size(); ++i) {
         if (i != _fetchMeta[i]->id) {
@@ -182,7 +183,7 @@ BlockingTcpClient *ReplManager::ensureClient(uint32_t idx) {
 }
 
 void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta, bool persist) {
-    // TODO(deyukong): mechanism to assert mutex held
+    // TODO(deyukong): mechanism to INVARIANT mutex held
     if (persist) {
         Catalog *catalog = _svr->getCatalog();
         Status s = catalog->setStoreMeta(storeMeta);
@@ -202,7 +203,7 @@ void ReplManager::supplyFullSyncRoutine(
             std::unique_ptr<BlockingTcpClient> client, uint32_t storeId) {
 
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
-    assert(store);
+    INVARIANT(store != nullptr);
     if (!store->isRunning()) {
         client->writeLine("-ERR store is not running", std::chrono::seconds(1));
         return;
@@ -373,7 +374,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     }
 
     PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
-    assert(store != nullptr);
+    INVARIANT(store != nullptr);
     if (store->isRunning()) {
         LOG(FATAL) << "BUG: store:" << metaSnapshot.id << " shouldnt be"
             << " running when logic comes to here";
@@ -488,7 +489,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
 // TODO(deyukong): fixme, remove the long long int
 Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
     // if we reach here, we should have something to do. caller should guarantee this
-    assert(metaSnapshot.syncFromHost != "");
+    INVARIANT(metaSnapshot.syncFromHost != "");
 
     constexpr size_t suggestBatch = 1024;
     auto client = ensureClient(metaSnapshot.id);
@@ -562,7 +563,7 @@ Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
         rawBinlogs.emplace_back(
             std::string(exptRcd.value().c_str(), exptRcd.value().size()-2));
     }
-    assert(rawBinlogs.size() == arrayNum);
+    INVARIANT(rawBinlogs.size() == static_cast<size_t>(arrayNum));
 
     // from this point, the resp data from master are parsed succ,
     // so this client can be reused.
@@ -582,7 +583,7 @@ Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
         binlogGroup[logKey.getTxnId()].emplace_back(std::move(logkv.value()));
     }
     for (const auto& logList : binlogGroup) {
-        assert(logList.second.size() >= 1);
+        INVARIANT(logList.second.size() >= 1);
         const ReplLogKey& firstLogKey = logList.second.begin()->getReplLogKey();
         const ReplLogKey& lastLogKey = logList.second.rbegin()->getReplLogKey();
         if (!(static_cast<uint16_t>(firstLogKey.getFlag()) &
@@ -617,7 +618,7 @@ Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops) {
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
-    assert(store);
+    INVARIANT(store != nullptr);
 
     auto ptxn = store->createTransaction();
     if (!ptxn.ok()) {
@@ -673,7 +674,7 @@ void ReplManager::fetchRoutine(uint32_t i) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, i] {
         std::lock_guard<std::mutex> lk(_mutex);
-        assert(_fetchStatus[i]->isRunning);
+        INVARIANT(_fetchStatus[i]->isRunning);
         _fetchStatus[i]->isRunning = false;
         _fetchStatus[i]->nextSchedTime = nextSched;
         _cv.notify_all();

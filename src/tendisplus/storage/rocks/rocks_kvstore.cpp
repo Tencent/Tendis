@@ -10,6 +10,7 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -132,7 +133,7 @@ void RocksOptTxn::ensureTxn() {
         LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
     }
     _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
-    assert(_txn);
+    INVARIANT(_txn != nullptr);
 }
 
 uint64_t RocksOptTxn::getTxnId() const {
@@ -379,7 +380,7 @@ Expected<BackupInfo> RocksKVStore::backup() {
             }
             size_t filesize = filesystem::file_size(path);
             // assert path with backupDir prefix
-            assert(path.string().find(backupDir()) == 0);
+            INVARIANT(path.string().find(backupDir()) == 0);
             std::string relative = path.string().erase(0, backupDir().size());
             flist[relative] = filesize;
         }

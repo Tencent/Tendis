@@ -8,6 +8,7 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/error/en.h"
 #include "tendisplus/storage/catalog.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -109,31 +110,31 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
             << rapidjson::GetParseError_En(doc.GetParseError());
     }
 
-    assert(doc.IsObject());
+    INVARIANT(doc.IsObject());
 
-    assert(doc.HasMember("syncFromHost"));
-    assert(doc["syncFromHost"].IsString());
+    INVARIANT(doc.HasMember("syncFromHost"));
+    INVARIANT(doc["syncFromHost"].IsString());
     result->syncFromHost = doc["syncFromHost"].GetString();
 
-    assert(doc.HasMember("syncFromPort"));
-    assert(doc["syncFromPort"].IsUint64());
+    INVARIANT(doc.HasMember("syncFromPort"));
+    INVARIANT(doc["syncFromPort"].IsUint64());
     result->syncFromPort = static_cast<uint16_t>(
         doc["syncFromPort"].GetUint64());
 
-    assert(doc.HasMember("id"));
-    assert(doc["id"].IsUint64());
+    INVARIANT(doc.HasMember("id"));
+    INVARIANT(doc["id"].IsUint64());
     result->id = doc["id"].GetUint64();
 
-    assert(doc.HasMember("syncFromId"));
-    assert(doc["syncFromId"].IsUint64());
+    INVARIANT(doc.HasMember("syncFromId"));
+    INVARIANT(doc["syncFromId"].IsUint64());
     result->syncFromId = static_cast<uint32_t>(doc["syncFromId"].GetUint64());
 
-    assert(doc.HasMember("binlogId"));
-    assert(doc["binlogId"].IsUint64());
+    INVARIANT(doc.HasMember("binlogId"));
+    INVARIANT(doc["binlogId"].IsUint64());
     result->binlogId = static_cast<uint64_t>(doc["binlogId"].GetUint64());
 
-    assert(doc.HasMember("replState"));
-    assert(doc["replState"].IsUint64());
+    INVARIANT(doc.HasMember("replState"));
+    INVARIANT(doc["replState"].IsUint64());
     result->replState = static_cast<ReplState>(doc["replState"].GetUint64());
 
     return result;

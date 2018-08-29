@@ -3,6 +3,7 @@
 #include <memory>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -54,7 +55,7 @@ class GetCommand: public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
         SessionCtx *pCtx = sess->getCtx();
-        assert(pCtx);
+        INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
                 params.value().key, "");

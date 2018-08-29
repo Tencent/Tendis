@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <sstream>
 #include <iostream>
 #include <string>
@@ -6,6 +5,7 @@
 #include "asio.hpp"
 #include "glog/logging.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -152,14 +152,14 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
     }
 
     size_t inputBufSize = _inputBuf.size();
-    assert(inputBufSize >= bufSize);
+    INVARIANT(inputBufSize >= bufSize);
 
     std::string result;
     result.resize(bufSize);
     std::istream is(&_inputBuf);
     is.read(&result[0], bufSize);
 
-    assert(inputBufSize == _inputBuf.size() + bufSize);
+    INVARIANT(inputBufSize == _inputBuf.size() + bufSize);
 
     // supress compile complain
     (void)inputBufSize;

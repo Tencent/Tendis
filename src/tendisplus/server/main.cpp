@@ -5,6 +5,7 @@
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
 #include "glog/logging.h"
 
 namespace tendisplus {
@@ -15,12 +16,12 @@ static std::shared_ptr<ServerEntry> gServer(nullptr);
 
 static void shutdown(int sigNum) {
     LOG(INFO) << "signal:" << sigNum << " caught, begin shutdown server";
-    assert(tendisplus::gServer);
+    INVARIANT(tendisplus::gServer != nullptr);
     tendisplus::gServer->stop();
 }
 
 static void waitForExit() {
-    assert(tendisplus::gServer);
+    INVARIANT(tendisplus::gServer != nullptr);
     tendisplus::gServer->waitStopComplete();
 }
 
@@ -30,17 +31,17 @@ static void setupSignals() {
     ignore.sa_handler = SIG_IGN;
     sigemptyset(&ignore.sa_mask);
 
-    assert(sigaction(SIGHUP, &ignore, nullptr) == 0);
-    assert(sigaction(SIGUSR2, &ignore, nullptr) == 0);
-    assert(sigaction(SIGPIPE, &ignore, nullptr) == 0);
+    INVARIANT(sigaction(SIGHUP, &ignore, nullptr) == 0);
+    INVARIANT(sigaction(SIGUSR2, &ignore, nullptr) == 0);
+    INVARIANT(sigaction(SIGPIPE, &ignore, nullptr) == 0);
 
     struct sigaction exits;
     memset(&exits, 0, sizeof(exits));
     exits.sa_handler = shutdown;
     sigemptyset(&ignore.sa_mask);
 
-    assert(sigaction(SIGTERM, &exits, nullptr) == 0);
-    assert(sigaction(SIGINT, &exits, nullptr) == 0);
+    INVARIANT(sigaction(SIGTERM, &exits, nullptr) == 0);
+    INVARIANT(sigaction(SIGINT, &exits, nullptr) == 0);
 }
 
 static void usage() {

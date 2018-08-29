@@ -7,6 +7,7 @@
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -136,7 +137,7 @@ class SetCommand: public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
         SessionCtx *pCtx = sess->getCtx();
-        assert(pCtx);
+        INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
                 params.value().key, "");

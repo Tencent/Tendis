@@ -7,6 +7,7 @@
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -58,7 +59,7 @@ class AuthCommand: public Command {
         }
 
         SessionCtx *pCtx = sess->getCtx();
-        assert(pCtx);
+        INVARIANT(pCtx != nullptr);
         pCtx->setAuthed();
 
         return Command::fmtOK();

@@ -84,6 +84,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 add_definitions(-DASIO_STANDALONE)
 add_definitions(-DRAPIDJSON_HAS_STDSTRING)
 
+message("${CMAKE_BUILD_TYPE}")
+message("${CMAKE_CXX_FLAGS_RELEASE}")
 include_directories("${PROJECT_SOURCE_DIR}/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")

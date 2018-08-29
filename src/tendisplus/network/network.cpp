@@ -5,6 +5,7 @@
 #include "glog/logging.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -165,7 +166,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server, tcp::socket sock,
     if (initSock) {
         std::error_code ec;
         _sock.non_blocking(true, ec);
-        assert(ec.value() == 0);
+        INVARIANT(ec.value() == 0);
         _sock.set_option(tcp::no_delay(true));
         _sock.set_option(asio::socket_base::keep_alive(true));
         // TODO(deyukong): keep-alive params
@@ -319,7 +320,8 @@ void NetSession::processMultibulkBuffer() {
         }
         _multibulklen = ll;
     }
-    assert(_multibulklen > 0);
+
+    INVARIANT(_multibulklen > 0);
 
     while (_multibulklen) {
         if (_bulkLen == -1) {
@@ -385,7 +387,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         return;
     }
 
-    assert(_state.load(std::memory_order_relaxed) == State::DrainReq);
+    INVARIANT(_state.load(std::memory_order_relaxed) == State::DrainReq);
 
     if (actualLen == 0) {
         LOG(WARNING) << "connId:" << _connId << ", remote:" << getRemoteRepr()
@@ -550,8 +552,8 @@ SessionCtx* NetSession::getCtx() const {
 
 void NetSession::stepState() {
     if (_state.load(std::memory_order_relaxed) == State::Created) {
-        assert(_reqType == REDIS_REQ_UNKNOWN);
-        assert(_multibulklen == 0 && _bulkLen == -1);
+        INVARIANT(_reqType == RedisReqMode::REDIS_REQ_UNKNOWN);
+        INVARIANT(_multibulklen == 0 && _bulkLen == -1);
         setState(State::DrainReq);
     }
     auto currState = _state.load(std::memory_order_relaxed);

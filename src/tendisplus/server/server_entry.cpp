@@ -7,6 +7,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 
@@ -193,7 +194,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
         // NOTE(deyukong): this connect will be closed after supplyFullSync
         std::vector<std::string> args = sess->getArgs();
         // we have called precheck, it should have 2 args
-        assert(args.size() == 2);
+        INVARIANT(args.size() == 2);
         uint32_t storeId = std::stoi(args[1]);
         _replMgr->supplyFullSync(sess->borrowConn(), storeId);
         return false;
