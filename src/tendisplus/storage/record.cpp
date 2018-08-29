@@ -89,6 +89,14 @@ RecordKey::RecordKey(uint32_t dbid, RecordType type,
      _fmtVsn(0) {
 }
 
+uint32_t RecordKey::getDbId() const {
+    return _dbId;
+}
+
+RecordType RecordKey::getRecordType() const {
+    return _type;
+}
+
 std::string RecordKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
@@ -339,12 +347,8 @@ ReplLogKey::ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
      _reserved(reserved) {
 }
 
-Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
-    Expected<RecordKey> rk = RecordKey::decode(rawKey);
-    if (!rk.ok()) {
-        return rk.status();
-    }
-    const std::string& key = rk.value().getPrimaryKey();
+Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
+    const std::string& key = rk.getPrimaryKey();
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
     if (key.size() != sizeof(_txnId) + sizeof(_localId) + sizeof(_flag)
             + sizeof(_timestamp) + sizeof(_reserved)) {
@@ -382,6 +386,24 @@ Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
     reserved = keyCstr[key.size()-1];
 
     return ReplLogKey(txnid, localid, flag, timestamp, reserved);
+}
+
+Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
+    Expected<RecordKey> rk = RecordKey::decode(rawKey);
+    if (!rk.ok()) {
+        return rk.status();
+    }
+    return decode(rk.value());
+}
+
+const std::string& ReplLogKey::binlogPrefix() {
+    static std::string s = []() {
+        std::string result;
+        result.push_back(0);
+        result.push_back(rt2Char(RecordType::RT_BINLOG));
+        return result;
+    }();
+    return s;
 }
 
 std::string ReplLogKey::encode() const {

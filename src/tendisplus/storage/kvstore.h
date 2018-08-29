@@ -15,6 +15,14 @@ namespace tendisplus {
 class KVStore;
 using PStore = std::shared_ptr<KVStore>;
 
+class Cursor {
+ public:
+    Cursor() = default;
+    virtual ~Cursor() = default;
+    virtual void seek(const std::string& prefix) = 0;
+    virtual Expected<Record> next() = 0;
+};
+
 class Transaction {
  public:
     using CommitId = uint64_t;
@@ -24,6 +32,7 @@ class Transaction {
     virtual ~Transaction() = default;
     virtual Expected<CommitId> commit() = 0;
     virtual Status rollback() = 0;
+    virtual std::unique_ptr<Cursor> createCursor() = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key, const std::string& val) = 0;
     virtual Status delKV(const std::string& key) = 0;

@@ -20,6 +20,7 @@ enum class ErrorCodes {
     ERR_DECODE,
     ERR_AUTH,
     ERR_BUSY,
+    ERR_EXHAUST,  // for cursor
 };
 
 class Status {

@@ -52,6 +52,9 @@ class RecordKey {
     RecordKey(uint32_t dbid, RecordType type, std::string&& pk,
         std::string&& sk);
     const std::string& getPrimaryKey() const;
+    uint32_t getDbId() const;
+
+    RecordType getRecordType() const;
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
     bool operator==(const RecordKey& other) const;
@@ -140,6 +143,7 @@ class ReplLogKey {
     ReplLogKey(ReplLogKey&&);
     ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
         uint32_t timestamp, uint8_t reserved = 0);
+    static Expected<ReplLogKey> decode(const RecordKey&);
     static Expected<ReplLogKey> decode(const std::string&);
     std::string encode() const;
     bool operator==(const ReplLogKey&) const;
@@ -147,6 +151,10 @@ class ReplLogKey {
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
     ReplFlag getFlag() const { return _flag; }
+
+    // return the binlog prefix
+    static const std::string& binlogPrefix();
+
 
  private:
     uint64_t _txnId;

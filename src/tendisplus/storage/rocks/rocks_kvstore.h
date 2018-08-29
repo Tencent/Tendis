@@ -6,6 +6,7 @@
 #include <iostream>
 #include <set>
 #include <mutex>
+#include "rocksdb/db.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "tendisplus/server/server_params.h"
@@ -20,6 +21,7 @@ class RocksOptTxn: public Transaction {
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn();
+    std::unique_ptr<Cursor> createCursor() final;
     Expected<CommitId> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
@@ -40,6 +42,20 @@ class RocksOptTxn: public Transaction {
 
     // if rollback/commit has been explicitly called
     bool _done;
+};
+
+class RocksKVCursor: public Cursor {
+ public:
+    RocksKVCursor(std::unique_ptr<rocksdb::Iterator>);
+    virtual ~RocksKVCursor() = default;
+    void seek(const std::string& prefix) final;
+    Expected<Record> next() final;
+
+    // seekToLast currently is not Curosr interface's requirement
+    void seekToLast();
+
+ private:
+    std::unique_ptr<rocksdb::Iterator> _it;
 };
 
 class RocksKVStore: public KVStore {
@@ -79,9 +95,10 @@ class RocksKVStore: public KVStore {
     std::shared_ptr<rocksdb::Cache> _blockCache;
 
     std::atomic<uint64_t> _nextTxnSeq;
+
     // NOTE(deyukong): sorted data-structure is required here.
     // we rely on the data order to maintain active txns' watermark.
-    std::set<uint64_t> _uncommitted_txns;
+    std::set<uint64_t> _uncommittedTxns;
 };
 
 }  // namespace tendisplus

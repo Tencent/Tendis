@@ -12,11 +12,53 @@
 #include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
+
+RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
+        :Cursor(),
+         _it(std::move(it)) {
+    _it->Seek("");
+}
+
+void RocksKVCursor::seek(const std::string& prefix) {
+    _it->Seek(prefix);
+}
+
+void RocksKVCursor::seekToLast() {
+    _it->SeekToLast();
+}
+
+Expected<Record> RocksKVCursor::next() {
+    if (!_it->status().ok()) {
+        return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
+    }
+    if (!_it->Valid()) {
+        return {ErrorCodes::ERR_EXHAUST, "no more data"};
+    }
+    const std::string& key = _it->key().ToString();
+    const std::string& val = _it->value().ToString();
+    auto result = Record::decode(key, val);
+    _it->Next();
+    if (result.ok()) {
+        return std::move(result.value());
+    }
+    return result.status();
+}
+
 RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
         :_txnId(txnId),
          _txn(nullptr),
          _store(store),
          _done(false) {
+}
+
+std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
+    ensureTxn();
+    rocksdb::ReadOptions readOpts;
+    readOpts.snapshot =  _txn->GetSnapshot();
+    rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
+    return std::unique_ptr<Cursor>(
+        new RocksKVCursor(
+            std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
 }
 
 Expected<Transaction::CommitId> RocksOptTxn::commit() {
@@ -157,7 +199,7 @@ bool RocksKVStore::isRunning() const {
 
 Status RocksKVStore::stop() {
     std::lock_guard<std::mutex> lk(_mutex); 
-    if (_uncommitted_txns.size() != 0) {
+    if (_uncommittedTxns.size() != 0) {
         return {ErrorCodes::ERR_INTERNAL,
             "it's upperlayer's duty to guarantee no pinning txns alive"};
     }
@@ -177,7 +219,6 @@ Status RocksKVStore::clear() {
 }
 
 Status RocksKVStore::restart(bool restore) {
-    // TODO(deyukong): initialize _nextTxnSeq
     std::lock_guard<std::mutex> lk(_mutex); 
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
@@ -221,6 +262,37 @@ Status RocksKVStore::restart(bool restore) {
     if (!status.ok()) {
         return {ErrorCodes::ERR_INTERNAL, status.ToString()};
     }
+
+    // NOTE(deyukong): during starttime, mutex is held and
+    // no need to consider visibility
+    rocksdb::ReadOptions readOpts;
+    auto iter = std::unique_ptr<rocksdb::Iterator>(
+        tmpDb->GetBaseDB()->NewIterator(readOpts));
+    RocksKVCursor cursor(std::move(iter));
+    cursor.seek(ReplLogKey::binlogPrefix());
+    cursor.seekToLast();
+    Expected<Record> expRcd = cursor.next();
+    if (expRcd.ok()) {
+        if (expRcd.value().getRecordKey().getRecordType() == RecordType::RT_BINLOG) {
+            auto explk = ReplLogKey::decode(expRcd.value().getRecordKey());
+            if (!explk.ok()) {
+                return explk.status();
+            } else {
+                LOG(INFO) << "store:" << dbId() << " nextSeq change from:"
+                    << _nextTxnSeq << " to:" << explk.value().getTxnId()+1;
+                _nextTxnSeq = explk.value().getTxnId()+1;
+            }
+        } else {
+            LOG(INFO) << "store:" << dbId() << " have no binlog, set nextSeq to 0";
+            _nextTxnSeq = 0;
+        }
+    } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+        LOG(INFO) << "store:" << dbId() << " all empty, set nextSeq to 0";
+        _nextTxnSeq = 0;
+    } else {
+        return expRcd.status();
+    }
+
     _db.reset(tmpDb);
     _isRunning = true;
     return {ErrorCodes::ERR_OK, ""};
@@ -370,10 +442,10 @@ rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
 
 void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
     // TODO(deyukong): need a better mutex mechnism to assert held
-    if (_uncommitted_txns.find(txnId) != _uncommitted_txns.end()) {
+    if (_uncommittedTxns.find(txnId) != _uncommittedTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " double add uncommitted";
     }
-    _uncommitted_txns.insert(txnId);
+    _uncommittedTxns.insert(txnId);
 }
 
 void RocksKVStore::removeUncommited(uint64_t txnId) {
@@ -383,18 +455,18 @@ void RocksKVStore::removeUncommited(uint64_t txnId) {
 
 std::set<uint64_t> RocksKVStore::getUncommittedTxns() const {
     std::lock_guard<std::mutex> lk(_mutex);
-    return _uncommitted_txns;
+    return _uncommittedTxns;
 }
 
 void RocksKVStore::removeUncommitedInLock(uint64_t txnId) {
     // TODO(deyukong): need a better mutex mechnism to assert held
-    if (_uncommitted_txns.find(txnId) == _uncommitted_txns.end()) {
+    if (_uncommittedTxns.find(txnId) == _uncommittedTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
     }
     if (!_isRunning) {
-        LOG(FATAL) << "BUG: _uncommitted_txns not empty after stopped";
+        LOG(FATAL) << "BUG: _uncommittedTxns not empty after stopped";
     }
-    _uncommitted_txns.erase(txnId);
+    _uncommittedTxns.erase(txnId);
 }
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
