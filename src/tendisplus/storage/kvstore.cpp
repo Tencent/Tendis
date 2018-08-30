@@ -27,7 +27,7 @@ Expected<ReplLog> BinlogCursor::next() {
             return {ErrorCodes::ERR_EXHAUST, ""};
         }
         Expected<ReplLogValue> val =
-            ReplLogValue::decode(expRcd.value().getRecordValue().getValue());
+            ReplLogValue::decode(expRcd.value().getRecordValue());
         if (!val.ok()) {
             return val.status();
         }

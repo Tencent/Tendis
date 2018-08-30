@@ -56,11 +56,13 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
 }
 
 std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
+    INVARIANT(!_done);
     ensureTxn();
     auto cursor = createCursor();
 
     // the smallest txnId that is uncommitted.
     uint64_t lwm = _store->txnLowWaterMark();
+    LOG(INFO) << "binlogCursor:" << begin << "," << lwm;
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, lwm);
 }
 
@@ -75,9 +77,7 @@ std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
 }
 
 Expected<uint64_t> RocksOptTxn::commit() {
-    if (_done) {
-        LOG(FATAL) << "BUG: reusing RocksOptTxn";
-    }
+    INVARIANT(!_done);
     _done = true;
 
     const auto guard = MakeGuard([this] {
@@ -115,9 +115,7 @@ Expected<uint64_t> RocksOptTxn::commit() {
 }
 
 Status RocksOptTxn::rollback() {
-    if (_done) {
-        LOG(FATAL) << "BUG: reusing RocksOptTxn";
-    }
+    INVARIANT(!_done);
     _done = true;
 
     const auto guard = MakeGuard([this] {
@@ -137,6 +135,7 @@ Status RocksOptTxn::rollback() {
 }
 
 void RocksOptTxn::ensureTxn() {
+    INVARIANT(!_done);
     if (_txn != nullptr) {
         return;
     }
@@ -164,6 +163,72 @@ void RocksOptTxn::ensureTxn() {
 
 uint64_t RocksOptTxn::getTxnId() const {
     return _txnId;
+}
+
+Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
+    ensureTxn();
+    rocksdb::ReadOptions readOpts;
+    std::string value;
+    auto s = _txn->Get(readOpts, key, &value);
+    if (s.ok()) {
+        return value;
+    }
+    if (s.IsNotFound()) {
+        return {ErrorCodes::ERR_NOTFOUND, s.ToString()};
+    }
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+}
+
+Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
+    ensureTxn();
+
+    // write binlogs first
+    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
+        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
+    }
+    ReplLogKey logKey(_txnId, _binlogs.size(),
+                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+    ReplLogValue logVal(ReplOp::REPL_OP_SET, key, val);
+    if (_binlogs.size() == 0) {
+        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
+        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
+        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
+    }
+
+    auto s = _txn->Put(key, val);
+    if (s.ok()) {
+        _binlogs.emplace_back(
+            std::move(
+                ReplLog(std::move(logKey), std::move(logVal))));
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+}
+
+Status RocksOptTxn::delKV(const std::string& key) {
+    ensureTxn();
+
+    // write binlogs first
+    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
+        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
+    }
+    ReplLogKey logKey(_txnId, _binlogs.size(),
+                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+    ReplLogValue logVal(ReplOp::REPL_OP_DEL, key, "");
+    if (_binlogs.size() == 0) {
+        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
+        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
+        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
+    }
+
+    auto s = _txn->Delete(key);
+    if (s.ok()) {
+        _binlogs.emplace_back(
+            std::move(
+                ReplLog(std::move(logKey), std::move(logVal))));
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }
 
 RocksOptTxn::~RocksOptTxn() {
@@ -420,72 +485,6 @@ Expected<BackupInfo> RocksKVStore::backup() {
     result.setCommitId(0);
     // TODO(deyukong): fulfill commitId
     return result;
-}
-
-Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
-    ensureTxn();
-    rocksdb::ReadOptions readOpts;
-    std::string value;
-    auto s = _txn->Get(readOpts, key, &value);
-    if (s.ok()) {
-        return value;
-    }
-    if (s.IsNotFound()) {
-        return {ErrorCodes::ERR_NOTFOUND, s.ToString()};
-    }
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-}
-
-Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
-    ensureTxn();
-
-    // write binlogs first
-    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
-        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
-    }
-    ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, sinceEpoch());
-    ReplLogValue logVal(ReplOp::REPL_OP_SET, key, val);
-    if (_binlogs.size() == 0) {
-        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
-        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
-        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
-    }
-
-    auto s = _txn->Put(key, val);
-    if (s.ok()) {
-        _binlogs.emplace_back(
-            std::move(
-                ReplLog(std::move(logKey), std::move(logVal))));
-        return {ErrorCodes::ERR_OK, ""};
-    }
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-}
-
-Status RocksOptTxn::delKV(const std::string& key) {
-    ensureTxn();
-
-    // write binlogs first
-    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
-        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
-    }
-    ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, sinceEpoch());
-    ReplLogValue logVal(ReplOp::REPL_OP_DEL, key, "");
-    if (_binlogs.size() == 0) {
-        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
-        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
-        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
-    }
-
-    auto s = _txn->Delete(key);
-    if (s.ok()) {
-        _binlogs.emplace_back(
-            std::move(
-                ReplLog(std::move(logKey), std::move(logVal))));
-        return {ErrorCodes::ERR_OK, ""};
-    }
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }
 
 Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {

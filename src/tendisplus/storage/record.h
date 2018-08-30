@@ -176,6 +176,7 @@ class ReplLogValue {
     const std::string& getOpValue() const;
     ReplOp getOp() const;
     static Expected<ReplLogValue> decode(const std::string&);
+    static Expected<ReplLogValue> decode(const RecordValue&);
     std::string encode() const;
     bool operator==(const ReplLogValue&) const;
 

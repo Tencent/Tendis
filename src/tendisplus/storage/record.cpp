@@ -481,12 +481,8 @@ ReplLogValue::ReplLogValue(ReplOp op, const std::string& key,
      _val(val) {
 }
 
-Expected<ReplLogValue> ReplLogValue::decode(const std::string& rawVal) {
-    Expected<RecordValue> exptVal = RecordValue::decode(rawVal);
-    if (!exptVal.ok()) {
-        return exptVal.status();
-    }
-    const std::string& o = exptVal.value().getValue();
+Expected<ReplLogValue> ReplLogValue::decode(const RecordValue& rawVal) {
+    const std::string& o = rawVal.getValue();
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(o.c_str());
     if (o.size() <= sizeof(_op)) {
         return {ErrorCodes::ERR_DECODE, "invalid replvalue len"};
@@ -519,6 +515,14 @@ Expected<ReplLogValue> ReplLogValue::decode(const std::string& rawVal) {
     }
     val = std::string(o.c_str() + offset, expt.value().first);
     return ReplLogValue(static_cast<ReplOp>(op), key, val);
+}
+
+Expected<ReplLogValue> ReplLogValue::decode(const std::string& rawVal) {
+    Expected<RecordValue> exptVal = RecordValue::decode(rawVal);
+    if (!exptVal.ok()) {
+        return exptVal.status();
+    }
+    return decode(exptVal.value());
 }
 
 const std::string& ReplLogValue::getOpKey() const {
