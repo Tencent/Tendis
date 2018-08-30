@@ -5,6 +5,7 @@
 #include <utility>
 #include <memory>
 #include "tendisplus/utils/status.h"
+#include "tendisplus/storage/kvstore.h"
 
 namespace tendisplus {
 
@@ -153,8 +154,8 @@ class ReplLogKey {
     ReplFlag getFlag() const { return _flag; }
 
     // return the binlog prefix
-    static const std::string& binlogPrefix();
-
+    static const std::string& prefix();
+    static std::string prefix(uint64_t commitId);
 
  private:
     uint64_t _txnId;

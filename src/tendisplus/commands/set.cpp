@@ -61,7 +61,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
     if (!status.ok()) {
         return status;
     }
-    Expected<Transaction::CommitId> exptCommit = txn->commit();
+    Expected<uint64_t> exptCommit = txn->commit();
     if (!exptCommit.ok()) {
         return exptCommit.status();
     }

@@ -396,7 +396,7 @@ Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
     return decode(rk.value());
 }
 
-const std::string& ReplLogKey::binlogPrefix() {
+const std::string& ReplLogKey::prefix() {
     static std::string s = []() {
         std::string result;
         result.push_back(0);
@@ -404,6 +404,20 @@ const std::string& ReplLogKey::binlogPrefix() {
         return result;
     }();
     return s;
+}
+
+std::string ReplLogKey::prefix(uint64_t commitId) {
+    // NOTE(deyukong): currently commitId is defined as uint64,
+    // we do a compiletime assert here. change the logic if commitId is
+    // redefined to different structure
+    static_assert(sizeof(commitId) == 8,
+        "commitId size not 8, reimpl the logic");
+    std::string p = ReplLogKey::prefix();
+    const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&commitId);
+    for (size_t i = 0; i < sizeof(commitId); i++) {
+        p.push_back(txnBuf[sizeof(commitId)-1-i]);
+    }
+    return p;
 }
 
 std::string ReplLogKey::encode() const {
@@ -568,7 +582,8 @@ const ReplLogValue& ReplLog::getReplLogValue() const {
     return _val;
 }
 
-Expected<ReplLog> ReplLog::decode(const std::string& key, const std::string& val) {
+Expected<ReplLog> ReplLog::decode(const std::string& key,
+        const std::string& val) {
     auto e = ReplLogKey::decode(key);
     if (!e.ok()) {
         return e.status();
@@ -578,6 +593,10 @@ Expected<ReplLog> ReplLog::decode(const std::string& key, const std::string& val
         return e1.status();
     }
     return ReplLog(std::move(e.value()), std::move(e1.value()));
+}
+
+ReplLog::KV ReplLog::encode() const {
+    return {_key.encode(), _val.encode()};
 }
 
 bool ReplLog::operator==(const ReplLog& o) const {

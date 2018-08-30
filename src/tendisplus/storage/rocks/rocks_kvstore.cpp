@@ -2,6 +2,8 @@
 #include <utility>
 #include <string>
 #include <sstream>
+#include <map>
+#include <vector>
 #include "glog/logging.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
@@ -52,6 +54,15 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
          _done(false) {
 }
 
+std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
+    ensureTxn();
+    auto cursor = createCursor();
+
+    // the smallest txnId that is uncommitted.
+    uint64_t lwm = _store->txnLowWaterMark();
+    return std::make_unique<BinlogCursor>(std::move(cursor), begin, lwm);
+}
+
 std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
     ensureTxn();
     rocksdb::ReadOptions readOpts;
@@ -62,7 +73,7 @@ std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
             std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
 }
 
-Expected<Transaction::CommitId> RocksOptTxn::commit() {
+Expected<uint64_t> RocksOptTxn::commit() {
     if (_done) {
         LOG(FATAL) << "BUG: reusing RocksOptTxn";
     }
@@ -194,12 +205,12 @@ rocksdb::Options RocksKVStore::options() {
 }
 
 bool RocksKVStore::isRunning() const {
-    std::lock_guard<std::mutex> lk(_mutex); 
+    std::lock_guard<std::mutex> lk(_mutex);
     return _isRunning;
 }
 
 Status RocksKVStore::stop() {
-    std::lock_guard<std::mutex> lk(_mutex); 
+    std::lock_guard<std::mutex> lk(_mutex);
     if (_uncommittedTxns.size() != 0) {
         return {ErrorCodes::ERR_INTERNAL,
             "it's upperlayer's duty to guarantee no pinning txns alive"};
@@ -210,7 +221,7 @@ Status RocksKVStore::stop() {
 }
 
 Status RocksKVStore::clear() {
-    std::lock_guard<std::mutex> lk(_mutex); 
+    std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
     }
@@ -220,7 +231,7 @@ Status RocksKVStore::clear() {
 }
 
 Status RocksKVStore::restart(bool restore) {
-    std::lock_guard<std::mutex> lk(_mutex); 
+    std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
@@ -270,12 +281,13 @@ Status RocksKVStore::restart(bool restore) {
     auto iter = std::unique_ptr<rocksdb::Iterator>(
         tmpDb->GetBaseDB()->NewIterator(readOpts));
     RocksKVCursor cursor(std::move(iter));
-    cursor.seek(ReplLogKey::binlogPrefix());
+    cursor.seek(ReplLogKey::prefix());
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
     if (expRcd.ok()) {
-        if (expRcd.value().getRecordKey().getRecordType() == RecordType::RT_BINLOG) {
-            auto explk = ReplLogKey::decode(expRcd.value().getRecordKey());
+        const RecordKey& rk = expRcd.value().getRecordKey();
+        if (rk.getRecordType() == RecordType::RT_BINLOG) {
+            auto explk = ReplLogKey::decode(rk);
             if (!explk.ok()) {
                 return explk.status();
             } else {
@@ -284,7 +296,8 @@ Status RocksKVStore::restart(bool restore) {
                 _nextTxnSeq = explk.value().getTxnId()+1;
             }
         } else {
-            LOG(INFO) << "store:" << dbId() << " have no binlog, set nextSeq to 0";
+            LOG(INFO) << "store:" << dbId()
+                    << " have no binlog, set nextSeq to 0";
             _nextTxnSeq = 0;
         }
     } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -333,7 +346,7 @@ Status RocksKVStore::releaseBackup() {
     }
 }
 
-// this function guarantees that if backup is failed, 
+// this function guarantees that if backup is failed,
 // there should be no remaining dirs left to clean.
 Expected<BackupInfo> RocksKVStore::backup() {
     {
@@ -372,7 +385,7 @@ Expected<BackupInfo> RocksKVStore::backup() {
     BackupInfo result;
     std::map<std::string, uint64_t> flist;
     try {
-        for (auto& p: filesystem::recursive_directory_iterator(backupDir())) {
+        for (auto& p : filesystem::recursive_directory_iterator(backupDir())) {
             const filesystem::path& path = p.path();
             if (!filesystem::is_regular_file(p)) {
                 LOG(INFO) << "backup ignore:" << p.path();
@@ -439,6 +452,14 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
 
 rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
     return _db.get();
+}
+
+uint64_t RocksKVStore::txnLowWaterMark() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_uncommittedTxns.size() == 0) {
+        return _nextTxnSeq;
+    }
+    return *_uncommittedTxns.begin();
 }
 
 void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {

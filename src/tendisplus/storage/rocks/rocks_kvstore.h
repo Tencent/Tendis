@@ -15,6 +15,9 @@
 namespace tendisplus {
 
 class RocksKVStore;
+
+// TODO(deyukong): donot modify store's unCommittedTxn list if
+// its only a read-transaction
 class RocksOptTxn: public Transaction {
  public:
     explicit RocksOptTxn(RocksKVStore *store, uint64_t txnId);
@@ -22,7 +25,8 @@ class RocksOptTxn: public Transaction {
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn();
     std::unique_ptr<Cursor> createCursor() final;
-    Expected<CommitId> commit() final;
+    std::unique_ptr<BinlogCursor> createBinlogCursor(uint64_t begin) final;
+    Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
     Status setKV(const std::string& key, const std::string& val) final;
@@ -46,7 +50,7 @@ class RocksOptTxn: public Transaction {
 
 class RocksKVCursor: public Cursor {
  public:
-    RocksKVCursor(std::unique_ptr<rocksdb::Iterator>);
+    explicit RocksKVCursor(std::unique_ptr<rocksdb::Iterator>);
     virtual ~RocksKVCursor() = default;
     void seek(const std::string& prefix) final;
     Expected<Record> next() final;
@@ -67,7 +71,8 @@ class RocksKVStore: public KVStore {
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
     Status setKV(const Record& kv, Transaction* txn) final;
-    Status setKV(const RecordKey& key, const RecordValue& val, Transaction* txn) final;
+    Status setKV(const RecordKey& key,
+            const RecordValue& val, Transaction* txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
 
     Status clear() final;
@@ -80,6 +85,11 @@ class RocksKVStore: public KVStore {
 
     void removeUncommited(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
+
+    // the smallest txnId that is uncommitted. if no uncommitted txns,
+    // return _nextTxnSeq;
+    uint64_t txnLowWaterMark() const;
+
     std::set<uint64_t> getUncommittedTxns() const;
 
  private:

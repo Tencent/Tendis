@@ -2,6 +2,7 @@
 #define SRC_TENDISPLUS_STORAGE_CATALOG_H_
 
 #include <memory>
+#include <string>
 
 #include "tendisplus/replication/repl_manager.h"
 

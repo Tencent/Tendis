@@ -109,6 +109,17 @@ std::string Command::fmtOK() {
     return "+OK\r\n";
 }
 
+std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {
+    ss << "*" << l << "\r\n";
+    return ss;
+}
+
+std::stringstream& Command::fmtBulk(std::stringstream& ss,
+        const std::string& s) {
+    ss << "$" << s.size() << "\r\n" << s << "\r\n";
+    return ss;
+}
+
 std::string Command::fmtBulk(const std::string& s) {
     std::stringstream ss;
     ss << "$" << s.size() << "\r\n" << s << "\r\n";

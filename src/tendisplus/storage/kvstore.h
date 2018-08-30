@@ -13,6 +13,11 @@
 namespace tendisplus {
 
 class KVStore;
+class Record;
+class ReplLog;
+class RecordKey;
+class RecordValue;
+
 using PStore = std::shared_ptr<KVStore>;
 
 class Cursor {
@@ -23,16 +28,33 @@ class Cursor {
     virtual Expected<Record> next() = 0;
 };
 
+class BinlogCursor {
+ public:
+    BinlogCursor() = delete;
+    BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
+    ~BinlogCursor() = default;
+    // NOTE(deyukong): in range of [begin, end), be careful right is open
+    Expected<ReplLog> next();
+
+ protected:
+    std::unique_ptr<Cursor> _baseCursor;
+
+ private:
+    const std::string _beginPrefix;
+    const uint64_t _end;
+};
+
 class Transaction {
  public:
-    using CommitId = uint64_t;
     Transaction() = default;
     Transaction(const Transaction&) = delete;
     Transaction(Transaction&&) = delete;
     virtual ~Transaction() = default;
-    virtual Expected<CommitId> commit() = 0;
+    virtual Expected<uint64_t> commit() = 0;
     virtual Status rollback() = 0;
     virtual std::unique_ptr<Cursor> createCursor() = 0;
+    virtual std::unique_ptr<BinlogCursor>
+        createBinlogCursor(uint64_t begin) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key, const std::string& val) = 0;
     virtual Status delKV(const std::string& key) = 0;
@@ -44,12 +66,12 @@ class Transaction {
 class BackupInfo {
  public:
     BackupInfo() = default;
-    Transaction::CommitId getCommitId() const;
+    uint64_t getCommitId() const;
     const std::map<std::string, uint64_t>& getFileList() const;
-    void setCommitId(const Transaction::CommitId&);
+    void setCommitId(const uint64_t);
     void setFileList(const std::map<std::string, uint64_t>&);
  private:
-    Transaction::CommitId _commitId;
+    uint64_t _commitId;
     std::map<std::string, uint64_t> _fileList;
 };
 
@@ -63,7 +85,8 @@ class KVStore {
     virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
         Transaction* txn) = 0;
-    virtual Status setKV(const RecordKey&, const RecordValue&, Transaction*) = 0;
+    virtual Status setKV(const RecordKey&,
+        const RecordValue&, Transaction*) = 0;
     virtual Status setKV(const Record& kv, Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
 
@@ -80,6 +103,7 @@ class KVStore {
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
     static constexpr size_t INSTANCE_NUM = size_t(100);
+
  private:
     const std::string _id;
     const std::string _dbPath;

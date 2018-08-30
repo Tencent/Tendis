@@ -505,7 +505,8 @@ Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
     });
 
     std::stringstream ss;
-    ss << "FETCHBINLOG " << metaSnapshot.binlogId << " " << suggestBatch;
+    ss << "FETCHBINLOG " << metaSnapshot.syncFromId
+        << " " << metaSnapshot.binlogId << " " << suggestBatch;
     Status s = client->writeLine(ss.str(), std::chrono::seconds(1));
     if (!s.ok()) {
         return s;
@@ -659,7 +660,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
             }
         }
     }
-    Expected<Transaction::CommitId> expCmit = txn->commit();
+    Expected<uint64_t> expCmit = txn->commit();
     if (!expCmit.ok()) {
         return expCmit.status();
     }
