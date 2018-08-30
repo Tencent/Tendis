@@ -151,6 +151,7 @@ class ReplLogKey {
     ReplLogKey& operator=(const ReplLogKey&);
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
+    void setFlag(ReplFlag f) { _flag = f; }
     ReplFlag getFlag() const { return _flag; }
 
     // return the binlog prefix
@@ -193,6 +194,7 @@ class ReplLog {
     ReplLog(const ReplLogKey& key, const ReplLogValue& value);
     ReplLog(ReplLogKey&& key, ReplLogValue&& value);
     const ReplLogKey& getReplLogKey() const;
+    ReplLogKey& getReplLogKey();
     const ReplLogValue& getReplLogValue() const;
     static Expected<ReplLog> decode(const std::string& key,
             const std::string& value);

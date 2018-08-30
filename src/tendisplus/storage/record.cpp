@@ -574,6 +574,10 @@ ReplLog::ReplLog(ReplLogKey&& key, ReplLogValue&& val)
          _val(std::move(val)) {
 }
 
+ReplLogKey& ReplLog::getReplLogKey() {
+    return _key;
+}
+
 const ReplLogKey& ReplLog::getReplLogKey() const {
     return _key;
 }

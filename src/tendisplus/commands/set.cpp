@@ -54,9 +54,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         }
     }
 
-    // TODO(deyukong): eliminate this copy
-    Record kv(key, val);
-    Status status = store->setKV(kv, txn);
+    Status status = store->setKV(key, val, txn);
     TEST_SYNC_POINT("setGeneric::SetKV::1");
     if (!status.ok()) {
         return status;

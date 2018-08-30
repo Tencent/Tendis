@@ -13,6 +13,7 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -86,6 +87,20 @@ Expected<uint64_t> RocksOptTxn::commit() {
 
     if (_txn == nullptr) {
         return {ErrorCodes::ERR_OK, ""};
+    }
+
+    if (_binlogs.size() != 0) {
+        ReplLogKey& key = _binlogs[_binlogs.size()-1].getReplLogKey();
+        uint16_t oriFlag = static_cast<uint16_t>(key.getFlag());
+        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
+        key.setFlag(static_cast<ReplFlag>(oriFlag));
+    }
+    for (auto& v : _binlogs) {
+        auto strPair = v.encode();
+        auto s = _txn->Put(strPair.first, strPair.second);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
     }
     TEST_SYNC_POINT("RocksOptTxn::commit()::1");
     TEST_SYNC_POINT("RocksOptTxn::commit()::2");
@@ -423,8 +438,25 @@ Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
 
 Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
     ensureTxn();
+
+    // write binlogs first
+    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
+        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
+    }
+    ReplLogKey logKey(_txnId, _binlogs.size(),
+                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+    ReplLogValue logVal(ReplOp::REPL_OP_SET, key, val);
+    if (_binlogs.size() == 0) {
+        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
+        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
+        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
+    }
+
     auto s = _txn->Put(key, val);
     if (s.ok()) {
+        _binlogs.emplace_back(
+            std::move(
+                ReplLog(std::move(logKey), std::move(logVal))));
         return {ErrorCodes::ERR_OK, ""};
     }
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -432,8 +464,25 @@ Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
 
 Status RocksOptTxn::delKV(const std::string& key) {
     ensureTxn();
+
+    // write binlogs first
+    if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
+        return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
+    }
+    ReplLogKey logKey(_txnId, _binlogs.size(),
+                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+    ReplLogValue logVal(ReplOp::REPL_OP_DEL, key, "");
+    if (_binlogs.size() == 0) {
+        uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
+        oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
+        logKey.setFlag(static_cast<ReplFlag>(oriFlag));
+    }
+
     auto s = _txn->Delete(key);
     if (s.ok()) {
+        _binlogs.emplace_back(
+            std::move(
+                ReplLog(std::move(logKey), std::move(logVal))));
         return {ErrorCodes::ERR_OK, ""};
     }
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -509,6 +558,11 @@ Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
     Record::KV pair = kv.encode();
     return txn->setKV(pair.first, pair.second);
+}
+
+Status RocksKVStore::setKV(const std::string& key, const std::string& val,
+        Transaction *txn) {
+    return txn->setKV(key, val);
 }
 
 Status RocksKVStore::delKV(const RecordKey& key, Transaction *txn) {

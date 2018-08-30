@@ -116,13 +116,17 @@ std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {
 
 std::stringstream& Command::fmtBulk(std::stringstream& ss,
         const std::string& s) {
-    ss << "$" << s.size() << "\r\n" << s << "\r\n";
+    ss << "$" << s.size() << "\r\n";
+    ss.write(s.c_str(), s.size());
+    ss << "\r\n";
     return ss;
 }
 
 std::string Command::fmtBulk(const std::string& s) {
     std::stringstream ss;
-    ss << "$" << s.size() << "\r\n" << s << "\r\n";
+    ss << "$" << s.size() << "\r\n";
+    ss.write(s.c_str(), s.size());
+    ss << "\r\n";
     return ss.str();
 }
 

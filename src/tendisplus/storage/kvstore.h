@@ -88,6 +88,7 @@ class KVStore {
     virtual Status setKV(const RecordKey&,
         const RecordValue&, Transaction*) = 0;
     virtual Status setKV(const Record& kv, Transaction* txn) = 0;
+    virtual Status setKV(const std::string&, const std::string&, Transaction*) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
 
     // remove all data in db

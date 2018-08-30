@@ -18,6 +18,9 @@ class RocksKVStore;
 
 // TODO(deyukong): donot modify store's unCommittedTxn list if
 // its only a read-transaction
+
+// NOTE(deyukong): RocksOptTxn does not guarantee thread-safety
+// Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public Transaction {
  public:
     explicit RocksOptTxn(RocksKVStore *store, uint64_t txnId);
@@ -43,6 +46,9 @@ class RocksOptTxn: public Transaction {
 
     // NOTE(deyukong): not owned by RocksOptTxn
     RocksKVStore *_store;
+
+    // TODO(deyukong): it's double buffered in rocks, optimize 
+    std::vector<ReplLog> _binlogs;
 
     // if rollback/commit has been explicitly called
     bool _done;
@@ -73,6 +79,8 @@ class RocksKVStore: public KVStore {
     Status setKV(const Record& kv, Transaction* txn) final;
     Status setKV(const RecordKey& key,
             const RecordValue& val, Transaction* txn) final;
+    Status setKV(const std::string& key, const std::string& val,
+            Transaction *txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
 
     Status clear() final;

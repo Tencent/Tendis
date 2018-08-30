@@ -3,7 +3,8 @@
 
 namespace tendisplus {
 
-int64_t nsSinceEpoch();
+uint64_t nsSinceEpoch();
+uint32_t sinceEpoch();
 
 }  // namespace tendisplus
 
