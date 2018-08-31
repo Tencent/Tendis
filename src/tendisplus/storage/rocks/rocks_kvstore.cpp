@@ -482,8 +482,7 @@ Expected<BackupInfo> RocksKVStore::backup() {
     }
     succ = true;
     result.setFileList(flist);
-    result.setCommitId(0);
-    // TODO(deyukong): fulfill commitId
+    result.setCommitId(txnLowWaterMark());
     return result;
 }
 

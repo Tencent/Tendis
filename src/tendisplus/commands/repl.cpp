@@ -166,7 +166,7 @@ class SlaveofCommand: public Command {
         std::string ip = args[1];
         uint64_t port;
         try {
-            port = std::stoul(args[1]);
+            port = std::stoul(args[2]);
         } catch (std::exception& ex) {
             return {ErrorCodes::ERR_PARSEPKT, ex.what()};
         }
@@ -212,7 +212,7 @@ class SlaveofCommand: public Command {
         if (args.size() == 4) {
             uint64_t storeId = 0;
             try {
-                storeId = std::stoul(args[1]);
+                storeId = std::stoul(args[3]);
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEPKT, ex.what()};
             }
@@ -220,14 +220,14 @@ class SlaveofCommand: public Command {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            Status s = replMgr->changeReplSource(storeId, "", 0, -1);
+            Status s = replMgr->changeReplSource(storeId, "", 0, 0);
             if (s.ok()) {
                 return Command::fmtOK();
             }
             return s;
         } else {
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                Status s = replMgr->changeReplSource(i, "", 0, -1);
+                Status s = replMgr->changeReplSource(i, "", 0, 0);
                 if (!s.ok()) {
                     return s;
                 }

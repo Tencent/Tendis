@@ -23,7 +23,7 @@ struct StoreMeta {
     uint32_t id;
     std::string syncFromHost;
     uint16_t syncFromPort;
-    int32_t syncFromId;  // the storeid of master
+    uint32_t syncFromId;  // the storeid of master
     uint64_t binlogId;
     ReplState replState;
 };

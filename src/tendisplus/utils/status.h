@@ -12,6 +12,7 @@ namespace tendisplus {
 enum class ErrorCodes {
     ERR_OK,
     ERR_NETWORK,
+    ERR_TIMEOUT,
     ERR_INTERNAL,
     ERR_PARSEOPT,
     ERR_PARSEPKT,

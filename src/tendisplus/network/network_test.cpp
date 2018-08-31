@@ -50,14 +50,33 @@ TEST(NetSession, Completed) {
         EXPECT_EQ(sess._state.load(), NetSession::State::DrainReq);
         EXPECT_EQ(sess._closeAfterRsp, false);
     }
-    sess._queryBuf.emplace_back('\n');
+    sess._queryBuf[sess._queryBufPos] = '\n';
     sess.drainReqCallback(std::error_code(), 1);
     EXPECT_EQ(sess._state.load(), NetSession::State::Process);
     EXPECT_EQ(sess._closeAfterRsp, false);
     EXPECT_EQ(sess._args.size(), size_t(2));
     EXPECT_EQ(sess._args[0], "foo");
     EXPECT_EQ(sess._args[1], "bar");
+
+    sess.resetMultiBulkCtx();
+    s = "FULLSYNC 1\r";
+    sess.setState(NetSession::State::DrainReq);
+    sess._queryBuf.resize(128, 0);
+    for (auto& c : s) {
+        sess._queryBuf[sess._queryBufPos] = c;
+        sess.drainReqCallback(std::error_code(), 1);
+        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReq);
+        EXPECT_EQ(sess._closeAfterRsp, false);
+    }
+    sess._queryBuf[sess._queryBufPos] = '\n';
+    sess.drainReqCallback(std::error_code(), 1);
+    EXPECT_EQ(sess._state.load(), NetSession::State::Process);
+    EXPECT_EQ(sess._closeAfterRsp, false);
+    EXPECT_EQ(sess._args.size(), size_t(2));
+    EXPECT_EQ(sess._args[0], "FULLSYNC");
+    EXPECT_EQ(sess._args[1], "1");
 }
+
 
 class session : public std::enable_shared_from_this<session> {
  public:
@@ -146,49 +165,39 @@ TEST(BlockingTcpClient, Common) {
     });
 
     BlockingTcpClient cli1(ioCtx1, 128);
-    LOG(INFO) << "here1";
     Status s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
 
     s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
     EXPECT_EQ(s.toString(), "already inited sock");
-    LOG(INFO) << "here2";
     s = cli1.writeLine("hello world\r\n hello world1\r\n trailing",
         std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
-    LOG(INFO) << "here3";
     Expected<std::string> exps = cli1.readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), "hello world");
-    LOG(INFO) << "here4";
     exps = cli1.readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), " hello world1");
 
-    LOG(INFO) << "here5";
     EXPECT_EQ(cli1.getReadBufSize(), std::string(" trailing\r\n").size());
     exps = cli1.read(1, std::chrono::seconds(1));
-    LOG(INFO) << "here6";
     EXPECT_TRUE(exps.ok()) << exps.status().toString();
     EXPECT_EQ(exps.value()[0], ' ');
     EXPECT_EQ(cli1.getReadBufSize(), std::string("trailing\r\n").size());
 
-    LOG(INFO) << "here7";
     exps = cli1.read(10, std::chrono::seconds(1));
     EXPECT_TRUE(exps.ok()) << exps.status().toString();
     EXPECT_EQ(exps.value(), "trailing\r\n");
     EXPECT_EQ(cli1.getReadBufSize(), size_t(0));
 
-    LOG(INFO) << "here8";
     s = cli1.writeLine("hello world", std::chrono::seconds(1));
     // timeout
 
-    LOG(INFO) << "here9";
     exps = cli1.readLine(std::chrono::seconds(1));
     EXPECT_FALSE(exps.ok()) << exps.value();
 
-    LOG(INFO) << "here10";
     // more than max buf size
     BlockingTcpClient cli2(ioCtx1, 4);
     s = cli2.connect("127.0.0.1", 54321, std::chrono::seconds(1));

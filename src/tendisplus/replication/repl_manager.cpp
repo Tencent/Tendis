@@ -33,7 +33,10 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip, uint32_t 
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
     // NOTE(deyukong): we must wait for the target to stop before change meta,
     // or the meta may be rewrited
-    _cv.wait(lk, [this, storeId] { return !_fetchStatus[storeId]->isRunning; });
+    if (!_cv.wait_for(lk, std::chrono::seconds(1),
+            [this, storeId] { return !_fetchStatus[storeId]->isRunning; })) {
+        return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
     LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
     INVARIANT(!_fetchStatus[storeId]->isRunning);
 
@@ -46,12 +49,12 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip, uint32_t 
         }
     }
     auto newMeta = _fetchMeta[storeId]->copy();
-    newMeta->replState = ReplState::REPL_NONE;
     newMeta->syncFromHost = ip;
     newMeta->syncFromPort = port;
     newMeta->syncFromId = sourceStoreId;
+    newMeta->replState = ip == "" ? ReplState::REPL_NONE : ReplState::REPL_CONNECT;
     newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
-    changeReplState(*newMeta, true);
+    changeReplStateInLock(*newMeta, true);
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -307,6 +310,25 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock, uint32_t storeId) {
 void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
 
+    // 1) stop store and clean it's directory
+    PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
+    INVARIANT(store != nullptr);
+
+    Status stopStatus = store->stop();
+    if (!stopStatus.ok()) {
+        // there may be uncanceled transactions binding with the store
+        LOG(WARNING) << "stop store:" << metaSnapshot.id
+                    << " failed:" << stopStatus.toString();
+        return;
+    }
+    INVARIANT(!store->isRunning());
+    Status clearStatus =  store->clear();
+    if (!clearStatus.ok()) {
+        LOG(FATAL) << "Unexpected store:" << metaSnapshot.id << " clear"
+            << " failed:" << clearStatus.toString();
+    }
+
+    // 2) require a sync-client
     auto client = ensureClient(metaSnapshot.id);
     if (client == nullptr) {
         LOG(WARNING) << "startFullSync with: "
@@ -316,6 +338,8 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         return;
     }
 
+    // 3) necessary pre-conditions all ok, startup a guard to rollback
+    // state if failed
     bool rollback = true;
     auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
         std::lock_guard<std::mutex> lk(_mutex);
@@ -328,6 +352,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         _fetchClients[metaSnapshot.id].reset();
     });
 
+    // 4) read backupinfo from master
     std::stringstream ss;
     ss << "FULLSYNC " << metaSnapshot.syncFromId;
     client->writeLine(ss.str(), std::chrono::seconds(1));
@@ -371,18 +396,6 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
     // small schedule-unit, each processes one file, or a fixed-size block.
     if (!expFlist.ok()) {
         return;
-    }
-
-    PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
-    INVARIANT(store != nullptr);
-    if (store->isRunning()) {
-        LOG(FATAL) << "BUG: store:" << metaSnapshot.id << " shouldnt be"
-            << " running when logic comes to here";
-    }
-    Status clearStatus =  store->clear();
-    if (!clearStatus.ok()) {
-        LOG(FATAL) << "Unexpected store:" << metaSnapshot.id << " clear"
-            << " failed:" << clearStatus.toString();
     }
 
     auto backupExists = [store]() -> Expected<bool> {
@@ -447,6 +460,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
+    // 5) read backupinfo done, reply master ok
     Expected<std::string> expDone = client->readLine(std::chrono::seconds(1));
     if (!expDone.ok() || expDone.value().size() == 0) {
         LOG(ERROR) << "read FULLSYNCDONE from master failed:"
@@ -470,6 +484,7 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
         return;
     }
 
+    // 6) restart store, change to stready-syncing mode
     Status restartStatus = store->restart(true);
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
@@ -483,7 +498,9 @@ void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
 
     rollback = false;
 
-    LOG(INFO) << "store:" << metaSnapshot.id << " fullsync Done";
+    LOG(INFO) << "store:" << metaSnapshot.id
+                << " fullsync Done, files:" << finishedFiles.size()
+                << ", binlogId:" << binlogId;
 }
 
 // TODO(deyukong): fixme, remove the long long int
@@ -646,12 +663,16 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                 auto s = store->setKV(expRk.value(), expRv.value(), txn.get());
                 if (!s.ok()) {
                     return s;
+                } else {
+                    break;
                 }
             }
             case (ReplOp::REPL_OP_DEL): {
                 auto s = store->delKV(expRk.value(), txn.get());
                 if (!s.ok()) {
                     return s;
+                } else {
+                    break;
                 }
             }
             default: {

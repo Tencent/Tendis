@@ -196,7 +196,7 @@ std::vector<std::string> splitargs(const std::string& lineStr) {
             /* add the token to the vector */
             result.emplace_back(std::move(current));
         } else {
-            return std::vector<std::string>();
+            return result;
         }
     }
 
