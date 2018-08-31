@@ -186,7 +186,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
-        sess->setResponse(redis_port::errorReply(expCmdName.value()));
+        sess->setResponse(redis_port::errorReply(expCmdName.status().toString()));
         return true;
     }
     if (expCmdName.value() == "fullsync") {
@@ -251,6 +251,7 @@ void ServerEntry::stop() {
     _eventCV.notify_all();
     _network->stop();
     _executor->stop();
+    _replMgr->stop();
     _sessions.clear();
     _ftmcThd->join();
     LOG(INFO) << "server stops complete...";

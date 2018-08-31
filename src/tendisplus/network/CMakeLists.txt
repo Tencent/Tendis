@@ -1,5 +1,5 @@
 add_library(network network.cpp blocking_tcp_client.cpp)
-target_link_libraries(network pthread glog redis_port status server session_ctx)
+target_link_libraries(network pthread glog redis_port status server commands session_ctx)
 
 add_library(nwp worker_pool.cpp)
 target_link_libraries(nwp pthread glog redis_port status server)

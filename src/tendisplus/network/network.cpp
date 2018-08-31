@@ -94,6 +94,7 @@ void NetworkAsio::stop() {
     LOG(INFO) << "network-asio begin stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _acceptCtx->stop();
+    _rwCtx->stop();
     _acceptThd->join();
     for (auto& v : _rwThreads) {
         v.join();
@@ -208,7 +209,7 @@ const std::vector<std::string>& NetSession::getArgs() const {
 }
 
 void NetSession::setResponse(const std::string& s) {
-    _respBuf.clear();
+    INVARIANT(_respBuf.size() == 0);
     std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
 }
 
@@ -459,6 +460,8 @@ void NetSession::resetMultiBulkCtx() {
     _reqType = RedisReqMode::REDIS_REQ_UNKNOWN;
     _multibulklen = 0;
     _bulkLen = -1;
+    _args.clear();
+    _respBuf.clear();
 }
 
 void NetSession::drainReq() {
