@@ -3,6 +3,7 @@
 
 #include <string>
 #include <chrono>
+#include <memory>
 #include "asio.hpp"
 #include "tendisplus/utils/status.h"
 
@@ -21,17 +22,13 @@ class BlockingTcpClient {
     size_t getReadBufSize() const { return _inputBuf.size(); }
 
  private:
-    void checkDeadLine(const asio::error_code& ec);
+    void closeSocket();
     std::mutex _mutex;
     std::condition_variable _cv;
     bool _inited;
     std::shared_ptr<asio::io_context> _ctx;
     asio::ip::tcp::socket _socket;
-    asio::steady_timer _deadline;
     asio::streambuf _inputBuf;
-    // a hundred year later
-    static constexpr std::chrono::seconds MAX_TIMEOUT_SEC =
-        std::chrono::seconds(3153600000U);
 };
 
 }  // namespace tendisplus

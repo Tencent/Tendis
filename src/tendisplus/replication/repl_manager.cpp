@@ -719,14 +719,15 @@ void ReplManager::controlRoutine() {
                     || SCLOCK::now() < _fetchStatus[i]->nextSchedTime) {
                 continue;
             }
-            _fetchStatus[i]->isRunning = true;
             // NOTE(deyukong): we dispatch fullsync/incrsync jobs into
             // different pools.
             if (_fetchMeta[i]->replState == ReplState::REPL_CONNECT) {
+                _fetchStatus[i]->isRunning = true;
                 _fullFetcher->schedule([this, i]() {
                     fetchRoutine(i);
                 });
             } else if (_fetchMeta[i]->replState == ReplState::REPL_CONNECTED) {
+                _fetchStatus[i]->isRunning = true;
                 _fetcher->schedule([this, i]() {
                     fetchRoutine(i);
                 });

@@ -38,7 +38,7 @@ bool WorkerPool::isFull() const {
 }
 
 void WorkerPool::consumeTasks(size_t idx) {
-    LOG(INFO) << "net workerthread:" << idx << " starts";
+    LOG(INFO) << "workerthread:" << idx << " starts";
     const auto guard = MakeGuard([this, idx] {
         std::lock_guard<std::mutex> lk(_mutex);
         const auto& thd_id = std::this_thread::get_id();
@@ -78,6 +78,10 @@ void WorkerPool::stop() {
 
 Status WorkerPool::startup(size_t poolsize) {
     std::lock_guard<std::mutex> lk(_mutex);
+
+    // worker threads rely on _isRunning flag
+    _isRuning.store(true, std::memory_order_relaxed);
+
     for (size_t i = 0; i < poolsize; ++i) {
         std::thread thd = std::thread([this](size_t idx) {
             return [this, idx]() {
@@ -86,7 +90,6 @@ Status WorkerPool::startup(size_t poolsize) {
         } (i));
         _threads.emplace_back(std::move(thd));
     }
-    _isRuning.store(true, std::memory_order_relaxed);
     return {ErrorCodes::ERR_OK, ""};
 }
 

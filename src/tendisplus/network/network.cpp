@@ -99,7 +99,7 @@ void NetworkAsio::stop() {
     for (auto& v : _rwThreads) {
         v.join();
     }
-    LOG(INFO) << "network-asio begin stops complete...";
+    LOG(INFO) << "network-asio stops complete...";
 }
 
 Status NetworkAsio::run() {
@@ -127,7 +127,7 @@ Status NetworkAsio::run() {
         std::thread thd([this] {
             // TODO(deyukong): set threadname for debug/profile
             while (_isRunning.load(std::memory_order_relaxed)) {
-                // if no work-gurad, the run() returns immediately if no other tasks
+                // if no workguard, the run() returns immediately if no tasks
                 asio::io_context::work work(*_rwCtx);
                 try {
                     _rwCtx->run();
