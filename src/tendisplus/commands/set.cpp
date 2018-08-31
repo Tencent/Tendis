@@ -6,6 +6,8 @@
 #include <clocale>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -34,15 +36,6 @@ struct SetParams {
     uint64_t expire;
 };
 
-std::string toLower(const std::string& s) {
-    std::string result = s;
-    std::transform(result.begin(),
-        result.end(),
-        result.begin(),
-        tolower);
-    return result;
-}
-
 Expected<std::string> setGeneric(PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             const std::string& okReply, const std::string& abortReply) {
@@ -61,25 +54,22 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         }
     }
 
-    // TODO(deyukong): eliminate this copy
-    Record kv(key, val);
-    Status status = store->setKV(kv, txn);
+    Status status = store->setKV(key, val, txn);
     TEST_SYNC_POINT("setGeneric::SetKV::1");
-    if (status.ok()) {
-        status = txn->commit();
-    }
-    if (status.ok()) {
-        return okReply == "" ? Command::fmtOK() :okReply;
-    } else {
+    if (!status.ok()) {
         return status;
     }
+    Expected<uint64_t> exptCommit = txn->commit();
+    if (!exptCommit.ok()) {
+        return exptCommit.status();
+    }
+    return okReply == "" ? Command::fmtOK() : okReply;
 }
 
 class SetCommand: public Command {
  public:
     SetCommand()
         :Command("set") {
-        LOG(INFO) << "here called";
     }
 
     Expected<SetParams> parse(NetSession *sess) const {
@@ -145,7 +135,7 @@ class SetCommand: public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
         SessionCtx *pCtx = sess->getCtx();
-        assert(pCtx);
+        INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
                 params.value().key, "");

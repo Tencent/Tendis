@@ -11,6 +11,7 @@ class SessionCtx {
     SessionCtx(const SessionCtx&) = delete;
     SessionCtx(SessionCtx&&) = delete;
     bool authed() const;
+    void setAuthed();
     uint32_t getDbId() const;
 
  private:

@@ -2,7 +2,9 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
@@ -25,6 +27,36 @@ RecordType randomType() {
             return RecordType::RT_LIST_ELE;
         default:
             return RecordType::RT_INVALID;
+    }
+}
+
+ReplFlag randomReplFlag() {
+    switch ((genRand() % 3)) {
+        case 0:
+            return ReplFlag::REPL_GROUP_MID;
+        case 1:
+            return ReplFlag::REPL_GROUP_START;
+        case 2:
+            return ReplFlag::REPL_GROUP_END;
+        default:
+            INVARIANT(0);
+            // void compiler complain
+            return ReplFlag::REPL_GROUP_MID;
+    }
+}
+
+ReplOp randomReplOp() {
+    switch ((genRand() % 3)) {
+        case 0:
+            return ReplOp::REPL_OP_NONE;
+        case 1:
+            return ReplOp::REPL_OP_SET;
+        case 2:
+            return ReplOp::REPL_OP_DEL;
+        default:
+            INVARIANT(0);
+            // void compiler complain
+            return ReplOp::REPL_OP_NONE;
     }
 }
 
@@ -83,6 +115,32 @@ TEST(Record, Common) {
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(overflip(kv.first), kv.second);
         EXPECT_EQ(prcd1.status().code(), ErrorCodes::ERR_DECODE);
+    }
+}
+
+TEST(ReplRecord, Common) {
+    srand(time(NULL));
+    std::vector<ReplLogKey> logKeys;
+    for (size_t i = 0; i < 1000000; i++) {
+        uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
+        uint16_t localid = uint16_t(genRand());
+        ReplFlag flag = randomReplFlag();
+        uint32_t timestamp = genRand();
+        auto rk = ReplLogKey(txnid, localid, flag, timestamp);
+        auto rkStr = rk.encode();
+        auto prk = ReplLogKey::decode(rkStr);
+        EXPECT_TRUE(prk.ok());
+        EXPECT_EQ(prk.value(), rk);
+        logKeys.emplace_back(std::move(rk));
+    }
+    std::sort(logKeys.begin(), logKeys.end(),
+        [](const ReplLogKey& a, const ReplLogKey& b) {
+            return a.encode() < b.encode();
+        });
+    for (size_t i = 0; i < logKeys.size()-1; ++i) {
+        EXPECT_TRUE(logKeys[i].getTxnId() < logKeys[i+1].getTxnId()
+            ||(logKeys[i].getTxnId() == logKeys[i+1].getTxnId() &&
+            logKeys[i].getLocalId() <= logKeys[i+1].getLocalId()));
     }
 }
 

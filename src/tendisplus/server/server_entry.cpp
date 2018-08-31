@@ -7,7 +7,9 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
 
@@ -17,10 +19,13 @@ ServerEntry::ServerEntry()
          _network(nullptr),
          _executor(nullptr),
          _segmentMgr(nullptr),
+         _replMgr(nullptr),
+         _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _ftmcThd(nullptr),
-         _requirepass("") {
+         _requirepass(nullptr),
+         _masterauth(nullptr) {
 }
 
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
@@ -33,13 +38,25 @@ void ServerEntry::installSegMgrInLock(std::unique_ptr<SegmentMgr> o) {
     _segmentMgr = std::move(o);
 }
 
+void ServerEntry::installCatalog(std::unique_ptr<Catalog> o) {
+    _catalog = std::move(o);
+}
+
+Catalog* ServerEntry::getCatalog() {
+    return _catalog.get();
+}
+
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    _isRunning.store(true, std::memory_order_relaxed);
-    _isStopped.store(false, std::memory_order_relaxed);
+    _requirepass = std::make_shared<std::string>(cfg->requirepass);
+    _masterauth = std::make_shared<std::string>(cfg->masterauth);
 
-    _requirepass = cfg->requirepass;
+    // catalog init
+    auto catalog = std::make_unique<Catalog>(
+        std::move(std::unique_ptr<KVStore>(
+            new RocksKVStore("catalog", cfg, nullptr))));
+    installCatalog(std::move(catalog));
 
     // kvstore init
     auto blockCache =
@@ -61,7 +78,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // network listener
     _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
-    auto s = _network->prepare(cfg->bindIp, cfg->port);
+    Status s = _network->prepare(cfg->bindIp, cfg->port);
     if (!s.ok()) {
         return s;
     }
@@ -81,6 +98,16 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    // replication
+    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    s = _replMgr->startup();
+    if (!s.ok()) {
+        return s;
+    }
+
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
+
     // server stats monitor
     _ftmcThd = std::make_unique<std::thread>([this] {
         ftmc();
@@ -88,12 +115,26 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+NetworkAsio* ServerEntry::getNetwork() {
+    return _network.get();
+}
+
+ReplManager* ServerEntry::getReplManager() {
+    return _replMgr.get();
+}
+
 const SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
 }
 
-const std::string& ServerEntry::requirepass() const {
+const std::shared_ptr<std::string> ServerEntry::requirepass() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
+}
+
+const std::shared_ptr<std::string> ServerEntry::masterauth() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _masterauth;
 }
 
 void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
@@ -106,7 +147,7 @@ void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
     // TODO(deyukong): max conns
 
 
-    // NOTE(deyukong): god's first driving force
+    // NOTE(deyukong): first driving force
     sess->start();
     uint64_t id = sess->getConnId();
     if (_sessions.find(id) != _sessions.end()) {
@@ -127,12 +168,12 @@ void ServerEntry::endSession(uint64_t connId) {
     _sessions.erase(it);
 }
 
-void ServerEntry::processRequest(uint64_t connId) {
+bool ServerEntry::processRequest(uint64_t connId) {
     NetSession *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
-            return;
+            return false;
         }
         auto it = _sessions.find(connId);
         if (it == _sessions.end()) {
@@ -143,17 +184,28 @@ void ServerEntry::processRequest(uint64_t connId) {
             LOG(FATAL) << "conn:" << connId << ",null in servermap";
         }
     }
-    auto status = Command::precheck(sess);
-    if (!status.ok()) {
-        sess->setResponse(redis_port::errorReply(status.toString()));
-        return;
+    auto expCmdName = Command::precheck(sess);
+    if (!expCmdName.ok()) {
+        sess->setResponse(redis_port::errorReply(expCmdName.status().toString()));
+        return true;
+    }
+    if (expCmdName.value() == "fullsync") {
+        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        // NOTE(deyukong): this connect will be closed after supplyFullSync
+        std::vector<std::string> args = sess->getArgs();
+        // we have called precheck, it should have 2 args
+        INVARIANT(args.size() == 2);
+        uint32_t storeId = std::stoi(args[1]);
+        _replMgr->supplyFullSync(sess->borrowConn(), storeId);
+        return false;
     }
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
         sess->setResponse(Command::fmtErr(expect.status().toString()));
-        return;
+        return true;
     }
     sess->setResponse(expect.value());
+    return true;
 }
 
 // full-time matrix collect
@@ -199,6 +251,7 @@ void ServerEntry::stop() {
     _eventCV.notify_all();
     _network->stop();
     _executor->stop();
+    _replMgr->stop();
     _sessions.clear();
     _ftmcThd->join();
     LOG(INFO) << "server stops complete...";

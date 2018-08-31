@@ -1,6 +1,7 @@
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/transaction.h"
-
+#include "tendisplus/utils/invariant.h"
+#include "glog/logging.h"
 #include <unistd.h>
 #include <thread>
 #include <vector>
@@ -91,7 +92,7 @@ int main(int argc, char *argv[]) {
     options.create_if_missing = true;
     const std::string dbname = "./test";
     rocksdb::Status s = rocksdb::OptimisticTransactionDB::Open(options, dbname, &txn_db);
-    assert(s.ok());
+    INVARIANT(s.ok());
     PDB pdb(txn_db);
     std::vector<std::thread> threads;
     auto succ_updates = std::make_shared<std::atomic<uint64_t>>(0);

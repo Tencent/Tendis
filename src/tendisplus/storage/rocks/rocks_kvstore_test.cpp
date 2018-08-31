@@ -1,5 +1,6 @@
 #include <fstream>
 #include <utility>
+#include "glog/logging.h"
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -29,6 +30,278 @@ static std::shared_ptr<ServerParams> genParams() {
     return cfg;
 }
 
+TEST(RocksKVStore, BinlogCursor) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache);
+
+    auto eTxn1 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+    Status s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "a", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "ab", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "abc", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    Expected<uint64_t> exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+ 
+    auto eTxn2 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn2.ok(), true);
+    std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+    auto bcursor = txn2->createBinlogCursor(0);
+
+    auto eTxn3 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn3.ok(), true);
+    std::unique_ptr<Transaction> txn3 = std::move(eTxn3.value());
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "b", ""),
+            RecordValue("txn1")),
+        txn3.get());
+    EXPECT_EQ(s.ok(), true);
+
+    exptCommitId = txn3->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+
+    int32_t cnt = 0;
+    while (true) {
+        auto v = bcursor->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    EXPECT_EQ(cnt, 3);
+    txn2->commit();
+
+    cnt = 0;
+    auto eTxn4 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn4.ok(), true);
+    std::unique_ptr<Transaction> txn4 = std::move(eTxn4.value());
+    auto bcursor1 = txn4->createBinlogCursor(1);
+    std::vector<ReplLog> binlogs;
+    while (true) {
+        auto v = bcursor1->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+        binlogs.emplace_back(std::move(v.value()));
+    }
+    EXPECT_EQ(cnt, 1);
+    if (cnt == 1) {
+        // 3 == REPL_GROUP_START | REPL_GROUP_END
+        EXPECT_EQ(binlogs[0].getReplLogKey().getTxnId(), uint64_t(2));
+        EXPECT_EQ(binlogs[0].getReplLogKey().getLocalId(), uint16_t(0));
+        EXPECT_EQ(static_cast<uint16_t>(binlogs[0].getReplLogKey().getFlag()), uint16_t(3));
+    }
+}
+
+TEST(RocksKVStore, Cursor) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache);
+
+    auto eTxn1 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+    Status s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "a", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "ab", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "abc", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "b", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "bac", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+
+    std::unique_ptr<Cursor> cursor = txn1->createCursor();
+    int32_t cnt = 0;
+    while (true) {
+        auto v = cursor->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    EXPECT_EQ(cnt, 5);
+
+    cnt = 0;
+    std::string prefix;
+    prefix.push_back(0);
+    prefix.push_back(rt2Char(RecordType::RT_KV));
+    prefix.push_back('b');
+    cursor->seek(prefix);
+    while (true) {
+        auto v = cursor->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    EXPECT_EQ(cnt, 2);
+}
+
+TEST(RocksKVStore, Backup) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache);
+
+    auto eTxn1 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    Status s = kvstore->setKV(
+        Record(
+            RecordKey(RecordType::RT_KV, "a", ""),
+            RecordValue("txn1")),
+        txn1.get());
+    EXPECT_EQ(s.ok(), true);
+    Expected<uint64_t> exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+
+    Expected<BackupInfo> expBk = kvstore->backup();
+    EXPECT_TRUE(expBk.ok()) << expBk.status().toString();
+    for (auto& bk : expBk.value().getFileList()) {
+        LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
+    }
+    Expected<BackupInfo> expBk1 = kvstore->backup();
+    EXPECT_FALSE(expBk1.ok());
+
+    s = kvstore->stop();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->clear();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->restart(true);
+    EXPECT_TRUE(s.ok());
+
+    eTxn1 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn1.ok(), true);
+    txn1 = std::move(eTxn1.value());
+    Expected<RecordValue> e = kvstore->getKV(
+        RecordKey(RecordType::RT_KV, "a", ""),
+        txn1.get());
+    EXPECT_EQ(e.ok(), true);
+}
+
+TEST(RocksKVStore, Stop) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache);
+    auto eTxn1 = kvstore->createTransaction();
+    EXPECT_EQ(eTxn1.ok(), true);
+
+    auto s = kvstore->stop();
+    EXPECT_FALSE(s.ok());
+
+    s = kvstore->clear();
+    EXPECT_FALSE(s.ok());
+
+    s = kvstore->restart(false);
+    EXPECT_FALSE(s.ok());
+
+    eTxn1.value().reset();
+
+    s = kvstore->stop();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->clear();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->restart(false);
+    EXPECT_TRUE(s.ok());
+}
+
 TEST(RocksKVStore, Common) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -48,21 +321,30 @@ TEST(RocksKVStore, Common) {
     auto eTxn2 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
     EXPECT_EQ(eTxn2.ok(), true);
-    auto txn1 = std::move(eTxn1.value());
-    auto txn2 = std::move(eTxn2.value());
-    auto s = kvstore->setKV(
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+
+    std::set<uint64_t> uncommitted = kvstore->getUncommittedTxns();
+    EXPECT_NE(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn1.get())->getTxnId()),
+        uncommitted.end());
+    EXPECT_NE(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn2.get())->getTxnId()),
+        uncommitted.end());
+
+    Status s = kvstore->setKV(
         Record(
             RecordKey(RecordType::RT_KV, "a", ""),
             RecordValue("txn1")),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
-    auto e = kvstore->getKV(
+    Expected<RecordValue> e = kvstore->getKV(
         RecordKey(RecordType::RT_KV, "a", ""),
         txn1.get());
     EXPECT_EQ(e.ok(), true);
     EXPECT_EQ(e.value(), RecordValue("txn1"));
 
-    auto e1 = kvstore->getKV(
+    Expected<RecordValue> e1 = kvstore->getKV(
         RecordKey(RecordType::RT_KV, "a", ""),
         txn2.get());
     EXPECT_EQ(e1.status().code(), ErrorCodes::ERR_NOTFOUND);
@@ -71,10 +353,18 @@ TEST(RocksKVStore, Common) {
             RecordKey(RecordType::RT_KV, "a", ""),
             RecordValue("txn2")),
         txn2.get());
-    s = txn2->commit();
-    EXPECT_EQ(s.ok(), true);
-    s = txn1->commit();
-    EXPECT_EQ(s.code(), ErrorCodes::ERR_COMMIT_RETRY);
+
+    Expected<uint64_t> exptCommitId = txn2->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+    exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.status().code(), ErrorCodes::ERR_COMMIT_RETRY);
+    uncommitted = kvstore->getUncommittedTxns();
+    EXPECT_EQ(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn1.get())->getTxnId()),
+        uncommitted.end());
+    EXPECT_EQ(uncommitted.find(
+        dynamic_cast<RocksOptTxn*>(txn2.get())->getTxnId()),
+        uncommitted.end());
 }
 
 }  // namespace tendisplus

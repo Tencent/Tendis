@@ -15,4 +15,8 @@ uint32_t SessionCtx::getDbId() const {
     return _dbId;
 }
 
+void SessionCtx::setAuthed() {
+    _authed = true;
+}
+
 }  // namespace tendisplus

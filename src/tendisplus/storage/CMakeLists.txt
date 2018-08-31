@@ -1,5 +1,5 @@
 add_library(kvstore STATIC kvstore.cpp)
-target_link_libraries(kvstore status)
+target_link_libraries(kvstore status stdc++fs glog)
 
 add_library(varint STATIC varint.cpp)
 
@@ -13,3 +13,6 @@ add_executable(record_test record_test.cpp)
 target_link_libraries(record_test record status gtest_main)
 
 add_subdirectory(rocks)
+
+add_library(catalog STATIC catalog.cpp)
+target_link_libraries(catalog glog record kvstore)

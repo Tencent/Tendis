@@ -12,6 +12,7 @@ namespace tendisplus {
 enum class ErrorCodes {
     ERR_OK,
     ERR_NETWORK,
+    ERR_TIMEOUT,
     ERR_INTERNAL,
     ERR_PARSEOPT,
     ERR_PARSEPKT,
@@ -19,6 +20,8 @@ enum class ErrorCodes {
     ERR_NOTFOUND,
     ERR_DECODE,
     ERR_AUTH,
+    ERR_BUSY,
+    ERR_EXHAUST,  // for cursor
 };
 
 class Status {
@@ -43,27 +46,34 @@ template<typename T>
 class Expected {
  public:
     static_assert(!std::is_same<T, Status>::value,
-        "Expected<Status> is not allowd");
+        "invalid use of recursive Expected<Status>");
+
     Expected(ErrorCodes code, const std::string& reason)
         :_status(Status(code, reason)) {
     }
+
     // here we ignore "explicit" to make return two types
     // Status/T possible. It's more convinent to use
     Expected(const Status& other)  // NOLINT(runtime/explicit)
         :_status(other) {
     }
+
     Expected(T t)  // NOLINT(runtime/explicit)
         :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }
+
     const T& value() const {
         return *_data;
     }
+
     T& value() {
         return *_data;
     }
+
     const Status& status() const {
         return _status;
     }
+
     bool ok() const {
         return _status.ok();
     }

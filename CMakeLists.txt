@@ -27,6 +27,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
 add_subdirectory(src/thirdparty/googletest-release-1.8.0)
 add_subdirectory(src/thirdparty/glog-0.3.5)
 add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
+add_subdirectory(src/thirdparty/rapidjson-1.1.0)
 
 set(WARN_C_CXX
 "-Wall \
@@ -80,11 +81,17 @@ set(WARN_C_ONLY
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 
+add_definitions(-DASIO_STANDALONE)
+add_definitions(-DRAPIDJSON_HAS_STDSTRING)
+
+message("${CMAKE_BUILD_TYPE}")
+message("${CMAKE_CXX_FLAGS_RELEASE}")
 include_directories("${PROJECT_SOURCE_DIR}/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson-1.1.0/include") 
 
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
@@ -92,3 +99,4 @@ add_subdirectory(src/tendisplus/server)
 add_subdirectory(src/tendisplus/benchmark)
 add_subdirectory(src/tendisplus/commands)
 add_subdirectory(src/tendisplus/storage)
+add_subdirectory(src/tendisplus/replication)

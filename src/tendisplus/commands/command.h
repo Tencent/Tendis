@@ -19,7 +19,8 @@ class Command {
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
     const std::string& getName() const;
-    static Status precheck(NetSession *sess);
+    // precheck returns command name
+    static Expected<std::string> precheck(NetSession *sess);
     static Expected<std::string> runSessionCmd(NetSession *sess);
     // where should I put this function ?
     static PStore getStore(NetSession *sess, const std::string&);
@@ -28,6 +29,9 @@ class Command {
     static std::string fmtNull();
     static std::string fmtOK();
     static std::string fmtBulk(const std::string& s);
+
+    std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
+    std::stringstream& fmtBulk(std::stringstream&, const std::string&);
 
     static constexpr int32_t RETRY_CNT = 3;
 

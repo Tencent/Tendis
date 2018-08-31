@@ -31,11 +31,12 @@ class WorkerPool {
     WorkerPool(const WorkerPool&) = delete;
     WorkerPool(WorkerPool&&) = delete;
     Status startup(size_t poolSize);
+    bool isFull() const;
     template <typename fn>
     void schedule(fn&& task) {
         int64_t enQueueTs = nsSinceEpoch();
         ++_matrix->inQueue;
-        auto taskWrap = [this, mytask = std::move(task), enQueueTs] {
+        auto taskWrap = [this, mytask = std::move(task), enQueueTs] () mutable {
             int64_t outQueueTs = nsSinceEpoch();
             _matrix->queueTime += outQueueTs - enQueueTs;
             --_matrix->inQueue;
@@ -44,13 +45,18 @@ class WorkerPool {
             _matrix->executeTime += endExeTs - outQueueTs;
             ++_matrix->executed;
         };
-        _ioCtx->post(std::move(taskWrap));
+        asio::post(*_ioCtx, std::move(taskWrap));
+        // NOTE(deyukong): use asio::post rather than ctx.post, the latter one
+        // only support copyable callbacks. which means you cannot use a lambda
+        // which captures unique_Ptr as params
+        // refer to here: https://github.com/boostorg/asio/issues/61
+        // _ioCtx->post(std::move(taskWrap));
     }
     void stop();
 
  private:
     void consumeTasks(size_t idx);
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::atomic<bool> _isRuning;
     // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;
