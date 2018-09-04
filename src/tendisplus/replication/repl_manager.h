@@ -5,6 +5,9 @@
 #include <vector>
 #include <utility>
 #include <list>
+#include <map>
+#include <string>
+
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/network/blocking_tcp_client.h"
@@ -12,6 +15,23 @@
 namespace tendisplus {
 
 using SCLOCK = std::chrono::steady_clock;
+
+// slave's pov, sync status
+struct SPovStatus {
+    bool isRunning;
+    uint64_t sessionId;
+    SCLOCK::time_point nextSchedTime;
+    SCLOCK::time_point lastSyncTime;
+};
+
+struct MPovStatus {
+    bool isRunning;
+    uint32_t dstStoreId;
+    uint64_t binlogPos;
+    SCLOCK::time_point nextSchedTime;
+    std::unique_ptr<BlockingTcpClient> client;
+    uint64_t clientId;
+};
 
 // 1) a new slave store's state is default to REPL_NONE
 // when it receives a slaveof command, its state steps to
@@ -43,30 +63,35 @@ enum class ReplState: std::uint8_t {
 class ServerEntry;
 class StoreMeta;
 
-struct FetchStatus {
-    bool isRunning;
-    SCLOCK::time_point nextSchedTime;
-};
-
 class ReplManager {
  public:
     explicit ReplManager(std::shared_ptr<ServerEntry> svr);
     Status startup();
     void stop();
-    void supplyFullSync(asio::ip::tcp::socket, uint32_t storeId);
     Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
             uint32_t sourceStoreId);
+    std::unique_ptr<BlockingTcpClient> createClient(const StoreMeta&);
+    void slaveStartFullsync(const StoreMeta&);
+    void slaveChkSyncStatus(const StoreMeta&);
+    Expected<uint64_t> masterSendBinlog(BlockingTcpClient*, uint64_t binlogPos);
+    void masterPushRoutine(uint32_t storeId, uint64_t clientId);
+    void slaveSyncRoutine(uint32_t  storeId);
+    void supplyFullSync(asio::ip::tcp::socket sock,
+            const std::string& storeIdArg);
+    void registerIncrSync(asio::ip::tcp::socket sock,
+            const std::string& storeIdArg,
+            const std::string& dstStoreIdArg,
+            const std::string& binlogPosArg);
+    void changeReplState(const StoreMeta& storeMeta, bool persist);
+    Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
+            const std::map<uint64_t, std::list<ReplLog>>& binlogs);
+
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
+    void controlRoutine();
     void supplyFullSyncRoutine(std::unique_ptr<BlockingTcpClient> client,
             uint32_t storeId);
-    void controlRoutine();
-    void fetchRoutine(uint32_t idx);
-    BlockingTcpClient *ensureClient(uint32_t idx);
-    void startFullSync(const StoreMeta& metaSnapshot);
-    void changeReplState(const StoreMeta&, bool persist);
-    Expected<uint64_t> fetchBinlog(const StoreMeta&);
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
     bool isFullSupplierFull() const;
@@ -79,25 +104,38 @@ class ReplManager {
     std::atomic<bool> _isRunning;
     std::shared_ptr<ServerEntry> _svr;
 
-    // protected by _mutex
-    std::vector<std::unique_ptr<FetchStatus>> _fetchStatus;
-    std::vector<std::unique_ptr<StoreMeta>> _fetchMeta;
-    std::vector<std::unique_ptr<BlockingTcpClient>> _fetchClients;
+    // slave's pov, meta data.
+    std::vector<std::unique_ptr<StoreMeta>> _syncMeta;
 
-    // slave side incr-sync threadpool
-    std::unique_ptr<WorkerPool> _fetcher;
-    // slave side full-sync threadpool
-    std::unique_ptr<WorkerPool> _fullFetcher;
-    // master side full-sync threadpool
-    std::unique_ptr<WorkerPool> _fullSupplier;
+    // slave's pov, sync status
+    std::vector<std::unique_ptr<SPovStatus>> _syncStatus;
+
+    // master's pov, living slave clients
+    std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
+
+    std::unique_ptr<WorkerPool> _fullPusher;
+
+    std::unique_ptr<WorkerPool> _incrPusher;
+
+    std::unique_ptr<WorkerPool> _fullReceiver;
+
+    // slave's pov, periodly check incr-sync status
+    std::unique_ptr<WorkerPool> _incrChecker;
+
+    // master's pov, smallest binlogId, moves on when truncated
+    std::vector<uint64_t> _firstBinlogId;
+
+    std::atomic<uint64_t> _clientIdGen;
 
     std::thread _controller;
 
-    std::shared_ptr<PoolMatrix> _fetcherMatrix;
-    std::shared_ptr<PoolMatrix> _fullFetcherMatrix;
-    std::shared_ptr<PoolMatrix> _fullSupplierMatrix;
+    std::shared_ptr<PoolMatrix> _fullPushMatrix;
+    std::shared_ptr<PoolMatrix> _incrPushMatrix;
+    std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
+    std::shared_ptr<PoolMatrix> _incrCheckMatrix;
 };
 
 }  // namespace tendisplus
+
 
 #endif  // SRC_TENDISPLUS_REPLICATION_REPL_MANAGER_H_

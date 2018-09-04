@@ -156,6 +156,18 @@ void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
     _sessions[id] = std::move(sess);
 }
 
+Status ServerEntry::cancelSession(uint64_t connId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+        return {ErrorCodes::ERR_BUSY, "server is shutting down"};
+    }
+    auto it = _sessions.find(connId);
+    if (it == _sessions.end()) {
+        return {ErrorCodes::ERR_NOTFOUND, "session not found"};
+    }
+    return it->second->cancel();
+}
+
 void ServerEntry::endSession(uint64_t connId) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -191,14 +203,20 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
-        // NOTE(deyukong): this connect will be closed after supplyFullSync
         std::vector<std::string> args = sess->getArgs();
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 2);
-        uint32_t storeId = std::stoi(args[1]);
-        _replMgr->supplyFullSync(sess->borrowConn(), storeId);
+        _replMgr->supplyFullSync(sess->borrowConn(), args[1]);
+        return false;
+    } else if (expCmdName.value() == "incrsync") {
+        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        std::vector<std::string> args = sess->getArgs();
+        // we have called precheck, it should have 2 args
+        INVARIANT(args.size() == 4);
+        _replMgr->registerIncrSync(sess->borrowConn(), args[1], args[2], args[3]);
         return false;
     }
+
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
         sess->setResponse(Command::fmtErr(expect.status().toString()));

@@ -35,29 +35,119 @@ class FullSyncCommand: public Command {
         return 0;
     }
 
-    Expected<uint32_t> parse(NetSession *sess) const {
-        const auto& args = sess->getArgs();
-        if (args.size() != 2) {
-            return {ErrorCodes::ERR_PARSEPKT, "invalid  fullsync params"};
-        }
-        uint64_t storeId = 0;
-        try {
-            storeId = std::stoul(args[1]);
-        } catch (std::exception& ex) {
-            return {ErrorCodes::ERR_PARSEPKT, ex.what()};
-        }
-        if (storeId >= KVStore::INSTANCE_NUM) {
-            return {ErrorCodes::ERR_PARSEPKT, "store it outof boundary"};
-        }
-        return storeId;
-    }
-
     Expected<std::string> run(NetSession *sess) final {
         LOG(FATAL) << "fullsync should not be called";
         // void compiler complain
         return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
     }
 } fullSyncCommand;
+
+class IncrSyncCommand: public Command {
+ public:
+    IncrSyncCommand()
+        :Command("incrsync") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // incrSync storeId dstStoreId binlogId
+    // binlogId: the last binlog that has been applied
+    Expected<std::string> run(NetSession *sess) final {
+        LOG(FATAL) << "incrsync should not be called";
+
+        // void compiler complain
+        return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
+    }
+} incrSyncCommand;
+
+class ApplyBinlogsCommand: public Command {
+ public:
+    ApplyBinlogsCommand()
+        :Command("applybinlogs") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // applybinlogs storeId [k0 v0] [k1 v1] ...
+    // why is there no storeId ? storeId is contained in this
+    // session in fact.
+    // please refer to comments of ReplManager::registerIncrSync
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        std::map<uint64_t, std::list<ReplLog>> binlogGroup;
+
+        uint64_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        if (exptStoreId.value() >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
+        }
+        storeId = exptStoreId.value();
+
+        for (size_t i = 2; i < args.size(); i+=2) {
+            Expected<ReplLog> logkv = ReplLog::decode(args[i], args[i+1]);
+            if (!logkv.ok()) {
+                return logkv.status();
+            }
+            const ReplLogKey& logKey = logkv.value().getReplLogKey();
+            if (binlogGroup.find(logKey.getTxnId()) == binlogGroup.end()) {
+                binlogGroup[logKey.getTxnId()] = std::list<ReplLog>();
+            }
+            binlogGroup[logKey.getTxnId()].emplace_back(std::move(logkv.value()));
+        }
+        for (const auto& logList : binlogGroup) {
+            INVARIANT(logList.second.size() >= 1);
+            const ReplLogKey& firstLogKey = logList.second.begin()->getReplLogKey();
+            const ReplLogKey& lastLogKey = logList.second.rbegin()->getReplLogKey();
+            if (!(static_cast<uint16_t>(firstLogKey.getFlag()) &
+                    static_cast<uint16_t>(ReplFlag::REPL_GROUP_START))) {
+                LOG(FATAL) << "txnId:" << firstLogKey.getTxnId()
+                    << " first record not marked begin";
+            }
+            if (!(static_cast<uint16_t>(lastLogKey.getFlag()) &
+                    static_cast<uint16_t>(ReplFlag::REPL_GROUP_END))) {
+                LOG(FATAL) << "txnId:" << lastLogKey.getTxnId()
+                    << " last record not marked begin";
+            }
+        }
+
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+        return replMgr->applyBinlogs(storeId, sess->getConnId(), binlogGroup);
+    }
+} applyBinlogsCommand;
 
 class FetchBinlogCommand: public Command {
  public:

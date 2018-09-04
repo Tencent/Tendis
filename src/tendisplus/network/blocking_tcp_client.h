@@ -19,7 +19,18 @@ class BlockingTcpClient {
     Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
     Status writeLine(const std::string& line, std::chrono::seconds timeout);
     Status writeData(const std::string& data, std::chrono::seconds timeout);
+
+    std::string getRemoteRepr() const {
+        return _socket.remote_endpoint().address().to_string();
+    }
+
+    std::string getLocalRepr() const {
+        return _socket.local_endpoint().address().to_string();
+    }
+
     size_t getReadBufSize() const { return _inputBuf.size(); }
+
+    asio::ip::tcp::socket borrowConn();
 
  private:
     void closeSocket();

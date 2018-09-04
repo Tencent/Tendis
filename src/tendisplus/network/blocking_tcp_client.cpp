@@ -21,6 +21,11 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
     if (&(_socket.get_io_context()) != &(*ctx)) {
         LOG(FATAL) << " cannot transfer socket between ioctx";
     }
+    std::error_code ec;
+    _socket.non_blocking(true, ec);
+    INVARIANT(ec.value() == 0);
+    _socket.set_option(asio::ip::tcp::no_delay(true));
+    _socket.set_option(asio::socket_base::keep_alive(true));
 }
 
 BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
@@ -29,6 +34,11 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
          _ctx(ctx),
          _socket(*_ctx),
          _inputBuf(maxBufSize) {
+    std::error_code ec;
+    _socket.non_blocking(true, ec);
+    INVARIANT(ec.value() == 0);
+    _socket.set_option(asio::ip::tcp::no_delay(true));
+    _socket.set_option(asio::socket_base::keep_alive(true));
 }
 
 void BlockingTcpClient::closeSocket() {
@@ -188,6 +198,10 @@ Status BlockingTcpClient::writeLine(const std::string& line,
     std::string line1 = line;
     line1.append("\r\n");
     return writeData(line1, timeout);
+}
+
+asio::ip::tcp::socket BlockingTcpClient::borrowConn() {
+    return std::move(_socket);
 }
 
 }  // namespace tendisplus

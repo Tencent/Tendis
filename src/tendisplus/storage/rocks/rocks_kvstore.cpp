@@ -357,6 +357,7 @@ Status RocksKVStore::restart(bool restore) {
 
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
+    // TODO(deyukong): use BinlogCursor to rewrite 
     rocksdb::ReadOptions readOpts;
     auto iter = std::unique_ptr<rocksdb::Iterator>(
         tmpDb->GetBaseDB()->NewIterator(readOpts));

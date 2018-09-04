@@ -35,9 +35,22 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         _executor->schedule(std::forward<fn>(task));
     }
     void addSession(std::unique_ptr<NetSession> sess);
+
+    // NOTE(deyukong): be careful, currently, the callpath of
+    // serverEntry::endSession is
+    // NetSession.endSession -> ServerEntry.endSession
+    // -> ServerEntry.eraseSession -> NetSession.~NetSession
+    // this function is initially triggered by NetSession.
+    // If you want to close a NetSession from serverside, do not 
+    // call ServerEntry.endSession, or asio's calllback may
+    // meet a nil pointer.
+    // Instead, you should call NetSession.cancel to close NetSession's
+    // underlying socket and let itself trigger the whole path.
     void endSession(uint64_t connId);
 
-    // continue schedule if returns true
+    Status cancelSession(uint64_t connId);
+
+    // returns true if NetSession should continue schedule
     bool processRequest(uint64_t connId);
 
     void installStoresInLock(const std::vector<PStore>&);

@@ -5,6 +5,7 @@
 #include <string>
 #include <set>
 #include <map>
+#include <limits>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -20,55 +21,24 @@
 namespace tendisplus {
 
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
-        :_isRunning(false),
-         _svr(svr),
-         _fetcherMatrix(std::make_shared<PoolMatrix>()),
-         _fullFetcherMatrix(std::make_shared<PoolMatrix>()),
-         _fullSupplierMatrix(std::make_shared<PoolMatrix>()) {
-}
-
-Status ReplManager::changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
-            uint32_t sourceStoreId) {
-    std::unique_lock<std::mutex> lk(_mutex);
-    LOG(INFO) << "wait for store:" << storeId << " to yield work";
-    // NOTE(deyukong): we must wait for the target to stop before change meta,
-    // or the meta may be rewrited
-    if (!_cv.wait_for(lk, std::chrono::seconds(1),
-            [this, storeId] { return !_fetchStatus[storeId]->isRunning; })) {
-        return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
-    }
-    LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
-    INVARIANT(!_fetchStatus[storeId]->isRunning);
-
-    if (storeId >= _fetchMeta.size()) {
-        return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
-    }
-    if (ip != "") {
-        if (_fetchMeta[storeId]->syncFromHost != "") {
-            return {ErrorCodes::ERR_BUSY, "explicit set sync source empty before change it"};
-        }
-    }
-    auto newMeta = _fetchMeta[storeId]->copy();
-    newMeta->syncFromHost = ip;
-    newMeta->syncFromPort = port;
-    newMeta->syncFromId = sourceStoreId;
-    newMeta->replState = ip == "" ? ReplState::REPL_NONE : ReplState::REPL_CONNECT;
-    newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
-    changeReplStateInLock(*newMeta, true);
-    return {ErrorCodes::ERR_OK, ""};
+    :_isRunning(false),
+     _svr(svr),
+     _firstBinlogId(0),
+     _fullPushMatrix(std::make_shared<PoolMatrix>()),
+     _incrPushMatrix(std::make_shared<PoolMatrix>()),
+     _fullReceiveMatrix(std::make_shared<PoolMatrix>()),
+     _incrCheckMatrix(std::make_shared<PoolMatrix>()) {
 }
 
 Status ReplManager::startup() {
     std::lock_guard<std::mutex> lk(_mutex);
     Catalog *catalog = _svr->getCatalog();
-    if (!catalog) {
-        LOG(FATAL) << "ReplManager::startup catalog not inited!";
-    }
+    INVARIANT(catalog != nullptr);
 
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
         Expected<std::unique_ptr<StoreMeta>> meta = catalog->getStoreMeta(i);
         if (meta.ok()) {
-            _fetchMeta.emplace_back(std::move(meta.value()));
+            _syncMeta.emplace_back(std::move(meta.value()));
         } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
             auto pMeta = std::unique_ptr<StoreMeta>(
                 new StoreMeta(i, "", 0, -1,
@@ -77,33 +47,31 @@ Status ReplManager::startup() {
             if (!s.ok()) {
                 return s;
             }
-            _fetchMeta.emplace_back(std::move(pMeta));
+            _syncMeta.emplace_back(std::move(pMeta));
         } else {
             return meta.status();
         }
     }
 
-    INVARIANT(_fetchMeta.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_syncMeta.size() == KVStore::INSTANCE_NUM);
 
-    for (size_t i = 0; i < _fetchMeta.size(); ++i) {
-        if (i != _fetchMeta[i]->id) {
+    for (size_t i = 0; i < _syncMeta.size(); ++i) {
+        if (i != _syncMeta[i]->id) {
             std::stringstream ss;
-            ss << "meta:" << i << " has id:" << _fetchMeta[i]->id;
+            ss << "meta:" << i << " has id:" << _syncMeta[i]->id;
             return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
     }
 
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        _fetchStatus.emplace_back(std::move(
-            std::unique_ptr<FetchStatus>(
-                new FetchStatus {
+        _syncStatus.emplace_back(
+            std::unique_ptr<SPovStatus>(
+                new SPovStatus {
                     isRunning: false,
+                    sessionId: std::numeric_limits<uint64_t>::max(),
                     nextSchedTime: SCLOCK::now(),
-                })));
-    }
-
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        _fetchClients.emplace_back(nullptr);
+                    lastSyncTime: SCLOCK::now(),
+                }));
     }
 
     // TODO(deyukong): configure
@@ -112,20 +80,78 @@ Status ReplManager::startup() {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
 
-    _fetcher = std::make_unique<WorkerPool>(_fetcherMatrix);
-    Status s = _fetcher->startup(std::max(POOL_SIZE, cpuNum/2));
+    _incrPusher = std::make_unique<WorkerPool>(_incrPushMatrix);
+    Status s = _incrPusher->startup(std::max(POOL_SIZE, cpuNum/2));
     if (!s.ok()) {
         return s;
     }
 
-    _fullFetcher = std::make_unique<WorkerPool>(_fullFetcherMatrix);
-    s = _fullFetcher->startup(std::max(POOL_SIZE, cpuNum/2));
+    _fullPusher = std::make_unique<WorkerPool>(_fullPushMatrix);
+    s = _fullPusher->startup(std::max(POOL_SIZE/2, cpuNum/4));
     if (!s.ok()) {
         return s;
     }
 
-    _fullSupplier = std::make_unique<WorkerPool>(_fullSupplierMatrix);
-    s = _fullSupplier->startup(std::max(POOL_SIZE, cpuNum/2));
+    _fullReceiver = std::make_unique<WorkerPool>(_fullReceiveMatrix);
+    s = _fullReceiver->startup(std::max(POOL_SIZE/2, cpuNum/4));
+    if (!s.ok()) {
+        return s;
+    }
+
+    _incrChecker = std::make_unique<WorkerPool>(_incrCheckMatrix);
+    s = _incrChecker->startup(2);
+    if (!s.ok()) {
+        return s;
+    }
+
+    // init master's pov, incrpush status
+    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+        _pushStatus.emplace_back(
+            std::map<uint64_t, std::unique_ptr<MPovStatus>>());
+    }
+
+    // init first binlogpos, empty binlogs makes cornercase complicated.
+    // so we put an no-op to binlogs everytime startup.
+    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+        PStore store = _svr->getSegmentMgr()->getInstanceById(i);
+        INVARIANT(store != nullptr);
+
+        auto ptxn = store->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        RecordKey rk(0, RecordType::RT_META, "NOOP", "");
+        RecordValue rv("");
+        Status putStatus = store->setKV(rk, rv, txn.get());
+        if (!putStatus.ok()) {
+            return putStatus;
+        }
+        Expected<uint64_t> commitStatus = txn->commit();
+        if (!commitStatus.ok()) {
+            return commitStatus.status();
+        }
+
+        ptxn = store->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+
+        txn = std::move(ptxn.value());
+        std::unique_ptr<BinlogCursor> cursor =
+            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
+        Expected<ReplLog> explog = cursor->next();
+        if (explog.ok()) {
+            const auto& rlk = explog.value().getReplLogKey();
+            _firstBinlogId.emplace_back(rlk.getTxnId());
+        } else {
+            INVARIANT(explog.status().code() != ErrorCodes::ERR_EXHAUST);
+            return explog.status();
+        }
+    }
+
+    INVARIANT(_firstBinlogId.size() == KVStore::INSTANCE_NUM);
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::thread([this]() {
@@ -135,29 +161,35 @@ Status ReplManager::startup() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-BlockingTcpClient *ReplManager::ensureClient(uint32_t idx) {
-    {
-        std::lock_guard<std::mutex> lk(_mutex);
-        if (_fetchClients[idx] != nullptr) {
-            return _fetchClients[idx].get();
+void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
+                                        bool persist) {
+    // TODO(deyukong): mechanism to INVARIANT mutex held
+    if (persist) {
+        Catalog *catalog = _svr->getCatalog();
+        Status s = catalog->setStoreMeta(storeMeta);
+        if (!s.ok()) {
+            LOG(FATAL) << "setStoreMeta failed:" << s.toString();
         }
     }
+    _syncMeta[storeMeta.id] = std::move(storeMeta.copy());
+}
 
-    auto source = [this, idx]() {
-        std::lock_guard<std::mutex> lk(_mutex);
-        return std::make_pair(
-            _fetchMeta[idx]->syncFromHost,
-            _fetchMeta[idx]->syncFromPort);
-    }();
+void ReplManager::changeReplState(const StoreMeta& storeMeta,
+                                        bool persist) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    changeReplStateInLock(storeMeta, persist);
+}
 
+std::unique_ptr<BlockingTcpClient> ReplManager::createClient(
+                    const StoreMeta& metaSnapshot) {
     auto client = _svr->getNetwork()->createBlockingClient(64*1024*1024);
     Status s = client->connect(
-        source.first,
-        source.second,
+        metaSnapshot.syncFromHost,
+        metaSnapshot.syncFromPort,
         std::chrono::seconds(3));
     if (!s.ok()) {
-        LOG(WARNING) << "connect " << source.first
-            << ":" << source.second << " failed:"
+        LOG(WARNING) << "connect " << metaSnapshot.syncFromHost
+            << ":" << metaSnapshot.syncFromPort << " failed:"
             << s.toString();
         return nullptr;
     }
@@ -177,34 +209,634 @@ BlockingTcpClient *ReplManager::ensureClient(uint32_t idx) {
             return nullptr;
         }
     }
+    return std::move(client);
+}
+
+void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
+    LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
+
+    // 1) stop store and clean it's directory
+    PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
+    INVARIANT(store != nullptr);
+
+    Status stopStatus = store->stop();
+    if (!stopStatus.ok()) {
+        // there may be uncanceled transactions binding with the store
+        LOG(WARNING) << "stop store:" << metaSnapshot.id
+                    << " failed:" << stopStatus.toString();
+        return;
+    }
+    INVARIANT(!store->isRunning());
+    Status clearStatus =  store->clear();
+    if (!clearStatus.ok()) {
+        LOG(FATAL) << "Unexpected store:" << metaSnapshot.id << " clear"
+            << " failed:" << clearStatus.toString();
+    }
+
+    // 2) require a sync-client
+    auto client = createClient(metaSnapshot);
+    if (client == nullptr) {
+        LOG(WARNING) << "startFullSync with: "
+                    << metaSnapshot.syncFromHost << ":"
+                    << metaSnapshot.syncFromPort
+                    << " failed, no valid client";
+        return;
+    }
+
+    // 3) necessary pre-conditions all ok, startup a guard to rollback
+    // state if failed
+    bool rollback = true;
+    auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (rollback) {
+            auto newMeta = metaSnapshot.copy();
+            newMeta->replState = ReplState::REPL_CONNECT;
+            newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+            changeReplStateInLock(*newMeta, false);
+        }
+    });
+
+    // 4) read backupinfo from master
+    std::stringstream ss;
+    ss << "FULLSYNC " << metaSnapshot.syncFromId;
+    client->writeLine(ss.str(), std::chrono::seconds(1));
+    Expected<std::string> s = client->readLine(std::chrono::seconds(3));
+    if (!s.ok()) {
+        LOG(WARNING) << "fullSync req master error:" << s.status().toString();
+        return;
+    }
+
+    if (s.value().size() == 0 || s.value()[0] == '-') {
+        LOG(INFO) << "fullSync req master failed:" << s.value();
+        return;
+    }
+
+    auto newMeta = metaSnapshot.copy();
+    newMeta->replState = ReplState::REPL_TRANSFER;
+    newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+    changeReplState(*newMeta, false);
+
+    auto expFlist = [&s]() -> Expected<std::map<std::string, size_t>> {
+        rapidjson::Document doc;
+        doc.Parse(s.value());
+        if (doc.HasParseError()) {
+            return {ErrorCodes::ERR_NETWORK,
+                        rapidjson::GetParseError_En(doc.GetParseError())};
+        }
+        if (!doc.IsObject()) {
+            return {ErrorCodes::ERR_NOTFOUND, "flist not json obj"};
+        }
+        std::map<std::string, size_t> result;
+        for (auto& o : doc.GetObject()) {
+            if (!o.value.IsUint64()) {
+                return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};
+            }
+            result[o.name.GetString()] = o.value.GetUint64();
+        }
+        return result;
+    }();
+
+    // TODO(deyukong): split the transfering-physical-task into many
+    // small schedule-unit, each processes one file, or a fixed-size block.
+    if (!expFlist.ok()) {
+        return;
+    }
+
+    auto backupExists = [store]() -> Expected<bool> {
+        std::error_code ec;
+        bool exists = filesystem::exists(
+                        filesystem::path(store->backupDir()), ec);
+        if (ec) {
+            return {ErrorCodes::ERR_INTERNAL, ec.message()};
+        }
+        return exists;
+    }();
+    if (!backupExists.ok() || backupExists.value()) {
+        LOG(FATAL) << "store:" << metaSnapshot.id << " backupDir exists";
+    }
+
+    const std::map<std::string, size_t>& flist = expFlist.value();
+
+    std::set<std::string> finishedFiles;
+    while (true) {
+        if (finishedFiles.size() == flist.size()) {
+            break;
+        }
+        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
+        if (!s.ok()) {
+            return;
+        }
+        if (finishedFiles.find(s.value()) != finishedFiles.end()) {
+            LOG(FATAL) << "BUG: fullsync " << s.value() << " retransfer";
+        }
+        if (flist.find(s.value()) == flist.end()) {
+            LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
+        }
+        std::string fullFileName = store->backupDir() + "/" + s.value();
+        filesystem::path fileDir =
+                filesystem::path(fullFileName).remove_filename();
+        if (!filesystem::exists(fileDir)) {
+            filesystem::create_directories(fileDir);
+        }
+        auto myfile = std::fstream(fullFileName,
+                    std::ios::out|std::ios::binary);
+        if (!myfile.is_open()) {
+            LOG(ERROR) << "open file:" << fullFileName << " for write failed";
+            return;
+        }
+        size_t remain = flist.at(s.value());
+        while (remain) {
+            size_t batchSize = std::min(remain, size_t(20ULL*1024*1024));
+            remain -= batchSize;
+            Expected<std::string> exptData =
+                client->read(batchSize, std::chrono::seconds(1));
+            if (!exptData.ok()) {
+                LOG(ERROR) << "fullsync read bulk data failed:"
+                            << exptData.status().toString();
+                return;
+            }
+            myfile.write(exptData.value().c_str(), exptData.value().size());
+            if (myfile.bad()) {
+                LOG(ERROR) << "write file:" << fullFileName
+                            << " failed:" << strerror(errno);
+                return;
+            }
+        }
+        LOG(INFO) << "fullsync file:" << fullFileName << " transfer done";
+        finishedFiles.insert(s.value());
+    }
+
+    // 5) read backupinfo done, reply master ok
+    Expected<std::string> expDone = client->readLine(std::chrono::seconds(1));
+    if (!expDone.ok() || expDone.value().size() == 0) {
+        LOG(ERROR) << "read FULLSYNCDONE from master failed:"
+                    << expDone.status().toString();
+        return;
+    }
+    std::string fullsyncDone;
+    uint64_t binlogId = Transaction::MAX_VALID_TXNID+1;
+    std::stringstream fullSyncDoneSs(expDone.value());
+    fullSyncDoneSs >> fullsyncDone >> binlogId;
+    if (fullsyncDone != "FULLSYNCDONE" ||
+            binlogId == Transaction::MAX_VALID_TXNID+1) {
+        LOG(ERROR) << "invalid FULLSYNCDONE command:" << expDone.value();
+        return;
+    }
+    Status expDoneReplyStatus =
+        client->writeLine("+OK", std::chrono::seconds(1));
+    if (!expDoneReplyStatus.ok()) {
+        LOG(ERROR) << "reply fullsync done failed:"
+            << expDoneReplyStatus.toString();
+        return;
+    }
+
+    // 6) restart store, change to stready-syncing mode
+    Status restartStatus = store->restart(true);
+    if (!restartStatus.ok()) {
+        LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
+            << " failed:" << restartStatus.toString();
+    }
+
+    newMeta = metaSnapshot.copy();
+    newMeta->replState = ReplState::REPL_CONNECTED;
+    newMeta->binlogId = binlogId;
+    changeReplState(*newMeta, true);
+
+    rollback = false;
+
+    LOG(INFO) << "store:" << metaSnapshot.id
+                << " fullsync Done, files:" << finishedFiles.size()
+                << ", binlogId:" << binlogId;
+}
+
+void ReplManager::slaveChkSyncStatus(uint32_t storeId) {
+    bool reconn = [this, &metaSnapshot] {
+        std::lock_guard<std::mutex> lk(_mutex);
+        const auto& meta = _syncStatus[storeId];
+        if (meta->sessionId == std::numeric_limits<uint64_t>::max()) {
+            return true;
+        }
+        if (meta->lastSyncTime + std::chrono::seconds(10) <=
+                SCLOCK::now()) {
+            return true;
+        }
+        return false;
+    }();
+
+    if (!reconn) {
+        return;
+    }
+    LOG(INFO) << "store:" << metaSnapshot.id
+                << " reconn with:" << metaSnapshot.syncFromHost
+                << "," << metaSnapshot.syncFromPort
+                << "," << metaSnapshot.syncFromId;
+
+    auto client = createClient(metaSnapshot);
+    if (client == nullptr) {
+        LOG(WARNING) << "store:" << metaSnapshot.id << " reconn master failed";
+        return;
+    }
+
+    std::stringstream ss;
+    ss << "INCRSYNC " << metaSnapshot.syncFromId
+        << ' ' << metaSnapshot.id
+        << ' ' << metaSnapshot.binlogId;
+    client->writeLine(ss.str(), std::chrono::seconds(1));
+    Expected<std::string> s = client->readLine(std::chrono::seconds(3));
+    if (!s.ok()) {
+        LOG(WARNING) << "store:" << metaSnapshot.id
+                << " psync master failed with error:" << s.status().toString();
+        return;
+    }
+    if (s.value().size() == 0 || s.value()[0] != '+') {
+        LOG(WARNING) << "store:" << metaSnapshot.id
+                << " incrsync master bad return:" << s.value();
+        return;
+    }
+
+    NetworkAsio *network = _svr->getNetwork();
+    INVARIANT(network != nullptr);
+    Expected<uint64_t> expSessionId =
+            network->client2Session(std::move(client));
+    if (!expSessionId.ok()) {
+        LOG(WARNING) << "client2Session failed:"
+                    << expSessionId.status().toString();
+        return;
+    }
+    uint64_t sessionId = expSessionId.value();
 
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        _fetchClients[idx] = std::move(client);
-        return _fetchClients[idx].get();
+        _syncStatus[metaSnapshot.id]->sessionId = sessionId;
+        _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
+    }
+    LOG(INFO) << "store:" << metaSnapshot.id << " psync master succ";
+}
+
+Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
+                uint64_t binlogPos) {
+    return 0;
+}
+
+void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
+    SCLOCK::time_point nextSched = SCLOCK::now();
+    auto guard = MakeGuard([this, &nextSched, storeId, clientId] {
+        std::lock_guard<std::mutex> lk(_mutex);
+        auto& mpov = _pushStatus[storeId];
+        if (mpov.find(clientId) == mpov.end()) {
+            return;
+        }
+        INVARIANT(mpov[clientId]->isRunning);
+        mpov[clientId]->isRunning = false;
+        mpov[clientId]->nextSchedTime = nextSched;
+        // currently nothing waits for master's push process
+        // _cv.notify_all();
+    });
+
+    uint64_t binlogPos = 0;
+    BlockingTcpClient *client = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+            nextSched = nextSched + std::chrono::seconds(1);
+            return;
+        }
+        binlogPos = _pushStatus[storeId][clientId]->binlogPos;
+        client = _pushStatus[storeId][clientId]->client.get();
+    }
+
+    Expected<uint64_t> newPos = masterSendBinlog(client, binlogPos);
+    if (!newPos.ok()) {
+        LOG(WARNING) << "masterSendBinlog to client:"
+                << client->getRemoteRepr() << " failed:"
+                << newPos.status().toString();
+        std::lock_guard<std::mutex> lk(_mutex);
+        // it is safe to remove a non-exist key
+        _pushStatus[storeId].erase(clientId);
+        return;
+    } else {
+        std::lock_guard<std::mutex> lk(_mutex);
+        _pushStatus[storeId][clientId]->binlogPos = newPos.value();
     }
 }
 
-void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta, bool persist) {
-    // TODO(deyukong): mechanism to INVARIANT mutex held
-    if (persist) {
-        Catalog *catalog = _svr->getCatalog();
-        Status s = catalog->setStoreMeta(storeMeta);
-        if (!s.ok()) {
-            LOG(FATAL) << "setStoreMeta failed:" << s.toString();
+void ReplManager::slaveSyncRoutine(uint32_t storeId) {
+    SCLOCK::time_point nextSched = SCLOCK::now();
+    auto guard = MakeGuard([this, &nextSched, storeId] {
+        std::lock_guard<std::mutex> lk(_mutex);
+        INVARIANT(_syncStatus[storeId]->isRunning);
+        _syncStatus[storeId]->isRunning = false;
+        _syncStatus[storeId]->nextSchedTime = nextSched;
+        _cv.notify_all();
+    });
+
+    std::unique_ptr<StoreMeta> metaSnapshot = [this, storeId]() {
+        std::lock_guard<std::mutex> lk(_mutex);
+        return std::move(_syncMeta[storeId]->copy());
+    }();
+
+    if (metaSnapshot->syncFromHost == "") {
+        // if master is nil, try sched after 1 second
+        nextSched = nextSched + std::chrono::seconds(1);
+        return;
+    }
+
+    INVARIANT(metaSnapshot->replState == ReplState::REPL_CONNECT ||
+        metaSnapshot->replState == ReplState::REPL_CONNECTED);
+
+    if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
+        slaveStartFullsync(*metaSnapshot);
+        nextSched = nextSched + std::chrono::seconds(3);
+        return;
+    } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED) {
+        slaveChkSyncStatus(storeId);
+        nextSched = nextSched + std::chrono::seconds(10);
+    } else {
+        INVARIANT(false);
+    }
+}
+
+void ReplManager::controlRoutine() {
+    using namespace std::chrono_literals;  // (NOLINT)
+    auto now = SCLOCK::now();
+    auto schedSlaveInLock = [this, now]() {
+        // slave's POV
+        bool doSth = false;
+        for (size_t i = 0; i < _syncStatus.size(); i++) {
+            if (_syncStatus[i]->isRunning
+                    || now < _syncStatus[i]->nextSchedTime) {
+                continue;
+            }
+            doSth = true;
+            // NOTE(deyukong): we dispatch fullsync/incrsync jobs into
+            // different pools.
+            if (_syncMeta[i]->replState == ReplState::REPL_CONNECT) {
+                _syncStatus[i]->isRunning = true;
+                _fullReceiver->schedule([this, i]() {
+                    slaveSyncRoutine(i);
+                });
+            } else if (_syncMeta[i]->replState == ReplState::REPL_CONNECTED) {
+                _syncStatus[i]->isRunning = true;
+                _incrChecker->schedule([this, i]() {
+                    slaveSyncRoutine(i);
+                });
+            } else if (_syncMeta[i]->replState == ReplState::REPL_TRANSFER) {
+                LOG(FATAL) << "sync store:" << i
+                    << " REPL_TRANSFER should not be visitable";
+            } else {  // REPL_NONE
+                // nothing to do with REPL_NONE
+            }
+        }
+        return doSth;
+    };
+    auto schedMasterInLock = [this, now]() {
+        // master's POV
+        bool doSth = false;
+        for (size_t i = 0; i < _pushStatus.size(); i++) {
+            for (auto& mpov : _pushStatus[i]) {
+                if (mpov.second->isRunning
+                        || now < mpov.second->nextSchedTime) {
+                    continue;
+                }
+
+                doSth = true;
+                mpov.second->isRunning = true;
+                uint64_t clientId = mpov.first;
+                _incrPusher->schedule([this, i, clientId]() {
+                    masterPushRoutine(i, clientId);
+                });
+            }
+        }
+        return doSth;
+    };
+    while (_isRunning.load(std::memory_order_relaxed)) {
+        bool doSth = false;
+        {
+            std::lock_guard<std::mutex> lk(_mutex);
+            doSth = schedSlaveInLock();
+            doSth = schedMasterInLock() || doSth;
+        }
+        if (doSth) {
+            // schedyield
+            std::this_thread::yield();
+        } else {
+            std::this_thread::sleep_for(10ms);
         }
     }
-    _fetchMeta[storeMeta.id] = std::move(storeMeta.copy());
+    LOG(INFO) << "repl controller exits";
 }
 
-void ReplManager::changeReplState(const StoreMeta& storeMeta, bool persist) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    changeReplStateInLock(storeMeta, persist);
+bool ReplManager::isFullSupplierFull() const {
+    return _fullPusher->isFull();
+}
+
+void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
+                        const std::string& storeIdArg) {
+    auto client = _svr->getNetwork()->createBlockingClient(
+            std::move(sock), 64*1024*1024);
+
+    // NOTE(deyukong): this judge is not precise
+    // even it's not full at this time, it can be full during schedule.
+    if (isFullSupplierFull()) {
+        client->writeLine("-ERR workerpool full", std::chrono::seconds(1));
+        return;
+    }
+
+    Expected<int64_t> expStoreId = stoul(storeIdArg);
+    if (!expStoreId.ok() || expStoreId.value() < 0) {
+        client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
+        return;
+    }
+    uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
+    _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
+        supplyFullSyncRoutine(std::move(client), storeId);
+    });
+}
+
+//  1) s->m INCRSYNC (m side: session2Client)
+//  2) m->s +OK
+//  3) s->m +PONG (s side: client2Session)
+//  4) m->s periodly send binlogs
+//  the 3) step is necessary, if ignored, the +OK in step 2) and binlogs
+//  in step 4) may sticky together. and redis-resp protocal is not fixed-size
+//  That makes client2Session complicated.
+void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
+            const std::string& storeIdArg,
+            const std::string& dstStoreIdArg,
+            const std::string& binlogPosArg) {
+    auto client = _svr->getNetwork()->createBlockingClient(
+            std::move(sock), 64*1024*1024);
+
+    uint64_t storeId;
+    uint64_t  dstStoreId;
+    uint64_t binlogPos;
+    try {
+        storeId = stoul(storeIdArg);
+        dstStoreId = stoul(dstStoreIdArg);
+        binlogPos = stoul(binlogPosArg);
+    } catch (const std::exception& ex) {
+        std::stringstream ss;
+        ss << "-ERR parse opts failed:" << ex.what();
+        client->writeLine(ss.str(), std::chrono::seconds(1));
+        return;
+    }
+
+    if (storeId >= KVStore::INSTANCE_NUM ||
+            dstStoreId >= KVStore::INSTANCE_NUM) {
+        client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
+        return;
+    }
+
+    uint64_t firstPos = [this, storeId]() {
+        std::lock_guard<std::mutex> lk(_mutex);
+        return _firstBinlogId[storeId];
+    }();
+
+    // NOTE(deyukong): this check is not precise
+    // (not in the same critical area with the modification to _pushStatus),
+    // but it does not harm correctness.
+    // A strict check may be too complicated to read.
+    if (firstPos > binlogPos) {
+        client->writeLine("-ERR invalid binlogPos", std::chrono::seconds(1));
+        return;
+    }
+    client->writeLine("+OK", std::chrono::seconds(1));
+    Expected<std::string> exptPong = client->readLine(std::chrono::seconds(1));
+    if (!exptPong.ok()) {
+        LOG(WARNING) << "slave incrsync handshake failed:"
+                << exptPong.status().toString();
+        return;
+    } else if (exptPong.value() != "+PONG") {
+        LOG(WARNING) << "slave incrsync handshake not +PONG:"
+                << exptPong.value();
+        return;
+    }
+
+    bool registPosOk =
+            [this,
+             storeId,
+             dstStoreId,
+             binlogPos,
+             client = std::move(client)]() mutable {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_firstBinlogId[storeId] > binlogPos) {
+            return false;
+        }
+        uint64_t clientId = _clientIdGen.fetch_add(1);
+        _pushStatus[storeId][clientId] =
+            std::move(std::unique_ptr<MPovStatus>(
+                new MPovStatus {
+                    isRunning: false,
+                    dstStoreId: static_cast<uint32_t>(dstStoreId),
+                    binlogPos: binlogPos,
+                    nextSchedTime: SCLOCK::now(),
+                    client: std::move(client),
+                    clientId: clientId}));
+        return true;
+    }();
+    LOG(INFO) << "slave:" << client->getRemoteRepr()
+            << " registerIncrSync " << (registPosOk ? "ok" : "failed");
+}
+
+Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
+        const std::list<ReplLog>& ops) {
+    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    INVARIANT(store != nullptr);
+
+    auto ptxn = store->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    // TODO(deyukong): insert oplogs
+    for (const auto& log : ops) {
+        const ReplLogValue& logVal = log.getReplLogValue();
+
+        Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
+        if (!expRk.ok()) {
+            return expRk.status();
+        }
+
+        switch (logVal.getOp()) {
+            case (ReplOp::REPL_OP_SET): {
+                Expected<RecordValue> expRv =
+                    RecordValue::decode(logVal.getOpValue());
+                if (!expRv.ok()) {
+                    return expRv.status();
+                }
+                auto s = store->setKV(expRk.value(), expRv.value(), txn.get());
+                if (!s.ok()) {
+                    return s;
+                } else {
+                    break;
+                }
+            }
+            case (ReplOp::REPL_OP_DEL): {
+                auto s = store->delKV(expRk.value(), txn.get());
+                if (!s.ok()) {
+                    return s;
+                } else {
+                    break;
+                }
+            }
+            default: {
+                LOG(FATAL) << "invalid binlogOp:"
+                            << static_cast<uint8_t>(logVal.getOp());
+            }
+        }
+    }
+    Expected<uint64_t> expCmit = txn->commit();
+    if (!expCmit.ok()) {
+        return expCmit.status();
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
+            const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
+    [this, storeId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        _cv.wait(lk,
+                [this, storeId]
+                { return !_syncStatus[storeId]->isRunning;});
+        _syncStatus[storeId]->isRunning = true;
+    }();
+
+    auto guard = MakeGuard([this, storeId] {
+        std::unique_lock<std::mutex> lk(_mutex);
+        INVARIANT(_syncStatus[storeId]->isRunning);
+        _syncStatus[storeId]->isRunning = true;
+    });
+
+    bool idMatch = [this, storeId, sessionId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        return (sessionId == _syncStatus[storeId]->sessionId);
+    }();
+    if (!idMatch) {
+        return {ErrorCodes::ERR_NOTFOUND, "sessionId not match"};
+    }
+
+    for (const auto& logList : binlogs) {
+        Status s = applySingleTxn(storeId, logList.first, logList.second);
+        if (!s.ok()) {
+            return s;
+        }
+    }
+
+    // TODO(deyukong): periodly save binlogpos
+    if (binlogs.size() > 0) {
+        std::lock_guard<std::mutex> lk(_mutex);
+        auto newMeta = _syncMeta[storeId]->copy();
+        newMeta->binlogId = binlogs.rbegin()->first;
+        INVARIANT(newMeta->replState == ReplState::REPL_CONNECTED);
+        changeReplStateInLock(*newMeta, true);
+    }
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 void ReplManager::supplyFullSyncRoutine(
             std::unique_ptr<BlockingTcpClient> client, uint32_t storeId) {
-
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
     if (!store->isRunning()) {
@@ -285,482 +917,67 @@ void ReplManager::supplyFullSyncRoutine(
     }
     Expected<std::string> reply = client->readLine(std::chrono::seconds(1));
     if (!reply.ok()) {
-        LOG(ERROR) << "read FULLSYNCDONE reply failed:" << reply.status().toString();
+        LOG(ERROR) << "read FULLSYNCDONE reply failed:"
+                    << reply.status().toString();
     } else {
         LOG(INFO) << "read FULLSYNCDONE reply:" << reply.value();
     }
 }
 
-void ReplManager::supplyFullSync(asio::ip::tcp::socket sock, uint32_t storeId) {
-    auto client = _svr->getNetwork()->createBlockingClient(
-            std::move(sock), 64*1024*1024);
+Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
+            uint32_t port, uint32_t sourceStoreId) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    LOG(INFO) << "wait for store:" << storeId << " to yield work";
+    // NOTE(deyukong): we must wait for the target to stop before change meta,
+    // or the meta may be rewrited
+    if (!_cv.wait_for(lk, std::chrono::seconds(1),
+            [this, storeId] { return !_syncStatus[storeId]->isRunning; })) {
+        return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
+    INVARIANT(!_syncStatus[storeId]->isRunning);
 
-    // NOTE(deyukong): this judge is not precise
-    // even it's not full at this time, it can be full during schedule.
-    if (isFullSupplierFull()) {
-        client->writeLine("-ERR workerpool full", std::chrono::seconds(1));
-        return;
+    if (storeId >= _syncMeta.size()) {
+        return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
     }
 
-    _fullSupplier->schedule([this, storeId, client(std::move(client))]() mutable {
-        supplyFullSyncRoutine(std::move(client), storeId);
-    });
-}
-
-void ReplManager::startFullSync(const StoreMeta& metaSnapshot) {
-    LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
-
-    // 1) stop store and clean it's directory
-    PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
-    INVARIANT(store != nullptr);
-
-    Status stopStatus = store->stop();
-    if (!stopStatus.ok()) {
-        // there may be uncanceled transactions binding with the store
-        LOG(WARNING) << "stop store:" << metaSnapshot.id
-                    << " failed:" << stopStatus.toString();
-        return;
-    }
-    INVARIANT(!store->isRunning());
-    Status clearStatus =  store->clear();
-    if (!clearStatus.ok()) {
-        LOG(FATAL) << "Unexpected store:" << metaSnapshot.id << " clear"
-            << " failed:" << clearStatus.toString();
-    }
-
-    // 2) require a sync-client
-    auto client = ensureClient(metaSnapshot.id);
-    if (client == nullptr) {
-        LOG(WARNING) << "startFullSync with: "
-                    << metaSnapshot.syncFromHost << ":"
-                    << metaSnapshot.syncFromPort
-                    << " failed, no valid client";
-        return;
-    }
-
-    // 3) necessary pre-conditions all ok, startup a guard to rollback
-    // state if failed
-    bool rollback = true;
-    auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
-        std::lock_guard<std::mutex> lk(_mutex);
-        if (rollback) {
-            auto newMeta = metaSnapshot.copy();
-            newMeta->replState = ReplState::REPL_CONNECT;
-            newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
-            changeReplStateInLock(*newMeta, false);
-        }
-        _fetchClients[metaSnapshot.id].reset();
-    });
-
-    // 4) read backupinfo from master
-    std::stringstream ss;
-    ss << "FULLSYNC " << metaSnapshot.syncFromId;
-    client->writeLine(ss.str(), std::chrono::seconds(1));
-    Expected<std::string> s = client->readLine(std::chrono::seconds(3));
-    if (!s.ok()) {
-        LOG(WARNING) << "fullSync req master error:" << s.status().toString();
-        return;
-    }
-
-    if (s.value().size() == 0 || s.value()[0] == '-') {
-        LOG(INFO) << "fullSync req master failed:" << s.value();
-        return;
-    }
-
-    auto newMeta = metaSnapshot.copy();
-    newMeta->replState = ReplState::REPL_TRANSFER;
-    newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
-    changeReplState(*newMeta, false);
-
-    auto expFlist = [&s]() -> Expected<std::map<std::string, size_t>> {
-        rapidjson::Document doc;
-        doc.Parse(s.value());
-        if (doc.HasParseError()) {
-            return {ErrorCodes::ERR_NETWORK,
-                        rapidjson::GetParseError_En(doc.GetParseError())};
-        }
-        if (!doc.IsObject()) {
-            return {ErrorCodes::ERR_NOTFOUND, "flist not json obj"};
-        }
-        std::map<std::string, size_t> result;
-        for (auto& o : doc.GetObject()) {
-            if (!o.value.IsUint64()) {
-                return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};
-            }
-            result[o.name.GetString()] = o.value.GetUint64();
-        }
-        return result;
-    }();
-
-    // TODO(deyukong): split the transfering-physical-task into many
-    // small schedule-unit, each processes one file, or a fixed-size block.
-    if (!expFlist.ok()) {
-        return;
-    }
-
-    auto backupExists = [store]() -> Expected<bool> {
-        std::error_code ec;
-        bool exists = filesystem::exists(filesystem::path(store->backupDir()), ec);
-        if (ec) {
-            return {ErrorCodes::ERR_INTERNAL, ec.message()};
-        }
-        return exists;
-    }();
-    if (!backupExists.ok() || backupExists.value()) {
-        LOG(FATAL) << "store:" << metaSnapshot.id << " backupDir exists";
-    }
-
-    const std::map<std::string, size_t>& flist = expFlist.value();
-
-    std::set<std::string> finishedFiles;
-    while (true) {
-        if (finishedFiles.size() == flist.size()) {
-            break;
-        }
-        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
-        if (!s.ok()) {
-            return;
-        }
-        if (finishedFiles.find(s.value()) != finishedFiles.end()) {
-            LOG(FATAL) << "BUG: fullsync " << s.value() << " retransfer";
-        }
-        if (flist.find(s.value()) == flist.end()) {
-            LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
-        }
-        std::string fullFileName = store->backupDir() + "/" + s.value();
-        filesystem::path fileDir = filesystem::path(fullFileName).remove_filename();
-        if (!filesystem::exists(fileDir)) {
-            filesystem::create_directories(fileDir);
-        }
-        auto myfile = std::fstream(fullFileName,
-                    std::ios::out|std::ios::binary);
-        if (!myfile.is_open()) {
-            LOG(ERROR) << "open file:" << fullFileName << " for write failed";
-            return;
-        }
-        size_t remain = flist.at(s.value());
-        while (remain) {
-            size_t batchSize = std::min(remain, size_t(20ULL*1024*1024));
-            remain -= batchSize;
-            Expected<std::string> exptData =
-                client->read(batchSize, std::chrono::seconds(1));
-            if (!exptData.ok()) {
-                LOG(ERROR) << "fullsync read bulk data failed:"
-                            << exptData.status().toString();
-                return;
-            }
-            myfile.write(exptData.value().c_str(), exptData.value().size());
-            if (myfile.bad()) {
-                LOG(ERROR) << "write file:" << fullFileName
-                            << " failed:" << strerror(errno);
-                return;
-            }
-        }
-        LOG(INFO) << "fullsync file:" << fullFileName << " transfer done";
-        finishedFiles.insert(s.value());
-    }
-
-    // 5) read backupinfo done, reply master ok
-    Expected<std::string> expDone = client->readLine(std::chrono::seconds(1));
-    if (!expDone.ok() || expDone.value().size() == 0) {
-        LOG(ERROR) << "read FULLSYNCDONE from master failed:"
-                    << expDone.status().toString();
-        return;
-    }
-    std::string fullsyncDone;
-    uint64_t binlogId = Transaction::MAX_VALID_TXNID+1;
-    std::stringstream fullSyncDoneSs(expDone.value());
-    fullSyncDoneSs >> fullsyncDone >> binlogId;
-    if (fullsyncDone != "FULLSYNCDONE" ||
-            binlogId == Transaction::MAX_VALID_TXNID+1) {
-        LOG(ERROR) << "invalid FULLSYNCDONE command:" << expDone.value();
-        return;
-    }
-    Status expDoneReplyStatus =
-        client->writeLine("+OK", std::chrono::seconds(1));
-    if (!expDoneReplyStatus.ok()) {
-        LOG(ERROR) << "reply fullsync done failed:"
-            << expDoneReplyStatus.toString();
-        return;
-    }
-
-    // 6) restart store, change to stready-syncing mode
-    Status restartStatus = store->restart(true);
-    if (!restartStatus.ok()) {
-        LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
-            << " failed:" << restartStatus.toString();
-    }
-
-    newMeta = metaSnapshot.copy();
-    newMeta->replState = ReplState::REPL_CONNECTED;
-    newMeta->binlogId = binlogId;
-    changeReplState(*newMeta, true);
-
-    rollback = false;
-
-    LOG(INFO) << "store:" << metaSnapshot.id
-                << " fullsync Done, files:" << finishedFiles.size()
-                << ", binlogId:" << binlogId;
-}
-
-// TODO(deyukong): fixme, remove the long long int
-Expected<uint64_t> ReplManager::fetchBinlog(const StoreMeta& metaSnapshot) {
-    // if we reach here, we should have something to do. caller should guarantee this
-    INVARIANT(metaSnapshot.syncFromHost != "");
-
-    constexpr size_t suggestBatch = 1024;
-    auto client = ensureClient(metaSnapshot.id);
-    if (client == nullptr) {
-        return {ErrorCodes::ERR_NETWORK, "cant get client"};
-    }
-    bool resetClient = true;
-    auto guard = MakeGuard([this, &resetClient, &metaSnapshot]{
-        if (resetClient) {
-            std::lock_guard<std::mutex> lk(_mutex);
-            _fetchClients[metaSnapshot.id].reset();
-        }
-    });
-
-    std::stringstream ss;
-    ss << "FETCHBINLOG " << metaSnapshot.syncFromId
-        << " " << metaSnapshot.binlogId << " " << suggestBatch;
-    Status s = client->writeLine(ss.str(), std::chrono::seconds(1));
-    if (!s.ok()) {
-        return s;
-    }
-
-    Expected<std::string> exptNum = client->readLine(std::chrono::seconds(1));
-    if (!exptNum.ok()) {
-        return exptNum.status();
-    }
-    if (exptNum.value().size() < 2 || exptNum.value()[0] != '*') {
-        return {ErrorCodes::ERR_NETWORK, "marshaled FETCHBINLOG result"};
-    }
-
-    const std::string& numStr = exptNum.value();
-    long long int arrayNum = -1;  // NOLINT
-    bool ok = redis_port::string2ll(
-        numStr.c_str() + 1,
-        numStr.size() - 1,
-        &arrayNum);
-    if (!ok) {
-        std::stringstream ss;
-        ss << "decode numstr:" << numStr << " failed";
-        return {ErrorCodes::ERR_NETWORK, ss.str()};
-    }
-    if (arrayNum % 2 != 0) {
-        return {ErrorCodes::ERR_NETWORK, "binlog array odd size!"};
-    }
-    std::vector<std::string> rawBinlogs;
-    for (long long int i = 0; i < arrayNum; i++) {  // NOLINT
-        Expected<std::string> exptSize =
-            client->readLine(std::chrono::seconds(1));
-        if (!exptSize.ok()) {
-            return exptSize.status();
-        }
-        if (exptSize.value().size() < 2 || exptSize.value()[0] != '$') {
-            return {ErrorCodes::ERR_NETWORK, "marshaled FETCHBINLOG size"};
-        }
-        const std::string& sizeStr = exptSize.value();
-        long long int rcdSize = -1;  // NOLINT
-        ok = redis_port::string2ll(sizeStr.c_str() + 1,
-            sizeStr.size() - 1, &rcdSize);
-        if (!ok) {
-            std::stringstream ss;
-            ss << "decode binlogSize:" << sizeStr << " failed";
-            return {ErrorCodes::ERR_NETWORK, ss.str()};
-        }
-        if (rcdSize <= 0) {
-            LOG(FATAL) << "binlog record size:" << rcdSize << " invalid";
-        }
-        Expected<std::string> exptRcd =
-            client->read(rcdSize + 2, std::chrono::seconds(1));
-        if (!exptSize.ok()) {
-            return exptSize.status();
-        }
-        rawBinlogs.emplace_back(
-            std::string(exptRcd.value().c_str(), exptRcd.value().size()-2));
-    }
-    INVARIANT(rawBinlogs.size() == static_cast<size_t>(arrayNum));
-
-    // from this point, the resp data from master are parsed succ,
-    // so this client can be reused.
-    resetClient = false;
-
-    std::map<uint64_t, std::list<ReplLog>> binlogGroup;
-    for (size_t i = 0; i < rawBinlogs.size(); i+=2) {
-        Expected<ReplLog> logkv =
-            ReplLog::decode(rawBinlogs[i], rawBinlogs[i+1]);
-        if (!logkv.ok()) {
-            return logkv.status();
-        }
-        const ReplLogKey& logKey = logkv.value().getReplLogKey();
-        if (binlogGroup.find(logKey.getTxnId()) == binlogGroup.end()) {
-            binlogGroup[logKey.getTxnId()] = std::list<ReplLog>();
-        }
-        binlogGroup[logKey.getTxnId()].emplace_back(std::move(logkv.value()));
-    }
-    for (const auto& logList : binlogGroup) {
-        INVARIANT(logList.second.size() >= 1);
-        const ReplLogKey& firstLogKey = logList.second.begin()->getReplLogKey();
-        const ReplLogKey& lastLogKey = logList.second.rbegin()->getReplLogKey();
-        if (!(static_cast<uint16_t>(firstLogKey.getFlag()) &
-                static_cast<uint16_t>(ReplFlag::REPL_GROUP_START))) {
-            LOG(FATAL) << "txnId:" << firstLogKey.getTxnId()
-                << " first record not marked begin";
-        }
-        if (!(static_cast<uint16_t>(lastLogKey.getFlag()) &
-                static_cast<uint16_t>(ReplFlag::REPL_GROUP_END))) {
-            LOG(FATAL) << "txnId:" << lastLogKey.getTxnId()
-                << " last record not marked begin";
-        }
-    }
-
-    for (const auto& logList : binlogGroup) {
-        Status s = applySingleTxn(metaSnapshot.id,
-            logList.first, logList.second);
-        if (!s.ok()) {
-            return s;
-        }
-    }
-
-    if (arrayNum > 0) {
-        auto newMeta = metaSnapshot.copy();
-        newMeta->replState = ReplState::REPL_CONNECTED;
-        newMeta->binlogId = binlogGroup.rbegin()->first+1;
-        changeReplState(*newMeta, true);
-    }
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
-        const std::list<ReplLog>& ops) {
-    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
-    INVARIANT(store != nullptr);
-
-    auto ptxn = store->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    // TODO(deyukong): insert oplogs
-    for (const auto& log : ops) {
-        const ReplLogValue& logVal = log.getReplLogValue();
-
-        Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
-        if (!expRk.ok()) {
-            return expRk.status();
+    auto newMeta = _syncMeta[storeId]->copy();
+    if (ip != "") {
+        if (_syncMeta[storeId]->syncFromHost != "") {
+            return {ErrorCodes::ERR_BUSY,
+                    "explicit set sync source empty before change it"};
         }
 
-        switch (logVal.getOp()) {
-            case (ReplOp::REPL_OP_SET): {
-                Expected<RecordValue> expRv =
-                    RecordValue::decode(logVal.getOpValue());
-                if (!expRv.ok()) {
-                    return expRv.status();
-                }
-                auto s = store->setKV(expRk.value(), expRv.value(), txn.get());
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            case (ReplOp::REPL_OP_DEL): {
-                auto s = store->delKV(expRk.value(), txn.get());
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            default: {
-                LOG(FATAL) << "invalid binlogOp:"
-                            << static_cast<uint8_t>(logVal.getOp());
-            }
+        newMeta->syncFromHost = ip;
+        newMeta->syncFromPort = port;
+        newMeta->syncFromId = sourceStoreId;
+        newMeta->replState = ReplState::REPL_CONNECT;
+        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        changeReplStateInLock(*newMeta, true);
+        return {ErrorCodes::ERR_OK, ""};
+    } else {  // ip == ""
+        if (newMeta->syncFromHost == "") {
+            return {ErrorCodes::ERR_OK, ""};
         }
-    }
-    Expected<uint64_t> expCmit = txn->commit();
-    if (!expCmit.ok()) {
-        return expCmit.status();
-    }
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-bool ReplManager::isFullSupplierFull() const {
-    return _fullSupplier->isFull();
-}
-
-void ReplManager::fetchRoutine(uint32_t i) {
-    SCLOCK::time_point nextSched = SCLOCK::now();
-    auto guard = MakeGuard([this, &nextSched, i] {
-        std::lock_guard<std::mutex> lk(_mutex);
-        INVARIANT(_fetchStatus[i]->isRunning);
-        _fetchStatus[i]->isRunning = false;
-        _fetchStatus[i]->nextSchedTime = nextSched;
-        _cv.notify_all();
-    });
-
-    std::unique_ptr<StoreMeta> metaSnapshot = [this, i]() {
-        std::lock_guard<std::mutex> lk(_mutex);
-        return std::move(_fetchMeta[i]->copy());
-    }();
-
-    if (metaSnapshot->syncFromHost == "") {
-        // if master is nil, try sched after 1 second
-        nextSched = nextSched + std::chrono::seconds(1);
-        return;
-    }
-
-    if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
-        startFullSync(*metaSnapshot);
-        nextSched = nextSched + std::chrono::seconds(1);
-        return;
-    } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED) {
-        Expected<uint64_t> syncId = fetchBinlog(*metaSnapshot);
-        if (!syncId.ok()) {
-            nextSched = nextSched + std::chrono::seconds(10);
-        } else if (syncId.value() == metaSnapshot->binlogId) {
-            // nothing fetched
-            nextSched = nextSched + std::chrono::seconds(1);
-        } else {
-            nextSched = SCLOCK::now();
+        LOG(INFO) << "change store:" << storeId
+                    << " syncSrc:" << newMeta->syncFromHost
+                    << " to no one";
+        Status closeStatus =
+            _svr->cancelSession(_syncStatus[storeId]->sessionId);
+        if (!closeStatus.ok()) {
+            // this error does not affect much, just log and continue
+            LOG(WARNING) << "cancel store:" << storeId << " session failed:"
+                        << closeStatus.toString();
         }
-    }
-}
 
-void ReplManager::controlRoutine() {
-    using namespace std::chrono_literals;  // (NOLINT)
-    while (_isRunning.load(std::memory_order_relaxed)) {
-        {
-        std::lock_guard<std::mutex> lk(_mutex);
-        for (size_t i = 0; i < _fetchStatus.size(); i++) {
-            if (_fetchStatus[i]->isRunning
-                    || SCLOCK::now() < _fetchStatus[i]->nextSchedTime) {
-                continue;
-            }
-            // NOTE(deyukong): we dispatch fullsync/incrsync jobs into
-            // different pools.
-            if (_fetchMeta[i]->replState == ReplState::REPL_CONNECT) {
-                _fetchStatus[i]->isRunning = true;
-                _fullFetcher->schedule([this, i]() {
-                    fetchRoutine(i);
-                });
-            } else if (_fetchMeta[i]->replState == ReplState::REPL_CONNECTED) {
-                _fetchStatus[i]->isRunning = true;
-                _fetcher->schedule([this, i]() {
-                    fetchRoutine(i);
-                });
-            } else if (_fetchMeta[i]->replState == ReplState::REPL_TRANSFER) {
-                LOG(FATAL) << "fetcher:" << i
-                    << " REPL_TRANSFER should not be visitable";
-            } else {  // REPL_NONE
-                // nothing to do with REPL_NONE
-            }
-        }
-        }
-        std::this_thread::sleep_for(1s);
+        newMeta->syncFromHost = ip;
+        INVARIANT(port == 0 && sourceStoreId == 0);
+        newMeta->syncFromPort = port;
+        newMeta->syncFromId = sourceStoreId;
+        newMeta->replState = ReplState::REPL_NONE;
+        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        changeReplStateInLock(*newMeta, true);
+        return {ErrorCodes::ERR_OK, ""};
     }
 }
 
@@ -769,9 +986,10 @@ void ReplManager::stop() {
     LOG(WARNING) << "repl manager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _controller.join();
-    _fetcher->stop();
-    _fullFetcher->stop();
-    _fullSupplier->stop();
+    _fullPusher->stop();
+    _incrPusher->stop();
+    _fullReceiver->stop();
+    _incrChecker->stop();
     LOG(WARNING) << "repl manager stops succ";
 }
 

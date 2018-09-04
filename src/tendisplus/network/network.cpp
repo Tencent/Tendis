@@ -69,6 +69,21 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Expected<uint64_t> NetworkAsio::client2Session(std::unique_ptr<BlockingTcpClient> c) {
+    if (c->getReadBufSize() > 0) {
+        return {ErrorCodes::ERR_NETWORK,
+            "client still have buf unread, cannot transfer to a session"};
+    }
+    uint64_t connId = _connCreated.fetch_add(1, std::memory_order_relaxed);
+    _server->addSession(
+        std::move(
+            std::make_unique<NetSession>(
+                _server, std::move(c->borrowConn()),
+                connId, true, _matrix)));
+    ++_matrix->connCreated;
+    return connId;
+}
+
 void NetworkAsio::doAccept() {
     auto cb = [this](const std::error_code& ec, tcp::socket socket) {
         if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -82,7 +97,8 @@ void NetworkAsio::doAccept() {
         _server->addSession(
             std::move(
                 std::make_unique<NetSession>(
-                    _server, std::move(socket), ++_connCreated,
+                    _server, std::move(socket),
+                    _connCreated.fetch_add(1, std::memory_order_relaxed),
                     true, _matrix)));
         ++_matrix->connCreated;
         doAccept();
@@ -198,6 +214,15 @@ asio::ip::tcp::socket NetSession::borrowConn() {
 
 void NetSession::start() {
     stepState();
+}
+
+Status NetSession::cancel() {
+    std::error_code ec;
+    _sock.cancel(ec);
+    if (!ec) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    return {ErrorCodes::ERR_NETWORK, ec.message()};
 }
 
 void NetSession::setArgs(const std::vector<std::string>& args) {
