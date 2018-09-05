@@ -8,6 +8,9 @@
 #include <map>
 #include <string>
 
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/network/blocking_tcp_client.h"
@@ -79,6 +82,8 @@ class ReplManager {
             const std::string& binlogPosArg);
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
+    void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
+
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
@@ -105,7 +110,7 @@ class ReplManager {
     void changeReplState(const StoreMeta& storeMeta, bool persist);
     void changeReplStateInLock(const StoreMeta&, bool persist);
 
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
     std::shared_ptr<ServerEntry> _svr;

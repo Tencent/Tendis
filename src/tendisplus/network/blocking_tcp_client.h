@@ -13,6 +13,7 @@ class BlockingTcpClient {
     BlockingTcpClient(std::shared_ptr<asio::io_context> ctx, size_t maxBufSize);
     BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
         asio::ip::tcp::socket, size_t maxBufSize);
+    ~BlockingTcpClient();
     Status connect(const std::string& host, uint16_t port,
         std::chrono::seconds timeout);
     Expected<std::string> readLine(std::chrono::seconds timeout);

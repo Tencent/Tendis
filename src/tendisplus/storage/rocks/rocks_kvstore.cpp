@@ -582,4 +582,22 @@ Status RocksKVStore::delKV(const RecordKey& key,
     return txn->delKV(key.encode(), withLog);
 }
 
+void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    w.Key("isRunning");
+    w.Uint64(_isRunning);
+    w.Key("hasBackup");
+    w.Uint64(_hasBackup);
+    w.Key("nextTxnSeq");
+    w.Uint64(_nextTxnSeq);
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        w.Key("ucCnt");
+        w.Uint64(_uncommittedTxns.size());
+        w.Key("minUC");
+        w.Uint64(_uncommittedTxns.size() ? *_uncommittedTxns.begin():0);
+        w.Key("maxUC");
+        w.Uint64(_uncommittedTxns.size() ? *_uncommittedTxns.rbegin():0);
+    }
+}
+
 }  // namespace tendisplus

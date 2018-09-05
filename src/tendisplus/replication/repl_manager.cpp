@@ -438,6 +438,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         return;
     }
 
+    // TODO(deyukong): here lack pong
+
     NetworkAsio *network = _svr->getNetwork();
     INVARIANT(network != nullptr);
     Expected<uint64_t> expSessionId =
@@ -612,6 +614,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
     } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED) {
         slaveChkSyncStatus(*metaSnapshot);
         nextSched = nextSched + std::chrono::seconds(10);
+        return;
     } else {
         INVARIANT(false);
     }
@@ -619,8 +622,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
 void ReplManager::controlRoutine() {
     using namespace std::chrono_literals;  // (NOLINT)
-    auto now = SCLOCK::now();
-    auto schedSlaveInLock = [this, now]() {
+    auto schedSlaveInLock = [this](const SCLOCK::time_point& now) {
         // slave's POV
         bool doSth = false;
         for (size_t i = 0; i < _syncStatus.size(); i++) {
@@ -650,7 +652,7 @@ void ReplManager::controlRoutine() {
         }
         return doSth;
     };
-    auto schedMasterInLock = [this, now]() {
+    auto schedMasterInLock = [this](const SCLOCK::time_point& now) {
         // master's POV
         bool doSth = false;
         for (size_t i = 0; i < _pushStatus.size(); i++) {
@@ -674,8 +676,9 @@ void ReplManager::controlRoutine() {
         bool doSth = false;
         {
             std::lock_guard<std::mutex> lk(_mutex);
-            doSth = schedSlaveInLock();
-            doSth = schedMasterInLock() || doSth;
+            auto now = SCLOCK::now();
+            doSth = schedSlaveInLock(now);
+            doSth = schedMasterInLock(now) || doSth;
         }
         if (doSth) {
             // schedyield
@@ -1019,6 +1022,10 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_CONNECT;
         newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        LOG(INFO) << "change store:" << storeId
+                    << " syncSrc from no one to " << newMeta->syncFromHost
+                    << ":" << newMeta->syncFromPort
+                    << ":" << newMeta->syncFromId;
         changeReplStateInLock(*newMeta, true);
         return {ErrorCodes::ERR_OK, ""};
     } else {  // ip == ""
@@ -1044,6 +1051,36 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
         changeReplStateInLock(*newMeta, true);
         return {ErrorCodes::ERR_OK, ""};
+    }
+}
+
+void ReplManager::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    w.Key("slaves");
+    {
+        w.StartObject();
+        std::lock_guard<std::mutex> lk(_mutex);
+        for (size_t i = 0; i < _pushStatus.size(); i++) {
+            for (auto& mpov : _pushStatus[i]) {
+                std::stringstream ss;
+                ss << "client_" << mpov.second->clientId;
+                w.Key(ss.str().c_str());
+                w.StartObject();
+                w.Key("isRunning");
+                w.Uint64(mpov.second->isRunning);
+                w.Key("dstStoreId");
+                w.Uint64(mpov.second->dstStoreId);
+                w.Key("binlogPos");
+                w.Uint64(mpov.second->binlogPos);
+                w.Key("remoteHost");
+                if (mpov.second->client != nullptr) {
+                    w.String(mpov.second->client->getRemoteRepr());
+                } else {
+                    w.String("???");
+                }
+                w.EndObject();
+            }
+        }
+        w.EndObject();
     }
 }
 

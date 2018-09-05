@@ -7,6 +7,10 @@
 #include <memory>
 #include <iostream>
 #include <map>
+
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
 
@@ -108,8 +112,10 @@ class KVStore {
     virtual Expected<BackupInfo> backup() = 0;
     virtual Status releaseBackup() = 0;
 
+    virtual void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
+
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(100);
+    static constexpr size_t INSTANCE_NUM = size_t(4);
 
  private:
     const std::string _id;

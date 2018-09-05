@@ -76,13 +76,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         new SegmentMgrFnvHash64(_kvstores));
     installSegMgrInLock(std::move(tmpSegMgr));
 
-    // network listener
-    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
-    Status s = _network->prepare(cfg->bindIp, cfg->port);
-    if (!s.ok()) {
-        return s;
-    }
-    s = _network->run();
+    // replication
+    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    Status s = _replMgr->startup();
     if (!s.ok()) {
         return s;
     }
@@ -98,9 +94,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    // replication
-    _replMgr = std::make_unique<ReplManager>(shared_from_this());
-    s = _replMgr->startup();
+    // listener should be the lastone in startup process.
+    // network listener
+    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
+    s = _network->prepare(cfg->bindIp, cfg->port);
+    if (!s.ok()) {
+        return s;
+    }
+    s = _network->run();
     if (!s.ok()) {
         return s;
     }
@@ -237,8 +238,8 @@ void ServerEntry::ftmc() {
         auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
         oldNetMatrix = *_netMatrix;
         oldPoolMatrix = *_poolMatrix;
-        LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
-        LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
+        // LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
+        // LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
 
         std::unique_lock<std::mutex> lk(_mutex);
         bool ok = _eventCV.wait_for(lk, 1000ms, [this] {

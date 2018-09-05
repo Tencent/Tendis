@@ -100,6 +100,8 @@ class RocksKVStore: public KVStore {
     Expected<BackupInfo> backup() final;
     Status releaseBackup() final;
 
+    void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const final;
+
     void removeUncommited(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
 
