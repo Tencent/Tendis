@@ -30,8 +30,8 @@ class Command {
     static std::string fmtOK();
     static std::string fmtBulk(const std::string& s);
 
-    std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
-    std::stringstream& fmtBulk(std::stringstream&, const std::string&);
+    static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
+    static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
 
     static constexpr int32_t RETRY_CNT = 3;
 

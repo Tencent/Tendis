@@ -19,8 +19,10 @@ char rt2Char(RecordType t) {
             return 'L';
         case RecordType::RT_LIST_ELE:
             return 'l';
+        //  it's convinent (for seek) to have BINLOG to pos
+        //  at the rightmost of a lsmtree
         case RecordType::RT_BINLOG:
-            return 'B';
+            return std::numeric_limits<char>::max();
         default:
             LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
@@ -38,7 +40,7 @@ RecordType char2Rt(char t) {
             return RecordType::RT_LIST_META;
         case 'l':
             return RecordType::RT_LIST_ELE;
-        case 'B':
+        case std::numeric_limits<char>::max():
             return RecordType::RT_BINLOG;
         default:
             LOG(FATAL) << "invalid recordchar:" << t;

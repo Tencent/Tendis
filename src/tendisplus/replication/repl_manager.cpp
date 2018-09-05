@@ -14,6 +14,7 @@
 #include "glog/logging.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
@@ -366,58 +367,40 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
-    // 5) read backupinfo done, reply master ok
-    Expected<std::string> expDone = client->readLine(std::chrono::seconds(1));
-    if (!expDone.ok() || expDone.value().size() == 0) {
-        LOG(ERROR) << "read FULLSYNCDONE from master failed:"
-                    << expDone.status().toString();
-        return;
-    }
-    std::string fullsyncDone;
-    uint64_t binlogId = Transaction::MAX_VALID_TXNID+1;
-    std::stringstream fullSyncDoneSs(expDone.value());
-    fullSyncDoneSs >> fullsyncDone >> binlogId;
-    if (fullsyncDone != "FULLSYNCDONE" ||
-            binlogId == Transaction::MAX_VALID_TXNID+1) {
-        LOG(ERROR) << "invalid FULLSYNCDONE command:" << expDone.value();
-        return;
-    }
-    Status expDoneReplyStatus =
-        client->writeLine("+OK", std::chrono::seconds(1));
-    if (!expDoneReplyStatus.ok()) {
-        LOG(ERROR) << "reply fullsync done failed:"
-            << expDoneReplyStatus.toString();
-        return;
-    }
+    client->writeLine("+OK", std::chrono::seconds(1));
 
-    // 6) restart store, change to stready-syncing mode
-    Status restartStatus = store->restart(true);
+    // 5) restart store, change to stready-syncing mode
+    Expected<uint64_t> restartStatus = store->restart(true);
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
-            << " failed:" << restartStatus.toString();
+            << " failed:" << restartStatus.status().toString();
     }
-
+    
     newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_CONNECTED;
-    newMeta->binlogId = binlogId;
+    newMeta->binlogId = restartStatus.value();
+
+    // in ReplManager.startup(), a dummy binlog is written. here we should not
+    // get an empty binlog set.
+    INVARIANT(newMeta->binlogId != Transaction::TXNID_UNINITED);
     changeReplState(*newMeta, true);
 
     rollback = false;
 
     LOG(INFO) << "store:" << metaSnapshot.id
                 << " fullsync Done, files:" << finishedFiles.size()
-                << ", binlogId:" << binlogId;
+                << ", binlogId:" << newMeta->binlogId;
 }
 
-void ReplManager::slaveChkSyncStatus(uint32_t storeId) {
+void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     bool reconn = [this, &metaSnapshot] {
         std::lock_guard<std::mutex> lk(_mutex);
-        const auto& meta = _syncStatus[storeId];
-        if (meta->sessionId == std::numeric_limits<uint64_t>::max()) {
+        auto sessionId = _syncStatus[metaSnapshot.id]->sessionId;
+        auto lastSyncTime = _syncStatus[metaSnapshot.id]->lastSyncTime;
+        if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (meta->lastSyncTime + std::chrono::seconds(10) <=
-                SCLOCK::now()) {
+        if (lastSyncTime + std::chrono::seconds(10) <= SCLOCK::now()) {
             return true;
         }
         return false;
@@ -474,8 +457,78 @@ void ReplManager::slaveChkSyncStatus(uint32_t storeId) {
 }
 
 Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
-                uint64_t binlogPos) {
-    return 0;
+                uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
+    constexpr uint32_t suggestBatch = 64;
+    constexpr size_t suggestBytes = 16*1024*1024;
+    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    INVARIANT(store != nullptr);
+
+    auto ptxn = store->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    std::unique_ptr<BinlogCursor> cursor =
+        txn->createBinlogCursor(binlogPos+1);
+
+    std::vector<ReplLog> binlogs;
+    uint32_t cnt = 0;
+    uint64_t nowId = 0;
+    size_t estimateSize = 0;
+
+    // TODO(deyukong): limit by datasize
+    while (true) {
+        Expected<ReplLog> explog = cursor->next();
+        if (explog.ok()) {
+            cnt += 1;
+            const ReplLogKey& rlk = explog.value().getReplLogKey();
+            const ReplLogValue& rlv = explog.value().getReplLogValue();
+            estimateSize += rlv.getOpValue().size();
+            if (nowId == 0 || nowId != rlk.getTxnId()) {
+                nowId = rlk.getTxnId();
+                if (cnt >= suggestBatch || estimateSize >= suggestBytes) {
+                    break;
+                } else {
+                    binlogs.emplace_back(std::move(explog.value()));
+                }
+            } else {
+                binlogs.emplace_back(std::move(explog.value()));
+            }
+        } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        } else {
+            LOG(ERROR) << "iter binlog failed:"
+                        << explog.status().toString();
+            return explog.status();
+        }
+    }
+
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, binlogs.size()*2 + 2);
+    Command::fmtBulk(ss, "applybinlogs");
+    Command::fmtBulk(ss, std::to_string(dstStoreId));
+    for (auto& v : binlogs) {
+        ReplLog::KV kv = v.encode();
+        Command::fmtBulk(ss, kv.first);
+        Command::fmtBulk(ss, kv.second);
+    }
+    std::string stingtoWrite = ss.str();
+    uint32_t secs = 1;
+    if (stingtoWrite.size() > 1024*1024) {
+        secs = 2;
+    } else if (stingtoWrite.size() > 1024*1024*10) {
+        secs = 4;
+    }
+    Status s = client->writeData(ss.str(), std::chrono::seconds(secs));
+    if (!s.ok()) {
+        return s;
+    }
+    if (binlogs.size() == 0) {
+        return binlogPos;
+    } else {
+        return binlogs[binlogs.size()-1].getReplLogKey().getTxnId();
+    }
 }
 
 void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
@@ -495,6 +548,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
 
     uint64_t binlogPos = 0;
     BlockingTcpClient *client = nullptr;
+    uint32_t dstStoreId = 0;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
@@ -503,9 +557,10 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         }
         binlogPos = _pushStatus[storeId][clientId]->binlogPos;
         client = _pushStatus[storeId][clientId]->client.get();
+        dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
     }
 
-    Expected<uint64_t> newPos = masterSendBinlog(client, binlogPos);
+    Expected<uint64_t> newPos = masterSendBinlog(client, storeId, dstStoreId, binlogPos);
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
                 << client->getRemoteRepr() << " failed:"
@@ -517,6 +572,11 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     } else {
         std::lock_guard<std::mutex> lk(_mutex);
         _pushStatus[storeId][clientId]->binlogPos = newPos.value();
+        if (newPos.value() > binlogPos) {
+            nextSched = SCLOCK::now();
+        } else {
+            nextSched = SCLOCK::now() + std::chrono::seconds(1);
+        }
     }
 }
 
@@ -549,7 +609,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
         nextSched = nextSched + std::chrono::seconds(3);
         return;
     } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED) {
-        slaveChkSyncStatus(storeId);
+        slaveChkSyncStatus(*metaSnapshot);
         nextSched = nextSched + std::chrono::seconds(10);
     } else {
         INVARIANT(false);
@@ -660,6 +720,10 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
 //  the 3) step is necessary, if ignored, the +OK in step 2) and binlogs
 //  in step 4) may sticky together. and redis-resp protocal is not fixed-size
 //  That makes client2Session complicated.
+
+// NOTE(deyukong): we define binlogPos the greatest id that has been applied.
+// "NOT" the smallest id that has not been applied. keep the same with BackupInfo's
+// setCommitId
 void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
@@ -739,10 +803,9 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 }
 
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
-        const std::list<ReplLog>& ops) {
+                                   const std::list<ReplLog>& ops) {
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
-    INVARIANT(store != nullptr);
-
+    INVARIANT(store != nullptr); 
     auto ptxn = store->createTransaction();
     if (!ptxn.ok()) {
         return ptxn.status();
@@ -758,6 +821,12 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
             return expRk.status();
         }
 
+        auto strPair = log.encode();
+        auto s = store->setKV(strPair.first, strPair.second,
+                              txn.get(), false /*withlog*/);
+        if (!s.ok()) {
+            return s;
+        }
         switch (logVal.getOp()) {
             case (ReplOp::REPL_OP_SET): {
                 Expected<RecordValue> expRv =
@@ -765,7 +834,8 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                 if (!expRv.ok()) {
                     return expRv.status();
                 }
-                auto s = store->setKV(expRk.value(), expRv.value(), txn.get());
+                s = store->setKV(expRk.value(), expRv.value(),
+                                      txn.get(), false /*withlog*/);
                 if (!s.ok()) {
                     return s;
                 } else {
@@ -773,7 +843,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                 }
             }
             case (ReplOp::REPL_OP_DEL): {
-                auto s = store->delKV(expRk.value(), txn.get());
+                s = store->delKV(expRk.value(), txn.get(), false /*withlog*/);
                 if (!s.ok()) {
                     return s;
                 } else {
@@ -908,19 +978,14 @@ void ReplManager::supplyFullSyncRoutine(
             }
         }
     }
-    std::stringstream  ss;
-    ss << "FULLSYNCDONE " << bkInfo.value().getCommitId();
-    s = client->writeLine(ss.str(), std::chrono::seconds(1));
-    if (!s.ok()) {
-        LOG(ERROR) << "write FULLSYNCDONE to client failed:" << s.toString();
-        return;
-    }
     Expected<std::string> reply = client->readLine(std::chrono::seconds(1));
     if (!reply.ok()) {
-        LOG(ERROR) << "read FULLSYNCDONE reply failed:"
-                    << reply.status().toString();
+        LOG(ERROR) << "fullsync done read "
+                   << client->getRemoteRepr() << " reply failed:"
+                   << reply.status().toString();
     } else {
-        LOG(INFO) << "read FULLSYNCDONE reply:" << reply.value();
+        LOG(INFO) << "fullsync done read "
+                  << client->getRemoteRepr() << " reply:" << reply.value();
     }
 }
 

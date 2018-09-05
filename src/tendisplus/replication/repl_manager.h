@@ -27,6 +27,7 @@ struct SPovStatus {
 struct MPovStatus {
     bool isRunning;
     uint32_t dstStoreId;
+    // the greatest id that has been applied
     uint64_t binlogPos;
     SCLOCK::time_point nextSchedTime;
     std::unique_ptr<BlockingTcpClient> client;
@@ -73,7 +74,10 @@ class ReplManager {
     std::unique_ptr<BlockingTcpClient> createClient(const StoreMeta&);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
-    Expected<uint64_t> masterSendBinlog(BlockingTcpClient*, uint64_t binlogPos);
+
+    // binlogPos: the greatest id that has been applied
+    Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
+            uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
     void slaveSyncRoutine(uint32_t  storeId);
     void supplyFullSync(asio::ip::tcp::socket sock,

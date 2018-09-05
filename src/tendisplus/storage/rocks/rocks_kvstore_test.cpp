@@ -252,8 +252,10 @@ TEST(RocksKVStore, Backup) {
     s = kvstore->clear();
     EXPECT_TRUE(s.ok());
 
-    s = kvstore->restart(true);
-    EXPECT_TRUE(s.ok());
+    uint64_t lastCommitId = exptCommitId.value();
+    exptCommitId = kvstore->restart(true);
+    EXPECT_TRUE(exptCommitId.ok());
+    EXPECT_EQ(exptCommitId.value(), lastCommitId);
 
     eTxn1 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
@@ -287,8 +289,8 @@ TEST(RocksKVStore, Stop) {
     s = kvstore->clear();
     EXPECT_FALSE(s.ok());
 
-    s = kvstore->restart(false);
-    EXPECT_FALSE(s.ok());
+    Expected<uint64_t> exptCommitId = kvstore->restart(false);
+    EXPECT_FALSE(exptCommitId.ok());
 
     eTxn1.value().reset();
 
@@ -298,8 +300,8 @@ TEST(RocksKVStore, Stop) {
     s = kvstore->clear();
     EXPECT_TRUE(s.ok());
 
-    s = kvstore->restart(false);
-    EXPECT_TRUE(s.ok());
+    exptCommitId = kvstore->restart(false);
+    EXPECT_TRUE(exptCommitId.ok());
 }
 
 TEST(RocksKVStore, Common) {

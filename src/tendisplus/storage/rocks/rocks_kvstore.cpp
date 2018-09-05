@@ -24,7 +24,7 @@ RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
 }
 
 void RocksKVCursor::seek(const std::string& prefix) {
-    _it->Seek(prefix);
+    _it->Seek(rocksdb::Slice(prefix.c_str(), prefix.size()));
 }
 
 void RocksKVCursor::seekToLast() {
@@ -62,7 +62,6 @@ std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
 
     // the smallest txnId that is uncommitted.
     uint64_t lwm = _store->txnLowWaterMark();
-    LOG(INFO) << "binlogCursor:" << begin << "," << lwm;
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, lwm);
 }
 
@@ -179,10 +178,18 @@ Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }
 
-Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
+Status RocksOptTxn::setKV(const std::string& key,
+                          const std::string& val,
+                          bool withLog) {
     ensureTxn();
+    auto s = _txn->Put(key, val);
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    if (!withLog) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
 
-    // write binlogs first
     if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
@@ -194,21 +201,22 @@ Status RocksOptTxn::setKV(const std::string& key, const std::string& val) {
         oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
         logKey.setFlag(static_cast<ReplFlag>(oriFlag));
     }
-
-    auto s = _txn->Put(key, val);
-    if (s.ok()) {
-        _binlogs.emplace_back(
+    _binlogs.emplace_back(
             std::move(
                 ReplLog(std::move(logKey), std::move(logVal))));
-        return {ErrorCodes::ERR_OK, ""};
-    }
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksOptTxn::delKV(const std::string& key) {
+Status RocksOptTxn::delKV(const std::string& key, bool withLog) {
     ensureTxn();
+    auto s = _txn->Delete(key);
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    if (!withLog) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
 
-    // write binlogs first
     if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
@@ -220,15 +228,10 @@ Status RocksOptTxn::delKV(const std::string& key) {
         oriFlag |= static_cast<uint16_t>(ReplFlag::REPL_GROUP_START);
         logKey.setFlag(static_cast<ReplFlag>(oriFlag));
     }
-
-    auto s = _txn->Delete(key);
-    if (s.ok()) {
-        _binlogs.emplace_back(
-            std::move(
-                ReplLog(std::move(logKey), std::move(logVal))));
-        return {ErrorCodes::ERR_OK, ""};
-    }
-    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    _binlogs.emplace_back(
+        std::move(
+            ReplLog(std::move(logKey), std::move(logVal))));
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 RocksOptTxn::~RocksOptTxn() {
@@ -306,11 +309,11 @@ Status RocksKVStore::clear() {
         return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
     }
     auto n = filesystem::remove_all(dbPath() + "/" + dbId());
-    LOG(INFO) << "dbId:" << dbId() << "cleared " << n << " files/dirs";
+    LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::restart(bool restore) {
+Expected<uint64_t> RocksKVStore::restart(bool restore) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
@@ -362,9 +365,11 @@ Status RocksKVStore::restart(bool restore) {
     auto iter = std::unique_ptr<rocksdb::Iterator>(
         tmpDb->GetBaseDB()->NewIterator(readOpts));
     RocksKVCursor cursor(std::move(iter));
-    cursor.seek(ReplLogKey::prefix());
+
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
+
+    uint64_t maxCommitId = Transaction::TXNID_UNINITED;
     if (expRcd.ok()) {
         const RecordKey& rk = expRcd.value().getRecordKey();
         if (rk.getRecordType() == RecordType::RT_BINLOG) {
@@ -374,10 +379,11 @@ Status RocksKVStore::restart(bool restore) {
             } else {
                 LOG(INFO) << "store:" << dbId() << " nextSeq change from:"
                     << _nextTxnSeq << " to:" << explk.value().getTxnId()+1;
-                _nextTxnSeq = explk.value().getTxnId()+1;
+                maxCommitId = explk.value().getTxnId();
+                _nextTxnSeq = maxCommitId+1;
             }
         } else {
-            LOG(INFO) << "store:" << dbId()
+            LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
                     << " have no binlog, set nextSeq to 0";
             _nextTxnSeq = 0;
         }
@@ -390,7 +396,7 @@ Status RocksKVStore::restart(bool restore) {
 
     _db.reset(tmpDb);
     _isRunning = true;
-    return {ErrorCodes::ERR_OK, ""};
+    return maxCommitId;
 }
 
 RocksKVStore::RocksKVStore(const std::string& id,
@@ -402,10 +408,10 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _db(nullptr),
          _stats(rocksdb::CreateDBStatistics()),
          _blockCache(blockCache) {
-    Status s = restart(false);
+    Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
-                    << ", failed info:" << s.toString();
+                    << ", failed info:" << s.status().toString();
     }
 }
 
@@ -483,7 +489,6 @@ Expected<BackupInfo> RocksKVStore::backup() {
     }
     succ = true;
     result.setFileList(flist);
-    result.setCommitId(txnLowWaterMark());
     return result;
 }
 
@@ -540,7 +545,7 @@ void RocksKVStore::removeUncommitedInLock(uint64_t txnId) {
 }
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
-        Transaction *txn) {
+                                          Transaction *txn) {
     Expected<std::string> s = txn->getKV(key.encode());
     if (!s.ok()) {
         return s.status();
@@ -548,25 +553,33 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
     return RecordValue::decode(s.value());
 }
 
-Status RocksKVStore::setKV(const RecordKey& key, const RecordValue& value,
-        Transaction *txn) {
-    return txn->setKV(key.encode(), value.encode());
+Status RocksKVStore::setKV(const RecordKey& key,
+                           const RecordValue& value,
+                           Transaction *txn,
+                           bool withLog) {
+    return txn->setKV(key.encode(), value.encode(), withLog);
 }
 
-Status RocksKVStore::setKV(const Record& kv, Transaction* txn) {
+Status RocksKVStore::setKV(const Record& kv,
+                           Transaction* txn,
+                           bool withLog) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
     Record::KV pair = kv.encode();
-    return txn->setKV(pair.first, pair.second);
+    return txn->setKV(pair.first, pair.second, withLog);
 }
 
-Status RocksKVStore::setKV(const std::string& key, const std::string& val,
-        Transaction *txn) {
-    return txn->setKV(key, val);
+Status RocksKVStore::setKV(const std::string& key,
+                           const std::string& val,
+                           Transaction *txn,
+                           bool withLog) {
+    return txn->setKV(key, val, withLog);
 }
 
-Status RocksKVStore::delKV(const RecordKey& key, Transaction *txn) {
+Status RocksKVStore::delKV(const RecordKey& key,
+                           Transaction *txn,
+                           bool withLog) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
-    return txn->delKV(key.encode());
+    return txn->delKV(key.encode(), withLog);
 }
 
 }  // namespace tendisplus
