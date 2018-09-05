@@ -156,7 +156,7 @@ class SetCommand: public Command {
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            txn = std::move(ptxn.value());
         }
         return setGeneric(kvstore, txn.get(), params.value().flags,
             rk, rv, "", "");
