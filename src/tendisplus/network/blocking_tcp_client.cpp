@@ -34,11 +34,6 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
          _ctx(ctx),
          _socket(*_ctx),
          _inputBuf(maxBufSize) {
-    std::error_code ec;
-    _socket.non_blocking(true, ec);
-    INVARIANT(ec.value() == 0);
-    _socket.set_option(asio::ip::tcp::no_delay(true));
-    _socket.set_option(asio::socket_base::keep_alive(true));
 }
 
 void BlockingTcpClient::closeSocket() {
@@ -77,6 +72,11 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
             closeSocket();
             return {ErrorCodes::ERR_NETWORK, ec.message()};
         }
+        std::error_code ec;
+        _socket.non_blocking(true, ec);
+        INVARIANT(ec.value() == 0);
+        _socket.set_option(asio::ip::tcp::no_delay(true));
+        _socket.set_option(asio::socket_base::keep_alive(true));
         return {ErrorCodes::ERR_OK, ""};
     } else {
         closeSocket();

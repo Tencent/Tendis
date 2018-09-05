@@ -25,6 +25,7 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
     :_isRunning(false),
      _svr(svr),
      _firstBinlogId(0),
+     _clientIdGen(0),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
      _incrPushMatrix(std::make_shared<PoolMatrix>()),
      _fullReceiveMatrix(std::make_shared<PoolMatrix>()),
@@ -812,7 +813,6 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     }
 
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    // TODO(deyukong): insert oplogs
     for (const auto& log : ops) {
         const ReplLogValue& logVal = log.getReplLogValue();
 
@@ -822,6 +822,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
         }
 
         auto strPair = log.encode();
+        // write binlog
         auto s = store->setKV(strPair.first, strPair.second,
                               txn.get(), false /*withlog*/);
         if (!s.ok()) {
@@ -894,7 +895,7 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
         }
     }
 
-    // TODO(deyukong): periodly save binlogpos
+    // TODO(deyukong): perf and maybe periodly save binlogpos
     if (binlogs.size() > 0) {
         std::lock_guard<std::mutex> lk(_mutex);
         auto newMeta = _syncMeta[storeId]->copy();
@@ -1047,7 +1048,6 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
 }
 
 void ReplManager::stop() {
-    std::lock_guard<std::mutex> lk(_mutex);
     LOG(WARNING) << "repl manager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _controller.join();

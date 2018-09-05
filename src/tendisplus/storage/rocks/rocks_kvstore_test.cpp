@@ -20,9 +20,9 @@ static std::shared_ptr<ServerParams> genParams() {
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
     myfile << "logdir ./log\n";
-    myfile << "storageEngine rocks\n";
-    myfile << "dbPath ./db\n";
-    myfile << "rocksBlockCacheMB 4096\n";
+    myfile << "storage rocks\n";
+    myfile << "dir ./db\n";
+    myfile << "rocks.blockcachemb 4096\n";
     myfile.close();
     auto cfg = std::make_shared<ServerParams>();
     auto s = cfg->parseFile("a.cfg");

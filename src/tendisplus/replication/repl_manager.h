@@ -71,25 +71,14 @@ class ReplManager {
     void stop();
     Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
             uint32_t sourceStoreId);
-    std::unique_ptr<BlockingTcpClient> createClient(const StoreMeta&);
-    void slaveStartFullsync(const StoreMeta&);
-    void slaveChkSyncStatus(const StoreMeta&);
-
-    // binlogPos: the greatest id that has been applied
-    Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
-            uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
-    void masterPushRoutine(uint32_t storeId, uint64_t clientId);
-    void slaveSyncRoutine(uint32_t  storeId);
     void supplyFullSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg);
     void registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg);
-    void changeReplState(const StoreMeta& storeMeta, bool persist);
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
-
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
@@ -100,7 +89,20 @@ class ReplManager {
         const std::list<ReplLog>& ops);
     bool isFullSupplierFull() const;
 
+    std::unique_ptr<BlockingTcpClient> createClient(const StoreMeta&);
+    void slaveStartFullsync(const StoreMeta&);
+    void slaveChkSyncStatus(const StoreMeta&);
+
+    // binlogPos: the greatest id that has been applied
+    Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
+            uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
+
+    void masterPushRoutine(uint32_t storeId, uint64_t clientId);
+    void slaveSyncRoutine(uint32_t  storeId);
+
+
  private:
+    void changeReplState(const StoreMeta& storeMeta, bool persist);
     void changeReplStateInLock(const StoreMeta&, bool persist);
 
     std::mutex _mutex;
@@ -117,10 +119,13 @@ class ReplManager {
     // master's pov, living slave clients
     std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
 
+    // master's pov, workerpool of pushing full backup
     std::unique_ptr<WorkerPool> _fullPusher;
 
+    // master's pov, workerpool of pushing incr backup
     std::unique_ptr<WorkerPool> _incrPusher;
 
+    // slave's pov, workerpool of receiving full backup
     std::unique_ptr<WorkerPool> _fullReceiver;
 
     // slave's pov, periodly check incr-sync status
