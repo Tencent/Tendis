@@ -34,7 +34,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));
     }
-    void addSession(std::unique_ptr<NetSession> sess);
+    void addSession(std::shared_ptr<NetSession> sess);
 
     // NOTE(deyukong): be careful, currently, the callpath of
     // serverEntry::endSession is
@@ -75,7 +75,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     mutable std::mutex _mutex;
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
-    std::map<uint64_t, std::unique_ptr<NetSession>> _sessions;
+    std::map<uint64_t, std::shared_ptr<NetSession>> _sessions;
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;

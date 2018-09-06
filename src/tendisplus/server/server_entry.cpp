@@ -138,7 +138,7 @@ const std::shared_ptr<std::string> ServerEntry::masterauth() const {
     return _masterauth;
 }
 
-void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
+void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->getRemoteRepr()

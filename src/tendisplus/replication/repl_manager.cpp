@@ -182,9 +182,10 @@ void ReplManager::changeReplState(const StoreMeta& storeMeta,
     changeReplStateInLock(storeMeta, persist);
 }
 
-std::unique_ptr<BlockingTcpClient> ReplManager::createClient(
+std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
                     const StoreMeta& metaSnapshot) {
-    auto client = _svr->getNetwork()->createBlockingClient(64*1024*1024);
+    std::shared_ptr<BlockingTcpClient> client =
+        std::move(_svr->getNetwork()->createBlockingClient(64*1024*1024));
     Status s = client->connect(
         metaSnapshot.syncFromHost,
         metaSnapshot.syncFromPort,
@@ -236,7 +237,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     }
 
     // 2) require a sync-client
-    auto client = createClient(metaSnapshot);
+    std::shared_ptr<BlockingTcpClient> client =
+        std::move(createClient(metaSnapshot));
     if (client == nullptr) {
         LOG(WARNING) << "startFullSync with: "
                     << metaSnapshot.syncFromHost << ":"
@@ -415,7 +417,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
                 << "," << metaSnapshot.syncFromPort
                 << "," << metaSnapshot.syncFromId;
 
-    auto client = createClient(metaSnapshot);
+    std::shared_ptr<BlockingTcpClient> client =
+        std::move(createClient(metaSnapshot));
     if (client == nullptr) {
         LOG(WARNING) << "store:" << metaSnapshot.id << " reconn master failed";
         return;
@@ -438,10 +441,23 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         return;
     }
 
-    // TODO(deyukong): here lack pong
+    Status pongStatus  = client->writeLine("+PONG", std::chrono::seconds(1));
+    if (!pongStatus.ok()) {
+        LOG(WARNING) << "store:" << metaSnapshot.id
+                << " write pong failed:" << pongStatus.toString();
+        return;
+    }
 
     NetworkAsio *network = _svr->getNetwork();
     INVARIANT(network != nullptr);
+
+    // why dare we transfer a client to a session ?
+    // 1) the logic gets here, so there wont be any
+    // async handlers in the event queue.
+    // 2) every handler is trigger by calling client's
+    // some read/write/connect functions.
+    // 3) master side will read +PONG before sending
+    // new data, so there wont be any sticky packets.
     Expected<uint64_t> expSessionId =
             network->client2Session(std::move(client));
     if (!expSessionId.ok()) {
@@ -696,8 +712,9 @@ bool ReplManager::isFullSupplierFull() const {
 
 void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                         const std::string& storeIdArg) {
-    auto client = _svr->getNetwork()->createBlockingClient(
-            std::move(sock), 64*1024*1024);
+    std::shared_ptr<BlockingTcpClient> client =
+        std::move(_svr->getNetwork()->createBlockingClient(
+            std::move(sock), 64*1024*1024));
 
     // NOTE(deyukong): this judge is not precise
     // even it's not full at this time, it can be full during schedule.
@@ -732,8 +749,9 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg) {
-    auto client = _svr->getNetwork()->createBlockingClient(
-            std::move(sock), 64*1024*1024);
+    std::shared_ptr<BlockingTcpClient> client =
+        std::move(_svr->getNetwork()->createBlockingClient(
+            std::move(sock), 64*1024*1024));
 
     uint64_t storeId;
     uint64_t  dstStoreId;
@@ -780,6 +798,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         return;
     }
 
+    std::string remoteHost = client->getRemoteRepr();
     bool registPosOk =
             [this,
              storeId,
@@ -802,7 +821,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                     clientId: clientId}));
         return true;
     }();
-    LOG(INFO) << "slave:" << client->getRemoteRepr()
+    LOG(INFO) << "slave:" << remoteHost
             << " registerIncrSync " << (registPosOk ? "ok" : "failed");
 }
 
@@ -880,7 +899,7 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
     auto guard = MakeGuard([this, storeId] {
         std::unique_lock<std::mutex> lk(_mutex);
         INVARIANT(_syncStatus[storeId]->isRunning);
-        _syncStatus[storeId]->isRunning = true;
+        _syncStatus[storeId]->isRunning = false;
     });
 
     bool idMatch = [this, storeId, sessionId]() {
@@ -910,7 +929,7 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
 }
 
 void ReplManager::supplyFullSyncRoutine(
-            std::unique_ptr<BlockingTcpClient> client, uint32_t storeId) {
+            std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
     if (!store->isRunning()) {

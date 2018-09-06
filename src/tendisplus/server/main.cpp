@@ -82,7 +82,14 @@ int main(int argc, char *argv[]) {
     }
     FLAGS_logbufsecs = 1;
     ::google::InitGoogleLogging("tendisplus");
-
+    ::google::InstallFailureSignalHandler();
+    ::google::InstallFailureWriter([](const char *data, int size) {
+        LOG(ERROR) << "Failure:" << std::string(data, size);
+        google::FlushLogFiles(google::INFO);
+        google::FlushLogFiles(google::WARNING);
+        google::FlushLogFiles(google::ERROR);
+        google::FlushLogFiles(google::FATAL);
+    });
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();
     s = tendisplus::gServer->startup(params);
     if (!s.ok()) {

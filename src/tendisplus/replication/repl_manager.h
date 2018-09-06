@@ -33,7 +33,7 @@ struct MPovStatus {
     // the greatest id that has been applied
     uint64_t binlogPos;
     SCLOCK::time_point nextSchedTime;
-    std::unique_ptr<BlockingTcpClient> client;
+    std::shared_ptr<BlockingTcpClient> client;
     uint64_t clientId;
 };
 
@@ -88,13 +88,13 @@ class ReplManager {
 
  protected:
     void controlRoutine();
-    void supplyFullSyncRoutine(std::unique_ptr<BlockingTcpClient> client,
+    void supplyFullSyncRoutine(std::shared_ptr<BlockingTcpClient> client,
             uint32_t storeId);
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
     bool isFullSupplierFull() const;
 
-    std::unique_ptr<BlockingTcpClient> createClient(const StoreMeta&);
+    std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 

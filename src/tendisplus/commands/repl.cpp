@@ -145,7 +145,12 @@ class ApplyBinlogsCommand: public Command {
         INVARIANT(svr != nullptr);
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
-        return replMgr->applyBinlogs(storeId, sess->getConnId(), binlogGroup);
+        Status s = replMgr->applyBinlogs(storeId, sess->getConnId(), binlogGroup);
+        if (s.ok()) {
+            return Command::fmtOK();
+        } else {
+            return s;
+        }
     }
 } applyBinlogsCommand;
 

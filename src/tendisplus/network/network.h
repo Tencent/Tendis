@@ -44,7 +44,7 @@ class NetworkAsio {
     std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf);
     std::unique_ptr<BlockingTcpClient> createBlockingClient(
         asio::ip::tcp::socket, size_t readBuf);
-    Expected<uint64_t> client2Session(std::unique_ptr<BlockingTcpClient>);
+    Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>);
 
     Status prepare(const std::string& ip, const uint16_t port);
     Status run();
@@ -64,7 +64,7 @@ class NetworkAsio {
 };
 
 // represent a ingress tcp-connection
-class NetSession {
+class NetSession: public std::enable_shared_from_this<NetSession>  {
  public:
     NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
         uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix);

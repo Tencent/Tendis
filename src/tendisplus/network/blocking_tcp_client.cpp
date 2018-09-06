@@ -15,6 +15,7 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
                 asio::ip::tcp::socket socket,
                 size_t maxBufSize)
         :_inited(true),
+         _notified(false),
          _ctx(ctx),
          _socket(std::move(socket)),
          _inputBuf(maxBufSize) {
@@ -31,6 +32,7 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
 BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
                 size_t maxBufSize)
         :_inited(false),
+         _notified(false),
          _ctx(ctx),
          _socket(*_ctx),
          _inputBuf(maxBufSize) {
@@ -55,22 +57,22 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
     asio::ip::tcp::resolver::results_type endpoints =
         asio::ip::tcp::resolver(*_ctx).resolve(host, ss.str());
 
-    asio::error_code ec;
-    bool notified = false;
+    _notified = false;
+    auto self(shared_from_this());
     asio::async_connect(_socket, endpoints,
-        [this, &ec, &notified](const std::error_code& oec,
+        [this, self](const std::error_code& oec,
                                 asio::ip::tcp::endpoint) {
             std::unique_lock<std::mutex> lk(_mutex);
-            ec = oec;
-            notified = true;
+            _ec = oec;
+            _notified = true;
             _cv.notify_one();
         });
 
     std::unique_lock<std::mutex> lk(_mutex);
-    if (_cv.wait_for(lk, timeout, [&notified]{ return notified;})) {
-        if (ec) {
+    if (_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
+        if (_ec) {
             closeSocket();
-            return {ErrorCodes::ERR_NETWORK, ec.message()};
+            return {ErrorCodes::ERR_NETWORK, _ec.message()};
         }
         std::error_code ec;
         _socket.non_blocking(true, ec);
@@ -86,21 +88,21 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
 
 Expected<std::string> BlockingTcpClient::readLine(
         std::chrono::seconds timeout) {
-    asio::error_code ec;
-    bool notified = false;
+    _notified = false;
+    auto self(shared_from_this());
     asio::async_read_until(_socket, _inputBuf, "\n",
-        [this, &ec, &notified](const asio::error_code& oec, size_t size) {
+        [this, self](const asio::error_code& oec, size_t size) {
             std::unique_lock<std::mutex> lk(_mutex);
-            ec = oec;
-            notified = true;
+            _ec = oec;
+            _notified = true;
             _cv.notify_one();
         });
 
     std::unique_lock<std::mutex> lk(_mutex);
-    if (_cv.wait_for(lk, timeout, [&notified]{ return notified;})) {
-        if (ec) {
+    if (_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
+        if (_ec) {
             closeSocket();
-            return {ErrorCodes::ERR_NETWORK, ec.message()};
+            return {ErrorCodes::ERR_NETWORK, _ec.message()};
         }
 
         std::string line;
@@ -130,25 +132,24 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
             bufSize - _inputBuf.size() : 0;
 
     if (remain > 0) {
-        asio::error_code ec = asio::error::would_block;
-        bool notified = false;
-
+        _notified = false;
+        auto self(shared_from_this());
         asio::async_read(_socket, _inputBuf, asio::transfer_exactly(remain),
-            [this, &ec, &notified](const asio::error_code& oec, size_t) {
+            [this, self](const asio::error_code& oec, size_t) {
                 std::unique_lock<std::mutex> lk(_mutex);
-                ec = oec;
-                notified = true;
+                _ec = oec;
+                _notified = true;
                 _cv.notify_one();
             });
 
         // Block until the asynchronous operation has completed.
         std::unique_lock<std::mutex> lk(_mutex);
-        if (!_cv.wait_for(lk, timeout, [&notified]{ return notified;})) {
+        if (!_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
             closeSocket();
             return {ErrorCodes::ERR_TIMEOUT, ""};
-        } else if (ec) {
+        } else if (_ec) {
             closeSocket();
-            return {ErrorCodes::ERR_NETWORK, ec.message()};
+            return {ErrorCodes::ERR_NETWORK, _ec.message()};
         } else {
             // everything is ok, stepout this scope and process buffer
         }
@@ -169,21 +170,21 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
 
 Status BlockingTcpClient::writeData(const std::string& data,
         std::chrono::seconds timeout) {
-    asio::error_code ec = asio::error::would_block;
-    bool notified = false;
+    _notified = false;
+    auto self(shared_from_this());
     asio::async_write(_socket, asio::buffer(data),
-        [this, &ec, &notified](const asio::error_code& oec, size_t) {
+        [this, self](const asio::error_code& oec, size_t) {
             std::unique_lock<std::mutex> lk(_mutex);
-            ec = oec;
-            notified = true;
+            _ec = oec;
+            _notified = true;
             _cv.notify_one();
         });
 
     std::unique_lock<std::mutex> lk(_mutex);
-    if (_cv.wait_for(lk, timeout, [&notified]{ return notified;})) {
-        if (ec) {
+    if (_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
+        if (_ec) {
             closeSocket();
-            return {ErrorCodes::ERR_NETWORK, ec.message()};
+            return {ErrorCodes::ERR_NETWORK, _ec.message()};
         } else {
             return {ErrorCodes::ERR_OK, ""};
         }
