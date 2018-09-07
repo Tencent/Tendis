@@ -49,7 +49,7 @@ class WorkerPool {
         // NOTE(deyukong): use asio::post rather than ctx.post, the latter one
         // only support copyable callbacks. which means you cannot use a lambda
         // which captures unique_Ptr as params
-        // refer to here: https://github.com/boostorg/asio/issues/61
+        // refers here: https://github.com/boostorg/asio/issues/61
         // _ioCtx->post(std::move(taskWrap));
     }
     void stop();

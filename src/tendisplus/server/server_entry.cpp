@@ -76,13 +76,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         new SegmentMgrFnvHash64(_kvstores));
     installSegMgrInLock(std::move(tmpSegMgr));
 
-    // network listener
-    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
-    Status s = _network->prepare(cfg->bindIp, cfg->port);
-    if (!s.ok()) {
-        return s;
-    }
-    s = _network->run();
+    // replication
+    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    Status s = _replMgr->startup();
     if (!s.ok()) {
         return s;
     }
@@ -98,9 +94,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    // replication
-    _replMgr = std::make_unique<ReplManager>(shared_from_this());
-    s = _replMgr->startup();
+    // listener should be the lastone in startup process.
+    // network listener
+    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
+    s = _network->prepare(cfg->bindIp, cfg->port);
+    if (!s.ok()) {
+        return s;
+    }
+    s = _network->run();
     if (!s.ok()) {
         return s;
     }
@@ -137,7 +138,7 @@ const std::shared_ptr<std::string> ServerEntry::masterauth() const {
     return _masterauth;
 }
 
-void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
+void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->getRemoteRepr()
@@ -154,6 +155,18 @@ void ServerEntry::addSession(std::unique_ptr<NetSession> sess) {
         LOG(FATAL) << "add conn:" << id << ",id already exists";
     }
     _sessions[id] = std::move(sess);
+}
+
+Status ServerEntry::cancelSession(uint64_t connId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+        return {ErrorCodes::ERR_BUSY, "server is shutting down"};
+    }
+    auto it = _sessions.find(connId);
+    if (it == _sessions.end()) {
+        return {ErrorCodes::ERR_NOTFOUND, "session not found"};
+    }
+    return it->second->cancel();
 }
 
 void ServerEntry::endSession(uint64_t connId) {
@@ -191,14 +204,20 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
-        // NOTE(deyukong): this connect will be closed after supplyFullSync
         std::vector<std::string> args = sess->getArgs();
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 2);
-        uint32_t storeId = std::stoi(args[1]);
-        _replMgr->supplyFullSync(sess->borrowConn(), storeId);
+        _replMgr->supplyFullSync(sess->borrowConn(), args[1]);
+        return false;
+    } else if (expCmdName.value() == "incrsync") {
+        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        std::vector<std::string> args = sess->getArgs();
+        // we have called precheck, it should have 2 args
+        INVARIANT(args.size() == 4);
+        _replMgr->registerIncrSync(sess->borrowConn(), args[1], args[2], args[3]);
         return false;
     }
+
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
         sess->setResponse(Command::fmtErr(expect.status().toString()));
@@ -219,8 +238,8 @@ void ServerEntry::ftmc() {
         auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
         oldNetMatrix = *_netMatrix;
         oldPoolMatrix = *_poolMatrix;
-        LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
-        LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
+        // LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
+        // LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
 
         std::unique_lock<std::mutex> lk(_mutex);
         bool ok = _eventCV.wait_for(lk, 1000ms, [this] {

@@ -3,9 +3,13 @@
 
 #include <string>
 
+#include "tendisplus/utils/status.h"
+
 namespace tendisplus {
 
 std::string toLower(const std::string&);
+
+Expected<uint64_t> stoul(const std::string&);
 
 }  // namespace tendisplus
 

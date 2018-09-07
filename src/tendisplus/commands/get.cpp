@@ -4,6 +4,7 @@
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/storage/expirable.h"
 
 namespace tendisplus {
 
@@ -59,7 +60,9 @@ class GetCommand: public Command {
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
                 params.value().key, "");
-        Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
+
+        auto dbWrap = std::make_unique<ExpirableDBWrapper>(kvstore);
+        Expected<RecordValue> eValue = dbWrap->getKV(rk, txn.get());
         if (!eValue.ok()) {
             const Status& status = eValue.status();
             if (status.code() == ErrorCodes::ERR_NOTFOUND) {

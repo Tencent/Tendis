@@ -16,6 +16,11 @@ def test_repl1(m, s):
 
     cli2.send_command("slaveof", "127.0.0.1", "12345")
     print cli2.read_response()
+    time.sleep(1)
+    cli2.send_command("get", "a")
+    assert(cli2.read_response() == "1")
+    cli2.send_command("get", "b")
+    assert(cli2.read_response() == "2")
 
 def test_repl():
     m = RedisServer(12345, "m_")

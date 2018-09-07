@@ -7,6 +7,10 @@
 #include <memory>
 #include <iostream>
 #include <map>
+
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
 
@@ -56,22 +60,23 @@ class Transaction {
     virtual std::unique_ptr<BinlogCursor>
         createBinlogCursor(uint64_t begin) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
-    virtual Status setKV(const std::string& key, const std::string& val) = 0;
-    virtual Status delKV(const std::string& key) = 0;
+    virtual Status setKV(const std::string& key,
+                         const std::string& val,
+                         bool withLog) = 0;
+    virtual Status delKV(const std::string& key, bool withLog) = 0;
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
     static constexpr uint64_t MIN_VALID_TXNID = 0;
+    static constexpr uint64_t TXNID_UNINITED
+        = std::numeric_limits<uint64_t>::max()/2+1;
 };
 
 class BackupInfo {
  public:
     BackupInfo() = default;
-    uint64_t getCommitId() const;
     const std::map<std::string, uint64_t>& getFileList() const;
-    void setCommitId(const uint64_t);
     void setFileList(const std::map<std::string, uint64_t>&);
  private:
-    uint64_t _commitId;
     std::map<std::string, uint64_t> _fileList;
 };
 
@@ -86,24 +91,31 @@ class KVStore {
     virtual Expected<RecordValue> getKV(const RecordKey& key,
         Transaction* txn) = 0;
     virtual Status setKV(const RecordKey&,
-        const RecordValue&, Transaction*) = 0;
-    virtual Status setKV(const Record& kv, Transaction* txn) = 0;
-    virtual Status setKV(const std::string&, const std::string&, Transaction*) = 0;
-    virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+        const RecordValue&, Transaction*, bool withLog = true) = 0;
+    virtual Status setKV(const Record& kv, Transaction* txn,
+        bool withLog = true) = 0;
+    virtual Status setKV(const std::string& key, const std::string& val,
+        Transaction* txn, bool withLog = true) = 0;
+    virtual Status delKV(const RecordKey& key, Transaction* txn,
+        bool withLog = true) = 0;
 
     // remove all data in db
     virtual Status clear() = 0;
     virtual bool isRunning() const = 0;
     virtual Status stop() = 0;
-    virtual Status restart(bool restore = false) = 0;
+
+    // return the greatest commitId
+    virtual Expected<uint64_t> restart(bool restore = false) = 0;
 
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
     virtual Expected<BackupInfo> backup() = 0;
     virtual Status releaseBackup() = 0;
 
+    virtual void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
+
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(100);
+    static constexpr size_t INSTANCE_NUM = size_t(4);
 
  private:
     const std::string _id;

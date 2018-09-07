@@ -22,6 +22,7 @@ enum class ErrorCodes {
     ERR_AUTH,
     ERR_BUSY,
     ERR_EXHAUST,  // for cursor
+    ERR_EXPIRE,
 };
 
 class Status {
@@ -55,7 +56,14 @@ class Expected {
     // here we ignore "explicit" to make return two types
     // Status/T possible. It's more convinent to use
     Expected(const Status& other)  // NOLINT(runtime/explicit)
-        :_status(other) {
+            :_status(other) {
+        if (_status.ok()) {
+            static const char *s =
+                "can not use OK as Expected input"
+                ", this makes data field empty,"
+                ", which is always a misuse";
+            throw std::invalid_argument(s);
+        }
     }
 
     Expected(T t)  // NOLINT(runtime/explicit)

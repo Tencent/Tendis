@@ -39,16 +39,20 @@ class NetworkAsio {
             std::shared_ptr<NetworkMatrix> matrix);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
+
+    // blocking client related apis
     std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf);
     std::unique_ptr<BlockingTcpClient> createBlockingClient(
         asio::ip::tcp::socket, size_t readBuf);
+    Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>);
+
     Status prepare(const std::string& ip, const uint16_t port);
     Status run();
     void stop();
  private:
     // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
-    uint64_t _connCreated;
+    std::atomic<uint64_t> _connCreated;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
     std::shared_ptr<asio::io_context> _rwCtx;
@@ -60,7 +64,7 @@ class NetworkAsio {
 };
 
 // represent a ingress tcp-connection
-class NetSession {
+class NetSession: public std::enable_shared_from_this<NetSession>  {
  public:
     NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
         uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix);
@@ -72,6 +76,7 @@ class NetSession {
     uint64_t getConnId() const;
     asio::ip::tcp::socket borrowConn();
     void start();
+    Status cancel();
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);
     void setResponse(const std::string& s);

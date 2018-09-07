@@ -34,10 +34,23 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));
     }
-    void addSession(std::unique_ptr<NetSession> sess);
+    void addSession(std::shared_ptr<NetSession> sess);
+
+    // NOTE(deyukong): be careful, currently, the callpath of
+    // serverEntry::endSession is
+    // NetSession.endSession -> ServerEntry.endSession
+    // -> ServerEntry.eraseSession -> NetSession.~NetSession
+    // this function is initially triggered by NetSession.
+    // If you want to close a NetSession from serverside, do not 
+    // call ServerEntry.endSession, or asio's calllback may
+    // meet a nil pointer.
+    // Instead, you should call NetSession.cancel to close NetSession's
+    // underlying socket and let itself trigger the whole path.
     void endSession(uint64_t connId);
 
-    // continue schedule if returns true
+    Status cancelSession(uint64_t connId);
+
+    // returns true if NetSession should continue schedule
     bool processRequest(uint64_t connId);
 
     void installStoresInLock(const std::vector<PStore>&);
@@ -62,7 +75,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     mutable std::mutex _mutex;
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
-    std::map<uint64_t, std::unique_ptr<NetSession>> _sessions;
+    std::map<uint64_t, std::shared_ptr<NetSession>> _sessions;
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;

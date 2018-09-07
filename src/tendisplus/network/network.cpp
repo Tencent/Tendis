@@ -69,6 +69,21 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Expected<uint64_t> NetworkAsio::client2Session(std::shared_ptr<BlockingTcpClient> c) {
+    if (c->getReadBufSize() > 0) {
+        return {ErrorCodes::ERR_NETWORK,
+            "client still have buf unread, cannot transfer to a session"};
+    }
+    uint64_t connId = _connCreated.fetch_add(1, std::memory_order_relaxed);
+    _server->addSession(
+        std::move(
+            std::make_shared<NetSession>(
+                _server, std::move(c->borrowConn()),
+                connId, true, _matrix)));
+    ++_matrix->connCreated;
+    return connId;
+}
+
 void NetworkAsio::doAccept() {
     auto cb = [this](const std::error_code& ec, tcp::socket socket) {
         if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -81,8 +96,9 @@ void NetworkAsio::doAccept() {
         }
         _server->addSession(
             std::move(
-                std::make_unique<NetSession>(
-                    _server, std::move(socket), ++_connCreated,
+                std::make_shared<NetSession>(
+                    _server, std::move(socket),
+                    _connCreated.fetch_add(1, std::memory_order_relaxed),
                     true, _matrix)));
         ++_matrix->connCreated;
         doAccept();
@@ -179,11 +195,17 @@ void NetSession::setState(State s) {
 }
 
 std::string NetSession::getRemoteRepr() const {
-    return _sock.remote_endpoint().address().to_string();
+    if (_sock.is_open()) {
+        return _sock.remote_endpoint().address().to_string();
+    }
+    return "closed conn";
 }
 
 std::string NetSession::getLocalRepr() const {
-    return _sock.local_endpoint().address().to_string();
+    if (_sock.is_open()) {
+        return _sock.local_endpoint().address().to_string();
+    }
+    return "closed conn";
 }
 
 void NetSession::schedule() {
@@ -198,6 +220,15 @@ asio::ip::tcp::socket NetSession::borrowConn() {
 
 void NetSession::start() {
     stepState();
+}
+
+Status NetSession::cancel() {
+    std::error_code ec;
+    _sock.cancel(ec);
+    if (!ec) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    return {ErrorCodes::ERR_NETWORK, ec.message()};
 }
 
 void NetSession::setArgs(const std::vector<std::string>& args) {
@@ -485,9 +516,10 @@ void NetSession::drainReq() {
     // TODO(deyukong): I believe async_read_some wont callback if no
     // readable-event is set on the fd or this callback will be a deadloop
     // it needs futher tests
+    auto self(shared_from_this());
     _sock.
         async_read_some(asio::buffer(_queryBuf.data() + _queryBufPos, wantLen),
-        [this](const std::error_code& ec, size_t actualLen) {
+        [this, self](const std::error_code& ec, size_t actualLen) {
             drainReqCallback(ec, actualLen);
         });
 }
@@ -508,8 +540,9 @@ void NetSession::processReq() {
 }
 
 void NetSession::drainRsp() {
+    auto self(shared_from_this());
     asio::async_write(_sock, asio::buffer(_respBuf.data(), _respBuf.size()),
-        [this](const std::error_code& ec, size_t actualLen) {
+        [this, self](const std::error_code& ec, size_t actualLen) {
             drainRspCallback(ec, actualLen);
     });
 }

@@ -32,8 +32,10 @@ class RocksOptTxn: public Transaction {
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
-    Status setKV(const std::string& key, const std::string& val) final;
-    Status delKV(const std::string& key) final;
+    Status setKV(const std::string& key,
+                 const std::string& val,
+                 bool withLog) final;
+    Status delKV(const std::string& key, bool withLog) final;
     uint64_t getTxnId() const;
 
  private:
@@ -76,20 +78,29 @@ class RocksKVStore: public KVStore {
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
-    Status setKV(const Record& kv, Transaction* txn) final;
+    Status setKV(const Record& kv, Transaction* txn,
+                 bool withLog = true) final;
     Status setKV(const RecordKey& key,
-            const RecordValue& val, Transaction* txn) final;
-    Status setKV(const std::string& key, const std::string& val,
-            Transaction *txn) final;
-    Status delKV(const RecordKey& key, Transaction* txn) final;
+                 const RecordValue& val,
+                 Transaction* txn,
+                 bool withLog = true) final;
+    Status setKV(const std::string& key,
+                 const std::string& val,
+                 Transaction *txn,
+                 bool withLog = true) final;
+    Status delKV(const RecordKey& key,
+                 Transaction* txn,
+                 bool withLog = true) final;
 
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
-    Status restart(bool restore = false) final;
+    Expected<uint64_t> restart(bool restore = false) final;
 
     Expected<BackupInfo> backup() final;
     Status releaseBackup() final;
+
+    void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
     void removeUncommited(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
