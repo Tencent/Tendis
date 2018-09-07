@@ -56,7 +56,6 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
 }
 
 std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
-    INVARIANT(!_done);
     ensureTxn();
     auto cursor = createCursor();
 

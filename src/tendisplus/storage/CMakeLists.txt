@@ -1,4 +1,4 @@
-add_library(kvstore STATIC kvstore.cpp)
+add_library(kvstore STATIC kvstore.cpp expirable.cpp)
 target_link_libraries(kvstore status stdc++fs glog)
 
 add_library(varint STATIC varint.cpp)

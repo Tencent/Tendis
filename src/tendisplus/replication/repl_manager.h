@@ -83,7 +83,6 @@ class ReplManager {
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
-
     static constexpr size_t POOL_SIZE = 12;
 
  protected:
@@ -104,7 +103,6 @@ class ReplManager {
 
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
     void slaveSyncRoutine(uint32_t  storeId);
-
 
  private:
     void changeReplState(const StoreMeta& storeMeta, bool persist);
@@ -150,6 +148,5 @@ class ReplManager {
 };
 
 }  // namespace tendisplus
-
 
 #endif  // SRC_TENDISPLUS_REPLICATION_REPL_MANAGER_H_

@@ -81,6 +81,7 @@ class RecordValue {
     explicit RecordValue(const std::string& val, uint64_t ttl = 0);
     explicit RecordValue(std::string&& val, uint64_t ttl = 0);
     const std::string& getValue() const;
+    uint64_t getTtl() const;
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     bool operator==(const RecordValue& other) const;
@@ -151,6 +152,7 @@ class ReplLogKey {
     ReplLogKey& operator=(const ReplLogKey&);
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
+    uint32_t getTimestamp() const { return _timestamp; }
     void setFlag(ReplFlag f) { _flag = f; }
     ReplFlag getFlag() const { return _flag; }
 

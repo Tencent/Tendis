@@ -22,6 +22,7 @@ enum class ErrorCodes {
     ERR_AUTH,
     ERR_BUSY,
     ERR_EXHAUST,  // for cursor
+    ERR_EXPIRE,
 };
 
 class Status {

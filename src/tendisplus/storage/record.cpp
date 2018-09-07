@@ -266,6 +266,10 @@ const std::string& RecordValue::getValue() const {
     return _value;
 }
 
+uint64_t RecordValue::getTtl() const {
+    return _ttl;
+}
+
 bool RecordValue::operator==(const RecordValue& other) const {
     return _ttl == other._ttl && _value == other._value;
 }
