@@ -32,7 +32,7 @@ TEST(ConflictTable, Common) {
 }
 
 TEST(LockShard, Align) {
-    EXPECT_GE(sizeof(LockShard), 128);
+    EXPECT_GE(sizeof(LockShard), size_t(128));
 }
 
 TEST(MGL, OneTarget) {

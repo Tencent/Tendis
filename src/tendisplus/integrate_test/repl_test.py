@@ -22,6 +22,14 @@ def test_repl1(m, s):
     cli2.send_command("get", "b")
     assert(cli2.read_response() == "2")
 
+    for i in xrange(10000):
+        cli1.send_command("set", str(i), str(i))
+        cli1.read_response()
+
+    for i in xrange(10000):
+        cli2.send_command("get", str(i))
+        assert(cli2.read_response() == str(i))
+
 def test_repl():
     m = RedisServer(12345, "m_")
     s = RedisServer(12346, "s_")
