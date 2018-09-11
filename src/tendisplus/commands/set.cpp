@@ -122,12 +122,16 @@ class SetCommand: public Command {
     }
 
     Expected<std::string> run(NetSession *sess) final {
-        Expected<SetParams> params = parse(sess);
-        if (!params.ok()) {
-            return params.status();
+        Expected<SetParams> exptParams = parse(sess);
+        if (!exptParams.ok()) {
+            return exptParams.status();
         }
 
-        PStore kvstore = getStore(sess, params.value().key);
+        const SetParams& params = exptParams.value();
+        auto storeLock = Command::lockDBByKey(sess,
+                                              params.key,
+                                              mgl::LockMode::LOCK_IX);
+        PStore kvstore = Command::getStore(sess, params.key);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -138,17 +142,17 @@ class SetCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                params.value().key, "");
+                     params.key, "");
 
         uint64_t ts = 0;
-        if (params.value().expire != 0) {
-            ts = nsSinceEpoch() / 1000000 + params.value().expire;
+        if (params.expire != 0) {
+            ts = nsSinceEpoch() / 1000000 + params.expire;
         }
-        RecordValue rv(params.value().value, ts);
+        RecordValue rv(params.value, ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
-            auto result = setGeneric(kvstore, txn.get(), params.value().flags,
-                    rk, rv, "", "");
+            auto result = setGeneric(kvstore, txn.get(), params.flags,
+                                     rk, rv, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
@@ -158,7 +162,7 @@ class SetCommand: public Command {
             }
             txn = std::move(ptxn.value());
         }
-        return setGeneric(kvstore, txn.get(), params.value().flags,
+        return setGeneric(kvstore, txn.get(), params.flags,
             rk, rv, "", "");
     }
 } setCommand;

@@ -19,6 +19,10 @@ char rt2Char(RecordType t) {
             return 'L';
         case RecordType::RT_LIST_ELE:
             return 'l';
+        case RecordType::RT_HASH_META:
+            return 'H';
+        case RecordType::RT_HASH_ELE:
+            return 'h';
         //  it's convinent (for seek) to have BINLOG to pos
         //  at the rightmost of a lsmtree
         case RecordType::RT_BINLOG:
@@ -40,6 +44,10 @@ RecordType char2Rt(char t) {
             return RecordType::RT_LIST_META;
         case 'l':
             return RecordType::RT_LIST_ELE;
+        case 'H':
+            return RecordType::RT_HASH_META;
+        case 'h':
+            return RecordType::RT_HASH_ELE;
         case std::numeric_limits<char>::max():
             return RecordType::RT_BINLOG;
         default:
@@ -156,7 +164,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
         return expt.status();
     }
     offset += expt.value().second;
-    dbid = expt.value().first;
+    dbid = static_cast<uint32_t>(expt.value().first);
 
     // type
     char typec = keyCstr[offset++];
@@ -375,7 +383,7 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     offset += sizeof(txnid);
 
     // localid
-    localid = (keyCstr[offset] << 8)|keyCstr[offset+1];
+    localid = static_cast<uint16_t>((keyCstr[offset] << 8)|keyCstr[offset+1]);
     offset += sizeof(localid);
 
     // flag

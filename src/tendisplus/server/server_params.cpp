@@ -68,7 +68,7 @@ Status ServerParams::parseFile(const std::string& filename) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid port configure"};
             }
             try {
-                port = std::stoi(tokens[1]);
+                port = static_cast<uint16_t>(std::stoi(tokens[1]));
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEOPT, ex.what()};
             }

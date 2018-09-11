@@ -18,11 +18,14 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
 void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
+
+    StoreLock storeLock(metaSnapshot.id, mgl::LockMode::LOCK_X);
 
     // 1) stop store and clean it's directory
     PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
@@ -320,6 +323,8 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
 Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
+    // NOTE(deyukong): donot lock store in IX mode again
+    // the caller have duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         _cv.wait(lk,

@@ -40,7 +40,7 @@ class DebugCommand: public Command {
     Expected<std::string> run(NetSession *sess) final {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        const SegmentMgr *segMgr = svr->getSegmentMgr(); 
+        const SegmentMgr *segMgr = svr->getSegmentMgr();
         INVARIANT(segMgr != nullptr);
         ReplManager *replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);

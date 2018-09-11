@@ -43,12 +43,16 @@ class GetCommand: public Command {
     }
 
     Expected<std::string> run(NetSession *sess) final {
-        Expected<GetParams> params = parse(sess);
-        if (!params.ok()) {
-            return params.status();
+        Expected<GetParams> exptParams = parse(sess);
+        if (!exptParams.ok()) {
+            return exptParams.status();
         }
 
-        PStore kvstore = getStore(sess, params.value().key);
+        const GetParams& params = exptParams.value();
+        auto storeLock = Command::lockDBByKey(sess,
+                                              params.key,
+                                              mgl::LockMode::LOCK_IS);
+        PStore kvstore = getStore(sess, params.key);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -59,7 +63,7 @@ class GetCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                params.value().key, "");
+                params.key, "");
 
         auto dbWrap = std::make_unique<ExpirableDBWrapper>(kvstore);
         Expected<RecordValue> eValue = dbWrap->getKV(rk, txn.get());

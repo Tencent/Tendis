@@ -3,8 +3,10 @@
 
 #include <string>
 #include <map>
+#include <memory>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/network/network.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -24,10 +26,15 @@ class Command {
     static Expected<std::string> runSessionCmd(NetSession *sess);
     // where should I put this function ?
     static PStore getStore(NetSession *sess, const std::string&);
+    static std::unique_ptr<StoreLock> lockDBByKey(NetSession *sess,
+                                                  const std::string& key,
+                                                  mgl::LockMode mode);
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();
     static std::string fmtOK();
+    static std::string fmtOne();
+    static std::string fmtZero();
     static std::string fmtBulk(const std::string& s);
 
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);

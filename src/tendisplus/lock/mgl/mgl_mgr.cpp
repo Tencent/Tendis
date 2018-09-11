@@ -8,18 +8,18 @@ namespace tendisplus {
 namespace mgl {
 
 bool isConflict(uint16_t modes, LockMode mode) {
-    static int16_t x = 1 << enum2Int(LockMode::LOCK_X);
-    static int16_t s = 1 << enum2Int(LockMode::LOCK_S);
-    static int16_t ix = 1 << enum2Int(LockMode::LOCK_IX);
-    static int16_t is = 1 << enum2Int(LockMode::LOCK_IS);
-    static int16_t conflictTable[enum2Int(LockMode::LOCK_MODE_NUM)] = {
-        0,          // NONE
-        x,          // IS
-        s|x,        // IX
-        ix|x,       // S
-        is|ix|s|x,  // x
+    static uint16_t x = 1 << enum2Int(LockMode::LOCK_X);
+    static uint16_t s = 1 << enum2Int(LockMode::LOCK_S);
+    static uint16_t ix = 1 << enum2Int(LockMode::LOCK_IX);
+    static uint16_t is = 1 << enum2Int(LockMode::LOCK_IS);
+    static uint16_t conflictTable[enum2Int(LockMode::LOCK_MODE_NUM)] = {
+        0,                                 // NONE
+        static_cast<uint16_t>(x),          // IS
+        static_cast<uint16_t>(s|x),        // IX
+        static_cast<uint16_t>(ix|x),       // S
+        static_cast<uint16_t>(is|ix|s|x),  // x
     };
-    int16_t modeInt = enum2Int(mode);
+    uint16_t modeInt = enum2Int(mode);
     return (conflictTable[modeInt]&modes) != 0;
 }
 
@@ -91,7 +91,7 @@ void LockSchedCtx::incrPendingRef(LockMode mode) {
     ++_pendingRefCnt[modeInt];
     if (_pendingRefCnt[modeInt] == 1) {
         INVARIANT((_pendingModes&(1 << modeInt)) == 0);
-        _pendingModes |= (1 << modeInt);
+        _pendingModes |= static_cast<uint16_t>((1 << modeInt));
     }
 }
 
@@ -101,7 +101,7 @@ void LockSchedCtx::decPendingRef(LockMode mode) {
     --_pendingRefCnt[modeInt];
     if (_pendingRefCnt[modeInt] == 0) {
         INVARIANT((_pendingModes&(1 << modeInt)) != 0);
-        _pendingModes &= ~(1 << modeInt);
+        _pendingModes &= static_cast<uint16_t>(~(1 << modeInt));
     }
 }
 
@@ -110,7 +110,7 @@ void LockSchedCtx::incrRunningRef(LockMode mode) {
     ++_runningRefCnt[modeInt];
     if (_runningRefCnt[modeInt] == 1) {
         INVARIANT((_runningModes&(1 << modeInt)) == 0);
-        _runningModes |= (1 << modeInt);
+        _runningModes |= static_cast<uint16_t>((1 << modeInt));
     }
 }
 
@@ -120,7 +120,7 @@ void LockSchedCtx::decRunningRef(LockMode mode) {
     --_runningRefCnt[modeInt];
     if (_runningRefCnt[modeInt] == 0) {
         INVARIANT((_runningModes&(1 << modeInt)) != 0);
-        _runningModes &= ~(1 << modeInt);
+        _runningModes &= static_cast<uint16_t>(~(1 << modeInt));
     }
 }
 

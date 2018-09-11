@@ -18,6 +18,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -115,6 +116,7 @@ Status ReplManager::startup() {
     // init first binlogpos, empty binlogs makes cornercase complicated.
     // so we put an no-op to binlogs everytime startup.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+        StoreLock storeLock(i, mgl::LockMode::LOCK_IX);
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
         INVARIANT(store != nullptr);
 

@@ -1,8 +1,10 @@
 #include <string>
+#include <memory>
 #include <map>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -67,6 +69,27 @@ Expected<std::string> Command::runSessionCmd(NetSession *sess) {
     return it->second->run(sess);
 }
 
+std::unique_ptr<StoreLock> Command::lockDBByKey(NetSession *sess,
+                                                const std::string& key,
+                                                mgl::LockMode mode) {
+    auto server = sess->getServerEntry();
+    if (!server) {
+        LOG(FATAL) << "BUG: get server from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+    auto segMgr = server->getSegmentMgr();
+    if (!segMgr) {
+        LOG(FATAL) << "BUG: get segMgr from sess:"
+                    << sess->getConnId()
+                    << ",Ip:"
+                    << sess->getRemoteRepr() << " empty";
+    }
+    uint32_t storeId = segMgr->calcSegId(key);
+    return std::make_unique<StoreLock>(storeId, mode);
+}
+
 PStore Command::getStore(NetSession *sess, const std::string& key) {
     auto server = sess->getServerEntry();
     if (!server) {
@@ -107,6 +130,14 @@ std::string Command::fmtNull() {
 
 std::string Command::fmtOK() {
     return "+OK\r\n";
+}
+
+std::string Command::fmtOne() {
+    return ":1\r\n";
+}
+
+std::string Command::fmtZero() {
+    return ":0\r\n";
 }
 
 std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {

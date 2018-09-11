@@ -20,7 +20,11 @@ Expected<RecordValue> ExpirableDBWrapper::getKV(const RecordKey& key,
     if (currentTs < ttlVal) {
         return expv.value();
     }
-    return _store->delKV(key, txn);
+    Status s = _store->delKV(key, txn);
+    if (!s.ok()) {
+        return s;
+    }
+    return {ErrorCodes::ERR_NOTFOUND, ""};
 }
 
 }  // namespace tendisplus

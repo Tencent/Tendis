@@ -128,8 +128,9 @@ std::vector<std::string> splitargs(const std::string& lineStr) {
                                              is_hex_digit(*(p+3))) {
                         unsigned char byte;
 
-                        byte = (hex_digit_to_int(*(p+2))*16)+
-                                hex_digit_to_int(*(p+3));
+                        byte = static_cast<unsigned char>(
+                                (hex_digit_to_int(*(p+2))*16)+
+                                hex_digit_to_int(*(p+3)));
                         current.push_back(static_cast<char>(byte));
                         p += 3;
                     } else if (*p == '\\' && *(p+1)) {

@@ -15,6 +15,8 @@ enum class RecordType {
     RT_KV,
     RT_LIST_META,
     RT_LIST_ELE,
+    RT_HASH_META,
+    RT_HASH_ELE,
     RT_BINLOG,
 };
 

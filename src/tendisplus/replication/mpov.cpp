@@ -18,6 +18,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -102,6 +103,9 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
                 uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
     constexpr uint32_t suggestBatch = 64;
     constexpr size_t suggestBytes = 16*1024*1024;
+
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
 
@@ -274,6 +278,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
     if (!store->isRunning()) {
