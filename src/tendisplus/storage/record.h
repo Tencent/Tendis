@@ -211,6 +211,26 @@ class ReplLog {
     ReplLogValue _val;
 };
 
+class HashMetaValue {
+ public:
+    HashMetaValue();
+    HashMetaValue(uint64_t count, uint64_t cas);
+    HashMetaValue(HashMetaValue&&);
+    static Expected<HashMetaValue> decode(const std::string&);
+    HashMetaValue& operator=(HashMetaValue&&);
+    std::string encode() const;
+    void setCount(uint64_t count);
+    void setCas(uint64_t cas);
+    uint64_t getCount() const;
+    uint64_t getCas() const;
+
+ private:
+    uint64_t _count;
+    uint64_t _cas;
+};
+
+Expected<uint64_t> getSubKeyCount(const RecordKey& key,
+                                  const RecordValue& val);
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_RECORD_H_

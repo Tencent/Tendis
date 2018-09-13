@@ -26,17 +26,37 @@ class Command {
     static Expected<std::string> runSessionCmd(NetSession *sess);
     // where should I put this function ?
     static PStore getStore(NetSession *sess, const std::string&);
+    static uint32_t getStoreId(NetSession *sess, const std::string&);
+    static PStore getStoreById(NetSession *sess, uint32_t storeId);
+
     static std::unique_ptr<StoreLock> lockDBByKey(NetSession *sess,
                                                   const std::string& key,
                                                   mgl::LockMode mode);
+
+    static bool isKeyLocked(NetSession *sess,
+                            uint32_t storeId,
+                            const std::string& encodedKey);
+
+    // return ERR_OK if not expired
+    // return ERR_EXPIRED if expired
+    // return errors on other unexpected conditions
+    static Status expireKeyIfNeeded(NetSession *sess,
+                                    uint32_t storeId,
+                                    const RecordKey& mk);
+
+    static Status delBigkey(NetSession *sess, uint32_t storeId,
+                            const RecordKey& rk);
+    static Status delCompondKey(NetSession *sess, uint32_t storeId,
+                            const RecordKey& rk, Transaction* txn);
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();
     static std::string fmtOK();
     static std::string fmtOne();
     static std::string fmtZero();
-    static std::string fmtBulk(const std::string& s);
+    static std::string fmtLongLong(uint64_t);
 
+    static std::string fmtBulk(const std::string& s);
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
     static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
 

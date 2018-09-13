@@ -8,22 +8,10 @@
 
 namespace tendisplus {
 
-struct GetParams {
-    std::string key;
-};
-
 class GetCommand: public Command {
  public:
     GetCommand()
         :Command("get") {
-    }
-
-    Expected<GetParams> parse(NetSession *sess) const {
-        const auto& args = sess->getArgs();
-        if (args.size() != 2) {
-            return {ErrorCodes::ERR_PARSEPKT, "invalid get params"};
-        }
-        return GetParams{args[1]};
     }
 
     ssize_t arity() const {
@@ -43,30 +31,37 @@ class GetCommand: public Command {
     }
 
     Expected<std::string> run(NetSession *sess) final {
-        Expected<GetParams> exptParams = parse(sess);
-        if (!exptParams.ok()) {
-            return exptParams.status();
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Status s = Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (s.code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtNull();
+        } else if (!s.ok()) {
+            return s;
         }
 
-        const GetParams& params = exptParams.value();
         auto storeLock = Command::lockDBByKey(sess,
-                                              params.key,
+                                              key,
                                               mgl::LockMode::LOCK_IS);
-        PStore kvstore = getStore(sess, params.key);
+        // NOTE(deyukong): currently we donot check if key is locked
+        // because we know, a simple kv will never be locked
+        // if this guarantee is broken in the future, remember to
+        // rewrite the code below
+        // if (Command::isKeyLocked(storeId, key.encode())) {
+        //    return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                params.key, "");
-
-        auto dbWrap = std::make_unique<ExpirableDBWrapper>(kvstore);
-        Expected<RecordValue> eValue = dbWrap->getKV(rk, txn.get());
+        Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
         if (!eValue.ok()) {
             const Status& status = eValue.status();
             if (status.code() == ErrorCodes::ERR_NOTFOUND) {

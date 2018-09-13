@@ -14,6 +14,7 @@ class SegmentMgr {
     SegmentMgr(const SegmentMgr&) = delete;
     SegmentMgr(SegmentMgr&&) = delete;
     virtual uint32_t calcSegId(const std::string&) const = 0;
+    virtual uint32_t calcInstanceId(const std::string&) const = 0;
     virtual PStore calcInstance(const std::string&) const = 0;
     virtual PStore getInstanceById(uint32_t) const = 0;
     // instances intersecting with this range
@@ -32,6 +33,7 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
     uint32_t calcSegId(const std::string&) const final;
+    uint32_t calcInstanceId(const std::string&) const final;
     PStore calcInstance(const std::string&) const final;
     PStore getInstanceById(uint32_t) const final;
     std::vector<PStore> calcInstances(

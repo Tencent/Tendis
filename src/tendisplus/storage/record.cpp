@@ -625,4 +625,98 @@ bool ReplLog::operator==(const ReplLog& o) const {
     return _key == o._key && _val == o._val;
 }
 
+HashMetaValue::HashMetaValue()
+    :HashMetaValue(0, 0) {
+}
+
+HashMetaValue::HashMetaValue(uint64_t count, uint64_t cas)
+    :_count(count),
+     _cas(cas) {
+}
+
+HashMetaValue::HashMetaValue(HashMetaValue&& o)
+        :_count(o._count),
+         _cas(o._cas) {
+    o._count = 0;
+    o._cas = 0;
+}
+
+std::string HashMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    auto countBytes = varintEncode(_count);
+    value.insert(value.end(), countBytes.begin(), countBytes.end());
+    auto casBytes = varintEncode(_cas);
+    value.insert(value.end(), casBytes.begin(), casBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    uint64_t count = 0;
+    uint64_t cas = 0;
+    auto expt = varintDecodeFwd(valCstr + offset, val.size());
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    count = expt.value().first;
+
+    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    cas = expt.value().first;
+    return HashMetaValue(count, cas);
+}
+
+HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {
+    if (&o == this) {
+        return *this;
+    }
+    _count = o._count;
+    _cas = o._cas;
+    o._count = 0;
+    o._cas = 0;
+    return *this;
+}
+
+void HashMetaValue::setCount(uint64_t count) {
+    _count = count;
+}
+
+void HashMetaValue::setCas(uint64_t cas) {
+    _cas = cas;
+}
+
+uint64_t HashMetaValue::getCount() const {
+    return _count;
+}
+
+uint64_t HashMetaValue::getCas() const {
+    return _cas;
+}
+
+Expected<uint64_t> getSubKeyCount(const RecordKey& key,
+                                  const RecordValue& val) {
+     switch (key.getRecordType()) {
+        case RecordType::RT_KV: {
+            return 1;
+        }
+        case RecordType::RT_HASH_META: {
+            auto v = HashMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getCount();
+        }
+        default: {
+            return {ErrorCodes::ERR_INTERNAL, "not support"};
+        }
+    }
+}
+
 }  // namespace tendisplus

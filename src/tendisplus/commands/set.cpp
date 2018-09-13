@@ -127,6 +127,8 @@ class SetCommand: public Command {
             return exptParams.status();
         }
 
+        // NOTE(deyukong): no need to do a expireKeyIfNeeded
+        // on a simple kv. We will overwrite it.
         const SetParams& params = exptParams.value();
         auto storeLock = Command::lockDBByKey(sess,
                                               params.key,

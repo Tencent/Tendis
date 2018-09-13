@@ -11,6 +11,7 @@
 #include "tendisplus/network/worker_pool.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/segment_manager.h"
+#include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
@@ -61,6 +62,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const SegmentMgr* getSegmentMgr() const;
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
+    PessimisticMgr* getPessimisticMgr();
 
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
@@ -79,6 +81,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
+    std::unique_ptr<PessimisticMgr> _pessimisticMgr;
+
     std::vector<PStore> _kvstores;
     std::unique_ptr<Catalog> _catalog;
 

@@ -39,7 +39,6 @@ class LockSchedCtx {
 // class alignas(std::hardware_destructive_interference_size) LockShard {
 // hardware_destructive_interference_size requires quite high version
 // gcc. 128 should work for most cases
-
 struct alignas(128) LockShard {
     std::mutex mutex;
     std::unordered_map<std::string, LockSchedCtx> map;

@@ -20,6 +20,7 @@ ServerEntry::ServerEntry()
          _executor(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
+         _pessimisticMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -83,6 +84,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    // pessimisticMgr
+    _pessimisticMgr = std::make_unique<PessimisticMgr>(
+        KVStore::INSTANCE_NUM);
+
     // network executePool
     _executor = std::make_unique<WorkerPool>(_poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
@@ -126,6 +131,10 @@ ReplManager* ServerEntry::getReplManager() {
 
 const SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
+}
+
+PessimisticMgr* ServerEntry::getPessimisticMgr() {
+    return _pessimisticMgr.get();
 }
 
 const std::shared_ptr<std::string> ServerEntry::requirepass() const {
