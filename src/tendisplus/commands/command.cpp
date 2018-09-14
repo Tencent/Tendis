@@ -1,6 +1,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <utility>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
@@ -93,16 +94,17 @@ bool Command::isKeyLocked(NetSession *sess,
     return shard->isLocked(encodedKey);
 }
 
-Status Command::delBigkey(NetSession *sess, uint32_t storeId, const RecordKey& mk) {
+Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
+                          const RecordKey& mk) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status Command::delCompondKey(NetSession *sess, uint32_t storeId,
+Status Command::delKeyOptimism(NetSession *sess, uint32_t storeId,
                              const RecordKey& mk, Transaction* txn) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status Command::expireKeyIfNeeded(NetSession *sess,
+Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
                                   uint32_t storeId,
                                   const RecordKey& mk) {
     // currently, a simple kv will not be locked
@@ -128,10 +130,11 @@ Status Command::expireKeyIfNeeded(NetSession *sess,
             return eValue.status();
         }
         uint64_t currentTs = nsSinceEpoch()/1000;
-        if (currentTs < eValue.value().getTtl()) {
-            return {ErrorCodes::ERR_OK, ""};
+        uint64_t targetTtl = eValue.value().getTtl();
+        if (targetTtl == 0 || currentTs < targetTtl) {
+            return eValue.value();
         }
-        Expected<uint64_t> cnt = getSubKeyCount(mk, eValue.value());
+        auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
         if (!cnt.ok()) {
             return cnt.status();
         }
@@ -142,14 +145,14 @@ Status Command::expireKeyIfNeeded(NetSession *sess,
             storeLock.reset();
             // reset txn, it is no longer used
             txn.reset();
-            Status s = Command::delBigkey(sess, storeId, mk);
+            Status s = Command::delKeyPessimistic(sess, storeId, mk);
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {
                 return s;
             }
         } else {
-            Status s = Command::delCompondKey(sess, storeId, mk, txn.get());
+            Status s = Command::delKeyOptimism(sess, storeId, mk, txn.get());
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;

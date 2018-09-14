@@ -24,13 +24,13 @@ char rt2Char(RecordType t);
 RecordType char2Rt(char t);
 
 // ********************* key format ***********************************
-// DBID + Type + PK + SK + len(PK) + len(SK) + 1B reserved
+// DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
 // DBID is a varint32 in little endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE
 // PK is primarykey, its length is described in len(PK)
-// SK is secondarykey, its length is described in len(SK)
-// len(PK) and len(SK) are varint32 stored in bigendian, so we can read
+// SK is secondarykey, its length is not stored
+// len(PK) is varint32 stored in bigendian, so we can read
 // from the end backwards.
 // the last 1B are reserved.
 // ********************* value format *********************************
@@ -55,6 +55,7 @@ class RecordKey {
     RecordKey(uint32_t dbid, RecordType type, std::string&& pk,
         std::string&& sk);
     const std::string& getPrimaryKey() const;
+    const std::string& getSecondaryKey() const;
     uint32_t getDbId() const;
 
     RecordType getRecordType() const;
@@ -229,8 +230,10 @@ class HashMetaValue {
     uint64_t _cas;
 };
 
+namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val);
+}  // namespace rcd_util
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_RECORD_H_

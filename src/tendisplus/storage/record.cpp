@@ -2,10 +2,12 @@
 #include <utility>
 #include <memory>
 #include <vector>
+#include <limits>
 #include "glog/logging.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -120,7 +122,13 @@ std::string RecordKey::encode() const {
     key.emplace_back(static_cast<uint8_t>(rt2Char(_type)));
 
     // PK
-    key.insert(key.end(), _pk.begin(), _pk.end());
+    std::string hexPk = hexlify(_pk);
+    key.insert(key.end(), hexPk.begin(), hexPk.end());
+
+    // NOTE(deyukong): 0 never exists in hex string.
+    // a padding o avoids prefixes intersect with
+    // each other in physical space
+    key.push_back(0);
 
     // SK
     key.insert(key.end(), _sk.begin(), _sk.end());
@@ -128,10 +136,6 @@ std::string RecordKey::encode() const {
     // len(PK)
     auto lenPK = varintEncode(_pk.size());
     key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
-
-    // len(SK)
-    auto lenSK = varintEncode(_sk.size());
-    key.insert(key.end(), lenSK.rbegin(), lenSK.rend());
 
     // reserved
     const uint8_t *p = reinterpret_cast<const uint8_t*>(&_fmtVsn);
@@ -144,6 +148,10 @@ std::string RecordKey::encode() const {
 
 const std::string& RecordKey::getPrimaryKey() const {
     return _pk;
+}
+
+const std::string& RecordKey::getSecondaryKey() const {
+    return _sk;
 }
 
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
@@ -170,40 +178,36 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     char typec = keyCstr[offset++];
     type = char2Rt(typec);
 
-    // sklen and pklen are stored in the reverse order
-    // sklen
+    // pklen is stored in the reverse order
+    // pklen
     const uint8_t *p = keyCstr + key.size() - rsvd - 1;
     expt = varintDecodeRvs(p, key.size() - rsvd - offset);
     if (!expt.ok()) {
         return expt.status();
     }
     rvsOffset += expt.value().second;
-    skLen = expt.value().first;
-
-    // pklen
-    p = keyCstr + key.size() - rsvd - 1 - rvsOffset;
-    expt = varintDecodeRvs(p, key.size() - rsvd - offset - rvsOffset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    rvsOffset += expt.value().second;
     pkLen = expt.value().first;
 
-    // do a double check
-    if (offset + pkLen + skLen + rvsOffset + rsvd != key.size()) {
-        // TODO(deyukong): hex the string
-        std::stringstream ss;
-        ss << "marshaled key content:" << key;
-        return {ErrorCodes::ERR_DECODE, ss.str()};
+    // 2*pklen: pk is hexed
+    // here -1 for the padding 0 after pk
+    if (key.size() < offset + rsvd + rvsOffset + 2*pkLen + 1) {
+        return {ErrorCodes::ERR_DECODE, "invalid sk len"};
     }
+    skLen = key.size() - offset - rsvd - rvsOffset - 2*pkLen - 1;
 
     // pk and sk
-    pk = std::string(key.c_str() + offset, pkLen);
-    sk = std::string(key.c_str() + offset + pkLen, skLen);
+    pk = std::string(key.c_str() + offset, 2*pkLen);
+
+    Expected<std::string> unhexPk = unhexlify(pk);
+    if (!unhexPk.ok()) {
+        return unhexPk.status();
+    }
+
+    sk = std::string(key.c_str() + offset + 2*pkLen + 1, skLen);
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(dbid, type, pk, sk);
+    return RecordKey(dbid, type, unhexPk.value(), sk);
 }
 
 bool RecordKey::operator==(const RecordKey& other) const {
@@ -700,6 +704,7 @@ uint64_t HashMetaValue::getCas() const {
     return _cas;
 }
 
+namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
      switch (key.getRecordType()) {
@@ -718,5 +723,5 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
         }
     }
 }
-
+}  // namespace rcd_util
 }  // namespace tendisplus

@@ -10,7 +10,6 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
-#include "tendisplus/storage/expirable.h"
 
 namespace tendisplus {
 
@@ -101,39 +100,17 @@ class HLenCommand: public Command {
         std::string metaKeyEnc = metaRk.encode();
         uint32_t storeId = Command::getStoreId(sess, key);
 
-        Status s = Command::expireKeyIfNeeded(sess, storeId, metaRk);
-        if (!s.ok()) {
-            return s;
-        }
-
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IS);
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
-
-        PStore kvstore = Command::getStoreById(sess, storeId);
-        auto ptxn = kvstore->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMetaVal = kvstore->getKV(metaRk, txn.get());
-        if (!eMetaVal.ok() &&
-                eMetaVal.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return eMetaVal.status();
-        }
-
-        if (!eMetaVal.ok() &&
-                eMetaVal.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return eMetaVal.status();
-        }
-        if (eMetaVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return fmtZero();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtZero();
+        } else if (!rv.status().ok()) {
+            return rv.status();
         }
         Expected<HashMetaValue> exptHashMeta =
-            HashMetaValue::decode(eMetaVal.value().getValue());
+            HashMetaValue::decode(rv.value().getValue());
         if (!exptHashMeta.ok()) {
             return exptHashMeta.status();
         }
@@ -176,11 +153,16 @@ class HGetCommand: public Command {
         RecordKey subRk(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
         uint32_t storeId = Command::getStoreId(sess, key);
 
-        Status s = Command::expireKeyIfNeeded(sess, storeId, metaRk);
-        if (!s.ok()) {
-            return s;
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtNull();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.status().ok()) {
+            return rv.status();
         }
- 
+
         auto storeLock = Command::lockDBByKey(sess,
                                               key,
                                               mgl::LockMode::LOCK_IS);
@@ -194,17 +176,9 @@ class HGetCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMetaVal = kvstore->getKV(metaRk, txn.get());
-        if (!eMetaVal.ok() &&
-                eMetaVal.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return eMetaVal.status();
-        }
-        if (eMetaVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return fmtNull();
-        }
         Expected<RecordValue> eVal = kvstore->getKV(subRk, txn.get());
         if (eVal.ok()) {
-            return eVal.value().getValue();
+            return fmtBulk(eVal.value().getValue());
         } else if (eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return fmtNull();
         } else {
@@ -249,12 +223,16 @@ class HSetCommand: public Command {
         RecordValue subRv(val);
         uint32_t storeId = Command::getStoreId(sess, key);
 
-        Status s = Command::expireKeyIfNeeded(sess, storeId, metaKey);
-        if (!s.ok()) {
-            return s;
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
         }
+
         // now, we have no need to deal with expire, though it may still
-        // be expired in a very rere situation since expireHash is in
+        // be expired in a very rare situation since expireHash is in
         // a seperate txn (from code below)
         auto storeLock = Command::lockDBByKey(sess,
                                               key,

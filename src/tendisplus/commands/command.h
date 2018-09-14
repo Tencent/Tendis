@@ -40,13 +40,13 @@ class Command {
     // return ERR_OK if not expired
     // return ERR_EXPIRED if expired
     // return errors on other unexpected conditions
-    static Status expireKeyIfNeeded(NetSession *sess,
+    static Expected<RecordValue> expireKeyIfNeeded(NetSession *sess,
                                     uint32_t storeId,
                                     const RecordKey& mk);
 
-    static Status delBigkey(NetSession *sess, uint32_t storeId,
+    static Status delKeyPessimistic(NetSession *sess, uint32_t storeId,
                             const RecordKey& rk);
-    static Status delCompondKey(NetSession *sess, uint32_t storeId,
+    static Status delKeyOptimism(NetSession *sess, uint32_t storeId,
                             const RecordKey& rk, Transaction* txn);
 
     static std::string fmtErr(const std::string& s);
