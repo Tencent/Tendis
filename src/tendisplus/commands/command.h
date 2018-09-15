@@ -63,6 +63,9 @@ class Command {
     static constexpr int32_t RETRY_CNT = 3;
 
  private:
+    static Expected<uint32_t> deleteKey(NetSession *sess, uint32_t storeId,
+                                 uint32_t subCount, const RecordKey& mk,
+                                 bool deleteMeta, Transaction *txn);
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.

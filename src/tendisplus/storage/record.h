@@ -58,12 +58,17 @@ class RecordKey {
     const std::string& getSecondaryKey() const;
     uint32_t getDbId() const;
 
+    // an encoded prefix until prefix and a padding zero.
+    // mainly for prefix scan.
+    std::string prefixPk() const;
+
     RecordType getRecordType() const;
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
     bool operator==(const RecordKey& other) const;
 
  private:
+    void encodePrefixPk(std::vector<uint8_t>*) const;
     uint32_t _dbId;
     RecordType _type;
     std::string _pk;

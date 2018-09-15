@@ -101,8 +101,35 @@ RecordKey::RecordKey(uint32_t dbid, RecordType type,
      _fmtVsn(0) {
 }
 
+void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
+    // --------key encoding
+    // DBID
+    auto dbIdBytes = varintEncode(_dbId);
+    arr->insert(arr->end(), dbIdBytes.begin(), dbIdBytes.end());
+
+    // Type
+    arr->emplace_back(static_cast<uint8_t>(rt2Char(_type)));
+
+    // PK
+    std::string hexPk = hexlify(_pk);
+    arr->insert(arr->end(), hexPk.begin(), hexPk.end());
+
+    // NOTE(deyukong): 0 never exists in hex string.
+    // a padding o avoids prefixes intersect with
+    // each other in physical space
+    arr->push_back(0);
+}
+
 uint32_t RecordKey::getDbId() const {
     return _dbId;
+}
+
+std::string RecordKey::prefixPk() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    encodePrefixPk(&key);
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
 }
 
 RecordType RecordKey::getRecordType() const {
@@ -113,22 +140,7 @@ std::string RecordKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
 
-    // --------key encoding
-    // DBID
-    auto dbIdBytes = varintEncode(_dbId);
-    key.insert(key.end(), dbIdBytes.begin(), dbIdBytes.end());
-
-    // Type
-    key.emplace_back(static_cast<uint8_t>(rt2Char(_type)));
-
-    // PK
-    std::string hexPk = hexlify(_pk);
-    key.insert(key.end(), hexPk.begin(), hexPk.end());
-
-    // NOTE(deyukong): 0 never exists in hex string.
-    // a padding o avoids prefixes intersect with
-    // each other in physical space
-    key.push_back(0);
+    encodePrefixPk(&key);
 
     // SK
     key.insert(key.end(), _sk.begin(), _sk.end());

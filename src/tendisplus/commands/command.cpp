@@ -2,10 +2,13 @@
 #include <memory>
 #include <map>
 #include <utility>
+#include <list>
+#include <limits>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/storage/record.h"
 
@@ -94,14 +97,147 @@ bool Command::isKeyLocked(NetSession *sess,
     return shard->isLocked(encodedKey);
 }
 
+// requirement: StoreLock not held, add storelock inside
 Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
                           const RecordKey& mk) {
-    return {ErrorCodes::ERR_OK, ""};
+    std::string keyEnc = mk.encode();
+    // lock key with X-lock held
+    {
+        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
+        if (Command::isKeyLocked(sess, storeId, keyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key is locked"};
+        }
+        auto server = sess->getServerEntry();
+        auto pessimisticMgr = server->getPessimisticMgr();
+        auto shard = pessimisticMgr->getShard(storeId);
+        shard->lock(keyEnc);
+    }
+    LOG(INFO) << "begin delKeyPessimistic key:"
+                << hexlify(mk.getPrimaryKey());
+
+    // storeLock destructs after guard, it's guaranteed.
+    // unlock the key at last
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+    auto guard = MakeGuard([sess, storeId, &keyEnc]() {
+        auto server = sess->getServerEntry();
+        auto pessimisticMgr = server->getPessimisticMgr();
+        auto shard = pessimisticMgr->getShard(storeId);
+        shard->unlock(keyEnc);
+    });
+
+    PStore kvstore = Command::getStoreById(sess, storeId);
+    uint64_t totalCount = 0;
+    const uint32_t batchSize = 2048;
+    while (true) {
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<uint32_t> deleteCount =
+            deleteKey(sess, storeId, batchSize, mk, false, txn.get());
+        if (!deleteCount.ok()) {
+            return deleteCount.status();
+        }
+        totalCount += deleteCount.value();
+        if (deleteCount.value() == batchSize) {
+            continue;
+        }
+        ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        txn = std::move(ptxn.value());
+        Status s = kvstore->delKV(mk, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> commitStatus = txn->commit();
+        return commitStatus.status();
+    }
 }
 
-Status Command::delKeyOptimism(NetSession *sess, uint32_t storeId,
-                             const RecordKey& mk, Transaction* txn) {
-    return {ErrorCodes::ERR_OK, ""};
+// requirement: StoreLock held
+Status Command::delKeyOptimism(NetSession *sess,
+                                           uint32_t storeId,
+                                           const RecordKey& rk,
+                                           Transaction* txn) {
+    auto s = Command::deleteKey(sess,
+                              storeId,
+                              std::numeric_limits<uint32_t>::max(),
+                              rk,
+                              true,
+                              txn);
+    return s.status();
+}
+
+Expected<uint32_t> Command::deleteKey(NetSession *sess,
+                                       uint32_t storeId,
+                                       uint32_t subCount,
+                                       const RecordKey& mk,
+                                       bool deleteMeta,
+                                       Transaction* txn) {
+    if (deleteMeta && subCount != std::numeric_limits<uint32_t>::max()) {
+        return {ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount"};
+    }
+    PStore kvstore = Command::getStoreById(sess, storeId);
+    if (mk.getRecordType() == RecordType::RT_KV) {
+        Status s = kvstore->delKV(mk, txn);
+        if (!s.ok()) {
+            return s;
+        }
+        auto commitStatus = txn->commit();
+        return commitStatus.status();
+    }
+    std::string prefix;
+    if (mk.getRecordType() == RecordType::RT_HASH_META) {
+        RecordKey fakeEle(mk.getDbId(),
+                          RecordType::RT_HASH_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefix = fakeEle.prefixPk();
+    } else {
+        // TODO(impl)
+        INVARIANT(0);
+    }
+    auto cursor = txn->createCursor();
+    cursor->seek(prefix);
+
+    std::list<RecordKey> pendingDelete;
+    while (true) {
+        if (pendingDelete.size() >= subCount) {
+            break;
+        }
+        Expected<Record> exptRcd = cursor->next();
+        if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+        if (!exptRcd.ok()) {
+            return exptRcd.status();
+        }
+        Record& rcd = exptRcd.value();
+        const RecordKey& rcdKey = rcd.getRecordKey();
+        INVARIANT(rcdKey.prefixPk() == prefix);
+        INVARIANT(rcdKey.getPrimaryKey() == mk.getPrimaryKey());
+        pendingDelete.push_back(rcdKey);
+    }
+    if (deleteMeta) {
+        pendingDelete.push_back(mk);
+    }
+
+    for (auto& v : pendingDelete) {
+        Status s = kvstore->delKV(v, txn);
+        if (!s.ok()) {
+            return s;
+        }
+    }
+
+    Expected<uint64_t> commitStatus = txn->commit();
+    if (commitStatus.ok()) {
+        return pendingDelete.size();
+    } else {
+        return commitStatus.status();
+    }
 }
 
 Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
@@ -139,7 +275,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
             return cnt.status();
         }
         if (cnt.value() >= 2048) {
-            LOG(INFO) << "bigkey delete:" << mk.getPrimaryKey()
+            LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
+                      << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
             // reset storelock, or deadlock
             storeLock.reset();
