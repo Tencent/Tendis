@@ -217,6 +217,22 @@ class ReplLog {
     ReplLogValue _val;
 };
 
+class ListMetaValue {
+ public:
+    ListMetaValue(uint64_t head, uint64_t tail);
+    ListMetaValue(ListMetaValue&&);
+    static Expected<ListMetaValue> decode(const std::string&);
+    ListMetaValue& operator=(ListMetaValue&&);
+    void setHead(uint64_t head);
+    uint64_t getHead() const;
+    void setTail(uint64_t tail);
+    uint64_t getTail() const;
+
+ private:
+    uint64_t _head;
+    uint64_t _tail;
+};
+
 class HashMetaValue {
  public:
     HashMetaValue();

@@ -716,6 +716,66 @@ uint64_t HashMetaValue::getCas() const {
     return _cas;
 }
 
+ListMetaValue::ListMetaValue(uint64_t head, uint64_t tail)
+        :_head(head),
+         _tail(tail) {
+}
+
+ListMetaValue::ListMetaValue(ListMetaValue&& v)
+        :_head(v._head),
+         _tail(v._tail) {
+    v._head = 0;
+    v._tail = 0;
+}
+
+Expected<ListMetaValue> ListMetaValue::decode(const std::string& val) {
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    uint64_t head = 0;
+    uint64_t tail = 0;
+    auto expt = varintDecodeFwd(valCstr + offset, val.size());
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    head = expt.value().first;
+
+    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    tail = expt.value().first;
+    return ListMetaValue(head, tail);
+}
+
+ListMetaValue& ListMetaValue::operator=(ListMetaValue&& o) {
+    if (&o == this) {
+        return *this;
+    }
+    _head = o._head;
+    _tail = o._tail;
+    o._head = 0;
+    o._tail = 0;
+    return *this;
+}
+
+void ListMetaValue::setHead(uint64_t head) {
+    _head = head;
+}
+
+void ListMetaValue::setTail(uint64_t tail) {
+    _tail = tail;
+}
+
+uint64_t ListMetaValue::getHead() const {
+    return _head;
+}
+
+uint64_t ListMetaValue::getTail() const {
+    return _tail;
+}
+
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
