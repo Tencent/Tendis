@@ -27,6 +27,7 @@ enum class ErrorCodes {
 
 class Status {
  public:
+    Status();
     Status(const ErrorCodes& code, const std::string& reason);
     Status(const Status& other) = default;
     Status(Status&& other);

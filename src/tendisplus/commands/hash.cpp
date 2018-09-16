@@ -252,4 +252,157 @@ class HSetCommand: public Command {
         return hsetGeneric(metaKey, subKey, subRv, kvstore);
     }
 } hsetCommand;
+
+class HDelCommand: public Command {
+ public:
+    HDelCommand()
+        :Command("hdel") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<uint32_t> delKeys(PStore kvstore,
+                               const RecordKey& metaKey,
+                               const std::vector<std::string>& args,
+                               Transaction* txn) {
+        uint32_t dbId = metaKey.getDbId();
+        uint32_t realDel = 0;
+
+        Expected<RecordValue> eValue = kvstore->getKV(metaKey, txn);
+        if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return 0;
+        }
+        if (!eValue.ok()) {
+            return eValue.status();
+        }
+
+        HashMetaValue hashMeta;
+        uint64_t ttl = 0;
+        if (eValue.ok()) {
+            ttl = eValue.value().getTtl();
+            Expected<HashMetaValue> exptHashMeta =
+                HashMetaValue::decode(eValue.value().getValue());
+            if (!exptHashMeta.ok()) {
+                return exptHashMeta.status();
+            }
+            hashMeta = std::move(exptHashMeta.value());
+        }  // no else, else not found , so subkeyCount = 0, ttl = 0
+
+        for (size_t i = 2; i < args.size(); ++i) {
+            RecordKey subRk(dbId,
+                            RecordType::RT_HASH_ELE,
+                            metaKey.getPrimaryKey(),
+                            args[i]);
+            Expected<RecordValue> eVal = kvstore->getKV(subRk, txn);
+            if (eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            }
+            if (!eVal.ok()) {
+                return eVal.status();
+            }
+            Status s = kvstore->delKV(subRk, txn);
+            if (!s.ok()) {
+                return s;
+            }
+            realDel++;
+        }
+
+        // modify meta data
+        INVARIANT(realDel <= hashMeta.getCount());
+        Status s;
+        if (realDel == hashMeta.getCount()) {
+            s = kvstore->delKV(metaKey, txn);
+        } else {
+            hashMeta.setCount(hashMeta.getCount() - realDel);
+            RecordValue metaValue(hashMeta.encode(), ttl);
+            s = kvstore->setKV(metaKey, metaValue, txn);
+        }
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> commitStatus = txn->commit();
+        if (!commitStatus.ok()) {
+            return commitStatus.status();
+        }
+        return realDel;
+    }
+
+    Expected<std::string> run(NetSession* sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        if (args.size() >= 32768) {
+            return {ErrorCodes::ERR_PARSEOPT, "exceed hdel batch lim"};
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        uint32_t storeId = Command::getStoreId(sess, key);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtZero();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtZero();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        std::vector<RecordKey> rcds;
+        for (size_t i = 2; i < args.size(); ++i) {
+            rcds.emplace_back(
+                RecordKey(pCtx->getDbId(),
+                          RecordType::RT_HASH_ELE,
+                          key,
+                          args[i]));
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<uint32_t> delCount =
+                    delKeys(kvstore, metaKey, args, txn.get());
+            if (delCount.status().code() == ErrorCodes::ERR_COMMIT_RETRY) {
+                if (i == RETRY_CNT - 1) {
+                    return delCount.status();
+                } else {
+                    continue;
+                }
+            }
+            if (!delCount.ok()) {
+                return delCount.status();
+            }
+            return Command::fmtLongLong(delCount.value());
+        }
+        // never reaches here
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
+    }
+} hdelCommand;
 }  // namespace tendisplus

@@ -2,6 +2,10 @@
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
+Status::Status()
+    :Status(ErrorCodes::ERR_OK, "") {
+}
+
 Status::Status(const ErrorCodes& code, const std::string& reason)
     :_errmsg(reason), _code(code) {
 }

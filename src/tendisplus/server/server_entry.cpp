@@ -29,6 +29,10 @@ ServerEntry::ServerEntry()
          _masterauth(nullptr) {
 }
 
+void ServerEntry::installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr> o) {
+    _pessimisticMgr = std::move(o);
+}
+
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
     // TODO(deyukong): assert mutex held
     _kvstores = o;
@@ -85,8 +89,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
 
     // pessimisticMgr
-    _pessimisticMgr = std::make_unique<PessimisticMgr>(
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
         KVStore::INSTANCE_NUM);
+    installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
     // network executePool
     _executor = std::make_unique<WorkerPool>(_poolMatrix);

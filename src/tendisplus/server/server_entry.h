@@ -57,6 +57,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installStoresInLock(const std::vector<PStore>&);
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void installCatalog(std::unique_ptr<Catalog>);
+    void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
+
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;

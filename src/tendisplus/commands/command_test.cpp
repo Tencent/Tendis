@@ -24,15 +24,48 @@ static std::shared_ptr<ServerParams> genParams() {
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
     myfile << "logdir ./log\n";
-    myfile << "storageEngine rocks\n";
-    myfile << "dbPath ./db\n";
-    myfile << "rocksBlockCacheMB 4096\n";
+    myfile << "storage rocks\n";
+    myfile << "dir ./db\n";
+    myfile << "rocks.blockcachemb 4096\n";
     myfile.close();
     auto cfg = std::make_shared<ServerParams>();
     auto s = cfg->parseFile("a.cfg");
     EXPECT_EQ(s.ok(), true) << s.toString();
     return cfg;
 }
+
+void testHash(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+    }
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hget", "a", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
+    }
+    std::vector<std::string> args;
+    args.push_back("hdel");
+    args.push_back("a");
+    for (uint32_t i = 0; i < 10000; i++) {
+        args.push_back(std::to_string(2*i));
+    }
+    sess.setArgs(args);
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(5000));
+
+    sess.setArgs({"hlen", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(5000));
+}
+
 
 void testSet(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
@@ -106,8 +139,13 @@ TEST(Command, common) {
     auto segMgr = std::unique_ptr<SegmentMgr>(
             new SegmentMgrFnvHash64(tmpStores));
     server->installSegMgrInLock(std::move(segMgr));
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
+        KVStore::INSTANCE_NUM);
+    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+
     testSet(server);
     testSetRetry(server);
+    testHash(server);
 }
 
 }  // namespace tendisplus
