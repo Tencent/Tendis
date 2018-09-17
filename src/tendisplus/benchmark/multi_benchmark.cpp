@@ -55,6 +55,7 @@ rocksdb::ColumnFamilyOptions _cfOptions(int memtable_num, int memtable_size) {
 	options.write_buffer_size = memtable_size;  // 64MB
 	options.level0_slowdown_writes_trigger = 8;
 	options.max_write_buffer_number = memtable_num;
+    options.max_write_buffer_number_to_maintain = 1;
 	options.target_file_size_base = 64 * 1024 * 1024; // 64MB
 	options.soft_rate_limit = 2.5;
 	options.hard_rate_limit = 3;
@@ -85,6 +86,7 @@ rocksdb::Options _options(std::shared_ptr<rocksdb::Cache> bc, int memtable_num, 
 	options.write_buffer_size = memtable_size;  // 64MB
 	options.level0_slowdown_writes_trigger = 8;
 	options.max_write_buffer_number = memtable_num;
+    options.max_write_buffer_number_to_maintain = 1;
 	options.max_background_compactions = 8;
 	options.max_background_flushes = 2;
 	options.target_file_size_base = 64 * 1024 * 1024; // 64MB
@@ -176,6 +178,24 @@ void odoPut(const ODBS& dbs, const CFS& cfs) {
     delete txn;
 }
 
+void odoGet(const ODBS& dbs, const CFS& cfs) {
+	uint32_t key = intRand();
+	uint32_t dbid = (key>>16) % dbs.size();
+	uint32_t cfid = (key&0xffff) % cfs[dbid].size();
+	std::stringstream ss;
+	ss << key;
+	std::string keystr = ss.str();
+	auto rockskey = rocksdb::Slice(keystr.c_str(), keystr.size());
+	std::string val;
+
+    rocksdb::OptimisticTransactionOptions txnOpts;
+    txnOpts.set_snapshot = true;
+    auto txn = dbs[dbid]->BeginTransaction(rocksdb::WriteOptions(), txnOpts);
+    txn->Get(rocksdb::ReadOptions(), cfs[dbid][cfid].get(), ss.str(), &val);
+    txn->Commit();
+    delete txn;
+}
+
 void pdoPut(const PDBS& dbs, const CFS& cfs) {
 	uint32_t key = intRand();
 	uint32_t dbid = (key>>16) % dbs.size();
@@ -206,23 +226,6 @@ void doGet(const DBS& dbs, const CFS& cfs) {
 	dbs[dbid]->Get(rocksdb::ReadOptions(), cfs[dbid][cfid].get(), ss.str(), &val);
 }
 
-void odoGet(const ODBS& dbs, const CFS& cfs) {
-	uint32_t key = intRand();
-	uint32_t dbid = (key>>16) % dbs.size();
-	uint32_t cfid = (key&0xffff) % cfs[dbid].size();
-	std::stringstream ss;
-	ss << key;
-	std::string keystr = ss.str();
-	auto rockskey = rocksdb::Slice(keystr.c_str(), keystr.size());
-	std::string val;
-
-    rocksdb::OptimisticTransactionOptions txnOpts;
-    txnOpts.set_snapshot = true;
-    auto txn = dbs[dbid]->BeginTransaction(rocksdb::WriteOptions(), txnOpts);
-    txn->Get(rocksdb::ReadOptions(), cfs[dbid][cfid].get(), ss.str(), &val);
-    delete txn;
-}
-
 void pdoGet(const PDBS& dbs, const CFS& cfs) {
 	uint32_t key = intRand();
 	uint32_t dbid = (key>>16) % dbs.size();
@@ -236,6 +239,7 @@ void pdoGet(const PDBS& dbs, const CFS& cfs) {
     rocksdb::TransactionOptions txnOpts;
     auto txn = dbs[dbid]->BeginTransaction(rocksdb::WriteOptions(), txnOpts);
     txn->Get(rocksdb::ReadOptions(), cfs[dbid][cfid].get(), ss.str(), &val);
+    txn->Commit();
     delete txn;
 }
 
@@ -372,7 +376,8 @@ int main(int argc, char *argv[]) {
 	}
 	assert(memtable_num >= 0 && memtable_num <= 4);
 	assert(memtable_size >= 8*1024*1024);
-    auto bc = rocksdb::NewLRUCache(4 * 1024 * 1024 * 1024LL, 6);
+    auto bc = rocksdb::NewLRUCache(4 * 1024 * 1024 * 1LL, 6);
+    //auto bc = rocksdb::NewLRUCache(4 * 1024 * 1024 * 1024LL, 6);
 
 	DBS dbs;
     ODBS odbs;
@@ -441,8 +446,10 @@ int main(int argc, char *argv[]) {
             }
 			assert(status.ok());
 			for(auto &v : handles) {
+                if (v->GetName() == "default") continue;
 				cfs[i].emplace_back(std::unique_ptr<rocksdb::ColumnFamilyHandle>(v));
 			}
+            std::cout<< "db:" << i << ",cf size:" << cfs[i].size() << std::endl;
             if (mode == "db") {
 			    dbs.emplace_back(std::unique_ptr<rocksdb::DB>(db));
             } else if (mode == "odb") {
