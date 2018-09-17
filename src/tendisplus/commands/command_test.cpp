@@ -34,6 +34,29 @@ static std::shared_ptr<ServerParams> genParams() {
     return cfg;
 }
 
+void testList(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+
+    sess.setArgs({"lindex", "a", std::to_string(0)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"lpush", "a", std::to_string(2*i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+
+        sess.setArgs({"lindex", "a", std::to_string(i)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(2*i)));
+    }
+}
+
 void testHash(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -146,6 +169,7 @@ TEST(Command, common) {
     testSet(server);
     testSetRetry(server);
     testHash(server);
+    testList(server);
 }
 
 }  // namespace tendisplus

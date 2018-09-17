@@ -223,6 +223,7 @@ class ListMetaValue {
     ListMetaValue(ListMetaValue&&);
     static Expected<ListMetaValue> decode(const std::string&);
     ListMetaValue& operator=(ListMetaValue&&);
+    std::string encode() const;
     void setHead(uint64_t head);
     uint64_t getHead() const;
     void setTail(uint64_t tail);

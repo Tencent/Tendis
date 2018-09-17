@@ -344,7 +344,7 @@ class HDelCommand: public Command {
     Expected<std::string> run(NetSession* sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-        if (args.size() >= 32768) {
+        if (args.size() >= 30000) {
             return {ErrorCodes::ERR_PARSEOPT, "exceed hdel batch lim"};
         }
 

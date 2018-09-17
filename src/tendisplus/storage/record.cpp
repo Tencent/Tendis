@@ -728,6 +728,17 @@ ListMetaValue::ListMetaValue(ListMetaValue&& v)
     v._tail = 0;
 }
 
+std::string ListMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    auto headBytes = varintEncode(_head);
+    value.insert(value.end(), headBytes.begin(), headBytes.end());
+    auto tailBytes = varintEncode(_tail);
+    value.insert(value.end(), tailBytes.begin(), tailBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
 Expected<ListMetaValue> ListMetaValue::decode(const std::string& val) {
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
     size_t offset = 0;
@@ -789,6 +800,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                 return v.status();
             }
             return v.value().getCount();
+        }
+        case RecordType::RT_LIST_META: {
+            auto v = ListMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getTail() - v.value().getHead();
         }
         default: {
             return {ErrorCodes::ERR_INTERNAL, "not support"};

@@ -17,6 +17,133 @@ constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ/2ULL;
 constexpr uint64_t MINSEQ = 1024;
 
+Expected<std::string> genericPush(NetSession *sess,
+                                  PStore kvstore,
+                                  const RecordKey& metaRk,
+                                  const std::vector<std::string>& args) {
+    auto ptxn = kvstore->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    ListMetaValue lm(INITSEQ, INITSEQ);
+    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+    uint64_t ttl = 0;
+
+    if (rv.ok()) {
+        ttl = rv.value().getTtl();
+        Expected<ListMetaValue> exptLm =
+            ListMetaValue::decode(rv.value().getValue());
+        INVARIANT(exptLm.ok());
+        lm = std::move(exptLm.value());
+    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+        return rv.status();
+    }
+
+    uint64_t tail = lm.getTail();
+    for (size_t i = 2; i < args.size(); ++i) {
+        RecordKey subRk(metaRk.getDbId(),
+                        RecordType::RT_LIST_ELE,
+                        metaRk.getPrimaryKey(),
+                        std::to_string(tail++));
+        RecordValue subRv(args[i]);
+        Status s = kvstore->setKV(subRk, subRv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+    }
+    lm.setTail(tail);
+    Status s = kvstore->setKV(metaRk,
+                              RecordValue(lm.encode(), ttl),
+                              txn.get());
+    if (!s.ok()) {
+        return s;
+    }
+    Expected<uint64_t> commitStatus = txn->commit();
+    return Command::fmtLongLong(lm.getTail() - lm.getHead());
+}
+
+class LPushCommand: public Command {
+ public:
+    LPushCommand()
+        :Command("lpush") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        if (args.size() >= 30000) {
+            return {ErrorCodes::ERR_PARSEOPT, "exceed lpush batch lim"};
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> s =
+                genericPush(sess, kvstore, metaRk, args);
+            if (s.ok()) {
+                return s.value();
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} lpushCommand;
+
 class LIndexCommand: public Command {
  public:
     LIndexCommand()

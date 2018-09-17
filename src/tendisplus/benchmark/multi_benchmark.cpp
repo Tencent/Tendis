@@ -311,7 +311,7 @@ void prunFunctor(const PDBS& dbs, const CFS& cfs, int thd_id, int record_num) {
 	std::cout << "thd:" << thd_id << ", run done" << std::endl;
 }
 
-void monitorFunctor(const DBS& dbs, const CFS& cfs, const std::atomic<bool>& stop_flag) {
+void monitorFunctor(const std::vector<rocksdb::DB*> dbs, const CFS& cfs, const std::atomic<bool>& stop_flag) {
         std::vector<std::pair<std::string, uint64_t>> properties = { 
             {"num-immutable-mem-table", 0},
             {"mem-table-flush-pending", 0},
@@ -372,7 +372,7 @@ int main(int argc, char *argv[]) {
 	}
 	assert(memtable_num >= 0 && memtable_num <= 4);
 	assert(memtable_size >= 8*1024*1024);
-        auto bc = rocksdb::NewLRUCache(4 * 1024 * 1024 * 1024LL, 6);
+    auto bc = rocksdb::NewLRUCache(4 * 1024 * 1024 * 1024LL, 6);
 
 	DBS dbs;
     ODBS odbs;
@@ -477,7 +477,21 @@ int main(int argc, char *argv[]) {
 	}
 
 	std::atomic<bool> stopped(false);
-	auto monitor = std::thread(monitorFunctor, std::ref(dbs), std::ref(cfs), std::ref(stopped));
+    std::vector<rocksdb::DB*> alldbs;
+    if (mode == "db") {
+        for (auto& db : dbs) {
+            alldbs.push_back(db.get());
+        }
+    } else if (mode == "odb") {
+        for (auto& db : odbs) {
+            alldbs.push_back(db->GetBaseDB());
+        }
+    } else if (mode == "pdb") {
+        for (auto& db : pdbs) {
+            alldbs.push_back(db->GetBaseDB());
+        }
+    }
+	auto monitor = std::thread(monitorFunctor, alldbs, std::ref(cfs), std::ref(stopped));
 
 	for (auto& v : threads) {
 		v.join();
