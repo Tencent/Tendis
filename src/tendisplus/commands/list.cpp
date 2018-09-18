@@ -64,6 +64,60 @@ Expected<std::string> genericPush(NetSession *sess,
     return Command::fmtLongLong(lm.getTail() - lm.getHead());
 }
 
+class LLenCommand: public Command {
+ public:
+    LLenCommand()
+        :Command("llen") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::string& key = sess->getArgs()[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtZero();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtZero();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+
+        Expected<ListMetaValue> exptListMeta =
+            ListMetaValue::decode(rv.value().getValue());
+        if (!exptListMeta.ok()) {
+            return exptListMeta.status();
+        }
+        uint64_t tail = exptListMeta.value().getTail();
+        uint64_t head = exptListMeta.value().getHead();
+        return fmtLongLong(tail - head);
+    }
+} llenCommand;
+
 class LPushCommand: public Command {
  public:
     LPushCommand()

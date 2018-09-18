@@ -54,6 +54,11 @@ void testList(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(2*i)));
+
+        sess.setArgs({"llen", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
     }
 }
 
