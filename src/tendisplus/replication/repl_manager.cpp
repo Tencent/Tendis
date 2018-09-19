@@ -127,7 +127,7 @@ Status ReplManager::startup() {
 
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         RecordKey rk(0, RecordType::RT_META, "NOOP", "");
-        RecordValue rv("");
+        RecordValue rv("NOOP");
         Status putStatus = store->setKV(rk, rv, txn.get());
         if (!putStatus.ok()) {
             return putStatus;

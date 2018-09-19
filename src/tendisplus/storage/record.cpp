@@ -8,6 +8,7 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -252,6 +253,7 @@ RecordValue::RecordValue(std::string&& val, uint64_t ttl)
 }
 
 std::string RecordValue::encode() const {
+    INVARIANT(_value.size() > 0);
     // --------value encoding
     // TTL
     std::vector<uint8_t> value;
@@ -279,7 +281,9 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     // NOTE(deyukong): value must not be empty
     // so we use >= rather than > here
     if (offset >= value.size()) {
-        return {ErrorCodes::ERR_DECODE, "marshaled value content"};
+        std::stringstream ss;
+        ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
+        return {ErrorCodes::ERR_DECODE, ss.str()};
     }
     std::string rawValue = std::string(value.c_str() + offset,
         value.size() - offset);
@@ -443,11 +447,12 @@ std::string ReplLogKey::prefix(uint64_t commitId) {
     static_assert(sizeof(commitId) == 8,
         "commitId size not 8, reimpl the logic");
     std::string p = ReplLogKey::prefix();
+    std::string p1;
     const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&commitId);
     for (size_t i = 0; i < sizeof(commitId); i++) {
-        p.push_back(txnBuf[sizeof(commitId)-1-i]);
+        p1.push_back(txnBuf[sizeof(commitId)-1-i]);
     }
-    return p;
+    return p + hexlify(p1);
 }
 
 std::string ReplLogKey::encode() const {

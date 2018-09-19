@@ -87,7 +87,6 @@ std::string overflip(const std::string& s) {
 }
 
 TEST(Record, Common) {
-    return;
     srand(time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
@@ -126,7 +125,7 @@ TEST(Record, Common) {
 TEST(ReplRecord, Common) {
     srand(time(NULL));
     std::vector<ReplLogKey> logKeys;
-    for (size_t i = 0; i < 1000000; i++) {
+    for (size_t i = 0; i < 100000; i++) {
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint16_t localid = uint16_t(genRand());
         ReplFlag flag = randomReplFlag();
@@ -147,6 +146,11 @@ TEST(ReplRecord, Common) {
             ||(logKeys[i].getTxnId() == logKeys[i+1].getTxnId() &&
             logKeys[i].getLocalId() <= logKeys[i+1].getLocalId()));
     }
+
+    ReplLogValue rlv(ReplOp::REPL_OP_SET, "a", "b");
+    std::string s = rlv.encode();
+    Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
+    EXPECT_TRUE(erlv.ok());
 }
 
 }  // namespace tendisplus
