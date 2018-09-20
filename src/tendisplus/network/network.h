@@ -33,10 +33,20 @@ struct NetworkMatrix {
     std::string toString() const;
 };
 
+struct RequestMatrix {
+    Atom<uint64_t> processed;
+    Atom<uint64_t> readPacketCost;
+    Atom<uint64_t> processCost;
+    Atom<uint64_t> sendPacketCost;
+    RequestMatrix operator -(const RequestMatrix& right);
+    std::string toString() const;
+};
+
 class NetworkAsio {
  public:
     NetworkAsio(std::shared_ptr<ServerEntry> server,
-            std::shared_ptr<NetworkMatrix> matrix);
+            std::shared_ptr<NetworkMatrix> netMatrix,
+            std::shared_ptr<RequestMatrix> reqMatrix);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
 
@@ -49,6 +59,7 @@ class NetworkAsio {
     Status prepare(const std::string& ip, const uint16_t port);
     Status run();
     void stop();
+
  private:
     // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
@@ -60,14 +71,19 @@ class NetworkAsio {
     std::unique_ptr<std::thread> _acceptThd;
     std::vector<std::thread> _rwThreads;
     std::atomic<bool> _isRunning;
-    std::shared_ptr<NetworkMatrix> _matrix;
+    std::shared_ptr<NetworkMatrix> _netMatrix;
+    std::shared_ptr<RequestMatrix> _reqMatrix;
 };
 
 // represent a ingress tcp-connection
 class NetSession: public std::enable_shared_from_this<NetSession>  {
  public:
-    NetSession(std::shared_ptr<ServerEntry> server, asio::ip::tcp::socket sock,
-        uint64_t connid, bool initSock, std::shared_ptr<NetworkMatrix> matrix);
+    NetSession(std::shared_ptr<ServerEntry> server,
+               asio::ip::tcp::socket sock,
+               uint64_t connid,
+               bool initSock,
+               std::shared_ptr<NetworkMatrix> netMatrix,
+               std::shared_ptr<RequestMatrix> reqMatrix);
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
     virtual ~NetSession() = default;
@@ -85,12 +101,14 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
     SessionCtx *getCtx() const;
 
     // normal clients
-    // Created -> [DrainReq]+ -> Process -> DrainRsp -> [DrainReq]+
+    // Created-> [DrainReqNet]+ -> Process -> DrainRsp ->
+    // --> [DrainReqNet|DrainReqBuf]+
     // clients with bad input
-    // Created -> [DrainReq]+ -> DrainRsp(with _closeAfterRsp set) -> End
+    // Created -> [DrainReqNet]+ -> DrainRsp(with _closeAfterRsp set) -> End
     enum class State {
         Created,
-        DrainReq,
+        DrainReqNet,
+        DrainReqBuf,
         Process,
         DrainRsp,
         End,
@@ -107,8 +125,10 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
     FRIEND_TEST(NetSession, drainReqInvalid);
     FRIEND_TEST(NetSession, Completed);
     FRIEND_TEST(Command, common);
+
     // read data from socket
-    void drainReq();
+    void drainReqNet();
+    void drainReqBuf();
     void drainReqCallback(const std::error_code& ec, size_t actualLen);
     void processMultibulkBuffer();
     void processInlineBuffer();
@@ -148,7 +168,8 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
     std::vector<std::string> _args;
     std::vector<char> _respBuf;
     std::unique_ptr<SessionCtx> _ctx;
-    std::shared_ptr<NetworkMatrix> _matrix;
+    std::shared_ptr<NetworkMatrix> _netMatrix;
+    std::shared_ptr<RequestMatrix> _reqMatrix;
 };
 
 }  // namespace tendisplus

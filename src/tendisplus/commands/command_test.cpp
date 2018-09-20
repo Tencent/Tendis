@@ -37,7 +37,7 @@ static std::shared_ptr<ServerParams> genParams() {
 void testList(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
-    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     sess.setArgs({"lindex", "a", std::to_string(0)});
     auto expect = Command::runSessionCmd(&sess);
@@ -65,7 +65,7 @@ void testList(std::shared_ptr<ServerEntry> svr) {
 void testHash(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
-    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
     for (uint32_t i = 0; i < 10000; i++) {
         sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
         auto expect = Command::runSessionCmd(&sess);
@@ -98,7 +98,7 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
 void testSet(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NetSession sess(svr, std::move(socket), 1, false, nullptr);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
     sess.setArgs({"set", "a", "1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -120,8 +120,8 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
 void testSetRetry(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
-    NetSession sess(svr, std::move(socket), 1, false, nullptr);
-    NetSession sess1(svr, std::move(socket1), 1, false, nullptr);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    NetSession sess1(svr, std::move(socket1), 1, false, nullptr, nullptr);
 
     uint32_t cnt = 0;
     SyncPoint::GetInstance()->EnableProcessing();

@@ -82,7 +82,7 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
         return {ErrorCodes::ERR_OK, ""};
     } else {
         closeSocket();
-        return {ErrorCodes::ERR_TIMEOUT, ""};
+        return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
     }
 }
 
@@ -116,7 +116,7 @@ Expected<std::string> BlockingTcpClient::readLine(
         return line;
     } else {
         closeSocket();
-        return {ErrorCodes::ERR_TIMEOUT, ""};
+        return {ErrorCodes::ERR_TIMEOUT, "readLine timeout"};
     }
 }
 
@@ -146,7 +146,7 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
         std::unique_lock<std::mutex> lk(_mutex);
         if (!_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
             closeSocket();
-            return {ErrorCodes::ERR_TIMEOUT, ""};
+            return {ErrorCodes::ERR_TIMEOUT, "read timeout"};
         } else if (_ec) {
             closeSocket();
             return {ErrorCodes::ERR_NETWORK, _ec.message()};
@@ -190,7 +190,7 @@ Status BlockingTcpClient::writeData(const std::string& data,
         }
     } else {
         closeSocket();
-        return {ErrorCodes::ERR_TIMEOUT, ""};
+        return {ErrorCodes::ERR_TIMEOUT, "writeData timeout"};
     }
 }
 

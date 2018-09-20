@@ -11,8 +11,8 @@ std::string PoolMatrix::toString() const {
     std::stringstream ss;
     ss << "\ninQueue\t" << inQueue
         << "\nexecuted\t" << executed
-        << "\nqueueTime\t" << queueTime
-        << "\nexecuteTime\t" << executeTime;
+        << "\nqueueTime\t" << queueTime << "ns"
+        << "\nexecuteTime\t" << executeTime << "ns";
     return ss.str();
 }
 

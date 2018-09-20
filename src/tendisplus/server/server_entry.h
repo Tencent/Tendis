@@ -21,6 +21,7 @@ class NetSession;
 class NetworkAsio;
 class NetworkMatrix;
 class PoolMatrix;
+class RequestMatrix;
 class Catalog;
 class ReplManager;
 
@@ -69,6 +70,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
 
+    void appendSessionJsonStats(rapidjson::Writer<rapidjson::StringBuffer>&) const;
+
  private:
     void ftmc();
     // NOTE(deyukong): _isRunning = true -> running
@@ -90,6 +93,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<PoolMatrix> _poolMatrix;
+    std::shared_ptr<RequestMatrix> _reqMatrix;
     std::unique_ptr<std::thread> _ftmcThd;
 
     // NOTE(deyukong):

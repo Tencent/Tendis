@@ -158,11 +158,11 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
         Command::fmtBulk(ss, kv.first);
         Command::fmtBulk(ss, kv.second);
     }
-    std::string stingtoWrite = ss.str();
+    std::string stringtoWrite = ss.str();
     uint32_t secs = 1;
-    if (stingtoWrite.size() > 1024*1024) {
+    if (stringtoWrite.size() > 1024*1024) {
         secs = 2;
-    } else if (stingtoWrite.size() > 1024*1024*10) {
+    } else if (stringtoWrite.size() > 1024*1024*10) {
         secs = 4;
     }
     Status s = client->writeData(ss.str(), std::chrono::seconds(secs));

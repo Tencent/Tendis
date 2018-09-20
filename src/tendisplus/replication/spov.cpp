@@ -278,6 +278,13 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
 
     {
         std::lock_guard<std::mutex> lk(_mutex);
+        uint64_t currSessId = _syncStatus[metaSnapshot.id]->sessionId;
+        if (currSessId != std::numeric_limits<uint64_t>::max()) {
+            Status s = _svr->cancelSession(currSessId);
+            LOG(INFO) << "sess:" << currSessId
+                    << ",discard status:"
+                    << (s.ok() ? "ok" : s.toString());
+        }
         _syncStatus[metaSnapshot.id]->sessionId = sessionId;
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
@@ -333,17 +340,19 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
         _syncStatus[storeId]->isRunning = true;
     }();
 
-    auto guard = MakeGuard([this, storeId] {
-        std::unique_lock<std::mutex> lk(_mutex);
-        INVARIANT(_syncStatus[storeId]->isRunning);
-        _syncStatus[storeId]->isRunning = false;
-        _syncStatus[storeId]->lastSyncTime = SCLOCK::now();
-    });
-
     bool idMatch = [this, storeId, sessionId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         return (sessionId == _syncStatus[storeId]->sessionId);
     }();
+    auto guard = MakeGuard([this, storeId, &idMatch] {
+        std::unique_lock<std::mutex> lk(_mutex);
+        INVARIANT(_syncStatus[storeId]->isRunning);
+        _syncStatus[storeId]->isRunning = false;
+        if (idMatch) {
+            _syncStatus[storeId]->lastSyncTime = SCLOCK::now();
+        }
+    });
+
     if (!idMatch) {
         return {ErrorCodes::ERR_NOTFOUND, "sessionId not match"};
     }
