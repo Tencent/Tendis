@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <functional>
 #include <string>
 #include "glog/logging.h"
@@ -56,13 +57,7 @@ void WorkerPool::consumeTasks(size_t idx) {
     while (_isRuning.load(std::memory_order_relaxed)) {
         // TODO(deyukong): use run_for to make threads more adaptive
         asio::io_context::work work(*_ioCtx);
-        try {
-            _ioCtx->run();
-        } catch (const std::exception& ex) {
-            LOG(FATAL) << "_ioCtx->run failed:" << ex.what();
-        } catch (...) {
-            LOG(FATAL) << "unknown exception";
-        }
+        _ioCtx->run();
     }
 }
 
