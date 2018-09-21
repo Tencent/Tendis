@@ -18,6 +18,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
 #include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
@@ -279,6 +280,9 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
     StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+    LOG(INFO) << "client:" << client->getRemoteRepr()
+              << ",storeId:" << storeId
+              << ",begins fullsync";
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
     if (!store->isRunning()) {
@@ -286,12 +290,16 @@ void ReplManager::supplyFullSyncRoutine(
         return;
     }
 
+    uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup();
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
         client->writeLine(ss.str(), std::chrono::seconds(1));
         return;
+    } else {
+        LOG(INFO) << "storeId:" << storeId
+                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns";
     }
 
     auto guard = MakeGuard([this, store, storeId]() {
@@ -343,9 +351,18 @@ void ReplManager::supplyFullSyncRoutine(
                             << " failed with err:" << strerror(errno);
                 return;
             }
-            s = client->writeData(readBuf, std::chrono::seconds(1));
+            s = client->writeData(readBuf, std::chrono::seconds(10));
             if (!s.ok()) {
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
+                return;
+            }
+            auto oneRpy = client->readLine(std::chrono::seconds(10));
+            if (!oneRpy.ok() || oneRpy.value() != "+OK") {
+                LOG(ERROR) << "send client:" << client->getRemoteRepr()
+                           << "file:" << fileInfo.first
+                           << ",size:" << fileInfo.second
+                           << " failed:"
+                           << (oneRpy.ok() ? oneRpy.value() : oneRpy.status().toString());
                 return;
             }
         }

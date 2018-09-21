@@ -162,7 +162,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             size_t batchSize = std::min(remain, size_t(20ULL*1024*1024));
             remain -= batchSize;
             Expected<std::string> exptData =
-                client->read(batchSize, std::chrono::seconds(1));
+                client->read(batchSize, std::chrono::seconds(10));
             if (!exptData.ok()) {
                 LOG(ERROR) << "fullsync read bulk data failed:"
                             << exptData.status().toString();
@@ -172,6 +172,12 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             if (myfile.bad()) {
                 LOG(ERROR) << "write file:" << fullFileName
                             << " failed:" << strerror(errno);
+                return;
+            }
+            Status s = client->writeLine("+OK", std::chrono::seconds(1));
+            if (!s.ok()) {
+                LOG(ERROR) << "write file:" << fullFileName
+                           << " reply failed:" << s.toString();
                 return;
             }
         }
