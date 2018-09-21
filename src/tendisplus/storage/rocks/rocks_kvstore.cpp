@@ -8,6 +8,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/sync_point.h"
@@ -330,28 +331,30 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
     }
     std::string dbname = dbPath() + "/" + dbId();
     if (restore) {
-        rocksdb::BackupEngine* bkEngine = nullptr;
-        auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
-            rocksdb::BackupableDBOptions(backupDir()),
-            &bkEngine);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-        }
-        std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
-        pBkEngine.reset(bkEngine);
-        std::vector<rocksdb::BackupInfo> backupInfo;
-        pBkEngine->GetBackupInfo(&backupInfo);
-        if (backupInfo.size() != 1) {
-            LOG(FATAL) << "BUG: backup cnt:" << backupInfo.size()
-                << " != 1";
-        }
-        s = pBkEngine->RestoreDBFromLatestBackup(dbname, dbname);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        try {
+            const std::string path = dbPath() + "/" + dbId();
+            if (filesystem::exists(path)) {
+                std::stringstream ss;
+                ss << "path:" << path
+                    << " should not exist when restore";
+                return {ErrorCodes::ERR_INTERNAL, ss.str()};
+            }
+            if (!filesystem::exists(backupDir())) {
+                std::stringstream ss;
+                ss << "recover path:" << backupDir()
+                    << " not exist when restore";
+                return {ErrorCodes::ERR_INTERNAL, ss.str()};
+            }
+            filesystem::rename(backupDir(), path);
+        } catch(std::exception& ex) {
+            LOG(WARNING) << "dbId:" << dbId()
+                        << "restore exception" << ex.what();
+            return {ErrorCodes::ERR_INTERNAL, ex.what()};
         }
     }
 
     try {
+        // this happens due to a bad terminate
         if (filesystem::exists(backupDir())) {
             LOG(WARNING) << backupDir() << " exists, remove it";
             filesystem::remove_all(backupDir());
@@ -454,7 +457,6 @@ Expected<BackupInfo> RocksKVStore::backup() {
         _hasBackup = true;
     }
     bool succ = false;
-    rocksdb::BackupEngine* bkEngine;
     auto guard = MakeGuard([this, &succ]() {
         if (succ) {
             return;
@@ -468,17 +470,17 @@ Expected<BackupInfo> RocksKVStore::backup() {
             LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
         }
     });
-    auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
-            rocksdb::BackupableDBOptions(backupDir()), &bkEngine);
+
+    rocksdb::Checkpoint* checkpoint;    
+    auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
-    std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
-    pBkEngine.reset(bkEngine);
-    s = pBkEngine->CreateNewBackup(_db->GetBaseDB());
+    s = checkpoint->CreateCheckpoint(backupDir());
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
+
     BackupInfo result;
     std::map<std::string, uint64_t> flist;
     try {
