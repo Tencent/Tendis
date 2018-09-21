@@ -84,19 +84,19 @@ Status ReplManager::startup() {
     }
 
     _incrPusher = std::make_unique<WorkerPool>(_incrPushMatrix);
-    Status s = _incrPusher->startup(std::max(POOL_SIZE, cpuNum/2));
+    Status s = _incrPusher->startup(INCR_POOL_SIZE);
     if (!s.ok()) {
         return s;
     }
 
     _fullPusher = std::make_unique<WorkerPool>(_fullPushMatrix);
-    s = _fullPusher->startup(std::max(POOL_SIZE/2, cpuNum/4));
+    s = _fullPusher->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
 
     _fullReceiver = std::make_unique<WorkerPool>(_fullReceiveMatrix);
-    s = _fullReceiver->startup(std::max(POOL_SIZE/2, cpuNum/4));
+    s = _fullReceiver->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
@@ -336,6 +336,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             LOG(WARNING) << "cancel store:" << storeId << " session failed:"
                         << closeStatus.toString();
         }
+        _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
 
         newMeta->syncFromHost = ip;
         INVARIANT(port == 0 && sourceStoreId == 0);

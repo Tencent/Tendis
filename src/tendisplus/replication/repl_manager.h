@@ -83,7 +83,8 @@ class ReplManager {
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
-    static constexpr size_t POOL_SIZE = 12;
+    static constexpr size_t INCR_POOL_SIZE = 12;
+    static constexpr size_t MAX_FULL_PARAL = 4;
 
  protected:
     void controlRoutine();
