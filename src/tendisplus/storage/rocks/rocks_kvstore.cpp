@@ -256,6 +256,7 @@ rocksdb::Options RocksKVStore::options() {
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
     options.max_write_buffer_number = 4;
+    options.max_write_buffer_number_to_maintain = 1;
     options.max_background_compactions = 8;
     options.max_background_flushes = 2;
     options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
@@ -307,8 +308,18 @@ Status RocksKVStore::clear() {
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
     }
-    auto n = filesystem::remove_all(dbPath() + "/" + dbId());
-    LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
+    try {
+        const std::string path = dbPath() + "/" + dbId();
+        if (!filesystem::exists(path)) {
+            return {ErrorCodes::ERR_OK, ""};
+        }
+        auto n = filesystem::remove_all(dbPath() + "/" + dbId());
+        LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
+    } catch(std::exception& ex) {
+        LOG(WARNING) << "dbId:" << dbId()
+                     << " clear failed:" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
+    }
     return {ErrorCodes::ERR_OK, ""};
 }
 
