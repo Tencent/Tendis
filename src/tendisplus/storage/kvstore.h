@@ -72,7 +72,7 @@ class Transaction {
 
 class BackupInfo {
  public:
-    BackupInfo() = default;
+    BackupInfo();
     const std::map<std::string, uint64_t>& getFileList() const;
     void setFileList(const std::map<std::string, uint64_t>&);
     void setBinlogPos(uint64_t);

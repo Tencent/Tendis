@@ -47,6 +47,10 @@ KVStore::KVStore(const std::string& id, const std::string& path)
     }
 }
 
+BackupInfo::BackupInfo()
+    :_binlogPos(Transaction::TXNID_UNINITED) {
+}
+
 void BackupInfo::setFileList(const std::map<std::string, uint64_t>& fl) {
     _fileList = fl;
 }

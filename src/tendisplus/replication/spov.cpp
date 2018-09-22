@@ -235,8 +235,11 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     
     newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_CONNECTED;
-    INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
     newMeta->binlogId = bkInfo.value().getBinlogPos();
+
+    // NOTE(deyukong): the line below is commented, because it can not
+    // hold true all times. since readonly-txns also increases binlogPos
+    // INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
 
     // in ReplManager.startup(), a dummy binlog is written. here we should not
     // get an empty binlog set.

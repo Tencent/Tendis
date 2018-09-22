@@ -479,6 +479,14 @@ Expected<BackupInfo> RocksKVStore::backup() {
         }
     });
 
+    // NOTE(deyukong): we should get highVisible before making a ckpt
+    BackupInfo result;
+    uint64_t highVisible = getHighestVisibleTxnId();
+    if (highVisible == Transaction::TXNID_UNINITED) {
+        return {ErrorCodes::ERR_INTERNAL, "highVisible not inited"};
+    }
+    result.setBinlogPos(highVisible);
+
     rocksdb::Checkpoint* checkpoint;    
     auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
     if (!s.ok()) {
@@ -489,11 +497,6 @@ Expected<BackupInfo> RocksKVStore::backup() {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
 
-    BackupInfo result;
-    uint64_t highVisible = getHighestVisibleTxnId();
-    if (highVisible == Transaction::TXNID_UNINITED) {
-        return {ErrorCodes::ERR_INTERNAL, "highVisible not inited"};
-    }
     std::map<std::string, uint64_t> flist;
     try {
         for (auto& p : filesystem::recursive_directory_iterator(backupDir())) {
@@ -639,7 +642,7 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
         w.Uint64(_aliveTxns.size());
         w.Key("minAliveTxn");
         w.Uint64(_aliveTxns.size() ? _aliveTxns.begin()->first : 0);
-        w.Key("minAliveTxn");
+        w.Key("maxAliveTxn");
         w.Uint64(_aliveTxns.size() ? _aliveTxns.rbegin()->first : 0);
         w.Key("highVisible");
         w.Uint64(_highestVisible);
