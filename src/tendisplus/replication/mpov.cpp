@@ -277,6 +277,14 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             << " registerIncrSync " << (registPosOk ? "ok" : "failed");
 }
 
+// mpov's network communicate procedure
+// send binlogpos low watermark
+// send filelist={filename->filesize}
+// foreach file
+//     send filename
+//     send content
+//     read +OK
+// read +OK
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
     StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
@@ -310,6 +318,17 @@ void ReplManager::supplyFullSyncRoutine(
         }
     });
 
+    // send binlogPos
+    Status s = client->writeLine(
+            std::to_string(bkInfo.value().getBinlogPos()),
+            std::chrono::seconds(1));
+    if (!s.ok()) {
+        LOG(ERROR) << "store:" << storeId
+                   << " fullsync send binlogpos failed:" << s.toString();
+        return;
+    }
+
+    // send fileList
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
@@ -318,10 +337,10 @@ void ReplManager::supplyFullSyncRoutine(
         writer.Uint64(kv.second);
     }
     writer.EndObject();
-    Status s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
+    s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
     if (!s.ok()) {
-        LOG(ERROR) << "store:" << storeId << " writeLine failed"
-                    << s.toString();
+        LOG(ERROR) << "store:" << storeId
+                   << " fullsync send filelist failed:" << s.toString();
         return;
     }
 

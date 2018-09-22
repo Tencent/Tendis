@@ -66,9 +66,8 @@ class Transaction {
     virtual Status delKV(const std::string& key, bool withLog) = 0;
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
-    static constexpr uint64_t MIN_VALID_TXNID = 0;
-    static constexpr uint64_t TXNID_UNINITED
-        = std::numeric_limits<uint64_t>::max()/2+1;
+    static constexpr uint64_t MIN_VALID_TXNID = 1;
+    static constexpr uint64_t TXNID_UNINITED = 0;
 };
 
 class BackupInfo {
@@ -76,8 +75,11 @@ class BackupInfo {
     BackupInfo() = default;
     const std::map<std::string, uint64_t>& getFileList() const;
     void setFileList(const std::map<std::string, uint64_t>&);
+    void setBinlogPos(uint64_t);
+    uint64_t getBinlogPos() const;
  private:
     std::map<std::string, uint64_t> _fileList;
+    uint64_t _binlogPos;
 };
 
 class KVStore {

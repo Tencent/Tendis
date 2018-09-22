@@ -23,7 +23,7 @@ Expected<ReplLog> BinlogCursor::next() {
         if (!explk.ok()) {
             return explk.status();
         }
-        if (explk.value().getTxnId() >= _end) {
+        if (explk.value().getTxnId() > _end) {
             return {ErrorCodes::ERR_EXHAUST, ""};
         }
         Expected<ReplLogValue> val =
@@ -53,6 +53,14 @@ void BackupInfo::setFileList(const std::map<std::string, uint64_t>& fl) {
 
 const std::map<std::string, uint64_t>& BackupInfo::getFileList() const {
     return _fileList;
+}
+
+void BackupInfo::setBinlogPos(uint64_t pos) {
+    _binlogPos = pos;
+}
+
+uint64_t BackupInfo::getBinlogPos() const {
+    return _binlogPos;
 }
 
 }  // namespace tendisplus

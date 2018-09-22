@@ -45,7 +45,7 @@ Status ReplManager::startup() {
         } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
             auto pMeta = std::unique_ptr<StoreMeta>(
                 new StoreMeta(i, "", 0, -1,
-                    Transaction::MAX_VALID_TXNID+1, ReplState::REPL_NONE));
+                    Transaction::TXNID_UNINITED, ReplState::REPL_NONE));
             Status s = catalog->setStoreMeta(*pMeta);
             if (!s.ok()) {
                 return s;
@@ -115,6 +115,7 @@ Status ReplManager::startup() {
 
     // init first binlogpos, empty binlogs makes cornercase complicated.
     // so we put an no-op to binlogs everytime startup.
+    // in this way, the full-backup will always have a committed txnId.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
         StoreLock storeLock(i, mgl::LockMode::LOCK_IX);
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
@@ -315,7 +316,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_CONNECT;
-        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        newMeta->binlogId = Transaction::TXNID_UNINITED;
         LOG(INFO) << "change store:" << storeId
                     << " syncSrc from no one to " << newMeta->syncFromHost
                     << ":" << newMeta->syncFromPort
@@ -343,7 +344,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_NONE;
-        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        newMeta->binlogId = Transaction::TXNID_UNINITED;
         changeReplStateInLock(*newMeta, true);
         return {ErrorCodes::ERR_OK, ""};
     }

@@ -102,18 +102,17 @@ class RocksKVStore: public KVStore {
 
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
-    void removeUncommited(uint64_t txnId);
+    void markCommitted(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
 
-    // the smallest txnId that is uncommitted. if no uncommitted txns,
-    // return _nextTxnSeq;
-    uint64_t txnLowWaterMark() const;
+    uint64_t getHighestVisibleTxnId() const;
 
+    // NOTE(deyukong): this api is only for debug
     std::set<uint64_t> getUncommittedTxns() const;
 
  private:
     void addUnCommitedTxnInLock(uint64_t txnId);
-    void removeUncommitedInLock(uint64_t txnId);
+    void markCommittedInLock(uint64_t txnId);
     rocksdb::Options options();
     mutable std::mutex _mutex;
 
@@ -123,11 +122,28 @@ class RocksKVStore: public KVStore {
     std::shared_ptr<rocksdb::Statistics> _stats;
     std::shared_ptr<rocksdb::Cache> _blockCache;
 
-    std::atomic<uint64_t> _nextTxnSeq;
+    uint64_t _nextTxnSeq;
 
     // NOTE(deyukong): sorted data-structure is required here.
     // we rely on the data order to maintain active txns' watermark.
-    std::set<uint64_t> _uncommittedTxns;
+    // txnid -> committed|uncommited
+    // --------------------------------------------------------------
+    // when creating txns, a {txnId, false} pair is inserted
+    // when txn commits or destroys, the txnId is marked as true
+    // means it is committed. As things run parallely, there will
+    // be false-holes in _aliveTxns, fortunely, when _aliveTxns.begin()
+    // changes from uncommitted to committed, we have a chance to
+    // remove all the continous committed txnIds follows it, and
+    // push _highestVisible forward.
+    std::map<uint64_t, bool> _aliveTxns;
+
+    // NOTE(deyukong): _highestVisible is the largest committedTxnId that
+    // for any txn with Id = b is committed, and b > committedTxnId
+    // there must exists a uncommitted txn with Id = c, and
+    // _highestVisible < c < b.
+    // For simple, _highestVisible is the highest TxnId that before this
+    // txnId, there wont be any "commit-hole"
+    uint64_t _highestVisible;
 };
 
 }  // namespace tendisplus
