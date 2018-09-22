@@ -87,8 +87,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         KVStore::INSTANCE_NUM);
     installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    // network executePool
-    _executor = std::make_unique<WorkerPool>(_poolMatrix);
+    // request executePool
+    _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};

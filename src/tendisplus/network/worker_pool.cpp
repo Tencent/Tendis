@@ -27,9 +27,11 @@ PoolMatrix PoolMatrix::operator-(const PoolMatrix& right) {
     return result;
 }
 
-WorkerPool::WorkerPool(std::shared_ptr<PoolMatrix> poolMatrix)
+WorkerPool::WorkerPool(const std::string& name,
+                       std::shared_ptr<PoolMatrix> poolMatrix)
     :_isRuning(false),
      _ioCtx(std::make_unique<asio::io_context>()),
+     _name(name),
      _matrix(poolMatrix) {
 }
 
@@ -39,19 +41,24 @@ bool WorkerPool::isFull() const {
 }
 
 void WorkerPool::consumeTasks(size_t idx) {
-    LOG(INFO) << "workerthread:" << idx << " starts";
-    const auto guard = MakeGuard([this, idx] {
+    char threadName[64];
+    memset(threadName, 0, sizeof threadName);
+    pthread_getname_np(pthread_self(), threadName, sizeof threadName);
+    LOG(INFO) << "workerthread:" << threadName << " starts";
+    const auto guard = MakeGuard([this, threadName] {
         std::lock_guard<std::mutex> lk(_mutex);
         const auto& thd_id = std::this_thread::get_id();
         for (auto v = _threads.begin(); v != _threads.end(); v++) {
             if (v->get_id() == thd_id) {
-                LOG(INFO) << "thd:" << thd_id << ",idx:"
-                    << idx << ",clean and exit";
+                LOG(INFO) << "thd:" << thd_id
+                          << ",name:" << threadName
+                          << ", clean and exit";
                 return;
             }
         }
-        LOG(FATAL) << "thd:" << thd_id << ",idx:"
-            << idx << "not found in threads_list";
+        LOG(FATAL) << "thd:" << thd_id
+                   << ",name:" << threadName
+                   << "not found in threads_list";
     });
 
     while (_isRuning.load(std::memory_order_relaxed)) {
@@ -78,11 +85,13 @@ Status WorkerPool::startup(size_t poolsize) {
     _isRuning.store(true, std::memory_order_relaxed);
 
     for (size_t i = 0; i < poolsize; ++i) {
-        std::thread thd = std::thread([this](size_t idx) {
-            return [this, idx]() {
-                consumeTasks(idx);
-            };
-        } (i));
+        std::thread thd = std::thread([this, i]() {
+            std::string threadName = _name + "_" + std::to_string(i);
+            // NOTE(deyukong): pthread_setname_np requires the
+            // name not longer than 15 chars.
+            pthread_setname_np(pthread_self(), threadName.c_str());
+            consumeTasks(i);
+        });
         _threads.emplace_back(std::move(thd));
     }
     return {ErrorCodes::ERR_OK, ""};

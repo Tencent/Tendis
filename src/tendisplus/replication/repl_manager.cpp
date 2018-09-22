@@ -83,25 +83,29 @@ Status ReplManager::startup() {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
 
-    _incrPusher = std::make_unique<WorkerPool>(_incrPushMatrix);
+    _incrPusher = std::make_unique<WorkerPool>(
+            "repl-minc", _incrPushMatrix);
     Status s = _incrPusher->startup(INCR_POOL_SIZE);
     if (!s.ok()) {
         return s;
     }
 
-    _fullPusher = std::make_unique<WorkerPool>(_fullPushMatrix);
+    _fullPusher = std::make_unique<WorkerPool>(
+            "repl-mfull", _fullPushMatrix);
     s = _fullPusher->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
 
-    _fullReceiver = std::make_unique<WorkerPool>(_fullReceiveMatrix);
+    _fullReceiver = std::make_unique<WorkerPool>(
+            "repl-sfull", _fullReceiveMatrix);
     s = _fullReceiver->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
 
-    _incrChecker = std::make_unique<WorkerPool>(_incrCheckMatrix);
+    _incrChecker = std::make_unique<WorkerPool>(
+            "repl-scheck", _incrCheckMatrix);
     s = _incrChecker->startup(2);
     if (!s.ok()) {
         return s;
