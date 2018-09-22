@@ -290,8 +290,8 @@ void ReplManager::controlRoutine() {
 
 Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
-    std::unique_lock<std::mutex> lk(_mutex);
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
+    std::unique_lock<std::mutex> lk(_mutex);
     // NOTE(deyukong): we must wait for the target to stop before change meta,
     // or the meta may be rewrited
     if (!_cv.wait_for(lk, std::chrono::seconds(1),
@@ -350,32 +350,52 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
     }
 }
 
-void ReplManager::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    w.Key("slaves");
-    {
+void ReplManager::appendJSONStat(
+        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    INVARIANT(_pushStatus.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_syncStatus.size() == KVStore::INSTANCE_NUM);
+    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        std::stringstream ss;
+        ss << "store_" << i;
+        w.Key(ss.str().c_str());
         w.StartObject();
-        std::lock_guard<std::mutex> lk(_mutex);
-        for (size_t i = 0; i < _pushStatus.size(); i++) {
-            for (auto& mpov : _pushStatus[i]) {
-                std::stringstream ss;
-                ss << "client_" << mpov.second->clientId;
-                w.Key(ss.str().c_str());
-                w.StartObject();
-                w.Key("isRunning");
-                w.Uint64(mpov.second->isRunning);
-                w.Key("dstStoreId");
-                w.Uint64(mpov.second->dstStoreId);
-                w.Key("binlogPos");
-                w.Uint64(mpov.second->binlogPos);
-                w.Key("remoteHost");
-                if (mpov.second->client != nullptr) {
-                    w.String(mpov.second->client->getRemoteRepr());
-                } else {
-                    w.String("???");
-                }
-                w.EndObject();
+
+        // sync to
+        for (auto& mpov : _pushStatus[i]) {
+            std::stringstream ss;
+            ss << "client_" << mpov.second->clientId;
+            w.Key(ss.str().c_str());
+            w.StartObject();
+            w.Key("isRunning");
+            w.Uint64(mpov.second->isRunning);
+            w.Key("dstStoreId");
+            w.Uint64(mpov.second->dstStoreId);
+            w.Key("binlogPos");
+            w.Uint64(mpov.second->binlogPos);
+            w.Key("remoteHost");
+            if (mpov.second->client != nullptr) {
+                w.String(mpov.second->client->getRemoteRepr());
+            } else {
+                w.String("???");
             }
+            w.EndObject();
         }
+
+        // sync from
+        w.Key("syncSource");
+        ss.str("");
+        ss << _syncMeta[i]->syncFromHost << ":"
+           << _syncMeta[i]->syncFromPort << ":"
+           << _syncMeta[i]->syncFromId;
+        w.String(ss.str().c_str());
+        w.Key("binlogId");
+        w.Uint64(_syncMeta[i]->binlogId);
+        w.Key("replState");
+        w.Uint64(static_cast<uint64_t>(_syncMeta[i]->replState));
+        w.Key("lastSyncTime");
+        w.String(timePointRepr(_syncStatus[i]->lastSyncTime));
+
         w.EndObject();
     }
 }
