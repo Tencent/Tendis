@@ -180,6 +180,54 @@ void testExpire1(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+void testExpire2(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // bounder for optimistic del/pessimistic del
+    for (auto v : {1000u, 10000u}) {
+        for (uint32_t i = 0; i < v; i++) {
+            sess.setArgs({"lpush", "a", std::to_string(2*i)});
+            auto expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+        }
+
+        for (uint32_t i = 0; i < v; i++) {
+            sess.setArgs({"hset", "a", std::to_string(2*i)});
+            auto expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+        }
+
+        sess.setArgs({"llen", "a"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
+
+        sess.setArgs({"hlen", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
+
+        sess.setArgs({"expire", "a", std::to_string(-1)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({"llen", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+
+        sess.setArgs({"hlen", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+    }
+}
+
 void testSetRetry(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
