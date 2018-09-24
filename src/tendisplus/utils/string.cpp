@@ -16,9 +16,19 @@ std::string toLower(const std::string& s) {
 }
 
 Expected<uint64_t> stoul(const std::string& s) {
-    int64_t result;
+    uint64_t result;
     try {
         result = static_cast<uint64_t>(std::stoul(s));
+        return result;
+    } catch (const std::exception& ex) {
+        return {ErrorCodes::ERR_DECODE, ex.what()};
+    }
+}
+
+Expected<int64_t> stoll(const std::string& s) {
+    int64_t result;
+    try {
+        result = static_cast<int64_t>(std::stoll(s));
         return result;
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_DECODE, ex.what()};

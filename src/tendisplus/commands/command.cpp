@@ -135,7 +135,7 @@ Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<uint32_t> deleteCount =
-            deleteKey(sess, storeId, batchSize, mk, false, txn.get());
+            partialDelSubKeys(sess, storeId, batchSize, mk, false, txn.get());
         if (!deleteCount.ok()) {
             return deleteCount.status();
         }
@@ -162,7 +162,7 @@ Status Command::delKeyOptimism(NetSession *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
                                            Transaction* txn) {
-    auto s = Command::deleteKey(sess,
+    auto s = Command::partialDelSubKeys(sess,
                               storeId,
                               std::numeric_limits<uint32_t>::max(),
                               rk,
@@ -171,7 +171,7 @@ Status Command::delKeyOptimism(NetSession *sess,
     return s.status();
 }
 
-Expected<uint32_t> Command::deleteKey(NetSession *sess,
+Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
                                        uint32_t storeId,
                                        uint32_t subCount,
                                        const RecordKey& mk,
@@ -196,9 +196,15 @@ Expected<uint32_t> Command::deleteKey(NetSession *sess,
                           mk.getPrimaryKey(),
                           "");
         prefix = fakeEle.prefixPk();
+    } else if (mk.getRecordType() == RecordType::RT_LIST_META) {
+        RecordKey fakeEle(mk.getDbId(),
+                          RecordType::RT_LIST_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefix = fakeEle.prefixPk();
     } else {
-        // TODO(impl)
-        INVARIANT(0);
+        // invariant 0
+        // TODO(deyukong): impl
     }
     auto cursor = txn->createCursor();
     cursor->seek(prefix);
@@ -217,8 +223,10 @@ Expected<uint32_t> Command::deleteKey(NetSession *sess,
         }
         Record& rcd = exptRcd.value();
         const RecordKey& rcdKey = rcd.getRecordKey();
-        INVARIANT(rcdKey.prefixPk() == prefix);
-        INVARIANT(rcdKey.getPrimaryKey() == mk.getPrimaryKey());
+        if (rcdKey.prefixPk() != prefix) {
+            INVARIANT(rcdKey.getPrimaryKey() != mk.getPrimaryKey());
+            break;
+        }
         pendingDelete.push_back(rcdKey);
     }
     if (deleteMeta) {
@@ -240,9 +248,10 @@ Expected<uint32_t> Command::deleteKey(NetSession *sess,
     }
 }
 
-Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
-                                  uint32_t storeId,
-                                  const RecordKey& mk) {
+Status Command::delKey(NetSession *sess, uint32_t storeId,
+                       const RecordKey& mk) {
+    auto storeLock = std::make_unique<StoreLock>(storeId,
+                    mgl::LockMode::LOCK_IX);
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -250,9 +259,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
     }
-    auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX);
-
     PStore kvstore = Command::getStoreById(sess, storeId);
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
@@ -260,12 +266,63 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
         Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
         if (!eValue.ok()) {
             return eValue.status();
         }
-        uint64_t currentTs = nsSinceEpoch()/1000;
+        auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
+        if (!cnt.ok()) {
+            return cnt.status();
+        }
+        if (cnt.value() >= 2048) {
+            LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
+                      << ",rcdType:" << rt2Char(mk.getRecordType())
+                      << ",size:" << cnt.value();
+            // reset storelock, or will deadlock
+            storeLock.reset();
+            // reset txn, it is no longer used
+            txn.reset();
+            return Command::delKeyPessimistic(sess, storeId, mk);
+        } else {
+            Status s = Command::delKeyOptimism(sess, storeId, mk, txn.get());
+            if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
+                    && i != RETRY_CNT - 1) {
+                continue;
+            }
+            return s;
+        }
+    }
+    // should never reach here
+    INVARIANT(0);
+    return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+
+}
+                      
+
+Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
+                                  uint32_t storeId,
+                                  const RecordKey& mk) {
+    auto storeLock = std::make_unique<StoreLock>(storeId,
+                    mgl::LockMode::LOCK_IX);
+    // currently, a simple kv will not be locked
+    if (mk.getRecordType() != RecordType::RT_KV) {
+        std::string mkEnc = mk.encode();
+        if (Command::isKeyLocked(sess, storeId, mkEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+    }
+    PStore kvstore = Command::getStoreById(sess, storeId);
+    for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+        if (!eValue.ok()) {
+            return eValue.status();
+        }
+        uint64_t currentTs = nsSinceEpoch()/1000000;
         uint64_t targetTtl = eValue.value().getTtl();
         if (targetTtl == 0 || currentTs < targetTtl) {
             return eValue.value();
@@ -278,7 +335,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
-            // reset storelock, or deadlock
+            // reset storelock, or will deadlock
             storeLock.reset();
             // reset txn, it is no longer used
             txn.reset();

@@ -118,7 +118,7 @@ class KVStore {
         rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(100);
+    static constexpr size_t INSTANCE_NUM = size_t(1);
 
  private:
     const std::string _id;

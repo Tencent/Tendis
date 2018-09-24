@@ -298,6 +298,10 @@ uint64_t RecordValue::getTtl() const {
     return _ttl;
 }
 
+void RecordValue::setTtl(uint64_t ttl) {
+    _ttl = ttl;
+}
+
 bool RecordValue::operator==(const RecordValue& other) const {
     return _ttl == other._ttl && _value == other._value;
 }

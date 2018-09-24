@@ -90,6 +90,7 @@ class RecordValue {
     explicit RecordValue(std::string&& val, uint64_t ttl = 0);
     const std::string& getValue() const;
     uint64_t getTtl() const;
+    void setTtl(uint64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     bool operator==(const RecordValue& other) const;
