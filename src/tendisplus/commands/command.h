@@ -46,10 +46,12 @@ class Command {
 
     static Status delKey(NetSession *sess, uint32_t storeId,
                             const RecordKey& rk);
-    static Status delKeyPessimistic(NetSession *sess, uint32_t storeId,
-                            const RecordKey& rk);
-    static Status delKeyOptimism(NetSession *sess, uint32_t storeId,
-                            const RecordKey& rk, Transaction* txn);
+
+    // return true if exists and delete succ
+    // return false if not exists
+    // return error if has error
+    static Expected<bool> delKeyChkExpire(NetSession *sess, uint32_t storeId,
+                                          const RecordKey& rk);
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();
@@ -65,6 +67,12 @@ class Command {
     static constexpr int32_t RETRY_CNT = 3;
 
  private:
+    static Status delKeyPessimistic(NetSession *sess, uint32_t storeId,
+                            const RecordKey& rk);
+
+    static Status delKeyOptimism(NetSession *sess, uint32_t storeId,
+                            const RecordKey& rk, Transaction* txn);
+
     static Expected<uint32_t> partialDelSubKeys(NetSession *sess, uint32_t storeId,
                                  uint32_t subCount, const RecordKey& mk,
                                  bool deleteMeta, Transaction *txn);

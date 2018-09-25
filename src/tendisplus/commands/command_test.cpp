@@ -195,10 +195,10 @@ void testExpire2(std::shared_ptr<ServerEntry> svr) {
         }
 
         for (uint32_t i = 0; i < v; i++) {
-            sess.setArgs({"hset", "a", std::to_string(2*i)});
+            sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
             auto expect = Command::runSessionCmd(&sess);
             EXPECT_TRUE(expect.ok());
-            EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+            EXPECT_EQ(expect.value(), Command::fmtOne());
         }
 
         sess.setArgs({"llen", "a"});
@@ -253,6 +253,98 @@ void testSetRetry(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_COMMIT_RETRY);
 }
 
+void testDel(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // bounder for optimistic del/pessimistic del
+    for (auto v : {1000u, 10000u}) {
+        sess.setArgs({"set", "a", "b"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
+
+        for (uint32_t i = 0; i < v; i++) {
+            sess.setArgs({"lpush", "a", std::to_string(2*i)});
+            auto expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+        }
+
+        sess.setArgs({"expire", "a", std::to_string(1)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({"del", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({"llen", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+
+        sess.setArgs({"get", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtNull());
+    }
+    for (auto v : {1000u, 10000u}) {
+        for (uint32_t i = 0; i < v; i++) {
+            sess.setArgs({"lpush", "a", std::to_string(2*i)});
+            auto expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+        }
+
+        sess.setArgs({"expire", "a", std::to_string(1)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        sess.setArgs({"del", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+    }
+}
+
+TEST(Command, del) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    // EXPECT_TRUE(filesystem::create_directory("db/0"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+
+    auto server = std::make_shared<ServerEntry>();
+    std::vector<PStore> tmpStores;
+    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        std::stringstream ss;
+        ss << i;
+        std::string dbId = ss.str();
+        tmpStores.emplace_back(std::unique_ptr<KVStore>(
+            new RocksKVStore(dbId, cfg, blockCache)));
+    }
+    server->installStoresInLock(tmpStores);
+    auto segMgr = std::unique_ptr<SegmentMgr>(
+            new SegmentMgrFnvHash64(tmpStores));
+    server->installSegMgrInLock(std::move(segMgr));
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
+        KVStore::INSTANCE_NUM);
+    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+
+    testDel(server);
+}
+
 TEST(Command, expire) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -284,6 +376,7 @@ TEST(Command, expire) {
 
     testExpire(server);
     testExpire1(server);
+    testExpire2(server);
 }
 
 TEST(Command, common) {

@@ -13,9 +13,6 @@
 
 namespace tendisplus {
 
-// return true if exists and delete succ
-// return false if not exists
-// return error if has error
 Expected<bool> expireBeforeNow(NetSession *sess,
                         RecordType type,
                         const std::string& key) {
@@ -23,25 +20,7 @@ Expected<bool> expireBeforeNow(NetSession *sess,
     INVARIANT(pCtx != nullptr);
     RecordKey rk(pCtx->getDbId(), type, key, "");
     uint32_t storeId = Command::getStoreId(sess, key);
-    Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, storeId, rk);
-    if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-        return false;
-    } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        return false;
-    } else if (!rv.status().ok()) {
-        return rv.status();
-    }
-
-    // key exists and not expired, now we delete it
-    Status s = Command::delKey(sess, storeId, rk);
-    if (s.code() == ErrorCodes::ERR_NOTFOUND) {
-        return false;
-    }
-    if (s.ok()) {
-        return true;
-    }
-    return s;
+    return Command::delKeyChkExpire(sess, storeId, rk);
 }
 
 // return true if exists

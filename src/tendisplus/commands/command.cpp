@@ -187,7 +187,10 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
             return s;
         }
         auto commitStatus = txn->commit();
-        return commitStatus.status();
+        if (!commitStatus.ok()) {
+            return commitStatus.status();
+        }
+        return 1;
     }
     std::string prefix;
     if (mk.getRecordType() == RecordType::RT_HASH_META) {
@@ -246,6 +249,30 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
     } else {
         return commitStatus.status();
     }
+}
+
+Expected<bool> Command::delKeyChkExpire(NetSession *sess,
+                                        uint32_t storeId,
+                                        const RecordKey& rk) {
+    Expected<RecordValue> rv =
+        Command::expireKeyIfNeeded(sess, storeId, rk);
+    if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+        return false;
+    } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        return false;
+    } else if (!rv.status().ok()) {
+        return rv.status();
+    }
+
+    // key exists and not expired, now we delete it
+    Status s = Command::delKey(sess, storeId, rk);
+    if (s.code() == ErrorCodes::ERR_NOTFOUND) {
+        return false;
+    }
+    if (s.ok()) {
+        return true;
+    }
+    return s;
 }
 
 Status Command::delKey(NetSession *sess, uint32_t storeId,
