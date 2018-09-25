@@ -33,6 +33,9 @@ std::string ServerParams::toString() const {
         << ",\nstorageEngine:" << storageEngine
         << ",\ndbPath:" << dbPath
         << ",\nrocksBlockCacheMB:" << rocksBlockcacheMB
+        << ",\nrequirepass:" << requirepass
+        << ",\nmasterauth:" << masterauth
+        << ",\npidFile:" << pidFile
         << std::endl;
     return ss.str();
 }
@@ -118,6 +121,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                     "invalid masterauth configure"};
             }
             masterauth = tokens[1];
+        } else if (tokens[0] == "pidfile") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid pidfile configure"};
+            }
+            pidFile = tokens[1];
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -132,7 +141,8 @@ ServerParams::ServerParams()
          dbPath("./db"),
          rocksBlockcacheMB(4096),
          requirepass(""),
-         masterauth("") {
+         masterauth(""),
+         pidFile("./tendisplus.pid") {
 }
 
 

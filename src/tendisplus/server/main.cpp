@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <fstream>
 #include <iostream>
 #include <utility>
 #include <memory>
@@ -96,8 +97,15 @@ int main(int argc, char *argv[]) {
         LOG(FATAL) << "server startup failed:" << s.toString();
     }
     setupSignals();
+
+    // pid file
+    std::ofstream pidfile(params->pidFile);
+    pidfile << getpid();
+    pidfile.close();
+
     waitForExit();
     LOG(INFO) << "server exits";
+
+    remove(params->pidFile.c_str());
+    return 0;
 }
-
-
