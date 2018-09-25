@@ -29,16 +29,19 @@ class Cursor {
     Cursor() = default;
     virtual ~Cursor() = default;
     virtual void seek(const std::string& prefix) = 0;
+    // seek to last of the collection, Not the prefix
+    virtual void seekToLast() = 0;
     virtual Expected<Record> next() = 0;
 };
 
 class BinlogCursor {
  public:
     BinlogCursor() = delete;
+    // NOTE(deyukong): in range of [begin, end], be careful both close interval 
     BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
     ~BinlogCursor() = default;
-    // NOTE(deyukong): in range of [begin, end), be careful right is open
     Expected<ReplLog> next();
+    void seekToLast();
 
  protected:
     std::unique_ptr<Cursor> _baseCursor;

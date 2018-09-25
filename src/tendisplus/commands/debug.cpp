@@ -17,6 +17,55 @@
 
 namespace tendisplus {
 
+class BinlogPosCommand: public Command {
+ public:
+    BinlogPosCommand()
+        :Command("binlogpos") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+        if (storeId.value() >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+        }
+        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS);
+        PStore kvstore = Command::getStoreById(sess, storeId.value());
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        std::unique_ptr<BinlogCursor> cursor =
+            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
+        cursor->seekToLast();
+        Expected<ReplLog> explog = cursor->next();
+        if (!explog.ok()) {
+            return explog.status();
+        }
+        return Command::fmtLongLong(explog.value().getReplLogKey().getTxnId());
+    }
+} binlogPosCommand;
+
 class DebugCommand: public Command {
  public:
     DebugCommand()

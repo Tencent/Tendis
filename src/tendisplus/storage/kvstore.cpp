@@ -12,6 +12,12 @@ BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin,
     _baseCursor->seek(_beginPrefix);
 }
 
+void BinlogCursor::seekToLast() {
+    // NOTE(deyukong): it works because binlog has a maximum prefix.
+    // see RecordType::RT_BINLOG, plz note that it's tricky.
+    _baseCursor->seekToLast();
+}
+
 Expected<ReplLog> BinlogCursor::next() {
     Expected<Record> expRcd = _baseCursor->next();
     if (expRcd.ok()) {

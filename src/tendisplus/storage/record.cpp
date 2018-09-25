@@ -26,8 +26,11 @@ char rt2Char(RecordType t) {
             return 'H';
         case RecordType::RT_HASH_ELE:
             return 'h';
-        //  it's convinent (for seek) to have BINLOG to pos
-        //  at the rightmost of a lsmtree
+        // it's convinent (for seek) to have BINLOG to pos
+        // at the rightmost of a lsmtree
+        // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
+        // the underlying cursor iteration relys on it to be at
+        // the right most part.
         case RecordType::RT_BINLOG:
             return std::numeric_limits<char>::max();
         default:

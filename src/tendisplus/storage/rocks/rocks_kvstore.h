@@ -61,10 +61,8 @@ class RocksKVCursor: public Cursor {
     explicit RocksKVCursor(std::unique_ptr<rocksdb::Iterator>);
     virtual ~RocksKVCursor() = default;
     void seek(const std::string& prefix) final;
+    void seekToLast() final;
     Expected<Record> next() final;
-
-    // seekToLast currently is not Curosr interface's requirement
-    void seekToLast();
 
  private:
     std::unique_ptr<rocksdb::Iterator> _it;
