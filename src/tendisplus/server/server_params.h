@@ -21,6 +21,7 @@ class ServerParams {
     uint64_t  rocksBlockcacheMB;
     std::string requirepass;
     std::string masterauth;
+    std::string pidFile;
 };
 }  // namespace tendisplus
 

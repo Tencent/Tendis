@@ -5,6 +5,8 @@
 #include <cctype>
 #include <vector>
 #include <clocale>
+#include <map>
+#include <list>
 #include "glog/logging.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/sync_point.h"
@@ -120,15 +122,18 @@ class ApplyBinlogsCommand: public Command {
                 return logkv.status();
             }
             const ReplLogKey& logKey = logkv.value().getReplLogKey();
-            if (binlogGroup.find(logKey.getTxnId()) == binlogGroup.end()) {
-                binlogGroup[logKey.getTxnId()] = std::list<ReplLog>();
+            uint64_t txnId  = logKey.getTxnId();
+            if (binlogGroup.find(txnId) == binlogGroup.end()) {
+                binlogGroup[txnId] = std::list<ReplLog>();
             }
-            binlogGroup[logKey.getTxnId()].emplace_back(std::move(logkv.value()));
+            binlogGroup[txnId].emplace_back(std::move(logkv.value()));
         }
         for (const auto& logList : binlogGroup) {
             INVARIANT(logList.second.size() >= 1);
-            const ReplLogKey& firstLogKey = logList.second.begin()->getReplLogKey();
-            const ReplLogKey& lastLogKey = logList.second.rbegin()->getReplLogKey();
+            const ReplLogKey& firstLogKey =
+                              logList.second.begin()->getReplLogKey();
+            const ReplLogKey& lastLogKey =
+                              logList.second.rbegin()->getReplLogKey();
             if (!(static_cast<uint16_t>(firstLogKey.getFlag()) &
                     static_cast<uint16_t>(ReplFlag::REPL_GROUP_START))) {
                 LOG(FATAL) << "txnId:" << firstLogKey.getTxnId()
@@ -145,7 +150,11 @@ class ApplyBinlogsCommand: public Command {
         INVARIANT(svr != nullptr);
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
-        Status s = replMgr->applyBinlogs(storeId, sess->getConnId(), binlogGroup);
+
+        StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+        Status s = replMgr->applyBinlogs(storeId,
+                                         sess->getConnId(),
+                                         binlogGroup);
         if (s.ok()) {
             return Command::fmtOK();
         } else {
@@ -153,97 +162,6 @@ class ApplyBinlogsCommand: public Command {
         }
     }
 } applyBinlogsCommand;
-
-class FetchBinlogCommand: public Command {
- public:
-    FetchBinlogCommand()
-        :Command("fetchbinlog") {
-    }
-
-    ssize_t arity() const {
-        return 4;
-    }
-
-    int32_t firstkey() const {
-        return 0;
-    }
-
-    int32_t lastkey() const {
-        return 0;
-    }
-
-    int32_t keystep() const {
-        return 0;
-    }
-
-    // fetchbinlog storeId binlogId suggestBatch
-    Expected<std::string> run(NetSession *sess) final {
-        const std::vector<std::string>& args = sess->getArgs();
-        INVARIANT(ssize_t(args.size()) == arity());
-        uint64_t storeId;
-        uint64_t binlogId;
-        uint32_t suggestBatch;
-        try {
-            storeId = std::stoul(args[1]);
-            binlogId = std::stoul(args[2]);
-            suggestBatch = std::stoul(args[3]);
-        } catch (std::exception& ex) {
-            return {ErrorCodes::ERR_PARSEPKT, ex.what()};
-        }
-        if (storeId >= KVStore::INSTANCE_NUM) {
-            return {ErrorCodes::ERR_PARSEPKT, "store it outof boundary"};
-        }
-        auto svr = sess->getServerEntry();
-        INVARIANT(svr != nullptr);
-        PStore store = svr->getSegmentMgr()->getInstanceById(storeId);
-        INVARIANT(store != nullptr);
-
-        auto ptxn = store->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        std::unique_ptr<BinlogCursor> cursor =
-            txn->createBinlogCursor(binlogId);
-
-        std::vector<ReplLog> binlogs;
-        uint32_t cnt = 0;
-        uint64_t nowId = 0;
-        while (true) {
-            Expected<ReplLog> explog = cursor->next();
-            if (explog.ok()) {
-                cnt += 1;
-                const ReplLogKey& rlk = explog.value().getReplLogKey();
-                if (nowId == 0 || nowId != rlk.getTxnId()) {
-                    nowId = rlk.getTxnId();
-                    if (cnt >= suggestBatch) {
-                        break;
-                    } else {
-                        binlogs.emplace_back(std::move(explog.value()));
-                    }
-                } else {
-                    binlogs.emplace_back(std::move(explog.value()));
-                }
-            } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-                break;
-            } else {
-                LOG(ERROR) << "iter binlog failed:"
-                            << explog.status().toString();
-                return explog.status();
-            }
-        }
-
-        std::stringstream ss;
-        Command::fmtMultiBulkLen(ss, binlogs.size()*2);
-        for (auto& v : binlogs) {
-            ReplLog::KV kv = v.encode();
-            Command::fmtBulk(ss, kv.first);
-            Command::fmtBulk(ss, kv.second);
-        }
-        return ss.str();
-    }
-} fetchBinlogCommand;
 
 class SlaveofCommand: public Command {
  public:
@@ -267,6 +185,7 @@ class SlaveofCommand: public Command {
         }
         if (args.size() == 3) {
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+                StoreLock storeLock(i, mgl::LockMode::LOCK_X);
                 Status s = replMgr->changeReplSource(i, ip, port, i);
                 if (!s.ok()) {
                     return s;
@@ -286,6 +205,8 @@ class SlaveofCommand: public Command {
                     sourceStoreId >= KVStore::INSTANCE_NUM) {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
+
+            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
             Status s = replMgr->changeReplSource(
                     storeId, ip, port, sourceStoreId);
             if (s.ok()) {
@@ -315,6 +236,7 @@ class SlaveofCommand: public Command {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
+            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
             Status s = replMgr->changeReplSource(storeId, "", 0, 0);
             if (s.ok()) {
                 return Command::fmtOK();
@@ -322,6 +244,7 @@ class SlaveofCommand: public Command {
             return s;
         } else {
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+                StoreLock storeLock(i, mgl::LockMode::LOCK_X);
                 Status s = replMgr->changeReplSource(i, "", 0, 0);
                 if (!s.ok()) {
                     return s;

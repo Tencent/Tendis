@@ -12,6 +12,12 @@ BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin,
     _baseCursor->seek(_beginPrefix);
 }
 
+void BinlogCursor::seekToLast() {
+    // NOTE(deyukong): it works because binlog has a maximum prefix.
+    // see RecordType::RT_BINLOG, plz note that it's tricky.
+    _baseCursor->seekToLast();
+}
+
 Expected<ReplLog> BinlogCursor::next() {
     Expected<Record> expRcd = _baseCursor->next();
     if (expRcd.ok()) {
@@ -23,7 +29,7 @@ Expected<ReplLog> BinlogCursor::next() {
         if (!explk.ok()) {
             return explk.status();
         }
-        if (explk.value().getTxnId() >= _end) {
+        if (explk.value().getTxnId() > _end) {
             return {ErrorCodes::ERR_EXHAUST, ""};
         }
         Expected<ReplLogValue> val =
@@ -47,12 +53,24 @@ KVStore::KVStore(const std::string& id, const std::string& path)
     }
 }
 
+BackupInfo::BackupInfo()
+    :_binlogPos(Transaction::TXNID_UNINITED) {
+}
+
 void BackupInfo::setFileList(const std::map<std::string, uint64_t>& fl) {
     _fileList = fl;
 }
 
 const std::map<std::string, uint64_t>& BackupInfo::getFileList() const {
     return _fileList;
+}
+
+void BackupInfo::setBinlogPos(uint64_t pos) {
+    _binlogPos = pos;
+}
+
+uint64_t BackupInfo::getBinlogPos() const {
+    return _binlogPos;
 }
 
 }  // namespace tendisplus

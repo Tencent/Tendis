@@ -12,8 +12,10 @@ class NoSchedNetSession: public NetSession {
  public:
     NoSchedNetSession(std::shared_ptr<ServerEntry> server,
         asio::ip::tcp::socket sock, uint64_t connid, bool initSock,
-        std::shared_ptr<NetworkMatrix> matrix)
-            :NetSession(server, std::move(sock), connid, initSock, matrix) {
+        std::shared_ptr<NetworkMatrix> netMatrix,
+        std::shared_ptr<RequestMatrix> reqMatrix)
+            :NetSession(server, std::move(sock), connid,
+                        initSock, netMatrix, reqMatrix) {
     }
 
  protected:
@@ -24,9 +26,13 @@ class NoSchedNetSession: public NetSession {
 TEST(NetSession, drainReqInvalid) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NoSchedNetSession sess(nullptr, std::move(socket),
-        1, false, std::make_shared<NetworkMatrix>());
-    sess.setState(NetSession::State::DrainReq);
+    NoSchedNetSession sess(nullptr,
+                           std::move(socket),
+                           1,
+                           false,
+                           std::make_shared<NetworkMatrix>(),
+                           std::make_shared<RequestMatrix>());
+    sess.setState(NetSession::State::DrainReqNet);
     const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
     std::copy(s.begin(), s.end(), std::back_inserter(sess._queryBuf));
     sess.drainReqCallback(std::error_code(), s.size());
@@ -40,14 +46,18 @@ TEST(NetSession, Completed) {
     std::string s = "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r";
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NoSchedNetSession sess(nullptr, std::move(socket),
-        1, false, std::make_shared<NetworkMatrix>());
-    sess.setState(NetSession::State::DrainReq);
+    NoSchedNetSession sess(nullptr,
+                           std::move(socket),
+                           1,
+                           false,
+                           std::make_shared<NetworkMatrix>(),
+                           std::make_shared<RequestMatrix>());
+    sess.setState(NetSession::State::DrainReqNet);
     sess._queryBuf.resize(128, 0);
     for (auto& c : s) {
         sess._queryBuf[sess._queryBufPos] = c;
         sess.drainReqCallback(std::error_code(), 1);
-        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReq);
+        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReqNet);
         EXPECT_EQ(sess._closeAfterRsp, false);
     }
     sess._queryBuf[sess._queryBufPos] = '\n';
@@ -60,12 +70,12 @@ TEST(NetSession, Completed) {
 
     sess.resetMultiBulkCtx();
     s = "FULLSYNC 1\r";
-    sess.setState(NetSession::State::DrainReq);
+    sess.setState(NetSession::State::DrainReqNet);
     sess._queryBuf.resize(128, 0);
     for (auto& c : s) {
         sess._queryBuf[sess._queryBufPos] = c;
         sess.drainReqCallback(std::error_code(), 1);
-        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReq);
+        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReqNet);
         EXPECT_EQ(sess._closeAfterRsp, false);
     }
     sess._queryBuf[sess._queryBufPos] = '\n';

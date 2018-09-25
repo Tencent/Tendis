@@ -15,6 +15,8 @@ enum class RecordType {
     RT_KV,
     RT_LIST_META,
     RT_LIST_ELE,
+    RT_HASH_META,
+    RT_HASH_ELE,
     RT_BINLOG,
 };
 
@@ -22,13 +24,13 @@ char rt2Char(RecordType t);
 RecordType char2Rt(char t);
 
 // ********************* key format ***********************************
-// DBID + Type + PK + SK + len(PK) + len(SK) + 1B reserved
+// DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
 // DBID is a varint32 in little endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE
 // PK is primarykey, its length is described in len(PK)
-// SK is secondarykey, its length is described in len(SK)
-// len(PK) and len(SK) are varint32 stored in bigendian, so we can read
+// SK is secondarykey, its length is not stored
+// len(PK) is varint32 stored in bigendian, so we can read
 // from the end backwards.
 // the last 1B are reserved.
 // ********************* value format *********************************
@@ -53,7 +55,12 @@ class RecordKey {
     RecordKey(uint32_t dbid, RecordType type, std::string&& pk,
         std::string&& sk);
     const std::string& getPrimaryKey() const;
+    const std::string& getSecondaryKey() const;
     uint32_t getDbId() const;
+
+    // an encoded prefix until prefix and a padding zero.
+    // mainly for prefix scan.
+    std::string prefixPk() const;
 
     RecordType getRecordType() const;
     std::string encode() const;
@@ -61,6 +68,7 @@ class RecordKey {
     bool operator==(const RecordKey& other) const;
 
  private:
+    void encodePrefixPk(std::vector<uint8_t>*) const;
     uint32_t _dbId;
     RecordType _type;
     std::string _pk;
@@ -82,6 +90,7 @@ class RecordValue {
     explicit RecordValue(std::string&& val, uint64_t ttl = 0);
     const std::string& getValue() const;
     uint64_t getTtl() const;
+    void setTtl(uint64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     bool operator==(const RecordValue& other) const;
@@ -209,6 +218,45 @@ class ReplLog {
     ReplLogValue _val;
 };
 
+class ListMetaValue {
+ public:
+    ListMetaValue(uint64_t head, uint64_t tail);
+    ListMetaValue(ListMetaValue&&);
+    static Expected<ListMetaValue> decode(const std::string&);
+    ListMetaValue& operator=(ListMetaValue&&);
+    std::string encode() const;
+    void setHead(uint64_t head);
+    uint64_t getHead() const;
+    void setTail(uint64_t tail);
+    uint64_t getTail() const;
+
+ private:
+    uint64_t _head;
+    uint64_t _tail;
+};
+
+class HashMetaValue {
+ public:
+    HashMetaValue();
+    HashMetaValue(uint64_t count, uint64_t cas);
+    HashMetaValue(HashMetaValue&&);
+    static Expected<HashMetaValue> decode(const std::string&);
+    HashMetaValue& operator=(HashMetaValue&&);
+    std::string encode() const;
+    void setCount(uint64_t count);
+    void setCas(uint64_t cas);
+    uint64_t getCount() const;
+    uint64_t getCas() const;
+
+ private:
+    uint64_t _count;
+    uint64_t _cas;
+};
+
+namespace rcd_util {
+Expected<uint64_t> getSubKeyCount(const RecordKey& key,
+                                  const RecordValue& val);
+}  // namespace rcd_util
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_RECORD_H_

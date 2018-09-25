@@ -18,6 +18,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -44,7 +45,7 @@ Status ReplManager::startup() {
         } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
             auto pMeta = std::unique_ptr<StoreMeta>(
                 new StoreMeta(i, "", 0, -1,
-                    Transaction::MAX_VALID_TXNID+1, ReplState::REPL_NONE));
+                    Transaction::TXNID_UNINITED, ReplState::REPL_NONE));
             Status s = catalog->setStoreMeta(*pMeta);
             if (!s.ok()) {
                 return s;
@@ -82,25 +83,29 @@ Status ReplManager::startup() {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
 
-    _incrPusher = std::make_unique<WorkerPool>(_incrPushMatrix);
-    Status s = _incrPusher->startup(std::max(POOL_SIZE, cpuNum/2));
+    _incrPusher = std::make_unique<WorkerPool>(
+            "repl-minc", _incrPushMatrix);
+    Status s = _incrPusher->startup(INCR_POOL_SIZE);
     if (!s.ok()) {
         return s;
     }
 
-    _fullPusher = std::make_unique<WorkerPool>(_fullPushMatrix);
-    s = _fullPusher->startup(std::max(POOL_SIZE/2, cpuNum/4));
+    _fullPusher = std::make_unique<WorkerPool>(
+            "repl-mfull", _fullPushMatrix);
+    s = _fullPusher->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
 
-    _fullReceiver = std::make_unique<WorkerPool>(_fullReceiveMatrix);
-    s = _fullReceiver->startup(std::max(POOL_SIZE/2, cpuNum/4));
+    _fullReceiver = std::make_unique<WorkerPool>(
+            "repl-sfull", _fullReceiveMatrix);
+    s = _fullReceiver->startup(MAX_FULL_PARAL);
     if (!s.ok()) {
         return s;
     }
 
-    _incrChecker = std::make_unique<WorkerPool>(_incrCheckMatrix);
+    _incrChecker = std::make_unique<WorkerPool>(
+            "repl-scheck", _incrCheckMatrix);
     s = _incrChecker->startup(2);
     if (!s.ok()) {
         return s;
@@ -114,7 +119,9 @@ Status ReplManager::startup() {
 
     // init first binlogpos, empty binlogs makes cornercase complicated.
     // so we put an no-op to binlogs everytime startup.
+    // in this way, the full-backup will always have a committed txnId.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+        StoreLock storeLock(i, mgl::LockMode::LOCK_IX);
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
         INVARIANT(store != nullptr);
 
@@ -125,7 +132,7 @@ Status ReplManager::startup() {
 
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         RecordKey rk(0, RecordType::RT_META, "NOOP", "");
-        RecordValue rv("");
+        RecordValue rv("NOOP");
         Status putStatus = store->setKV(rk, rv, txn.get());
         if (!putStatus.ok()) {
             return putStatus;
@@ -287,8 +294,8 @@ void ReplManager::controlRoutine() {
 
 Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
-    std::unique_lock<std::mutex> lk(_mutex);
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
+    std::unique_lock<std::mutex> lk(_mutex);
     // NOTE(deyukong): we must wait for the target to stop before change meta,
     // or the meta may be rewrited
     if (!_cv.wait_for(lk, std::chrono::seconds(1),
@@ -313,7 +320,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_CONNECT;
-        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        newMeta->binlogId = Transaction::TXNID_UNINITED;
         LOG(INFO) << "change store:" << storeId
                     << " syncSrc from no one to " << newMeta->syncFromHost
                     << ":" << newMeta->syncFromPort
@@ -334,44 +341,65 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             LOG(WARNING) << "cancel store:" << storeId << " session failed:"
                         << closeStatus.toString();
         }
+        _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
 
         newMeta->syncFromHost = ip;
         INVARIANT(port == 0 && sourceStoreId == 0);
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_NONE;
-        newMeta->binlogId = Transaction::MAX_VALID_TXNID+1;
+        newMeta->binlogId = Transaction::TXNID_UNINITED;
         changeReplStateInLock(*newMeta, true);
         return {ErrorCodes::ERR_OK, ""};
     }
 }
 
-void ReplManager::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    w.Key("slaves");
-    {
+void ReplManager::appendJSONStat(
+        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    INVARIANT(_pushStatus.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_syncStatus.size() == KVStore::INSTANCE_NUM);
+    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        std::stringstream ss;
+        ss << "store_" << i;
+        w.Key(ss.str().c_str());
         w.StartObject();
-        std::lock_guard<std::mutex> lk(_mutex);
-        for (size_t i = 0; i < _pushStatus.size(); i++) {
-            for (auto& mpov : _pushStatus[i]) {
-                std::stringstream ss;
-                ss << "client_" << mpov.second->clientId;
-                w.Key(ss.str().c_str());
-                w.StartObject();
-                w.Key("isRunning");
-                w.Uint64(mpov.second->isRunning);
-                w.Key("dstStoreId");
-                w.Uint64(mpov.second->dstStoreId);
-                w.Key("binlogPos");
-                w.Uint64(mpov.second->binlogPos);
-                w.Key("remoteHost");
-                if (mpov.second->client != nullptr) {
-                    w.String(mpov.second->client->getRemoteRepr());
-                } else {
-                    w.String("???");
-                }
-                w.EndObject();
+
+        // sync to
+        for (auto& mpov : _pushStatus[i]) {
+            std::stringstream ss;
+            ss << "client_" << mpov.second->clientId;
+            w.Key(ss.str().c_str());
+            w.StartObject();
+            w.Key("isRunning");
+            w.Uint64(mpov.second->isRunning);
+            w.Key("dstStoreId");
+            w.Uint64(mpov.second->dstStoreId);
+            w.Key("binlogPos");
+            w.Uint64(mpov.second->binlogPos);
+            w.Key("remoteHost");
+            if (mpov.second->client != nullptr) {
+                w.String(mpov.second->client->getRemoteRepr());
+            } else {
+                w.String("???");
             }
+            w.EndObject();
         }
+
+        // sync from
+        w.Key("syncSource");
+        ss.str("");
+        ss << _syncMeta[i]->syncFromHost << ":"
+           << _syncMeta[i]->syncFromPort << ":"
+           << _syncMeta[i]->syncFromId;
+        w.String(ss.str().c_str());
+        w.Key("binlogId");
+        w.Uint64(_syncMeta[i]->binlogId);
+        w.Key("replState");
+        w.Uint64(static_cast<uint64_t>(_syncMeta[i]->replState));
+        w.Key("lastSyncTime");
+        w.String(timePointRepr(_syncStatus[i]->lastSyncTime));
+
         w.EndObject();
     }
 }

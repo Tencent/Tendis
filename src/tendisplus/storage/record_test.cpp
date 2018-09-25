@@ -2,9 +2,11 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
@@ -114,14 +116,16 @@ TEST(Record, Common) {
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(overflip(kv.first), kv.second);
-        EXPECT_EQ(prcd1.status().code(), ErrorCodes::ERR_DECODE);
+        EXPECT_TRUE(
+            prcd1.status().code() == ErrorCodes::ERR_DECODE ||
+            !(prcd1.value().getRecordKey() == rk));
     }
 }
 
 TEST(ReplRecord, Common) {
     srand(time(NULL));
     std::vector<ReplLogKey> logKeys;
-    for (size_t i = 0; i < 1000000; i++) {
+    for (size_t i = 0; i < 100000; i++) {
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint16_t localid = uint16_t(genRand());
         ReplFlag flag = randomReplFlag();
@@ -142,6 +146,11 @@ TEST(ReplRecord, Common) {
             ||(logKeys[i].getTxnId() == logKeys[i+1].getTxnId() &&
             logKeys[i].getLocalId() <= logKeys[i+1].getLocalId()));
     }
+
+    ReplLogValue rlv(ReplOp::REPL_OP_SET, "a", "b");
+    std::string s = rlv.encode();
+    Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
+    EXPECT_TRUE(erlv.ok());
 }
 
 }  // namespace tendisplus

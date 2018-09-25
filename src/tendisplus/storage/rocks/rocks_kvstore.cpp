@@ -8,6 +8,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/sync_point.h"
@@ -59,9 +60,8 @@ std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
     ensureTxn();
     auto cursor = createCursor();
 
-    // the smallest txnId that is uncommitted.
-    uint64_t lwm = _store->txnLowWaterMark();
-    return std::make_unique<BinlogCursor>(std::move(cursor), begin, lwm);
+    uint64_t hv = _store->getHighestVisibleTxnId();
+    return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
 }
 
 std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
@@ -80,7 +80,7 @@ Expected<uint64_t> RocksOptTxn::commit() {
 
     const auto guard = MakeGuard([this] {
         _txn.reset();
-        _store->removeUncommited(_txnId);
+        _store->markCommitted(_txnId);
     });
 
     if (_txn == nullptr) {
@@ -118,7 +118,7 @@ Status RocksOptTxn::rollback() {
 
     const auto guard = MakeGuard([this] {
         _txn.reset();
-        _store->removeUncommited(_txnId);
+        _store->markCommitted(_txnId);
     });
 
     if (_txn == nullptr) {
@@ -238,7 +238,7 @@ RocksOptTxn::~RocksOptTxn() {
         return;
     }
     _txn.reset();
-    _store->removeUncommited(_txnId);
+    _store->markCommitted(_txnId);
 }
 
 rocksdb::Options RocksKVStore::options() {
@@ -256,6 +256,7 @@ rocksdb::Options RocksKVStore::options() {
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
     options.max_write_buffer_number = 4;
+    options.max_write_buffer_number_to_maintain = 1;
     options.max_background_compactions = 8;
     options.max_background_flushes = 2;
     options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
@@ -293,7 +294,7 @@ bool RocksKVStore::isRunning() const {
 
 Status RocksKVStore::stop() {
     std::lock_guard<std::mutex> lk(_mutex);
-    if (_uncommittedTxns.size() != 0) {
+    if (_aliveTxns.size() != 0) {
         return {ErrorCodes::ERR_INTERNAL,
             "it's upperlayer's duty to guarantee no pinning txns alive"};
     }
@@ -307,8 +308,18 @@ Status RocksKVStore::clear() {
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
     }
-    auto n = filesystem::remove_all(dbPath() + "/" + dbId());
-    LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
+    try {
+        const std::string path = dbPath() + "/" + dbId();
+        if (!filesystem::exists(path)) {
+            return {ErrorCodes::ERR_OK, ""};
+        }
+        auto n = filesystem::remove_all(dbPath() + "/" + dbId());
+        LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
+    } catch(std::exception& ex) {
+        LOG(WARNING) << "dbId:" << dbId()
+                     << " clear failed:" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
+    }
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -319,28 +330,30 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
     }
     std::string dbname = dbPath() + "/" + dbId();
     if (restore) {
-        rocksdb::BackupEngine* bkEngine = nullptr;
-        auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
-            rocksdb::BackupableDBOptions(backupDir()),
-            &bkEngine);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-        }
-        std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
-        pBkEngine.reset(bkEngine);
-        std::vector<rocksdb::BackupInfo> backupInfo;
-        pBkEngine->GetBackupInfo(&backupInfo);
-        if (backupInfo.size() != 1) {
-            LOG(FATAL) << "BUG: backup cnt:" << backupInfo.size()
-                << " != 1";
-        }
-        s = pBkEngine->RestoreDBFromLatestBackup(dbname, dbname);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        try {
+            const std::string path = dbPath() + "/" + dbId();
+            if (filesystem::exists(path)) {
+                std::stringstream ss;
+                ss << "path:" << path
+                    << " should not exist when restore";
+                return {ErrorCodes::ERR_INTERNAL, ss.str()};
+            }
+            if (!filesystem::exists(backupDir())) {
+                std::stringstream ss;
+                ss << "recover path:" << backupDir()
+                    << " not exist when restore";
+                return {ErrorCodes::ERR_INTERNAL, ss.str()};
+            }
+            filesystem::rename(backupDir(), path);
+        } catch(std::exception& ex) {
+            LOG(WARNING) << "dbId:" << dbId()
+                        << "restore exception" << ex.what();
+            return {ErrorCodes::ERR_INTERNAL, ex.what()};
         }
     }
 
     try {
+        // this happens due to a bad terminate
         if (filesystem::exists(backupDir())) {
             LOG(WARNING) << backupDir() << " exists, remove it";
             filesystem::remove_all(backupDir());
@@ -376,19 +389,26 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
             if (!explk.ok()) {
                 return explk.status();
             } else {
-                LOG(INFO) << "store:" << dbId() << " nextSeq change from:"
-                    << _nextTxnSeq << " to:" << explk.value().getTxnId()+1;
+                LOG(INFO) << "store:" << dbId()
+                          << " nextSeq change from:" << _nextTxnSeq
+                          << " to:" << explk.value().getTxnId() + 1;
                 maxCommitId = explk.value().getTxnId();
                 _nextTxnSeq = maxCommitId+1;
+                _highestVisible = maxCommitId;
             }
         } else {
+            _nextTxnSeq = Transaction::MIN_VALID_TXNID;
             LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
-                    << " have no binlog, set nextSeq to 0";
-            _nextTxnSeq = 0;
+                    << " have no binlog, set nextSeq to " << _nextTxnSeq;
+            _highestVisible = Transaction::TXNID_UNINITED;
+            INVARIANT(_highestVisible < _nextTxnSeq);
         }
     } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        LOG(INFO) << "store:" << dbId() << " all empty, set nextSeq to 0";
-        _nextTxnSeq = 0;
+        _nextTxnSeq = Transaction::MIN_VALID_TXNID;
+        LOG(INFO) << "store:" << dbId()
+                  << " all empty, set nextSeq to " << _nextTxnSeq;
+        _highestVisible = Transaction::TXNID_UNINITED;
+        INVARIANT(_highestVisible < _nextTxnSeq);
     } else {
         return expRcd.status();
     }
@@ -406,7 +426,9 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _hasBackup(false),
          _db(nullptr),
          _stats(rocksdb::CreateDBStatistics()),
-         _blockCache(blockCache) {
+         _blockCache(blockCache),
+         _nextTxnSeq(0),
+         _highestVisible(Transaction::TXNID_UNINITED) {
     Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
@@ -443,7 +465,6 @@ Expected<BackupInfo> RocksKVStore::backup() {
         _hasBackup = true;
     }
     bool succ = false;
-    rocksdb::BackupEngine* bkEngine;
     auto guard = MakeGuard([this, &succ]() {
         if (succ) {
             return;
@@ -457,18 +478,25 @@ Expected<BackupInfo> RocksKVStore::backup() {
             LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
         }
     });
-    auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
-            rocksdb::BackupableDBOptions(backupDir()), &bkEngine);
-    if (!s.ok()) {
-        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-    }
-    std::unique_ptr<rocksdb::BackupEngine> pBkEngine;
-    pBkEngine.reset(bkEngine);
-    s = pBkEngine->CreateNewBackup(_db->GetBaseDB());
-    if (!s.ok()) {
-        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-    }
+
+    // NOTE(deyukong): we should get highVisible before making a ckpt
     BackupInfo result;
+    uint64_t highVisible = getHighestVisibleTxnId();
+    if (highVisible == Transaction::TXNID_UNINITED) {
+        return {ErrorCodes::ERR_INTERNAL, "highVisible not inited"};
+    }
+    result.setBinlogPos(highVisible);
+
+    rocksdb::Checkpoint* checkpoint;    
+    auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    s = checkpoint->CreateCheckpoint(backupDir());
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+
     std::map<std::string, uint64_t> flist;
     try {
         for (auto& p : filesystem::recursive_directory_iterator(backupDir())) {
@@ -492,12 +520,12 @@ Expected<BackupInfo> RocksKVStore::backup() {
 }
 
 Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
-    uint64_t txnId = _nextTxnSeq.fetch_add(1);
-    auto ret = std::unique_ptr<Transaction>(new RocksOptTxn(this, txnId));
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "db stopped!"};
     }
+    uint64_t txnId = _nextTxnSeq++;
+    auto ret = std::unique_ptr<Transaction>(new RocksOptTxn(this, txnId));
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);
 }
@@ -506,41 +534,61 @@ rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
     return _db.get();
 }
 
-uint64_t RocksKVStore::txnLowWaterMark() const {
+uint64_t RocksKVStore::getHighestVisibleTxnId() const {
     std::lock_guard<std::mutex> lk(_mutex);
-    if (_uncommittedTxns.size() == 0) {
-        return _nextTxnSeq;
-    }
-    return *_uncommittedTxns.begin();
+    return _highestVisible;
 }
 
 void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
     // TODO(deyukong): need a better mutex mechnism to assert held
-    if (_uncommittedTxns.find(txnId) != _uncommittedTxns.end()) {
+    if (_aliveTxns.find(txnId) != _aliveTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " double add uncommitted";
     }
-    _uncommittedTxns.insert(txnId);
+    _aliveTxns.insert({txnId, false});
 }
 
-void RocksKVStore::removeUncommited(uint64_t txnId) {
+void RocksKVStore::markCommitted(uint64_t txnId) {
     std::lock_guard<std::mutex> lk(_mutex);
-    removeUncommitedInLock(txnId);
+    markCommittedInLock(txnId);
 }
 
 std::set<uint64_t> RocksKVStore::getUncommittedTxns() const {
     std::lock_guard<std::mutex> lk(_mutex);
-    return _uncommittedTxns;
+    std::set<uint64_t> result;
+    for (auto& kv : _aliveTxns) {
+        if (!kv.second) {
+            result.insert(kv.first);
+        }
+    }
+    return result;
 }
 
-void RocksKVStore::removeUncommitedInLock(uint64_t txnId) {
-    // TODO(deyukong): need a better mutex mechnism to assert held
-    if (_uncommittedTxns.find(txnId) == _uncommittedTxns.end()) {
-        LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
-    }
+void RocksKVStore::markCommittedInLock(uint64_t txnId) {
     if (!_isRunning) {
         LOG(FATAL) << "BUG: _uncommittedTxns not empty after stopped";
     }
-    _uncommittedTxns.erase(txnId);
+
+    // TODO(deyukong): need a better mutex mechnism to assert held
+    auto it = _aliveTxns.find(txnId);
+    if (it == _aliveTxns.end()) {
+        LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
+    }
+    if (it->second) {
+        LOG(FATAL) << "BUG: txnid:" << txnId << " already committed";
+    }
+    it->second = true;
+
+    // NOTE(deyukong): now, we can remove a visibility-hole
+    if (it == _aliveTxns.begin()) {
+        while (it != _aliveTxns.end()) {
+            if (!it->second) {
+                break;
+            }
+            INVARIANT(it->first > _highestVisible);
+            _highestVisible = it->first;
+            it = _aliveTxns.erase(it);
+        }
+    }
 }
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
@@ -590,12 +638,14 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
     w.Uint64(_nextTxnSeq);
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        w.Key("ucCnt");
-        w.Uint64(_uncommittedTxns.size());
-        w.Key("minUC");
-        w.Uint64(_uncommittedTxns.size() ? *_uncommittedTxns.begin():0);
-        w.Key("maxUC");
-        w.Uint64(_uncommittedTxns.size() ? *_uncommittedTxns.rbegin():0);
+        w.Key("aliveTxns");
+        w.Uint64(_aliveTxns.size());
+        w.Key("minAliveTxn");
+        w.Uint64(_aliveTxns.size() ? _aliveTxns.begin()->first : 0);
+        w.Key("maxAliveTxn");
+        w.Uint64(_aliveTxns.size() ? _aliveTxns.rbegin()->first : 0);
+        w.Key("highVisible");
+        w.Uint64(_highestVisible);
     }
 }
 

@@ -27,7 +27,8 @@ struct PoolMatrix {
 // It's better to adaptively resize thread-pool by pressure
 class WorkerPool {
  public:
-    explicit WorkerPool(std::shared_ptr<PoolMatrix> poolMatrix);
+    explicit WorkerPool(const std::string& name,
+                        std::shared_ptr<PoolMatrix> poolMatrix);
     WorkerPool(const WorkerPool&) = delete;
     WorkerPool(WorkerPool&&) = delete;
     Status startup(size_t poolSize);
@@ -60,6 +61,7 @@ class WorkerPool {
     std::atomic<bool> _isRuning;
     // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;
+    const std::string _name;
     std::shared_ptr<PoolMatrix> _matrix;
     std::vector<std::thread> _threads;
 };

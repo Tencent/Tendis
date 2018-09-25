@@ -23,6 +23,11 @@ uint32_t SegmentMgrFnvHash64::calcSegId(const std::string& key) const {
     return hash % HASH_SPACE;
 }
 
+uint32_t SegmentMgrFnvHash64::calcInstanceId(const std::string& key) const {
+    uint32_t segId = calcSegId(key);
+    return segId % _instances.size();
+}
+
 PStore SegmentMgrFnvHash64::calcInstance(const std::string& key) const {
     uint32_t segId = calcSegId(key);
     return _instances[segId % _instances.size()];

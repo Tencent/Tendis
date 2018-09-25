@@ -1,9 +1,11 @@
 #ifndef SRC_TENDISPLUS_UTILS_STATUS_H_
 #define SRC_TENDISPLUS_UTILS_STATUS_H_
 
+#include <stdlib.h>
 #include <utility>
 #include <string>
 #include <memory>
+#include <execinfo.h>
 #include <type_traits>
 #include "tendisplus/utils/portable.h"
 
@@ -22,11 +24,12 @@ enum class ErrorCodes {
     ERR_AUTH,
     ERR_BUSY,
     ERR_EXHAUST,  // for cursor
-    ERR_EXPIRE,
+    ERR_EXPIRED,
 };
 
 class Status {
  public:
+    Status();
     Status(const ErrorCodes& code, const std::string& reason);
     Status(const Status& other) = default;
     Status(Status&& other);
@@ -61,8 +64,19 @@ class Expected {
             static const char *s =
                 "can not use OK as Expected input"
                 ", this makes data field empty,"
-                ", which is always a misuse";
-            throw std::invalid_argument(s);
+                ", which is always a misuse\n";
+            std::stringstream ss;
+            void *buffer[100];
+            char **strings;
+            int j, nptrs;
+            nptrs = backtrace(buffer, 100);
+            strings = backtrace_symbols(buffer, nptrs);
+            ss << s;
+            for (j = 0; j < nptrs; j++) {
+                ss << strings[j] << "\n";
+            }
+            free(strings);
+            throw std::invalid_argument(ss.str());
         }
     }
 

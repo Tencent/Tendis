@@ -2,6 +2,10 @@
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
+Status::Status()
+    :Status(ErrorCodes::ERR_OK, "") {
+}
+
 Status::Status(const ErrorCodes& code, const std::string& reason)
     :_errmsg(reason), _code(code) {
 }
@@ -15,7 +19,12 @@ bool Status::ok() const {
 }
 
 std::string Status::toString() const {
-    return _errmsg;
+    std::stringstream ss;
+    ss << "ERR:"
+       << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
+       << ",msg:"
+       << _errmsg;
+    return ss.str();
 }
 
 ErrorCodes Status::code() const {

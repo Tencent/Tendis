@@ -2,10 +2,13 @@
 #include <utility>
 #include <memory>
 #include <vector>
+#include <limits>
 #include "glog/logging.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -19,8 +22,15 @@ char rt2Char(RecordType t) {
             return 'L';
         case RecordType::RT_LIST_ELE:
             return 'l';
-        //  it's convinent (for seek) to have BINLOG to pos
-        //  at the rightmost of a lsmtree
+        case RecordType::RT_HASH_META:
+            return 'H';
+        case RecordType::RT_HASH_ELE:
+            return 'h';
+        // it's convinent (for seek) to have BINLOG to pos
+        // at the rightmost of a lsmtree
+        // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
+        // the underlying cursor iteration relys on it to be at
+        // the right most part.
         case RecordType::RT_BINLOG:
             return std::numeric_limits<char>::max();
         default:
@@ -40,6 +50,10 @@ RecordType char2Rt(char t) {
             return RecordType::RT_LIST_META;
         case 'l':
             return RecordType::RT_LIST_ELE;
+        case 'H':
+            return RecordType::RT_HASH_META;
+        case 'h':
+            return RecordType::RT_HASH_ELE;
         case std::numeric_limits<char>::max():
             return RecordType::RT_BINLOG;
         default:
@@ -91,8 +105,35 @@ RecordKey::RecordKey(uint32_t dbid, RecordType type,
      _fmtVsn(0) {
 }
 
+void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
+    // --------key encoding
+    // DBID
+    auto dbIdBytes = varintEncode(_dbId);
+    arr->insert(arr->end(), dbIdBytes.begin(), dbIdBytes.end());
+
+    // Type
+    arr->emplace_back(static_cast<uint8_t>(rt2Char(_type)));
+
+    // PK
+    std::string hexPk = hexlify(_pk);
+    arr->insert(arr->end(), hexPk.begin(), hexPk.end());
+
+    // NOTE(deyukong): 0 never exists in hex string.
+    // a padding o avoids prefixes intersect with
+    // each other in physical space
+    arr->push_back(0);
+}
+
 uint32_t RecordKey::getDbId() const {
     return _dbId;
+}
+
+std::string RecordKey::prefixPk() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    encodePrefixPk(&key);
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
 }
 
 RecordType RecordKey::getRecordType() const {
@@ -103,16 +144,7 @@ std::string RecordKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
 
-    // --------key encoding
-    // DBID
-    auto dbIdBytes = varintEncode(_dbId);
-    key.insert(key.end(), dbIdBytes.begin(), dbIdBytes.end());
-
-    // Type
-    key.emplace_back(static_cast<uint8_t>(rt2Char(_type)));
-
-    // PK
-    key.insert(key.end(), _pk.begin(), _pk.end());
+    encodePrefixPk(&key);
 
     // SK
     key.insert(key.end(), _sk.begin(), _sk.end());
@@ -120,10 +152,6 @@ std::string RecordKey::encode() const {
     // len(PK)
     auto lenPK = varintEncode(_pk.size());
     key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
-
-    // len(SK)
-    auto lenSK = varintEncode(_sk.size());
-    key.insert(key.end(), lenSK.rbegin(), lenSK.rend());
 
     // reserved
     const uint8_t *p = reinterpret_cast<const uint8_t*>(&_fmtVsn);
@@ -136,6 +164,10 @@ std::string RecordKey::encode() const {
 
 const std::string& RecordKey::getPrimaryKey() const {
     return _pk;
+}
+
+const std::string& RecordKey::getSecondaryKey() const {
+    return _sk;
 }
 
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
@@ -156,46 +188,42 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
         return expt.status();
     }
     offset += expt.value().second;
-    dbid = expt.value().first;
+    dbid = static_cast<uint32_t>(expt.value().first);
 
     // type
     char typec = keyCstr[offset++];
     type = char2Rt(typec);
 
-    // sklen and pklen are stored in the reverse order
-    // sklen
+    // pklen is stored in the reverse order
+    // pklen
     const uint8_t *p = keyCstr + key.size() - rsvd - 1;
     expt = varintDecodeRvs(p, key.size() - rsvd - offset);
     if (!expt.ok()) {
         return expt.status();
     }
     rvsOffset += expt.value().second;
-    skLen = expt.value().first;
-
-    // pklen
-    p = keyCstr + key.size() - rsvd - 1 - rvsOffset;
-    expt = varintDecodeRvs(p, key.size() - rsvd - offset - rvsOffset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    rvsOffset += expt.value().second;
     pkLen = expt.value().first;
 
-    // do a double check
-    if (offset + pkLen + skLen + rvsOffset + rsvd != key.size()) {
-        // TODO(deyukong): hex the string
-        std::stringstream ss;
-        ss << "marshaled key content:" << key;
-        return {ErrorCodes::ERR_DECODE, ss.str()};
+    // 2*pklen: pk is hexed
+    // here -1 for the padding 0 after pk
+    if (key.size() < offset + rsvd + rvsOffset + 2*pkLen + 1) {
+        return {ErrorCodes::ERR_DECODE, "invalid sk len"};
     }
+    skLen = key.size() - offset - rsvd - rvsOffset - 2*pkLen - 1;
 
     // pk and sk
-    pk = std::string(key.c_str() + offset, pkLen);
-    sk = std::string(key.c_str() + offset + pkLen, skLen);
+    pk = std::string(key.c_str() + offset, 2*pkLen);
+
+    Expected<std::string> unhexPk = unhexlify(pk);
+    if (!unhexPk.ok()) {
+        return unhexPk.status();
+    }
+
+    sk = std::string(key.c_str() + offset + 2*pkLen + 1, skLen);
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(dbid, type, pk, sk);
+    return RecordKey(dbid, type, unhexPk.value(), sk);
 }
 
 bool RecordKey::operator==(const RecordKey& other) const {
@@ -228,6 +256,7 @@ RecordValue::RecordValue(std::string&& val, uint64_t ttl)
 }
 
 std::string RecordValue::encode() const {
+    INVARIANT(_value.size() > 0);
     // --------value encoding
     // TTL
     std::vector<uint8_t> value;
@@ -255,7 +284,9 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     // NOTE(deyukong): value must not be empty
     // so we use >= rather than > here
     if (offset >= value.size()) {
-        return {ErrorCodes::ERR_DECODE, "marshaled value content"};
+        std::stringstream ss;
+        ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
+        return {ErrorCodes::ERR_DECODE, ss.str()};
     }
     std::string rawValue = std::string(value.c_str() + offset,
         value.size() - offset);
@@ -268,6 +299,10 @@ const std::string& RecordValue::getValue() const {
 
 uint64_t RecordValue::getTtl() const {
     return _ttl;
+}
+
+void RecordValue::setTtl(uint64_t ttl) {
+    _ttl = ttl;
 }
 
 bool RecordValue::operator==(const RecordValue& other) const {
@@ -375,7 +410,7 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     offset += sizeof(txnid);
 
     // localid
-    localid = (keyCstr[offset] << 8)|keyCstr[offset+1];
+    localid = static_cast<uint16_t>((keyCstr[offset] << 8)|keyCstr[offset+1]);
     offset += sizeof(localid);
 
     // flag
@@ -419,11 +454,12 @@ std::string ReplLogKey::prefix(uint64_t commitId) {
     static_assert(sizeof(commitId) == 8,
         "commitId size not 8, reimpl the logic");
     std::string p = ReplLogKey::prefix();
+    std::string p1;
     const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&commitId);
     for (size_t i = 0; i < sizeof(commitId); i++) {
-        p.push_back(txnBuf[sizeof(commitId)-1-i]);
+        p1.push_back(txnBuf[sizeof(commitId)-1-i]);
     }
-    return p;
+    return p + hexlify(p1);
 }
 
 std::string ReplLogKey::encode() const {
@@ -617,4 +653,177 @@ bool ReplLog::operator==(const ReplLog& o) const {
     return _key == o._key && _val == o._val;
 }
 
+HashMetaValue::HashMetaValue()
+    :HashMetaValue(0, 0) {
+}
+
+HashMetaValue::HashMetaValue(uint64_t count, uint64_t cas)
+    :_count(count),
+     _cas(cas) {
+}
+
+HashMetaValue::HashMetaValue(HashMetaValue&& o)
+        :_count(o._count),
+         _cas(o._cas) {
+    o._count = 0;
+    o._cas = 0;
+}
+
+std::string HashMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    auto countBytes = varintEncode(_count);
+    value.insert(value.end(), countBytes.begin(), countBytes.end());
+    auto casBytes = varintEncode(_cas);
+    value.insert(value.end(), casBytes.begin(), casBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    uint64_t count = 0;
+    uint64_t cas = 0;
+    auto expt = varintDecodeFwd(valCstr + offset, val.size());
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    count = expt.value().first;
+
+    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    cas = expt.value().first;
+    return HashMetaValue(count, cas);
+}
+
+HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {
+    if (&o == this) {
+        return *this;
+    }
+    _count = o._count;
+    _cas = o._cas;
+    o._count = 0;
+    o._cas = 0;
+    return *this;
+}
+
+void HashMetaValue::setCount(uint64_t count) {
+    _count = count;
+}
+
+void HashMetaValue::setCas(uint64_t cas) {
+    _cas = cas;
+}
+
+uint64_t HashMetaValue::getCount() const {
+    return _count;
+}
+
+uint64_t HashMetaValue::getCas() const {
+    return _cas;
+}
+
+ListMetaValue::ListMetaValue(uint64_t head, uint64_t tail)
+        :_head(head),
+         _tail(tail) {
+}
+
+ListMetaValue::ListMetaValue(ListMetaValue&& v)
+        :_head(v._head),
+         _tail(v._tail) {
+    v._head = 0;
+    v._tail = 0;
+}
+
+std::string ListMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    auto headBytes = varintEncode(_head);
+    value.insert(value.end(), headBytes.begin(), headBytes.end());
+    auto tailBytes = varintEncode(_tail);
+    value.insert(value.end(), tailBytes.begin(), tailBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<ListMetaValue> ListMetaValue::decode(const std::string& val) {
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    uint64_t head = 0;
+    uint64_t tail = 0;
+    auto expt = varintDecodeFwd(valCstr + offset, val.size());
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    head = expt.value().first;
+
+    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    tail = expt.value().first;
+    return ListMetaValue(head, tail);
+}
+
+ListMetaValue& ListMetaValue::operator=(ListMetaValue&& o) {
+    if (&o == this) {
+        return *this;
+    }
+    _head = o._head;
+    _tail = o._tail;
+    o._head = 0;
+    o._tail = 0;
+    return *this;
+}
+
+void ListMetaValue::setHead(uint64_t head) {
+    _head = head;
+}
+
+void ListMetaValue::setTail(uint64_t tail) {
+    _tail = tail;
+}
+
+uint64_t ListMetaValue::getHead() const {
+    return _head;
+}
+
+uint64_t ListMetaValue::getTail() const {
+    return _tail;
+}
+
+namespace rcd_util {
+Expected<uint64_t> getSubKeyCount(const RecordKey& key,
+                                  const RecordValue& val) {
+     switch (key.getRecordType()) {
+        case RecordType::RT_KV: {
+            return 1;
+        }
+        case RecordType::RT_HASH_META: {
+            auto v = HashMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getCount();
+        }
+        case RecordType::RT_LIST_META: {
+            auto v = ListMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getTail() - v.value().getHead();
+        }
+        default: {
+            return {ErrorCodes::ERR_INTERNAL, "not support"};
+        }
+    }
+}
+}  // namespace rcd_util
 }  // namespace tendisplus

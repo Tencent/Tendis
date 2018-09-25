@@ -29,16 +29,19 @@ class Cursor {
     Cursor() = default;
     virtual ~Cursor() = default;
     virtual void seek(const std::string& prefix) = 0;
+    // seek to last of the collection, Not the prefix
+    virtual void seekToLast() = 0;
     virtual Expected<Record> next() = 0;
 };
 
 class BinlogCursor {
  public:
     BinlogCursor() = delete;
+    // NOTE(deyukong): in range of [begin, end], be careful both close interval 
     BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
     ~BinlogCursor() = default;
-    // NOTE(deyukong): in range of [begin, end), be careful right is open
     Expected<ReplLog> next();
+    void seekToLast();
 
  protected:
     std::unique_ptr<Cursor> _baseCursor;
@@ -66,18 +69,20 @@ class Transaction {
     virtual Status delKV(const std::string& key, bool withLog) = 0;
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
-    static constexpr uint64_t MIN_VALID_TXNID = 0;
-    static constexpr uint64_t TXNID_UNINITED
-        = std::numeric_limits<uint64_t>::max()/2+1;
+    static constexpr uint64_t MIN_VALID_TXNID = 1;
+    static constexpr uint64_t TXNID_UNINITED = 0;
 };
 
 class BackupInfo {
  public:
-    BackupInfo() = default;
+    BackupInfo();
     const std::map<std::string, uint64_t>& getFileList() const;
     void setFileList(const std::map<std::string, uint64_t>&);
+    void setBinlogPos(uint64_t);
+    uint64_t getBinlogPos() const;
  private:
     std::map<std::string, uint64_t> _fileList;
+    uint64_t _binlogPos;
 };
 
 class KVStore {
@@ -112,10 +117,11 @@ class KVStore {
     virtual Expected<BackupInfo> backup() = 0;
     virtual Status releaseBackup() = 0;
 
-    virtual void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
+    virtual void appendJSONStat(
+        rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(4);
+    static constexpr size_t INSTANCE_NUM = size_t(1);
 
  private:
     const std::string _id;

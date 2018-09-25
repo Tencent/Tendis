@@ -122,12 +122,18 @@ class SetCommand: public Command {
     }
 
     Expected<std::string> run(NetSession *sess) final {
-        Expected<SetParams> params = parse(sess);
-        if (!params.ok()) {
-            return params.status();
+        Expected<SetParams> exptParams = parse(sess);
+        if (!exptParams.ok()) {
+            return exptParams.status();
         }
 
-        PStore kvstore = getStore(sess, params.value().key);
+        // NOTE(deyukong): no need to do a expireKeyIfNeeded
+        // on a simple kv. We will overwrite it.
+        const SetParams& params = exptParams.value();
+        auto storeLock = Command::lockDBByKey(sess,
+                                              params.key,
+                                              mgl::LockMode::LOCK_IX);
+        PStore kvstore = Command::getStore(sess, params.key);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -138,17 +144,17 @@ class SetCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                params.value().key, "");
+                     params.key, "");
 
         uint64_t ts = 0;
-        if (params.value().expire != 0) {
-            ts = nsSinceEpoch() / 1000000 + params.value().expire;
+        if (params.expire != 0) {
+            ts = nsSinceEpoch() / 1000000 + params.expire;
         }
-        RecordValue rv(params.value().value, ts);
+        RecordValue rv(params.value, ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
-            auto result = setGeneric(kvstore, txn.get(), params.value().flags,
-                    rk, rv, "", "");
+            auto result = setGeneric(kvstore, txn.get(), params.flags,
+                                     rk, rv, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
@@ -158,9 +164,52 @@ class SetCommand: public Command {
             }
             txn = std::move(ptxn.value());
         }
-        return setGeneric(kvstore, txn.get(), params.value().flags,
+        return setGeneric(kvstore, txn.get(), params.flags,
             rk, rv, "", "");
     }
 } setCommand;
+
+class GetCommand: public Command {
+ public:
+    GetCommand()
+        :Command("get") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtNull();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtNull();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        } else {
+            return fmtBulk(rv.value().getValue());
+        }
+    }
+} getCommand;
+
 
 }  // namespace tendisplus

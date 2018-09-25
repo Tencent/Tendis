@@ -20,12 +20,18 @@ ServerEntry::ServerEntry()
          _executor(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
+         _pessimisticMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
+         _reqMatrix(std::make_shared<RequestMatrix>()),
          _ftmcThd(nullptr),
          _requirepass(nullptr),
          _masterauth(nullptr) {
+}
+
+void ServerEntry::installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr> o) {
+    _pessimisticMgr = std::move(o);
 }
 
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
@@ -76,31 +82,41 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         new SegmentMgrFnvHash64(_kvstores));
     installSegMgrInLock(std::move(tmpSegMgr));
 
-    // replication
-    _replMgr = std::make_unique<ReplManager>(shared_from_this());
-    Status s = _replMgr->startup();
-    if (!s.ok()) {
-        return s;
-    }
+    // pessimisticMgr
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
+        KVStore::INSTANCE_NUM);
+    installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    // network executePool
-    _executor = std::make_unique<WorkerPool>(_poolMatrix);
+    // request executePool
+    _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    s = _executor->startup(std::max(size_t(4), cpuNum/2));
+    Status s = _executor->startup(std::max(size_t(4), cpuNum/2));
     if (!s.ok()) {
         return s;
     }
 
-    // listener should be the lastone in startup process.
-    // network listener
-    _network = std::make_unique<NetworkAsio>(shared_from_this(), _netMatrix);
+    // network
+    _network = std::make_unique<NetworkAsio>(shared_from_this(),
+                                             _netMatrix,
+                                             _reqMatrix);
     s = _network->prepare(cfg->bindIp, cfg->port);
     if (!s.ok()) {
         return s;
     }
+
+    // replication
+    // replication relys on blocking-client
+    // must startup after network prepares ok
+    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    s = _replMgr->startup();
+    if (!s.ok()) {
+        return s;
+    }
+
+    // listener should be the lastone to run.
     s = _network->run();
     if (!s.ok()) {
         return s;
@@ -126,6 +142,10 @@ ReplManager* ServerEntry::getReplManager() {
 
 const SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
+}
+
+PessimisticMgr* ServerEntry::getPessimisticMgr() {
+    return _pessimisticMgr.get();
 }
 
 const std::shared_ptr<std::string> ServerEntry::requirepass() const {
@@ -233,14 +253,17 @@ void ServerEntry::ftmc() {
     LOG(INFO) << "server ftmc thread starts";
     auto oldNetMatrix = *_netMatrix;
     auto oldPoolMatrix = *_poolMatrix;
+    auto oldReqMatrix = *_reqMatrix;
     while (_isRunning.load(std::memory_order_relaxed)) {
         auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
         auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
+        auto tmpReqMatrix = *_reqMatrix - oldReqMatrix;
         oldNetMatrix = *_netMatrix;
         oldPoolMatrix = *_poolMatrix;
-        // LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
-        // LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
-
+        oldReqMatrix = *_reqMatrix;
+        LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
+        LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
+        LOG(INFO) << "req matrix status:\n" << tmpReqMatrix.toString();
         std::unique_lock<std::mutex> lk(_mutex);
         bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
             return _isRunning.load(std::memory_order_relaxed) == false;
@@ -276,6 +299,13 @@ void ServerEntry::stop() {
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
+}
+
+void ServerEntry::appendSessionJsonStats(
+        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    std::unique_lock<std::mutex> lk(_mutex);
+    w.Key("sessions");
+    w.Uint64(_sessions.size());
 }
 
 }  // namespace tendisplus

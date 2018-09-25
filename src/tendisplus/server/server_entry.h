@@ -11,6 +11,7 @@
 #include "tendisplus/network/worker_pool.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/segment_manager.h"
+#include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
@@ -20,6 +21,7 @@ class NetSession;
 class NetworkAsio;
 class NetworkMatrix;
 class PoolMatrix;
+class RequestMatrix;
 class Catalog;
 class ReplManager;
 
@@ -56,14 +58,19 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installStoresInLock(const std::vector<PStore>&);
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void installCatalog(std::unique_ptr<Catalog>);
+    void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
+
     void stop();
     void waitStopComplete();
     const SegmentMgr* getSegmentMgr() const;
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
+    PessimisticMgr* getPessimisticMgr();
 
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
+
+    void appendSessionJsonStats(rapidjson::Writer<rapidjson::StringBuffer>&) const;
 
  private:
     void ftmc();
@@ -79,11 +86,14 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
+    std::unique_ptr<PessimisticMgr> _pessimisticMgr;
+
     std::vector<PStore> _kvstores;
     std::unique_ptr<Catalog> _catalog;
 
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<PoolMatrix> _poolMatrix;
+    std::shared_ptr<RequestMatrix> _reqMatrix;
     std::unique_ptr<std::thread> _ftmcThd;
 
     // NOTE(deyukong):

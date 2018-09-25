@@ -76,7 +76,7 @@ TEST(RocksKVStore, BinlogCursor) {
     auto eTxn2 = kvstore->createTransaction();
     EXPECT_EQ(eTxn2.ok(), true);
     std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
-    auto bcursor = txn2->createBinlogCursor(0);
+    auto bcursor = txn2->createBinlogCursor(1);
 
     auto eTxn3 = kvstore->createTransaction();
     EXPECT_EQ(eTxn3.ok(), true);
@@ -85,7 +85,7 @@ TEST(RocksKVStore, BinlogCursor) {
     s = kvstore->setKV(
         Record(
             RecordKey(RecordType::RT_KV, "b", ""),
-            RecordValue("txn1")),
+            RecordValue("txn3")),
         txn3.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -108,7 +108,7 @@ TEST(RocksKVStore, BinlogCursor) {
     auto eTxn4 = kvstore->createTransaction();
     EXPECT_EQ(eTxn4.ok(), true);
     std::unique_ptr<Transaction> txn4 = std::move(eTxn4.value());
-    auto bcursor1 = txn4->createBinlogCursor(1);
+    auto bcursor1 = txn4->createBinlogCursor(2);
     std::vector<ReplLog> binlogs;
     while (true) {
         auto v = bcursor1->next();
@@ -121,9 +121,9 @@ TEST(RocksKVStore, BinlogCursor) {
     }
     EXPECT_EQ(cnt, 1);
     if (cnt == 1) {
-        // 3 == REPL_GROUP_START | REPL_GROUP_END
-        EXPECT_EQ(binlogs[0].getReplLogKey().getTxnId(), uint64_t(2));
+        EXPECT_EQ(binlogs[0].getReplLogKey().getTxnId(), uint64_t(3));
         EXPECT_EQ(binlogs[0].getReplLogKey().getLocalId(), uint16_t(0));
+        // 3 == REPL_GROUP_START | REPL_GROUP_END
         EXPECT_EQ(static_cast<uint16_t>(binlogs[0].getReplLogKey().getFlag()), uint16_t(3));
     }
 }
@@ -195,11 +195,8 @@ TEST(RocksKVStore, Cursor) {
     EXPECT_EQ(cnt, 5);
 
     cnt = 0;
-    std::string prefix;
-    prefix.push_back(0);
-    prefix.push_back(rt2Char(RecordType::RT_KV));
-    prefix.push_back('b');
-    cursor->seek(prefix);
+    RecordKey rk(RecordType::RT_KV, "b", "");
+    cursor->seek(rk.prefixPk());
     while (true) {
         auto v = cursor->next();
         if (!v.ok()) {

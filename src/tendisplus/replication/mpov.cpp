@@ -18,6 +18,8 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
@@ -102,6 +104,9 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
                 uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
     constexpr uint32_t suggestBatch = 64;
     constexpr size_t suggestBytes = 16*1024*1024;
+
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
 
@@ -154,11 +159,11 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
         Command::fmtBulk(ss, kv.first);
         Command::fmtBulk(ss, kv.second);
     }
-    std::string stingtoWrite = ss.str();
+    std::string stringtoWrite = ss.str();
     uint32_t secs = 1;
-    if (stingtoWrite.size() > 1024*1024) {
+    if (stringtoWrite.size() > 1024*1024) {
         secs = 2;
-    } else if (stingtoWrite.size() > 1024*1024*10) {
+    } else if (stringtoWrite.size() > 1024*1024*10) {
         secs = 4;
     }
     Status s = client->writeData(ss.str(), std::chrono::seconds(secs));
@@ -272,8 +277,20 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             << " registerIncrSync " << (registPosOk ? "ok" : "failed");
 }
 
+// mpov's network communicate procedure
+// send binlogpos low watermark
+// send filelist={filename->filesize}
+// foreach file
+//     send filename
+//     send content
+//     read +OK
+// read +OK
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+    LOG(INFO) << "client:" << client->getRemoteRepr()
+              << ",storeId:" << storeId
+              << ",begins fullsync";
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
     if (!store->isRunning()) {
@@ -281,12 +298,16 @@ void ReplManager::supplyFullSyncRoutine(
         return;
     }
 
+    uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup();
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
         client->writeLine(ss.str(), std::chrono::seconds(1));
         return;
+    } else {
+        LOG(INFO) << "storeId:" << storeId
+                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns";
     }
 
     auto guard = MakeGuard([this, store, storeId]() {
@@ -297,6 +318,17 @@ void ReplManager::supplyFullSyncRoutine(
         }
     });
 
+    // send binlogPos
+    Status s = client->writeLine(
+            std::to_string(bkInfo.value().getBinlogPos()),
+            std::chrono::seconds(1));
+    if (!s.ok()) {
+        LOG(ERROR) << "store:" << storeId
+                   << " fullsync send binlogpos failed:" << s.toString();
+        return;
+    }
+
+    // send fileList
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
@@ -305,10 +337,10 @@ void ReplManager::supplyFullSyncRoutine(
         writer.Uint64(kv.second);
     }
     writer.EndObject();
-    Status s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
+    s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
     if (!s.ok()) {
-        LOG(ERROR) << "store:" << storeId << " writeLine failed"
-                    << s.toString();
+        LOG(ERROR) << "store:" << storeId
+                   << " fullsync send filelist failed:" << s.toString();
         return;
     }
 
@@ -338,9 +370,18 @@ void ReplManager::supplyFullSyncRoutine(
                             << " failed with err:" << strerror(errno);
                 return;
             }
-            s = client->writeData(readBuf, std::chrono::seconds(1));
+            s = client->writeData(readBuf, std::chrono::seconds(10));
             if (!s.ok()) {
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
+                return;
+            }
+            auto oneRpy = client->readLine(std::chrono::seconds(10));
+            if (!oneRpy.ok() || oneRpy.value() != "+OK") {
+                LOG(ERROR) << "send client:" << client->getRemoteRepr()
+                           << "file:" << fileInfo.first
+                           << ",size:" << fileInfo.second
+                           << " failed:"
+                           << (oneRpy.ok() ? oneRpy.value() : oneRpy.status().toString());
                 return;
             }
         }

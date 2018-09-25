@@ -1,10 +1,16 @@
 #ifndef SRC_TENDISPLUS_UTILS_TIME_H_
 #define SRC_TENDISPLUS_UTILS_TIME_H_
 
+#include <chrono>
+#include <string>
+
 namespace tendisplus {
 
 uint64_t nsSinceEpoch();
 uint32_t sinceEpoch();
+
+using SCLOCK = std::chrono::steady_clock;
+std::string timePointRepr(const SCLOCK::time_point&);
 
 }  // namespace tendisplus
 
