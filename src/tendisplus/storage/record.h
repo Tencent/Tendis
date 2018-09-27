@@ -17,6 +17,8 @@ enum class RecordType {
     RT_LIST_ELE,
     RT_HASH_META,
     RT_HASH_ELE,
+    RT_SET_META,
+    RT_SET_ELE,
     RT_BINLOG,
 };
 
@@ -251,6 +253,19 @@ class HashMetaValue {
  private:
     uint64_t _count;
     uint64_t _cas;
+};
+
+class SetMetaValue {
+ public:
+    SetMetaValue();
+    SetMetaValue(uint64_t count);
+    static Expected<SetMetaValue> decode(const std::string&);
+    std::string encode() const;
+    void setCount(uint64_t count);
+    uint64_t getCount() const;
+
+ private:
+    uint64_t _count;
 };
 
 namespace rcd_util {
