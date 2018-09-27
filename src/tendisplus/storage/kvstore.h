@@ -37,7 +37,7 @@ class Cursor {
 class BinlogCursor {
  public:
     BinlogCursor() = delete;
-    // NOTE(deyukong): in range of [begin, end], be careful both close interval 
+    // NOTE(deyukong): in range of [begin, end], be careful both close interval
     BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
     ~BinlogCursor() = default;
     Expected<ReplLog> next();

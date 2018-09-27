@@ -9,6 +9,9 @@ add_library(varint STATIC varint.cpp)
 add_library(record STATIC record.cpp)
 target_link_libraries(record varint status glog utils_common)
 
+add_library(skiplist STATIC skiplist.cpp)
+target_link_libraries(skiplist record varint status glog utils_common)
+
 add_executable(varint_test varint_test.cpp)
 target_link_libraries(varint_test varint status gtest_main)
 

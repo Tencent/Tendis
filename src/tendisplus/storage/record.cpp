@@ -799,13 +799,13 @@ uint64_t ListMetaValue::getTail() const {
     return _tail;
 }
 
-ZsetSkipListMeta::ZsetSkipListMeta()
+ZSlMetaValue::ZSlMetaValue()
         :_level(0),
          _maxLevel(0),
          _count(0) {
 }
 
-std::string ZsetSkipListMeta::encode() const {
+std::string ZSlMetaValue::encode() const {
     std::vector<uint8_t> value;
     value.reserve(128);
 
@@ -827,7 +827,7 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
     size_t offset = 0;
     ZSlMetaValue result;
 
-    // _level 
+    // _level
     auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
     if (!expt.ok()) {
         return expt.status();
@@ -859,6 +859,10 @@ uint8_t ZSlMetaValue::getMaxLevel() const {
 
 uint8_t ZSlMetaValue::getLevel() const {
     return _level;
+}
+
+uint32_t ZSlMetaValue::getCount() const {
+    return _count;
 }
 
 /*
@@ -903,9 +907,8 @@ Expected<ZslEleSubKey> ZslEleSubKey::decode(const std::string& key) {
 
 ZSlEleValue::ZSlEleValue()
         :_countLeft(0),
-         _name(""),
-         _value("") {
-    _forward.resize(ZSlEleValue::MAX_LAYER+1);
+         _key("") {
+    _forward.resize(ZSlMetaValue::MAX_LAYER+1);
     for (size_t i = 0; i < _forward.size(); ++i) {
         _forward[i] = 0;
     }
@@ -915,23 +918,31 @@ uint32_t ZSlEleValue::getForward(uint8_t layer) const {
     return _forward[layer];
 }
 
+void ZSlEleValue::setForward(uint8_t layer, uint32_t pointer) {
+    _forward[layer] = pointer;
+}
+
+void ZSlEleValue::setKey(const std::string& key) {
+    _key = key;
+}
+
+const std::string& ZSlEleValue::getKey() const {
+    return _key;
+}
+
 std::string ZSlEleValue::encode() const {
     std::vector<uint8_t> value;
     value.reserve(128);
     for (auto& v : _forward) {
-        auto bytes = varintEncode(v); 
+        auto bytes = varintEncode(v);
         value.insert(value.end(), bytes.begin(), bytes.end());
     }
     auto bytes = varintEncode(_countLeft);
     value.insert(value.end(), bytes.begin(), bytes.end());
 
-    bytes = varintEncode(_name.size());
+    bytes = varintEncode(_key.size());
     value.insert(value.end(), bytes.begin(), bytes.end());
-    value.insert(value.end(), _name.begin(), _name.end());
-
-    bytes = varintEncode(_value.size());
-    value.insert(value.end(), bytes.begin(), bytes.end());
-    value.insert(value.end(), _value.begin(), _value.end());
+    value.insert(value.end(), _key.begin(), _key.end());
 
     return std::string(reinterpret_cast<const char *>(
                 value.data()), value.size());
@@ -943,7 +954,7 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
     ZSlEleValue result;
 
     // forwardlist
-    for (uint32_t i = 0; i <= ZsetSkipListMeta::MAX_LAYER; ++i) {
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
         auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
         if (!expt.ok()) {
             return expt.status();
@@ -960,31 +971,18 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
     offset += expt.value().second;
     result._countLeft = expt.value().first;
 
-    // name
+    // key
     expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
     if (!expt.ok()) {
         return expt.status();
     }
     offset += expt.value().second;
-    size_t nameLen = expt.value().first;
-    if (offset + nameLen >= val.size()) {
-        return {ErrorCodes::ERR_DECODE, "invalid skiplist name len"};
+    size_t keyLen = expt.value().first;
+    if (offset + keyLen != val.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid skiplist key len"};
     }
-    result._name = std::string(val.c_str()+offset, nameLen);
-    offset += nameLen;
-
-    // value
-    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    size_t valLen = expt.value().first;
-    if (offset + valLen != val.size()) {
-        return {ErrorCodes::ERR_DECODE, "invalid skiplist val len"};
-    }
-    result._value = std::string(val.c_str()+offset, valLen);
-    offset += valLen;
+    result._key = std::string(val.c_str()+offset, keyLen);
+    offset += keyLen;
     return result;
 }
 

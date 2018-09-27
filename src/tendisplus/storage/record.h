@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <memory>
+#include <vector>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
 
@@ -264,10 +265,11 @@ class ZSlMetaValue {
     std::string encode() const;
     uint8_t getMaxLevel() const;
     uint8_t getLevel() const;
+    uint32_t getCount() const;
     // can not dynamicly change
-    static constexpr int8_t MAX_LAYER=24;
-    static constexpr uint32_t MAX_NUM=(1<<31);
-    static constexpr uint32_t HEAD_ID=1;
+    static constexpr int8_t MAX_LAYER = 24;
+    static constexpr uint32_t MAX_NUM = (1<<31);
+    static constexpr uint32_t HEAD_ID = 1;
 
  private:
     uint8_t _level;
@@ -295,12 +297,14 @@ class ZSlEleValue {
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
     uint32_t getForward(uint8_t layer) const;
+    void setForward(uint8_t layer, uint32_t pointer);
+    void setKey(const std::string& key);
+    const std::string& getKey() const;
 
  private:
     std::vector<uint32_t> _forward;
     uint32_t _countLeft;
-    std::string _name;
-    std::string _value;
+    std::string _key;
 };
 
 namespace rcd_util {
