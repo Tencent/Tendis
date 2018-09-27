@@ -799,6 +799,195 @@ uint64_t ListMetaValue::getTail() const {
     return _tail;
 }
 
+ZsetSkipListMeta::ZsetSkipListMeta()
+        :_level(0),
+         _maxLevel(0),
+         _count(0) {
+}
+
+std::string ZsetSkipListMeta::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+
+    auto bytes = varintEncode(_level);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_maxLevel);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_count);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    ZSlMetaValue result;
+
+    // _level 
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._level = expt.value().first;
+
+    // _maxLevel
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._maxLevel = expt.value().first;
+
+    // _count
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._count = expt.value().first;
+    return result;
+}
+
+uint8_t ZSlMetaValue::getMaxLevel() const {
+    return _maxLevel;
+}
+
+uint8_t ZSlMetaValue::getLevel() const {
+    return _level;
+}
+
+/*
+ZslEleSubKey::ZslEleSubKey()
+    :ZslEleSubKey(0, "") {
+}
+
+ZslEleSubKey::ZslEleSubKey(uint64_t score, const std::string& subkey)
+    :ZslEleSubKey(score, subkey) {
+}
+
+std::string ZslEleSubKey::encode() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    const uint8_t *scoreBuf = reinterpret_cast<const uint8_t*>(&_score);
+    for (size_t i = 0; i < sizeof(_score); i++) {
+        key.emplace_back(scoreBuf[sizeof(_score)-1-i]);
+    }
+    key.insert(key.end(), _subKey.begin(), _subKey.end());
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
+}
+
+Expected<ZslEleSubKey> ZslEleSubKey::decode(const std::string& key) {
+    uint64_t score = 0;
+    std::string subKey;
+
+    if (key.size() <= sizeof(score)) {
+        return {ErrorCodes::ERR_DECODE, "ZslEleSubKey bad size"};
+    }
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    size_t offset = 0;
+
+    for (size_t i = 0; i < sizeof(score); i++) {
+        score = (score << 8)|keyCstr[i];
+    }
+    offset += sizeof(score);
+    subKey = std::string(key.c_str()+offset, key.size()-offset);
+    return ZslEleSubKey(score, subKey);
+}
+*/
+
+ZSlEleValue::ZSlEleValue()
+        :_countLeft(0),
+         _name(""),
+         _value("") {
+    _forward.resize(ZSlEleValue::MAX_LAYER+1);
+    for (size_t i = 0; i < _forward.size(); ++i) {
+        _forward[i] = 0;
+    }
+}
+
+uint32_t ZSlEleValue::getForward(uint8_t layer) const {
+    return _forward[layer];
+}
+
+std::string ZSlEleValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    for (auto& v : _forward) {
+        auto bytes = varintEncode(v); 
+        value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+    auto bytes = varintEncode(_countLeft);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_name.size());
+    value.insert(value.end(), bytes.begin(), bytes.end());
+    value.insert(value.end(), _name.begin(), _name.end());
+
+    bytes = varintEncode(_value.size());
+    value.insert(value.end(), bytes.begin(), bytes.end());
+    value.insert(value.end(), _value.begin(), _value.end());
+
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    ZSlEleValue result;
+
+    // forwardlist
+    for (uint32_t i = 0; i <= ZsetSkipListMeta::MAX_LAYER; ++i) {
+        auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        result._forward[i] = expt.value().first;
+    }
+
+    // countLeft
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._countLeft = expt.value().first;
+
+    // name
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    size_t nameLen = expt.value().first;
+    if (offset + nameLen >= val.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid skiplist name len"};
+    }
+    result._name = std::string(val.c_str()+offset, nameLen);
+    offset += nameLen;
+
+    // value
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    size_t valLen = expt.value().first;
+    if (offset + valLen != val.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid skiplist val len"};
+    }
+    result._value = std::string(val.c_str()+offset, valLen);
+    offset += valLen;
+    return result;
+}
+
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
