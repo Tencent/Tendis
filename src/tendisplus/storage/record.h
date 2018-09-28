@@ -261,6 +261,7 @@ class HashMetaValue {
 class ZSlMetaValue {
  public:
     ZSlMetaValue();
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;
@@ -294,17 +295,22 @@ class ZslEleSubKey {
 class ZSlEleValue {
  public:
     ZSlEleValue();
+    ZSlEleValue(uint64_t score, const std::string& subkey);
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
     uint32_t getForward(uint8_t layer) const;
     void setForward(uint8_t layer, uint32_t pointer);
-    void setKey(const std::string& key);
-    const std::string& getKey() const;
+    void incRight();
+    void decRight();
+    uint32_t getRight() const;
+    uint64_t getScore() const;
+    const std::string& getSubKey() const;
 
  private:
     std::vector<uint32_t> _forward;
-    uint32_t _countLeft;
-    std::string _key;
+    uint32_t _right;
+    uint64_t _score;
+    std::string _subKey;
 };
 
 namespace rcd_util {

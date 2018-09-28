@@ -16,18 +16,19 @@ class SkipList {
  public:
     SkipList(uint32_t dbId, const std::string& pk,
              const ZSlMetaValue& meta, PStore store);
-    Status insert(const std::string& key, Transaction* txn);
-    // bool erase(const std::string& key);
+    Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
+    Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
+    // Expected<uint32_t rank(const std::string& key, Transaction* txn);
 
  private:
     using PSE = std::unique_ptr<ZSlEleValue>;
-    Status save();
+    Status save(Transaction* txn);
     uint8_t randomLevel();
-    Status saveNode(uint32_t pointer, const ZSlEleValue& val);
-    Expected<PSE> getNode(Transaction *txn, uint32_t pointer);
-    std::pair<uint32_t, PSE> makeNode(const std::string& key);
+    Status saveNode(uint32_t pointer, const ZSlEleValue& val, Transaction* txn);
+    Status delNode(uint32_t pointer, Transaction* txn);
+    Expected<PSE> getNode(uint32_t pointer, Transaction* txn);
+    std::pair<uint32_t, PSE> makeNode(uint64_t score, const std::string& subkey);
     const uint8_t _maxLevel;
-    // current level
     uint8_t _level;
     uint32_t _count;
     uint32_t _dbId;

@@ -145,7 +145,7 @@ class LPushCommand: public Command {
         const std::string& key = args[1];
 
         if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed lpush batch lim"};
+            return {ErrorCodes::ERR_PARSEOPT, "exceed batch lim"};
         }
 
         SessionCtx *pCtx = sess->getCtx();
