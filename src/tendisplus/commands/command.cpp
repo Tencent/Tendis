@@ -205,7 +205,14 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
                           mk.getPrimaryKey(),
                           "");
         prefix = fakeEle.prefixPk();
+    } else if (mk.getRecordType() == RecordType::RT_SET_META) {
+        RecordKey fakeEle(mk.getDbId(),
+                          RecordType::RT_SET_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefix = fakeEle.prefixPk();
     } else {
+        INVARIANT(0);
         // invariant 0
         // TODO(deyukong): impl
     }
@@ -322,9 +329,7 @@ Status Command::delKey(NetSession *sess, uint32_t storeId,
     // should never reach here
     INVARIANT(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
-
 }
-                      
 
 Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
                                   uint32_t storeId,

@@ -865,6 +865,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
             }
             return v.value().getTail() - v.value().getHead();
         }
+        case RecordType::RT_SET_META: {
+            auto v = SetMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getCount();
+        }
         default: {
             return {ErrorCodes::ERR_INTERNAL, "not support"};
         }

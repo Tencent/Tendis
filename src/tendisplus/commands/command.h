@@ -73,9 +73,12 @@ class Command {
     static Status delKeyOptimism(NetSession *sess, uint32_t storeId,
                             const RecordKey& rk, Transaction* txn);
 
-    static Expected<uint32_t> partialDelSubKeys(NetSession *sess, uint32_t storeId,
-                                 uint32_t subCount, const RecordKey& mk,
-                                 bool deleteMeta, Transaction *txn);
+    static Expected<uint32_t> partialDelSubKeys(NetSession *sess,
+                                 uint32_t storeId,
+                                 uint32_t subCount,
+                                 const RecordKey& mk,
+                                 bool deleteMeta,
+                                 Transaction *txn);
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.

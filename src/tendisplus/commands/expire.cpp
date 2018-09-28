@@ -63,7 +63,7 @@ Expected<bool> expireAfterNow(NetSession *sess,
         } else if (!eValue.ok()) {
             return eValue.status();
         }
-        auto rv = eValue.value(); 
+        auto rv = eValue.value();
         rv.setTtl(expireAt);
         Status s = kvstore->setKV(rk, rv, txn.get());
         if (!s.ok()) {
@@ -108,7 +108,8 @@ Expected<std::string> expireGeneric(NetSession *sess,
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META}) {
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META}) {
             auto done = expireBeforeNow(sess, type, key);
             if (!done.ok()) {
                 return done.status();
