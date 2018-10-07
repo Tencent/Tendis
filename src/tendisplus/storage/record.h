@@ -286,7 +286,10 @@ class ZSlMetaValue {
     // can not dynamicly change
     static constexpr int8_t MAX_LAYER = 24;
     static constexpr uint32_t MAX_NUM = (1<<31);
-    static constexpr uint32_t HEAD_ID = 1;
+    // NOTE(deyukong): static constexpr uint32_t HEAD_ID = 1
+    // fails to unlink, I don't know why, and give up, the
+    // definition of HEAD_ID is in record.cpp
+    static uint32_t HEAD_ID;
 
  private:
     uint8_t _level;

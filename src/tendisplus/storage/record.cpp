@@ -833,6 +833,8 @@ Expected<SetMetaValue> SetMetaValue::decode(const std::string& val) {
     return SetMetaValue(count);
 }
 
+uint32_t ZSlMetaValue::HEAD_ID = 1;
+
 ZSlMetaValue::ZSlMetaValue()
         :ZSlMetaValue(0, 0, 0) {
 }
