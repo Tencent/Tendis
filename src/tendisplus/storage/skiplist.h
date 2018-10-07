@@ -19,10 +19,10 @@ class SkipList {
     Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
     Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
     // Expected<uint32_t rank(const std::string& key, Transaction* txn);
+    Status save(Transaction* txn);
 
  private:
     using PSE = std::unique_ptr<ZSlEleValue>;
-    Status save(Transaction* txn);
     uint8_t randomLevel();
     Status saveNode(uint32_t pointer, const ZSlEleValue& val, Transaction* txn);
     Status delNode(uint32_t pointer, Transaction* txn);

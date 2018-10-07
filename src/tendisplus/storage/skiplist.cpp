@@ -7,7 +7,7 @@
 
 namespace tendisplus {
 
-// 0 eq
+// 0 ==
 // 1 <
 // 2 >
 int slCmp(uint64_t score0, const std::string& subk0,
@@ -67,15 +67,21 @@ Expected<SkipList::PSE> SkipList::getNode(uint32_t pointer, Transaction *txn) {
 }
 
 Status SkipList::delNode(uint32_t pointer, Transaction* txn) {
-    return {ErrorCodes::ERR_OK, ""};
+    RecordKey rk(_dbId, RecordType::RT_ZSET_S_ELE, _pk, std::to_string(pointer));
+    return _store->delKV(rk, txn);
 }
 
 Status SkipList::saveNode(uint32_t pointer, const ZSlEleValue& val, Transaction* txn) {
-    return {ErrorCodes::ERR_OK, ""};
+    RecordKey rk(_dbId, RecordType::RT_ZSET_S_ELE, _pk, std::to_string(pointer));
+    RecordValue rv(val.encode());
+    return _store->setKV(rk, rv, txn);
 }
 
 Status SkipList::save(Transaction* txn) {
-    return {ErrorCodes::ERR_OK, ""};
+    RecordKey rk(_dbId, RecordType::RT_ZSET_META, _pk, "");
+    ZSlMetaValue mv(_level, _maxLevel, _count);
+    RecordValue rv(mv.encode());
+    return _store->setKV(rk, rv, txn);
 }
 
 Status SkipList::remove(uint64_t score, const std::string& subkey, Transaction *txn) {
@@ -117,18 +123,16 @@ Status SkipList::remove(uint64_t score, const std::string& subkey, Transaction *
         if (cache[update[i]]->getForward(i) != pos) {
             break;
         }
-        cache[update[i]]->setForward(i, cache[pos]->getForward(i));
-    }
-    while (_level > 1 && cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
-        --_level;
-    }
-    for (size_t i = 1; i <= _level; ++i) {
         INVARIANT(update[i] >= ZSlMetaValue::HEAD_ID);
         INVARIANT(cache.find(update[i]) != cache.end());
+        cache[update[i]]->setForward(i, cache[pos]->getForward(i));
         Status s = saveNode(update[i], *cache[update[i]], txn);
         if (!s.ok()) {
             return s;
         }
+    }
+    while (_level > 1 && cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
+        --_level;
     }
     return delNode(pos, txn);
 }
@@ -176,19 +180,17 @@ Status SkipList::insert(uint64_t score, const std::string& subkey, Transaction *
     }
     std::pair<uint32_t, SkipList::PSE> p = SkipList::makeNode(score, subkey);
     cache[p.first] = std::move(p.second);
-    for (size_t i = 1; i <= _level; ++i) {
-        cache[p.first]->setForward(i, cache[update[i]]->getForward(i));
-        cache[update[i]]->setForward(i, p.first);
-    }
-    for (size_t i = 1; i <= _level; ++i) {
+    for (size_t i = 1; i <= lvl; ++i) {
         INVARIANT(update[i] >= ZSlMetaValue::HEAD_ID);
         INVARIANT(cache.find(update[i]) != cache.end());
+        cache[p.first]->setForward(i, cache[update[i]]->getForward(i));
+        cache[update[i]]->setForward(i, p.first);
         Status s = saveNode(update[i], *cache[update[i]], txn);
         if (!s.ok()) {
             return s;
         }
     }
-    return save(txn);
+    return saveNode(p.first, *(p.second), txn);
 }
 
 }  // namespace tendisplus
