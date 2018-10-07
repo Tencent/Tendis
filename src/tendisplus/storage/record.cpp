@@ -799,6 +799,8 @@ uint64_t ListMetaValue::getTail() const {
     return _tail;
 }
 
+uint32_t ZSlMetaValue::HEAD_ID = 1;
+
 ZSlMetaValue::ZSlMetaValue()
         :ZSlMetaValue(0, 0, 0) {
 }
