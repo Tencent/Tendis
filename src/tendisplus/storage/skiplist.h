@@ -1,6 +1,7 @@
 #ifndef SRC_TENDISPLUS_STORAGE_SKIPLIST_H_
 #define SRC_TENDISPLUS_STORAGE_SKIPLIST_H_
 
+#include <map>
 #include <limits>
 #include <memory>
 #include <string>
@@ -18,16 +19,23 @@ class SkipList {
              const ZSlMetaValue& meta, PStore store);
     Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
     Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
-    // Expected<uint32_t rank(const std::string& key, Transaction* txn);
+    Expected<uint32_t> rank(uint64_t score,
+                            const std::string& subkey, Transaction* txn);
     Status save(Transaction* txn);
+    Status traverse(std::stringstream& ss, Transaction* txn);
+    uint32_t getCount() const;
+    uint8_t getLevel() const;
 
  private:
     using PSE = std::unique_ptr<ZSlEleValue>;
     uint8_t randomLevel();
     Status saveNode(uint32_t pointer, const ZSlEleValue& val, Transaction* txn);
     Status delNode(uint32_t pointer, Transaction* txn);
-    Expected<PSE> getNode(uint32_t pointer, Transaction* txn);
-    std::pair<uint32_t, PSE> makeNode(uint64_t score, const std::string& subkey);
+    Expected<ZSlEleValue*> getNode(uint32_t pointer,
+                          std::map<uint32_t, SkipList::PSE>* cache,
+                          Transaction* txn);
+    std::pair<uint32_t, PSE> makeNode(uint64_t score,
+                                      const std::string& subkey);
     const uint8_t _maxLevel;
     uint8_t _level;
     uint32_t _count;

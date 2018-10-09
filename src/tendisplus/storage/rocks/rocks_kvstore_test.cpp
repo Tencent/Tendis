@@ -10,7 +10,7 @@
 
 namespace tendisplus {
 
-static std::shared_ptr<ServerParams> genParams() {
+std::shared_ptr<ServerParams> genParams() {
     const auto guard = MakeGuard([] {
         remove("a.cfg");
     });
