@@ -94,6 +94,47 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtLongLong(5000));
 }
 
+void testZset(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // pk not exists
+    {
+        sess.setArgs({"zrank", "test", std::to_string(0)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtNull());
+    }
+    for (uint32_t i = 1; i < 10000; i++) {
+        sess.setArgs({"zadd", "test", std::to_string(i), std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+    }
+    for (uint32_t i = 1; i < 10000; i++) {
+        sess.setArgs({"zrank", "test", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i-1));
+    }
+    {
+        sess.setArgs({"zrank", "test", std::to_string(0)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtNull());
+    }
+    {
+        sess.setArgs({"zadd", "test", std::to_string(1), std::to_string(9999)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+        return;
+        sess.setArgs({"zrank", "test", std::to_string(9999)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    }
+}
 
 void testSet(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
@@ -412,6 +453,7 @@ TEST(Command, common) {
     testSetRetry(server);
     testHash(server);
     testList(server);
+    testZset(server);
 }
 
 }  // namespace tendisplus

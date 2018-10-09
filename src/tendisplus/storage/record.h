@@ -262,14 +262,17 @@ class ZSlMetaValue {
  public:
     ZSlMetaValue();
     ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t alloc);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;
     uint8_t getLevel() const;
     uint32_t getCount() const;
+    uint64_t getPosAlloc() const;
     // can not dynamicly change
     static constexpr int8_t MAX_LAYER = 24;
     static constexpr uint32_t MAX_NUM = (1<<31);
+    static constexpr uint64_t MIN_POS = 128;
     // NOTE(deyukong): static constexpr uint32_t HEAD_ID = 1
     // fails to unlink, I don't know why, and give up, the
     // definition of HEAD_ID is in record.cpp
@@ -279,6 +282,7 @@ class ZSlMetaValue {
     uint8_t _level;
     uint8_t _maxLevel;
     uint32_t _count;
+    uint64_t _posAlloc;
 };
 
 class ZSlEleValue {

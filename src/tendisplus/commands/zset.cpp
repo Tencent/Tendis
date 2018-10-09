@@ -77,8 +77,8 @@ Expected<std::string> genericZadd(NetSession *sess,
                          entry.first);
         RecordValue hv(std::to_string(entry.second));
         Expected<RecordValue> eValue = kvstore->getKV(hk, txn.get());
-        if (!eMeta.ok() && eMeta.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return eMeta.status();
+        if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return eValue.status();
         }
         if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
             cnt += 1;
@@ -92,11 +92,10 @@ Expected<std::string> genericZadd(NetSession *sess,
             }
         } else {
             // change score
-            Expected<uint64_t> oldScore = ::tendisplus::stoul(hv.getValue());
+            Expected<uint64_t> oldScore = ::tendisplus::stoul(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
-            INVARIANT(eValue.ok());
             Status s = sl.remove(oldScore.value(), entry.first, txn.get());
             if (!s.ok()) {
                 return s;
@@ -121,6 +120,105 @@ Expected<std::string> genericZadd(NetSession *sess,
     }
     return Command::fmtLongLong(cnt);
 }
+
+Expected<std::string> genericZRank(NetSession *sess,
+                                   PStore kvstore,
+                                   const RecordKey& mk,
+                                   const std::string& subkey) {
+    auto ptxn = kvstore->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+ 
+    RecordKey hk(mk.getDbId(),
+                 RecordType::RT_ZSET_H_ELE,
+                 mk.getPrimaryKey(),
+                 subkey);
+    Expected<RecordValue> eValue = kvstore->getKV(hk, txn.get());
+    if (!eValue.ok()) {
+        if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        }
+        return eValue.status();
+    }
+    Expected<uint64_t> score = ::tendisplus::stoul(eValue.value().getValue());
+    if (!score.ok()) {
+        return score.status();
+    }
+    Expected<RecordValue> mv = kvstore->getKV(mk, txn.get());
+    if (!mv.ok()) {
+        // since we have found it in the hash structure
+        INVARIANT(mv.status().code() != ErrorCodes::ERR_NOTFOUND);
+        return mv.status();
+    }
+
+    auto eMetaContent = ZSlMetaValue::decode(mv.value().getValue());
+    if (!eMetaContent.ok()) {
+        return eMetaContent.status();
+    }
+    ZSlMetaValue meta = eMetaContent.value();
+    SkipList sl(mk.getDbId(), mk.getPrimaryKey(), meta, kvstore);
+    Expected<uint32_t> rank = sl.rank(score.value(), subkey, txn.get());
+    if (!rank.ok()) {
+        return rank.status();
+    }
+    return Command::fmtLongLong(rank.value()-1);
+}
+
+class ZRankCommand: public Command {
+ public:
+    ZRankCommand()
+        :Command("zrank") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        const std::string& subkey = args[2];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        return genericZRank(sess, kvstore, metaKey, subkey);
+    }
+} zrankCommand;
 
 class ZAddCommand: public Command {
  public:
