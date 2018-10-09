@@ -52,7 +52,7 @@ Expected<std::string> genericZadd(NetSession *sess,
                        RecordType::RT_ZSET_S_ELE,
                        mk.getPrimaryKey(),
                        std::to_string(ZSlMetaValue::HEAD_ID));
-        ZSlMetaValue headVal;
+        ZSlEleValue headVal;
         RecordValue subRv(headVal.encode());
         s = kvstore->setKV(head, subRv, txn.get());
         if (!s.ok()) {
