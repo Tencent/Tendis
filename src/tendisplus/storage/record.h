@@ -281,20 +281,6 @@ class ZSlMetaValue {
     uint32_t _count;
 };
 
-/*
-class ZslEleSubKey {
- public:
-    ZslEleSubKey();
-    ZslEleSubKey(uint64_t score, const std::string& subkey);
-    static Expected<ZslEleSubKey> decode(const std::string&);
-    std::string encode() const;
-
- private:
-    uint64_t _score;
-    std::string _subKey;
-};
-*/
-
 class ZSlEleValue {
  public:
     ZSlEleValue();
@@ -303,15 +289,14 @@ class ZSlEleValue {
     std::string encode() const;
     uint32_t getForward(uint8_t layer) const;
     void setForward(uint8_t layer, uint32_t pointer);
-    void incRight();
-    void decRight();
-    uint32_t getRight() const;
     uint64_t getScore() const;
     const std::string& getSubKey() const;
+    uint32_t getSpan(uint8_t layer) const;
+    void setSpan(uint8_t layer, uint32_t span);
 
  private:
     std::vector<uint32_t> _forward;
-    uint32_t _right;
+    std::vector<uint32_t> _span;
     uint64_t _score;
     std::string _subKey;
 };

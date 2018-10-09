@@ -4,6 +4,7 @@
 #include <vector>
 #include <set>
 #include <algorithm>
+#include <limits>
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
@@ -151,6 +152,43 @@ TEST(ReplRecord, Common) {
     std::string s = rlv.encode();
     Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
     EXPECT_TRUE(erlv.ok());
+}
+
+TEST(ZSl, Common) {
+    srand(time(NULL));
+    for (size_t i = 0; i < 1000000; i++) {
+        uint8_t maxLvl = genRand() % std::numeric_limits<uint8_t>::max();
+        maxLvl = std::max(maxLvl, static_cast<uint8_t>(10));
+        uint8_t lvl = genRand() % maxLvl;
+        uint32_t count = static_cast<uint32_t>(genRand());
+        ZSlMetaValue m(lvl, maxLvl, count);
+        EXPECT_EQ(m.getMaxLevel(), maxLvl);
+        EXPECT_EQ(m.getLevel(), lvl);
+        EXPECT_EQ(m.getCount(), count);
+        std::string s = m.encode();
+        Expected<ZSlMetaValue> expm = ZSlMetaValue::decode(s);
+        EXPECT_TRUE(expm.ok());
+        EXPECT_EQ(expm.value().getMaxLevel(), maxLvl);
+        EXPECT_EQ(expm.value().getLevel(), lvl);
+        EXPECT_EQ(expm.value().getCount(), count);
+    }
+
+    for (size_t i = 0; i < 1000000; i++) {
+        ZSlEleValue v(genRand(), randomStr(false));
+        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+            v.setForward(i, genRand());
+            v.setSpan(i, genRand());
+        }
+        std::string s = v.encode();
+        Expected<ZSlEleValue> expv = ZSlEleValue::decode(s);
+        EXPECT_TRUE(expv.ok());
+        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+            EXPECT_EQ(expv.value().getForward(i), v.getForward(i));
+            EXPECT_EQ(expv.value().getSpan(i), v.getSpan(i));
+        }
+        EXPECT_EQ(expv.value().getScore(), v.getScore());
+        EXPECT_EQ(expv.value().getSubKey(), v.getSubKey());
+    }
 }
 
 }  // namespace tendisplus

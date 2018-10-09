@@ -26,6 +26,12 @@ char rt2Char(RecordType t) {
             return 'H';
         case RecordType::RT_HASH_ELE:
             return 'h';
+        case RecordType::RT_ZSET_META:
+            return 'Z';
+        case RecordType::RT_ZSET_H_ELE:
+            return 'z';
+        case RecordType::RT_ZSET_S_ELE:
+            return 'c';
         // it's convinent (for seek) to have BINLOG to pos
         // at the rightmost of a lsmtree
         // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
@@ -54,6 +60,10 @@ RecordType char2Rt(char t) {
             return RecordType::RT_HASH_META;
         case 'h':
             return RecordType::RT_HASH_ELE;
+        case 'z':
+            return RecordType::RT_ZSET_S_ELE;
+        case 'c':
+            return RecordType::RT_ZSET_H_ELE;
         case std::numeric_limits<char>::max():
             return RecordType::RT_BINLOG;
         default:
@@ -916,12 +926,15 @@ ZSlEleValue::ZSlEleValue()
 }
 
 ZSlEleValue::ZSlEleValue(uint64_t score, const std::string& subkey)
-        :_right(0),
-         _score(score),
-         _subKey(subkey) {
+         :_score(score),
+          _subKey(subkey) {
     _forward.resize(ZSlMetaValue::MAX_LAYER+1);
+    _span.resize(ZSlMetaValue::MAX_LAYER+1);
     for (size_t i = 0; i < _forward.size(); ++i) {
         _forward[i] = 0;
+    }
+    for (size_t i = 0; i < _span.size(); ++i) {
+        _span[i] = 0;
     }
 }
 
@@ -933,16 +946,12 @@ void ZSlEleValue::setForward(uint8_t layer, uint32_t pointer) {
     _forward[layer] = pointer;
 }
 
-void ZSlEleValue::incRight() {
-    _right++;
+uint32_t ZSlEleValue::getSpan(uint8_t layer) const {
+    return _span[layer];
 }
 
-void ZSlEleValue::decRight() {
-    _right--;
-}
-
-uint32_t ZSlEleValue::getRight() const {
-    return _right;
+void ZSlEleValue::setSpan(uint8_t layer, uint32_t span) {
+    _span[layer] = span;
 }
 
 uint64_t ZSlEleValue::getScore() const {
@@ -960,10 +969,12 @@ std::string ZSlEleValue::encode() const {
         auto bytes = varintEncode(v);
         value.insert(value.end(), bytes.begin(), bytes.end());
     }
-    auto bytes = varintEncode(_right);
-    value.insert(value.end(), bytes.begin(), bytes.end());
+    for (auto& v : _span) {
+        auto bytes = varintEncode(v);
+        value.insert(value.end(), bytes.begin(), bytes.end());
+    }
 
-    bytes = varintEncode(_score);
+    auto bytes = varintEncode(_score);
     value.insert(value.end(), bytes.begin(), bytes.end());
 
     bytes = varintEncode(_subKey.size());
@@ -989,16 +1000,18 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
         result._forward[i] = expt.value().first;
     }
 
-    // right 
-    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
+    // spanlist
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        result._span[i] = expt.value().first;
     }
-    offset += expt.value().second;
-    result._right = expt.value().first;
 
     // score
-    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
     if (!expt.ok()) {
         return expt.status();
     }
