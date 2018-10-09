@@ -30,6 +30,7 @@ SkipList::SkipList(uint32_t dbId, const std::string& pk,
     :_maxLevel(meta.getMaxLevel()),
      _level(meta.getLevel()),
      _count(meta.getCount()),
+     _posAlloc(meta.getPosAlloc()),
      _dbId(dbId),
      _pk(pk),
      _store(store) {
@@ -50,7 +51,7 @@ std::pair<uint32_t, SkipList::PSE> SkipList::makeNode(
                                              uint64_t score,
                                              const std::string& subkey) {
     auto result = std::make_unique<ZSlEleValue>(score, subkey);
-    return {++_count, std::move(result)};
+    return {++_posAlloc, std::move(result)};
 }
 
 Expected<ZSlEleValue*> SkipList::getNode(uint32_t pointer,
@@ -99,7 +100,7 @@ Status SkipList::saveNode(uint32_t pointer,
 
 Status SkipList::save(Transaction* txn) {
     RecordKey rk(_dbId, RecordType::RT_ZSET_META, _pk, "");
-    ZSlMetaValue mv(_level, _maxLevel, _count);
+    ZSlMetaValue mv(_level, _maxLevel, _count, _posAlloc);
     RecordValue rv(mv.encode());
     return _store->setKV(rk, rv, txn);
 }
@@ -270,6 +271,7 @@ Status SkipList::insert(uint64_t score,
             return s;
         }
     }
+    ++_count;
     return saveNode(p.first, *cache[p.first], txn);
 }
 
@@ -306,6 +308,10 @@ uint32_t SkipList::getCount() const {
 
 uint8_t SkipList::getLevel() const {
     return _level;
+}
+
+uint64_t SkipList::getAlloc() const {
+    return _posAlloc;
 }
 
 }  // namespace tendisplus

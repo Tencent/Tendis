@@ -852,7 +852,15 @@ ZSlMetaValue::ZSlMetaValue()
 ZSlMetaValue::ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count)
         :_level(lvl),
          _maxLevel(maxLvl),
-         _count(count) {
+         _count(count),
+         _posAlloc(ZSlMetaValue::MIN_POS) {
+}
+
+ZSlMetaValue::ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t alloc)
+        :_level(lvl),
+         _maxLevel(maxLvl),
+         _count(count),
+         _posAlloc(alloc) {
 }
 
 std::string ZSlMetaValue::encode() const {
@@ -866,6 +874,9 @@ std::string ZSlMetaValue::encode() const {
     value.insert(value.end(), bytes.begin(), bytes.end());
 
     bytes = varintEncode(_count);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_posAlloc);
     value.insert(value.end(), bytes.begin(), bytes.end());
 
     return std::string(reinterpret_cast<const char *>(
@@ -896,6 +907,15 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
     }
     offset += expt.value().second;
     result._count = expt.value().first;
+
+    // _posAlloc
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._posAlloc = expt.value().first;
+
     return result;
 }
 
@@ -909,6 +929,10 @@ uint8_t ZSlMetaValue::getLevel() const {
 
 uint32_t ZSlMetaValue::getCount() const {
     return _count;
+}
+
+uint64_t ZSlMetaValue::getPosAlloc() const {
+    return _posAlloc;
 }
 
 /*

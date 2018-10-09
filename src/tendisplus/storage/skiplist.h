@@ -24,6 +24,7 @@ class SkipList {
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
+    uint64_t getAlloc() const;
     uint8_t getLevel() const;
 
  private:
@@ -39,6 +40,7 @@ class SkipList {
     const uint8_t _maxLevel;
     uint8_t _level;
     uint32_t _count;
+    uint64_t _posAlloc;
     uint32_t _dbId;
     std::string _pk;
     PStore _store;
