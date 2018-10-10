@@ -33,6 +33,38 @@ std::shared_ptr<ServerParams> genParams() {
 }
 
 TEST(SkipList, Reload) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto store = std::shared_ptr<KVStore>(
+        new RocksKVStore("0", cfg, blockCache));
+    auto eTxn1 = store->createTransaction();
+    EXPECT_TRUE(eTxn1.ok());
+
+    ZSlMetaValue meta(1, 20, 1);
+    RecordValue rv(meta.encode());
+    RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
+    Status s = store->setKV(mk, rv, eTxn1.value().get());
+    EXPECT_TRUE(s.ok());
+
+    RecordKey head(0,
+                   RecordType::RT_ZSET_S_ELE,
+                   "test",
+                   std::to_string(ZSlMetaValue::HEAD_ID));
+    ZSlEleValue headVal;
+    RecordValue subRv(headVal.encode());
+
+    s = store->setKV(head, subRv, eTxn1.value().get());
+    EXPECT_TRUE(s.ok());
+
+    Expected<uint64_t> commitStatus = eTxn1.value()->commit();
+    EXPECT_TRUE(commitStatus.ok());
 }
 
 TEST(SkipList, Mix) {

@@ -56,7 +56,9 @@ Expected<std::string> Command::precheck(NetSession *sess) {
                     << sess->getRemoteRepr() << " empty";
     }
 
-    if (*server->requirepass() != "" && it->second->getName() != "auth") {
+    SessionCtx *pCtx = sess->getCtx();
+    bool authed = pCtx->authed();
+    if (*server->requirepass() != "" && it->second->getName() != "auth" && !authed) {
         return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
     }
 

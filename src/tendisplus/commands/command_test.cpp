@@ -128,7 +128,6 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
-        return;
         sess.setArgs({"zrank", "test", std::to_string(9999)});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
