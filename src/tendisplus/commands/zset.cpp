@@ -250,8 +250,8 @@ class ZAddCommand: public Command {
         const std::string& key = args[1];
         std::map<std::string, uint64_t> scoreMap;
         for (size_t i = 2; i < args.size(); i += 2) {
-            const std::string& subkey = args[i];
-            Expected<uint64_t> score = ::tendisplus::stoul(args[i+1]);
+            const std::string& subkey = args[i+1];
+            Expected<uint64_t> score = ::tendisplus::stoul(args[i]);
             if (!score.ok()) {
                 return score.status();
             }
