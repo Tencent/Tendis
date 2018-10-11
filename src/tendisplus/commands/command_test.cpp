@@ -53,7 +53,7 @@ void testList(std::shared_ptr<ServerEntry> svr) {
         sess.setArgs({"lindex", "a", std::to_string(i)});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(2*i)));
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(0)));
 
         sess.setArgs({"llen", "a"});
         expect = Command::runSessionCmd(&sess);
@@ -122,11 +122,46 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 5000);
+    std::vector<std::string> vals;
     for (uint32_t i = 0; i < 5000; ++i) {
-        Command::fmtBulk(ss, std::to_string(2*i+1));
+        vals.push_back(std::to_string(2*i+1));
+    }
+    std::sort(vals.begin(), vals.end());
+    for (const auto& v : vals) {
+        Command::fmtBulk(ss, v);
     }
     EXPECT_EQ(ss.str(), expect.value());
-    std::cout<<ss.str().substr(0, 100) << ' ' << expect.value().substr(0, 100);
+
+    int sum = 0;
+    for (int i = 0; i < 1000; ++i) {
+        int cur = rand()%100-50;
+        sum += cur;
+        sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(sum));
+
+        sess.setArgs({"hget", "testkey", "testsubkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(sum)));
+
+        sess.setArgs({"hlen", "testkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    }
+
+    int64_t delta = 0;
+    if (sum > 0) {
+        delta = std::numeric_limits<int64_t>::max();
+    } else {
+        delta = std::numeric_limits<int64_t>::min();
+    }
+    sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(delta)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_OVERFLOW);
 }
 
 void testSet(std::shared_ptr<ServerEntry> svr) {
@@ -445,7 +480,7 @@ TEST(Command, common) {
     testSet(server);
     testSetRetry(server);
     testHash(server);
-    // testList(server);
+    testList(server);
 }
 
 }  // namespace tendisplus
