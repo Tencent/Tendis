@@ -121,9 +121,10 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, 5000);
+    Command::fmtMultiBulkLen(ss, 10000);
     std::vector<std::string> vals;
     for (uint32_t i = 0; i < 5000; ++i) {
+        vals.push_back(std::to_string(2*i+1));
         vals.push_back(std::to_string(2*i+1));
     }
     std::sort(vals.begin(), vals.end());

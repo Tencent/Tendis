@@ -251,10 +251,10 @@ class HExistsCommand: public Command {
     }
 } hexistsCmd;
 
-class HGetAllCommand: public Command {
+class HAllCommand: public Command {
  public:
-    HGetAllCommand()
-        :Command("hgetall") {
+    HAllCommand(const std::string name)
+        :Command(name) {
     }
 
     ssize_t arity() const {
@@ -273,7 +273,7 @@ class HGetAllCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::list<Record>> getRecords(NetSession *sess) {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -287,9 +287,9 @@ class HGetAllCommand: public Command {
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, storeId, metaRk);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return Command::fmtZeroBulkLen();
+            return std::list<Record>();
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtZeroBulkLen();
+            return std::list<Record>();
         } else if (!rv.status().ok()) {
             return rv.status();
         }
@@ -315,7 +315,7 @@ class HGetAllCommand: public Command {
         auto cursor = txn->createCursor();
         cursor->seek(prefix);
 
-        std::list<std::string> result;
+        std::list<Record> result;
         while (true) {
             Expected<Record> exptRcd = cursor->next();
             if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -330,21 +330,77 @@ class HGetAllCommand: public Command {
                 INVARIANT(rcdKey.getPrimaryKey() != metaRk.getPrimaryKey());
                 break;
             }
-            result.push_back(rcd.getRecordValue().getValue());
+            result.emplace_back(std::move(rcd));
+        }
+        return std::move(result);
+    }
+};
+
+class HGetAllCommand: public HAllCommand {
+ public:
+    HGetAllCommand()
+        :HAllCommand("hgetall") {
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        Expected<std::list<Record>> rcds = getRecords(sess);
+        if (!rcds.ok()) {
+            return rcds.status();
         }
         std::stringstream ss;
-        Command::fmtMultiBulkLen(ss, result.size());
-        for (const auto& v : result) {
-            Command::fmtBulk(ss, v);
+        Command::fmtMultiBulkLen(ss, rcds.value().size()*2);
+        for (const auto& v : rcds.value()) {
+            Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
+            Command::fmtBulk(ss, v.getRecordValue().getValue());
         }
         return ss.str();
     }
 } hgetAllCmd;
 
-class HGetCommand: public Command {
+class HKeysCommand: public HAllCommand {
  public:
-    HGetCommand()
-        :Command("hget") {
+    HKeysCommand()
+        :HAllCommand("hkeys") {
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        Expected<std::list<Record>> rcds = getRecords(sess);
+        if (!rcds.ok()) {
+            return rcds.status();
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, rcds.value().size());
+        for (const auto& v : rcds.value()) {
+            Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
+        }
+        return ss.str();
+    }
+} hkeysCmd;
+
+class HValsCommand: public HAllCommand {
+ public:
+    HValsCommand()
+        :HAllCommand("hvals") {
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        Expected<std::list<Record>> rcds = getRecords(sess);
+        if (!rcds.ok()) {
+            return rcds.status();
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, rcds.value().size());
+        for (const auto& v : rcds.value()) {
+            Command::fmtBulk(ss, v.getRecordValue().getValue());
+        }
+        return ss.str();
+    }
+} hvalsCmd;
+
+class HGetRecordCommand: public Command {
+ public:
+    HGetRecordCommand(const std::string& name)
+        :Command(name) {
     }
 
     ssize_t arity() const {
@@ -363,7 +419,7 @@ class HGetCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<Record> getRecord(NetSession *sess) {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -379,9 +435,9 @@ class HGetCommand: public Command {
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, storeId, metaRk);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return Command::fmtNull();
+            return rv.status();
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtNull();
+            return rv.status();
         } else if (!rv.status().ok()) {
             return rv.status();
         }
@@ -401,14 +457,84 @@ class HGetCommand: public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<RecordValue> eVal = kvstore->getKV(subRk, txn.get());
         if (eVal.ok()) {
-            return fmtBulk(eVal.value().getValue());
-        } else if (eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return fmtNull();
+            return std::move(Record(std::move(subRk), std::move(eVal.value())));
         } else {
             return eVal.status();
         }
     }
+};
+
+class HGetCommand: public HGetRecordCommand {
+ public:
+    HGetCommand()
+        :HGetRecordCommand("hget") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        Expected<Record> ercd = getRecord(sess);
+        if (ercd.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (ercd.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtNull();
+        } else if (!ercd.ok()) {
+            return ercd.status();
+        }
+        return ercd.value().getRecordValue().getValue();
+    }
 } hgetCommand;
+
+class HStrlenCommand: public HGetRecordCommand {
+ public:
+    HStrlenCommand()
+        :HGetRecordCommand("hstrlen") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        Expected<Record> ercd = getRecord(sess);
+        if (ercd.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (ercd.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZero();
+        } else if (!ercd.ok()) {
+            return ercd.status();
+        }
+        uint64_t size = ercd.value().getRecordValue().getValue().size();
+        return Command::fmtLongLong(size);
+    }
+
+} hstrlenCommand;
 
 class HIncrByCommand: public Command {
  public:
@@ -478,7 +604,6 @@ class HIncrByCommand: public Command {
         return hincrGeneric(metaKey, subKey, inc.value(), kvstore);
     }
 } hincrbyCommand;
-
 
 class HSetCommand: public Command {
  public:
@@ -698,4 +823,5 @@ class HDelCommand: public Command {
         return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
     }
 } hdelCommand;
+
 }  // namespace tendisplus
