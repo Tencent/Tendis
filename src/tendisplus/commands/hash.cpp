@@ -118,6 +118,165 @@ class HLenCommand: public Command {
     }
 } hlenCommand;
 
+class HExistsCommand: public Command {
+ public:
+    HExistsCommand()
+        :Command("hexists") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        const std::string& subkey = args[2];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        RecordKey subRk(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtNull();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eVal = kvstore->getKV(subRk, txn.get());
+        if (eVal.ok()) {
+            return Command::fmtOne();
+        } else if (eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else {
+            return eVal.status();
+        }
+    }
+} hexistsCmd;
+
+class HGetAllCommand: public Command {
+ public:
+    HGetAllCommand()
+        :Command("hgetall") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZeroBulkLen();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        RecordKey fakeEle(metaRk.getDbId(),
+                          RecordType::RT_HASH_ELE,
+                          metaRk.getPrimaryKey(),
+                          "");
+        std::string prefix = fakeEle.prefixPk();
+        auto cursor = txn->createCursor();
+        cursor->seek(prefix);
+
+        std::list<std::string> result;
+        while (true) {
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            Record& rcd = exptRcd.value();
+            const RecordKey& rcdKey = rcd.getRecordKey();
+            if (rcdKey.prefixPk() != prefix) {
+                INVARIANT(rcdKey.getPrimaryKey() != metaRk.getPrimaryKey());
+                break;
+            }
+            result.push_back(rcd.getRecordValue().getValue());
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, result.size());
+        for (const auto& v : result) {
+            Command::fmtBulk(ss, v);
+        }
+        return ss.str();
+    }
+} hgetAllCmd;
+
 class HGetCommand: public Command {
  public:
     HGetCommand()

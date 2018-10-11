@@ -1,4 +1,5 @@
 #include <string>
+#include <sstream>
 #include <utility>
 #include <memory>
 #include <algorithm>
@@ -16,6 +17,39 @@
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
+
+class CommandListCommand: public Command {
+ public:
+    CommandListCommand()
+         :Command("commandlist") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const auto& cmds = listCommands();
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, cmds.size());
+        for (const auto& cmd : cmds) {
+            Command::fmtBulk(ss, cmd);
+        }
+        return ss.str();
+    }
+} cmdList;
 
 class BinlogPosCommand: public Command {
  public:

@@ -21,6 +21,7 @@ class Command {
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
     const std::string& getName() const;
+    std::vector<std::string> listCommands() const;
     // precheck returns command name
     static Expected<std::string> precheck(NetSession *sess);
     static Expected<std::string> runSessionCmd(NetSession *sess);
@@ -61,6 +62,8 @@ class Command {
     static std::string fmtLongLong(uint64_t);
 
     static std::string fmtBulk(const std::string& s);
+
+    static std::string fmtZeroBulkLen();
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
     static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
 

@@ -28,6 +28,15 @@ const std::string& Command::getName() const {
     return _name;
 }
 
+std::vector<std::string> Command::listCommands() const {
+    std::vector<std::string> lst;
+    const auto& v = commandMap();
+    for (const auto& kv : v) {
+        lst.push_back(kv.first);
+    }
+    return lst;
+}
+
 Expected<std::string> Command::precheck(NetSession *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
@@ -453,6 +462,10 @@ std::string Command::fmtLongLong(uint64_t v) {
     std::stringstream ss;
     ss << ":" << v << "\r\n";
     return ss.str();
+}
+
+std::string Command::fmtZeroBulkLen() {
+    return "*0\r\n";
 }
 
 std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {
