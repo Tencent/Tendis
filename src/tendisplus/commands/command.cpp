@@ -4,6 +4,7 @@
 #include <utility>
 #include <list>
 #include <limits>
+#include <vector>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
@@ -68,7 +69,8 @@ Expected<std::string> Command::precheck(NetSession *sess) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     bool authed = pCtx->authed();
-    if (!authed && *server->requirepass() != "" && it->second->getName() != "auth") {
+    if (!authed && *server->requirepass() != ""
+            && it->second->getName() != "auth") {
         return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required."};
     }
 

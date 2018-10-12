@@ -16,11 +16,13 @@ int string2ll(const char *s, size_t slen, long long *value); // (NOLINT/int)
 
 std::string errorReply(const std::string& s);
 
-// port from redis source code, sds.cpp::sdssplitargs
+// port from redis source code, sds.c::sdssplitargs
 std::vector<std::string> splitargs(const std::string& lineStr);
+
+// port from redis source code object.c::createStringObjectFromLongDouble
+std::string ldtos(long double value);
+
 }  // namespace redis_port
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_UTILS_REDIS_PORT_H_
-
-

@@ -2,9 +2,12 @@
 #include <utility>
 #include <memory>
 #include <vector>
+#include <limits>
+#include <algorithm>
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
@@ -62,7 +65,53 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
-void testHash(std::shared_ptr<ServerEntry> svr) {
+void testHash2(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    int sum = 0;
+    for (int i = 0; i < 1000; ++i) {
+        int cur = rand_r()%100-50;
+        sum += cur;
+        sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(sum));
+
+        sess.setArgs({"hget", "testkey", "testsubkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(sum)));
+
+        sess.setArgs({"hlen", "testkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    }
+
+    int64_t delta = 0;
+    if (sum > 0) {
+        delta = std::numeric_limits<int64_t>::max();
+    } else {
+        delta = std::numeric_limits<int64_t>::min();
+    }
+    sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(delta)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_OVERFLOW);
+
+    const long double pi = 3.14159265358979323846L;
+    long double floatSum = sum + pi;
+    sess.setArgs({"hincrbyfloat", "testkey", "testsubkey",
+                  redis_port::ldtos(pi)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::string result = redis_port::ldtos(floatSum);
+    EXPECT_EQ(Command::fmtBulk(result), expect.value());
+}
+
+void testHash1(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -133,36 +182,27 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
     }
     EXPECT_EQ(ss.str(), expect.value());
 
-    int sum = 0;
-    for (int i = 0; i < 1000; ++i) {
-        int cur = rand()%100-50;
-        sum += cur;
-        sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
-        expect = Command::runSessionCmd(&sess);
+    // hsetnx related
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hsetnx", "a", std::to_string(i), std::to_string(0)});
+        auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtLongLong(sum));
-
-        sess.setArgs({"hget", "testkey", "testsubkey"});
-        expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(sum)));
-
-        sess.setArgs({"hlen", "testkey"});
-        expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+        if (i % 2 == 0) {
+            EXPECT_EQ(expect.value(), Command::fmtOne());
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtZero());
+        }
     }
-
-    int64_t delta = 0;
-    if (sum > 0) {
-        delta = std::numeric_limits<int64_t>::max();
-    } else {
-        delta = std::numeric_limits<int64_t>::min();
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hget", "a", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i % 2 == 0) {
+            EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(0)));
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
+        }
     }
-    sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(delta)});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_FALSE(expect.ok());
-    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_OVERFLOW);
 }
 
 void testSet(std::shared_ptr<ServerEntry> svr) {
@@ -480,7 +520,8 @@ TEST(Command, common) {
 
     testSet(server);
     testSetRetry(server);
-    testHash(server);
+    testHash1(server);
+    testHash2(server);
     testList(server);
 }
 

@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <vector>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/lock/lock.h"
