@@ -22,7 +22,7 @@ enum class ListPos {
     LP_TAIL,
 };
 
-Expected<std::string> genericPop(NetSession *sess,
+Expected<std::string> genericPop(Session *sess,
                                  PStore kvstore,
                                  const RecordKey& metaRk,
                                  ListPos pos) {
@@ -88,7 +88,7 @@ Expected<std::string> genericPop(NetSession *sess,
     return Command::fmtBulk(subRv.value().getValue());
 }
 
-Expected<std::string> genericPush(NetSession *sess,
+Expected<std::string> genericPush(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
                                   const std::vector<std::string>& args,
@@ -166,7 +166,7 @@ class LLenCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
 
         SessionCtx *pCtx = sess->getCtx();
@@ -221,7 +221,7 @@ class ListPopWrapper: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -318,7 +318,7 @@ class ListPushWrapper: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -415,7 +415,7 @@ class LIndexCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         int64_t idx = 0;

@@ -37,7 +37,7 @@ class FullSyncCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "fullsync should not be called";
         // void compiler complain
         return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
@@ -68,7 +68,7 @@ class IncrSyncCommand: public Command {
 
     // incrSync storeId dstStoreId binlogId
     // binlogId: the last binlog that has been applied
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "incrsync should not be called";
 
         // void compiler complain
@@ -102,7 +102,7 @@ class ApplyBinlogsCommand: public Command {
     // why is there no storeId ? storeId is contained in this
     // session in fact.
     // please refer to comments of ReplManager::registerIncrSync
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         std::map<uint64_t, std::list<ReplLog>> binlogGroup;
 
@@ -153,7 +153,7 @@ class ApplyBinlogsCommand: public Command {
 
         StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
         Status s = replMgr->applyBinlogs(storeId,
-                                         sess->getConnId(),
+                                         sess->id(),
                                          binlogGroup);
         if (s.ok()) {
             return Command::fmtOK();
@@ -169,7 +169,7 @@ class SlaveofCommand: public Command {
         :Command("slaveof") {
     }
 
-    Expected<std::string> runSlaveofSomeOne(NetSession* sess) {
+    Expected<std::string> runSlaveofSomeOne(Session* sess) {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
@@ -218,7 +218,7 @@ class SlaveofCommand: public Command {
         }
     }
 
-    Expected<std::string> runSlaveofNoOne(NetSession* sess) {
+    Expected<std::string> runSlaveofNoOne(Session* sess) {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
@@ -258,7 +258,7 @@ class SlaveofCommand: public Command {
     // slaveof no one myStoreId
     // slaveof ip port
     // slaveof ip port myStoreId sourceStoreId
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         INVARIANT(args.size() >= size_t(3));
         if (toLower(args[1]) == "no" && toLower(args[2]) == "one") {

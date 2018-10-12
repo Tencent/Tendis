@@ -193,9 +193,9 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,
                        std::shared_ptr<RequestMatrix> reqMatrix)
-         :_connId(connid),
+        :Session(server),
+         _connId(connid),
          _closeAfterRsp(false),
-         _server(server),
          _state(State::Created),
          _sock(std::move(sock)),
          _queryBuf(std::vector<char>()),
@@ -203,9 +203,6 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
          _reqType(RedisReqMode::REDIS_REQ_UNKNOWN),
          _multibulklen(0),
          _bulkLen(-1),
-         _args(std::vector<std::string>()),
-         _respBuf(std::vector<char>()),
-         _ctx(std::make_unique<SessionCtx>()),
          _netMatrix(netMatrix),
          _reqMatrix(reqMatrix) {
     if (initSock) {
@@ -237,7 +234,10 @@ std::string NetSession::getLocalRepr() const {
 }
 
 void NetSession::schedule() {
-    _server->schedule([this]() {
+    // incr the reference, so it's safe to remove sessions
+    // from _serverEntry at executing time.
+    auto self(shared_from_this());
+    _server->schedule([this, self]() {
         stepState();
     });
 }
@@ -265,15 +265,6 @@ void NetSession::setArgs(const std::vector<std::string>& args) {
 
 const std::vector<std::string>& NetSession::getArgs() const {
     return _args;
-}
-
-void NetSession::setResponse(const std::string& s) {
-    INVARIANT(_respBuf.size() == 0);
-    std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
-}
-
-const std::vector<char>& NetSession::getResponse() const {
-    return _respBuf;
 }
 
 void NetSession::setRspAndClose(const std::string& s) {
@@ -554,13 +545,9 @@ void NetSession::drainReqNet() {
         });
 }
 
-uint64_t NetSession::getConnId() const {
-    return _connId;
-}
-
 void NetSession::processReq() {
     _ctx->setProcessPacketStart(nsSinceEpoch());
-    bool continueSched = _server->processRequest(_connId);
+    bool continueSched = _server->processRequest(id());
     _ctx->setProcessPacketEnd(nsSinceEpoch());
     if (!continueSched) {
         _state.store(State::End);
@@ -623,15 +610,7 @@ void NetSession::endSession() {
     ++_netMatrix->connReleased;
     // NOTE(deyukong): endSession will call destructor
     // never write any codes after _server->endSession
-    _server->endSession(_connId);
-}
-
-std::shared_ptr<ServerEntry> NetSession::getServerEntry() const {
-    return _server;
-}
-
-SessionCtx* NetSession::getCtx() const {
-    return _ctx.get();
+    _server->endSession(id());
 }
 
 void NetSession::stepState() {

@@ -18,7 +18,7 @@ class AuthCommand: public Command {
         :Command("auth") {
     }
 
-    Expected<std::string> parse(NetSession *sess) const {
+    Expected<std::string> parse(Session *sess) const {
         const auto& args = sess->getArgs();
         if (args.size() != 2) {
             return {ErrorCodes::ERR_PARSEPKT, "invalid auth command"};
@@ -42,7 +42,7 @@ class AuthCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<std::string> params = parse(sess);
         if (!params.ok()) {
             return params.status();

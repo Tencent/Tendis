@@ -13,7 +13,7 @@
 
 namespace tendisplus {
 
-Expected<bool> expireBeforeNow(NetSession *sess,
+Expected<bool> expireBeforeNow(Session *sess,
                         RecordType type,
                         const std::string& key) {
     SessionCtx *pCtx = sess->getCtx();
@@ -26,7 +26,7 @@ Expected<bool> expireBeforeNow(NetSession *sess,
 // return true if exists
 // return false if not exists
 // return error if has error
-Expected<bool> expireAfterNow(NetSession *sess,
+Expected<bool> expireAfterNow(Session *sess,
                         RecordType type,
                         const std::string& key,
                         uint64_t expireAt) {
@@ -89,7 +89,7 @@ Expected<bool> expireAfterNow(NetSession *sess,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<std::string> expireGeneric(NetSession *sess,
+Expected<std::string> expireGeneric(Session *sess,
                                     uint64_t expireAt,
                                     const std::string& key) {
     if (expireAt >= nsSinceEpoch()/1000000) {
@@ -144,7 +144,7 @@ class ExpireCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         auto expSecs = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!expSecs.ok()) {

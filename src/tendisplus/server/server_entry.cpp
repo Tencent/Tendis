@@ -159,7 +159,7 @@ const std::shared_ptr<std::string> ServerEntry::masterauth() const {
     return _masterauth;
 }
 
-void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
+void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->getRemoteRepr()
@@ -171,7 +171,7 @@ void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
 
     // NOTE(deyukong): first driving force
     sess->start();
-    uint64_t id = sess->getConnId();
+    uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add conn:" << id << ",id already exists";
     }
@@ -203,7 +203,7 @@ void ServerEntry::endSession(uint64_t connId) {
 }
 
 bool ServerEntry::processRequest(uint64_t connId) {
-    NetSession *sess = nullptr;
+    Session *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {

@@ -38,7 +38,7 @@ std::vector<std::string> Command::listCommands() const {
     return lst;
 }
 
-Expected<std::string> Command::precheck(NetSession *sess) {
+Expected<std::string> Command::precheck(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
         LOG(FATAL) << "BUG: sess " << sess->getRemoteRepr() << " len 0 args";
@@ -61,7 +61,7 @@ Expected<std::string> Command::precheck(NetSession *sess) {
     auto server = sess->getServerEntry();
     if (!server) {
         LOG(FATAL) << "BUG: get server from sess:"
-                    << sess->getConnId()
+                    << sess->id()
                     << ",Ip:"
                     << sess->getRemoteRepr() << " empty";
     }
@@ -79,7 +79,7 @@ Expected<std::string> Command::precheck(NetSession *sess) {
 
 // NOTE(deyukong): call precheck before call runSessionCmd
 // this function does no necessary checks
-Expected<std::string> Command::runSessionCmd(NetSession *sess) {
+Expected<std::string> Command::runSessionCmd(Session *sess) {
     const auto& args = sess->getArgs();
     std::string commandName = toLower(args[0]);
     auto it = commandMap().find(commandName);
@@ -89,7 +89,7 @@ Expected<std::string> Command::runSessionCmd(NetSession *sess) {
     return it->second->run(sess);
 }
 
-std::unique_ptr<StoreLock> Command::lockDBByKey(NetSession *sess,
+std::unique_ptr<StoreLock> Command::lockDBByKey(Session *sess,
                                                 const std::string& key,
                                                 mgl::LockMode mode) {
     auto server = sess->getServerEntry();
@@ -100,7 +100,7 @@ std::unique_ptr<StoreLock> Command::lockDBByKey(NetSession *sess,
     return std::make_unique<StoreLock>(storeId, mode);
 }
 
-bool Command::isKeyLocked(NetSession *sess,
+bool Command::isKeyLocked(Session *sess,
                           uint32_t storeId,
                           const std::string& encodedKey) {
     auto server = sess->getServerEntry();
@@ -112,7 +112,7 @@ bool Command::isKeyLocked(NetSession *sess,
 }
 
 // requirement: StoreLock not held, add storelock inside
-Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
+Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
                           const RecordKey& mk) {
     std::string keyEnc = mk.encode();
     // lock key with X-lock held
@@ -172,7 +172,7 @@ Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
 }
 
 // requirement: StoreLock held
-Status Command::delKeyOptimism(NetSession *sess,
+Status Command::delKeyOptimism(Session *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
                                            Transaction* txn) {
@@ -185,7 +185,7 @@ Status Command::delKeyOptimism(NetSession *sess,
     return s.status();
 }
 
-Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
+Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        uint32_t storeId,
                                        uint32_t subCount,
                                        const RecordKey& mk,
@@ -272,7 +272,7 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
     }
 }
 
-Expected<bool> Command::delKeyChkExpire(NetSession *sess,
+Expected<bool> Command::delKeyChkExpire(Session *sess,
                                         uint32_t storeId,
                                         const RecordKey& rk) {
     Expected<RecordValue> rv =
@@ -296,7 +296,7 @@ Expected<bool> Command::delKeyChkExpire(NetSession *sess,
     return s;
 }
 
-Status Command::delKey(NetSession *sess, uint32_t storeId,
+Status Command::delKey(Session *sess, uint32_t storeId,
                        const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
                     mgl::LockMode::LOCK_IX);
@@ -345,7 +345,7 @@ Status Command::delKey(NetSession *sess, uint32_t storeId,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
+Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                                   uint32_t storeId,
                                   const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
@@ -409,7 +409,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-PStore Command::getStore(NetSession *sess, const std::string& key) {
+PStore Command::getStore(Session *sess, const std::string& key) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();
@@ -419,7 +419,7 @@ PStore Command::getStore(NetSession *sess, const std::string& key) {
     return kvStore;
 }
 
-uint32_t Command::getStoreId(NetSession *sess, const std::string& key) {
+uint32_t Command::getStoreId(Session *sess, const std::string& key) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();
@@ -427,7 +427,7 @@ uint32_t Command::getStoreId(NetSession *sess, const std::string& key) {
     return segMgr->calcInstanceId(key);
 }
 
-PStore Command::getStoreById(NetSession *sess, uint32_t storeId) {
+PStore Command::getStoreById(Session *sess, uint32_t storeId) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();

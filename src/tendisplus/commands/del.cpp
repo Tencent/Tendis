@@ -16,7 +16,7 @@ namespace tendisplus {
 // return false if not exists
 // return true if exists and del ok
 // return error on error
-Expected<bool> delGeneric(NetSession *sess, const std::string& key) {
+Expected<bool> delGeneric(Session *sess, const std::string& key) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     bool atLeastOne = false;
@@ -58,7 +58,7 @@ class ExistsCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
     }
 
 } existsCommand;
@@ -86,7 +86,7 @@ class DelCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         uint64_t total = 0;
         for (size_t i = 1; i < args.size(); ++i) {

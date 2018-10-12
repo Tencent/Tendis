@@ -40,7 +40,7 @@ class ToggleFtmcCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         bool enable = false; 
         if (args[1] == "1") {
@@ -52,7 +52,8 @@ class ToggleFtmcCommand: public Command {
         }
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        svr->toggleftmc(enable);
+        svr->toggleFtmc(enable);
+        return Command::fmtOK();
     }
 } togFtmcCmd;
 
@@ -78,7 +79,7 @@ class CommandListCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const auto& cmds = listCommands();
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, cmds.size());
@@ -111,7 +112,7 @@ class BinlogPosCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
         if (!storeId.ok()) {
@@ -160,7 +161,7 @@ class DebugCommand: public Command {
         return 0;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         std::set<std::string> sections;
         if (args.size() == 1) {

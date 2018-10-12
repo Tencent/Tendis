@@ -72,7 +72,7 @@ class SetCommand: public Command {
         :Command("set") {
     }
 
-    Expected<SetParams> parse(NetSession *sess) const {
+    Expected<SetParams> parse(Session *sess) const {
         const auto& args = sess->getArgs();
         SetParams result;
         if (args.size() < 3) {
@@ -121,7 +121,7 @@ class SetCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<SetParams> exptParams = parse(sess);
         if (!exptParams.ok()) {
             return exptParams.status();
@@ -191,7 +191,7 @@ class GetCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];

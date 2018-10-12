@@ -72,7 +72,7 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
 
     int sum = 0;
     for (int i = 0; i < 1000; ++i) {
-        int cur = rand_r()%100-50;
+        int cur = rand()%100-50;  // NOLINT(runtime/threadsafe_fn)
         sum += cur;
         sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
         auto expect = Command::runSessionCmd(&sess);

@@ -9,6 +9,7 @@
 #include "asio.hpp"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/server/session.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/atomic_utility.h"
@@ -76,7 +77,7 @@ class NetworkAsio {
 };
 
 // represent a ingress tcp-connection
-class NetSession: public std::enable_shared_from_this<NetSession>  {
+class NetSession: public Session {
  public:
     NetSession(std::shared_ptr<ServerEntry> server,
                asio::ip::tcp::socket sock,
@@ -87,18 +88,13 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
     virtual ~NetSession() = default;
-    std::string getRemoteRepr() const;
-    std::string getLocalRepr() const;
-    uint64_t getConnId() const;
-    asio::ip::tcp::socket borrowConn();
-    void start();
-    Status cancel();
+    std::string getRemoteRepr() const final;
+    std::string getLocalRepr() const final;
+    asio::ip::tcp::socket borrowConn() final;
+    void start() final;
+    Status cancel() final;
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);
-    void setResponse(const std::string& s);
-    const std::vector<char>& getResponse() const;
-    std::shared_ptr<ServerEntry> getServerEntry() const;
-    SessionCtx *getCtx() const;
 
     // normal clients
     // Created-> [DrainReqNet]+ -> Process -> DrainRsp ->
@@ -154,7 +150,6 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
 
     uint64_t _connId;
     bool _closeAfterRsp;
-    std::shared_ptr<ServerEntry> _server;
     std::atomic<State> _state;
     asio::ip::tcp::socket _sock;
     std::vector<char> _queryBuf;
@@ -165,9 +160,6 @@ class NetSession: public std::enable_shared_from_this<NetSession>  {
     int64_t _multibulklen;
     int64_t _bulkLen;
 
-    std::vector<std::string> _args;
-    std::vector<char> _respBuf;
-    std::unique_ptr<SessionCtx> _ctx;
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<RequestMatrix> _reqMatrix;
 };

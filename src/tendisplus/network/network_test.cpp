@@ -174,46 +174,46 @@ TEST(BlockingTcpClient, Common) {
         ioCtx1->run();
     });
 
-    BlockingTcpClient cli1(ioCtx1, 128);
-    Status s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+    auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx1, 128);
+    Status s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
 
-    s = cli1.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+    s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
-    EXPECT_EQ(s.toString(), "already inited sock");
-    s = cli1.writeLine("hello world\r\n hello world1\r\n trailing",
+    EXPECT_EQ(s.toString(), "ERR:1,msg:already inited sock");
+    s = cli1->writeLine("hello world\r\n hello world1\r\n trailing",
         std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
-    Expected<std::string> exps = cli1.readLine(std::chrono::seconds(3));
+    Expected<std::string> exps = cli1->readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), "hello world");
-    exps = cli1.readLine(std::chrono::seconds(3));
+    exps = cli1->readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
     EXPECT_EQ(exps.value(), " hello world1");
 
-    EXPECT_EQ(cli1.getReadBufSize(), std::string(" trailing\r\n").size());
-    exps = cli1.read(1, std::chrono::seconds(1));
+    EXPECT_EQ(cli1->getReadBufSize(), std::string(" trailing\r\n").size());
+    exps = cli1->read(1, std::chrono::seconds(1));
     EXPECT_TRUE(exps.ok()) << exps.status().toString();
     EXPECT_EQ(exps.value()[0], ' ');
-    EXPECT_EQ(cli1.getReadBufSize(), std::string("trailing\r\n").size());
+    EXPECT_EQ(cli1->getReadBufSize(), std::string("trailing\r\n").size());
 
-    exps = cli1.read(10, std::chrono::seconds(1));
+    exps = cli1->read(10, std::chrono::seconds(1));
     EXPECT_TRUE(exps.ok()) << exps.status().toString();
     EXPECT_EQ(exps.value(), "trailing\r\n");
-    EXPECT_EQ(cli1.getReadBufSize(), size_t(0));
+    EXPECT_EQ(cli1->getReadBufSize(), size_t(0));
 
-    s = cli1.writeLine("hello world", std::chrono::seconds(1));
+    s = cli1->writeLine("hello world", std::chrono::seconds(1));
     // timeout
 
-    exps = cli1.readLine(std::chrono::seconds(1));
+    exps = cli1->readLine(std::chrono::seconds(1));
     EXPECT_FALSE(exps.ok()) << exps.value();
 
     // more than max buf size
-    BlockingTcpClient cli2(ioCtx1, 4);
-    s = cli2.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+    auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4);
+    s = cli2->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
-    s = cli2.writeLine("hello world", std::chrono::seconds(1));
-    exps = cli2.readLine(std::chrono::seconds(3));
+    s = cli2->writeLine("hello world", std::chrono::seconds(1));
+    exps = cli2->readLine(std::chrono::seconds(3));
     EXPECT_FALSE(exps.ok());
     ioCtx->stop();
     ioCtx1->stop();
