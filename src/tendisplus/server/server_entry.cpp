@@ -14,7 +14,8 @@
 namespace tendisplus {
 
 ServerEntry::ServerEntry()
-        :_isRunning(false),
+        :_ftmcEnabled(false),
+         _isRunning(false),
          _isStopped(true),
          _network(nullptr),
          _executor(nullptr),
@@ -255,6 +256,17 @@ void ServerEntry::ftmc() {
     auto oldPoolMatrix = *_poolMatrix;
     auto oldReqMatrix = *_reqMatrix;
     while (_isRunning.load(std::memory_order_relaxed)) {
+        std::unique_lock<std::mutex> lk(_mutex);
+        bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
+            return _isRunning.load(std::memory_order_relaxed) == false;
+        });
+        if (ok) {
+            LOG(INFO) << "server ftmc thread exits";
+            return;
+        }
+        if (!_ftmcEnabled.load(std::memory_order_relaxed)) {
+            continue;
+        }
         auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
         auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
         auto tmpReqMatrix = *_reqMatrix - oldReqMatrix;
@@ -264,14 +276,6 @@ void ServerEntry::ftmc() {
         LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
         LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
         LOG(INFO) << "req matrix status:\n" << tmpReqMatrix.toString();
-        std::unique_lock<std::mutex> lk(_mutex);
-        bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
-            return _isRunning.load(std::memory_order_relaxed) == false;
-        });
-        if (ok) {
-            LOG(INFO) << "server ftmc thread exits";
-            return;
-        }
     }
 }
 
@@ -306,6 +310,10 @@ void ServerEntry::appendSessionJsonStats(
     std::unique_lock<std::mutex> lk(_mutex);
     w.Key("sessions");
     w.Uint64(_sessions.size());
+}
+
+void ServerEntry::toggleFtmc(bool enable) {
+    _ftmcEnabled.store(enable, std::memory_order_relaxed);
 }
 
 }  // namespace tendisplus

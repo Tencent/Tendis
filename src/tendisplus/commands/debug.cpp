@@ -18,6 +18,44 @@
 
 namespace tendisplus {
 
+class ToggleFtmcCommand: public Command {
+ public:
+    ToggleFtmcCommand()
+        :Command("toggleftmc") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        bool enable = false; 
+        if (args[1] == "1") {
+            enable = true;
+        } else if (args[1] == "0") {
+            enable = false;
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid toggleftmc para"};
+        }
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        svr->toggleftmc(enable);
+    }
+} togFtmcCmd;
+
 class CommandListCommand: public Command {
  public:
     CommandListCommand()

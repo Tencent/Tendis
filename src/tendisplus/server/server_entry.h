@@ -72,11 +72,14 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     void appendSessionJsonStats(rapidjson::Writer<rapidjson::StringBuffer>&) const;
 
+    void toggleFtmc(bool enable);
+
  private:
     void ftmc();
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
     // _isRunning = false && _isStopped = true -> stop complete
+    std::atomic<bool> _ftmcEnabled;
     std::atomic<bool> _isRunning;
     std::atomic<bool> _isStopped;
     mutable std::mutex _mutex;
