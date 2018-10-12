@@ -98,11 +98,11 @@ Expected<uint64_t> NetworkAsio::client2Session(
             "client still have buf unread, cannot transfer to a session"};
     }
     uint64_t connId = _connCreated.fetch_add(1, std::memory_order_relaxed);
-    _server->addSession(
-        std::move(
-            std::make_shared<NetSession>(
+    auto sess = std::make_shared<NetSession>(
                 _server, std::move(c->borrowConn()),
-                connId, true, _netMatrix, _reqMatrix)));
+                connId, true, _netMatrix, _reqMatrix);
+    sess->getCtx()->setAuthed();
+    _server->addSession(std::move(sess));
     ++_netMatrix->connCreated;
     return connId;
 }

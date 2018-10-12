@@ -1,7 +1,7 @@
-add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp)
+add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp)
 target_link_libraries(commands status network utils_common lock)
 
-add_library(commands_debug STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp)
+add_library(commands_debug STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp)
 target_compile_definitions(commands_debug PRIVATE WITH_SYNC_POINT)
 target_link_libraries(commands_debug status network utils_common lock sync_point)
 

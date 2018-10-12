@@ -22,7 +22,8 @@ Expected<bool> delGeneric(NetSession *sess, const std::string& key) {
     bool atLeastOne = false;
     for (auto type : {RecordType::RT_KV,
                       RecordType::RT_LIST_META,
-                      RecordType::RT_HASH_META}) {
+                      RecordType::RT_HASH_META,
+                      RecordType::RT_SET_META}) {
         RecordKey rk(pCtx->getDbId(), type, key, "");
         uint32_t storeId = Command::getStoreId(sess, key);
         Expected<bool> done = Command::delKeyChkExpire(sess, storeId, rk);
@@ -33,6 +34,35 @@ Expected<bool> delGeneric(NetSession *sess, const std::string& key) {
     }
     return atLeastOne;
 }
+
+/*
+class ExistsCommand: public Command {
+ public:
+    ExistsCommand()
+        :Command("exists") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+    }
+
+} existsCommand;
+*/
 
 class DelCommand: public Command {
  public:

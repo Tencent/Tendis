@@ -35,6 +35,16 @@ Expected<int64_t> stoll(const std::string& s) {
     }
 }
 
+Expected<long double> stold(const std::string& s) {
+    long double result;
+    try {
+        result = static_cast<long double>(std::stold(s));
+        return result;
+    } catch (const std::exception& ex) {
+        return {ErrorCodes::ERR_DECODE, ex.what()};
+    }
+}
+
 std::string hexlify(const std::string& s) {
     static const char *lookup = "0123456789ABCDEF";
     std::string result;

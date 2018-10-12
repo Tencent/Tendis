@@ -17,10 +17,82 @@ constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ/2ULL;
 constexpr uint64_t MINSEQ = 1024;
 
+enum class ListPos {
+    LP_HEAD,
+    LP_TAIL,
+};
+
+Expected<std::string> genericPop(NetSession *sess,
+                                 PStore kvstore,
+                                 const RecordKey& metaRk,
+                                 ListPos pos) {
+    auto ptxn = kvstore->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    ListMetaValue lm(INITSEQ, INITSEQ);
+    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+
+    if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        return Command::fmtNull();
+    } else if (!rv.ok()) {
+        return rv.status();
+    }
+
+    uint64_t ttl = 0;
+    ttl = rv.value().getTtl();
+    Expected<ListMetaValue> exptLm =
+        ListMetaValue::decode(rv.value().getValue());
+    INVARIANT(exptLm.ok());
+    lm = std::move(exptLm.value());
+
+    uint64_t head = lm.getHead();
+    uint64_t tail = lm.getTail();
+    INVARIANT(head != tail);
+    uint64_t idx;
+    if (pos == ListPos::LP_HEAD) {
+        idx = head++;
+    } else {
+        idx = --tail;
+    }
+    RecordKey subRk(metaRk.getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    metaRk.getPrimaryKey(),
+                    std::to_string(idx));
+    Expected<RecordValue> subRv = kvstore->getKV(subRk, txn.get());
+    if (!subRv.ok()) {
+        return subRv.status();
+    }
+    Status s = kvstore->delKV(subRk, txn.get());
+    if (!s.ok()) {
+        return s;
+    }
+    if (head == tail) {
+        s = kvstore->delKV(metaRk, txn.get());
+    } else {
+        lm.setHead(head);
+        lm.setTail(tail);
+        s = kvstore->setKV(metaRk,
+                           RecordValue(lm.encode(), ttl),
+                           txn.get());
+    }
+    if (!s.ok()) {
+        return s;
+    }
+    auto commitStatus = txn->commit();
+    if (!commitStatus.ok()) {
+        return commitStatus.status();
+    }
+    return Command::fmtBulk(subRv.value().getValue());
+}
+
 Expected<std::string> genericPush(NetSession *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
-                                  const std::vector<std::string>& args) {
+                                  const std::vector<std::string>& args,
+                                  ListPos pos) {
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
         return ptxn.status();
@@ -41,18 +113,26 @@ Expected<std::string> genericPush(NetSession *sess,
         return rv.status();
     }
 
+    uint64_t head = lm.getHead();
     uint64_t tail = lm.getTail();
     for (size_t i = 2; i < args.size(); ++i) {
+        uint64_t idx;
+        if (pos == ListPos::LP_HEAD) {
+            idx = --head;
+        } else {
+            idx = tail++;
+        }
         RecordKey subRk(metaRk.getDbId(),
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
-                        std::to_string(tail++));
+                        std::to_string(idx));
         RecordValue subRv(args[i]);
         Status s = kvstore->setKV(subRk, subRv, txn.get());
         if (!s.ok()) {
             return s;
         }
     }
+    lm.setHead(head);
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
                               RecordValue(lm.encode(), ttl),
@@ -118,10 +198,108 @@ class LLenCommand: public Command {
     }
 } llenCommand;
 
-class LPushCommand: public Command {
+class ListPopWrapper: public Command {
  public:
-    LPushCommand()
-        :Command("lpush") {
+    explicit ListPopWrapper(ListPos pos)
+        :Command(pos == ListPos::LP_HEAD ? "lpop" : "rpop"),
+         _pos(pos) {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(NetSession *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        }
+        if (!rv.ok()) {
+            return rv.status();
+        }
+
+        // record exists
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> s =
+                genericPop(sess, kvstore, metaRk, _pos);
+            if (s.ok()) {
+                return s.value();
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+
+ private:
+    ListPos _pos;
+};
+
+class LPopCommand: public ListPopWrapper {
+ public:
+    LPopCommand()
+        :ListPopWrapper(ListPos::LP_HEAD) {
+    }
+} LPopCommand;
+
+class RPopCommand: public ListPopWrapper {
+ public:
+    RPopCommand()
+        :ListPopWrapper(ListPos::LP_TAIL) {
+    }
+} rpopCommand;
+
+class ListPushWrapper: public Command {
+ public:
+    explicit ListPushWrapper(ListPos pos)
+        :Command(pos == ListPos::LP_HEAD ? "lpush" : "rpush"),
+         _pos(pos) {
     }
 
     ssize_t arity() const {
@@ -145,7 +323,7 @@ class LPushCommand: public Command {
         const std::string& key = args[1];
 
         if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed lpush batch lim"};
+            return {ErrorCodes::ERR_PARSEOPT, "exceed batch lim"};
         }
 
         SessionCtx *pCtx = sess->getCtx();
@@ -179,7 +357,7 @@ class LPushCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPush(sess, kvstore, metaRk, args);
+                genericPush(sess, kvstore, metaRk, args, _pos);
             if (s.ok()) {
                 return s.value();
             }
@@ -196,7 +374,24 @@ class LPushCommand: public Command {
         INVARIANT(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
+
+ private:
+    ListPos _pos;
+};
+
+class LPushCommand: public ListPushWrapper {
+ public:
+    LPushCommand()
+        :ListPushWrapper(ListPos::LP_HEAD) {
+    }
 } lpushCommand;
+
+class RPushCommand: public ListPushWrapper {
+ public:
+    RPushCommand()
+        :ListPushWrapper(ListPos::LP_TAIL) {
+    }
+} rpushCommand;
 
 class LIndexCommand: public Command {
  public:

@@ -4,6 +4,7 @@
 #include <utility>
 #include <list>
 #include <limits>
+#include <vector>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
@@ -26,6 +27,15 @@ Command::Command(const std::string& name)
 
 const std::string& Command::getName() const {
     return _name;
+}
+
+std::vector<std::string> Command::listCommands() const {
+    std::vector<std::string> lst;
+    const auto& v = commandMap();
+    for (const auto& kv : v) {
+        lst.push_back(kv.first);
+    }
+    return lst;
 }
 
 Expected<std::string> Command::precheck(NetSession *sess) {
@@ -56,8 +66,12 @@ Expected<std::string> Command::precheck(NetSession *sess) {
                     << sess->getRemoteRepr() << " empty";
     }
 
-    if (*server->requirepass() != "" && it->second->getName() != "auth") {
-        return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
+    SessionCtx *pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+    bool authed = pCtx->authed();
+    if (!authed && *server->requirepass() != ""
+            && it->second->getName() != "auth") {
+        return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required."};
     }
 
     return it->second->getName();
@@ -205,7 +219,14 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
                           mk.getPrimaryKey(),
                           "");
         prefix = fakeEle.prefixPk();
+    } else if (mk.getRecordType() == RecordType::RT_SET_META) {
+        RecordKey fakeEle(mk.getDbId(),
+                          RecordType::RT_SET_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefix = fakeEle.prefixPk();
     } else {
+        INVARIANT(0);
         // invariant 0
         // TODO(deyukong): impl
     }
@@ -322,9 +343,7 @@ Status Command::delKey(NetSession *sess, uint32_t storeId,
     // should never reach here
     INVARIANT(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
-
 }
-                      
 
 Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
                                   uint32_t storeId,
@@ -445,6 +464,10 @@ std::string Command::fmtLongLong(uint64_t v) {
     std::stringstream ss;
     ss << ":" << v << "\r\n";
     return ss.str();
+}
+
+std::string Command::fmtZeroBulkLen() {
+    return "*0\r\n";
 }
 
 std::stringstream& Command::fmtMultiBulkLen(std::stringstream& ss, uint64_t l) {

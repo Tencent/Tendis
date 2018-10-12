@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <vector>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/lock/lock.h"
@@ -21,6 +22,7 @@ class Command {
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
     const std::string& getName() const;
+    std::vector<std::string> listCommands() const;
     // precheck returns command name
     static Expected<std::string> precheck(NetSession *sess);
     static Expected<std::string> runSessionCmd(NetSession *sess);
@@ -61,6 +63,8 @@ class Command {
     static std::string fmtLongLong(uint64_t);
 
     static std::string fmtBulk(const std::string& s);
+
+    static std::string fmtZeroBulkLen();
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
     static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
 
@@ -73,9 +77,12 @@ class Command {
     static Status delKeyOptimism(NetSession *sess, uint32_t storeId,
                             const RecordKey& rk, Transaction* txn);
 
-    static Expected<uint32_t> partialDelSubKeys(NetSession *sess, uint32_t storeId,
-                                 uint32_t subCount, const RecordKey& mk,
-                                 bool deleteMeta, Transaction *txn);
+    static Expected<uint32_t> partialDelSubKeys(NetSession *sess,
+                                 uint32_t storeId,
+                                 uint32_t subCount,
+                                 const RecordKey& mk,
+                                 bool deleteMeta,
+                                 Transaction *txn);
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.

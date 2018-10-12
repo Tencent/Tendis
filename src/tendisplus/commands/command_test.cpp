@@ -2,9 +2,12 @@
 #include <utility>
 #include <memory>
 #include <vector>
+#include <limits>
+#include <algorithm>
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
@@ -53,7 +56,7 @@ void testList(std::shared_ptr<ServerEntry> svr) {
         sess.setArgs({"lindex", "a", std::to_string(i)});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(2*i)));
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(0)));
 
         sess.setArgs({"llen", "a"});
         expect = Command::runSessionCmd(&sess);
@@ -62,7 +65,53 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
-void testHash(std::shared_ptr<ServerEntry> svr) {
+void testHash2(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    int sum = 0;
+    for (int i = 0; i < 1000; ++i) {
+        int cur = rand_r()%100-50;
+        sum += cur;
+        sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(sum));
+
+        sess.setArgs({"hget", "testkey", "testsubkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(sum)));
+
+        sess.setArgs({"hlen", "testkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    }
+
+    int64_t delta = 0;
+    if (sum > 0) {
+        delta = std::numeric_limits<int64_t>::max();
+    } else {
+        delta = std::numeric_limits<int64_t>::min();
+    }
+    sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(delta)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_OVERFLOW);
+
+    const long double pi = 3.14159265358979323846L;
+    long double floatSum = sum + pi;
+    sess.setArgs({"hincrbyfloat", "testkey", "testsubkey",
+                  redis_port::ldtos(pi)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::string result = redis_port::ldtos(floatSum);
+    EXPECT_EQ(Command::fmtBulk(result), expect.value());
+}
+
+void testHash1(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -76,6 +125,11 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
+
+        sess.setArgs({"hexists", "a", std::to_string(i)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
     }
     std::vector<std::string> args;
     args.push_back("hdel");
@@ -92,8 +146,64 @@ void testHash(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(5000));
-}
 
+    for (uint32_t i = 0; i < 5000; i++) {
+        sess.setArgs({"hget", "a", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i % 2 == 1) {
+            EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtNull());
+        }
+        sess.setArgs({"hexists", "a", std::to_string(i)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i % 2 == 1) {
+            EXPECT_EQ(expect.value(), Command::fmtOne());
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtZero());
+        }
+    }
+
+    sess.setArgs({"hgetall", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 10000);
+    std::vector<std::string> vals;
+    for (uint32_t i = 0; i < 5000; ++i) {
+        vals.push_back(std::to_string(2*i+1));
+        vals.push_back(std::to_string(2*i+1));
+    }
+    std::sort(vals.begin(), vals.end());
+    for (const auto& v : vals) {
+        Command::fmtBulk(ss, v);
+    }
+    EXPECT_EQ(ss.str(), expect.value());
+
+    // hsetnx related
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hsetnx", "a", std::to_string(i), std::to_string(0)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i % 2 == 0) {
+            EXPECT_EQ(expect.value(), Command::fmtOne());
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtZero());
+        }
+    }
+    for (uint32_t i = 0; i < 10000; i++) {
+        sess.setArgs({"hget", "a", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i % 2 == 0) {
+            EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(0)));
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
+        }
+    }
+}
 
 void testSet(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
@@ -410,7 +520,8 @@ TEST(Command, common) {
 
     testSet(server);
     testSetRetry(server);
-    testHash(server);
+    testHash1(server);
+    testHash2(server);
     testList(server);
 }
 

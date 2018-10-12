@@ -26,6 +26,10 @@ char rt2Char(RecordType t) {
             return 'H';
         case RecordType::RT_HASH_ELE:
             return 'h';
+        case RecordType::RT_SET_META:
+            return 'S';
+        case RecordType::RT_SET_ELE:
+            return 's';
         // it's convinent (for seek) to have BINLOG to pos
         // at the rightmost of a lsmtree
         // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
@@ -54,6 +58,10 @@ RecordType char2Rt(char t) {
             return RecordType::RT_HASH_META;
         case 'h':
             return RecordType::RT_HASH_ELE;
+        case 'S':
+            return RecordType::RT_SET_META;
+        case 's':
+            return RecordType::RT_SET_ELE;
         case std::numeric_limits<char>::max():
             return RecordType::RT_BINLOG;
         default:
@@ -799,6 +807,43 @@ uint64_t ListMetaValue::getTail() const {
     return _tail;
 }
 
+SetMetaValue::SetMetaValue()
+    :_count(0) {
+}
+
+SetMetaValue::SetMetaValue(uint64_t count)
+    :_count(count) {
+}
+
+Expected<SetMetaValue> SetMetaValue::decode(const std::string& val) {
+    const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    auto expt = varintDecodeFwd(valCstr + offset, val.size());
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t count = expt.value().first;
+    return SetMetaValue(count);
+}
+
+std::string SetMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(8);
+    auto countBytes = varintEncode(_count);
+    value.insert(value.end(), countBytes.begin(), countBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+void SetMetaValue::setCount(uint64_t count) {
+    _count = count;
+}
+
+uint64_t SetMetaValue::getCount() const {
+    return _count;
+}
+
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
@@ -819,6 +864,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                 return v.status();
             }
             return v.value().getTail() - v.value().getHead();
+        }
+        case RecordType::RT_SET_META: {
+            auto v = SetMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getCount();
         }
         default: {
             return {ErrorCodes::ERR_INTERNAL, "not support"};
