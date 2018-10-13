@@ -269,9 +269,12 @@ class DebugCommand: public Command {
         if (args.size() == 1) {
             sections.insert("stores");
             sections.insert("repl");
-            sections.insert("sessions");
+            sections.insert("commands");
+            sections.insert("unseen_commands");
         } else {
-            sections.insert(args[1]);
+            for (size_t i = 2; i < args.size(); ++i) {
+                sections.insert(args[i]);
+            }
         }
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
@@ -285,12 +288,12 @@ class DebugCommand: public Command {
         writer.StartObject();
 
         if (sections.find("stores") != sections.end()) {
-            writer.Key("Stores");
+            writer.Key("stores");
             writer.StartObject();
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
                 PStore store = segMgr->getInstanceById(i);
                 std::stringstream ss;
-                ss << "Stores_" << i;
+                ss << "stores_" << i;
                 writer.Key(ss.str().c_str());
                 writer.StartObject();
                 store->appendJSONStat(writer);
@@ -304,10 +307,28 @@ class DebugCommand: public Command {
             replMgr->appendJSONStat(writer);
             writer.EndObject();
         }
-        if (sections.find("sessions") != sections.end()) {
-            writer.Key("Sessions");
+        if (sections.find("unseen_commands") != sections.end()) {
+            writer.Key("unseen_commands");
             writer.StartObject();
-            svr->appendSessionJsonStats(writer);
+            std::lock_guard<std::mutex> lk(Command::_mutex);
+            for (const auto& kv : _unSeenCmds) {
+                writer.Key(kv.first);
+                writer.Uint64(kv.second);
+            }
+            writer.EndObject();
+        }
+        if (sections.find("commands") != sections.end()) {
+            writer.Key("commands");
+            writer.StartObject();
+            for (const auto& kv : commandMap()) {
+                writer.Key(kv.first);
+                writer.StartObject();
+                writer.Key("call_times");
+                writer.Uint64(kv.second->getCallTimes());
+                writer.Key("total_nanos");
+                writer.Uint64(kv.second->getNanos());
+                writer.EndObject();
+            }
             writer.EndObject();
         }
         writer.EndObject();

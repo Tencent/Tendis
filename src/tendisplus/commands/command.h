@@ -25,7 +25,11 @@ class Command {
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
     const std::string& getName() const;
-    std::vector<std::string> listCommands() const;
+    void incrCallTimes();
+    void incrNanos(uint64_t);
+    uint64_t getCallTimes() const;
+    uint64_t getNanos() const;
+    static std::vector<std::string> listCommands();
     // precheck returns command name
     static Expected<std::string> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
@@ -73,6 +77,11 @@ class Command {
 
     static constexpr int32_t RETRY_CNT = 3;
 
+ protected:
+    static std::mutex _mutex;
+    // protected by mutex
+    static std::map<std::string, uint64_t> _unSeenCmds;
+
  private:
     static Status delKeyPessimistic(Session *sess, uint32_t storeId,
                             const RecordKey& rk);
@@ -86,9 +95,13 @@ class Command {
                                  const RecordKey& mk,
                                  bool deleteMeta,
                                  Transaction *txn);
+
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.
+
+    std::atomic<uint64_t> _callTimes;
+    std::atomic<uint64_t> _totalNanoSecs;
 };
 
 std::map<std::string, Command*>& commandMap();

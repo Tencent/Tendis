@@ -73,9 +73,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
 
-    void appendSessionJsonStats(
-            rapidjson::Writer<rapidjson::StringBuffer>&) const;
-
     void toggleFtmc(bool enable);
 
  private:

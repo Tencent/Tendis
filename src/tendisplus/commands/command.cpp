@@ -15,6 +15,10 @@
 
 namespace tendisplus {
 
+std::mutex Command::_mutex;
+
+std::map<std::string, uint64_t> Command::_unSeenCmds = {};
+
 std::map<std::string, Command*>& commandMap() {
     static std::map<std::string, Command*> map = {};
     return map;
@@ -29,7 +33,23 @@ const std::string& Command::getName() const {
     return _name;
 }
 
-std::vector<std::string> Command::listCommands() const {
+void Command::incrCallTimes() {
+    _callTimes.fetch_add(1, std::memory_order_relaxed);
+}
+
+void Command::incrNanos(uint64_t v) {
+    _totalNanoSecs.fetch_add(v, std::memory_order_relaxed);
+}
+
+uint64_t Command::getCallTimes() const {
+    return _callTimes.load(std::memory_order_relaxed);
+}
+
+uint64_t Command::getNanos() const {
+    return _totalNanoSecs.load(std::memory_order_relaxed);
+}
+
+std::vector<std::string> Command::listCommands() {
     std::vector<std::string> lst;
     const auto& v = commandMap();
     for (const auto& kv : v) {
@@ -46,6 +66,14 @@ Expected<std::string> Command::precheck(Session *sess) {
     std::string commandName = toLower(args[0]);
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
+        {
+            std::lock_guard<std::mutex> lk(_mutex);
+            if (_unSeenCmds.find(commandName) == _unSeenCmds.end()) {
+                _unSeenCmds[commandName] = 1;
+            } else {
+                _unSeenCmds[commandName] += 1;
+            }
+        }
         std::stringstream ss;
         ss << "unknown command '" << args[0] << "'";
         return {ErrorCodes::ERR_PARSEPKT, ss.str()};
@@ -86,9 +114,13 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     if (it == commandMap().end()) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
+
     sess->getCtx()->setArgsBrief(sess->getArgs());
-    auto guard = MakeGuard([sess]() {
+    it->second->incrCallTimes();
+    auto now = nsSinceEpoch();
+    auto guard = MakeGuard([it, now, sess] {
         sess->getCtx()->clearRequestCtx();
+        it->second->incrNanos(nsSinceEpoch() - now);
     });
     return it->second->run(sess);
 }

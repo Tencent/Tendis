@@ -327,13 +327,6 @@ void ServerEntry::stop() {
     _eventCV.notify_all();
 }
 
-void ServerEntry::appendSessionJsonStats(
-        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    std::unique_lock<std::mutex> lk(_mutex);
-    w.Key("sessions");
-    w.Uint64(_sessions.size());
-}
-
 void ServerEntry::toggleFtmc(bool enable) {
     _ftmcEnabled.store(enable, std::memory_order_relaxed);
 }
