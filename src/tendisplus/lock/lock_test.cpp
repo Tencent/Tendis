@@ -44,9 +44,10 @@ TEST(Lock, Parent) {
     bool runFlag1 = true, runFlag2 = true;
     bool locked1 = false, locked2 = false;
 
-    std::thread thd1([&runFlag1, &locked1]() {
-        StoreLock v(1, mgl::LockMode::LOCK_IS);
-        StoreLock v1(2, mgl::LockMode::LOCK_IS);
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess]() {
+        StoreLock v(1, mgl::LockMode::LOCK_IS, sess.get());
+        StoreLock v1(2, mgl::LockMode::LOCK_IS, sess.get());
         locked1 = true;
         while (runFlag1) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -73,4 +74,4 @@ TEST(Lock, Parent) {
     runFlag2 = false;
     thd2.join();
 }
-}
+}  // namespace tendisplus

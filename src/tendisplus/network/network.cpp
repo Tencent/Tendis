@@ -117,12 +117,17 @@ void NetworkAsio::doAccept() {
             LOG(WARNING) << "acceptCb errorcode:" << ec.message();
             // we log this error, but dont return
         }
-        _server->addSession(
-            std::move(
-                std::make_shared<NetSession>(
+
+        uint64_t newConnId =
+                    _connCreated.fetch_add(1, std::memory_order_relaxed);
+        auto sess = std::make_shared<NetSession>(
                     _server, std::move(socket),
-                    _connCreated.fetch_add(1, std::memory_order_relaxed),
-                    true, _netMatrix, _reqMatrix)));
+                    newConnId, true, _netMatrix, _reqMatrix);
+        LOG(INFO) << "new net session, id:" << sess->id()
+                  << ",connId:" << newConnId
+                  << ",from:" << sess->getRemoteRepr()
+                  << " created";
+        _server->addSession(std::move(sess));
         ++_netMatrix->connCreated;
         doAccept();
     };
@@ -608,8 +613,9 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
 
 void NetSession::endSession() {
     ++_netMatrix->connReleased;
-    // NOTE(deyukong): endSession will call destructor
-    // never write any codes after _server->endSession
+    LOG(INFO) << "net session, id:" << id()
+                  << ",connId:" << _connId
+                  << " destroyed";
     _server->endSession(id());
 }
 

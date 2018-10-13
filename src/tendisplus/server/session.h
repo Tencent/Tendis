@@ -25,11 +25,8 @@ class Session: public std::enable_shared_from_this<Session> {
     SessionCtx *getCtx() const;
     std::shared_ptr<ServerEntry> getServerEntry() const;
 
-    virtual asio::ip::tcp::socket borrowConn() = 0;
     virtual void start() = 0;
     virtual Status cancel() = 0;
-    virtual std::string getRemoteRepr() const = 0;
-    virtual std::string getLocalRepr() const = 0;
 
  protected:
     std::vector<std::string> _args;
@@ -41,6 +38,23 @@ class Session: public std::enable_shared_from_this<Session> {
     uint64_t _sessId;
     static std::atomic<uint64_t> _idGen;
     static std::atomic<uint64_t> _aliveCnt;
+};
+
+class LocalSession: public Session {
+ public:
+    explicit LocalSession(std::shared_ptr<ServerEntry> svr);
+    void start() final;
+    Status cancel() final;
+};
+
+class LocalSessionGuard {
+ public:
+    explicit LocalSessionGuard(std::shared_ptr<ServerEntry> svr);
+    LocalSession* getSession();
+    ~LocalSessionGuard();
+
+ private:
+    std::shared_ptr<LocalSession> _sess;
 };
 
 }  // namespace tendisplus

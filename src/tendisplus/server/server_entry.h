@@ -6,6 +6,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <list>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -52,6 +53,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     Status cancelSession(uint64_t connId);
 
+    std::list<std::shared_ptr<Session>> getAllSessions() const;
+
     // returns true if NetSession should continue schedule
     bool processRequest(uint64_t connId);
 
@@ -70,7 +73,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
 
-    void appendSessionJsonStats(rapidjson::Writer<rapidjson::StringBuffer>&) const;
+    void appendSessionJsonStats(
+            rapidjson::Writer<rapidjson::StringBuffer>&) const;
 
     void toggleFtmc(bool enable);
 

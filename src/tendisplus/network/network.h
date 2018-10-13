@@ -88,9 +88,9 @@ class NetSession: public Session {
     NetSession(const NetSession&) = delete;
     NetSession(NetSession&&) = delete;
     virtual ~NetSession() = default;
-    std::string getRemoteRepr() const final;
-    std::string getLocalRepr() const final;
-    asio::ip::tcp::socket borrowConn() final;
+    std::string getRemoteRepr() const;
+    std::string getLocalRepr() const;
+    asio::ip::tcp::socket borrowConn();
     void start() final;
     Status cancel() final;
     const std::vector<std::string>& getArgs() const;

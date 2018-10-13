@@ -45,7 +45,7 @@ Expected<bool> expireAfterNow(Session *sess,
     }
 
     // record exists and not expired
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
 
     if (Command::isKeyLocked(sess, storeId, rk.encode())) {
         return {ErrorCodes::ERR_BUSY, "key locked"};

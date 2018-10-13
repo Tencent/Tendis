@@ -121,7 +121,7 @@ Status ReplManager::startup() {
     // so we put an no-op to binlogs everytime startup.
     // in this way, the full-backup will always have a committed txnId.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        StoreLock storeLock(i, mgl::LockMode::LOCK_IX);
+        // here we are starting up, dont acquire a storelock.
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
         INVARIANT(store != nullptr);
 

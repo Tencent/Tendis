@@ -151,7 +151,7 @@ class ApplyBinlogsCommand: public Command {
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
-        StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+        StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
         Status s = replMgr->applyBinlogs(storeId,
                                          sess->id(),
                                          binlogGroup);
@@ -185,7 +185,7 @@ class SlaveofCommand: public Command {
         }
         if (args.size() == 3) {
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                StoreLock storeLock(i, mgl::LockMode::LOCK_X);
+                StoreLock storeLock(i, mgl::LockMode::LOCK_X, sess);
                 Status s = replMgr->changeReplSource(i, ip, port, i);
                 if (!s.ok()) {
                     return s;
@@ -206,7 +206,7 @@ class SlaveofCommand: public Command {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
+            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
             Status s = replMgr->changeReplSource(
                     storeId, ip, port, sourceStoreId);
             if (s.ok()) {
@@ -236,7 +236,7 @@ class SlaveofCommand: public Command {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
+            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
             Status s = replMgr->changeReplSource(storeId, "", 0, 0);
             if (s.ok()) {
                 return Command::fmtOK();
@@ -244,7 +244,7 @@ class SlaveofCommand: public Command {
             return s;
         } else {
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                StoreLock storeLock(i, mgl::LockMode::LOCK_X);
+                StoreLock storeLock(i, mgl::LockMode::LOCK_X, sess);
                 Status s = replMgr->changeReplSource(i, "", 0, 0);
                 if (!s.ok()) {
                     return s;

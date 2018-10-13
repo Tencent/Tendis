@@ -8,3 +8,4 @@ add_executable(network_test network_test.cpp)
 target_link_libraries(network_test server network session gtest_main)
 
 add_library(session_ctx session_ctx.cpp)
+target_link_libraries(session_ctx glog)

@@ -6,6 +6,8 @@
 #include <set>
 #include <map>
 #include <limits>
+#include <memory>
+#include <utility>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -92,7 +94,12 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
 void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
 
-    StoreLock storeLock(metaSnapshot.id, mgl::LockMode::LOCK_X);
+    LocalSessionGuard sg(_svr);
+    // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
+    // since it's on stack
+    sg.getSession()->getCtx()->setArgsBrief(
+        {"slavefullsync", std::to_string(metaSnapshot.id)});
+    StoreLock storeLock(metaSnapshot.id, mgl::LockMode::LOCK_X, sg.getSession());
 
     // 1) stop store and clean it's directory
     PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
@@ -232,7 +239,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
                    << ",failed:" << restartStatus.status().toString();
     }
-    
+
     newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_CONNECTED;
     newMeta->binlogId = bkInfo.value().getBinlogPos();
@@ -428,7 +435,7 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                                    const std::list<ReplLog>& ops) {
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
-    INVARIANT(store != nullptr); 
+    INVARIANT(store != nullptr);
     auto ptxn = store->createTransaction();
     if (!ptxn.ok()) {
         return ptxn.status();

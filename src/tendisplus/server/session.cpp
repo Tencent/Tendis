@@ -2,6 +2,7 @@
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/network/session_ctx.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 std::atomic<uint64_t> Session::_idGen(0);
@@ -39,6 +40,34 @@ std::shared_ptr<ServerEntry> Session::getServerEntry() const {
 
 SessionCtx *Session::getCtx() const {
     return _ctx.get();
+}
+
+LocalSession::LocalSession(std::shared_ptr<ServerEntry> svr)
+        :Session(svr) {
+}
+
+void LocalSession::start() {
+    _ctx->setProcessPacketStart(nsSinceEpoch());
+}
+
+Status LocalSession::cancel() {
+    return {ErrorCodes::ERR_INTERNAL,
+        "LocalSession::cancel should not be called"};
+}
+
+LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
+    _sess = std::make_shared<LocalSession>(svr);
+    svr->addSession(_sess);
+}
+
+LocalSessionGuard::~LocalSessionGuard() {
+    auto svr = _sess->getServerEntry();
+    INVARIANT(svr != nullptr);
+    svr->endSession(_sess->id());
+}
+
+LocalSession* LocalSessionGuard::getSession() {
+    return _sess.get();
 }
 
 }  // namespace tendisplus

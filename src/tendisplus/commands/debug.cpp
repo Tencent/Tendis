@@ -7,6 +7,7 @@
 #include <clocale>
 #include <vector>
 #include <set>
+#include <list>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -17,6 +18,107 @@
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
+
+class ShowCommand: public Command {
+ public:
+    ShowCommand()
+        :Command("show") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // show processlist [all]
+    Expected<std::string> processList(Session *sess, bool all) {
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto sesses = svr->getAllSessions();
+
+        rapidjson::StringBuffer sb;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+        writer.StartArray();
+        for (const auto& sess : sesses) {
+            SessionCtx *ctx = sess->getCtx();
+            std::vector<std::string> args = ctx->getArgsBrief();
+            if (args.size() == 0 && !all) {
+                continue;
+            }
+            writer.StartObject();
+
+            writer.Key("args");
+            writer.StartArray();
+            for (const auto& arg : args) {
+                writer.String(arg);
+            }
+            writer.EndArray();
+
+            writer.Key("authed");
+            writer.Uint64(ctx->authed());
+
+            writer.Key("dbid");
+            writer.Uint64(ctx->getDbId());
+
+            writer.Key("start_time");
+            writer.Uint64(ctx->getProcessPacketStart()/1000000);
+
+            writer.Key("session_ref");
+            writer.Uint64(sess.use_count());
+
+            SLSP waitlockStat = ctx->getWaitlock();
+            if (waitlockStat.second != mgl::LockMode::LOCK_NONE) {
+                writer.Key("waitlock");
+                writer.StartArray();
+                writer.Uint64(waitlockStat.first);
+                writer.String(lockModeRepr(waitlockStat.second));
+                writer.EndArray();
+            }
+            std::list<SLSP> lockStats = ctx->getLockStates();
+            if (lockStats.size() > 0) {
+                writer.Key("holdinglocks");
+                writer.StartArray();
+                for (const auto& v : lockStats) {
+                    writer.StartArray();
+                    writer.Uint64(v.first);
+                    writer.String(lockModeRepr(v.second));
+                    writer.EndArray();
+                }
+                writer.EndArray();
+            }
+            writer.EndObject();
+        }
+        writer.EndArray();
+        return Command::fmtBulk(sb.GetString());
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        if (args[1] == "processlist") {
+            if (args.size() == 2) {
+                return processList(sess, false);
+            } else if (args.size() == 3) {
+                if (args[2] == "all") {
+                    return processList(sess, true);
+                }
+                return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
+            }
+            return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
+        }
+        return {ErrorCodes::ERR_PARSEOPT, "invalid show param"};
+    }
+} plCmd;
 
 class ToggleFtmcCommand: public Command {
  public:
@@ -42,7 +144,7 @@ class ToggleFtmcCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
-        bool enable = false; 
+        bool enable = false;
         if (args[1] == "1") {
             enable = true;
         } else if (args[1] == "0") {
@@ -121,7 +223,7 @@ class BinlogPosCommand: public Command {
         if (storeId.value() >= KVStore::INSTANCE_NUM) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
         }
-        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS);
+        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
         PStore kvstore = Command::getStoreById(sess, storeId.value());
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {

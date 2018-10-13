@@ -41,7 +41,7 @@ std::vector<std::string> Command::listCommands() const {
 Expected<std::string> Command::precheck(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
-        LOG(FATAL) << "BUG: sess " << sess->getRemoteRepr() << " len 0 args";
+        LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
     }
     std::string commandName = toLower(args[0]);
     auto it = commandMap().find(commandName);
@@ -63,7 +63,7 @@ Expected<std::string> Command::precheck(Session *sess) {
         LOG(FATAL) << "BUG: get server from sess:"
                     << sess->id()
                     << ",Ip:"
-                    << sess->getRemoteRepr() << " empty";
+                    << sess->id() << " empty";
     }
 
     SessionCtx *pCtx = sess->getCtx();
@@ -86,6 +86,10 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     if (it == commandMap().end()) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
+    sess->getCtx()->setArgsBrief(sess->getArgs());
+    auto guard = MakeGuard([sess]() {
+        sess->getCtx()->clearRequestCtx();
+    });
     return it->second->run(sess);
 }
 
@@ -97,7 +101,7 @@ std::unique_ptr<StoreLock> Command::lockDBByKey(Session *sess,
     auto segMgr = server->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
     uint32_t storeId = segMgr->calcInstanceId(key);
-    return std::make_unique<StoreLock>(storeId, mode);
+    return std::make_unique<StoreLock>(storeId, mode, sess);
 }
 
 bool Command::isKeyLocked(Session *sess,
@@ -117,7 +121,7 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
     std::string keyEnc = mk.encode();
     // lock key with X-lock held
     {
-        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
+        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
         if (Command::isKeyLocked(sess, storeId, keyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key is locked"};
         }
@@ -131,7 +135,7 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
 
     // storeLock destructs after guard, it's guaranteed.
     // unlock the key at last
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
     auto guard = MakeGuard([sess, storeId, &keyEnc]() {
         auto server = sess->getServerEntry();
         auto pessimisticMgr = server->getPessimisticMgr();
@@ -299,7 +303,7 @@ Expected<bool> Command::delKeyChkExpire(Session *sess,
 Status Command::delKey(Session *sess, uint32_t storeId,
                        const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX);
+                    mgl::LockMode::LOCK_IX, sess);
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -349,7 +353,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                                   uint32_t storeId,
                                   const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX);
+                    mgl::LockMode::LOCK_IX, sess);
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
