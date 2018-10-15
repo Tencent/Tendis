@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <map>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -206,4 +207,54 @@ class ExistsCommand: public Command {
     }
 } existsCmd;
 
+class TypeCommand: public Command {
+ public:
+    TypeCommand()
+        :Command("type") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        const std::map<RecordType, std::string> lookup = {
+            {RecordType::RT_KV, "string"},
+            {RecordType::RT_LIST_META, "list"},
+            {RecordType::RT_HASH_META, "hash"},
+            {RecordType::RT_SET_META, "set"},
+        };
+        for (const auto& typestr : lookup) {
+            RecordKey rk(pCtx->getDbId(), typestr.first, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            return Command::fmtBulk(typestr.second);
+        }
+        return Command::fmtBulk("none");
+    }
+} typeCmd;
 }  // namespace tendisplus

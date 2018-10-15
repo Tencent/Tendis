@@ -205,6 +205,40 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+void testType(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    sess.setArgs({"type", "test_type_key"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("none"));
+
+    sess.setArgs({"set", "test_type_key", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+
+    sess.setArgs({"hset", "test_type_key", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+
+    sess.setArgs({"hset", "test_type_key1", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("hash"));
+}
+
 void testKV(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
@@ -404,6 +438,9 @@ void testSetRetry(std::shared_ptr<ServerEntry> svr) {
     NetSession sess1(svr, std::move(socket1), 1, false, nullptr, nullptr);
 
     uint32_t cnt = 0;
+    const auto guard = MakeGuard([] {
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+    });
     SyncPoint::GetInstance()->EnableProcessing();
     SyncPoint::GetInstance()->SetCallBack(
         "setGeneric::SetKV::1", [&](void* arg) {
@@ -579,6 +616,7 @@ TEST(Command, common) {
 
     testKV(server);
     testSetRetry(server);
+    testType(server);
     testHash1(server);
     testHash2(server);
     testList(server);
