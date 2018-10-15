@@ -211,5 +211,203 @@ class GetCommand: public Command {
     }
 } getCommand;
 
+class IncrDecrGeneral: public Command {
+ public:
+    explicit IncrDecrGeneral(const std::string& name)
+        :Command(name) {
+    }
+
+    Expected<std::string> runWithParam(Session *sess,
+                                       const std::string& key,
+                                       int64_t incr) {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        // expire if possible
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        PStore kvstore = Command::getStoreById(sess, storeId);
+
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            int64_t sum = 0;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
+            if (!eValue.ok()
+                    && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return eValue.status();
+            }
+            if (eValue.ok()) {
+                Expected<int64_t> val =
+                    ::tendisplus::stoll(eValue.value().getValue());
+                if (!val.ok()) {
+                    return {ErrorCodes::ERR_DECODE,
+                            "value is not an integer or out of range"};
+                }
+                sum = val.value();
+            }
+
+            if ((incr < 0 && sum < 0 && incr < (LLONG_MIN-sum)) ||
+                    (incr > 0 && sum > 0 && incr > (LLONG_MAX-sum))) {
+                return {ErrorCodes::ERR_OVERFLOW,
+                        "increment or decrement would overflow"};
+            }
+            sum += incr;
+            RecordValue newSum(std::to_string(sum));
+            auto result = setGeneric(kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NO_FLAGS,
+                                     rk, newSum, "", "");
+            if (result.ok()) {
+                return Command::fmtLongLong(sum);
+            }
+            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return result.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return result.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+};
+
+class IncrbyCommand: public IncrDecrGeneral {
+ public:
+    IncrbyCommand()
+        :IncrDecrGeneral("incrby") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[2];
+        Expected<int64_t> eInc = ::tendisplus::stoll(val);
+        if (!eInc.ok()) {
+            return eInc.status();
+        }
+        return runWithParam(sess, key, eInc.value());
+    }
+} incrbyCmd;
+
+class IncrCommand: public IncrDecrGeneral {
+ public:
+    IncrCommand()
+        :IncrDecrGeneral("incr") {
+    }
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) {
+        const std::string& key = sess->getArgs()[1];
+        return runWithParam(sess, key, 1);
+    }
+} incrCmd;
+
+class DecrbyCommand: public IncrDecrGeneral {
+ public:
+    DecrbyCommand()
+        :IncrDecrGeneral("decrby") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[2];
+        Expected<int64_t> eInc = ::tendisplus::stoll(val);
+        if (!eInc.ok()) {
+            return eInc.status();
+        }
+        return runWithParam(sess, key, -eInc.value());
+    }
+} decrbyCmd;
+
+class DecrCommand: public IncrDecrGeneral {
+ public:
+    DecrCommand()
+        :IncrDecrGeneral("decr") {
+    }
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) {
+        const std::string& key = sess->getArgs()[1];
+        return runWithParam(sess, key, -1);
+    }
+} decrCmd;
 
 }  // namespace tendisplus

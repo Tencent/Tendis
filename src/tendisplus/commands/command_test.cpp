@@ -205,7 +205,7 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
-void testSet(std::shared_ptr<ServerEntry> svr) {
+void testKV(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -225,6 +225,65 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    // exists
+    sess.setArgs({"set", "expire_test_key", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"exists", "expire_test_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"expire", "expire_test_key", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"exists", "expire_test_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    // incrdecr
+    sess.setArgs({"incr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"incr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"incrby", "incrdecrkey", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(4));
+    sess.setArgs({"incrby",
+                  "incrdecrkey",
+                  std::to_string(std::numeric_limits<int64_t>::max())});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok()) << expect.value();
+    sess.setArgs({"incrby", "incrdecrkey", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"decr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"decr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"decrby", "incrdecrkey", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-2));
+    sess.setArgs({"decrby",
+                  "incrdecrkey",
+                  std::to_string(std::numeric_limits<int64_t>::max())});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok()) << expect.value();
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {
@@ -518,7 +577,7 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    testSet(server);
+    testKV(server);
     testSetRetry(server);
     testHash1(server);
     testHash2(server);

@@ -96,7 +96,8 @@ Expected<std::string> expireGeneric(Session *sess,
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META}) {
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -156,5 +157,53 @@ class ExpireCommand: public Command {
         return expireGeneric(sess, now+millsecs, key);
     }
 } expireCmd;
+
+class ExistsCommand: public Command {
+ public:
+    ExistsCommand()
+        :Command("exists") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        for (auto type : {RecordType::RT_KV,
+                          RecordType::RT_LIST_META,
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META}) {
+            RecordKey rk(pCtx->getDbId(), type, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            return Command::fmtOne();
+        }
+        return Command::fmtZero();
+    }
+} existsCmd;
 
 }  // namespace tendisplus
