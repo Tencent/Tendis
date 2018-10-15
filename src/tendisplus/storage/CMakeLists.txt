@@ -10,10 +10,10 @@ add_library(record STATIC record.cpp)
 target_link_libraries(record varint status glog utils_common)
 
 add_executable(varint_test varint_test.cpp)
-target_link_libraries(varint_test varint status gtest_main)
+target_link_libraries(varint_test varint status gtest_main ${SYS_LIBS})
 
 add_executable(record_test record_test.cpp)
-target_link_libraries(record_test record status gtest_main)
+target_link_libraries(record_test record status gtest_main ${SYS_LIBS})
 
 add_subdirectory(rocks)
 

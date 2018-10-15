@@ -21,6 +21,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+option(ENABLE_JEMALLOC "enable jemalloc" ON)
+list(APPEND SYS_LIBS "dl" "pthread" "rt")
+if(ENABLE_JEMALLOC)
+list(APPEND SYS_LIBS jemalloc)
+endif()
+
 # thirdparty code
 # do not set unnecessary flags before thirdparty dirs
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
