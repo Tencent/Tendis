@@ -14,4 +14,4 @@ target_link_libraries(server_params_test server_params status glog)
 
 add_executable(tendisplus main.cpp)
 target_link_libraries(tendisplus -Wl,--whole-archive commands -Wl,--no-whole-archive)
-target_link_libraries(tendisplus server_params server jemalloc dl)
+target_link_libraries(tendisplus server_params server)
