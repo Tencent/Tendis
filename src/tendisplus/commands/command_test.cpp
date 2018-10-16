@@ -294,6 +294,22 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
+    // setex
+    sess.setArgs({"setex", "a", "1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    sess.setArgs({"get", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("b"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    sess.setArgs({"get", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+
     // exists
     sess.setArgs({"set", "expire_test_key", "a"});
     expect = Command::runSessionCmd(&sess);
@@ -352,6 +368,52 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
                   std::to_string(std::numeric_limits<int64_t>::max())});
     expect = Command::runSessionCmd(&sess);
     EXPECT_FALSE(expect.ok()) << expect.value();
+
+    // append
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(6));
+    sess.setArgs({"expire", "appendkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"exists", "appendkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    // getset
+    sess.setArgs({"getset", "getsetkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+    sess.setArgs({"getset", "getsetkey", "def"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("abc"));
+    sess.setArgs({"expire", "getsetkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"getset", "getsetkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("def"));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"exists", "appendkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {

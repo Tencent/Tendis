@@ -193,10 +193,10 @@ class SetCommand: public Command {
     }
 } setCommand;
 
-class SetExCommand: public Command {
+class SetexGeneralCommand: public Command {
  public:
-    SetExCommand()
-        :Command("setex") {
+    explicit SetexGeneralCommand(const std::string& name)
+        :Command(name) {
     }
 
     ssize_t arity() const {
@@ -215,13 +215,10 @@ class SetExCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(Session *sess) final {
-        const std::string& key = sess->getArgs()[1];
-        const std::string& val = sess->getArgs()[3];
-        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
-        if (!eexpire.ok()) {
-            return eexpire.status();
-        }
+    Expected<std::string> runGeneral(Session *sess,
+                                     const std::string& key,
+                                     const std::string& val,
+                                     uint64_t ttl) {
         uint32_t storeId = Command::getStoreId(sess, key);
         auto storeLock = Command::lockDBByKey(sess,
                                               key,
@@ -230,9 +227,8 @@ class SetExCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                     key, "");
-        RecordValue rv(val, eexpire.value());
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        RecordValue rv(val, ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -262,7 +258,43 @@ class SetExCommand: public Command {
         INVARIANT(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
+};
+
+class SetExCommand: public SetexGeneralCommand {
+ public:
+    SetExCommand()
+        :SetexGeneralCommand("setex") {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[3];
+        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!eexpire.ok()) {
+            return eexpire.status();
+        }
+        return runGeneral(sess, key, val,
+                          nsSinceEpoch()/1000000 + eexpire.value()*1000);
+    }
 } setexCmd;
+
+class PSetExCommand: public SetexGeneralCommand {
+ public:
+    PSetExCommand()
+        :SetexGeneralCommand("psetex") {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[3];
+        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!eexpire.ok()) {
+            return eexpire.status();
+        }
+        return runGeneral(sess, key, val,
+                          nsSinceEpoch()/1000000 + eexpire.value());
+    }
+} psetexCmd;
 
 class SetNxCommand: public Command {
  public:
@@ -373,15 +405,21 @@ class GetCommand: public Command {
     }
 } getCommand;
 
-class IncrDecrGeneral: public Command {
+class GetSetGeneral: public Command {
  public:
-    explicit IncrDecrGeneral(const std::string& name)
+    explicit GetSetGeneral(const std::string& name)
         :Command(name) {
     }
 
-    Expected<std::string> runWithParam(Session *sess,
-                                       const std::string& key,
-                                       int64_t incr) {
+    virtual bool replyNewValue() const {
+        return true;
+    }
+
+    virtual Expected<RecordValue> newValueFromOld(Session* sess,
+                            const Expected<RecordValue>& oldValue) const = 0;
+
+    Expected<RecordValue> runGeneral(Session *sess) {
+            const std::string& key = sess->getArgs()[firstkey()];
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
@@ -402,7 +440,6 @@ class IncrDecrGeneral: public Command {
         PStore kvstore = Command::getStoreById(sess, storeId);
 
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            int64_t sum = 0;
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
                 return ptxn.status();
@@ -413,29 +450,21 @@ class IncrDecrGeneral: public Command {
                     && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
                 return eValue.status();
             }
-            if (eValue.ok()) {
-                Expected<int64_t> val =
-                    ::tendisplus::stoll(eValue.value().getValue());
-                if (!val.ok()) {
-                    return {ErrorCodes::ERR_DECODE,
-                            "value is not an integer or out of range"};
-                }
-                sum = val.value();
+            Expected<RecordValue> newValue =
+                newValueFromOld(sess, eValue);
+            if (!newValue.ok()) {
+                return newValue.status();
             }
-
-            if ((incr < 0 && sum < 0 && incr < (LLONG_MIN-sum)) ||
-                    (incr > 0 && sum > 0 && incr > (LLONG_MAX-sum))) {
-                return {ErrorCodes::ERR_OVERFLOW,
-                        "increment or decrement would overflow"};
-            }
-            sum += incr;
-            RecordValue newSum(std::to_string(sum));
             auto result = setGeneric(kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
-                                     rk, newSum, "", "");
+                                     rk, newValue.value(), "", "");
             if (result.ok()) {
-                return Command::fmtLongLong(sum);
+                if (replyNewValue()) {
+                    return newValue.value();
+                } else {
+                    return eValue.ok() ? eValue.value() : RecordValue("");
+                }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result.status();
@@ -449,6 +478,142 @@ class IncrDecrGeneral: public Command {
 
         INVARIANT(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+};
+
+class AppendCommand: public GetSetGeneral {
+ public:
+    AppendCommand()
+        :GetSetGeneral("append") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[2];
+        std::string cat;
+        if (!oldValue.ok()) {
+            cat = val;
+        } else {
+            cat = oldValue.value().getValue();
+            cat.insert(cat.end(), val.begin(), val.end());
+        }
+
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(cat, ttl);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        return Command::fmtLongLong(rv.value().getValue().size());
+    }
+} appendCmd;
+
+class GetSetCommand: public GetSetGeneral {
+ public:
+    GetSetCommand()
+        :GetSetGeneral("getset") {
+    }
+
+    bool replyNewValue() const final {
+        return false;
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        (void)oldValue;
+        // getset overwrites ttl
+        return RecordValue(sess->getArgs()[2], 0);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        const std::string& v = rv.value().getValue();
+        if (v.size()) {
+            return Command::fmtBulk(v);
+        }
+        return Command::fmtNull();
+    }
+} getsetCmd;
+
+class IncrDecrGeneral: public GetSetGeneral {
+ public:
+    explicit IncrDecrGeneral(const std::string& name)
+        :GetSetGeneral(name) {
+    }
+
+    Expected<int64_t> sumIncr(const Expected<RecordValue>& esum,
+                              int64_t incr) const {
+        int64_t sum = 0;
+        if (esum.ok()) {
+            Expected<int64_t> val =
+                ::tendisplus::stoll(esum.value().getValue());
+            if (!val.ok()) {
+                return {ErrorCodes::ERR_DECODE,
+                        "value is not an integer or out of range"};
+            }
+            sum = val.value();
+        }
+
+        if ((incr < 0 && sum < 0 && incr < (LLONG_MIN-sum)) ||
+                (incr > 0 && sum > 0 && incr > (LLONG_MAX-sum))) {
+            return {ErrorCodes::ERR_OVERFLOW,
+                    "increment or decrement would overflow"};
+        }
+        sum += incr;
+        return sum;
+    }
+
+    virtual Expected<std::string> run(Session *sess) {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        Expected<int64_t> val = ::tendisplus::stoll(rv.value().getValue());
+        if (!val.ok()) {
+            return val.status();
+        }
+        return Command::fmtLongLong(val.value());
     }
 };
 
@@ -474,14 +639,24 @@ class IncrbyCommand: public IncrDecrGeneral {
         return 1;
     }
 
-    Expected<std::string> run(Session *sess) {
-        const std::string& key = sess->getArgs()[1];
+    Expected<RecordValue> newValueFromOld(
+            Session* sess, const Expected<RecordValue>& oldValue) const {
         const std::string& val = sess->getArgs()[2];
         Expected<int64_t> eInc = ::tendisplus::stoll(val);
         if (!eInc.ok()) {
             return eInc.status();
         }
-        return runWithParam(sess, key, eInc.value());
+        Expected<int64_t> newSum = sumIncr(oldValue, eInc.value());
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } incrbyCmd;
 
@@ -506,9 +681,19 @@ class IncrCommand: public IncrDecrGeneral {
         return 1;
     }
 
-    Expected<std::string> run(Session *sess) {
-        const std::string& key = sess->getArgs()[1];
-        return runWithParam(sess, key, 1);
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        Expected<int64_t> newSum = sumIncr(oldValue, 1);
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } incrCmd;
 
@@ -534,14 +719,24 @@ class DecrbyCommand: public IncrDecrGeneral {
         return 1;
     }
 
-    Expected<std::string> run(Session *sess) {
-        const std::string& key = sess->getArgs()[1];
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
         const std::string& val = sess->getArgs()[2];
         Expected<int64_t> eInc = ::tendisplus::stoll(val);
         if (!eInc.ok()) {
             return eInc.status();
         }
-        return runWithParam(sess, key, -eInc.value());
+        Expected<int64_t> newSum = sumIncr(oldValue, -eInc.value());
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } decrbyCmd;
 
@@ -566,9 +761,19 @@ class DecrCommand: public IncrDecrGeneral {
         return 1;
     }
 
-    Expected<std::string> run(Session *sess) {
-        const std::string& key = sess->getArgs()[1];
-        return runWithParam(sess, key, -1);
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        Expected<int64_t> newSum = sumIncr(oldValue, -1);
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } decrCmd;
 
