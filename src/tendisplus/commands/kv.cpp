@@ -36,6 +36,7 @@ struct SetParams {
     uint64_t expire;
 };
 
+// TODO(deyukong): unittest of expire
 Expected<std::string> setGeneric(PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             const std::string& okReply, const std::string& abortReply) {
@@ -46,14 +47,37 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
                 eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return eValue.status();
         }
-        bool exists = (eValue.status().code() == ErrorCodes::ERR_OK);
+
+        uint64_t currentTs = 0;
+        uint64_t targetTtl = 0;
+        if (eValue.ok()) {
+            currentTs = nsSinceEpoch()/1000000;
+            targetTtl = eValue.value().getTtl();
+        }
+        bool needExpire = (targetTtl != 0
+                           && currentTs >= eValue.value().getTtl());
+        bool exists =
+            (eValue.status().code() == ErrorCodes::ERR_OK) && (!needExpire);
         if ((flags & REDIS_SET_NX && exists) ||
                 (flags & REDIS_SET_XX && (!exists)) ||
                 (flags & REDIS_SET_NXEX && exists)) {
+            // we will early return, we should del the expired key
+            // if needed.
+            if (needExpire) {
+                Status status = store->delKV(key, txn);
+                if (!status.ok()) {
+                    return status;
+                }
+                Expected<uint64_t> exptCommit = txn->commit();
+                if (!exptCommit.ok()) {
+                    return exptCommit.status();
+                }
+            }
             return abortReply == "" ? Command::fmtNull() : abortReply;
         }
     }
 
+    // here we have no need to check expire since we will overwrite it
     Status status = store->setKV(key, val, txn);
     TEST_SYNC_POINT("setGeneric::SetKV::1");
     if (!status.ok()) {
@@ -168,6 +192,144 @@ class SetCommand: public Command {
             rk, rv, "", "");
     }
 } setCommand;
+
+class SetExCommand: public Command {
+ public:
+    SetExCommand()
+        :Command("setex") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[3];
+        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!eexpire.ok()) {
+            return eexpire.status();
+        }
+        uint32_t storeId = Command::getStoreId(sess, key);
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
+                     key, "");
+        RecordValue rv(val, eexpire.value());
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto result = setGeneric(kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NO_FLAGS,
+                                     rk,
+                                     rv,
+                                     "",
+                                     "");
+            if (result.ok()) {
+                return result.value();
+            }
+            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return result.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return result.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} setexCmd;
+
+class SetNxCommand: public Command {
+ public:
+    SetNxCommand()
+        :Command("setnx") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[2];
+        uint32_t storeId = Command::getStoreId(sess, key);
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
+                     key, "");
+        RecordValue rv(val);
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto result = setGeneric(kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NX,
+                                     rk,
+                                     rv,
+                                     Command::fmtOne(),
+                                     Command::fmtZero());
+            if (result.ok()) {
+                return result.value();
+            }
+            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return result.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return result.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} setnxCmd;
 
 class GetCommand: public Command {
  public:

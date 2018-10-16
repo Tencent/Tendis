@@ -243,6 +243,8 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // set
     sess.setArgs({"set", "a", "1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -259,6 +261,38 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "a", "1", "xx"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "a", "1", "xx", "px", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    sess.setArgs({"set", "a", "1", "xx"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+
+    // setnx
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"expire", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
 
     // exists
     sess.setArgs({"set", "expire_test_key", "a"});
