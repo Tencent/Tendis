@@ -13,7 +13,7 @@
 
 namespace tendisplus {
 
-Expected<std::string> genericSRem(NetSession *sess,
+Expected<std::string> genericSRem(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
                                   const std::vector<std::string>& args) {
@@ -73,7 +73,7 @@ Expected<std::string> genericSRem(NetSession *sess,
     return Command::fmtLongLong(cnt);
 }
 
-Expected<std::string> genericSAdd(NetSession *sess,
+Expected<std::string> genericSAdd(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
                                   const std::vector<std::string>& args) {
@@ -150,7 +150,7 @@ class SIsMemberCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -229,7 +229,7 @@ class SaddCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -309,7 +309,7 @@ class ScardCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
 
         SessionCtx *pCtx = sess->getCtx();
@@ -361,7 +361,7 @@ class SRemCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 

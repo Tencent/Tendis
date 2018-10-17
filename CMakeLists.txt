@@ -21,6 +21,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+option(ENABLE_JEMALLOC "enable jemalloc" ON)
+list(APPEND SYS_LIBS "dl" "pthread" "rt")
+if(ENABLE_JEMALLOC)
+list(APPEND SYS_LIBS jemalloc)
+endif()
+
 # thirdparty code
 # do not set unnecessary flags before thirdparty dirs
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
@@ -91,6 +97,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson-1.1.0/include") 
 
 add_subdirectory(src/tendisplus/network)

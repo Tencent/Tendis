@@ -6,6 +6,9 @@
 #include <set>
 #include <map>
 #include <limits>
+#include <utility>
+#include <memory>
+#include <vector>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -80,7 +83,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
     }
 
-    Expected<uint64_t> newPos = masterSendBinlog(client, storeId, dstStoreId, binlogPos);
+    Expected<uint64_t> newPos =
+            masterSendBinlog(client, storeId, dstStoreId, binlogPos);
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
                 << client->getRemoteRepr() << " failed:"
@@ -105,7 +109,14 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     constexpr uint32_t suggestBatch = 64;
     constexpr size_t suggestBytes = 16*1024*1024;
 
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+    LocalSessionGuard sg(_svr);
+    sg.getSession()->getCtx()->setArgsBrief(
+        {"mastersendlog",
+         std::to_string(storeId),
+         client->getRemoteRepr(),
+         std::to_string(dstStoreId),
+         std::to_string(binlogPos)});
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS, sg.getSession());
 
     PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
     INVARIANT(store != nullptr);
@@ -195,8 +206,8 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
 //  That makes client2Session complicated.
 
 // NOTE(deyukong): we define binlogPos the greatest id that has been applied.
-// "NOT" the smallest id that has not been applied. keep the same with BackupInfo's
-// setCommitId
+// "NOT" the smallest id that has not been applied. keep the same with
+// BackupInfo's setCommitId
 void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
@@ -287,7 +298,12 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 // read +OK
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS);
+    LocalSessionGuard sg(_svr);
+    sg.getSession()->getCtx()->setArgsBrief(
+        {"masterfullsync",
+         client->getRemoteRepr(),
+         std::to_string(storeId)});
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS, sg.getSession());
     LOG(INFO) << "client:" << client->getRemoteRepr()
               << ",storeId:" << storeId
               << ",begins fullsync";

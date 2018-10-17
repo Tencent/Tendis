@@ -94,7 +94,7 @@ TEST(Record, Common) {
         auto pk = randomStr(false);
         auto sk = randomStr(true);
         uint32_t ttl = genRand();
-        auto val = randomStr(false);
+        auto val = randomStr(true);
         auto rk = RecordKey(dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl);
         auto rcd = Record(rk, rv);
@@ -110,7 +110,7 @@ TEST(Record, Common) {
         auto pk = randomStr(false);
         auto sk = randomStr(true);
         uint32_t ttl = genRand();
-        auto val = randomStr(false);
+        auto val = randomStr(true);
         auto rk = RecordKey(dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl);
         auto rcd = Record(rk, rv);

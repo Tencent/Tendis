@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <map>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -13,7 +14,7 @@
 
 namespace tendisplus {
 
-Expected<bool> expireBeforeNow(NetSession *sess,
+Expected<bool> expireBeforeNow(Session *sess,
                         RecordType type,
                         const std::string& key) {
     SessionCtx *pCtx = sess->getCtx();
@@ -26,7 +27,7 @@ Expected<bool> expireBeforeNow(NetSession *sess,
 // return true if exists
 // return false if not exists
 // return error if has error
-Expected<bool> expireAfterNow(NetSession *sess,
+Expected<bool> expireAfterNow(Session *sess,
                         RecordType type,
                         const std::string& key,
                         uint64_t expireAt) {
@@ -45,7 +46,7 @@ Expected<bool> expireAfterNow(NetSession *sess,
     }
 
     // record exists and not expired
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
 
     if (Command::isKeyLocked(sess, storeId, rk.encode())) {
         return {ErrorCodes::ERR_BUSY, "key locked"};
@@ -89,14 +90,15 @@ Expected<bool> expireAfterNow(NetSession *sess,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<std::string> expireGeneric(NetSession *sess,
+Expected<std::string> expireGeneric(Session *sess,
                                     uint64_t expireAt,
                                     const std::string& key) {
     if (expireAt >= nsSinceEpoch()/1000000) {
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META}) {
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -144,7 +146,7 @@ class ExpireCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         auto expSecs = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!expSecs.ok()) {
@@ -157,4 +159,102 @@ class ExpireCommand: public Command {
     }
 } expireCmd;
 
+class ExistsCommand: public Command {
+ public:
+    ExistsCommand()
+        :Command("exists") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        for (auto type : {RecordType::RT_KV,
+                          RecordType::RT_LIST_META,
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META}) {
+            RecordKey rk(pCtx->getDbId(), type, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            return Command::fmtOne();
+        }
+        return Command::fmtZero();
+    }
+} existsCmd;
+
+class TypeCommand: public Command {
+ public:
+    TypeCommand()
+        :Command("type") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        const std::map<RecordType, std::string> lookup = {
+            {RecordType::RT_KV, "string"},
+            {RecordType::RT_LIST_META, "list"},
+            {RecordType::RT_HASH_META, "hash"},
+            {RecordType::RT_SET_META, "set"},
+        };
+        for (const auto& typestr : lookup) {
+            RecordKey rk(pCtx->getDbId(), typestr.first, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            return Command::fmtBulk(typestr.second);
+        }
+        return Command::fmtBulk("none");
+    }
+} typeCmd;
 }  // namespace tendisplus

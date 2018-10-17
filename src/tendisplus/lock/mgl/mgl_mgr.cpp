@@ -7,6 +7,21 @@
 namespace tendisplus {
 namespace mgl {
 
+const char* lockModeRepr(LockMode mode) {
+    switch (mode) {
+        case LockMode::LOCK_X:
+            return "X";
+        case LockMode::LOCK_IX:
+            return "IX";
+        case LockMode::LOCK_S:
+            return "S";
+        case LockMode::LOCK_IS:
+            return "IS";
+        default:
+            return "?";
+    }
+}
+
 bool isConflict(uint16_t modes, LockMode mode) {
     static uint16_t x = 1 << enum2Int(LockMode::LOCK_X);
     static uint16_t s = 1 << enum2Int(LockMode::LOCK_S);

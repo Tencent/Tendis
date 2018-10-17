@@ -15,6 +15,10 @@
 
 namespace tendisplus {
 
+std::mutex Command::_mutex;
+
+std::map<std::string, uint64_t> Command::_unSeenCmds = {};
+
 std::map<std::string, Command*>& commandMap() {
     static std::map<std::string, Command*> map = {};
     return map;
@@ -29,7 +33,23 @@ const std::string& Command::getName() const {
     return _name;
 }
 
-std::vector<std::string> Command::listCommands() const {
+void Command::incrCallTimes() {
+    _callTimes.fetch_add(1, std::memory_order_relaxed);
+}
+
+void Command::incrNanos(uint64_t v) {
+    _totalNanoSecs.fetch_add(v, std::memory_order_relaxed);
+}
+
+uint64_t Command::getCallTimes() const {
+    return _callTimes.load(std::memory_order_relaxed);
+}
+
+uint64_t Command::getNanos() const {
+    return _totalNanoSecs.load(std::memory_order_relaxed);
+}
+
+std::vector<std::string> Command::listCommands() {
     std::vector<std::string> lst;
     const auto& v = commandMap();
     for (const auto& kv : v) {
@@ -38,14 +58,22 @@ std::vector<std::string> Command::listCommands() const {
     return lst;
 }
 
-Expected<std::string> Command::precheck(NetSession *sess) {
+Expected<std::string> Command::precheck(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
-        LOG(FATAL) << "BUG: sess " << sess->getRemoteRepr() << " len 0 args";
+        LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
     }
     std::string commandName = toLower(args[0]);
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
+        {
+            std::lock_guard<std::mutex> lk(_mutex);
+            if (_unSeenCmds.find(commandName) == _unSeenCmds.end()) {
+                _unSeenCmds[commandName] = 1;
+            } else {
+                _unSeenCmds[commandName] += 1;
+            }
+        }
         std::stringstream ss;
         ss << "unknown command '" << args[0] << "'";
         return {ErrorCodes::ERR_PARSEPKT, ss.str()};
@@ -61,9 +89,9 @@ Expected<std::string> Command::precheck(NetSession *sess) {
     auto server = sess->getServerEntry();
     if (!server) {
         LOG(FATAL) << "BUG: get server from sess:"
-                    << sess->getConnId()
+                    << sess->id()
                     << ",Ip:"
-                    << sess->getRemoteRepr() << " empty";
+                    << sess->id() << " empty";
     }
 
     SessionCtx *pCtx = sess->getCtx();
@@ -79,17 +107,25 @@ Expected<std::string> Command::precheck(NetSession *sess) {
 
 // NOTE(deyukong): call precheck before call runSessionCmd
 // this function does no necessary checks
-Expected<std::string> Command::runSessionCmd(NetSession *sess) {
+Expected<std::string> Command::runSessionCmd(Session *sess) {
     const auto& args = sess->getArgs();
     std::string commandName = toLower(args[0]);
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
+
+    sess->getCtx()->setArgsBrief(sess->getArgs());
+    it->second->incrCallTimes();
+    auto now = nsSinceEpoch();
+    auto guard = MakeGuard([it, now, sess] {
+        sess->getCtx()->clearRequestCtx();
+        it->second->incrNanos(nsSinceEpoch() - now);
+    });
     return it->second->run(sess);
 }
 
-std::unique_ptr<StoreLock> Command::lockDBByKey(NetSession *sess,
+std::unique_ptr<StoreLock> Command::lockDBByKey(Session *sess,
                                                 const std::string& key,
                                                 mgl::LockMode mode) {
     auto server = sess->getServerEntry();
@@ -97,10 +133,10 @@ std::unique_ptr<StoreLock> Command::lockDBByKey(NetSession *sess,
     auto segMgr = server->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
     uint32_t storeId = segMgr->calcInstanceId(key);
-    return std::make_unique<StoreLock>(storeId, mode);
+    return std::make_unique<StoreLock>(storeId, mode, sess);
 }
 
-bool Command::isKeyLocked(NetSession *sess,
+bool Command::isKeyLocked(Session *sess,
                           uint32_t storeId,
                           const std::string& encodedKey) {
     auto server = sess->getServerEntry();
@@ -112,12 +148,12 @@ bool Command::isKeyLocked(NetSession *sess,
 }
 
 // requirement: StoreLock not held, add storelock inside
-Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
+Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
                           const RecordKey& mk) {
     std::string keyEnc = mk.encode();
     // lock key with X-lock held
     {
-        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X);
+        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
         if (Command::isKeyLocked(sess, storeId, keyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key is locked"};
         }
@@ -131,7 +167,7 @@ Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
 
     // storeLock destructs after guard, it's guaranteed.
     // unlock the key at last
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX);
+    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
     auto guard = MakeGuard([sess, storeId, &keyEnc]() {
         auto server = sess->getServerEntry();
         auto pessimisticMgr = server->getPessimisticMgr();
@@ -172,7 +208,7 @@ Status Command::delKeyPessimistic(NetSession *sess, uint32_t storeId,
 }
 
 // requirement: StoreLock held
-Status Command::delKeyOptimism(NetSession *sess,
+Status Command::delKeyOptimism(Session *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
                                            Transaction* txn) {
@@ -185,7 +221,7 @@ Status Command::delKeyOptimism(NetSession *sess,
     return s.status();
 }
 
-Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
+Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        uint32_t storeId,
                                        uint32_t subCount,
                                        const RecordKey& mk,
@@ -272,7 +308,7 @@ Expected<uint32_t> Command::partialDelSubKeys(NetSession *sess,
     }
 }
 
-Expected<bool> Command::delKeyChkExpire(NetSession *sess,
+Expected<bool> Command::delKeyChkExpire(Session *sess,
                                         uint32_t storeId,
                                         const RecordKey& rk) {
     Expected<RecordValue> rv =
@@ -296,10 +332,10 @@ Expected<bool> Command::delKeyChkExpire(NetSession *sess,
     return s;
 }
 
-Status Command::delKey(NetSession *sess, uint32_t storeId,
+Status Command::delKey(Session *sess, uint32_t storeId,
                        const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX);
+                    mgl::LockMode::LOCK_IX, sess);
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -345,11 +381,11 @@ Status Command::delKey(NetSession *sess, uint32_t storeId,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
+Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                                   uint32_t storeId,
                                   const RecordKey& mk) {
     auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX);
+                    mgl::LockMode::LOCK_IX, sess);
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -409,7 +445,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(NetSession *sess,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-PStore Command::getStore(NetSession *sess, const std::string& key) {
+PStore Command::getStore(Session *sess, const std::string& key) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();
@@ -419,7 +455,7 @@ PStore Command::getStore(NetSession *sess, const std::string& key) {
     return kvStore;
 }
 
-uint32_t Command::getStoreId(NetSession *sess, const std::string& key) {
+uint32_t Command::getStoreId(Session *sess, const std::string& key) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();
@@ -427,7 +463,7 @@ uint32_t Command::getStoreId(NetSession *sess, const std::string& key) {
     return segMgr->calcInstanceId(key);
 }
 
-PStore Command::getStoreById(NetSession *sess, uint32_t storeId) {
+PStore Command::getStoreById(Session *sess, uint32_t storeId) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto segMgr = server->getSegmentMgr();
@@ -480,6 +516,11 @@ std::stringstream& Command::fmtBulk(std::stringstream& ss,
     ss << "$" << s.size() << "\r\n";
     ss.write(s.c_str(), s.size());
     ss << "\r\n";
+    return ss;
+}
+
+std::stringstream& Command::fmtNull(std::stringstream& ss) {
+    ss << "$-1\r\n";
     return ss;
 }
 

@@ -164,7 +164,7 @@ class HLenCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -215,7 +215,7 @@ class HExistsCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -284,7 +284,7 @@ class HAllCommand: public Command {
         return 1;
     }
 
-    Expected<std::list<Record>> getRecords(NetSession *sess) {
+    Expected<std::list<Record>> getRecords(Session *sess) {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
@@ -353,7 +353,7 @@ class HGetAllCommand: public HAllCommand {
         :HAllCommand("hgetall") {
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<std::list<Record>> rcds = getRecords(sess);
         if (!rcds.ok()) {
             return rcds.status();
@@ -374,7 +374,7 @@ class HKeysCommand: public HAllCommand {
         :HAllCommand("hkeys") {
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<std::list<Record>> rcds = getRecords(sess);
         if (!rcds.ok()) {
             return rcds.status();
@@ -394,7 +394,7 @@ class HValsCommand: public HAllCommand {
         :HAllCommand("hvals") {
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<std::list<Record>> rcds = getRecords(sess);
         if (!rcds.ok()) {
             return rcds.status();
@@ -430,7 +430,7 @@ class HGetRecordCommand: public Command {
         return 1;
     }
 
-    Expected<Record> getRecord(NetSession *sess) {
+    Expected<Record> getRecord(Session *sess) {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -497,7 +497,7 @@ class HGetCommand: public HGetRecordCommand {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<Record> ercd = getRecord(sess);
         if (ercd.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtNull();
@@ -532,7 +532,7 @@ class HStrlenCommand: public HGetRecordCommand {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         Expected<Record> ercd = getRecord(sess);
         if (ercd.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtZero();
@@ -568,7 +568,7 @@ class HIncrByFloatCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -638,7 +638,7 @@ class HIncrByCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -708,7 +708,7 @@ class HSetGeneric: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -916,7 +916,7 @@ class HDelCommand: public Command {
         return realDel;
     }
 
-    Expected<std::string> run(NetSession* sess) final {
+    Expected<std::string> run(Session* sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         if (args.size() >= 30000) {

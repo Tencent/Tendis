@@ -3,6 +3,7 @@
 #include <iostream>
 #include <utility>
 #include <memory>
+#include <string>
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"

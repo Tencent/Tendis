@@ -121,7 +121,7 @@ Status ReplManager::startup() {
     // so we put an no-op to binlogs everytime startup.
     // in this way, the full-backup will always have a committed txnId.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        StoreLock storeLock(i, mgl::LockMode::LOCK_IX);
+        // here we are starting up, dont acquire a storelock.
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
         INVARIANT(store != nullptr);
 
@@ -365,19 +365,21 @@ void ReplManager::appendJSONStat(
         w.Key(ss.str().c_str());
         w.StartObject();
 
+        w.Key("sync_dest");
+        w.StartObject();
         // sync to
         for (auto& mpov : _pushStatus[i]) {
             std::stringstream ss;
             ss << "client_" << mpov.second->clientId;
             w.Key(ss.str().c_str());
             w.StartObject();
-            w.Key("isRunning");
+            w.Key("is_running");
             w.Uint64(mpov.second->isRunning);
-            w.Key("dstStoreId");
+            w.Key("dest_store_id");
             w.Uint64(mpov.second->dstStoreId);
-            w.Key("binlogPos");
+            w.Key("binlog_pos");
             w.Uint64(mpov.second->binlogPos);
-            w.Key("remoteHost");
+            w.Key("remote_host");
             if (mpov.second->client != nullptr) {
                 w.String(mpov.second->client->getRemoteRepr());
             } else {
@@ -385,19 +387,20 @@ void ReplManager::appendJSONStat(
             }
             w.EndObject();
         }
+        w.EndObject();
 
         // sync from
-        w.Key("syncSource");
+        w.Key("sync_source");
         ss.str("");
         ss << _syncMeta[i]->syncFromHost << ":"
            << _syncMeta[i]->syncFromPort << ":"
            << _syncMeta[i]->syncFromId;
         w.String(ss.str().c_str());
-        w.Key("binlogId");
+        w.Key("binlog_id");
         w.Uint64(_syncMeta[i]->binlogId);
-        w.Key("replState");
+        w.Key("repl_state");
         w.Uint64(static_cast<uint64_t>(_syncMeta[i]->replState));
-        w.Key("lastSyncTime");
+        w.Key("last_sync_time");
         w.String(timePointRepr(_syncStatus[i]->lastSyncTime));
 
         w.EndObject();

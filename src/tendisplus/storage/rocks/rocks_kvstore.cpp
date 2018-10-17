@@ -630,21 +630,21 @@ Status RocksKVStore::delKV(const RecordKey& key,
 }
 
 void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    w.Key("isRunning");
+    w.Key("is_running");
     w.Uint64(_isRunning);
-    w.Key("hasBackup");
+    w.Key("has_backup");
     w.Uint64(_hasBackup);
-    w.Key("nextTxnSeq");
+    w.Key("next_txn_seq");
     w.Uint64(_nextTxnSeq);
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        w.Key("aliveTxns");
+        w.Key("alive_txns");
         w.Uint64(_aliveTxns.size());
-        w.Key("minAliveTxn");
+        w.Key("min_alive_txn");
         w.Uint64(_aliveTxns.size() ? _aliveTxns.begin()->first : 0);
-        w.Key("maxAliveTxn");
+        w.Key("max_alive_txn");
         w.Uint64(_aliveTxns.size() ? _aliveTxns.rbegin()->first : 0);
-        w.Key("highVisible");
+        w.Key("high_visible");
         w.Uint64(_highestVisible);
     }
 }

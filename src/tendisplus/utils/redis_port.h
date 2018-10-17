@@ -22,6 +22,10 @@ std::vector<std::string> splitargs(const std::string& lineStr);
 // port from redis source code object.c::createStringObjectFromLongDouble
 std::string ldtos(long double value);
 
+size_t popCount(const void *s, long count); // (NOLINT)
+
+int64_t bitPos(const void *s, size_t count, uint32_t bit);
+
 }  // namespace redis_port
 }  // namespace tendisplus
 

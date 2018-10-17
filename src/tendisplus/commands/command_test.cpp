@@ -72,7 +72,7 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
 
     int sum = 0;
     for (int i = 0; i < 1000; ++i) {
-        int cur = rand_r()%100-50;
+        int cur = rand()%100-50;  // NOLINT(runtime/threadsafe_fn)
         sum += cur;
         sess.setArgs({"hincrby", "testkey", "testsubkey", std::to_string(cur)});
         auto expect = Command::runSessionCmd(&sess);
@@ -205,10 +205,46 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
-void testSet(std::shared_ptr<ServerEntry> svr) {
+void testType(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    sess.setArgs({"type", "test_type_key"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("none"));
+
+    sess.setArgs({"set", "test_type_key", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+
+    sess.setArgs({"hset", "test_type_key", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+
+    sess.setArgs({"hset", "test_type_key1", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"type", "test_type_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("hash"));
+}
+
+void testKV(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // set
     sess.setArgs({"set", "a", "1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -225,6 +261,291 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "a", "1", "xx"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "a", "1", "xx", "px", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    sess.setArgs({"set", "a", "1", "xx"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+
+    // setnx
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"expire", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"setnx", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    // setex
+    sess.setArgs({"setex", "a", "1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    sess.setArgs({"get", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("b"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    sess.setArgs({"get", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+
+    // exists
+    sess.setArgs({"set", "expire_test_key", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"exists", "expire_test_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"expire", "expire_test_key", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"exists", "expire_test_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    // incrdecr
+    sess.setArgs({"incr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"incr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"incrby", "incrdecrkey", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(4));
+    sess.setArgs({"incrby",
+                  "incrdecrkey",
+                  std::to_string(std::numeric_limits<int64_t>::max())});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok()) << expect.value();
+    sess.setArgs({"incrby", "incrdecrkey", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"decr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"decr", "incrdecrkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"decrby", "incrdecrkey", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-2));
+    sess.setArgs({"decrby",
+                  "incrdecrkey",
+                  std::to_string(std::numeric_limits<int64_t>::max())});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok()) << expect.value();
+
+    // append
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(6));
+    sess.setArgs({"expire", "appendkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"exists", "appendkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"append", "appendkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    // getset
+    sess.setArgs({"getset", "getsetkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+    sess.setArgs({"getset", "getsetkey", "def"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("abc"));
+    sess.setArgs({"expire", "getsetkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"getset", "getsetkey", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("def"));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    sess.setArgs({"exists", "appendkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    // setbit
+    sess.setArgs({"setbit", "setbitkey", "7", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"setbit", "setbitkey", "7", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"get", "setbitkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::string setbitRes;
+    setbitRes.push_back(0);
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setbitRes));
+
+    // setrange
+    sess.setArgs({"setrange", "setrangekey", "7", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(10));
+    std::string setrangeRes;
+    setrangeRes.resize(10, 0);
+    setrangeRes[7] = 'a';
+    setrangeRes[8] = 'b';
+    setrangeRes[9] = 'c';
+    sess.setArgs({"get", "setrangekey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
+    sess.setArgs({"setrange", "setrangekey", "8", "aaa"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(11));
+    setrangeRes.resize(11);
+    setrangeRes[8] = 'a';
+    setrangeRes[9] = 'a';
+    setrangeRes[10] = 'a';
+    sess.setArgs({"get", "setrangekey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
+
+    // bitcount
+    sess.setArgs({"bitcount", "bitcountkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"set", "bitcountkey", "foobar"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitcount", "bitcountkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(26));
+    sess.setArgs({"bitcount", "bitcountkey", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(26));
+    sess.setArgs({"bitcount", "bitcountkey", "2", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+    std::vector<int> bitcountarr{4, 6, 6, 3, 3, 4};
+    for (size_t i = 0; i < bitcountarr.size(); ++i) {
+        sess.setArgs({"bitcount",
+                      "bitcountkey",
+                      std::to_string(i),
+                      std::to_string(i)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(bitcountarr[i]));
+    }
+
+    // bitpos
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"bitpos", "bitposkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"set", "bitposkey", {"\xff\xf0\x00", 3}});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(12));
+    sess.setArgs({"set", "bitposkey", {"\x00\xff\xf0", 3}});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "1", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(8));
+    sess.setArgs({"bitpos", "bitposkey", "1", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(16));
+    sess.setArgs({"set", "bitposkey", {"\x00\x00\x00", 3}});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+    // mget/mset
+    sess.setArgs({"mset", "msetkey0", "0", "msetkey1", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"mget", "msetkey0", "msetkey1", "msetkey2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtNull(ss);
+    EXPECT_EQ(ss.str(), expect.value());
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {
@@ -345,6 +666,9 @@ void testSetRetry(std::shared_ptr<ServerEntry> svr) {
     NetSession sess1(svr, std::move(socket1), 1, false, nullptr, nullptr);
 
     uint32_t cnt = 0;
+    const auto guard = MakeGuard([] {
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+    });
     SyncPoint::GetInstance()->EnableProcessing();
     SyncPoint::GetInstance()->SetCallBack(
         "setGeneric::SetKV::1", [&](void* arg) {
@@ -518,8 +842,9 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    testSet(server);
+    testKV(server);
     testSetRetry(server);
+    testType(server);
     testHash1(server);
     testHash2(server);
     testList(server);

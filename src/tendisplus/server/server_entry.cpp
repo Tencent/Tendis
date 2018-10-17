@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <string>
+#include <list>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -31,7 +32,8 @@ ServerEntry::ServerEntry()
          _masterauth(nullptr) {
 }
 
-void ServerEntry::installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr> o) {
+void ServerEntry::installPessimisticMgrInLock(
+        std::unique_ptr<PessimisticMgr> o) {
     _pessimisticMgr = std::move(o);
 }
 
@@ -159,10 +161,10 @@ const std::shared_ptr<std::string> ServerEntry::masterauth() const {
     return _masterauth;
 }
 
-void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
+void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
-        LOG(WARNING) << "session:" << sess->getRemoteRepr()
+        LOG(WARNING) << "session:" << sess->id()
             << "comes when stopping, ignore it";
         return;
     }
@@ -171,7 +173,7 @@ void ServerEntry::addSession(std::shared_ptr<NetSession> sess) {
 
     // NOTE(deyukong): first driving force
     sess->start();
-    uint64_t id = sess->getConnId();
+    uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add conn:" << id << ",id already exists";
     }
@@ -202,8 +204,23 @@ void ServerEntry::endSession(uint64_t connId) {
     _sessions.erase(it);
 }
 
+std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    uint64_t start = nsSinceEpoch();
+    std::list<std::shared_ptr<Session>> sesses;
+    for (const auto& kv : _sessions) {
+        sesses.push_back(kv.second);
+    }
+    uint64_t delta = (nsSinceEpoch() - start)/1000000;
+    if (delta >= 5) {
+        LOG(WARNING) << "get sessions cost:" << delta << "ms"
+                     << "length:" << sesses.size();
+    }
+    return sesses;
+}
+
 bool ServerEntry::processRequest(uint64_t connId) {
-    NetSession *sess = nullptr;
+    Session *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -220,22 +237,27 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
-        sess->setResponse(redis_port::errorReply(expCmdName.status().toString()));
+        sess->setResponse(
+            redis_port::errorReply(expCmdName.status().toString()));
         return true;
     }
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
-        std::vector<std::string> args = sess->getArgs();
+        NetSession *ns = dynamic_cast<NetSession*>(sess);
+        INVARIANT(ns != nullptr);
+        std::vector<std::string> args = ns->getArgs();
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 2);
-        _replMgr->supplyFullSync(sess->borrowConn(), args[1]);
+        _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
         return false;
     } else if (expCmdName.value() == "incrsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
-        std::vector<std::string> args = sess->getArgs();
+        NetSession *ns = dynamic_cast<NetSession*>(sess);
+        INVARIANT(ns != nullptr);
+        std::vector<std::string> args = ns->getArgs();
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 4);
-        _replMgr->registerIncrSync(sess->borrowConn(), args[1], args[2], args[3]);
+        _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3]);
         return false;
     }
 
@@ -303,13 +325,6 @@ void ServerEntry::stop() {
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
-}
-
-void ServerEntry::appendSessionJsonStats(
-        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    std::unique_lock<std::mutex> lk(_mutex);
-    w.Key("sessions");
-    w.Uint64(_sessions.size());
 }
 
 void ServerEntry::toggleFtmc(bool enable) {

@@ -6,6 +6,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <list>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -17,7 +18,7 @@
 #include "tendisplus/storage/catalog.h"
 
 namespace tendisplus {
-class NetSession;
+class Session;
 class NetworkAsio;
 class NetworkMatrix;
 class PoolMatrix;
@@ -36,21 +37,23 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));
     }
-    void addSession(std::shared_ptr<NetSession> sess);
+    void addSession(std::shared_ptr<Session> sess);
 
     // NOTE(deyukong): be careful, currently, the callpath of
     // serverEntry::endSession is
     // NetSession.endSession -> ServerEntry.endSession
     // -> ServerEntry.eraseSession -> NetSession.~NetSession
     // this function is initially triggered by NetSession.
-    // If you want to close a NetSession from serverside, do not 
-    // call ServerEntry.endSession, or asio's calllback may
-    // meet a nil pointer.
+    // If you want to close a NetSession from serverside, do not
+    // call ServerEntry.endSession, or the underlay's socket
+    // may never have a chance to be destroyed.
     // Instead, you should call NetSession.cancel to close NetSession's
     // underlying socket and let itself trigger the whole path.
     void endSession(uint64_t connId);
 
     Status cancelSession(uint64_t connId);
+
+    std::list<std::shared_ptr<Session>> getAllSessions() const;
 
     // returns true if NetSession should continue schedule
     bool processRequest(uint64_t connId);
@@ -70,8 +73,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
 
-    void appendSessionJsonStats(rapidjson::Writer<rapidjson::StringBuffer>&) const;
-
     void toggleFtmc(bool enable);
 
  private:
@@ -85,7 +86,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     mutable std::mutex _mutex;
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
-    std::map<uint64_t, std::shared_ptr<NetSession>> _sessions;
+    std::map<uint64_t, std::shared_ptr<Session>> _sessions;
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;

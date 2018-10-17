@@ -26,6 +26,8 @@ enum class LockRes: std::uint8_t {
     LOCKRES_NUM = 5,
 };
 
+const char* lockModeRepr(LockMode mode);
+
 bool isConflict(uint16_t modes, LockMode mode);
 
 template <typename E>
