@@ -264,8 +264,6 @@ RecordValue::RecordValue(std::string&& val, uint64_t ttl)
 }
 
 std::string RecordValue::encode() const {
-    INVARIANT(_value.size() > 0);
-    // --------value encoding
     // TTL
     std::vector<uint8_t> value;
     value.reserve(128);
@@ -273,8 +271,9 @@ std::string RecordValue::encode() const {
 
     // Value
     value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
-    value.insert(value.end(), _value.begin(), _value.end());
-
+    if (_value.size() > 0) {
+        value.insert(value.end(), _value.begin(), _value.end());
+    }
     return std::string(reinterpret_cast<const char *>(
         value.data()), value.size());
 }
@@ -291,14 +290,17 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
 
     // NOTE(deyukong): value must not be empty
     // so we use >= rather than > here
-    if (offset >= value.size()) {
+    if (offset > value.size()) {
         std::stringstream ss;
         ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
         return {ErrorCodes::ERR_DECODE, ss.str()};
     }
-    std::string rawValue = std::string(value.c_str() + offset,
-        value.size() - offset);
-    return RecordValue(rawValue, ttl);
+    std::string rawValue;
+    if (value.size() > offset) {
+        rawValue = std::string(value.c_str() + offset,
+            value.size() - offset);
+    }
+    return RecordValue(std::move(rawValue), ttl);
 }
 
 const std::string& RecordValue::getValue() const {
