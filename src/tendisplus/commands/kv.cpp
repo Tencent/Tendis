@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <clocale>
+#include <vector>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -406,6 +407,108 @@ class StrlenCommand: public Command {
     }
 } strlenCmd;
 
+class BitPosCommand: public Command {
+ public:
+    BitPosCommand()
+        :Command("bitpos") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        uint32_t bit = 0;
+        bool endGiven = false;
+        if (args[2] == "0") {
+            bit = 0;
+        } else if (args[2] == "1") {
+            bit = 1;
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "The bit argument must be 1 or 0."};
+        }
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtLongLong(-1);
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtLongLong(-1);
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+        int64_t start = 0;
+        const std::string& target = rv.value().getValue();
+        int64_t end = target.size() - 1;
+        if (args.size() == 4 || args.size() == 5) {
+            Expected<int64_t> estart = ::tendisplus::stoll(args[3]);
+            if (!estart.ok()) {
+                return estart.status();
+            }
+            start = estart.value();
+            if (args.size() == 5) {
+                Expected<int64_t> eend = ::tendisplus::stoll(args[4]);
+                if (!eend.ok()) {
+                    return eend.status();
+                }
+                end = eend.value();
+                endGiven = true;
+            }
+
+            ssize_t len = rv.value().getValue().size();
+            if (start < 0) {
+                start = len + start;
+            }
+            if (end < 0) {
+                end = len + end;
+            }
+            if (start < 0) {
+                start = 0;
+            }
+            if (end < 0) {
+                end = 0;
+            }
+            if (end >= len) {
+                end = len - 1;
+            }
+        } else if (args.size() == 3) {
+            // nothing
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+        }
+        if (start > end) {
+            return Command::fmtLongLong(-1);
+        }
+        int64_t result =
+            redis_port::bitPos(target.c_str()+start, end-start+1, bit);
+        if (endGiven && bit == 0 && result == (end-start+1)*8) {
+            return Command::fmtLongLong(-1);
+        }
+        if (result != -1) {
+            result += start*8;
+        }
+        return Command::fmtLongLong(result);
+    }
+} bitposCmd;
+
 class BitCountCommand: public Command {
  public:
     BitCountCommand()
@@ -584,7 +687,8 @@ class GetSetGeneral: public Command {
                 if (replyNewValue()) {
                     return std::move(newValue.value());
                 } else {
-                    return eValue.ok() ? std::move(eValue.value()) : RecordValue("");
+                    return eValue.ok() ?
+                           std::move(eValue.value()) : RecordValue("");
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

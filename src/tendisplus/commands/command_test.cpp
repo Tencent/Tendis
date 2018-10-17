@@ -489,6 +489,49 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(bitcountarr[i]));
     }
+
+    // bitpos
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"bitpos", "bitposkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"set", "bitposkey", {"\xff\xf0\x00", 3}});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(12));
+    sess.setArgs({"set", "bitposkey", {"\x00\xff\xf0", 3}});
+
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "1", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(8));
+    sess.setArgs({"bitpos", "bitposkey", "1", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(16));
+    sess.setArgs({"set", "bitposkey", {"\x00\x00\x00", 3}});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitpos", "bitposkey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    sess.setArgs({"bitpos", "bitposkey", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {
