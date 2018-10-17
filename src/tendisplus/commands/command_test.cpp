@@ -457,6 +457,38 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
+
+    // bitcount
+    sess.setArgs({"bitcount", "bitcountkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"set", "bitcountkey", "foobar"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitcount", "bitcountkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(26));
+    sess.setArgs({"bitcount", "bitcountkey", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(26));
+    sess.setArgs({"bitcount", "bitcountkey", "2", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+    std::vector<int> bitcountarr{4, 6, 6, 3, 3, 4};
+    for (size_t i = 0; i < bitcountarr.size(); ++i) {
+        sess.setArgs({"bitcount",
+                      "bitcountkey",
+                      std::to_string(i),
+                      std::to_string(i)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(bitcountarr[i]));
+    }
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {

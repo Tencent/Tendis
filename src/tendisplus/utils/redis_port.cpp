@@ -8,6 +8,48 @@
 namespace tendisplus {
 namespace redis_port {
 
+size_t popCount(const void *s, long count) {  // (NOLINT)
+    size_t bits = 0;
+    const unsigned char *p = static_cast<const unsigned char*>(s);
+    uint32_t *p4;
+    static const unsigned char bitsinbyte[256] = {0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8};  // (NOLINT)
+
+    /* Count initial bytes not aligned to 32 bit. */
+    while((unsigned long)p & 3 && count) {  // (NOLINT)
+        bits += bitsinbyte[*p++];
+        count--;
+    }
+
+    /* Count bits 16 bytes at a time */
+    p4 = (uint32_t*)p;  // (NOLINT)
+    while(count>=16) {  // (NOLINT)
+        uint32_t aux1, aux2, aux3, aux4;
+
+        aux1 = *p4++;
+        aux2 = *p4++;
+        aux3 = *p4++;
+        aux4 = *p4++;
+        count -= 16;
+
+        aux1 = aux1 - ((aux1 >> 1) & 0x55555555);
+        aux1 = (aux1 & 0x33333333) + ((aux1 >> 2) & 0x33333333);
+        aux2 = aux2 - ((aux2 >> 1) & 0x55555555);
+        aux2 = (aux2 & 0x33333333) + ((aux2 >> 2) & 0x33333333);
+        aux3 = aux3 - ((aux3 >> 1) & 0x55555555);
+        aux3 = (aux3 & 0x33333333) + ((aux3 >> 2) & 0x33333333);
+        aux4 = aux4 - ((aux4 >> 1) & 0x55555555);
+        aux4 = (aux4 & 0x33333333) + ((aux4 >> 2) & 0x33333333);
+        bits += ((((aux1 + (aux1 >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24) +
+                ((((aux2 + (aux2 >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24) +
+                ((((aux3 + (aux3 >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24) +
+                ((((aux4 + (aux4 >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24);
+    }
+    /* Count the remaining bytes. */
+    p = (unsigned char*)p4;
+    while(count--) bits += bitsinbyte[*p++];  // (NOLINT)
+    return bits;
+}
+
 std::string ldtos(long double value) {
     char buf[256];
     int len;
@@ -17,11 +59,11 @@ std::string ldtos(long double value) {
      * that is "non surprising" for the user (that is, most small decimal
      * numbers will be represented in a way that when converted back into
      * a string are exactly the same as what the user typed.) */
-    len = snprintf(buf,sizeof(buf),"%.17Lf", value);
+    len = snprintf(buf, sizeof(buf), "%.17Lf", value);
     /* Now remove trailing zeroes after the '.' */
-    if (strchr(buf,'.') != NULL) {
+    if (strchr(buf, '.') != NULL) {
         char *p = buf+len-1;
-        while(*p == '0') {
+        while (*p == '0') {
             p--;
             len--;
         }

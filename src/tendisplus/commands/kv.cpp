@@ -8,6 +8,7 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -363,6 +364,126 @@ class SetNxCommand: public Command {
     }
 } setnxCmd;
 
+class StrlenCommand: public Command {
+ public:
+    StrlenCommand()
+        :Command("strlen") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZero();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        } else {
+            return Command::fmtLongLong(rv.value().getValue().size());
+        }
+    }
+} strlenCmd;
+
+class BitCountCommand: public Command {
+ public:
+    BitCountCommand()
+        :Command("bitcount") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZero();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        }
+        int64_t start = 0;
+        const std::string& target = rv.value().getValue();
+        int64_t end = target.size() - 1;
+        if (sess->getArgs().size() == 4) {
+            Expected<int64_t> estart = ::tendisplus::stoll(sess->getArgs()[2]);
+            Expected<int64_t> eend = ::tendisplus::stoll(sess->getArgs()[3]);
+            if (!estart.ok() || !eend.ok()) {
+                return estart.ok() ? eend.status() : estart.status();
+            }
+            start = estart.value();
+            end = eend.value();
+            ssize_t len = rv.value().getValue().size();
+            if (start < 0) {
+                start = len + start;
+            }
+            if (end < 0) {
+                end = len + end;
+            }
+            if (start < 0) {
+                start = 0;
+            }
+            if (end < 0) {
+                end = 0;
+            }
+            if (end >= len) {
+                end = len - 1;
+            }
+        } else if (sess->getArgs().size() == 2) {
+            // nothing
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+        }
+        if (start > end) {
+            return Command::fmtZero();
+        }
+        return Command::fmtLongLong(
+            redis_port::popCount(target.c_str() + start, end - start + 1));
+    }
+} bitcntCmd;
+
+
 class GetCommand: public Command {
  public:
     GetCommand()
@@ -450,7 +571,7 @@ class GetSetGeneral: public Command {
                     && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
                 return eValue.status();
             }
-            Expected<RecordValue> newValue =
+            const Expected<RecordValue>& newValue =
                 newValueFromOld(sess, eValue);
             if (!newValue.ok()) {
                 return newValue.status();
@@ -461,9 +582,9 @@ class GetSetGeneral: public Command {
                                      rk, newValue.value(), "", "");
             if (result.ok()) {
                 if (replyNewValue()) {
-                    return newValue.value();
+                    return std::move(newValue.value());
                 } else {
-                    return eValue.ok() ? eValue.value() : RecordValue("");
+                    return eValue.ok() ? std::move(eValue.value()) : RecordValue("");
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -518,7 +639,7 @@ class AppendCommand: public GetSetGeneral {
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
         }
-        return RecordValue(std::move(cat), ttl);
+        return std::move(RecordValue(std::move(cat), ttl));
     }
 
     Expected<std::string> run(Session *sess) final {
