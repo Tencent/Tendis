@@ -602,7 +602,7 @@ class GetCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -1130,6 +1130,7 @@ class DecrCommand: public IncrDecrGeneral {
     DecrCommand()
         :IncrDecrGeneral("decr") {
     }
+
     ssize_t arity() const {
         return 2;
     }
@@ -1161,5 +1162,131 @@ class DecrCommand: public IncrDecrGeneral {
         return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } decrCmd;
+
+class MGetCommand: public Command {
+ public:
+    MGetCommand()
+        :Command("mget") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, sess->getArgs().size()-1);
+        for (size_t i = 1; i < sess->getArgs().size(); ++i) {
+            const std::string& key = sess->getArgs()[i];
+            RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+            uint32_t storeId = Command::getStoreId(sess, key);
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                Command::fmtNull(ss);
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                Command::fmtNull(ss);
+                continue;
+            } else if (!rv.status().ok()) {
+                return rv.status();
+            }
+            Command::fmtBulk(ss, rv.value().getValue());
+        }
+        return ss.str();
+    }
+} mgetCmd;
+
+// NOTE(deyukong): redis guarantees mset is atomic. not partially
+// visible to other clients, to implement this, we can take all
+// related stores' X lock to do this. we didnt do this for better
+// performance.
+// NOTE(deyukong): we commit kv one by one, so there is a chance
+// that this command partial successes.
+class MSetCommand: public Command {
+ public:
+    MSetCommand()
+        :Command("mset") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 2;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        for (size_t i = 1; i < sess->getArgs().size(); i+= 2) {
+            const std::string& key = sess->getArgs()[i];
+            const std::string& val = sess->getArgs()[i+1];
+            auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+            PStore kvstore = Command::getStore(sess, key);
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+            RecordValue rv(val);
+            for (int32_t i = 0; i < RETRY_CNT; ++i) {
+                auto ptxn = kvstore->createTransaction();
+                if (!ptxn.ok()) {
+                    return ptxn.status();
+                }
+                std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+                auto result = setGeneric(kvstore,
+                                         txn.get(),
+                                         REDIS_SET_NO_FLAGS,
+                                         rk,
+                                         rv,
+                                         "",
+                                         "");
+                if (result.ok()) {
+                    break;
+                }
+                if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return result.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return result.status();
+                } else {
+                    continue;
+                }
+            }
+        }
+        return Command::fmtOK();
+    }
+} msetCmd;
 
 }  // namespace tendisplus

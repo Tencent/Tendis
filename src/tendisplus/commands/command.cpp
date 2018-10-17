@@ -519,6 +519,11 @@ std::stringstream& Command::fmtBulk(std::stringstream& ss,
     return ss;
 }
 
+std::stringstream& Command::fmtNull(std::stringstream& ss) {
+    ss << "$-1\r\n";
+    return ss;
+}
+
 std::string Command::fmtBulk(const std::string& s) {
     std::stringstream ss;
     ss << "$" << s.size() << "\r\n";

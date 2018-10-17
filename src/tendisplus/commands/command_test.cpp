@@ -508,7 +508,6 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(12));
     sess.setArgs({"set", "bitposkey", {"\x00\xff\xf0", 3}});
-
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
@@ -532,6 +531,21 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+    // mget/mset
+    sess.setArgs({"mset", "msetkey0", "0", "msetkey1", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"mget", "msetkey0", "msetkey1", "msetkey2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtNull(ss);
+    EXPECT_EQ(ss.str(), expect.value());
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {

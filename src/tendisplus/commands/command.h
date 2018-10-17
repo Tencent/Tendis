@@ -74,6 +74,7 @@ class Command {
     static std::string fmtZeroBulkLen();
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
     static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
+    static std::stringstream& fmtNull(std::stringstream&);
 
     static constexpr int32_t RETRY_CNT = 3;
 
