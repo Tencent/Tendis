@@ -518,7 +518,7 @@ class AppendCommand: public GetSetGeneral {
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
         }
-        return RecordValue(cat, ttl);
+        return RecordValue(std::move(cat), ttl);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -529,6 +529,166 @@ class AppendCommand: public GetSetGeneral {
         return Command::fmtLongLong(rv.value().getValue().size());
     }
 } appendCmd;
+
+// TODO(unittest)
+class SetRangeCommand: public GetSetGeneral {
+ public:
+    SetRangeCommand()
+        :GetSetGeneral("setrange") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[3];
+        Expected<int64_t> eoffset = ::tendisplus::stoll(sess->getArgs()[2]);
+        if (!eoffset.ok()) {
+            return eoffset.status();
+        }
+        if (eoffset.value() < 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "offset is out of range"};
+        }
+        uint32_t offset = eoffset.value();
+        if (offset + val.size() > 512*1024*1024) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "string exceeds maximum allowed size (512MB)"};
+        }
+        std::string cat;
+        if (oldValue.ok()) {
+            cat = oldValue.value().getValue();
+        }
+        if (offset + val.size() > cat.size()) {
+            cat.resize(offset + val.size(), 0);
+        }
+        for (size_t i = offset; i < offset + val.size(); ++i) {
+            cat[i] = val[i-offset];
+        }
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::move(cat), ttl);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        return Command::fmtLongLong(rv.value().getValue().size());
+    }
+} setrangeCmd;
+
+class SetBitCommand: public GetSetGeneral {
+ public:
+    SetBitCommand()
+        :GetSetGeneral("setbit") {
+    }
+
+    bool replyNewValue() const final {
+        return false;
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        Expected<uint64_t> epos = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!epos.ok()) {
+            return epos.status();
+        }
+        uint64_t pos = epos.value();
+        int on = 0;
+        std::string tomodify;
+        if (oldValue.ok()) {
+            tomodify = oldValue.value().getValue();
+        }
+        if ((pos >> 3) >= (512*1024*1024)) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "bit offset is not an integer or out of range"};
+        }
+        if ((pos >> 3) > 4*1024*1024) {
+            LOG(WARNING) << "meet large bitpos:" << pos;
+        }
+        if (sess->getArgs()[3] == "1") {
+            on = 1;
+        } else if (sess->getArgs()[3] == "0") {
+            on = 0;
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "bit is not an integer or out of range"};
+        }
+
+        uint64_t byte = (pos>>3);
+        if (tomodify.size() < byte+1) {
+            tomodify.resize(byte+1, 0);
+        }
+        uint8_t byteval = static_cast<uint8_t>(tomodify[byte]);
+        uint8_t bit = 7 - (pos & 0x7);
+        byteval &= ~(1 << bit);
+        byteval |= ((on & 0x1) << bit);
+        tomodify[byte] = byteval;
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(std::move(tomodify), ttl);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+
+        Expected<uint64_t> epos = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!epos.ok()) {
+            return epos.status();
+        }
+        uint64_t pos = epos.value();
+        std::string toreturn = rv.value().getValue();
+
+        uint64_t byte = (pos>>3);
+        if (toreturn.size() < byte+1) {
+            toreturn.resize(byte+1, 0);
+        }
+        uint8_t byteval = static_cast<uint8_t>(toreturn[byte]);
+        uint8_t bit = 7 - (pos & 0x7);
+        uint8_t bitval = byteval & (1 << bit);
+        return bitval ? Command::fmtOne() : Command::fmtZero();
+    }
+} setbitCmd;
 
 class GetSetCommand: public GetSetGeneral {
  public:

@@ -414,6 +414,49 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    // setbit
+    sess.setArgs({"setbit", "setbitkey", "7", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({"setbit", "setbitkey", "7", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+    sess.setArgs({"get", "setbitkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::string setbitRes;
+    setbitRes.push_back(0);
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setbitRes));
+
+    // setrange
+    sess.setArgs({"setrange", "setrangekey", "7", "abc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(10));
+    std::string setrangeRes;
+    setrangeRes.resize(10, 0);
+    setrangeRes[7] = 'a';
+    setrangeRes[8] = 'b';
+    setrangeRes[9] = 'c';
+    sess.setArgs({"get", "setrangekey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
+    sess.setArgs({"setrange", "setrangekey", "8", "aaa"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(11));
+    setrangeRes.resize(11);
+    setrangeRes[8] = 'a';
+    setrangeRes[9] = 'a';
+    setrangeRes[10] = 'a';
+    sess.setArgs({"get", "setrangekey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {
