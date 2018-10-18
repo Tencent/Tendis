@@ -630,6 +630,37 @@ Status RocksKVStore::delKV(const RecordKey& key,
 }
 
 void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    const static std::map<std::string, std::string> properties = {
+        {"rocksdb.num-immutable-mem-table", "num_immutable_mem_table"},
+        {"rocksdb.mem-table-flush-pending", "mem_table_flush_pending"},
+        {"rocksdb.compaction-pending", "compaction_pending"},
+        {"rocksdb.background-errors", "background_errors"},
+        {"rocksdb.cur-size-active-mem-table", "cur_size_active_mem_table"},
+        {"rocksdb.cur-size-all-mem-tables", "cur_size_all_mem_tables"},
+        {"rocksdb.size-all-mem-tables", "size_all_mem_tables"},
+        {"rocksdb.num-entries-active-mem-table", "num_entries_active_mem_table"},
+        {"rocksdb.num-entries-imm-mem-tables", "num_entries_imm_mem_tables"},
+        {"rocksdb.num-deletes-active-mem-table", "num_deletes_active_mem_table"},
+        {"rocksdb.num-deletes-imm-mem-tables", "num_deletes_imm_mem_tables"},
+        {"rocksdb.estimate-num-keys", "estimate_num_keys"},
+        {"rocksdb.estimate-table-readers-mem", "estimate_table_readers_mem"},
+        {"rocksdb.is-file-deletions-enabled", "is_file_deletions_enabled"},
+        {"rocksdb.num-snapshots", "num_snapshots"},
+        {"rocksdb.oldest-snapshot-time", "oldest_snapshot_time"},
+        {"rocksdb.num-live-versions", "num_live_versions"},
+        {"rocksdb.current-super-version-number", "current_super_version_number"},
+        {"rocksdb.estimate-live-data-size", "estimate_live_data_size"},
+        {"rocksdb.min-log-number-to-keep", "min_log_number_to_keep"},
+        {"rocksdb.total-sst-files-size", "total_sst_files_size"},
+        {"rocksdb.live-sst-files-size", "live_sst_files_size"},
+        {"rocksdb.base-level", "base_level"},
+        {"rocksdb.estimate-pending-compaction-bytes", "estimate_pending_compaction_bytes"},
+        {"rocksdb.num-running-compactions", "num_running_compactions"},
+        {"rocksdb.num-running-flushes", "num_running_flushses"},
+        {"rocksdb.actual-delayed-write-rate", "actual_delayed_write_rate"},
+        {"rocksdb.is-write-stopped", "is_write_stopped"},
+        {"rocksdb.estimate-oldest-key-time", "estimate_oldest_key_time"},
+    };
     w.Key("is_running");
     w.Uint64(_isRunning);
     w.Key("has_backup");
@@ -647,6 +678,20 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
         w.Key("high_visible");
         w.Uint64(_highestVisible);
     }
+    w.Key("rocksdb");
+    w.StartObject();
+    for (const auto& kv : properties) {
+        uint64_t tmp;
+        bool ok = _db->GetBaseDB()->GetIntProperty(kv.first, &tmp);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                         << " getProperity:" << kv.first << " failed";
+            continue;
+        }
+        w.Key(kv.second.c_str());
+        w.Uint64(tmp);
+    }
+    w.EndObject();
 }
 
 }  // namespace tendisplus
