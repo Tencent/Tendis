@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
+	"os"
+	"text/tabwriter"
 	"time"
 )
 
@@ -54,7 +56,7 @@ type DebugInfo struct {
 			ActualDelayedWriteRate         uint64 `json:"actual_delayed_write_rate"`
 			IsWriteStopped                 uint64 `json:"is_write_stopped"`
 			EstimateOldestKeyTime          uint64 `json:"estimate_oldest_key_time"`
-        } `json:"rocksdb"`
+		} `json:"rocksdb"`
 	} `json:"stores"`
 	Repl map[string]struct {
 		SyncDest map[string]struct {
@@ -71,6 +73,22 @@ type DebugInfo struct {
 	} `json:"commands"`
 }
 
+func normBytes(bytes uint64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	bytes = bytes / 1024
+	if bytes < 1024 {
+		return fmt.Sprintf("%dK", bytes)
+	}
+	bytes = bytes / 1024
+	if bytes < 1024 {
+		return fmt.Sprintf("%dM", bytes)
+	}
+	bytes = bytes / 1024
+	return fmt.Sprintf("%dG", bytes)
+}
+
 func main() {
 	flag.Parse()
 	host := fmt.Sprintf("%s:%d", *ip, *port)
@@ -78,13 +96,65 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial host %s failed:%v", host, err)
 	}
-	v, err := client.Cmd("DEBUG").Str()
-	if err != nil {
-		log.Fatalf("send debug cmd failed:%v", err)
+
+	var oldInfo *DebugInfo = nil
+	info := &DebugInfo{}
+	w := tabwriter.NewWriter(os.Stdout,
+		4,   // minwidth
+		0,   // tabwidth
+		0,   // padding
+		' ', // padchar
+		tabwriter.AlignRight|tabwriter.Debug)
+	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\t")
+	w.Flush()
+	for {
+		v, err := client.Cmd("DEBUG").Str()
+		if err != nil {
+			log.Fatalf("send debug cmd failed:%v", err)
+		}
+		if err := json.Unmarshal([]byte(v), &info); err != nil {
+			log.Fatalf("unmarshal debug info failed:%v", err)
+		}
+		if oldInfo == nil {
+			oldInfo = info
+			continue
+		}
+		oldInfo = info
+		activeTxns := uint64(0)
+		nImms := uint64(0)
+		flushPending := uint64(0)
+		compactPending := uint64(0)
+		backgroundErrs := uint64(0)
+		sizeMemtable := uint64(0)
+		estimem := uint64(0)
+		numSnapshots := uint64(0)
+		for _, v := range info.Stores {
+			activeTxns += v.AliveTxns
+			nImms += v.Rocksdb.NumImmutableMemTable
+			flushPending += v.Rocksdb.MemTableFlushPending
+			compactPending += v.Rocksdb.CompactionPending
+			backgroundErrs += v.Rocksdb.BackgroundErrors
+			sizeMemtable += v.Rocksdb.SizeAllMemTables
+			estimem += v.Rocksdb.EstimateTableReadersMem
+			numSnapshots += v.Rocksdb.NumSnapshots
+		}
+		w.Init(os.Stdout,
+			4,   // minwidth
+			0,   // tabwidth
+			0,   // padding
+			' ', // padchar
+			tabwriter.AlignRight|tabwriter.Debug)
+		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t",
+                         activeTxns,
+                         nImms,
+                         flushPending,
+                         compactPending,
+                         backgroundErrs,
+                         normBytes(sizeMemtable),
+                         normBytes(estimem),
+                         numSnapshots)
+		fmt.Fprintln(w, s)
+		w.Flush()
+		time.Sleep(1 * time.Second)
 	}
-	info := DebugInfo{}
-	if err := json.Unmarshal([]byte(v), &info); err != nil {
-		log.Fatalf("unmarshal debug info failed:%v", err)
-	}
-	log.Infof("%+v", info)
 }

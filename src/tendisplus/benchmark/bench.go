@@ -7,11 +7,13 @@ import (
     "github.com/ngaut/log"
     "flag"
     "fmt"
+    "sync"
     "sync/atomic"
 )
 
 var threadNum = flag.Int("thd", 10, "thread num")
 var host = flag.String("host", "127.0.0.1:6379", "host")
+var run = flag.Int("run", 1, "load:0,run:1")
 var gCounter = uint64(0)
 var ten = uint64(0)
 var fifty = uint64(0)
@@ -33,17 +35,24 @@ func dial(host string) (*redis.Client, error) {
     return client, nil
 }
 
-func run(i int) {
+func runFunctor(begin, end int, wg *sync.WaitGroup) {
+    defer wg.Done()
     c, err := dial(*host)
     if err != nil {
         log.Fatalf("dail:%s failed:%v", *host, err)
     }
 
-    var str2send = randomString(500)
+    var str2send = randomString(2000)
     cnt := 0
-    for {
+    for i := begin; i <= end; i++ {
         now := time.Now()
-        r := c.Cmd("SET", fmt.Sprintf("%d", 100000000*i+cnt), str2send)
+        var r *redis.Resp = nil
+        if (*run) == 0 {
+            r = c.Cmd("SET", fmt.Sprintf("%d", i), str2send)
+        } else {
+            key := rand.Intn(end - begin) + begin
+            r = c.Cmd("GET", fmt.Sprintf("%d", key))
+        }
         delta := time.Now().Sub(now)
         mills := delta.Nanoseconds()/1000000
         if (mills >= 10) {
@@ -57,7 +66,7 @@ func run(i int) {
         }
         cnt += 1
         if r.Err != nil {
-            log.Errorf("set failed:%v", r.Err)
+            log.Errorf("exec failed:%v", r.Err)
         } else {
             atomic.AddUint64(&gCounter, 1)
         }
@@ -66,11 +75,23 @@ func run(i int) {
 
 func main() {
     flag.Parse()
+    total := 100000000
+    delta := total/(*threadNum)
+    var wg sync.WaitGroup
     for i := 0; i < *threadNum; i+=1 {
-        go run(i);
+        wg.Add(1)
+        go runFunctor(i*delta, (i+1)*delta, &wg);
     }
-    for {
-        log.Infof("insert counter:%d,%d,%d,%d", gCounter, ten, fifty, hundred)
-        time.Sleep(1*time.Second)
-    }
+    go func() {
+        oriGcount := gCounter
+        for {
+            log.Infof("insert counter:%d,%d,%d,%d,%d", gCounter, ten, fifty, hundred, gCounter - oriGcount)
+            if gCounter >= 100000000 {
+                break
+            }
+            oriGcount = gCounter
+            time.Sleep(1*time.Second)
+        }
+    } ()
+    wg.Wait()
 }
