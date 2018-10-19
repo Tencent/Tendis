@@ -18,6 +18,24 @@ var (
 )
 
 type DebugInfo struct {
+	Network struct {
+		StickyPackets  uint64 `json:"sticky_packets"`
+		ConnCreated    uint64 `json:"conn_created"`
+		ConnReleased   uint64 `json:"conn_released"`
+		InvalidPackets uint64 `json:"invalid_packets"`
+	} `json:"network"`
+	ReqPool struct {
+		InQueue     uint64 `json:"in_queue"`
+		Executed    uint64 `json:"executed"`
+		QueueTime   uint64 `json:"queue_time"`
+		ExecuteTime uint64 `json:"execute_time"`
+	} `json:"req_pool"`
+	Request struct {
+		Processed      uint64 `json:"processed"`
+		ReadPacketCost uint64 `json:"read_packet_cost"`
+		ProcessCost    uint64 `json:"process_cost"`
+		SendPacketCost uint64 `json:"send_packet_cost"`
+	} `json:"request"`
 	Stores map[string]struct {
 		IsRunning   int    `json:"is_running"`
 		HasBackup   int    `json:"has_backup"`
@@ -73,20 +91,23 @@ type DebugInfo struct {
 	} `json:"commands"`
 }
 
-func normBytes(bytes uint64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%dB", bytes)
+func normInt(val uint64, withB bool) string {
+	if val < 1024 {
+		if withB {
+			return fmt.Sprintf("%dB", val)
+		}
+		return fmt.Sprintf("%d", val)
 	}
-	bytes = bytes / 1024
-	if bytes < 1024 {
-		return fmt.Sprintf("%dK", bytes)
+	val = val / 1024
+	if val < 1024 {
+		return fmt.Sprintf("%dK", val)
 	}
-	bytes = bytes / 1024
-	if bytes < 1024 {
-		return fmt.Sprintf("%dM", bytes)
+	val = val / 1024
+	if val < 1024 {
+		return fmt.Sprintf("%dM", val)
 	}
-	bytes = bytes / 1024
-	return fmt.Sprintf("%dG", bytes)
+	val = val / 1024
+	return fmt.Sprintf("%dG", val)
 }
 
 func main() {
@@ -105,7 +126,7 @@ func main() {
 		0,   // padding
 		' ', // padchar
 		tabwriter.AlignRight|tabwriter.Debug)
-	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\t")
+	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\tqtps\tq\t")
 	w.Flush()
 	for {
 		v, err := client.Cmd("DEBUG").Str()
@@ -119,7 +140,6 @@ func main() {
 			oldInfo = info
 			continue
 		}
-		oldInfo = info
 		activeTxns := uint64(0)
 		nImms := uint64(0)
 		flushPending := uint64(0)
@@ -128,6 +148,8 @@ func main() {
 		sizeMemtable := uint64(0)
 		estimem := uint64(0)
 		numSnapshots := uint64(0)
+		inqueue := info.ReqPool.InQueue
+		qtps := info.Request.Processed - oldInfo.Request.Processed
 		for _, v := range info.Stores {
 			activeTxns += v.AliveTxns
 			nImms += v.Rocksdb.NumImmutableMemTable
@@ -144,17 +166,21 @@ func main() {
 			0,   // padding
 			' ', // padchar
 			tabwriter.AlignRight|tabwriter.Debug)
-		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t",
-                         activeTxns,
-                         nImms,
-                         flushPending,
-                         compactPending,
-                         backgroundErrs,
-                         normBytes(sizeMemtable),
-                         normBytes(estimem),
-                         numSnapshots)
+		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\t%d\t",
+			activeTxns,
+			nImms,
+			flushPending,
+			compactPending,
+			backgroundErrs,
+			normInt(sizeMemtable, true),
+			normInt(estimem, true),
+			numSnapshots,
+			normInt(qtps, false),
+			inqueue)
 		fmt.Fprintln(w, s)
 		w.Flush()
+		oldInfo = info
+		info = &DebugInfo{}
 		time.Sleep(1 * time.Second)
 	}
 }

@@ -35,10 +35,10 @@ struct NetworkMatrix {
 };
 
 struct RequestMatrix {
-    Atom<uint64_t> processed;
-    Atom<uint64_t> readPacketCost;
-    Atom<uint64_t> processCost;
-    Atom<uint64_t> sendPacketCost;
+    Atom<uint64_t> processed{0};
+    Atom<uint64_t> readPacketCost{0};
+    Atom<uint64_t> processCost{0};
+    Atom<uint64_t> sendPacketCost{0};
     RequestMatrix operator -(const RequestMatrix& right);
     std::string toString() const;
 };

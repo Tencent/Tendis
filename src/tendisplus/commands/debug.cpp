@@ -271,6 +271,9 @@ class DebugCommand: public Command {
             sections.insert("repl");
             sections.insert("commands");
             sections.insert("unseen_commands");
+            sections.insert("network");
+            sections.insert("request");
+            sections.insert("req_pool");
         } else {
             for (size_t i = 2; i < args.size(); ++i) {
                 sections.insert(args[i]);
@@ -331,6 +334,18 @@ class DebugCommand: public Command {
             }
             writer.EndObject();
         }
+
+        std::set<std::string> serverSections;
+        if (sections.find("network") != sections.end()) {
+            serverSections.insert("network");
+        }
+        if (sections.find("req_pool") != sections.end()) {
+            serverSections.insert("req_pool");
+        }
+        if (sections.find("request") != sections.end()) {
+            serverSections.insert("request");
+        }
+        svr->appendJSONStat(writer, serverSections);
         writer.EndObject();
         return Command::fmtBulk(std::string(sb.GetString()));
     }
