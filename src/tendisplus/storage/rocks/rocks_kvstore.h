@@ -6,6 +6,8 @@
 #include <iostream>
 #include <set>
 #include <mutex>
+#include <map>
+#include <vector>
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
@@ -28,7 +30,7 @@ class RocksOptTxn: public Transaction {
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn();
     std::unique_ptr<Cursor> createCursor() final;
-    std::unique_ptr<BinlogCursor> createBinlogCursor(uint64_t begin) final;
+    std::unique_ptr<BinlogCursor> createBinlogCursor(uint64_t begin, bool ignoreReadBarrier) final;
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
@@ -49,7 +51,7 @@ class RocksOptTxn: public Transaction {
     // NOTE(deyukong): not owned by RocksOptTxn
     RocksKVStore *_store;
 
-    // TODO(deyukong): it's double buffered in rocks, optimize 
+    // TODO(deyukong): it's double buffered in rocks, optimize
     std::vector<ReplLog> _binlogs;
 
     // if rollback/commit has been explicitly called
@@ -98,7 +100,8 @@ class RocksKVStore: public KVStore {
     Expected<BackupInfo> backup() final;
     Status releaseBackup() final;
 
-    void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const final;
+    void appendJSONStat(
+            rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
     void markCommitted(uint64_t txnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();

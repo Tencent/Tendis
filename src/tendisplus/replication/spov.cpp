@@ -388,7 +388,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
     // NOTE(deyukong): donot lock store in IX mode again
-    // the caller have duty to do this thing.
+    // the caller has duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         _cv.wait(lk,

@@ -37,6 +37,7 @@ type DebugInfo struct {
 		SendPacketCost uint64 `json:"send_packet_cost"`
 	} `json:"request"`
 	Stores map[string]struct {
+        Id          string `json:"id"`
 		IsRunning   int    `json:"is_running"`
 		HasBackup   int    `json:"has_backup"`
 		NextTxnSeq  uint64 `json:"next_txn_seq"`
@@ -73,7 +74,6 @@ type DebugInfo struct {
 			NumRunningFlushes              uint64 `json:"num_running_flushses"`
 			ActualDelayedWriteRate         uint64 `json:"actual_delayed_write_rate"`
 			IsWriteStopped                 uint64 `json:"is_write_stopped"`
-			EstimateOldestKeyTime          uint64 `json:"estimate_oldest_key_time"`
 		} `json:"rocksdb"`
 	} `json:"stores"`
 	Repl map[string]struct {
@@ -83,6 +83,10 @@ type DebugInfo struct {
 			BinlogPos   uint64 `json:"binlog_pos"`
 			RemoteHost  string `json:"remote_host"`
 		} `json:"sync_dest"`
+        SyncSource string `json:"sync_source"`
+        BinlogId uint64 `json:"binlog_id"`
+        ReplState uint64 `json:"repl_state"`
+        LastSyncTime string `json:"last_sync_time"`
 	} `json:"repl"`
 	UnseenCommands map[string]uint64 `json:"unseen_commands"`
 	Commands       map[string]struct {
@@ -126,8 +130,10 @@ func main() {
 		0,   // padding
 		' ', // padchar
 		tabwriter.AlignRight|tabwriter.Debug)
-	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\tqtps\tq\t")
+	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\tqtps\tq\tlag\t")
 	w.Flush()
+
+    nextTime := time.Now().Add(1*time.Second)
 	for {
 		v, err := client.Cmd("DEBUG").Str()
 		if err != nil {
@@ -150,6 +156,7 @@ func main() {
 		numSnapshots := uint64(0)
 		inqueue := info.ReqPool.InQueue
 		qtps := info.Request.Processed - oldInfo.Request.Processed
+        maxLag := int64(0)
 		for _, v := range info.Stores {
 			activeTxns += v.AliveTxns
 			nImms += v.Rocksdb.NumImmutableMemTable
@@ -159,6 +166,27 @@ func main() {
 			sizeMemtable += v.Rocksdb.SizeAllMemTables
 			estimem += v.Rocksdb.EstimateTableReadersMem
 			numSnapshots += v.Rocksdb.NumSnapshots
+            pos, err := client.Cmd("BINLOGPOS", v.Id).Int64()
+            if err != nil {
+                log.Fatalf("get store:%s binlogpos failed:%v", v.Id, err)
+            }
+            bt, err := client.Cmd("BINLOGTIME", v.Id, pos).Int64()
+            if err != nil {
+                log.Fatalf("get store:%s pos:%d binlog time failed:%v", v.Id, pos, err)
+            }
+            replList, ok := info.Repl[v.Id]
+            if !ok {
+                continue
+            }
+            for _, dst := range replList.SyncDest {
+                subbt, err := client.Cmd("BINLOGTIME", v.Id, dst.BinlogPos).Int64()
+                if err != nil {
+                    log.Fatalf("get store:%s pos:%d binlog time failed:%v", v.Id, dst.BinlogPos, err)
+                }
+                if bt - subbt > maxLag {
+                    maxLag = bt - subbt
+                }
+            }
 		}
 		w.Init(os.Stdout,
 			4,   // minwidth
@@ -166,7 +194,7 @@ func main() {
 			0,   // padding
 			' ', // padchar
 			tabwriter.AlignRight|tabwriter.Debug)
-		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\t%d\t",
+		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\t%d\t%d\t",
 			activeTxns,
 			nImms,
 			flushPending,
@@ -176,11 +204,14 @@ func main() {
 			normInt(estimem, true),
 			numSnapshots,
 			normInt(qtps, false),
-			inqueue)
+			inqueue,
+            maxLag)
 		fmt.Fprintln(w, s)
 		w.Flush()
+
 		oldInfo = info
 		info = &DebugInfo{}
-		time.Sleep(1 * time.Second)
+		time.Sleep(nextTime.Sub(time.Now()))
+        nextTime = time.Now().Add(1*time.Second)
 	}
 }

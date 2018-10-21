@@ -62,8 +62,10 @@ ReplOp randomReplOp() {
     }
 }
 
-std::string randomStr(bool maybeEmpty) {
-    size_t s = genRand() % 256;
+std::string randomStr(size_t s, bool maybeEmpty) {
+    if (s == 0) {
+        s = genRand() % 256;
+    }
     if (!maybeEmpty) {
         s++;
     }
@@ -91,10 +93,10 @@ TEST(Record, Common) {
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         auto type = randomType();
-        auto pk = randomStr(false);
-        auto sk = randomStr(true);
+        auto pk = randomStr(5, false);
+        auto sk = randomStr(5, true);
         uint32_t ttl = genRand();
-        auto val = randomStr(true);
+        auto val = randomStr(5, true);
         auto rk = RecordKey(dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl);
         auto rcd = Record(rk, rv);
@@ -107,10 +109,10 @@ TEST(Record, Common) {
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         auto type = randomType();
-        auto pk = randomStr(false);
-        auto sk = randomStr(true);
+        auto pk = randomStr(5, false);
+        auto sk = randomStr(5, true);
         uint32_t ttl = genRand();
-        auto val = randomStr(true);
+        auto val = randomStr(5, true);
         auto rk = RecordKey(dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl);
         auto rcd = Record(rk, rv);
@@ -119,6 +121,21 @@ TEST(Record, Common) {
         EXPECT_TRUE(
             prcd1.status().code() == ErrorCodes::ERR_DECODE ||
             !(prcd1.value().getRecordKey() == rk));
+    }
+}
+
+TEST(ReplRecord, Prefix) {
+    auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), genRand());
+    RecordKey rk(ReplLogKey::DBID, RecordType::RT_BINLOG, rlk.encode(), "");
+    const std::string s = rk.encode();
+    EXPECT_EQ(s[0], '\xff');
+    EXPECT_EQ(s[1], '\xff');
+    EXPECT_EQ(s[2], '\xff');
+    EXPECT_EQ(s[3], '\xff');
+    EXPECT_EQ(s[4], '\xff');
+    const std::string& prefix = RecordKey::prefixReplLog();
+    for (int i = 0; i < 100000; ++i) {
+        EXPECT_TRUE(randomStr(5, false) <= prefix);
     }
 }
 

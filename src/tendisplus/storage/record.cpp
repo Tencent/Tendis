@@ -12,7 +12,7 @@
 
 namespace tendisplus {
 
-char rt2Char(RecordType t) {
+uint8_t rt2Char(RecordType t) {
     switch (t) {
         case RecordType::RT_META:
             return 'M';
@@ -36,7 +36,7 @@ char rt2Char(RecordType t) {
         // the underlying cursor iteration relys on it to be at
         // the right most part.
         case RecordType::RT_BINLOG:
-            return std::numeric_limits<char>::max();
+            return std::numeric_limits<uint8_t>::max();
         default:
             LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
@@ -44,7 +44,7 @@ char rt2Char(RecordType t) {
     }
 }
 
-RecordType char2Rt(char t) {
+RecordType char2Rt(uint8_t t) {
     switch (t) {
         case 'M':
             return RecordType::RT_META;
@@ -62,7 +62,7 @@ RecordType char2Rt(char t) {
             return RecordType::RT_SET_META;
         case 's':
             return RecordType::RT_SET_ELE;
-        case std::numeric_limits<char>::max():
+        case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
             LOG(FATAL) << "invalid recordchar:" << t;
@@ -116,18 +116,19 @@ RecordKey::RecordKey(uint32_t dbid, RecordType type,
 void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     // --------key encoding
     // DBID
-    auto dbIdBytes = varintEncode(_dbId);
-    arr->insert(arr->end(), dbIdBytes.begin(), dbIdBytes.end());
+    for (size_t i = 0; i < sizeof(_dbId); ++i) {
+        arr->emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
+    }
 
     // Type
-    arr->emplace_back(static_cast<uint8_t>(rt2Char(_type)));
+    arr->emplace_back(rt2Char(_type));
 
     // PK
     std::string hexPk = hexlify(_pk);
     arr->insert(arr->end(), hexPk.begin(), hexPk.end());
 
     // NOTE(deyukong): 0 never exists in hex string.
-    // a padding o avoids prefixes intersect with
+    // a padding 0 avoids prefixes intersect with
     // each other in physical space
     arr->push_back(0);
 }
@@ -142,6 +143,21 @@ std::string RecordKey::prefixPk() const {
     encodePrefixPk(&key);
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
+}
+
+const std::string& RecordKey::prefixReplLog() {
+    static std::string s = []() {
+        std::string result;
+        static_assert(ReplLogKey::DBID == 0xffffffff,
+                        "invalid ReplLogKey::DBID");
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(rt2Char(RecordType::RT_BINLOG));
+        return result;
+    }();
+    return s;
 }
 
 RecordType RecordKey::getRecordType() const {
@@ -191,21 +207,19 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
 
     // dbid
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
-    auto expt = varintDecodeFwd(keyCstr + offset, key.size());
-    if (!expt.ok()) {
-        return expt.status();
+    for (size_t i = 0; i < sizeof(dbid); i++) {
+        dbid = (dbid << 8) | keyCstr[i];
     }
-    offset += expt.value().second;
-    dbid = static_cast<uint32_t>(expt.value().first);
+    offset += sizeof(dbid);
 
     // type
-    char typec = keyCstr[offset++];
+    uint8_t typec = keyCstr[offset++];
     type = char2Rt(typec);
 
     // pklen is stored in the reverse order
     // pklen
     const uint8_t *p = keyCstr + key.size() - rsvd - 1;
-    expt = varintDecodeRvs(p, key.size() - rsvd - offset);
+    auto expt = varintDecodeRvs(p, key.size() - rsvd - offset);
     if (!expt.ok()) {
         return expt.status();
     }
@@ -447,27 +461,17 @@ Expected<ReplLogKey> ReplLogKey::decode(const std::string& rawKey) {
     return decode(rk.value());
 }
 
-const std::string& ReplLogKey::prefix() {
-    static std::string s = []() {
-        std::string result;
-        result.push_back(0);
-        result.push_back(rt2Char(RecordType::RT_BINLOG));
-        return result;
-    }();
-    return s;
-}
-
 std::string ReplLogKey::prefix(uint64_t commitId) {
     // NOTE(deyukong): currently commitId is defined as uint64,
     // we do a compiletime assert here. change the logic if commitId is
     // redefined to different structure
     static_assert(sizeof(commitId) == 8,
         "commitId size not 8, reimpl the logic");
-    std::string p = ReplLogKey::prefix();
+    std::string p = RecordKey::prefixReplLog();
     std::string p1;
-    const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&commitId);
+
     for (size_t i = 0; i < sizeof(commitId); i++) {
-        p1.push_back(txnBuf[sizeof(commitId)-1-i]);
+        p1.push_back((commitId>>((sizeof(commitId)-i-1)*8))&0xff);
     }
     return p + hexlify(p1);
 }
@@ -475,21 +479,21 @@ std::string ReplLogKey::prefix(uint64_t commitId) {
 std::string ReplLogKey::encode() const {
     std::vector<uint8_t> key;
     key.reserve(128);
-    const uint8_t *txnBuf = reinterpret_cast<const uint8_t*>(&_txnId);
     for (size_t i = 0; i < sizeof(_txnId); i++) {
-        key.emplace_back(txnBuf[sizeof(_txnId)-1-i]);
+        key.emplace_back((_txnId>>((sizeof(_txnId)-i-1)*8))&0xff);
     }
     key.emplace_back(_localId>>8);
     key.emplace_back(_localId&0xff);
     key.emplace_back(static_cast<uint16_t>(_flag)>>8);
     key.emplace_back(static_cast<uint16_t>(_flag)&0xff);
-    const uint8_t *tsBuf = reinterpret_cast<const uint8_t*>(&_timestamp);
     for (size_t i = 0; i < sizeof(_timestamp); i++) {
-        key.emplace_back(tsBuf[sizeof(_timestamp)-1-i]);
+        key.emplace_back((_timestamp>>((sizeof(_timestamp)-i-1)*8))&0xff);
     }
     key.emplace_back(_reserved);
     std::string partial(reinterpret_cast<const char *>(key.data()), key.size());
-    RecordKey tmpRk(0, RecordType::RT_BINLOG, std::move(partial), "");
+    RecordKey tmpRk(ReplLogKey::DBID,
+                    RecordType::RT_BINLOG,
+                    std::move(partial), "");
     return tmpRk.encode();
 }
 

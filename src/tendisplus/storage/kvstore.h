@@ -61,7 +61,7 @@ class Transaction {
     virtual Status rollback() = 0;
     virtual std::unique_ptr<Cursor> createCursor() = 0;
     virtual std::unique_ptr<BinlogCursor>
-        createBinlogCursor(uint64_t begin) = 0;
+        createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val,

@@ -4,6 +4,7 @@
 #include <sstream>
 #include <map>
 #include <vector>
+#include <limits>
 #include "glog/logging.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
@@ -56,11 +57,14 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
          _done(false) {
 }
 
-std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
+std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin, bool ignoreReadBarrier) {
     ensureTxn();
     auto cursor = createCursor();
 
     uint64_t hv = _store->getHighestVisibleTxnId();
+    if (ignoreReadBarrier) {
+        hv = Transaction::MAX_VALID_TXNID;
+    }
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
 }
 
@@ -372,7 +376,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
-    // TODO(deyukong): use BinlogCursor to rewrite 
+    // TODO(deyukong): use BinlogCursor to rewrite
     rocksdb::ReadOptions readOpts;
     auto iter = std::unique_ptr<rocksdb::Iterator>(
         tmpDb->GetBaseDB()->NewIterator(readOpts));
@@ -487,7 +491,7 @@ Expected<BackupInfo> RocksKVStore::backup() {
     }
     result.setBinlogPos(highVisible);
 
-    rocksdb::Checkpoint* checkpoint;    
+    rocksdb::Checkpoint* checkpoint;
     auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -629,8 +633,9 @@ Status RocksKVStore::delKV(const RecordKey& key,
     return txn->delKV(key.encode(), withLog);
 }
 
-void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    const static std::map<std::string, std::string> properties = {
+void RocksKVStore::appendJSONStat(
+            rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    static const std::map<std::string, std::string> properties = {
         {"rocksdb.num-immutable-mem-table", "num_immutable_mem_table"},
         {"rocksdb.mem-table-flush-pending", "mem_table_flush_pending"},
         {"rocksdb.compaction-pending", "compaction_pending"},
@@ -638,9 +643,11 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
         {"rocksdb.cur-size-active-mem-table", "cur_size_active_mem_table"},
         {"rocksdb.cur-size-all-mem-tables", "cur_size_all_mem_tables"},
         {"rocksdb.size-all-mem-tables", "size_all_mem_tables"},
-        {"rocksdb.num-entries-active-mem-table", "num_entries_active_mem_table"},
+        {"rocksdb.num-entries-active-mem-table",
+                                "num_entries_active_mem_table"},
         {"rocksdb.num-entries-imm-mem-tables", "num_entries_imm_mem_tables"},
-        {"rocksdb.num-deletes-active-mem-table", "num_deletes_active_mem_table"},
+        {"rocksdb.num-deletes-active-mem-table",
+                                "num_deletes_active_mem_table"},
         {"rocksdb.num-deletes-imm-mem-tables", "num_deletes_imm_mem_tables"},
         {"rocksdb.estimate-num-keys", "estimate_num_keys"},
         {"rocksdb.estimate-table-readers-mem", "estimate_table_readers_mem"},
@@ -648,19 +655,22 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
         {"rocksdb.num-snapshots", "num_snapshots"},
         {"rocksdb.oldest-snapshot-time", "oldest_snapshot_time"},
         {"rocksdb.num-live-versions", "num_live_versions"},
-        {"rocksdb.current-super-version-number", "current_super_version_number"},
+        {"rocksdb.current-super-version-number",
+                                "current_super_version_number"},
         {"rocksdb.estimate-live-data-size", "estimate_live_data_size"},
         {"rocksdb.min-log-number-to-keep", "min_log_number_to_keep"},
         {"rocksdb.total-sst-files-size", "total_sst_files_size"},
         {"rocksdb.live-sst-files-size", "live_sst_files_size"},
         {"rocksdb.base-level", "base_level"},
-        {"rocksdb.estimate-pending-compaction-bytes", "estimate_pending_compaction_bytes"},
+        {"rocksdb.estimate-pending-compaction-bytes",
+                                "estimate_pending_compaction_bytes"},
         {"rocksdb.num-running-compactions", "num_running_compactions"},
         {"rocksdb.num-running-flushes", "num_running_flushses"},
         {"rocksdb.actual-delayed-write-rate", "actual_delayed_write_rate"},
         {"rocksdb.is-write-stopped", "is_write_stopped"},
-        {"rocksdb.estimate-oldest-key-time", "estimate_oldest_key_time"},
     };
+    w.Key("id");
+    w.String(dbId().c_str());
     w.Key("is_running");
     w.Uint64(_isRunning);
     w.Key("has_backup");

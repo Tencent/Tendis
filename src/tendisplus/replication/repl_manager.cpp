@@ -294,6 +294,7 @@ void ReplManager::controlRoutine() {
 
 Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
+    // this function should be called with LOCK_X held
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
     std::unique_lock<std::mutex> lk(_mutex);
     // NOTE(deyukong): we must wait for the target to stop before change meta,
@@ -361,7 +362,7 @@ void ReplManager::appendJSONStat(
     INVARIANT(_syncStatus.size() == KVStore::INSTANCE_NUM);
     for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
         std::stringstream ss;
-        ss << "store_" << i;
+        ss << i;
         w.Key(ss.str().c_str());
         w.StartObject();
 
