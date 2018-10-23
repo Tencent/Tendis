@@ -391,13 +391,13 @@ void ReplManager::supplyFullSyncRoutine(
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
                 return;
             }
-            auto oneRpy = client->readLine(std::chrono::seconds(10));
-            if (!oneRpy.ok() || oneRpy.value() != "+OK") {
+            auto rpl = client->readLine(std::chrono::seconds(10));
+            if (!rpl.ok() || rpl.value() != "+OK") {
                 LOG(ERROR) << "send client:" << client->getRemoteRepr()
                            << "file:" << fileInfo.first
                            << ",size:" << fileInfo.second
                            << " failed:"
-                           << (oneRpy.ok() ? oneRpy.value() : oneRpy.status().toString());
+                           << (rpl.ok() ? rpl.value() : rpl.status().toString());
                 return;
             }
         }

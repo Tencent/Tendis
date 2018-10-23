@@ -99,7 +99,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // since it's on stack
     sg.getSession()->getCtx()->setArgsBrief(
         {"slavefullsync", std::to_string(metaSnapshot.id)});
-    StoreLock storeLock(metaSnapshot.id, mgl::LockMode::LOCK_X, sg.getSession());
+    StoreLock storeLock(metaSnapshot.id,
+                        mgl::LockMode::LOCK_X,
+                        sg.getSession());
 
     // 1) stop store and clean it's directory
     PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
@@ -442,49 +444,9 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     }
 
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    for (const auto& log : ops) {
-        const ReplLogValue& logVal = log.getReplLogValue();
-
-        Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
-        if (!expRk.ok()) {
-            return expRk.status();
-        }
-
-        auto strPair = log.encode();
-        // write binlog
-        auto s = store->setKV(strPair.first, strPair.second,
-                              txn.get(), false /*withlog*/);
-        if (!s.ok()) {
-            return s;
-        }
-        switch (logVal.getOp()) {
-            case (ReplOp::REPL_OP_SET): {
-                Expected<RecordValue> expRv =
-                    RecordValue::decode(logVal.getOpValue());
-                if (!expRv.ok()) {
-                    return expRv.status();
-                }
-                s = store->setKV(expRk.value(), expRv.value(),
-                                      txn.get(), false /*withlog*/);
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            case (ReplOp::REPL_OP_DEL): {
-                s = store->delKV(expRk.value(), txn.get(), false /*withlog*/);
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            default: {
-                LOG(FATAL) << "invalid binlogOp:"
-                            << static_cast<uint8_t>(logVal.getOp());
-            }
-        }
+    Status s = store->applyBinlog(ops, txn.get());
+    if (!s.ok()) {
+        return s;
     }
     Expected<uint64_t> expCmit = txn->commit();
     if (!expCmit.ok()) {

@@ -37,7 +37,7 @@ type DebugInfo struct {
 		SendPacketCost uint64 `json:"send_packet_cost"`
 	} `json:"request"`
 	Stores map[string]struct {
-        Id          string `json:"id"`
+		Id          string `json:"id"`
 		IsRunning   int    `json:"is_running"`
 		HasBackup   int    `json:"has_backup"`
 		NextTxnSeq  uint64 `json:"next_txn_seq"`
@@ -83,10 +83,10 @@ type DebugInfo struct {
 			BinlogPos   uint64 `json:"binlog_pos"`
 			RemoteHost  string `json:"remote_host"`
 		} `json:"sync_dest"`
-        SyncSource string `json:"sync_source"`
-        BinlogId uint64 `json:"binlog_id"`
-        ReplState uint64 `json:"repl_state"`
-        LastSyncTime string `json:"last_sync_time"`
+		SyncSource   string `json:"sync_source"`
+		BinlogId     uint64 `json:"binlog_id"`
+		ReplState    uint64 `json:"repl_state"`
+		LastSyncTime string `json:"last_sync_time"`
 	} `json:"repl"`
 	UnseenCommands map[string]uint64 `json:"unseen_commands"`
 	Commands       map[string]struct {
@@ -133,7 +133,7 @@ func main() {
 	fmt.Fprintln(w, "at\timm\tfp\tcp\tbe\tsm\tetrm\tns\tqtps\tq\tlag\t")
 	w.Flush()
 
-    nextTime := time.Now().Add(1*time.Second)
+	nextTime := time.Now().Add(1 * time.Second)
 	for {
 		v, err := client.Cmd("DEBUG").Str()
 		if err != nil {
@@ -156,7 +156,7 @@ func main() {
 		numSnapshots := uint64(0)
 		inqueue := info.ReqPool.InQueue
 		qtps := info.Request.Processed - oldInfo.Request.Processed
-        maxLag := int64(0)
+		maxLag := int64(0)
 		for _, v := range info.Stores {
 			activeTxns += v.AliveTxns
 			nImms += v.Rocksdb.NumImmutableMemTable
@@ -166,27 +166,15 @@ func main() {
 			sizeMemtable += v.Rocksdb.SizeAllMemTables
 			estimem += v.Rocksdb.EstimateTableReadersMem
 			numSnapshots += v.Rocksdb.NumSnapshots
-            pos, err := client.Cmd("BINLOGPOS", v.Id).Int64()
-            if err != nil {
-                log.Fatalf("get store:%s binlogpos failed:%v", v.Id, err)
-            }
-            bt, err := client.Cmd("BINLOGTIME", v.Id, pos).Int64()
-            if err != nil {
-                log.Fatalf("get store:%s pos:%d binlog time failed:%v", v.Id, pos, err)
-            }
-            replList, ok := info.Repl[v.Id]
-            if !ok {
-                continue
-            }
-            for _, dst := range replList.SyncDest {
-                subbt, err := client.Cmd("BINLOGTIME", v.Id, dst.BinlogPos).Int64()
-                if err != nil {
-                    log.Fatalf("get store:%s pos:%d binlog time failed:%v", v.Id, dst.BinlogPos, err)
-                }
-                if bt - subbt > maxLag {
-                    maxLag = bt - subbt
-                }
-            }
+			replList, ok := info.Repl[v.Id]
+			if !ok {
+				continue
+			}
+			for _, dst := range replList.SyncDest {
+				if int64(v.HighVisible)-int64(dst.BinlogPos) > maxLag {
+					maxLag = int64(v.HighVisible) - int64(dst.BinlogPos)
+				}
+			}
 		}
 		w.Init(os.Stdout,
 			4,   // minwidth
@@ -205,13 +193,13 @@ func main() {
 			numSnapshots,
 			normInt(qtps, false),
 			inqueue,
-            maxLag)
+			maxLag)
 		fmt.Fprintln(w, s)
 		w.Flush()
 
 		oldInfo = info
 		info = &DebugInfo{}
 		time.Sleep(nextTime.Sub(time.Now()))
-        nextTime = time.Now().Add(1*time.Second)
+		nextTime = time.Now().Add(1 * time.Second)
 	}
 }

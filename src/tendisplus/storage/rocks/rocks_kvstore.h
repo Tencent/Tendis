@@ -8,6 +8,8 @@
 #include <mutex>
 #include <map>
 #include <vector>
+#include <utility>
+#include <list>
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
@@ -25,19 +27,21 @@ class RocksKVStore;
 // Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public Transaction {
  public:
-    explicit RocksOptTxn(RocksKVStore *store, uint64_t txnId);
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn();
     std::unique_ptr<Cursor> createCursor() final;
-    std::unique_ptr<BinlogCursor> createBinlogCursor(uint64_t begin, bool ignoreReadBarrier) final;
+    std::unique_ptr<BinlogCursor> createBinlogCursor(
+                                    uint64_t begin,
+                                    bool ignoreReadBarrier) final;
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
     Status setKV(const std::string& key,
-                 const std::string& val,
-                 bool withLog) final;
-    Status delKV(const std::string& key, bool withLog) final;
+                 const std::string& val) final;
+    Status delKV(const std::string& key) final;
+    Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const;
 
  private:
@@ -56,6 +60,8 @@ class RocksOptTxn: public Transaction {
 
     // if rollback/commit has been explicitly called
     bool _done;
+
+    bool _replOnly;
 };
 
 class RocksKVCursor: public Cursor {
@@ -78,23 +84,21 @@ class RocksKVStore: public KVStore {
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
-    Status setKV(const Record& kv, Transaction* txn,
-                 bool withLog = true) final;
-    Status setKV(const RecordKey& key,
-                 const RecordValue& val,
-                 Transaction* txn,
-                 bool withLog = true) final;
-    Status setKV(const std::string& key,
-                 const std::string& val,
-                 Transaction *txn,
-                 bool withLog = true) final;
-    Status delKV(const RecordKey& key,
-                 Transaction* txn,
-                 bool withLog = true) final;
+    Status setKV(const Record& kv, Transaction* txn) final;
+    Status setKV(const RecordKey& key, const RecordValue& val,
+                 Transaction* txn) final;
+    Status setKV(const std::string& key, const std::string& val,
+                 Transaction *txn) final;
+    Status delKV(const RecordKey& key, Transaction* txn) final;
+    Status applyBinlog(const std::list<ReplLog>& txnLog,
+                       Transaction *txn) final;
 
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
+
+    Status setMode(StoreMode mode) final;
+
     Expected<uint64_t> restart(bool restore = false) final;
 
     Expected<BackupInfo> backup() final;
@@ -103,7 +107,7 @@ class RocksKVStore: public KVStore {
     void appendJSONStat(
             rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
-    void markCommitted(uint64_t txnId);
+    void markCommitted(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
 
     uint64_t getHighestVisibleTxnId() const;
@@ -113,12 +117,15 @@ class RocksKVStore: public KVStore {
 
  private:
     void addUnCommitedTxnInLock(uint64_t txnId);
-    void markCommittedInLock(uint64_t txnId);
+    void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::Options options();
     mutable std::mutex _mutex;
 
     bool _isRunning;
     bool _hasBackup;
+
+    KVStore::StoreMode _mode;
+
     std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;
     std::shared_ptr<rocksdb::Statistics> _stats;
     std::shared_ptr<rocksdb::Cache> _blockCache;
@@ -129,21 +136,17 @@ class RocksKVStore: public KVStore {
     // we rely on the data order to maintain active txns' watermark.
     // txnid -> committed|uncommited
     // --------------------------------------------------------------
-    // when creating txns, a {txnId, false} pair is inserted
+    // when creating txns, a {txnId, {false, 0}} pair is inserted
     // when txn commits or destroys, the txnId is marked as true
     // means it is committed. As things run parallely, there will
     // be false-holes in _aliveTxns, fortunely, when _aliveTxns.begin()
     // changes from uncommitted to committed, we have a chance to
     // remove all the continous committed txnIds follows it, and
     // push _highestVisible forward.
-    std::map<uint64_t, bool> _aliveTxns;
+    std::map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
 
-    // NOTE(deyukong): _highestVisible is the largest committedTxnId that
-    // for any txn with Id = b is committed, and b > committedTxnId
-    // there must exists a uncommitted txn with Id = c, and
-    // _highestVisible < c < b.
-    // For simple, _highestVisible is the highest TxnId that before this
-    // txnId, there wont be any "commit-hole"
+    // NOTE(deyukong): _highestVisible is the largest committed binlog
+    // before _aliveTxns.begin()
     uint64_t _highestVisible;
 };
 

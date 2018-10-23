@@ -6,6 +6,7 @@
 #include <utility>
 #include <memory>
 #include <iostream>
+#include <list>
 #include <map>
 
 #include "rapidjson/document.h"
@@ -37,7 +38,7 @@ class Cursor {
 class BinlogCursor {
  public:
     BinlogCursor() = delete;
-    // NOTE(deyukong): in range of [begin, end], be careful both close interval 
+    // NOTE(deyukong): in range of [begin, end], be careful both close interval
     BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
     ~BinlogCursor() = default;
     Expected<ReplLog> next();
@@ -64,9 +65,9 @@ class Transaction {
         createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
-                         const std::string& val,
-                         bool withLog) = 0;
-    virtual Status delKV(const std::string& key, bool withLog) = 0;
+                         const std::string& val) = 0;
+    virtual Status delKV(const std::string& key) = 0;
+    virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
     static constexpr uint64_t MIN_VALID_TXNID = 1;
@@ -87,6 +88,12 @@ class BackupInfo {
 
 class KVStore {
  public:
+    enum class StoreMode {
+        READ_WRITE,
+        REPLICATE_ONLY,
+    };
+
+ public:
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }
@@ -94,20 +101,23 @@ class KVStore {
     const std::string backupDir() const { return _backupDir; }
     virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
-        Transaction* txn) = 0;
+                                        Transaction* txn) = 0;
     virtual Status setKV(const RecordKey&,
-        const RecordValue&, Transaction*, bool withLog = true) = 0;
-    virtual Status setKV(const Record& kv, Transaction* txn,
-        bool withLog = true) = 0;
+                         const RecordValue&, Transaction*) = 0;
+    virtual Status setKV(const Record& kv, Transaction* txn) = 0;
     virtual Status setKV(const std::string& key, const std::string& val,
-        Transaction* txn, bool withLog = true) = 0;
-    virtual Status delKV(const RecordKey& key, Transaction* txn,
-        bool withLog = true) = 0;
+                         Transaction* txn) = 0;
+    virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+    virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
+                               Transaction* txn) = 0;
 
     // remove all data in db
     virtual Status clear() = 0;
+
     virtual bool isRunning() const = 0;
     virtual Status stop() = 0;
+
+    virtual Status setMode(StoreMode mode) = 0;
 
     // return the greatest commitId
     virtual Expected<uint64_t> restart(bool restore = false) = 0;

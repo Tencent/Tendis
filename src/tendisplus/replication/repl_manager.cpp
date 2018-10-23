@@ -117,37 +117,22 @@ Status ReplManager::startup() {
             std::map<uint64_t, std::unique_ptr<MPovStatus>>());
     }
 
-    // init first binlogpos, empty binlogs makes cornercase complicated.
-    // so we put an no-op to binlogs everytime startup.
-    // in this way, the full-backup will always have a committed txnId.
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
         // here we are starting up, dont acquire a storelock.
         PStore store = _svr->getSegmentMgr()->getInstanceById(i);
         INVARIANT(store != nullptr);
 
+        if (_syncMeta[i]->syncFromHost == "") {
+            store->setMode(KVStore::StoreMode::READ_WRITE);
+        } else {
+            store->setMode(KVStore::StoreMode::REPLICATE_ONLY);
+        }
         auto ptxn = store->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
 
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        RecordKey rk(0, RecordType::RT_META, "NOOP", "");
-        RecordValue rv("NOOP");
-        Status putStatus = store->setKV(rk, rv, txn.get());
-        if (!putStatus.ok()) {
-            return putStatus;
-        }
-        Expected<uint64_t> commitStatus = txn->commit();
-        if (!commitStatus.ok()) {
-            return commitStatus.status();
-        }
-
-        ptxn = store->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-
-        txn = std::move(ptxn.value());
+        auto txn = std::move(ptxn.value());
         std::unique_ptr<BinlogCursor> cursor =
             txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
         Expected<ReplLog> explog = cursor->next();
@@ -155,9 +140,16 @@ Status ReplManager::startup() {
             const auto& rlk = explog.value().getReplLogKey();
             _firstBinlogId.emplace_back(rlk.getTxnId());
         } else {
-            INVARIANT(explog.status().code() != ErrorCodes::ERR_EXHAUST);
-            return explog.status();
+            if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                // void compiler ud-link about static constexpr
+                uint64_t v = Transaction::TXNID_UNINITED;
+                _firstBinlogId.emplace_back(v);
+            } else {
+                return explog.status();
+            }
         }
+        LOG(INFO) << "store:" << i
+                  << ",_firstBinlogId:" << *(_firstBinlogId.rbegin());
     }
 
     INVARIANT(_firstBinlogId.size() == KVStore::INSTANCE_NUM);
@@ -292,9 +284,9 @@ void ReplManager::controlRoutine() {
     LOG(INFO) << "repl controller exits";
 }
 
+// changeReplSource should be called with LOCK_X held
 Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
-    // this function should be called with LOCK_X held
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
     std::unique_lock<std::mutex> lk(_mutex);
     // NOTE(deyukong): we must wait for the target to stop before change meta,
@@ -309,6 +301,9 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
     if (storeId >= _syncMeta.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
     }
+    auto segMgr = _svr->getSegmentMgr();
+    INVARIANT(segMgr != nullptr);
+    PStore kvstore = segMgr->getInstanceById(storeId);
 
     auto newMeta = _syncMeta[storeId]->copy();
     if (ip != "") {
@@ -317,15 +312,19 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
                     "explicit set sync source empty before change it"};
         }
 
+        Status s = kvstore->setMode(KVStore::StoreMode::REPLICATE_ONLY);
+        if (!s.ok()) {
+            return s;
+        }
         newMeta->syncFromHost = ip;
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_CONNECT;
         newMeta->binlogId = Transaction::TXNID_UNINITED;
         LOG(INFO) << "change store:" << storeId
-                    << " syncSrc from no one to " << newMeta->syncFromHost
-                    << ":" << newMeta->syncFromPort
-                    << ":" << newMeta->syncFromId;
+                  << " syncSrc from no one to " << newMeta->syncFromHost
+                  << ":" << newMeta->syncFromPort
+                  << ":" << newMeta->syncFromId;
         changeReplStateInLock(*newMeta, true);
         return {ErrorCodes::ERR_OK, ""};
     } else {  // ip == ""
@@ -333,8 +332,8 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             return {ErrorCodes::ERR_OK, ""};
         }
         LOG(INFO) << "change store:" << storeId
-                    << " syncSrc:" << newMeta->syncFromHost
-                    << " to no one";
+                  << " syncSrc:" << newMeta->syncFromHost
+                  << " to no one";
         Status closeStatus =
             _svr->cancelSession(_syncStatus[storeId]->sessionId);
         if (!closeStatus.ok()) {
@@ -343,6 +342,11 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
                         << closeStatus.toString();
         }
         _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
+
+        Status s = kvstore->setMode(KVStore::StoreMode::READ_WRITE);
+        if (!s.ok()) {
+            return s;
+        }
 
         newMeta->syncFromHost = ip;
         INVARIANT(port == 0 && sourceStoreId == 0);
@@ -365,6 +369,9 @@ void ReplManager::appendJSONStat(
         ss << i;
         w.Key(ss.str().c_str());
         w.StartObject();
+
+        w.Key("first_binlog");
+        w.Uint64(_firstBinlogId[i]);
 
         w.Key("sync_dest");
         w.StartObject();
