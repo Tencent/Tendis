@@ -65,7 +65,7 @@ std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
     ensureTxn();
     auto cursor = createCursor();
 
-    uint64_t hv = _store->getHighestVisibleTxnId();
+    uint64_t hv = _store->getHighestBinlogId();
     if (ignoreReadBarrier) {
         hv = Transaction::MAX_VALID_TXNID;
     }
@@ -595,9 +595,9 @@ Expected<BackupInfo> RocksKVStore::backup() {
 
     // NOTE(deyukong): we should get highVisible before making a ckpt
     BackupInfo result;
-    uint64_t highVisible = getHighestVisibleTxnId();
+    uint64_t highVisible = getHighestBinlogId();
     if (highVisible == Transaction::TXNID_UNINITED) {
-        return {ErrorCodes::ERR_INTERNAL, "highVisible not inited"};
+        LOG(WARNING) << "store:" << dbId() << " highVisible still zero";
     }
     result.setBinlogPos(highVisible);
 
@@ -650,7 +650,7 @@ rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
     return _db.get();
 }
 
-uint64_t RocksKVStore::getHighestVisibleTxnId() const {
+uint64_t RocksKVStore::getHighestBinlogId() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _highestVisible;
 }

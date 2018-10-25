@@ -52,9 +52,6 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
                      << pos.status().toString();
         return pos.status();
     }
-    if (pos.value() == Transaction::TXNID_UNINITED) {
-        return {ErrorCodes::ERR_INTERNAL, "fullsync see TXNID_UNINITED"};
-    }
     bkInfo.setBinlogPos(pos.value());
 
     auto expFlist = client->readLine(std::chrono::seconds(1));
@@ -250,9 +247,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // hold true all times. since readonly-txns also increases binlogPos
     // INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
 
-    // in ReplManager.startup(), a dummy binlog is written. here we should not
-    // get an empty binlog set.
-    INVARIANT(newMeta->binlogId != Transaction::TXNID_UNINITED);
     changeReplState(*newMeta, true);
 
     rollback = false;

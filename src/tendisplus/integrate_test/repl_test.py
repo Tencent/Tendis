@@ -5,7 +5,6 @@ import redis
 import threading
 from startstop import RedisServer
 
-
 def test_repl_match2(m, s):
     running = True 
     lk = threading.Lock()

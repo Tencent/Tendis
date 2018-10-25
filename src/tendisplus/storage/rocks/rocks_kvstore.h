@@ -110,7 +110,7 @@ class RocksKVStore: public KVStore {
     void markCommitted(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerDB();
 
-    uint64_t getHighestVisibleTxnId() const;
+    uint64_t getHighestBinlogId() const;
 
     // NOTE(deyukong): this api is only for debug
     std::set<uint64_t> getUncommittedTxns() const;
