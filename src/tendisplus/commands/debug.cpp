@@ -192,6 +192,59 @@ class CommandListCommand: public Command {
     }
 } cmdList;
 
+class BinlogTimeCommand: public Command {
+ public:
+    BinlogTimeCommand()
+        :Command("binlogtime") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    // binlogtime [storeId] [binlogId]
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+        if (storeId.value() >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+        }
+        Expected<uint64_t> binlogId = ::tendisplus::stoul(args[2]);
+        if (!binlogId.ok()) {
+            return binlogId.status();
+        }
+        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
+        PStore kvstore = Command::getStoreById(sess, storeId.value());
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        std::unique_ptr<BinlogCursor> cursor =
+            txn->createBinlogCursor(binlogId.value(), true);
+        Expected<ReplLog> explog = cursor->next();
+        if (!explog.ok()) {
+            return explog.status();
+        }
+        return Command::fmtLongLong(explog.value().getReplLogKey().getTimestamp());
+    }
+} binlogTimeCmd;
+
 class BinlogPosCommand: public Command {
  public:
     BinlogPosCommand()
@@ -199,19 +252,19 @@ class BinlogPosCommand: public Command {
     }
 
     ssize_t arity() const {
-        return -2;
+        return 2;
     }
 
     int32_t firstkey() const {
-        return 0;
+        return 1;
     }
 
     int32_t lastkey() const {
-        return 0;
+        return 1;
     }
 
     int32_t keystep() const {
-        return 0;
+        return 1;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -231,7 +284,7 @@ class BinlogPosCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         std::unique_ptr<BinlogCursor> cursor =
-            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
+            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID, true);
         cursor->seekToLast();
         Expected<ReplLog> explog = cursor->next();
         if (!explog.ok()) {
@@ -271,6 +324,9 @@ class DebugCommand: public Command {
             sections.insert("repl");
             sections.insert("commands");
             sections.insert("unseen_commands");
+            sections.insert("network");
+            sections.insert("request");
+            sections.insert("req_pool");
         } else {
             for (size_t i = 2; i < args.size(); ++i) {
                 sections.insert(args[i]);
@@ -331,6 +387,18 @@ class DebugCommand: public Command {
             }
             writer.EndObject();
         }
+
+        std::set<std::string> serverSections;
+        if (sections.find("network") != sections.end()) {
+            serverSections.insert("network");
+        }
+        if (sections.find("req_pool") != sections.end()) {
+            serverSections.insert("req_pool");
+        }
+        if (sections.find("request") != sections.end()) {
+            serverSections.insert("request");
+        }
+        svr->appendJSONStat(writer, serverSections);
         writer.EndObject();
         return Command::fmtBulk(std::string(sb.GetString()));
     }

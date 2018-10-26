@@ -52,9 +52,6 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
                      << pos.status().toString();
         return pos.status();
     }
-    if (pos.value() == Transaction::TXNID_UNINITED) {
-        return {ErrorCodes::ERR_INTERNAL, "fullsync see TXNID_UNINITED"};
-    }
     bkInfo.setBinlogPos(pos.value());
 
     auto expFlist = client->readLine(std::chrono::seconds(1));
@@ -99,7 +96,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // since it's on stack
     sg.getSession()->getCtx()->setArgsBrief(
         {"slavefullsync", std::to_string(metaSnapshot.id)});
-    StoreLock storeLock(metaSnapshot.id, mgl::LockMode::LOCK_X, sg.getSession());
+    StoreLock storeLock(metaSnapshot.id,
+                        mgl::LockMode::LOCK_X,
+                        sg.getSession());
 
     // 1) stop store and clean it's directory
     PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
@@ -248,9 +247,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // hold true all times. since readonly-txns also increases binlogPos
     // INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
 
-    // in ReplManager.startup(), a dummy binlog is written. here we should not
-    // get an empty binlog set.
-    INVARIANT(newMeta->binlogId != Transaction::TXNID_UNINITED);
     changeReplState(*newMeta, true);
 
     rollback = false;
@@ -388,7 +384,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
     // NOTE(deyukong): donot lock store in IX mode again
-    // the caller have duty to do this thing.
+    // the caller has duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         _cv.wait(lk,
@@ -442,49 +438,9 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     }
 
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    for (const auto& log : ops) {
-        const ReplLogValue& logVal = log.getReplLogValue();
-
-        Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
-        if (!expRk.ok()) {
-            return expRk.status();
-        }
-
-        auto strPair = log.encode();
-        // write binlog
-        auto s = store->setKV(strPair.first, strPair.second,
-                              txn.get(), false /*withlog*/);
-        if (!s.ok()) {
-            return s;
-        }
-        switch (logVal.getOp()) {
-            case (ReplOp::REPL_OP_SET): {
-                Expected<RecordValue> expRv =
-                    RecordValue::decode(logVal.getOpValue());
-                if (!expRv.ok()) {
-                    return expRv.status();
-                }
-                s = store->setKV(expRk.value(), expRv.value(),
-                                      txn.get(), false /*withlog*/);
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            case (ReplOp::REPL_OP_DEL): {
-                s = store->delKV(expRk.value(), txn.get(), false /*withlog*/);
-                if (!s.ok()) {
-                    return s;
-                } else {
-                    break;
-                }
-            }
-            default: {
-                LOG(FATAL) << "invalid binlogOp:"
-                            << static_cast<uint8_t>(logVal.getOp());
-            }
-        }
+    Status s = store->applyBinlog(ops, txn.get());
+    if (!s.ok()) {
+        return s;
     }
     Expected<uint64_t> expCmit = txn->commit();
     if (!expCmit.ok()) {

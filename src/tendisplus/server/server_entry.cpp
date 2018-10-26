@@ -270,6 +270,49 @@ bool ServerEntry::processRequest(uint64_t connId) {
     return true;
 }
 
+void ServerEntry::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w,
+                                 const std::set<std::string>& sections) const {
+    if (sections.find("network") != sections.end()) {
+        w.Key("network");
+        w.StartObject();
+        w.Key("sticky_packets");
+        w.Uint64(_netMatrix->stickyPackets.get());
+        w.Key("conn_created");
+        w.Uint64(_netMatrix->connCreated.get());
+        w.Key("conn_released");
+        w.Uint64(_netMatrix->connReleased.get());
+        w.Key("invalid_packets");
+        w.Uint64(_netMatrix->invalidPackets.get());
+        w.EndObject();
+    }
+    if (sections.find("request") != sections.end()) {
+        w.Key("request");
+        w.StartObject();
+        w.Key("processed");
+        w.Uint64(_reqMatrix->processed.get());
+        w.Key("read_packet_cost");
+        w.Uint64(_reqMatrix->readPacketCost.get());
+        w.Key("process_cost");
+        w.Uint64(_reqMatrix->processCost.get());
+        w.Key("send_packet_cost");
+        w.Uint64(_reqMatrix->sendPacketCost.get());
+        w.EndObject();
+    }
+    if (sections.find("req_pool") != sections.end()) {
+        w.Key("req_pool");
+        w.StartObject();
+        w.Key("in_queue");
+        w.Uint64(_poolMatrix->inQueue.get());
+        w.Key("executed");
+        w.Uint64(_poolMatrix->executed.get());
+        w.Key("queue_time");
+        w.Uint64(_poolMatrix->queueTime.get());
+        w.Key("execute_time");
+        w.Uint64(_poolMatrix->executeTime.get());
+        w.EndObject();
+    }
+}
+
 // full-time matrix collect
 void ServerEntry::ftmc() {
     using namespace std::chrono_literals;  // NOLINT(build/namespaces)

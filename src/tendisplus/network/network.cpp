@@ -102,9 +102,9 @@ Expected<uint64_t> NetworkAsio::client2Session(
                 _server, std::move(c->borrowConn()),
                 connId, true, _netMatrix, _reqMatrix);
     sess->getCtx()->setAuthed();
-    _server->addSession(std::move(sess));
+    _server->addSession(sess);
     ++_netMatrix->connCreated;
-    return connId;
+    return sess->id();
 }
 
 void NetworkAsio::doAccept() {

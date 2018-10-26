@@ -4,6 +4,8 @@
 #include <sstream>
 #include <map>
 #include <vector>
+#include <list>
+#include <limits>
 #include "glog/logging.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
@@ -49,18 +51,24 @@ Expected<Record> RocksKVCursor::next() {
     return result.status();
 }
 
-RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId)
+RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly)
         :_txnId(txnId),
          _txn(nullptr),
          _store(store),
-         _done(false) {
+         _done(false),
+         _replOnly(replOnly) {
 }
 
-std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(uint64_t begin) {
+std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
+                                uint64_t begin,
+                                bool ignoreReadBarrier) {
     ensureTxn();
     auto cursor = createCursor();
 
-    uint64_t hv = _store->getHighestVisibleTxnId();
+    uint64_t hv = _store->getHighestBinlogId();
+    if (ignoreReadBarrier) {
+        hv = Transaction::MAX_VALID_TXNID;
+    }
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
 }
 
@@ -78,9 +86,15 @@ Expected<uint64_t> RocksOptTxn::commit() {
     INVARIANT(!_done);
     _done = true;
 
-    const auto guard = MakeGuard([this] {
+    uint64_t binlogTxnId = Transaction::TXNID_UNINITED;
+    const auto guard = MakeGuard([this, &binlogTxnId] {
         _txn.reset();
-        _store->markCommitted(_txnId);
+        // for non-replonly mode, we should have binlogTxnId == _txnId
+        if (!_replOnly) {
+            INVARIANT(binlogTxnId == _txnId
+                      || binlogTxnId == Transaction::TXNID_UNINITED);
+        }
+        _store->markCommitted(_txnId, binlogTxnId);
     });
 
     if (_txn == nullptr) {
@@ -95,20 +109,34 @@ Expected<uint64_t> RocksOptTxn::commit() {
     }
     for (auto& v : _binlogs) {
         auto strPair = v.encode();
+        if (binlogTxnId == Transaction::TXNID_UNINITED) {
+            binlogTxnId = v.getReplLogKey().getTxnId();
+        } else {
+            if (binlogTxnId != v.getReplLogKey().getTxnId()) {
+                binlogTxnId = Transaction::TXNID_UNINITED;
+                return {ErrorCodes::ERR_INTERNAL,
+                        "binlogTxnId in one txn not same"};
+            }
+        }
         auto s = _txn->Put(strPair.first, strPair.second);
         if (!s.ok()) {
+            binlogTxnId = Transaction::TXNID_UNINITED;
             return {ErrorCodes::ERR_INTERNAL, s.ToString()};
         }
     }
+
     TEST_SYNC_POINT("RocksOptTxn::commit()::1");
     TEST_SYNC_POINT("RocksOptTxn::commit()::2");
     auto s = _txn->Commit();
     if (s.ok()) {
         return _txnId;
-    } else if (s.IsBusy() || s.IsTryAgain()) {
-        return {ErrorCodes::ERR_COMMIT_RETRY, s.ToString()};
     } else {
-        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        binlogTxnId = Transaction::TXNID_UNINITED;
+        if (s.IsBusy() || s.IsTryAgain()) {
+            return {ErrorCodes::ERR_COMMIT_RETRY, s.ToString()};
+        } else {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
     }
 }
 
@@ -118,7 +146,7 @@ Status RocksOptTxn::rollback() {
 
     const auto guard = MakeGuard([this] {
         _txn.reset();
-        _store->markCommitted(_txnId);
+        _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
     });
 
     if (_txn == nullptr) {
@@ -178,15 +206,14 @@ Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
 }
 
 Status RocksOptTxn::setKV(const std::string& key,
-                          const std::string& val,
-                          bool withLog) {
+                          const std::string& val) {
+    if (_replOnly) {
+        return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
+    }
     ensureTxn();
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-    }
-    if (!withLog) {
-        return {ErrorCodes::ERR_OK, ""};
     }
 
     if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
@@ -206,14 +233,14 @@ Status RocksOptTxn::setKV(const std::string& key,
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksOptTxn::delKV(const std::string& key, bool withLog) {
+Status RocksOptTxn::delKV(const std::string& key) {
+    if (_replOnly) {
+        return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
+    }
     ensureTxn();
     auto s = _txn->Delete(key);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-    }
-    if (!withLog) {
-        return {ErrorCodes::ERR_OK, ""};
     }
 
     if (_binlogs.size() >= std::numeric_limits<uint16_t>::max()) {
@@ -233,12 +260,62 @@ Status RocksOptTxn::delKV(const std::string& key, bool withLog) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksOptTxn::applyBinlog(const std::list<ReplLog>& ops) {
+    if (!_replOnly) {
+        return {ErrorCodes::ERR_INTERNAL, "txn is not replOnly"};
+    }
+    ensureTxn();
+    for (const auto& log : ops) {
+        const ReplLogValue& logVal = log.getReplLogValue();
+
+        Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
+        if (!expRk.ok()) {
+            return expRk.status();
+        }
+
+        auto strPair = log.encode();
+        // write binlog
+        auto s = _txn->Put(strPair.first, strPair.second);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        switch (logVal.getOp()) {
+            case (ReplOp::REPL_OP_SET): {
+                Expected<RecordValue> expRv =
+                    RecordValue::decode(logVal.getOpValue());
+                if (!expRv.ok()) {
+                    return expRv.status();
+                }
+                s = _txn->Put(expRk.value().encode(), expRv.value().encode());
+                if (!s.ok()) {
+                    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+                } else {
+                    break;
+                }
+            }
+            case (ReplOp::REPL_OP_DEL): {
+                s = _txn->Delete(expRk.value().encode());
+                if (!s.ok()) {
+                    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+                } else {
+                    break;
+                }
+            }
+            default: {
+                LOG(FATAL) << "invalid binlogOp:"
+                            << static_cast<uint8_t>(logVal.getOp());
+            }
+        }
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 RocksOptTxn::~RocksOptTxn() {
     if (_done) {
         return;
     }
     _txn.reset();
-    _store->markCommitted(_txnId);
+    _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
 }
 
 rocksdb::Options RocksKVStore::options() {
@@ -301,6 +378,42 @@ Status RocksKVStore::stop() {
     _isRunning = false;
     _db.reset();
     return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::setMode(StoreMode mode) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_aliveTxns.size() != 0) {
+        return {ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive"};
+    }
+    if (_mode == mode) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    uint64_t oldSeq = _nextTxnSeq;
+    if (mode == KVStore::StoreMode::READ_WRITE) {
+        INVARIANT(_mode == KVStore::StoreMode::REPLICATE_ONLY);
+        // in READ_WRITE mode, the binlog's key is identified by _nextTxnSeq,
+        // in REPLICATE_ONLY mode, the binlog is same as the sync-source's
+        // when changing from REPLICATE_ONLY to READ_WRITE mode, we shrink
+        // _nextTxnSeq so that binlog's wont' be duplicated.
+        if (_nextTxnSeq <= _highestVisible) {
+            _nextTxnSeq = _highestVisible+1;
+        }
+    } else if (mode == KVStore::StoreMode::REPLICATE_ONLY) {
+        INVARIANT(_mode == KVStore::StoreMode::READ_WRITE);
+    }
+    LOG(INFO) << "store:" << dbId()
+              << ",mode:" << static_cast<uint32_t>(_mode)
+              << ",changes to:" << static_cast<uint32_t>(mode)
+              << ",_nextTxnSeq:" << oldSeq
+              << ",changes to:" << _nextTxnSeq;
+    _mode = mode;
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
+                                 Transaction *txn) {
+    return txn->applyBinlog(txnLog);
 }
 
 Status RocksKVStore::clear() {
@@ -372,7 +485,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
-    // TODO(deyukong): use BinlogCursor to rewrite 
+    // TODO(deyukong): use BinlogCursor to rewrite
     rocksdb::ReadOptions readOpts;
     auto iter = std::unique_ptr<rocksdb::Iterator>(
         tmpDb->GetBaseDB()->NewIterator(readOpts));
@@ -424,6 +537,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
         :KVStore(id, cfg->dbPath),
          _isRunning(false),
          _hasBackup(false),
+         _mode(KVStore::StoreMode::READ_WRITE),
          _db(nullptr),
          _stats(rocksdb::CreateDBStatistics()),
          _blockCache(blockCache),
@@ -481,13 +595,13 @@ Expected<BackupInfo> RocksKVStore::backup() {
 
     // NOTE(deyukong): we should get highVisible before making a ckpt
     BackupInfo result;
-    uint64_t highVisible = getHighestVisibleTxnId();
+    uint64_t highVisible = getHighestBinlogId();
     if (highVisible == Transaction::TXNID_UNINITED) {
-        return {ErrorCodes::ERR_INTERNAL, "highVisible not inited"};
+        LOG(WARNING) << "store:" << dbId() << " highVisible still zero";
     }
     result.setBinlogPos(highVisible);
 
-    rocksdb::Checkpoint* checkpoint;    
+    rocksdb::Checkpoint* checkpoint;
     auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -525,7 +639,9 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
         return {ErrorCodes::ERR_INTERNAL, "db stopped!"};
     }
     uint64_t txnId = _nextTxnSeq++;
-    auto ret = std::unique_ptr<Transaction>(new RocksOptTxn(this, txnId));
+    bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
+    auto ret = std::unique_ptr<Transaction>(
+                                new RocksOptTxn(this, txnId, replOnly));
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);
 }
@@ -534,7 +650,7 @@ rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
     return _db.get();
 }
 
-uint64_t RocksKVStore::getHighestVisibleTxnId() const {
+uint64_t RocksKVStore::getHighestBinlogId() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _highestVisible;
 }
@@ -544,26 +660,26 @@ void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
     if (_aliveTxns.find(txnId) != _aliveTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " double add uncommitted";
     }
-    _aliveTxns.insert({txnId, false});
+    _aliveTxns.insert({txnId, {false, Transaction::TXNID_UNINITED}});
 }
 
-void RocksKVStore::markCommitted(uint64_t txnId) {
+void RocksKVStore::markCommitted(uint64_t txnId, uint64_t binlogTxnId) {
     std::lock_guard<std::mutex> lk(_mutex);
-    markCommittedInLock(txnId);
+    markCommittedInLock(txnId, binlogTxnId);
 }
 
 std::set<uint64_t> RocksKVStore::getUncommittedTxns() const {
     std::lock_guard<std::mutex> lk(_mutex);
     std::set<uint64_t> result;
     for (auto& kv : _aliveTxns) {
-        if (!kv.second) {
+        if (!kv.second.first) {
             result.insert(kv.first);
         }
     }
     return result;
 }
 
-void RocksKVStore::markCommittedInLock(uint64_t txnId) {
+void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
     if (!_isRunning) {
         LOG(FATAL) << "BUG: _uncommittedTxns not empty after stopped";
     }
@@ -573,19 +689,31 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId) {
     if (it == _aliveTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " not in uncommitted";
     }
-    if (it->second) {
+    if (it->second.first) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " already committed";
     }
-    it->second = true;
+    if (_mode == KVStore::StoreMode::READ_WRITE) {
+        INVARIANT(binlogTxnId == txnId ||
+                    binlogTxnId == Transaction::TXNID_UNINITED);
+    } else {
+        // currently, slaves do writes sequencially
+        INVARIANT(binlogTxnId > _highestVisible ||
+                    binlogTxnId == Transaction::TXNID_UNINITED);
+    }
+    it->second.first = true;
+    it->second.second = binlogTxnId;
 
     // NOTE(deyukong): now, we can remove a visibility-hole
+    // TODO(deyukong): afaik, slaves do writes sequencially, so in fact, there
+    // is no write-holes.
     if (it == _aliveTxns.begin()) {
         while (it != _aliveTxns.end()) {
-            if (!it->second) {
+            if (!it->second.first) {
                 break;
             }
-            INVARIANT(it->first > _highestVisible);
-            _highestVisible = it->first;
+            if (it->second.second != Transaction::TXNID_UNINITED) {
+                _highestVisible = it->second.second;
+            }
             it = _aliveTxns.erase(it);
         }
     }
@@ -602,34 +730,67 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
 
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
-                           Transaction *txn,
-                           bool withLog) {
-    return txn->setKV(key.encode(), value.encode(), withLog);
+                           Transaction *txn) {
+    return txn->setKV(key.encode(), value.encode());
 }
 
 Status RocksKVStore::setKV(const Record& kv,
-                           Transaction* txn,
-                           bool withLog) {
+                           Transaction* txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
     Record::KV pair = kv.encode();
-    return txn->setKV(pair.first, pair.second, withLog);
+    return txn->setKV(pair.first, pair.second);
 }
 
 Status RocksKVStore::setKV(const std::string& key,
                            const std::string& val,
-                           Transaction *txn,
-                           bool withLog) {
-    return txn->setKV(key, val, withLog);
+                           Transaction *txn) {
+    return txn->setKV(key, val);
 }
 
 Status RocksKVStore::delKV(const RecordKey& key,
-                           Transaction *txn,
-                           bool withLog) {
+                           Transaction *txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
-    return txn->delKV(key.encode(), withLog);
+    return txn->delKV(key.encode());
 }
 
-void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+void RocksKVStore::appendJSONStat(
+            rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+    static const std::map<std::string, std::string> properties = {
+        {"rocksdb.num-immutable-mem-table", "num_immutable_mem_table"},
+        {"rocksdb.mem-table-flush-pending", "mem_table_flush_pending"},
+        {"rocksdb.compaction-pending", "compaction_pending"},
+        {"rocksdb.background-errors", "background_errors"},
+        {"rocksdb.cur-size-active-mem-table", "cur_size_active_mem_table"},
+        {"rocksdb.cur-size-all-mem-tables", "cur_size_all_mem_tables"},
+        {"rocksdb.size-all-mem-tables", "size_all_mem_tables"},
+        {"rocksdb.num-entries-active-mem-table",
+                                "num_entries_active_mem_table"},
+        {"rocksdb.num-entries-imm-mem-tables", "num_entries_imm_mem_tables"},
+        {"rocksdb.num-deletes-active-mem-table",
+                                "num_deletes_active_mem_table"},
+        {"rocksdb.num-deletes-imm-mem-tables", "num_deletes_imm_mem_tables"},
+        {"rocksdb.estimate-num-keys", "estimate_num_keys"},
+        {"rocksdb.estimate-table-readers-mem", "estimate_table_readers_mem"},
+        {"rocksdb.is-file-deletions-enabled", "is_file_deletions_enabled"},
+        {"rocksdb.num-snapshots", "num_snapshots"},
+        {"rocksdb.oldest-snapshot-time", "oldest_snapshot_time"},
+        {"rocksdb.num-live-versions", "num_live_versions"},
+        {"rocksdb.current-super-version-number",
+                                "current_super_version_number"},
+        {"rocksdb.estimate-live-data-size", "estimate_live_data_size"},
+        {"rocksdb.min-log-number-to-keep", "min_log_number_to_keep"},
+        {"rocksdb.total-sst-files-size", "total_sst_files_size"},
+        {"rocksdb.live-sst-files-size", "live_sst_files_size"},
+        {"rocksdb.base-level", "base_level"},
+        {"rocksdb.estimate-pending-compaction-bytes",
+                                "estimate_pending_compaction_bytes"},
+        {"rocksdb.num-running-compactions", "num_running_compactions"},
+        {"rocksdb.num-running-flushes", "num_running_flushses"},
+        {"rocksdb.actual-delayed-write-rate", "actual_delayed_write_rate"},
+        {"rocksdb.is-write-stopped", "is_write_stopped"},
+    };
+    w.Key("id");
+    w.String(dbId().c_str());
     w.Key("is_running");
     w.Uint64(_isRunning);
     w.Key("has_backup");
@@ -647,6 +808,20 @@ void RocksKVStore::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w)
         w.Key("high_visible");
         w.Uint64(_highestVisible);
     }
+    w.Key("rocksdb");
+    w.StartObject();
+    for (const auto& kv : properties) {
+        uint64_t tmp;
+        bool ok = _db->GetBaseDB()->GetIntProperty(kv.first, &tmp);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                         << " getProperity:" << kv.first << " failed";
+            continue;
+        }
+        w.Key(kv.second.c_str());
+        w.Uint64(tmp);
+    }
+    w.EndObject();
 }
 
 }  // namespace tendisplus

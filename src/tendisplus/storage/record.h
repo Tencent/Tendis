@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 #include <memory>
+#include <vector>
+#include <limits>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
 
@@ -22,14 +24,14 @@ enum class RecordType {
     RT_BINLOG,
 };
 
-char rt2Char(RecordType t);
-RecordType char2Rt(char t);
+uint8_t rt2Char(RecordType t);
+RecordType char2Rt(uint8_t t);
 
 // ********************* key format ***********************************
 // DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
-// DBID is a varint32 in little endian
+// DBID is an int32 in big-endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
-// 'l' for RT_LIST_ELE
+// 'l' for RT_LIST_ELE an so on, see rt2Char
 // PK is primarykey, its length is described in len(PK)
 // SK is secondarykey, its length is not stored
 // len(PK) is varint32 stored in bigendian, so we can read
@@ -63,6 +65,7 @@ class RecordKey {
     // an encoded prefix until prefix and a padding zero.
     // mainly for prefix scan.
     std::string prefixPk() const;
+    static const std::string& prefixReplLog();
 
     RecordType getRecordType() const;
     std::string encode() const;
@@ -167,9 +170,8 @@ class ReplLogKey {
     void setFlag(ReplFlag f) { _flag = f; }
     ReplFlag getFlag() const { return _flag; }
 
-    // return the binlog prefix
-    static const std::string& prefix();
     static std::string prefix(uint64_t commitId);
+    static constexpr uint32_t DBID = std::numeric_limits<uint32_t>::max();
 
  private:
     uint64_t _txnId;
@@ -258,7 +260,7 @@ class HashMetaValue {
 class SetMetaValue {
  public:
     SetMetaValue();
-    SetMetaValue(uint64_t count);
+    explicit SetMetaValue(uint64_t count);
     static Expected<SetMetaValue> decode(const std::string&);
     std::string encode() const;
     void setCount(uint64_t count);
