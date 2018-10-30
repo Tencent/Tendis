@@ -177,7 +177,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     } else if (stringtoWrite.size() > 1024*1024*10) {
         secs = 4;
     }
-    Status s = client->writeData(ss.str(), std::chrono::seconds(secs));
+    Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
     if (!s.ok()) {
         return s;
     }
@@ -361,7 +361,7 @@ void ReplManager::supplyFullSyncRoutine(
     }
 
     std::string readBuf;
-    readBuf.reserve(size_t(20ULL*1024*1024));  // 20MB
+    readBuf.reserve(FILEBATCH);  // 20MB
     for (auto& fileInfo : bkInfo.value().getFileList()) {
         s = client->writeLine(fileInfo.first, std::chrono::seconds(1));
         if (!s.ok()) {
@@ -377,7 +377,8 @@ void ReplManager::supplyFullSyncRoutine(
         }
         size_t remain = fileInfo.second;
         while (remain) {
-            size_t batchSize = std::min(remain, readBuf.capacity());
+            size_t batchSize = std::min(remain, FILEBATCH);
+            _rateLimiter->Request(batchSize);
             readBuf.resize(batchSize);
             remain -= batchSize;
             myfile.read(&readBuf[0], batchSize);

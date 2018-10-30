@@ -18,6 +18,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
@@ -25,6 +26,7 @@ namespace tendisplus {
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
     :_isRunning(false),
      _svr(svr),
+     _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
      _firstBinlogId(0),
      _clientIdGen(0),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
