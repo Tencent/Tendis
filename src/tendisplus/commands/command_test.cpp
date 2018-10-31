@@ -209,7 +209,6 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
-
     // pk not exists
     {
         sess.setArgs({"zrank", "test", std::to_string(0)});

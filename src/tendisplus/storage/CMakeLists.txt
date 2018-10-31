@@ -21,6 +21,9 @@ target_link_libraries(record_test record status gtest_main ${SYS_LIBS})
 add_executable(skiplist_test skiplist_test.cpp)
 target_link_libraries(skiplist_test skiplist rocks_kvstore server_params status gtest_main)
 
+add_executable(skiplist_test skiplist_test.cpp)
+target_link_libraries(skiplist_test skiplist rocks_kvstore server_params status gtest_main)
+
 add_subdirectory(rocks)
 
 add_library(catalog STATIC catalog.cpp)

@@ -958,6 +958,46 @@ uint64_t ZSlMetaValue::getPosAlloc() const {
     return _posAlloc;
 }
 
+/*
+ZslEleSubKey::ZslEleSubKey()
+    :ZslEleSubKey(0, "") {
+}
+
+ZslEleSubKey::ZslEleSubKey(uint64_t score, const std::string& subkey)
+    :ZslEleSubKey(score, subkey) {
+}
+
+std::string ZslEleSubKey::encode() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    const uint8_t *scoreBuf = reinterpret_cast<const uint8_t*>(&_score);
+    for (size_t i = 0; i < sizeof(_score); i++) {
+        key.emplace_back(scoreBuf[sizeof(_score)-1-i]);
+    }
+    key.insert(key.end(), _subKey.begin(), _subKey.end());
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
+}
+
+Expected<ZslEleSubKey> ZslEleSubKey::decode(const std::string& key) {
+    uint64_t score = 0;
+    std::string subKey;
+
+    if (key.size() <= sizeof(score)) {
+        return {ErrorCodes::ERR_DECODE, "ZslEleSubKey bad size"};
+    }
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    size_t offset = 0;
+
+    for (size_t i = 0; i < sizeof(score); i++) {
+        score = (score << 8)|keyCstr[i];
+    }
+    offset += sizeof(score);
+    subKey = std::string(key.c_str()+offset, key.size()-offset);
+    return ZslEleSubKey(score, subKey);
+}
+*/
+
 ZSlEleValue::ZSlEleValue()
         :ZSlEleValue(0, "") {
 }
