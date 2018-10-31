@@ -68,14 +68,16 @@ RecordType char2Rt(uint8_t t) {
             return RecordType::RT_SET_META;
         case 's':
             return RecordType::RT_SET_ELE;
+        case 'Z':
+            return RecordType::RT_ZSET_META;
         case 'z':
             return RecordType::RT_ZSET_S_ELE;
         case 'c':
             return RecordType::RT_ZSET_H_ELE;
-        case std::numeric_limits<char>::max():
+        case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
-            LOG(FATAL) << "invalid recordchar:" << t;
+            LOG(FATAL) << "invalid rcdchr:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
             return RecordType::RT_INVALID;
     }
@@ -843,6 +845,23 @@ Expected<SetMetaValue> SetMetaValue::decode(const std::string& val) {
     return SetMetaValue(count);
 }
 
+std::string SetMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(8);
+    auto countBytes = varintEncode(_count);
+    value.insert(value.end(), countBytes.begin(), countBytes.end());
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+void SetMetaValue::setCount(uint64_t count) {
+    _count = count;
+}
+
+uint64_t SetMetaValue::getCount() const {
+    return _count;
+}
+
 uint32_t ZSlMetaValue::HEAD_ID = 1;
 
 ZSlMetaValue::ZSlMetaValue()
@@ -890,6 +909,10 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
 
     // _level
     auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
     result._level = expt.value().first;
 
     // _maxLevel
@@ -934,46 +957,6 @@ uint32_t ZSlMetaValue::getCount() const {
 uint64_t ZSlMetaValue::getPosAlloc() const {
     return _posAlloc;
 }
-
-/*
-ZslEleSubKey::ZslEleSubKey()
-    :ZslEleSubKey(0, "") {
-}
-
-ZslEleSubKey::ZslEleSubKey(uint64_t score, const std::string& subkey)
-    :ZslEleSubKey(score, subkey) {
-}
-
-std::string ZslEleSubKey::encode() const {
-    std::vector<uint8_t> key;
-    key.reserve(128);
-    const uint8_t *scoreBuf = reinterpret_cast<const uint8_t*>(&_score);
-    for (size_t i = 0; i < sizeof(_score); i++) {
-        key.emplace_back(scoreBuf[sizeof(_score)-1-i]);
-    }
-    key.insert(key.end(), _subKey.begin(), _subKey.end());
-    return std::string(reinterpret_cast<const char *>(
-                key.data()), key.size());
-}
-
-Expected<ZslEleSubKey> ZslEleSubKey::decode(const std::string& key) {
-    uint64_t score = 0;
-    std::string subKey;
-
-    if (key.size() <= sizeof(score)) {
-        return {ErrorCodes::ERR_DECODE, "ZslEleSubKey bad size"};
-    }
-    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
-    size_t offset = 0;
-
-    for (size_t i = 0; i < sizeof(score); i++) {
-        score = (score << 8)|keyCstr[i];
-    }
-    offset += sizeof(score);
-    subKey = std::string(key.c_str()+offset, key.size()-offset);
-    return ZslEleSubKey(score, subKey);
-}
-*/
 
 ZSlEleValue::ZSlEleValue()
         :ZSlEleValue(0, "") {
@@ -1037,23 +1020,6 @@ std::string ZSlEleValue::encode() const {
 
     return std::string(reinterpret_cast<const char *>(
                 value.data()), value.size());
-}
-
-std::string SetMetaValue::encode() const {
-    std::vector<uint8_t> value;
-    value.reserve(8);
-    auto countBytes = varintEncode(_count);
-    value.insert(value.end(), countBytes.begin(), countBytes.end());
-    return std::string(reinterpret_cast<const char *>(
-                value.data()), value.size());
-}
-
-void SetMetaValue::setCount(uint64_t count) {
-    _count = count;
-}
-
-uint64_t SetMetaValue::getCount() const {
-    return _count;
 }
 
 Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {

@@ -191,7 +191,7 @@ TEST(ZSl, Common) {
     }
 
     for (size_t i = 0; i < 1000000; i++) {
-        ZSlEleValue v(genRand(), randomStr(false));
+        ZSlEleValue v(genRand(), randomStr(256, false));
         for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             v.setForward(i, genRand());
             v.setSpan(i, genRand());

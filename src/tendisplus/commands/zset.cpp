@@ -14,7 +14,7 @@
 
 namespace tendisplus {
 
-Expected<std::string> genericZadd(NetSession *sess,
+Expected<std::string> genericZadd(Session *sess,
                             PStore kvstore,
                             const RecordKey& mk,
                             const std::map<std::string, uint64_t>& subKeys) {
@@ -121,7 +121,7 @@ Expected<std::string> genericZadd(NetSession *sess,
     return Command::fmtLongLong(cnt);
 }
 
-Expected<std::string> genericZRank(NetSession *sess,
+Expected<std::string> genericZRank(Session *sess,
                                    PStore kvstore,
                                    const RecordKey& mk,
                                    const std::string& subkey) {
@@ -188,7 +188,7 @@ class ZRankCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
@@ -242,7 +242,7 @@ class ZAddCommand: public Command {
         return 1;
     }
 
-    Expected<std::string> run(NetSession *sess) final {
+    Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         if ((args.size() - 2)%2 != 0) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid zadd params len"};
