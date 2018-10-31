@@ -14,6 +14,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/utils/rate_limiter.h"
 
 namespace tendisplus {
 
@@ -126,6 +127,9 @@ class ReplManager {
     // master's pov, workerpool of pushing full backup
     std::unique_ptr<WorkerPool> _fullPusher;
 
+    // master's pov fullsync rate limiter
+    std::unique_ptr<RateLimiter> _rateLimiter;
+
     // master's pov, workerpool of pushing incr backup
     std::unique_ptr<WorkerPool> _incrPusher;
 
@@ -146,6 +150,8 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _incrPushMatrix;
     std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
+
+    static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
 };
 
 }  // namespace tendisplus

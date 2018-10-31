@@ -204,7 +204,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         }
         size_t remain = flist.at(s.value());
         while (remain) {
-            size_t batchSize = std::min(remain, size_t(20ULL*1024*1024));
+            size_t batchSize = std::min(remain, FILEBATCH);
             remain -= batchSize;
             Expected<std::string> exptData =
                 client->read(batchSize, std::chrono::seconds(10));
