@@ -211,37 +211,56 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
     // pk not exists
     {
-        sess.setArgs({"zrank", "test", std::to_string(0)});
+        sess.setArgs({"zrank", "tzk1", std::to_string(0)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtNull());
     }
     for (uint32_t i = 1; i < 10000; i++) {
-        sess.setArgs({"zadd", "test", std::to_string(i), std::to_string(i)});
+        sess.setArgs({"zadd", "tzk1", std::to_string(i), std::to_string(i)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
     }
     for (uint32_t i = 1; i < 10000; i++) {
-        sess.setArgs({"zrank", "test", std::to_string(i)});
+        sess.setArgs({"zrank", "tzk1", std::to_string(i)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i-1));
     }
     {
-        sess.setArgs({"zrank", "test", std::to_string(0)});
+        sess.setArgs({"zrank", "tzk1", std::to_string(0)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtNull());
     }
     {
-        sess.setArgs({"zadd", "test", std::to_string(1), std::to_string(9999)});
+        sess.setArgs({"zadd", "tzk1", std::to_string(1), std::to_string(9999)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
-        sess.setArgs({"zrank", "test", std::to_string(9999)});
+        sess.setArgs({"zrank", "tzk1", std::to_string(9999)});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    }
+
+    for (uint32_t i = 1; i < 10000; i++) {
+        sess.setArgs({"zrem", "tzk1", std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+        sess.setArgs({"zcard", "tzk1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(9999-i));
+        sess.setArgs({"exists", "tzk1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (i != 9999) {
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+        } else {
+            EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+        }
     }
 }
 

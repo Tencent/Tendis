@@ -190,7 +190,8 @@ class ExistsCommand: public Command {
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, storeId, rk);
@@ -240,6 +241,7 @@ class TypeCommand: public Command {
             {RecordType::RT_LIST_META, "list"},
             {RecordType::RT_HASH_META, "hash"},
             {RecordType::RT_SET_META, "set"},
+            {RecordType::RT_ZSET_META, "zset"},
         };
         for (const auto& typestr : lookup) {
             RecordKey rk(pCtx->getDbId(), typestr.first, key, "");
