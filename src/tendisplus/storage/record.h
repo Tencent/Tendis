@@ -277,13 +277,14 @@ class SetMetaValue {
 class ZSlMetaValue {
  public:
     ZSlMetaValue();
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count);
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t alloc);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail, uint64_t alloc);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;
     uint8_t getLevel() const;
     uint32_t getCount() const;
+    uint64_t getTail() const;
     uint64_t getPosAlloc() const;
     // can not dynamicly change
     static constexpr int8_t MAX_LAYER = 24;
@@ -298,6 +299,7 @@ class ZSlMetaValue {
     uint8_t _level;
     uint8_t _maxLevel;
     uint32_t _count;
+    uint64_t _tail;
     uint64_t _posAlloc;
 };
 
@@ -307,17 +309,20 @@ class ZSlEleValue {
     ZSlEleValue(uint64_t score, const std::string& subkey);
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
-    uint32_t getForward(uint8_t layer) const;
-    void setForward(uint8_t layer, uint32_t pointer);
+    uint64_t getForward(uint8_t layer) const;
+    uint64_t getBackward() const;
+    void setForward(uint8_t layer, uint64_t pointer);
+    void setBackward(uint64_t pointer);
     uint64_t getScore() const;
     const std::string& getSubKey() const;
     uint32_t getSpan(uint8_t layer) const;
     void setSpan(uint8_t layer, uint32_t span);
 
  private:
-    std::vector<uint32_t> _forward;
+    std::vector<uint64_t> _forward;
     std::vector<uint32_t> _span;
     uint64_t _score;
+    uint64_t _backward;
     std::string _subKey;
 };
 

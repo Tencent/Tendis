@@ -1,5 +1,6 @@
 #include <limits.h>
 #include <string.h>
+#include <math.h>
 #include <sstream>
 #include <utility>
 
@@ -29,7 +30,7 @@ long bitPos(const void *s, size_t count, uint32_t bit) {
     /* Skip initial bits not aligned to sizeof(unsigned long) byte by byte. */
     skipval = bit ? 0 : UCHAR_MAX;
     c = (unsigned char*) s;
-    while((unsigned long)c & (sizeof(*l)-1) && count) {
+    while ((unsigned long)c & (sizeof(*l)-1) && count) {
         if (*c != skipval) break;
         c++;
         count--;
@@ -78,7 +79,7 @@ long bitPos(const void *s, size_t count, uint32_t bit) {
     one >>= 1;       /* All bits set to 1 but the MSB. */
     one = ~one;      /* All bits set to 0 but the MSB. */
 
-    while(one) {
+    while (one) {
         if (((one & word) != 0) == bit) return pos;
         pos++;
         one >>= 1;
@@ -251,6 +252,34 @@ int hex_digit_to_int(char c) {
     case 'f': case 'F': return 15;
     default: return 0;
     }
+}
+
+int zslParseRange(const char *min, const char *max, Zrangespec *spec) {
+    char *eptr;
+    spec->minex = spec->maxex = 0;
+
+    /* Parse the min-max interval. If one of the values is prefixed
+     * by the "(" character, it's considered "open". For instance
+     * ZRANGEBYSCORE zset (1.5 (2.5 will match min < x < max
+     * ZRANGEBYSCORE zset 1.5 2.5 will instead match min <= x <= max */
+    if (min[0] == '(') {
+        spec->min = strtod(min+1, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->min)) return -1;
+        spec->minex = 1;
+    } else {
+        spec->min = strtod(min, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->min)) return -1;
+    }
+
+    if (max[0] == '(') {
+        spec->max = strtod(max+1, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->max)) return -1;
+        spec->maxex = 1;
+    } else {
+        spec->max = strtod(max, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->max)) return -1;
+    }
+    return 0;
 }
 
 std::vector<std::string> splitargs(const std::string& lineStr) {

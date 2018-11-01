@@ -30,6 +30,7 @@ SkipList::SkipList(uint32_t dbId, const std::string& pk,
     :_maxLevel(meta.getMaxLevel()),
      _level(meta.getLevel()),
      _count(meta.getCount()),
+     _tail(meta.getTail()),
      _posAlloc(meta.getPosAlloc()),
      _dbId(dbId),
      _pk(pk),
@@ -100,7 +101,7 @@ Status SkipList::saveNode(uint32_t pointer,
 
 Status SkipList::save(Transaction* txn) {
     RecordKey rk(_dbId, RecordType::RT_ZSET_META, _pk, "");
-    ZSlMetaValue mv(_level, _maxLevel, _count, _posAlloc);
+    ZSlMetaValue mv(_level, _maxLevel, _count, _tail, _posAlloc);
     RecordValue rv(mv.encode());
     return _store->setKV(rk, rv, txn);
 }
@@ -152,6 +153,22 @@ Status SkipList::remove(uint64_t score,
             toupdate->setForward(i, cache[pos]->getForward(i));
         }
     }
+
+    uint64_t btmFwd = cache[pos]->getForward(1);
+    if (btmFwd) {
+        auto node = getNode(btmFwd, &cache, txn);
+        if (!node.ok()) {
+            return node.status();
+        }
+        node.value()->setBackward(cache[pos]->getBackward());
+        Status s = saveNode(btmFwd, *cache[btmFwd], txn);
+        if (!s.ok()) {
+            return s;
+        }
+    } else {
+        _tail = cache[pos]->getBackward();
+    }
+
     while (_level > 1 &&
            cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
         --_level;
@@ -202,9 +219,17 @@ Expected<uint32_t> SkipList::rank(uint64_t score,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
+/*
+Expected<ZSlEleValue> SkipList::firstInRange(const redis_port::Zrangespec& range, Transaction *txn) {
+}
+*/
+
 Status SkipList::insert(uint64_t score,
                         const std::string& subkey,
                         Transaction *txn) {
+    if (_count >= std::numeric_limits<int32_t>::max() / 2) {
+        return {ErrorCodes::ERR_INTERNAL, "zset count reach limit"};
+    }
     std::vector<uint32_t> update(_maxLevel+1, 0);
     std::vector<uint32_t> rank(_maxLevel+1, 0);
     std::map<uint32_t, SkipList::PSE> cache;
@@ -265,6 +290,26 @@ Status SkipList::insert(uint64_t score,
     for (size_t i = lvl+1; i <= _level; ++i) {
         cache[update[i]]->setSpan(i, cache[update[i]]->getSpan(i)+1);
     }
+    if (update[1] == ZSlMetaValue::HEAD_ID) {
+        cache[p.first]->setBackward(0);
+    } else {
+        cache[p.first]->setBackward(update[1]);
+    }
+
+    uint64_t btmFwd = cache[p.first]->getForward(1);
+    if (btmFwd != 0) {
+        auto node = getNode(btmFwd, &cache, txn);
+        if (!node.ok()) {
+            return node.status();
+        }
+        cache[btmFwd]->setBackward(p.first);
+        Status s = saveNode(btmFwd, *cache[btmFwd], txn);
+        if (!s.ok()) {
+            return s;
+        }
+    } else {
+        _tail = p.first;
+    }
     for (size_t i = 1; i <= _level; ++i) {
         Status s = saveNode(update[i], *cache[update[i]], txn);
         if (!s.ok()) {
@@ -314,4 +359,7 @@ uint64_t SkipList::getAlloc() const {
     return _posAlloc;
 }
 
+uint64_t SkipList::getTail() const {
+    return _tail;
+}
 }  // namespace tendisplus

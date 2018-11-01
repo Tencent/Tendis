@@ -10,6 +10,7 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/storage/skiplist.h"
 #include "tendisplus/commands/command.h"
 
@@ -118,7 +119,7 @@ Expected<std::string> genericZadd(Session *sess,
     } else {
         INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         // head node also included into the count
-        ZSlMetaValue tmp(1/*lvl*/, ZSlMetaValue::MAX_LAYER, 1/*count*/);
+        ZSlMetaValue tmp(1/*lvl*/, ZSlMetaValue::MAX_LAYER, 1/*count*/, 0/*tail*/);
         RecordValue rv(tmp.encode());
         Status s = kvstore->setKV(mk, rv, txn.get());
         if (!s.ok()) {
@@ -512,6 +513,43 @@ class ZIncrCommand: public Command {
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } zincrbyCommand;
+
+/*
+class ZCountCommand: public Command {
+ public:
+    ZCountCommand()
+        :Command("zcount") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        Zrangespec range;
+        if (zslParseRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+        }
+        
+    }
+
+} zcountCommand;
+*/
 
 class ZAddCommand: public Command {
  public:

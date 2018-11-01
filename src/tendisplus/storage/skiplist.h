@@ -21,10 +21,14 @@ class SkipList {
     Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
     Expected<uint32_t> rank(uint64_t score,
                             const std::string& subkey, Transaction* txn);
+    /*
+    Expected<ZSlEleValue> firstInRange(const redis_port::Zrangespec& range, Transaction* txn);
+    */
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
     uint64_t getAlloc() const;
+    uint64_t getTail() const;
     uint8_t getLevel() const;
 
  private:
@@ -40,6 +44,7 @@ class SkipList {
     const uint8_t _maxLevel;
     uint8_t _level;
     uint32_t _count;
+    uint64_t _tail;
     uint64_t _posAlloc;
     uint32_t _dbId;
     std::string _pk;

@@ -1,5 +1,6 @@
 #include <fstream>
 #include <utility>
+#include <algorithm>
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
@@ -13,6 +14,7 @@
 namespace tendisplus {
 
 std::shared_ptr<ServerParams> genParams() {
+    srand(time(0));
     const auto guard = MakeGuard([] {
         remove("a.cfg");
     });
@@ -32,7 +34,7 @@ std::shared_ptr<ServerParams> genParams() {
     return cfg;
 }
 
-TEST(SkipList, Reload) {
+TEST(SkipList, BackWardTail) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
@@ -47,7 +49,7 @@ TEST(SkipList, Reload) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1);
+    ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -65,6 +67,93 @@ TEST(SkipList, Reload) {
 
     Expected<uint64_t> commitStatus = eTxn1.value()->commit();
     EXPECT_TRUE(commitStatus.ok());
+
+    SkipList sl(0, "test", meta, store);
+    constexpr uint32_t CNT = 1000;
+    std::vector<uint32_t> keys;
+    for (uint32_t i = 1; i <= CNT; ++i) {
+        keys.push_back(i);
+    }
+
+    uint32_t currMax = 0;
+    std::random_shuffle(keys.begin(), keys.end());
+    // check tail always points to the max num
+    for (auto& i : keys) {
+        currMax = std::max(currMax, i);
+        auto eTxn = store->createTransaction();
+        EXPECT_TRUE(eTxn.ok());
+        Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
+        EXPECT_TRUE(s.ok());
+        s = sl.save(eTxn.value().get());
+        EXPECT_TRUE(s.ok());
+
+        std::string pointerStr = std::to_string(sl.getTail());
+        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        Expected<RecordValue> rv = store->getKV(rk, eTxn.value().get());
+        EXPECT_TRUE(rv.ok()) << rv.status().toString();
+
+        const std::string& ss = rv.value().getValue();
+        auto result = ZSlEleValue::decode(ss);
+        EXPECT_TRUE(result.ok()) << result.status().toString();
+        EXPECT_EQ(result.value().getScore(), currMax);
+
+        Expected<uint64_t> commitStatus = eTxn.value()->commit();
+        EXPECT_TRUE(commitStatus.ok());
+    }
+
+    // randomly erase 500 elements
+    std::random_shuffle(keys.begin(), keys.end());
+    for (uint32_t i = 0; i < CNT/2; ++i) {
+        auto eTxn = store->createTransaction();
+        EXPECT_TRUE(eTxn.ok());
+        Status s = sl.remove(
+            keys[CNT-i-1],
+            std::to_string(keys[CNT-i-1]),
+            eTxn.value().get());
+        EXPECT_TRUE(s.ok());
+        s = sl.save(eTxn.value().get());
+        EXPECT_TRUE(s.ok());
+
+        keys.pop_back();
+        currMax = *std::max_element(keys.begin(), keys.end());
+
+        std::string pointerStr = std::to_string(sl.getTail());
+        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        Expected<RecordValue> rv = store->getKV(rk, eTxn.value().get());
+        EXPECT_TRUE(rv.ok()) << rv.status().toString();
+
+        const std::string& ss = rv.value().getValue();
+        auto result = ZSlEleValue::decode(ss);
+        EXPECT_TRUE(result.ok()) << result.status().toString();
+        EXPECT_EQ(result.value().getScore(), currMax);
+
+        Expected<uint64_t> commitStatus = eTxn.value()->commit();
+        EXPECT_TRUE(commitStatus.ok());
+    }
+
+    // reload
+    auto eTxn2 = store->createTransaction();
+    EXPECT_TRUE(eTxn2.ok());
+    Expected<RecordValue> eMeta = store->getKV(mk, eTxn2.value().get());
+    auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+    EXPECT_TRUE(eMetaContent.ok());
+    meta = eMetaContent.value();
+    EXPECT_EQ(meta.getCount(), CNT/2+1);
+    SkipList sl2(mk.getDbId(), mk.getPrimaryKey(), meta, store);
+    std::sort(keys.begin(), keys.end());
+    uint64_t now = sl2.getTail();
+    for (uint32_t i = CNT/2; i >= 1; --i) {
+        std::string pointerStr = std::to_string(now);
+        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        Expected<RecordValue> rv = store->getKV(rk, eTxn2.value().get());
+        EXPECT_TRUE(rv.ok()) << rv.status().toString();
+
+        const std::string& ss = rv.value().getValue();
+        auto result = ZSlEleValue::decode(ss);
+        EXPECT_TRUE(result.ok()) << result.status().toString();
+        EXPECT_EQ(result.value().getScore(), keys[i-1]);
+        now = result.value().getBackward();
+    }
 }
 
 TEST(SkipList, Mix) {
@@ -82,7 +171,7 @@ TEST(SkipList, Mix) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1);
+    ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -153,7 +242,7 @@ TEST(SkipList, Common) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1);
+    ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());

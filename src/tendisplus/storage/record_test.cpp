@@ -178,16 +178,19 @@ TEST(ZSl, Common) {
         maxLvl = std::max(maxLvl, static_cast<uint8_t>(10));
         uint8_t lvl = genRand() % maxLvl;
         uint32_t count = static_cast<uint32_t>(genRand());
-        ZSlMetaValue m(lvl, maxLvl, count);
+        uint64_t tail = static_cast<uint64_t>(genRand()) * genRand();
+        ZSlMetaValue m(lvl, maxLvl, count, tail);
         EXPECT_EQ(m.getMaxLevel(), maxLvl);
         EXPECT_EQ(m.getLevel(), lvl);
         EXPECT_EQ(m.getCount(), count);
+        EXPECT_EQ(m.getTail(), tail);
         std::string s = m.encode();
         Expected<ZSlMetaValue> expm = ZSlMetaValue::decode(s);
         EXPECT_TRUE(expm.ok());
         EXPECT_EQ(expm.value().getMaxLevel(), maxLvl);
         EXPECT_EQ(expm.value().getLevel(), lvl);
         EXPECT_EQ(expm.value().getCount(), count);
+        EXPECT_EQ(expm.value().getTail(), tail);
     }
 
     for (size_t i = 0; i < 1000000; i++) {
