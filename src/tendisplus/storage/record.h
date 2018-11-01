@@ -277,8 +277,10 @@ class SetMetaValue {
 class ZSlMetaValue {
  public:
     ZSlMetaValue();
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail);
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail, uint64_t alloc);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
+                 uint32_t count, uint64_t tail);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
+                 uint32_t count, uint64_t tail, uint64_t alloc);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;

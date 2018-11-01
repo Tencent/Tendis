@@ -205,6 +205,46 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+void testZset2(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    std::vector<uint64_t> keys;
+    for (uint32_t i = 0; i < 100; i++) {
+        keys.push_back(i);
+    }
+    std::random_shuffle(keys.begin(), keys.end());
+    for (uint32_t i = 0; i < 100; i++) {
+        sess.setArgs({"zadd",
+                      "tzk1",
+                      std::to_string(keys[i]),
+                      std::to_string(keys[i])});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        sess.setArgs({"zcount", "tzk1", "-inf", "+inf"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
+    }
+    for (uint32_t i = 0; i < 100; i++) {
+        for (uint32_t j = 0; j < 100; j++) {
+            sess.setArgs({"zcount",
+                          "tzk1",
+                          std::to_string(i),
+                          std::to_string(j)});
+            auto expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            if (i > j) {
+                EXPECT_EQ(expect.value(), Command::fmtZero());
+            } else {
+                EXPECT_EQ(expect.value(), Command::fmtLongLong(j-i+1))
+                    << i << ' ' << j;
+            }
+        }
+    }
+}
+
 void testZset(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -806,6 +846,7 @@ void testDel(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+/*
 TEST(Command, del) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -871,6 +912,7 @@ TEST(Command, expire) {
     testExpire1(server);
     testExpire2(server);
 }
+*/
 
 TEST(Command, common) {
     auto cfg = genParams();
@@ -901,13 +943,18 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
+    /*
     testKV(server);
     testSetRetry(server);
     testType(server);
     testHash1(server);
     testHash2(server);
     testList(server);
+    // zadd/zrem/zrank
     testZset(server);
+    */
+    // zcount
+    testZset2(server);
 }
 
 }  // namespace tendisplus

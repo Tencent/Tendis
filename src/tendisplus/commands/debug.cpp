@@ -241,7 +241,8 @@ class BinlogTimeCommand: public Command {
         if (!explog.ok()) {
             return explog.status();
         }
-        return Command::fmtLongLong(explog.value().getReplLogKey().getTimestamp());
+        return Command::fmtLongLong(
+            explog.value().getReplLogKey().getTimestamp());
     }
 } binlogTimeCmd;
 

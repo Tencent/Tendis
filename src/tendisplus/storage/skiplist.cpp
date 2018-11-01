@@ -7,6 +7,14 @@
 
 namespace tendisplus {
 
+bool zslValueGteMin(uint64_t value, const Zrangespec& spec) {
+    return spec.minex ? (value > spec.min) : (value >= spec.min);
+}
+
+bool zslValueLteMax(uint64_t value, const Zrangespec& spec) {
+    return spec.maxex ? (value < spec.max) : (value <= spec.max);
+}
+
 // 0 ==
 // 1 <
 // 2 >
@@ -111,7 +119,8 @@ Status SkipList::remove(uint64_t score,
                         Transaction *txn) {
     std::vector<uint32_t> update(_maxLevel+1);
     std::map<uint32_t, SkipList::PSE> cache;
-    Expected<ZSlEleValue*> expHead = getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    Expected<ZSlEleValue*> expHead =
+            getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
     if (!expHead.ok()) {
         return expHead.status();
     }
@@ -188,7 +197,8 @@ Expected<uint32_t> SkipList::rank(uint64_t score,
                                   Transaction *txn) {
     uint32_t rank = 0;
     std::map<uint32_t, SkipList::PSE> cache;
-    Expected<ZSlEleValue*> expHead = getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    Expected<ZSlEleValue*> expHead =
+            getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
     if (!expHead.ok()) {
         return expHead.status();
     }
@@ -219,10 +229,135 @@ Expected<uint32_t> SkipList::rank(uint64_t score,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-/*
-Expected<ZSlEleValue> SkipList::firstInRange(const redis_port::Zrangespec& range, Transaction *txn) {
+/* Find the first node that is contained in the specified range.
+ * Returns NULL when no element is contained in the range. */
+Expected<SkipList::PSE> SkipList::firstInRange(
+        const Zrangespec& range,
+        Transaction *txn) {
+    Expected<bool> inrange = isInRange(range, txn);
+    if (!inrange.ok()) {
+        return inrange.status();
+    }
+    if (!inrange.value()) {
+        return PSE(nullptr);
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expHead =
+        getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+
+    uint32_t pos = ZSlMetaValue::HEAD_ID;
+    for (size_t i = _level; i >= 1; --i) {
+        uint32_t tmpPos = cache[pos]->getForward(i);
+        while (tmpPos != 0) {
+            Expected<ZSlEleValue*> next = getNode(tmpPos, &cache, txn);
+            if (!next.ok()) {
+                return next.status();
+            }
+
+            ZSlEleValue *pRaw = next.value();
+            if (!zslValueGteMin(pRaw->getScore(), range)) {
+                pos = tmpPos;
+                tmpPos = pRaw->getForward(i);
+            } else {
+                break;
+            }
+        }
+    }
+    pos = cache[pos]->getForward(1);
+    INVARIANT(pos != 0);
+    if (!zslValueLteMax(cache[pos]->getScore(), range)) {
+        return PSE(nullptr);
+    }
+    return std::move(cache[pos]);
 }
-*/
+
+/* Find the last node that is contained in the specified range.
+ * Returns NULL when no element is contained in the range. */
+Expected<SkipList::PSE> SkipList::lastInRange(
+        const Zrangespec& range,
+        Transaction *txn) {
+    Expected<bool> inrange = isInRange(range, txn);
+    if (!inrange.ok()) {
+        return inrange.status();
+    }
+    if (!inrange.value()) {
+        return PSE(nullptr);
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expHead =
+        getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+
+    uint32_t pos = ZSlMetaValue::HEAD_ID;
+    for (size_t i = _level; i >= 1; --i) {
+        uint32_t tmpPos = cache[pos]->getForward(i);
+        while (tmpPos != 0) {
+            Expected<ZSlEleValue*> next = getNode(tmpPos, &cache, txn);
+            if (!next.ok()) {
+                return next.status();
+            }
+
+            ZSlEleValue *pRaw = next.value();
+            if (zslValueLteMax(pRaw->getScore(), range)) {
+                pos = tmpPos;
+                tmpPos = pRaw->getForward(i);
+            } else {
+                break;
+            }
+        }
+    }
+    INVARIANT(pos != 0);
+    if (!zslValueGteMin(cache[pos]->getScore(), range)) {
+        return PSE(nullptr);
+    }
+    return std::move(cache[pos]);
+}
+
+Expected<bool> SkipList::isInRange(const Zrangespec& range, Transaction *txn) {
+    if (range.min > range.max ||
+            (fabs(range.min - range.max) < 0.001 &&
+                (range.minex || range.maxex))) {
+        return false;
+    }
+
+    if (_tail == 0) {
+        return false;
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expTail = getNode(_tail, &cache, txn);
+    if (!expTail.ok()) {
+        return expTail.status();
+    }
+    if (!zslValueGteMin(expTail.value()->getScore(), range)) {
+        return false;
+    }
+
+    Expected<ZSlEleValue*> expHead =
+            getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+    uint64_t first = expHead.value()->getForward(1);
+    if (first == 0) {
+        return false;
+    }
+    Expected<ZSlEleValue*> expNode = getNode(first, &cache, txn);
+    if (!expNode.ok()) {
+        return expNode.status();
+    }
+    if (!zslValueLteMax(expNode.value()->getScore(), range)) {
+        return false;
+    }
+    return true;
+}
 
 Status SkipList::insert(uint64_t score,
                         const std::string& subkey,
@@ -233,7 +368,8 @@ Status SkipList::insert(uint64_t score,
     std::vector<uint32_t> update(_maxLevel+1, 0);
     std::vector<uint32_t> rank(_maxLevel+1, 0);
     std::map<uint32_t, SkipList::PSE> cache;
-    Expected<ZSlEleValue*> expHead = getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    Expected<ZSlEleValue*> expHead =
+            getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
     if (!expHead.ok()) {
         return expHead.status();
     }
@@ -284,7 +420,8 @@ Status SkipList::insert(uint64_t score,
         INVARIANT(cache.find(update[i]) != cache.end());
         cache[p.first]->setForward(i, cache[update[i]]->getForward(i));
         cache[update[i]]->setForward(i, p.first);
-        cache[p.first]->setSpan(i, cache[update[i]]->getSpan(i) - (rank[1] - rank[i]));
+        cache[p.first]->setSpan(i,
+                    cache[update[i]]->getSpan(i) - (rank[1] - rank[i]));
         cache[update[i]]->setSpan(i, rank[1] - rank[i] + 1);
     }
     for (size_t i = lvl+1; i <= _level; ++i) {

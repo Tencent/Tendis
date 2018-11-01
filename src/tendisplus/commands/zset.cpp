@@ -78,6 +78,14 @@ Expected<std::string> genericZrem(Session *sess,
     } else {
         INVARIANT(sl.getCount() == 1);
         s = kvstore->delKV(mk, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        RecordKey head(pCtx->getDbId(),
+                       RecordType::RT_ZSET_S_ELE,
+                       mk.getPrimaryKey(),
+                       std::to_string(ZSlMetaValue::HEAD_ID));
+        s = kvstore->delKV(head, txn.get());
     }
     if (!s.ok()) {
         return s;
@@ -119,7 +127,10 @@ Expected<std::string> genericZadd(Session *sess,
     } else {
         INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         // head node also included into the count
-        ZSlMetaValue tmp(1/*lvl*/, ZSlMetaValue::MAX_LAYER, 1/*count*/, 0/*tail*/);
+        ZSlMetaValue tmp(1/*lvl*/,
+                         ZSlMetaValue::MAX_LAYER,
+                         1/*count*/,
+                         0/*tail*/);
         RecordValue rv(tmp.encode());
         Status s = kvstore->setKV(mk, rv, txn.get());
         if (!s.ok()) {
@@ -514,7 +525,6 @@ class ZIncrCommand: public Command {
     }
 } zincrbyCommand;
 
-/*
 class ZCountCommand: public Command {
  public:
     ZCountCommand()
@@ -545,11 +555,81 @@ class ZCountCommand: public Command {
         if (zslParseRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
             return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
         }
-        
-    }
 
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta = kvstore->getKV(metaKey, txn.get());
+        if (!eMeta.ok()) {
+            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZero();
+            } else {
+                return eMeta.status();
+            }
+        }
+        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        if (!eMetaContent.ok()) {
+            return eMetaContent.status();
+        }
+        ZSlMetaValue meta = eMetaContent.value();
+        SkipList sl(metaKey.getDbId(), key, meta, kvstore);
+        auto first = sl.firstInRange(range, txn.get());
+        if (!first.ok()) {
+            return first.status();
+        }
+        if (first.value() == nullptr) {
+            return Command::fmtZero();
+        }
+        Expected<uint32_t> rank = sl.rank(
+                    first.value()->getScore(),
+                    first.value()->getSubKey(),
+                    txn.get());
+        if (!rank.ok()) {
+            return rank.status();
+        }
+        // sl.getCount()-1 : total skiplist nodes exclude head
+        uint32_t count = (sl.getCount() - 1 - (rank.value() - 1));
+        auto last = sl.lastInRange(range, txn.get());
+        if (!last.ok()) {
+            return last.status();
+        }
+        if (last.value() == nullptr) {
+            return Command::fmtLongLong(count);
+        }
+        rank = sl.rank(
+                last.value()->getScore(),
+                last.value()->getSubKey(),
+                txn.get());
+        if (!rank.ok()) {
+            return rank.status();
+        }
+        return Command::fmtLongLong(count - (sl.getCount() - 1 - rank.value()));
+    }
 } zcountCommand;
-*/
 
 class ZAddCommand: public Command {
  public:

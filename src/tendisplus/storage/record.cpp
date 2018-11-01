@@ -868,7 +868,10 @@ ZSlMetaValue::ZSlMetaValue()
         :ZSlMetaValue(0, 0, 0, 0) {
 }
 
-ZSlMetaValue::ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail)
+ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
+                           uint8_t maxLvl,
+                           uint32_t count,
+                           uint64_t tail)
         :_level(lvl),
          _maxLevel(maxLvl),
          _count(count),
@@ -876,7 +879,11 @@ ZSlMetaValue::ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t
          _posAlloc(ZSlMetaValue::MIN_POS) {
 }
 
-ZSlMetaValue::ZSlMetaValue(uint8_t lvl, uint8_t maxLvl, uint32_t count, uint64_t tail, uint64_t alloc)
+ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
+                           uint8_t maxLvl,
+                           uint32_t count,
+                           uint64_t tail,
+                           uint64_t alloc)
         :_level(lvl),
          _maxLevel(maxLvl),
          _count(count),
@@ -1021,6 +1028,7 @@ ZSlEleValue::ZSlEleValue()
 
 ZSlEleValue::ZSlEleValue(uint64_t score, const std::string& subkey)
          :_score(score),
+          _backward(0),
           _subKey(subkey) {
     _forward.resize(ZSlMetaValue::MAX_LAYER+1);
     _span.resize(ZSlMetaValue::MAX_LAYER+1);
