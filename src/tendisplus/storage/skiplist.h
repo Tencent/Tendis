@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <list>
 #include <vector>
 #include <atomic>
 #include <utility>
@@ -36,6 +37,9 @@ class SkipList {
     Expected<PSE> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
     Expected<PSE> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
 
+    Expected<std::list<std::pair<uint64_t, std::string>>> scanByRank(
+        int64_t start, int64_t len, bool rev, Transaction *txn);
+
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
@@ -45,12 +49,15 @@ class SkipList {
 
  private:
     uint8_t randomLevel();
-    Status saveNode(uint32_t pointer, const ZSlEleValue& val, Transaction* txn);
-    Status delNode(uint32_t pointer, Transaction* txn);
-    Expected<ZSlEleValue*> getNode(uint32_t pointer,
-                          std::map<uint32_t, SkipList::PSE>* cache,
+    Status saveNode(uint64_t pointer, const ZSlEleValue& val, Transaction* txn);
+    Status delNode(uint64_t pointer, Transaction* txn);
+    Expected<ZSlEleValue*> getEleByRank(uint32_t rank,
+                          std::map<uint64_t, SkipList::PSE>* cache,
                           Transaction* txn);
-    std::pair<uint32_t, PSE> makeNode(uint64_t score,
+    Expected<ZSlEleValue*> getNode(uint64_t pointer,
+                          std::map<uint64_t, SkipList::PSE>* cache,
+                          Transaction* txn);
+    std::pair<uint64_t, PSE> makeNode(uint64_t score,
                                       const std::string& subkey);
     const uint8_t _maxLevel;
     uint8_t _level;

@@ -253,7 +253,7 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
     // NOTE(deyukong): zlexcount has undefined behavior when scores
     // are not all the same.
 
-    // cases from redis.io
+    // zlexcount case from redis.io
     sess.setArgs({"zadd",
                   "tzk3",
                   "0", "a", "0", "b", "0", "c", "0", "d", "0", "e"});
@@ -271,6 +271,82 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
+
+    // zrange case from redis.io
+    sess.setArgs({"zadd",
+                  "tzk3.1",
+                  "1", "one", "2", "two", "3", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    sess.setArgs({"zrange",
+                  "tzk3.1",
+                  "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok()) << expect.status().toString();
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "one");
+    Command::fmtBulk(ss, "two");
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+
+    sess.setArgs({"zrange",
+                  "tzk3.1",
+                  "2", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+
+    sess.setArgs({"zrange",
+                  "tzk3.1",
+                  "-2", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "two");
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+
+    // zrange random tests
+    std::vector<uint64_t> keys;
+    for (uint32_t i = 0; i < 100; i++) {
+        keys.push_back(i);
+    }
+    std::random_shuffle(keys.begin(), keys.end());
+    for (uint32_t i = 0; i < 100; i++) {
+        sess.setArgs({"zadd",
+                      "tzk3.2",
+                      std::to_string(keys[i]),
+                      std::to_string(keys[i])});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+    }
+    for (uint32_t i = 0; i < 100; i++) {
+        for (uint32_t j = 0; j < 100; j++) {
+            sess.setArgs({"zrange",
+                          "tzk3.2",
+                          std::to_string(i),
+                          std::to_string(j)});
+            expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            std::stringstream ss;
+            if (i > j) {
+                EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
+            } else {
+                Command::fmtMultiBulkLen(ss, j-i+1);
+                for (uint32_t k = i; k <= j; ++k) {
+                    Command::fmtBulk(ss, std::to_string(k));
+                }
+                EXPECT_EQ(expect.value(), ss.str());
+            }
+        }
+    }
 }
 
 void testZset(std::shared_ptr<ServerEntry> svr) {
@@ -983,7 +1059,7 @@ TEST(Command, common) {
     // zcount
     testZset2(server);
     */
-    // zlexcount
+    // zlexcount, zrange
     testZset3(server);
 }
 

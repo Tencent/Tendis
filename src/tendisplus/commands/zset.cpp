@@ -709,7 +709,6 @@ class ZlexCountCommand: public Command {
             return first.status();
         }
         if (first.value() == nullptr) {
-            std::cout<<"here ret:" << range.min << ' ' << range.max << std::endl;
             return Command::fmtZero();
         }
         Expected<uint32_t> rank = sl.rank(
@@ -738,6 +737,126 @@ class ZlexCountCommand: public Command {
         return Command::fmtLongLong(count - (sl.getCount() - 1 - rank.value()));
     }
 } zlexCntCmd;
+
+class ZRangeCommand: public Command {
+ public:
+    ZRangeCommand()
+        :Command("zrange") {
+    }
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        Expected<int64_t> estart = ::tendisplus::stoll(args[2]);
+        if (!estart.ok()) {
+            return estart.status();
+        }
+        Expected<int64_t> eend = ::tendisplus::stoll(args[3]);
+        if (!eend.ok()) {
+            return eend.status();
+        }
+        int64_t start = estart.value();
+        int64_t end = eend.value();
+        bool withscore = (args.size() == 5 && args[4] == "withscores");
+        if (args.size() > 5) {
+            return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta = kvstore->getKV(metaKey, txn.get());
+        if (!eMeta.ok()) {
+            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZeroBulkLen();
+            } else {
+                return eMeta.status();
+            }
+        }
+
+        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        if (!eMetaContent.ok()) {
+            return eMetaContent.status();
+        }
+        ZSlMetaValue meta = eMetaContent.value();
+        SkipList sl(metaKey.getDbId(), metaKey.getPrimaryKey(), meta, kvstore);
+        int64_t len = sl.getCount() - 1;
+        if (start < 0) {
+            start = len + start;
+        }
+        if (end < 0) {
+            end = len + end;
+        }
+        if (start < 0) {
+            start = 0;
+        }
+        if (start > end || start >= len) {
+            return Command::fmtZeroBulkLen();
+        }
+        if (end >= len) {
+            end = len - 1;
+        }
+        int64_t rangeLen = end - start + 1;
+        const bool REVERSE = false;
+        auto arr = sl.scanByRank(start, rangeLen, REVERSE, txn.get());
+        if (!arr.ok()) {
+            return arr.status();
+        }
+        std::stringstream ss;
+        if (withscore) {
+            Command::fmtMultiBulkLen(ss, arr.value().size()*2);
+        } else {
+            Command::fmtMultiBulkLen(ss, arr.value().size());
+        }
+        for (const auto& v : arr.value()) {
+            Command::fmtBulk(ss, v.second);
+            if (withscore) {
+                Command::fmtBulk(ss, std::to_string(v.first));
+            }
+        }
+        return ss.str();
+    }
+} zrangeCmd;
 
 class ZAddCommand: public Command {
  public:
