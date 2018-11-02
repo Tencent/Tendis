@@ -15,6 +15,7 @@
 namespace tendisplus {
 
 using Zrangespec = redis_port::Zrangespec;
+using Zlexrangespec = redis_port::Zlexrangespec;
 
 class SkipList {
  public:
@@ -25,9 +26,15 @@ class SkipList {
     Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
     Expected<uint32_t> rank(uint64_t score,
                             const std::string& subkey, Transaction* txn);
+
     Expected<bool> isInRange(const Zrangespec& spec, Transaction* txn);
+    Expected<bool> isInLexRange(const Zlexrangespec& spec, Transaction* txn);
+
     Expected<PSE> firstInRange(const Zrangespec& range, Transaction *txn);
     Expected<PSE> lastInRange(const Zrangespec& range, Transaction *txn);
+
+    Expected<PSE> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
+    Expected<PSE> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
 
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);

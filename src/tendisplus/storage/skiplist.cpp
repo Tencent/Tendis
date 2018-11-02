@@ -7,12 +7,34 @@
 
 namespace tendisplus {
 
+int compareStringObjectsForLexRange(const std::string& a,
+                                    const std::string& b) {
+    if (a == b) {
+        return 0;
+    }
+    if (a == ZLEXMIN || b == ZLEXMAX) return -1;
+    if (a == ZLEXMAX || b == ZLEXMIN) return 1;
+    return a < b ? -1 : 1;
+}
+
 bool zslValueGteMin(uint64_t value, const Zrangespec& spec) {
     return spec.minex ? (value > spec.min) : (value >= spec.min);
 }
 
 bool zslValueLteMax(uint64_t value, const Zrangespec& spec) {
     return spec.maxex ? (value < spec.max) : (value <= spec.max);
+}
+
+bool zslLexValueGteMin(const std::string& value, const Zlexrangespec& spec) {
+    return spec.minex ?
+        (compareStringObjectsForLexRange(value,spec.min) > 0) :
+        (compareStringObjectsForLexRange(value,spec.min) >= 0);
+}
+
+bool zslLexValueLteMax(const std::string& value, const Zlexrangespec& spec) {
+    return spec.maxex ?
+        (compareStringObjectsForLexRange(value,spec.max) < 0) :
+        (compareStringObjectsForLexRange(value,spec.max) <= 0);
 }
 
 // 0 ==
@@ -357,6 +379,133 @@ Expected<bool> SkipList::isInRange(const Zrangespec& range, Transaction *txn) {
         return false;
     }
     return true;
+}
+
+Expected<bool> SkipList::isInLexRange(const Zlexrangespec& range, Transaction *txn) {
+    if (compareStringObjectsForLexRange(range.min, range.max) > 0 ||
+            (range.min == range.max && (range.minex || range.maxex))) {
+        std::cout<< "lexrange 1\n";
+        return false;
+    }
+
+    if (_tail == 0) {
+        std::cout<< "lexrange 2\n";
+        return false;
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expTail = getNode(_tail, &cache, txn);
+    if (!expTail.ok()) {
+        return expTail.status();
+    }
+    if (!zslLexValueGteMin(expTail.value()->getSubKey(), range)) {
+        std::cout<< "lexrange 3\n";
+        return false;
+    }
+
+    Expected<ZSlEleValue*> expHead =
+            getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+    uint64_t first = expHead.value()->getForward(1);
+    if (first == 0) {
+        std::cout<< "lexrange 4\n";
+        return false;
+    }
+    Expected<ZSlEleValue*> expNode = getNode(first, &cache, txn);
+    if (!expNode.ok()) {
+        return expNode.status();
+    }
+    if (!zslLexValueLteMax(expNode.value()->getSubKey(), range)) {
+        std::cout<< "lexrange 5\n";
+        return false;
+    }
+    return true;
+}
+
+Expected<SkipList::PSE> SkipList::firstInLexRange(const Zlexrangespec& range, Transaction *txn) {
+    Expected<bool> inrange = isInLexRange(range, txn);
+    if (!inrange.ok()) {
+        return inrange.status();
+    }
+    if (!inrange.value()) {
+        std::cout<< "first in lex here\n";
+        return PSE(nullptr);
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expHead =
+        getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+
+    uint32_t pos = ZSlMetaValue::HEAD_ID;
+    for (size_t i = _level; i >= 1; --i) {
+        uint32_t tmpPos = cache[pos]->getForward(i);
+        while (tmpPos != 0) {
+            Expected<ZSlEleValue*> next = getNode(tmpPos, &cache, txn);
+            if (!next.ok()) {
+                return next.status();
+            }
+
+            ZSlEleValue *pRaw = next.value();
+            if (!zslLexValueGteMin(pRaw->getSubKey(), range)) {
+                pos = tmpPos;
+                tmpPos = pRaw->getForward(i);
+            } else {
+                break;
+            }
+        }
+    }
+    pos = cache[pos]->getForward(1);
+    INVARIANT(pos != 0);
+    if (!zslLexValueLteMax(cache[pos]->getSubKey(), range)) {
+        return PSE(nullptr);
+    }
+    return std::move(cache[pos]);
+}
+
+Expected<SkipList::PSE> SkipList::lastInLexRange(const Zlexrangespec& range, Transaction *txn) {
+    Expected<bool> inrange = isInLexRange(range, txn);
+    if (!inrange.ok()) {
+        return inrange.status();
+    }
+    if (!inrange.value()) {
+        return PSE(nullptr);
+    }
+
+    std::map<uint32_t, SkipList::PSE> cache;
+    Expected<ZSlEleValue*> expHead =
+        getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
+    if (!expHead.ok()) {
+        return expHead.status();
+    }
+
+    uint32_t pos = ZSlMetaValue::HEAD_ID;
+    for (size_t i = _level; i >= 1; --i) {
+        uint32_t tmpPos = cache[pos]->getForward(i);
+        while (tmpPos != 0) {
+            Expected<ZSlEleValue*> next = getNode(tmpPos, &cache, txn);
+            if (!next.ok()) {
+                return next.status();
+            }
+
+            ZSlEleValue *pRaw = next.value();
+            if (zslLexValueLteMax(pRaw->getSubKey(), range)) {
+                pos = tmpPos;
+                tmpPos = pRaw->getForward(i);
+            } else {
+                break;
+            }
+        }
+    }
+    INVARIANT(pos != 0);
+    if (!zslLexValueGteMin(cache[pos]->getSubKey(), range)) {
+        return PSE(nullptr);
+    }
+    return std::move(cache[pos]);
 }
 
 Status SkipList::insert(uint64_t score,

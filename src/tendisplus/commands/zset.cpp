@@ -631,6 +631,114 @@ class ZCountCommand: public Command {
     }
 } zcountCommand;
 
+class ZlexCountCommand: public Command {
+ public:
+    ZlexCountCommand()
+        :Command("zlexcount") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        Zlexrangespec range;
+        if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta = kvstore->getKV(metaKey, txn.get());
+        if (!eMeta.ok()) {
+            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZero();
+            } else {
+                return eMeta.status();
+            }
+        }
+        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        if (!eMetaContent.ok()) {
+            return eMetaContent.status();
+        }
+        ZSlMetaValue meta = eMetaContent.value();
+        SkipList sl(metaKey.getDbId(), key, meta, kvstore);
+
+        auto first = sl.firstInLexRange(range, txn.get());
+        if (!first.ok()) {
+            return first.status();
+        }
+        if (first.value() == nullptr) {
+            std::cout<<"here ret:" << range.min << ' ' << range.max << std::endl;
+            return Command::fmtZero();
+        }
+        Expected<uint32_t> rank = sl.rank(
+                    first.value()->getScore(),
+                    first.value()->getSubKey(),
+                    txn.get());
+        if (!rank.ok()) {
+            return rank.status();
+        }
+        // sl.getCount()-1 : total skiplist nodes exclude head
+        uint32_t count = (sl.getCount() - 1 - (rank.value() - 1));
+        auto last = sl.lastInLexRange(range, txn.get());
+        if (!last.ok()) {
+            return last.status();
+        }
+        if (last.value() == nullptr) {
+            return Command::fmtLongLong(count);
+        }
+        rank = sl.rank(
+                last.value()->getScore(),
+                last.value()->getSubKey(),
+                txn.get());
+        if (!rank.ok()) {
+            return rank.status();
+        }
+        return Command::fmtLongLong(count - (sl.getCount() - 1 - rank.value()));
+    }
+} zlexCntCmd;
+
 class ZAddCommand: public Command {
  public:
     ZAddCommand()

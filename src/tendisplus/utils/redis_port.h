@@ -33,7 +33,18 @@ struct Zrangespec {
     int maxex;
 };
 
+struct Zlexrangespec {
+    std::string min;
+    std::string max;
+    int minex;
+    int maxex;
+};
+
+#define ZLEXMIN "minstring"
+#define ZLEXMAX "maxstring"
+
 int zslParseRange(const char *min, const char *max, Zrangespec *spec);
+int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
 
 }  // namespace redis_port
 }  // namespace tendisplus

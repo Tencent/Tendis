@@ -254,6 +254,39 @@ int hex_digit_to_int(char c) {
     }
 }
 
+int zslParseLexRangeItem(const char *c, std::string* dest, int *ex) {
+    switch(c[0]) {
+    case '+': 
+        if (c[1] != '\0') return -1;
+        *ex = 0; 
+        *dest = ZLEXMAX;
+        return 0;
+    case '-': 
+        if (c[1] != '\0') return -1;
+        *ex = 0; 
+        *dest = ZLEXMIN;
+        return 0;
+    case '(': 
+        *ex = 1; 
+        *dest = std::string(c+1,strlen(c)-1);
+        return 0;
+    case '[': 
+        *ex = 0; 
+        *dest = std::string(c+1,strlen(c)-1);
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec) {
+    if (zslParseLexRangeItem(min, &spec->min, &spec->minex) != 0 ||
+            zslParseLexRangeItem(max, &spec->max, &spec->maxex) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 int zslParseRange(const char *min, const char *max, Zrangespec *spec) {
     char *eptr;
     spec->minex = spec->maxex = 0;

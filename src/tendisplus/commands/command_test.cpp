@@ -217,12 +217,12 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
     std::random_shuffle(keys.begin(), keys.end());
     for (uint32_t i = 0; i < 100; i++) {
         sess.setArgs({"zadd",
-                      "tzk1",
+                      "tzk2",
                       std::to_string(keys[i]),
                       std::to_string(keys[i])});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        sess.setArgs({"zcount", "tzk1", "-inf", "+inf"});
+        sess.setArgs({"zcount", "tzk2", "-inf", "+inf"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
@@ -230,7 +230,7 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
     for (uint32_t i = 0; i < 100; i++) {
         for (uint32_t j = 0; j < 100; j++) {
             sess.setArgs({"zcount",
-                          "tzk1",
+                          "tzk2",
                           std::to_string(i),
                           std::to_string(j)});
             auto expect = Command::runSessionCmd(&sess);
@@ -243,6 +243,34 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
             }
         }
     }
+}
+
+void testZset3(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    // NOTE(deyukong): zlexcount has undefined behavior when scores
+    // are not all the same.
+
+    // cases from redis.io
+    sess.setArgs({"zadd",
+                  "tzk3",
+                  "0", "a", "0", "b", "0", "c", "0", "d", "0", "e"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
+    sess.setArgs({"zadd",
+                  "tzk3",
+                  "0", "f", "0", "g"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+
+    sess.setArgs({"zlexcount", "tzk3", "[b", "[f"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
 }
 
 void testZset(std::shared_ptr<ServerEntry> svr) {
@@ -952,9 +980,11 @@ TEST(Command, common) {
     testList(server);
     // zadd/zrem/zrank
     testZset(server);
-    */
     // zcount
     testZset2(server);
+    */
+    // zlexcount
+    testZset3(server);
 }
 
 }  // namespace tendisplus
