@@ -738,10 +738,15 @@ class ZlexCountCommand: public Command {
     }
 } zlexCntCmd;
 
-class ZRangeCommand: public Command {
+class ZRangeGenericCommand: public Command {
  public:
-    ZRangeCommand()
-        :Command("zrange") {
+    ZRangeGenericCommand(const std::string& name)
+            :Command(name) {
+        if (name == "zrange") {
+            _rev = false;
+        } else {
+            _rev = true;
+        }
     }
 
     ssize_t arity() const {
@@ -837,8 +842,7 @@ class ZRangeCommand: public Command {
             end = len - 1;
         }
         int64_t rangeLen = end - start + 1;
-        const bool REVERSE = false;
-        auto arr = sl.scanByRank(start, rangeLen, REVERSE, txn.get());
+        auto arr = sl.scanByRank(start, rangeLen, _rev, txn.get());
         if (!arr.ok()) {
             return arr.status();
         }
@@ -856,7 +860,25 @@ class ZRangeCommand: public Command {
         }
         return ss.str();
     }
+
+ private:
+    bool _rev;
+};
+
+class ZRangeCommand: public ZRangeGenericCommand {
+ public:
+    ZRangeCommand()
+        :ZRangeGenericCommand("zrange") {
+    }
 } zrangeCmd;
+
+class ZRevRangeCommand: public ZRangeGenericCommand {
+ public:
+    ZRevRangeCommand()
+        :ZRangeGenericCommand("zrevrange") {
+    }
+} zrevrangeCmd;
+
 
 class ZAddCommand: public Command {
  public:

@@ -347,6 +347,26 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
             }
         }
     }
+    for (uint32_t i = 0; i < 100; i++) {
+        for (uint32_t j = 0; j < 100; j++) {
+            sess.setArgs({"zrevrange",
+                          "tzk3.2",
+                          std::to_string(i),
+                          std::to_string(j)});
+            expect = Command::runSessionCmd(&sess);
+            EXPECT_TRUE(expect.ok());
+            std::stringstream ss;
+            if (i > j) {
+                EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
+            } else {
+                Command::fmtMultiBulkLen(ss, j-i+1);
+                for (uint32_t k = i; k <= j; ++k) {
+                    Command::fmtBulk(ss, std::to_string(100-1-k));
+                }
+                EXPECT_EQ(expect.value(), ss.str());
+            }
+        }
+    }
 }
 
 void testZset(std::shared_ptr<ServerEntry> svr) {
