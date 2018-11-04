@@ -738,6 +738,143 @@ class ZlexCountCommand: public Command {
     }
 } zlexCntCmd;
 
+class ZRangeByLexGenericCommand: public Command {
+ public:
+    ZRangeByLexGenericCommand(const std::string& name)
+            :Command(name) {
+        if (name == "zrangebylex") {
+            _rev = false;
+        } else {
+            _rev = true;
+        }
+    }
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        int64_t offset = 0;
+        int64_t limit = -1;
+        int minidx, maxidx;
+        if (_rev) {
+            maxidx = 2; minidx = 3;
+        } else {
+            minidx = 2; maxidx = 3;
+        }
+
+        Zlexrangespec range;
+        if (zslParseLexRange(args[minidx].c_str(), args[maxidx].c_str(), &range) != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "min or max not valid string range item"};
+        }
+
+        if (args.size() > 4) {
+            int remaining = args.size() - 4;
+            int pos = 4;
+            while (remaining) {
+                if (remaining >= 3 && args[pos] == "limit") {
+                    Expected<int64_t> eoffset = ::tendisplus::stoll(args[pos+1]);
+                    if (!eoffset.ok()) {
+                        return eoffset.status();
+                    }
+                    Expected<int64_t> elimit = ::tendisplus::stoll(args[pos+2]);
+                    if (!elimit.ok()) {
+                        return elimit.status();
+                    }
+                    pos += 3;
+                    remaining -= 3;
+                } else {
+                    return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+                }
+            }
+        }
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta = kvstore->getKV(metaKey, txn.get());
+        if (!eMeta.ok()) {
+            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZeroBulkLen();
+            } else {
+                return eMeta.status();
+            }
+        }
+
+        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        if (!eMetaContent.ok()) {
+            return eMetaContent.status();
+        }
+        ZSlMetaValue meta = eMetaContent.value();
+        SkipList sl(metaKey.getDbId(), metaKey.getPrimaryKey(), meta, kvstore);
+        // std::cout<< range.min << ' ' << range.max << ' ' << offset << ' ' << limit << std::endl;
+        auto arr = sl.scanByLex(range, offset, limit, _rev, txn.get());
+        if (!arr.ok()) {
+            return arr.status();
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, arr.value().size());
+        for (const auto& v : arr.value()) {
+            Command::fmtBulk(ss, v.second);
+        }
+        return ss.str();
+    }
+
+ private:
+    bool _rev;
+};
+
+class ZRangeByLexCommand: public ZRangeByLexGenericCommand {
+ public:
+    ZRangeByLexCommand()
+        :ZRangeByLexGenericCommand("zrangebylex") {
+    }
+} zrangebylexCmd;
+
+class ZRevRangeByLexCommand: public ZRangeByLexGenericCommand {
+ public:
+    ZRevRangeByLexCommand()
+        :ZRangeByLexGenericCommand("zrevrangebylex") {
+    }
+} zrevrangebylexCmd;
+
 class ZRangeGenericCommand: public Command {
  public:
     ZRangeGenericCommand(const std::string& name)

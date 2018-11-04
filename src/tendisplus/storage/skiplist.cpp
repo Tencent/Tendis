@@ -539,6 +539,89 @@ Expected<SkipList::PSE> SkipList::lastInLexRange(const Zlexrangespec& range, Tra
 }
 
 Expected<std::list<std::pair<uint64_t, std::string>>>
+SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
+        int64_t limit, bool rev, Transaction *txn) {
+    PSE pse = nullptr;
+    if (rev) {
+        Expected<PSE> tmp = lastInLexRange(range, txn);
+        if (!tmp.ok()) {
+            return tmp.status();
+        }
+        pse = std::move(tmp.value());
+    } else {
+        Expected<PSE> tmp = firstInLexRange(range, txn);
+        if (!tmp.ok()) {
+            return tmp.status();
+        }
+        pse = std::move(tmp.value());
+    }
+    if (pse == nullptr) {
+        return std::list<std::pair<uint64_t, std::string>>();
+    }
+    std::list<std::pair<uint64_t, std::string>> result;
+    std::map<uint64_t, SkipList::PSE> cache;
+    ZSlEleValue *ln = pse.get();
+
+    while (ln != nullptr && offset--) {
+        if (rev) {
+            auto nxt = ln->getBackward();
+            if (nxt == 0) {
+                break;
+            }
+            auto tmp = getNode(nxt, &cache, txn);
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            ln = tmp.value();
+        } else {
+            auto nxt = ln->getForward(1);
+            if (nxt == 0) {
+                break;
+            }
+            auto tmp = getNode(nxt, &cache, txn);
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            ln = tmp.value();
+        }
+    }
+    while (ln != nullptr && limit--) {
+        if (rev) {
+            if (!zslLexValueGteMin(ln->getSubKey(), range)) {
+                break;
+            }
+        } else {
+            if (!zslLexValueLteMax(ln->getSubKey(), range)) {
+                break;
+            }
+        }
+        result.push_back({ln->getScore(), ln->getSubKey()});
+        if (rev) {
+            auto nxt = ln->getBackward();
+            if (nxt == 0) {
+                break;
+            }
+            auto tmp = getNode(nxt, &cache, txn);
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            ln = tmp.value();
+        } else {
+            auto nxt = ln->getForward(1);
+            if (nxt == 0) {
+                break;
+            }
+            auto tmp = getNode(nxt, &cache, txn);
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            ln = tmp.value();
+        }
+    }
+    return result;
+}
+
+Expected<std::list<std::pair<uint64_t, std::string>>>
 SkipList::scanByRank(int64_t start, int64_t len, bool rev, Transaction *txn) {
     // std::cout<< start << ' ' << len << ' ' << rev << ' ' << _count << std::endl;
     std::map<uint64_t, SkipList::PSE> cache;

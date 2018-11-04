@@ -367,6 +367,43 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
             }
         }
     }
+
+    // zrangebylex cases from redis.io
+    ss.str("");
+    sess.setArgs({"zadd", "tzk3.3",
+                 "0", "a", "0", "b", "0", "c", "0", "d",
+                 "0", "e", "0", "f", "0", "g"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"zrangebylex", "tzk3.3", "-", "[c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "b");
+    Command::fmtBulk(ss, "c");
+    EXPECT_EQ(expect.value(), ss.str());
+   
+    ss.str("");
+    sess.setArgs({"zrangebylex", "tzk3.3", "-", "(c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "b");
+    EXPECT_EQ(expect.value(), ss.str());
+
+    ss.str("");
+    sess.setArgs({"zrangebylex", "tzk3.3", "[aaa", "(g"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 5);
+    Command::fmtBulk(ss, "b");
+    Command::fmtBulk(ss, "c");
+    Command::fmtBulk(ss, "d");
+    Command::fmtBulk(ss, "e");
+    Command::fmtBulk(ss, "f");
+    EXPECT_EQ(expect.value(), ss.str());
 }
 
 void testZset(std::shared_ptr<ServerEntry> svr) {
@@ -1079,7 +1116,7 @@ TEST(Command, common) {
     // zcount
     testZset2(server);
     */
-    // zlexcount, zrange
+    // zlexcount, zrange, zrangebylex
     testZset3(server);
 }
 

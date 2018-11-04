@@ -37,6 +37,9 @@ class SkipList {
     Expected<PSE> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
     Expected<PSE> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
 
+    Expected<std::list<std::pair<uint64_t, std::string>>> scanByLex(
+            const Zlexrangespec& range, int64_t offset, int64_t limit,
+            bool rev, Transaction *txn);
     Expected<std::list<std::pair<uint64_t, std::string>>> scanByRank(
         int64_t start, int64_t len, bool rev, Transaction *txn);
 
