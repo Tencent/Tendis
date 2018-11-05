@@ -279,6 +279,33 @@ void testZset4(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), ss.str());
     ss.str("");
 
+    sess.setArgs({"zadd", "tzk4.2",
+                 "0", "aaaa", "0", "b", "0", "c", "0", "d",
+                 "0", "e"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({"zadd", "tzk4.2",
+                "0", "foo", "0", "zap", "0", "zip", "0", "ALPHA", "0", "alpha"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"zremrangebylex", "tzk4.2", "[alpha", "[omega"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(6));
+
+    ss.str("");
+    sess.setArgs({"zrange", "tzk4.2", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtBulk(ss, "ALPHA");
+    Command::fmtBulk(ss, "aaaa");
+    Command::fmtBulk(ss, "zap");
+    Command::fmtBulk(ss, "zip");
+    EXPECT_EQ(expect.value(), ss.str());
+
+    // TODO(deyukong): test zremrangebyscore
 }
 
 void testZset3(std::shared_ptr<ServerEntry> svr) {
