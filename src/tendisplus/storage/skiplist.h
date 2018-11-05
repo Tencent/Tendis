@@ -43,6 +43,10 @@ class SkipList {
     Expected<std::list<std::pair<uint64_t, std::string>>> scanByRank(
         int64_t start, int64_t len, bool rev, Transaction *txn);
 
+    Expected<std::list<std::pair<uint64_t, std::string>>> scanByScore(
+            const Zrangespec& range, int64_t offset, int64_t limit,
+            bool rev, Transaction *txn);
+
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
