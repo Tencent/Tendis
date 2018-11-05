@@ -245,6 +245,42 @@ void testZset2(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+void testZset4(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"zadd", "tzk4.1",
+                 "1", "one", "2", "two", "3", "three", "4", "four",
+                 "5", "five", "6", "six", "7", "seven"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(7));
+
+    sess.setArgs({"zremrangebyrank", "tzk4.1", "0", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"zrevrange", "tzk4.1", "0", "-1", "withscores"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok()) << expect.status().toString();
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 10);
+    Command::fmtBulk(ss, "seven");
+    Command::fmtBulk(ss, "7");
+    Command::fmtBulk(ss, "six");
+    Command::fmtBulk(ss, "6");
+    Command::fmtBulk(ss, "five");
+    Command::fmtBulk(ss, "5");
+    Command::fmtBulk(ss, "four");
+    Command::fmtBulk(ss, "4");
+    Command::fmtBulk(ss, "three");
+    Command::fmtBulk(ss, "3");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+
+}
+
 void testZset3(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1156,13 +1192,16 @@ TEST(Command, common) {
     testHash1(server);
     testHash2(server);
     testList(server);
+    */
     // zadd/zrem/zrank
     testZset(server);
     // zcount
     testZset2(server);
-    */
     // zlexcount, zrange, zrangebylex, zrangebyscore
     testZset3(server);
+
+    // zremrangebyrank, zremrangebylex, zremrangebyscore
+    testZset4(server);
 }
 
 }  // namespace tendisplus

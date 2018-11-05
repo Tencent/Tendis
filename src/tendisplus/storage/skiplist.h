@@ -47,6 +47,17 @@ class SkipList {
             const Zrangespec& range, int64_t offset, int64_t limit,
             bool rev, Transaction *txn);
 
+    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByScore(
+            const Zrangespec& range, Transaction* txn);
+
+    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByLex(
+            const Zlexrangespec& range, Transaction* txn);
+
+    // 1-based index
+    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByRank(
+            uint32_t start, uint32_t end, Transaction* txn);
+
+
     Status save(Transaction* txn);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
@@ -56,6 +67,10 @@ class SkipList {
 
  private:
     uint8_t randomLevel();
+    Status removeInternal(uint64_t pointer, 
+                          const std::vector<uint64_t>& update,
+                          std::map<uint64_t, SkipList::PSE>* cache,
+                          Transaction* txn);
     Status saveNode(uint64_t pointer, const ZSlEleValue& val, Transaction* txn);
     Status delNode(uint64_t pointer, Transaction* txn);
     Expected<ZSlEleValue*> getEleByRank(uint32_t rank,

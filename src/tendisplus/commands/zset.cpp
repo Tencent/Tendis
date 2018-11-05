@@ -266,6 +266,246 @@ Expected<std::string> genericZRank(Session *sess,
     return Command::fmtLongLong(rank.value()-1);
 }
 
+class ZRemByRangeGenericCommand: public Command {
+ public:
+    enum class Type {
+        RANK,
+        SCORE,
+        LEX,
+    };
+
+    ZRemByRangeGenericCommand(const std::string& name)
+        :Command(name) {
+        if (name == "zremrangebyscore") {
+            _type = Type::SCORE;
+        } else if (name == "zremrangebylex") {
+            _type = Type::LEX;
+        } else if (name == "zremrangebyrank") {
+            _type = Type::RANK;
+        } else {
+            INVARIANT(0);
+        }
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> genericZremrange(Session *sess,
+                            PStore kvstore,
+                            const RecordKey& mk,
+                            const Zrangespec& range,
+                            const Zlexrangespec& lexrange,
+                            int64_t start,
+                            int64_t end) {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta = kvstore->getKV(mk, txn.get());
+        if (!eMeta.ok()) {
+            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZero();
+            } else {
+                return eMeta.status();
+            }
+        }
+        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        if (!eMetaContent.ok()) {
+            return eMetaContent.status();
+        }
+        ZSlMetaValue meta = eMetaContent.value();
+        SkipList sl(mk.getDbId(), mk.getPrimaryKey(), meta, kvstore);
+
+        if (_type == Type::RANK) {
+            int64_t llen = sl.getCount() - 1;
+            if (start < 0) {
+                start = llen + start;
+            }
+            if (end < 0) {
+                end = llen + end;
+            }
+            if (start < 0) {
+                start = 0;
+            }
+            if (start > end || start >= llen) {
+                return Command::fmtZero();
+            }
+            if (end >= llen) {
+                end = llen - 1;
+            }
+        }
+
+        std::list<std::pair<uint64_t, std::string>> result;
+        if (_type == Type::RANK) {
+            auto tmp = sl.removeRangeByRank(start+1, end+1, txn.get());
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            result = std::move(tmp.value());
+        } else if (_type == Type::SCORE) {
+            auto tmp = sl.removeRangeByScore(range, txn.get());
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            result = std::move(tmp.value());
+        } else if (_type == Type::LEX) {
+            auto tmp = sl.removeRangeByLex(lexrange, txn.get());
+            if (!tmp.ok()) {
+                return tmp.status();
+            }
+            result = std::move(tmp.value());
+        }
+        for (const auto& v : result) {
+            RecordKey hk(pCtx->getDbId(),
+                             RecordType::RT_ZSET_H_ELE,
+                             mk.getPrimaryKey(),
+                             v.second);
+            auto s = kvstore->delKV(hk, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
+        Status s;
+        if (sl.getCount() > 1) {
+            s = sl.save(txn.get());
+        } else {
+            INVARIANT(sl.getCount() == 1);
+            s = kvstore->delKV(mk, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+            RecordKey head(pCtx->getDbId(),
+                           RecordType::RT_ZSET_S_ELE,
+                           mk.getPrimaryKey(),
+                           std::to_string(ZSlMetaValue::HEAD_ID));
+            s = kvstore->delKV(head, txn.get());
+        }
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> commitStatus = txn->commit();
+        if (!commitStatus.ok()) {
+            return commitStatus.status();
+        }
+        return Command::fmtLongLong(result.size());
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        Zrangespec range;
+        Zlexrangespec lexrange;
+        int64_t start(0), end(0);
+        if (_type == Type::RANK) {
+            Expected<int64_t> estart = ::tendisplus::stoll(args[2]);
+            if (!estart.ok()) {
+                return estart.status();
+            }
+            Expected<int64_t> eend = ::tendisplus::stoll(args[3]);
+            if (!eend.ok()) {
+                return eend.status();
+            }
+            start = estart.value();
+            end = eend.value();
+        } else if (_type == Type::SCORE) {
+            if (zslParseRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
+                return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+            }
+        } else if (_type == Type::LEX) {
+            if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &lexrange) != 0) {
+                return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+            }
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            Expected<std::string> s = genericZremrange(sess,
+                                            kvstore,
+                                            metaKey,
+                                            range,
+                                            lexrange,
+                                            start,
+                                            end);
+            if (s.ok()) {
+                return s.value();
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+
+ private:
+    Type _type;
+};
+
+class ZRemRangeByRankCommand: public ZRemByRangeGenericCommand {
+ public:
+    ZRemRangeByRankCommand()
+        :ZRemByRangeGenericCommand("zremrangebyrank") {
+    }
+} zremrangebyrankCmd;
+
+class ZRemRangeByScoreCommand: public ZRemByRangeGenericCommand {
+ public:
+    ZRemRangeByScoreCommand()
+        :ZRemByRangeGenericCommand("zremrangebyscore") {
+    }
+} zremrangebyscoreCmd;
+
+class ZRemRangeByLexCommand: public ZRemByRangeGenericCommand {
+ public:
+    ZRemRangeByLexCommand()
+        :ZRemByRangeGenericCommand("zremrangebylex") {
+    }
+} zremrangebylexCmd;
+
 class ZRemCommand: public Command {
  public:
     ZRemCommand()
