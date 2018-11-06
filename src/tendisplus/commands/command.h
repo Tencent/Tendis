@@ -53,6 +53,12 @@ class Command {
                                     uint32_t storeId,
                                     const RecordKey& mk);
 
+    static Expected<std::pair<std::string, std::list<Record>>>
+    scan(const std::string& pk,
+         const std::string& from,
+         uint64_t cnt,
+         Transaction *txn);
+
     static Status delKey(Session *sess, uint32_t storeId,
                             const RecordKey& rk);
 

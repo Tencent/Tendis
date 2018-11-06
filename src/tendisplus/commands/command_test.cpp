@@ -1204,6 +1204,47 @@ TEST(Command, expire) {
 }
 */
 
+void testScan(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"sadd", "scanset", "a", "b", "c", "d", "e", "f",
+                  "g", "h", "i", "j", "k", "l", "m", "n", "o"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"sscan", "scanset", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    std::string cursor = "00000000733733363336313645373336353734006B0700";
+    Command::fmtBulk(ss, cursor);
+    Command::fmtMultiBulkLen(ss, 10);
+    for (int i = 0; i < 10; ++i) {
+        std::string tmp;
+        tmp.push_back('a' + i);
+        Command::fmtBulk(ss, tmp);
+    }
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({"sscan", "scanset", cursor});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok()) << expect.status().toString();
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 2);
+    cursor = "0";
+    Command::fmtBulk(ss, cursor);
+    Command::fmtMultiBulkLen(ss, 5);
+    for (int i = 0; i < 5; ++i) {
+        std::string tmp;
+        tmp.push_back('a' + 10 + i);
+        Command::fmtBulk(ss, tmp);
+    }
+    EXPECT_EQ(ss.str(), expect.value());
+}
+
 TEST(Command, common) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -1240,16 +1281,16 @@ TEST(Command, common) {
     testHash1(server);
     testHash2(server);
     testList(server);
-    */
     // zadd/zrem/zrank/zscore
     testZset(server);
     // zcount
     testZset2(server);
     // zlexcount, zrange, zrangebylex, zrangebyscore
     testZset3(server);
-
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
+    */
+    testScan(server);
 }
 
 }  // namespace tendisplus

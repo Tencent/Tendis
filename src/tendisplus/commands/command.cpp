@@ -207,6 +207,49 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
     }
 }
 
+Expected<std::pair<std::string, std::list<Record>>>
+Command::scan(const std::string& pk, const std::string& from, uint64_t cnt, Transaction *txn) {
+    auto cursor = txn->createCursor();
+    if (from == "0") {
+        cursor->seek(pk);
+    } else {
+        auto unhex = unhexlify(from);
+        if (!unhex.ok()) {
+            return unhex.status();
+        }
+        cursor->seek(unhex.value());
+    }
+    std::list<Record> result;
+    while (true) {
+        if (result.size() >= cnt + 1) {
+            break;
+        }
+        Expected<Record> exptRcd = cursor->next();
+        if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+        if (!exptRcd.ok()) {
+            return exptRcd.status();
+        }
+        Record& rcd = exptRcd.value();
+        const RecordKey& rcdKey = rcd.getRecordKey();
+        if (rcdKey.prefixPk() != pk) {
+            break;
+        }
+        result.emplace_back(std::move(exptRcd.value()));
+    }
+    std::string nextCursor;
+    if (result.size() == cnt + 1) {
+        nextCursor = hexlify(result.back().getRecordKey().encode());
+        result.pop_back();
+    } else {
+        nextCursor = "0";
+    }
+    return std::move(
+        std::pair<std::string, std::list<Record>>(
+            nextCursor, std::move(result)));
+}
+
 // requirement: StoreLock held
 Status Command::delKeyOptimism(Session *sess,
                                            uint32_t storeId,
