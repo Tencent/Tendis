@@ -571,6 +571,27 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
             EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
         }
     }
+
+    {
+        sess.setArgs({"zscore", "notfoundkey", "subkey"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtNull());
+
+        sess.setArgs({"zadd", "tzk1.1", std::to_string(9999), "subkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+ 
+        sess.setArgs({"zscore", "tzk1.1", "notfoundsubkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtNull());
+
+        sess.setArgs({"zscore", "tzk1.1", "subkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(9999)));
+    }
 }
 
 void testType(std::shared_ptr<ServerEntry> svr) {
@@ -1220,7 +1241,7 @@ TEST(Command, common) {
     testHash2(server);
     testList(server);
     */
-    // zadd/zrem/zrank
+    // zadd/zrem/zrank/zscore
     testZset(server);
     // zcount
     testZset2(server);

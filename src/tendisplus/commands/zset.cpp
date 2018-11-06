@@ -1405,6 +1405,82 @@ class ZRevRangeCommand: public ZRangeGenericCommand {
     }
 } zrevrangeCmd;
 
+class ZScoreCommand: public Command {
+ public:
+    ZScoreCommand()
+        :Command("zscore") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        const std::string& subkey = args[2];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+ 
+        RecordKey hk(pCtx->getDbId(),
+                         RecordType::RT_ZSET_H_ELE,
+                         key,
+                         subkey);
+        Expected<RecordValue> eValue = kvstore->getKV(hk, txn.get());
+        if (!eValue.ok() &&
+                eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return eValue.status();
+        }
+        if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        }
+        Expected<uint64_t> oldScore =
+            ::tendisplus::stoul(eValue.value().getValue());
+        if (!oldScore.ok()) {
+            return oldScore.status();
+        }
+        return Command::fmtBulk(std::to_string(oldScore.value()));
+    }
+} zscoreCmd;
 
 class ZAddCommand: public Command {
  public:
