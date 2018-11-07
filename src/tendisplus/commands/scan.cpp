@@ -112,7 +112,7 @@ class ScanGenericCommand: public Command {
         if (!batch.ok()) {
             return batch.status();
         }
-        bool NOCASE = false;
+        const bool NOCASE = false;
         for (std::list<Record>::iterator it = batch.value().second.begin();
                 it != batch.value().second.end(); ) {
              if (usePatten && !redis_port::stringmatchlen(pat.c_str(),

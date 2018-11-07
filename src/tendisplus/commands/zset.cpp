@@ -158,6 +158,8 @@ Expected<std::string> genericZadd(Session *sess,
     }
 
     SkipList sl(mk.getDbId(), mk.getPrimaryKey(), meta, kvstore);
+    std::stringstream ss;
+    sl.traverse(ss, txn.get());
     for (const auto& entry : subKeys) {
         RecordKey hk(pCtx->getDbId(),
                          RecordType::RT_ZSET_H_ELE,

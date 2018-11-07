@@ -33,9 +33,9 @@ uint8_t rt2Char(RecordType t) {
         case RecordType::RT_ZSET_META:
             return 'Z';
         case RecordType::RT_ZSET_H_ELE:
-            return 'z';
-        case RecordType::RT_ZSET_S_ELE:
             return 'c';
+        case RecordType::RT_ZSET_S_ELE:
+            return 'z';
         // it's convinent (for seek) to have BINLOG to pos
         // at the rightmost of a lsmtree
         // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
