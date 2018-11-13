@@ -847,6 +847,12 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
 
+    // getrange
+    sess.setArgs({"getrange", "setrangekey", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
+ 
     // bitcount
     sess.setArgs({"bitcount", "bitcountkey"});
     expect = Command::runSessionCmd(&sess);
@@ -1274,7 +1280,6 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    /*
     testKV(server);
     testSetRetry(server);
     testType(server);
@@ -1289,7 +1294,6 @@ TEST(Command, common) {
     testZset3(server);
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
-    */
     testScan(server);
 }
 

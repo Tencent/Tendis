@@ -586,11 +586,36 @@ class BitCountCommand: public Command {
     }
 } bitcntCmd;
 
+class GetGenericCmd: public Command {
+ public:
+    GetGenericCmd(const std::string& name)
+        :Command(name) {
+    }
 
-class GetCommand: public Command {
+    virtual Expected<std::string> run(Session *sess) {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return std::string("");
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return std::string("");
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        } else {
+            return rv.value().getValue();
+        }
+    }
+};
+
+class GetCommand: public GetGenericCmd {
  public:
     GetCommand()
-        :Command("get") {
+        :GetGenericCmd("get") {
     }
 
     ssize_t arity() const {
@@ -602,7 +627,7 @@ class GetCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return -1;
+        return 1;
     }
 
     int32_t keystep() const {
@@ -610,24 +635,79 @@ class GetCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-        const std::string& key = sess->getArgs()[1];
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
-        Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return fmtNull();
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return fmtNull();
-        } else if (!rv.status().ok()) {
-            return rv.status();
-        } else {
-            return fmtBulk(rv.value().getValue());
+        auto v = GetGenericCmd::run(sess);
+        if (!v.ok()) {
+            return v.status();
         }
+        if (v.value() == "") {
+            return Command::fmtNull();
+        }
+        return Command::fmtBulk(v.value());
     }
 } getCommand;
+
+// TODO(deyukong): unittest
+class GetRangeCommand: public GetGenericCmd {
+ public:
+    GetRangeCommand()
+        :GetGenericCmd("getrange") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        Expected<int64_t> estart = ::tendisplus::stoll(sess->getArgs()[2]);
+        if (!estart.ok()) {
+            return estart.status();
+        }
+        int64_t start = estart.value();
+
+        Expected<int64_t> eend = ::tendisplus::stoll(sess->getArgs()[3]);
+        if (!eend.ok()) {
+            return eend.status();
+        }
+        int64_t end = eend.value();
+
+        auto v = GetGenericCmd::run(sess);
+        if (!v.ok()) {
+            return v.status();
+        }
+        std::string s = std::move(v.value());
+        if (start < 0) {
+            start = s.size() + start;
+        }
+        if (end < 0) {
+            end = s.size() + end;
+        }
+        if (start < 0) {
+            start = 0;
+        }
+        if (end < 0) {
+            end = 0;
+        }
+        if (end >= static_cast<ssize_t>(s.size())) {
+            end = s.size() - 1;
+        }
+        if (start > end || s.size() == 0) {
+            return Command::fmtBulk("");
+        }
+        return Command::fmtBulk(s.substr(start, end-start+1));
+    }
+} getrangeCmd;
 
 class GetSetGeneral: public Command {
  public:
