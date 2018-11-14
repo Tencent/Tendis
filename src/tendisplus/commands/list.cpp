@@ -92,7 +92,8 @@ Expected<std::string> genericPush(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
                                   const std::vector<std::string>& args,
-                                  ListPos pos) {
+                                  ListPos pos,
+                                  bool needExist) {
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
         return ptxn.status();
@@ -111,6 +112,8 @@ Expected<std::string> genericPush(Session *sess,
         lm = std::move(exptLm.value());
     } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
         return rv.status();
+    } else if (needExist) {
+        return Command::fmtZero();
     }
 
     uint64_t head = lm.getHead();
@@ -297,9 +300,10 @@ class RPopCommand: public ListPopWrapper {
 
 class ListPushWrapper: public Command {
  public:
-    explicit ListPushWrapper(ListPos pos)
-        :Command(pos == ListPos::LP_HEAD ? "lpush" : "rpush"),
-         _pos(pos) {
+    explicit ListPushWrapper(const std::string& name, ListPos pos, bool needExist)
+        :Command(name),
+         _pos(pos),
+         _needExist(needExist) {
     }
 
     ssize_t arity() const {
@@ -357,7 +361,7 @@ class ListPushWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPush(sess, kvstore, metaRk, args, _pos);
+                genericPush(sess, kvstore, metaRk, args, _pos, _needExist);
             if (s.ok()) {
                 return s.value();
             }
@@ -377,21 +381,36 @@ class ListPushWrapper: public Command {
 
  private:
     ListPos _pos;
+    bool _needExist;
 };
 
 class LPushCommand: public ListPushWrapper {
  public:
     LPushCommand()
-        :ListPushWrapper(ListPos::LP_HEAD) {
+        :ListPushWrapper("lpush", ListPos::LP_HEAD, false) {
     }
 } lpushCommand;
 
 class RPushCommand: public ListPushWrapper {
  public:
     RPushCommand()
-        :ListPushWrapper(ListPos::LP_TAIL) {
+        :ListPushWrapper("rpush", ListPos::LP_TAIL, false) {
     }
 } rpushCommand;
+
+class LPushXCommand: public ListPushWrapper {
+ public:
+    LPushXCommand()
+        :ListPushWrapper("lpushx", ListPos::LP_HEAD, true) {
+    }
+} lpushxCommand;
+
+class RPushXCommand: public ListPushWrapper {
+ public:
+    RPushXCommand()
+        :ListPushWrapper("rpushx", ListPos::LP_TAIL, true) {
+    }
+} rpushxCommand;
 
 class LIndexCommand: public Command {
  public:

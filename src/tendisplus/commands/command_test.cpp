@@ -203,6 +203,21 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
             EXPECT_EQ(expect.value(), Command::fmtBulk(std::to_string(i)));
         }
     }
+
+    for (uint32_t i = 0; i < 1000; i++) {
+        sess.setArgs({"hmset",
+                      "hmsetkey",
+                      std::to_string(i),
+                      std::to_string(i),
+                      std::to_string(i+1),
+                      std::to_string(i+1)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        sess.setArgs({"hlen", "hmsetkey"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
+    }
 }
 
 void testZset2(std::shared_ptr<ServerEntry> svr) {
@@ -1280,10 +1295,13 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
+    /*
     testKV(server);
     testSetRetry(server);
     testType(server);
+    */
     testHash1(server);
+    /*
     testHash2(server);
     testList(server);
     // zadd/zrem/zrank/zscore
@@ -1295,6 +1313,7 @@ TEST(Command, common) {
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
     testScan(server);
+    */
 }
 
 }  // namespace tendisplus

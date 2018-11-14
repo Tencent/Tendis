@@ -685,6 +685,125 @@ class HIncrByCommand: public Command {
     }
 } hincrbyCommand;
 
+class HMSetCommand: public Command {
+ public:
+    HMSetCommand()
+        :Command("hmset") {
+    }
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> hmsetGeneric(const RecordKey& metaRk,
+                        const std::vector<Record>& rcds,
+                        PStore kvstore) {
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eValue = kvstore->getKV(metaRk, txn.get());
+        if (!eValue.ok()
+                && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return eValue.status();
+        }
+
+        HashMetaValue hashMeta;
+        uint64_t ttl = 0;
+        uint32_t inserted = 0;
+        if (eValue.ok()) {
+            ttl = eValue.value().getTtl();
+            Expected<HashMetaValue> exptHashMeta =
+                HashMetaValue::decode(eValue.value().getValue());
+            if (!exptHashMeta.ok()) {
+                return exptHashMeta.status();
+            }
+            hashMeta = std::move(exptHashMeta.value());
+        }  // no else, else not found , so subkeyCount = 0, ttl = 0
+
+        for (const auto& v : rcds) {
+            auto getSubkeyExpt = kvstore->getKV(v.getRecordKey(), txn.get());
+            if (!getSubkeyExpt.ok()) {
+                if (getSubkeyExpt.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                    return getSubkeyExpt.status();
+                }
+                inserted += 1;
+            }
+            Status setStatus = kvstore->setKV(v.getRecordKey(), v.getRecordValue(), txn.get());
+            if (!setStatus.ok()) {
+                return setStatus;
+            }
+        }
+        hashMeta.setCount(hashMeta.getCount() + inserted);
+        RecordValue metaValue(hashMeta.encode(), ttl);
+        Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
+        if (!setStatus.ok()) {
+            return setStatus;
+        }
+        Expected<uint64_t> exptCommit = txn->commit();
+        if (!exptCommit.ok()) {
+            return exptCommit.status();
+        } else {
+            return Command::fmtOK();
+        }
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        if (args.size() > 1002) {
+            return {ErrorCodes::ERR_INTERNAL, "exceed batch lim"};
+        }
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        std::vector<Record> rcds;
+        for (size_t i = 2; i < args.size(); i+=2) {
+            RecordKey subKey(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
+            RecordValue subRv(args[i+1]);
+            rcds.emplace_back(Record(std::move(subKey), std::move(subRv)));
+        }
+        for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
+            auto result = hmsetGeneric(metaKey, rcds, kvstore);
+            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return result;
+            }
+        }
+        return hmsetGeneric(metaKey, rcds, kvstore);
+    }
+} hmsetCommand;
+
 class HSetGeneric: public Command {
  public:
     HSetGeneric(const std::string& name, bool setNx)
