@@ -12,6 +12,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -193,6 +194,7 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
         if (deleteCount.value() == batchSize) {
             continue;
         }
+        TEST_SYNC_POINT_CALLBACK("delKeyPessimistic::TotalCount", &totalCount);
         ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -285,64 +287,74 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         }
         return 1;
     }
-    std::string prefix;
+    std::vector<std::string> prefixes;
     if (mk.getRecordType() == RecordType::RT_HASH_META) {
         RecordKey fakeEle(mk.getDbId(),
                           RecordType::RT_HASH_ELE,
                           mk.getPrimaryKey(),
                           "");
-        prefix = fakeEle.prefixPk();
+        prefixes.push_back(fakeEle.prefixPk());
     } else if (mk.getRecordType() == RecordType::RT_LIST_META) {
         RecordKey fakeEle(mk.getDbId(),
                           RecordType::RT_LIST_ELE,
                           mk.getPrimaryKey(),
                           "");
-        prefix = fakeEle.prefixPk();
+        prefixes.push_back(fakeEle.prefixPk());
     } else if (mk.getRecordType() == RecordType::RT_SET_META) {
         RecordKey fakeEle(mk.getDbId(),
                           RecordType::RT_SET_ELE,
                           mk.getPrimaryKey(),
                           "");
-        prefix = fakeEle.prefixPk();
+        prefixes.push_back(fakeEle.prefixPk());
+    } else if (mk.getRecordType() == RecordType::RT_ZSET_META) {
+        RecordKey fakeEle(mk.getDbId(),
+                          RecordType::RT_ZSET_S_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefixes.push_back(fakeEle.prefixPk());
+        RecordKey fakeEle1(mk.getDbId(),
+                          RecordType::RT_ZSET_H_ELE,
+                          mk.getPrimaryKey(),
+                          "");
+        prefixes.push_back(fakeEle1.prefixPk());
     } else {
         INVARIANT(0);
-        // invariant 0
-        // TODO(deyukong): impl
     }
-    auto cursor = txn->createCursor();
-    cursor->seek(prefix);
 
     std::list<RecordKey> pendingDelete;
-    while (true) {
-        if (pendingDelete.size() >= subCount) {
-            break;
+    for (const auto& prefix : prefixes) {
+        auto cursor = txn->createCursor();
+        cursor->seek(prefix);
+
+        while (true) {
+            if (pendingDelete.size() >= subCount) {
+                break;
+            }
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            Record& rcd = exptRcd.value();
+            const RecordKey& rcdKey = rcd.getRecordKey();
+            if (rcdKey.prefixPk() != prefix) {
+                break;
+            }
+            pendingDelete.push_back(rcdKey);
         }
-        Expected<Record> exptRcd = cursor->next();
-        if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            break;
-        }
-        if (!exptRcd.ok()) {
-            return exptRcd.status();
-        }
-        Record& rcd = exptRcd.value();
-        const RecordKey& rcdKey = rcd.getRecordKey();
-        if (rcdKey.prefixPk() != prefix) {
-            INVARIANT(rcdKey.getPrimaryKey() != mk.getPrimaryKey());
-            break;
-        }
-        pendingDelete.push_back(rcdKey);
     }
+
     if (deleteMeta) {
         pendingDelete.push_back(mk);
     }
-
     for (auto& v : pendingDelete) {
         Status s = kvstore->delKV(v, txn);
         if (!s.ok()) {
             return s;
         }
     }
-
     Expected<uint64_t> commitStatus = txn->commit();
     if (commitStatus.ok()) {
         return pendingDelete.size();
@@ -401,7 +413,8 @@ Status Command::delKey(Session *sess, uint32_t storeId,
         if (!cnt.ok()) {
             return cnt.status();
         }
-        if (cnt.value() >= 2048) {
+        if (cnt.value() >= 2048 ||
+                (mk.getRecordType() == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();

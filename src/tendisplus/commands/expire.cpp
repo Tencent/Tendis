@@ -98,7 +98,8 @@ Expected<std::string> expireGeneric(Session *sess,
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -111,7 +112,8 @@ Expected<std::string> expireGeneric(Session *sess,
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             auto done = expireBeforeNow(sess, type, key);
             if (!done.ok()) {
                 return done.status();

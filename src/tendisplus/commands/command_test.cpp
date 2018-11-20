@@ -1155,9 +1155,30 @@ void testDel(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtZero());
     }
+
+    for (int i = 0; i < 10000; ++i) {
+        sess.setArgs({"zadd",
+                      "testzsetdel",
+                      std::to_string(i),
+                      std::to_string(i)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+    }
+    const auto guard = MakeGuard([] {
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+    });
+    std::cout<< "begin delete zset" << std::endl;
+    SyncPoint::GetInstance()->EnableProcessing();
+    SyncPoint::GetInstance()->SetCallBack(
+        "delKeyPessimistic::TotalCount", [&](void* arg) {
+            uint64_t v = *(static_cast<uint64_t*>(arg));
+            EXPECT_EQ(v, 20001U);
+        });
+    sess.setArgs({"del", "testzsetdel"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 }
 
-/*
 TEST(Command, del) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -1190,6 +1211,7 @@ TEST(Command, del) {
     testDel(server);
 }
 
+/*
 TEST(Command, expire) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -1299,8 +1321,8 @@ TEST(Command, common) {
     testKV(server);
     testSetRetry(server);
     testType(server);
-    */
     testHash1(server);
+    */
     /*
     testHash2(server);
     testList(server);

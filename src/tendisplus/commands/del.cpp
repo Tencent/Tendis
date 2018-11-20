@@ -23,7 +23,8 @@ Expected<bool> delGeneric(Session *sess, const std::string& key) {
     for (auto type : {RecordType::RT_KV,
                       RecordType::RT_LIST_META,
                       RecordType::RT_HASH_META,
-                      RecordType::RT_SET_META}) {
+                      RecordType::RT_SET_META,
+                      RecordType::RT_ZSET_META}) {
         RecordKey rk(pCtx->getDbId(), type, key, "");
         uint32_t storeId = Command::getStoreId(sess, key);
         Expected<bool> done = Command::delKeyChkExpire(sess, storeId, rk);
