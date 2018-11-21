@@ -400,14 +400,17 @@ func procCas(binlog *Binlog, c *redis.Client) error {
 }
 
 func procAsyncDel(binlog *Binlog, c *redis.Client) error {
+	log.Fatalf("procAsyncDel not impl")
 	return nil
 }
 
 func procSyncVer(binlog *Binlog, c *redis.Client) error {
+	log.Fatalf("procSyncVer not impl")
 	return nil
 }
 
 func procRecVer(binlog *Binlog, c *redis.Client) error {
+	log.Fatalf("procRecVer not impl")
 	return nil
 }
 

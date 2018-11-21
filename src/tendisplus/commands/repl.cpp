@@ -44,6 +44,43 @@ class FullSyncCommand: public Command {
     }
 } fullSyncCommand;
 
+class ToggleIncrSyncCommand: public Command {
+ public:
+    ToggleIncrSyncCommand()
+        :Command("toggleincrsync") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        Expected<uint64_t> state = ::tendisplus::stoul(sess->getArgs()[1]);
+        if (!state.ok()) {
+            return state.status();
+        }
+        LOG(INFO) << "toggle incrsync state to:" << state.value();
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+        replMgr->togglePauseState(state.value() ? false : true);
+        return Command::fmtOK();
+    }
+} toggleIncrSyncCmd;
+
 class IncrSyncCommand: public Command {
  public:
     IncrSyncCommand()

@@ -25,6 +25,7 @@ namespace tendisplus {
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
     :_isRunning(false),
      _svr(svr),
+     _incrPaused(false),
      _firstBinlogId(0),
      _clientIdGen(0),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
@@ -372,6 +373,9 @@ void ReplManager::appendJSONStat(
 
         w.Key("first_binlog");
         w.Uint64(_firstBinlogId[i]);
+
+        w.Key("incr_paused");
+        w.Uint64(_incrPaused);
 
         w.Key("sync_dest");
         w.StartObject();
