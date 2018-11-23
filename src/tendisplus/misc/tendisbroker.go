@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	backend     = flag.String("backendhost", "9.24.0.133:10001", "backend twenproxy host")
+	backend     = flag.String("backendhost", "9.24.0.133:12345", "backend twenproxy host")
 	frontenddir = flag.String("frontenddir", "./frontend", "dir contains frontend info")
 )
 
@@ -70,7 +70,7 @@ func parseFronts(dir string) ([]*Frontend, error) {
 	tmp := &Frontend{
 		Host:    "9.24.0.133:10000",
 		Passwd:  "tt7715TTC",
-		Runid:   "e42c6b5317a7154525e957350cdef5864da90f45",
+		Runid:   "276c0be4e0de6d5760a315b2e9cc4ac4984cedde",
 		LastSeq: 0,
 		State:   2,
 	}
@@ -539,9 +539,11 @@ func front2back(front *Frontend, back_host string, wg *sync.WaitGroup) {
 	if v, err := fc.Cmd("AUTH", front.Passwd).Str(); err != nil || v != "OK" {
 		log.Fatalf("auth %s failed", front.Host)
 	}
+    /*
 	if v, err := bc.Cmd("AUTH", "tt7715TTC").Str(); err != nil || v != "OK" {
 		log.Fatalf("auth %s failed", back_host)
 	}
+    */
 	state_buf := &bytes.Buffer{}
 	if err := binary.Write(state_buf, binary.LittleEndian, front.State); err != nil {
 		log.Fatalf("write state failed:%v", err)
