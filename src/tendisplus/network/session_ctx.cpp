@@ -24,6 +24,10 @@ uint32_t SessionCtx::getDbId() const {
     return _dbId;
 }
 
+void SessionCtx::setDbId(uint32_t dbid) {
+    _dbId = dbid;
+}
+
 void SessionCtx::setAuthed() {
     _authed = true;
 }

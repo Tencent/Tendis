@@ -118,6 +118,23 @@ func (c *Client) Cmd(cmd string, args ...interface{}) *Resp {
 	return c.readResp(true)
 }
 
+func (c *Client) OnewayCmd(cmd string, args ...interface{}) error {
+	return c.writeRequest(request{cmd, args})
+}
+
+func (c *Client) ReadRaw() ([]byte, error) {
+	return c.respReader.ReadRaw()
+}
+
+func (c *Client) WriteRaw(data []byte) error {
+	if c.WriteTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.WriteTimeout))
+	}
+    buf := bytes.NewBuffer(data)
+    _, err := buf.WriteTo(c.conn)
+    return err
+}
+
 // PipeAppend adds the given call to the pipeline queue.
 // Use PipeResp() to read the response.
 func (c *Client) PipeAppend(cmd string, args ...interface{}) {

@@ -25,6 +25,7 @@ class SessionCtx {
     bool authed() const;
     void setAuthed();
     uint32_t getDbId() const;
+    void setDbId(uint32_t);
 
     void resetSingleReqCtx();
 
