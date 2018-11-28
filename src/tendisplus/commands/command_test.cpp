@@ -956,6 +956,35 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, "1");
     Command::fmtNull(ss);
     EXPECT_EQ(ss.str(), expect.value());
+
+    // cas/getvsn
+    sess.setArgs({"set", "caskey", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"getvsn", "caskey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtLongLong(ss, 0);
+    Command::fmtBulk(ss, "1");
+    EXPECT_EQ(expect.value(), ss.str());
+    sess.setArgs({"cas", "caskey", "0", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"cas", "caskey", "0", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+    EXPECT_EQ(expect.status().code(), ErrorCodes::ERR_CAS);
+    sess.setArgs({"getvsn", "caskey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtLongLong(ss, 1);
+    Command::fmtBulk(ss, "2");
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {
@@ -1317,8 +1346,8 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    /*
     testKV(server);
+    /*
     testSetRetry(server);
     testType(server);
     testHash1(server);

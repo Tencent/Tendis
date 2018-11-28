@@ -580,6 +580,11 @@ std::stringstream& Command::fmtNull(std::stringstream& ss) {
     return ss;
 }
 
+std::stringstream& Command::fmtLongLong(std::stringstream& ss, uint64_t v) {
+    ss << ":" << v << "\r\n";
+    return ss;
+}
+
 std::string Command::fmtBulk(const std::string& s) {
     std::stringstream ss;
     ss << "$" << s.size() << "\r\n";

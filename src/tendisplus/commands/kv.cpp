@@ -612,6 +612,58 @@ class GetGenericCmd: public Command {
     }
 };
 
+class GetVsnCommand: public Command {
+ public:
+    GetVsnCommand()
+        :Command("getvsn") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            Command::fmtLongLong(ss, -1);
+            Command::fmtNull(ss);
+            return ss.str();
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        } else {
+            Command::fmtLongLong(ss, rv.value().getCas());
+            if (rv.value().getValue() == "") {
+                Command::fmtNull(ss);
+            } else {
+                Command::fmtBulk(ss, rv.value().getValue());
+            }
+            return ss.str();
+        }
+    }
+} getvsnCmd;
+
 class GetCommand: public GetGenericCmd {
  public:
     GetCommand()
@@ -785,6 +837,59 @@ class GetSetGeneral: public Command {
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
+
+class CasCommand: public GetSetGeneral {
+ public:
+    CasCommand()
+        :GetSetGeneral("cas") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        Expected<uint64_t> ecas = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!ecas.ok()) {
+            return ecas.status();
+        }
+
+        RecordValue ret(sess->getArgs()[3]);
+        if (!oldValue.ok()) {
+            ret.setCas(ecas.value());
+            return ret;
+        }
+
+        if (ecas.value() != oldValue.value().getCas()) {
+            return {ErrorCodes::ERR_CAS, "cas unmatch"};
+        }
+
+        ret.setCas(ecas.value() + 1);
+        ret.setTtl(oldValue.value().getTtl());
+        return std::move(ret);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        return Command::fmtOK();
+    }
+} casCommand;
 
 class AppendCommand: public GetSetGeneral {
  public:
