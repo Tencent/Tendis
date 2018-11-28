@@ -269,34 +269,44 @@ bool RecordKey::operator==(const RecordKey& other) const {
 }
 
 RecordValue::RecordValue()
-    :_ttl(0),
+    :_cas(0),
+     _ttl(0),
      _value("") {
 }
 
 RecordValue::RecordValue(RecordValue&& o)
-        :_ttl(o._ttl),
+        :_cas(o._cas),
+         _ttl(o._ttl),
          _value(std::move(o._value)) {
     o._ttl = 0;
+    o._cas = 0;
 }
 
-RecordValue::RecordValue(const std::string& val, uint64_t ttl)
-        :_ttl(ttl),
+RecordValue::RecordValue(const std::string& val, uint64_t ttl, uint64_t cas)
+        :_cas(cas),
+         _ttl(ttl),
          _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, uint64_t ttl)
-        :_ttl(ttl),
+RecordValue::RecordValue(std::string&& val, uint64_t ttl, uint64_t cas)
+        :_cas(cas),
+         _ttl(ttl),
          _value(std::move(val)) {
 }
 
 std::string RecordValue::encode() const {
-    // TTL
     std::vector<uint8_t> value;
     value.reserve(128);
+
+    // CAS
+    auto casBytes = varintEncode(_cas);
+    value.insert(value.end(), casBytes.begin(), casBytes.end());
+
+    // TTL
     auto ttlBytes = varintEncode(_ttl);
+    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
 
     // Value
-    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
     if (_value.size() > 0) {
         value.insert(value.end(), _value.begin(), _value.end());
     }
@@ -305,17 +315,22 @@ std::string RecordValue::encode() const {
 }
 
 Expected<RecordValue> RecordValue::decode(const std::string& value) {
-    // value
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+    size_t offset = 0;
     auto expt = varintDecodeFwd(valueCstr, value.size());
     if (!expt.ok()) {
         return expt.status();
     }
-    size_t offset = expt.value().second;
+    offset += expt.value().second;
+    uint64_t cas = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
     uint64_t ttl = expt.value().first;
 
-    // NOTE(deyukong): value must not be empty
-    // so we use >= rather than > here
     if (offset > value.size()) {
         std::stringstream ss;
         ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
@@ -326,7 +341,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         rawValue = std::string(value.c_str() + offset,
             value.size() - offset);
     }
-    return RecordValue(std::move(rawValue), ttl);
+    return RecordValue(std::move(rawValue), ttl, cas);
 }
 
 const std::string& RecordValue::getValue() const {
@@ -341,8 +356,16 @@ void RecordValue::setTtl(uint64_t ttl) {
     _ttl = ttl;
 }
 
+uint64_t RecordValue::getCas() const {
+    return _cas;
+}
+
+void RecordValue::setCas(uint64_t cas) {
+    _cas = cas;
+}
+
 bool RecordValue::operator==(const RecordValue& other) const {
-    return _ttl == other._ttl && _value == other._value;
+    return _ttl == other._ttl && _value == other._value && _cas == other._cas;
 }
 
 Record::Record()
@@ -684,15 +707,12 @@ HashMetaValue::HashMetaValue()
 }
 
 HashMetaValue::HashMetaValue(uint64_t count, uint64_t cas)
-    :_count(count),
-     _cas(cas) {
+    :_count(count) {
 }
 
 HashMetaValue::HashMetaValue(HashMetaValue&& o)
-        :_count(o._count),
-         _cas(o._cas) {
+        :_count(o._count) {
     o._count = 0;
-    o._cas = 0;
 }
 
 std::string HashMetaValue::encode() const {
@@ -700,8 +720,6 @@ std::string HashMetaValue::encode() const {
     value.reserve(128);
     auto countBytes = varintEncode(_count);
     value.insert(value.end(), countBytes.begin(), countBytes.end());
-    auto casBytes = varintEncode(_cas);
-    value.insert(value.end(), casBytes.begin(), casBytes.end());
     return std::string(reinterpret_cast<const char *>(
                 value.data()), value.size());
 }
@@ -732,9 +750,7 @@ HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {
         return *this;
     }
     _count = o._count;
-    _cas = o._cas;
     o._count = 0;
-    o._cas = 0;
     return *this;
 }
 
@@ -742,16 +758,8 @@ void HashMetaValue::setCount(uint64_t count) {
     _count = count;
 }
 
-void HashMetaValue::setCas(uint64_t cas) {
-    _cas = cas;
-}
-
 uint64_t HashMetaValue::getCount() const {
     return _count;
-}
-
-uint64_t HashMetaValue::getCas() const {
-    return _cas;
 }
 
 ListMetaValue::ListMetaValue(uint64_t head, uint64_t tail)

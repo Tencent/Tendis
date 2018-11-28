@@ -96,10 +96,11 @@ TEST(Record, Common) {
         auto type = randomType();
         auto pk = randomStr(5, false);
         auto sk = randomStr(5, true);
-        uint32_t ttl = genRand();
+        uint64_t ttl = genRand()*genRand();
+        uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
         auto rk = RecordKey(dbid, type, pk, sk);
-        auto rv = RecordValue(val, ttl);
+        auto rv = RecordValue(val, ttl, cas);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);
@@ -112,10 +113,11 @@ TEST(Record, Common) {
         auto type = randomType();
         auto pk = randomStr(5, false);
         auto sk = randomStr(5, true);
-        uint32_t ttl = genRand();
+        uint64_t ttl = genRand()*genRand();
+        uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
         auto rk = RecordKey(dbid, type, pk, sk);
-        auto rv = RecordValue(val, ttl);
+        auto rv = RecordValue(val, ttl, cas);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(overflip(kv.first), kv.second);
