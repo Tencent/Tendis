@@ -63,6 +63,50 @@ void testList(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
     }
+
+    // case from redis.io
+    std::stringstream ss;
+    sess.setArgs({"rpush", "lrangekey", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"rpush", "lrangekey", "two"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"rpush", "lrangekey", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"lrange", "lrangekey", "0", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "one");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+    sess.setArgs({"lrange", "lrangekey", "-3", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "one");
+    Command::fmtBulk(ss, "two");
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+    sess.setArgs({"lrange", "lrangekey", "-100", "100"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "one");
+    Command::fmtBulk(ss, "two");
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+    sess.setArgs({"lrange", "lrangekey", "5", "10"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
@@ -1346,15 +1390,15 @@ TEST(Command, common) {
         KVStore::INSTANCE_NUM);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
-    testKV(server);
+    testList(server);
     /*
+    testKV(server);
     testSetRetry(server);
     testType(server);
     testHash1(server);
     */
     /*
     testHash2(server);
-    testList(server);
     // zadd/zrem/zrank/zscore
     testZset(server);
     // zcount
