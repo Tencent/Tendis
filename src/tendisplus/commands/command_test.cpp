@@ -64,7 +64,7 @@ void testList(std::shared_ptr<ServerEntry> svr) {
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
     }
 
-    // case from redis.io
+    // case from redis.io, lrange
     std::stringstream ss;
     sess.setArgs({"rpush", "lrangekey", "one"});
     expect = Command::runSessionCmd(&sess);
@@ -107,6 +107,45 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZeroBulkLen());
+
+    // case from redis.io, ltrim
+    sess.setArgs({"rpush", "ltrimkey", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"rpush", "ltrimkey", "two"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"rpush", "ltrimkey", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"ltrim", "ltrimkey", "1", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    ss.str("");
+    sess.setArgs({"lrange", "ltrimkey", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "two");
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
+    sess.setArgs({"llen", "ltrimkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"ltrim", "ltrimkey", "2", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"exists", "ltrimkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+ 
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
