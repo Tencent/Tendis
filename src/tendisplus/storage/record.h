@@ -248,7 +248,7 @@ class ListMetaValue {
 class HashMetaValue {
  public:
     HashMetaValue();
-    HashMetaValue(uint64_t count, uint64_t cas);
+    HashMetaValue(uint64_t count);
     HashMetaValue(HashMetaValue&&);
     static Expected<HashMetaValue> decode(const std::string&);
     HashMetaValue& operator=(HashMetaValue&&);

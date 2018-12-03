@@ -685,6 +685,78 @@ class HIncrByCommand: public Command {
     }
 } hincrbyCommand;
 
+class HMGetCommand: public Command {
+ public:
+    HMGetCommand()
+        :Command("hmget") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        std::string metaKeyEnc = metaKey.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+ 
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, args.size()-2);
+        for (size_t i = 2; i < args.size(); ++i) {
+            RecordKey subKey(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
+            Expected<RecordValue> eValue = kvstore->getKV(subKey, txn.get());
+            if (!eValue.ok()) {
+                if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                    Command::fmtNull(ss);
+                } else {
+                    return eValue.status();
+                }
+            } else {
+                Command::fmtBulk(ss, eValue.value().getValue());
+            }
+        }
+        return ss.str();
+    }
+} hmgetCmd;
+
 class HMSetCommand: public Command {
  public:
     HMSetCommand()
@@ -764,9 +836,15 @@ class HMSetCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-        if (args.size() > 1002) {
-            return {ErrorCodes::ERR_INTERNAL, "exceed batch lim"};
+        if (args.size()-2 > 2048) {
+            std::stringstream ss;
+            ss << "exceed batch lim:" << args.size();
+            return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
+        if (args.size() % 2 != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
+        }
+
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");

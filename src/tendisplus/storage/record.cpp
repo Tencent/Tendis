@@ -703,10 +703,10 @@ bool ReplLog::operator==(const ReplLog& o) const {
 }
 
 HashMetaValue::HashMetaValue()
-    :HashMetaValue(0, 0) {
+    :HashMetaValue(0) {
 }
 
-HashMetaValue::HashMetaValue(uint64_t count, uint64_t cas)
+HashMetaValue::HashMetaValue(uint64_t count)
     :_count(count) {
 }
 
@@ -728,7 +728,6 @@ Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
     size_t offset = 0;
     uint64_t count = 0;
-    uint64_t cas = 0;
     auto expt = varintDecodeFwd(valCstr + offset, val.size());
     if (!expt.ok()) {
         return expt.status();
@@ -736,13 +735,7 @@ Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
     offset += expt.value().second;
     count = expt.value().first;
 
-    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    cas = expt.value().first;
-    return HashMetaValue(count, cas);
+    return HashMetaValue(count);
 }
 
 HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {

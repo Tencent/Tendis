@@ -201,7 +201,7 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     for (uint32_t i = 0; i < 10000; i++) {
         sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
         auto expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
+        EXPECT_TRUE(expect.ok()) << expect.status().toString();
     }
     for (uint32_t i = 0; i < 10000; i++) {
         sess.setArgs({"hget", "a", std::to_string(i)});
@@ -1430,13 +1430,10 @@ TEST(Command, common) {
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
     testList(server);
-    /*
     testKV(server);
     testSetRetry(server);
     testType(server);
     testHash1(server);
-    */
-    /*
     testHash2(server);
     // zadd/zrem/zrank/zscore
     testZset(server);
@@ -1447,7 +1444,6 @@ TEST(Command, common) {
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
     testScan(server);
-    */
 }
 
 }  // namespace tendisplus
