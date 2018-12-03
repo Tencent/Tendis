@@ -36,9 +36,7 @@ Expected<std::string> genericPop(Session *sess,
     ListMetaValue lm(INITSEQ, INITSEQ);
     Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
 
-    if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        return Command::fmtNull();
-    } else if (!rv.ok()) {
+    if (!rv.ok()) {
         return rv.status();
     }
 
@@ -86,7 +84,7 @@ Expected<std::string> genericPop(Session *sess,
     if (!commitStatus.ok()) {
         return commitStatus.status();
     }
-    return Command::fmtBulk(subRv.value().getValue());
+    return subRv.value().getValue();
 }
 
 Expected<std::string> genericPush(Session *sess,
@@ -119,7 +117,7 @@ Expected<std::string> genericPush(Session *sess,
 
     uint64_t head = lm.getHead();
     uint64_t tail = lm.getTail();
-    for (size_t i = 2; i < args.size(); ++i) {
+    for (size_t i = 0; i < args.size(); ++i) {
         uint64_t idx;
         if (pos == ListPos::LP_HEAD) {
             idx = --head;
@@ -265,8 +263,12 @@ class ListPopWrapper: public Command {
             Expected<std::string> s =
                 genericPop(sess, kvstore, metaRk, _pos);
             if (s.ok()) {
-                return s.value();
+                return Command::fmtBulk(s.value());
             }
+            if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtNull();
+            }
+ 
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
@@ -355,6 +357,10 @@ class ListPushWrapper: public Command {
 
         PStore kvstore = Command::getStoreById(sess, storeId);
 
+        std::vector<std::string> valargs;
+        for (size_t i = 2; i < args.size(); ++i) {
+            valargs.push_back(args[i]);
+        }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -362,7 +368,7 @@ class ListPushWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPush(sess, kvstore, metaRk, args, _pos, _needExist);
+                genericPush(sess, kvstore, metaRk, valargs, _pos, _needExist);
             if (s.ok()) {
                 return s.value();
             }
@@ -412,6 +418,135 @@ class RPushXCommand: public ListPushWrapper {
         :ListPushWrapper("rpushx", ListPos::LP_TAIL, true) {
     }
 } rpushxCommand;
+
+// NOTE(deyukong): atomic is not guaranteed
+class RPopLPushCommand: public Command {
+ public:
+    RPopLPushCommand()
+        :Command("rpoplpush") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key1 = args[1];
+        const std::string& key2 = args[2];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk1(pCtx->getDbId(), RecordType::RT_LIST_META, key1, "");
+        std::string metaKeyEnc1 = metaRk1.encode();
+        uint32_t storeId1 = Command::getStoreId(sess, key1);
+
+        RecordKey metaRk2(pCtx->getDbId(), RecordType::RT_LIST_META, key2, "");
+        std::string metaKeyEnc2 = metaRk2.encode();
+        uint32_t storeId2 = Command::getStoreId(sess, key2);
+
+        {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId1, metaRk1);
+            if (rv.status().code() != ErrorCodes::ERR_OK &&
+                    rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                    rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return rv.status();
+            }
+        }
+        {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId2, metaRk2);
+            if (rv.status().code() != ErrorCodes::ERR_OK &&
+                    rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                    rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return rv.status();
+            }
+        }
+        auto storeLock1 = Command::lockDBByKey(sess,
+                                              key1,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId1, metaKeyEnc1)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore1 = Command::getStoreById(sess, storeId1);
+
+        auto storeLock2 = Command::lockDBByKey(sess,
+                                              key2,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId2, metaKeyEnc2)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+        PStore kvstore2 = Command::getStoreById(sess, storeId2);
+
+        std::string val = "";
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore1->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> s =
+                genericPop(sess, kvstore1, metaRk1, ListPos::LP_TAIL);
+            if (s.ok()) {
+                val = std::move(s.value());
+                break;
+            }
+            if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtNull();
+            }
+
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore2->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            auto s = genericPush(sess,
+                                 kvstore2,
+                                 metaRk2,
+                                 {val},
+                                 ListPos::LP_HEAD,
+                                 false /*need_exist*/);
+            if (s.ok()) {
+                return Command::fmtBulk(val);
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} rpoplpushCmd;
 
 class LtrimCommand: public Command {
  public:

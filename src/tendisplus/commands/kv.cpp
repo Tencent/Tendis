@@ -699,10 +699,10 @@ class GetCommand: public GetGenericCmd {
 } getCommand;
 
 // TODO(deyukong): unittest
-class GetRangeCommand: public GetGenericCmd {
+class GetRangeGenericCommand: public GetGenericCmd {
  public:
-    GetRangeCommand()
-        :GetGenericCmd("getrange") {
+    GetRangeGenericCommand(const std::string& name)
+        :GetGenericCmd(name) {
     }
 
     ssize_t arity() const {
@@ -759,7 +759,21 @@ class GetRangeCommand: public GetGenericCmd {
         }
         return Command::fmtBulk(s.substr(start, end-start+1));
     }
+};
+
+class GetRangeCommand: public GetRangeGenericCommand {
+ public:
+    GetRangeCommand()
+        :GetRangeGenericCommand("getrange") {
+    }
 } getrangeCmd;
+
+class Substrcommand: public GetRangeGenericCommand {
+ public:
+    Substrcommand()
+        :GetRangeGenericCommand("substr") {
+    }
+} substrCmd;
 
 class GetSetGeneral: public Command {
  public:

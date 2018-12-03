@@ -145,7 +145,40 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
- 
+
+    // case from redis.io rpoplpush 
+    sess.setArgs({"rpush", "rpoplpushkey", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"rpush", "rpoplpushkey", "two"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+    sess.setArgs({"rpush", "rpoplpushkey", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    ss.str("");
+    sess.setArgs({"rpoplpush", "rpoplpushkey", "rpoplpushkey2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("three"));
+    ss.str("");
+    sess.setArgs({"lrange", "rpoplpushkey", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "one");
+    Command::fmtBulk(ss, "two");
+    EXPECT_EQ(expect.value(), ss.str());
+    ss.str("");
+    sess.setArgs({"lrange", "rpoplpushkey2", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "three");
+    EXPECT_EQ(expect.value(), ss.str());
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
