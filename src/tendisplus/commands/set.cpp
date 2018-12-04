@@ -38,7 +38,7 @@ Expected<std::string> genericSRem(Session *sess,
     }
 
     uint64_t cnt = 0;
-    for (size_t i = 2; i < args.size(); ++i) {
+    for (size_t i = 0; i < args.size(); ++i) {
         RecordKey subRk(metaRk.getDbId(),
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
@@ -207,6 +207,91 @@ class SIsMemberCommand: public Command {
         }
     }
 } sIsMemberCmd;
+
+class SpopCommand: public Command {
+ public:
+    SpopCommand()
+        :Command("spop") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IX);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+            auto batch = Command::scan(fake.prefixPk(), "0", 1, txn.get());
+            if (!batch.ok()) {
+                return batch.status();
+            }
+            const auto& rcds = batch.value().second;
+            if (rcds.size() == 0) {
+                return Command::fmtNull();
+            }
+            const std::string& v = (*rcds.begin()).getRecordKey().getSecondaryKey();
+            Expected<std::string> s =
+                genericSRem(sess, kvstore, metaRk, {v});
+            if (s.ok()) {
+                return Command::fmtBulk(v);
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} spopcmd;
 
 class SaddCommand: public Command {
  public:
@@ -394,6 +479,10 @@ class SRemCommand: public Command {
 
         PStore kvstore = Command::getStoreById(sess, storeId);
 
+        std::vector<std::string> valArgs;
+        for (uint32_t i = 2; i < args.size(); ++i) {
+            valArgs.push_back(args[i]);
+        }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -401,7 +490,7 @@ class SRemCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericSRem(sess, kvstore, metaRk, args);
+                genericSRem(sess, kvstore, metaRk, valArgs);
             if (s.ok()) {
                 return s.value();
             }

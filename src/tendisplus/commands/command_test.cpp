@@ -645,6 +645,25 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), ss.str());
 }
 
+void testSet(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"sadd", "settestkey1", "one", "two", "three"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"spop", "settestkey1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("one")) << expect.status().toString();
+    sess.setArgs({"scard", "settestkey1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2)) << expect.status().toString();
+}
+
 void testZset(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1468,6 +1487,7 @@ TEST(Command, common) {
     testType(server);
     testHash1(server);
     testHash2(server);
+    testSet(server);
     // zadd/zrem/zrank/zscore
     testZset(server);
     // zcount
