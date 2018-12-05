@@ -208,6 +208,137 @@ class SIsMemberCommand: public Command {
     }
 } sIsMemberCmd;
 
+// TODO(deyukong): unittest for srandmember
+class SrandMemberCommand: public Command {
+ public:
+    SrandMemberCommand()
+        :Command("srandmember") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        int64_t bulk = 0;
+        if (sess->getArgs().size() >= 3) {
+            Expected<int64_t> ebulk = ::tendisplus::stoll(sess->getArgs()[2]);
+            if (!ebulk.ok()) {
+                return ebulk.status();
+            }
+            bulk = ebulk.value();
+            if (bulk < 0) {
+                bulk = -bulk;
+            }
+        }
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                return fmtZero();
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return fmtZero();
+            } else if (!rv.status().ok()) {
+                return rv.status();
+            }
+        }
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+
+        ssize_t ssize = 0;
+        if (rv.ok()) {
+            Expected<SetMetaValue> exptSm =
+                SetMetaValue::decode(rv.value().getValue());
+            INVARIANT(exptSm.ok());
+            ssize = exptSm.value().getCount();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (!bulk) {
+                return Command::fmtNull();
+            } else {
+                return Command::fmtZeroBulkLen();
+            }
+        } else {
+            return rv.status();
+        }
+
+        auto cursor = txn->createCursor();
+        int64_t beginIdx = 0;
+        int64_t cnt = 0;
+        int64_t peek = 0;
+        std::vector<std::string> vals;
+        if (bulk > ssize) {
+            beginIdx = 0;
+        } else {
+            int64_t offset = ssize - (bulk == 0 ? 1 : bulk) + 1;
+            beginIdx = rand() % (offset > 1024 * 16 ? 1024 * 16 : offset);
+        }
+        RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+        cursor->seek(fake.prefixPk());
+        while (true) {
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            cnt++;
+            if (cnt < beginIdx) {
+                continue;
+            }
+            if (peek < (bulk == 0 ? 1 : bulk)) {
+                vals.emplace_back(exptRcd.value().getRecordKey().getSecondaryKey());
+                peek++;
+            } else {
+                break;
+            }
+        }
+        INVARIANT(vals.size() != 0);
+        if (!bulk) {
+            return Command::fmtBulk(vals[0]);
+        } else {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, vals.size());
+            for (auto& v : vals) {
+                Command::fmtBulk(ss, v);
+            }
+            return ss.str();
+        }
+    }
+} srandmembercmd;
+
 class SpopCommand: public Command {
  public:
     SpopCommand()

@@ -662,6 +662,44 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(2)) << expect.status().toString();
+
+    sess.setArgs({"sadd", "settestkey2", "one", "two", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+    sess.setArgs({"srandmember", "settestkey2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_TRUE(expect.value() == Command::fmtBulk("one") ||
+                expect.value() == Command::fmtBulk("two") ||
+                expect.value() == Command::fmtBulk("three"));
+
+    // srandmember
+    sess.setArgs({"srandmember", "settestkey2", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss1, ss2, ss3;
+    Command::fmtMultiBulkLen(ss1, 1);
+    Command::fmtBulk(ss1, "one");
+    Command::fmtMultiBulkLen(ss2, 1);
+    Command::fmtBulk(ss2, "two");
+    Command::fmtMultiBulkLen(ss3, 1);
+    Command::fmtBulk(ss3, "three");
+    EXPECT_TRUE(expect.value() == ss1.str() ||
+                expect.value() == ss2.str() ||
+                expect.value() == ss3.str());
+    sess.setArgs({"srandmember", "settestkey2", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss1.str(""), ss2.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "one");
+    Command::fmtBulk(ss1, "three");
+    Command::fmtMultiBulkLen(ss2, 2);
+    Command::fmtBulk(ss2, "three");
+    Command::fmtBulk(ss2, "two");
+    EXPECT_TRUE(expect.value() == ss1.str() ||
+                expect.value() == ss2.str());
 }
 
 void testZset(std::shared_ptr<ServerEntry> svr) {
