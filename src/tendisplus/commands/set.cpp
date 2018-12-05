@@ -129,6 +129,104 @@ Expected<std::string> genericSAdd(Session *sess,
     return Command::fmtLongLong(cnt);
 }
 
+class SMembersCommand: public Command {
+ public:
+    SMembersCommand()
+        :Command("smembers") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                return Command::fmtZeroBulkLen();
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtZeroBulkLen();
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+        }
+        auto storeLock = Command::lockDBByKey(sess,
+                                              key,
+                                              mgl::LockMode::LOCK_IS);
+        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+            return {ErrorCodes::ERR_BUSY, "key locked"};
+        }
+
+        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+
+        ssize_t ssize = 0, cnt = 0;
+        if (rv.ok()) {
+            Expected<SetMetaValue> exptSm =
+                SetMetaValue::decode(rv.value().getValue());
+            INVARIANT(exptSm.ok());
+            ssize = exptSm.value().getCount();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else {
+            return rv.status();
+        }
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, ssize);
+        auto cursor = txn->createCursor();
+        RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+        cursor->seek(fake.prefixPk());
+        while (true) {
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            Record& rcd = exptRcd.value();
+            const RecordKey& rcdkey = rcd.getRecordKey();
+            if (rcdkey.prefixPk() != fake.prefixPk()) {
+                break;
+            }
+            cnt += 1;
+            Command::fmtBulk(ss, rcdkey.getSecondaryKey());
+        }
+        INVARIANT(cnt == ssize);
+        return ss.str();
+    }
+} smemberscmd;
+
 class SIsMemberCommand: public Command {
  public:
     SIsMemberCommand()
