@@ -1,3 +1,4 @@
+#include <sys/time.h>
 #include <string>
 #include <sstream>
 #include <utility>
@@ -18,6 +19,93 @@
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
+
+class DbsizeCommand: public Command {
+ public:
+    DbsizeCommand()
+        :Command("dbsize") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtLongLong(0);
+    }
+} dbsizeCmd;
+
+class EchoCommand: public Command {
+ public:
+    EchoCommand()
+        :Command("echo") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtBulk(sess->getArgs()[1]);
+    }
+} echoCmd;
+
+class TimeCommand: public Command {
+ public:
+    TimeCommand()
+        :Command("time") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        Command::fmtBulk(ss, std::to_string(tv.tv_sec));
+        Command::fmtBulk(ss, std::to_string(tv.tv_usec));
+        return ss.str();
+    }
+} timeCmd;
 
 class IterAllCommand: public Command {
  public:

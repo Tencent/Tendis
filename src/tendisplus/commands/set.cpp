@@ -763,5 +763,4 @@ class SDiffCommand: public Command {
 
 } sdiffCommand;
 */
-
 }  // namespace tendisplus

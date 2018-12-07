@@ -757,6 +757,206 @@ class HMGetCommand: public Command {
     }
 } hmgetCmd;
 
+Status hmcas(Session *sess, const std::string& key,
+             const std::vector<std::string>& subargs,
+             uint64_t cmp, uint64_t vsn) {
+    SessionCtx *pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+    RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+    std::string metaKeyEnc = metaKey.encode();
+    uint32_t storeId = Command::getStoreId(sess, key);
+
+    {
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, metaKey);
+        if (rv.status().code() != ErrorCodes::ERR_OK &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
+        }
+    }
+
+    auto storeLock = Command::lockDBByKey(sess,
+                                          key,
+                                          mgl::LockMode::LOCK_IX);
+    if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        return {ErrorCodes::ERR_BUSY, "key locked"};
+    }
+    PStore kvstore = Command::getStoreById(sess, storeId);
+    auto ptxn = kvstore->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    Expected<RecordValue> eValue = kvstore->getKV(metaKey, txn.get());
+    if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+        return eValue.status();
+    }
+
+    HashMetaValue hashMeta;
+    uint64_t ttl = 0;
+    uint64_t cas = 0;
+    if (eValue.ok()) {
+        ttl = eValue.value().getTtl();
+        Expected<HashMetaValue> exptHashMeta =
+            HashMetaValue::decode(eValue.value().getValue());
+        if (!exptHashMeta.ok()) {
+            return exptHashMeta.status();
+        }
+        hashMeta = std::move(exptHashMeta.value());
+        cas = eValue.value().getCas();
+    }  // no else, else not found , so subkeyCount = 0, ttl = 0, cas = 0
+
+    if (cmp) {
+        // kv should exist for comparison
+        if (eValue.ok() && vsn != cas) {
+            return {ErrorCodes::ERR_CAS, ""};
+        }
+    }
+
+    std::map<std::string, uint64_t> uniqkeys;
+    std::map<std::string, std::string> existkvs;
+    for (size_t i = 0; i < subargs.size(); i += 3) {
+        std::string subk = subargs[i];
+        if (uniqkeys.find(subk) != uniqkeys.end()) {
+            continue;
+        }
+        uniqkeys[subk] = i;
+    }
+
+    for (const auto& keyPos: uniqkeys) {
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
+        Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
+        if (rv.ok()) {
+            existkvs[keyPos.first] = rv.value().getValue();
+        } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            continue;
+        }
+    }
+
+    constexpr int OPSET = 0;
+    constexpr int OPADD = 1;
+    for (const auto& keyPos: uniqkeys) {
+        const std::string& opstr = subargs[keyPos.second+1];
+        Expected<uint64_t> eop = ::tendisplus::stoul(opstr);
+        if (!eop.ok()) {
+            return eop.status();
+        }
+
+        RecordKey subrk(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
+        if (eop.value() == OPSET) {
+            RecordValue subrv(subargs[keyPos.second+2]);
+            Status s = kvstore->setKV(subrk, subrv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+        } else if (eop.value() == OPADD) {
+            Expected<int64_t> ev = ::tendisplus::stoll(existkvs[keyPos.first]);
+            if (!ev.ok()) {
+                return ev.status();
+            }
+            Expected<int64_t> ev1 = ::tendisplus::stoll(subargs[keyPos.second+2]);
+            if (!ev1.ok()) {
+                return ev1.status();
+            }
+            RecordValue subrv(std::to_string(ev1.value() + ev.value()));
+            Status s = kvstore->setKV(subrk, subrv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+    }
+
+    if (cmp) {
+        // if the kv does not exist before, use user passed cas
+        if (eValue.ok()) {
+            cas += 1;
+        } else {
+            cas = vsn;
+        }
+    } else {
+        cas = vsn;
+    }
+
+    hashMeta.setCount(hashMeta.getCount() + uniqkeys.size() - existkvs.size());
+    RecordValue metaValue(hashMeta.encode(), ttl, cas);
+    Status s = kvstore->setKV(metaKey, metaValue, txn.get());
+    if (!s.ok()) {
+        return s;
+    }
+    auto commitStat = txn->commit();
+    return commitStat.status(); 
+}
+
+class HMCasCommand: public Command {
+ public:
+    HMCasCommand()
+        :Command("hmcas") {
+    }
+
+    ssize_t arity() const {
+        return -7;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        if ((args.size() - 4)%3 != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments for hmcas"};
+        }
+        const std::string& key = args[1];
+        Expected<uint64_t> ecmp = ::tendisplus::stoul(args[2]);
+        if (!ecmp.ok()) {
+            return ecmp.status();
+        }
+        Expected<uint64_t> evsn = ::tendisplus::stoul(args[3]);
+        if (!evsn.ok()) {
+            return evsn.status();
+        }
+        uint64_t cmp = ecmp.value();
+        uint64_t vsn = evsn.value();
+        if (cmp != 0 && cmp != 1) {
+            return {ErrorCodes::ERR_PARSEOPT, "cmp should be 0 or 1"};
+        }
+
+        std::vector<std::string> subargs;
+        for (size_t i = 4; i < args.size(); ++i) {
+            subargs.push_back(args[i]);
+        }
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            Status s = hmcas(sess, key, subargs, cmp, vsn);
+            if (!s.ok()) {
+                if (s.code() == ErrorCodes::ERR_CAS) {
+                    return Command::fmtZero();
+                } else if (s.code() == ErrorCodes::ERR_COMMIT_RETRY) {
+                    if (i == RETRY_CNT-1) {
+                        return s;
+                    } else {
+                        continue;
+                    }
+                } else {
+                    return s;
+                }
+            } else {
+                return Command::fmtOne();
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
+    }
+} hmcasCmd;
+
 class HMSetCommand: public Command {
  public:
     HMSetCommand()

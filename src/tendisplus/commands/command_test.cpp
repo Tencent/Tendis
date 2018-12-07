@@ -225,6 +225,52 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     std::string result = redis_port::ldtos(floatSum);
     EXPECT_EQ(Command::fmtBulk(result), expect.value());
+
+    // hmcas key, cmp, vsn, [subkey1, op1, val1]
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "123", "subkey1", "0", "subval1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "123", "subkey1", "0", "subval1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "124", "subkey1", "0", "subval2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+    sess.setArgs({"hget", "hmcaskey1", "subkey1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("subval2"));
+    sess.setArgs({"hlen", "hmcaskey1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+    sess.setArgs({"hmcas", "hmcaskey1", "0", "999", "subkey1", "0", "subval2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+
+    // parse int failed
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "999", "subkey1", "1", "10"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "999", "subkey1", "0", "-100"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+
+    sess.setArgs({"hmcas", "hmcaskey1", "1", "1000", "subkey1", "1", "100"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtOne(), expect.value());
+
+    sess.setArgs({"hget", "hmcaskey1", "subkey1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("0"));
 }
 
 void testHash1(std::shared_ptr<ServerEntry> svr) {
