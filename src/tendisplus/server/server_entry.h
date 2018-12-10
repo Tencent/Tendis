@@ -72,6 +72,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
+    bool versionIncrease() const;
 
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
@@ -107,6 +108,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     // runtime. return by value is quite costive.
     std::shared_ptr<std::string> _requirepass;
     std::shared_ptr<std::string> _masterauth;
+    bool _versionIncrease;
 };
 }  // namespace tendisplus
 

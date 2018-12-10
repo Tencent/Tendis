@@ -759,7 +759,7 @@ class HMGetCommand: public Command {
 
 Status hmcas(Session *sess, const std::string& key,
              const std::vector<std::string>& subargs,
-             uint64_t cmp, uint64_t vsn) {
+             uint64_t cmp, uint64_t vsn, const Expected<uint64_t>& newvsn) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     RecordKey metaKey(pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
@@ -867,17 +867,20 @@ Status hmcas(Session *sess, const std::string& key,
         }
     }
 
-    if (cmp) {
-        // if the kv does not exist before, use user passed cas
-        if (eValue.ok()) {
-            cas += 1;
+    if (newvsn.ok()) {
+        cas = newvsn.value();
+    } else {
+        if (cmp) {
+            // if the kv does not exist before, use user passed cas
+            if (eValue.ok()) {
+                cas += 1;
+            } else {
+                cas = vsn;
+            }
         } else {
             cas = vsn;
         }
-    } else {
-        cas = vsn;
     }
-
     hashMeta.setCount(hashMeta.getCount() + uniqkeys.size() - existkvs.size());
     RecordValue metaValue(hashMeta.encode(), ttl, cas);
     Status s = kvstore->setKV(metaKey, metaValue, txn.get());
@@ -887,6 +890,87 @@ Status hmcas(Session *sess, const std::string& key,
     auto commitStat = txn->commit();
     return commitStat.status(); 
 }
+
+class HMCasV2Command: public Command {
+ public:
+    HMCasV2Command()
+        :Command("hmcasv2") {
+    }
+
+    ssize_t arity() const {
+        return -8;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        if ((args.size() - 5)%3 != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments for hmcas"};
+        }
+        const std::string& key = args[1];
+        Expected<uint64_t> ecmp = ::tendisplus::stoul(args[2]);
+        if (!ecmp.ok()) {
+            return ecmp.status();
+        }
+        Expected<uint64_t> evsn = ::tendisplus::stoul(args[3]);
+        if (!evsn.ok()) {
+            return evsn.status();
+        }
+        Expected<uint64_t> enewvsn = ::tendisplus::stoul(args[4]); 
+        if (!enewvsn.ok()) {
+            return enewvsn.status();
+        }
+        uint64_t cmp = ecmp.value();
+        uint64_t vsn = evsn.value();
+        uint64_t newvsn = enewvsn.value();
+        if (cmp != 0 && cmp != 1) {
+            return {ErrorCodes::ERR_PARSEOPT, "cmp should be 0 or 1"};
+        }
+        auto server = sess->getServerEntry();
+        if (server->versionIncrease()) {
+            if (cmp && newvsn <= vsn) {
+                return {ErrorCodes::ERR_PARSEOPT, "new version must be greater than old version"};
+            }
+        }
+
+        std::vector<std::string> subargs;
+        for (size_t i = 5; i < args.size(); ++i) {
+            subargs.push_back(args[i]);
+        }
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            Status s = hmcas(sess, key, subargs, cmp, vsn, newvsn);
+            if (!s.ok()) {
+                if (s.code() == ErrorCodes::ERR_CAS) {
+                    return Command::fmtZero();
+                } else if (s.code() == ErrorCodes::ERR_COMMIT_RETRY) {
+                    if (i == RETRY_CNT-1) {
+                        return s;
+                    } else {
+                        continue;
+                    }
+                } else {
+                    return s;
+                }
+            } else {
+                return Command::fmtOne();
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
+ 
+    }
+} hmcasV2Cmd;
 
 class HMCasCommand: public Command {
  public:
@@ -935,7 +1019,7 @@ class HMCasCommand: public Command {
             subargs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Status s = hmcas(sess, key, subargs, cmp, vsn);
+            Status s = hmcas(sess, key, subargs, cmp, vsn, {ErrorCodes::ERR_NOTFOUND, ""});
             if (!s.ok()) {
                 if (s.code() == ErrorCodes::ERR_CAS) {
                     return Command::fmtZero();
