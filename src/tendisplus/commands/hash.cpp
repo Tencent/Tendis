@@ -685,10 +685,15 @@ class HIncrByCommand: public Command {
     }
 } hincrbyCommand;
 
-class HMGetCommand: public Command {
+class HMGetGeneric: public Command {
  public:
-    HMGetCommand()
-        :Command("hmget") {
+    HMGetGeneric(const std::string& name)
+            :Command(name) {
+        if (name == "hmget") {
+            _returnVsn = false;
+        } else { // hmgetvsn
+            _returnVsn = true;
+        }
     }
 
     ssize_t arity() const {
@@ -737,9 +742,23 @@ class HMGetCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
- 
+
         std::stringstream ss;
-        Command::fmtMultiBulkLen(ss, args.size()-2);
+        if (_returnVsn) {
+            Command::fmtMultiBulkLen(ss, args.size()-1);
+            Expected<RecordValue> eValue = kvstore->getKV(metaKey, txn.get());
+            if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return eValue.status();
+            }
+            if (!eValue.ok()) {
+                Command::fmtNull(ss);
+            } else {
+                Command::fmtBulk(ss, std::to_string(eValue.value().getCas()));
+            }
+        } else {
+            Command::fmtMultiBulkLen(ss, args.size()-2);
+        }
+
         for (size_t i = 2; i < args.size(); ++i) {
             RecordKey subKey(pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
             Expected<RecordValue> eValue = kvstore->getKV(subKey, txn.get());
@@ -755,7 +774,24 @@ class HMGetCommand: public Command {
         }
         return ss.str();
     }
+
+ private:
+    bool _returnVsn;
+};
+
+class HMGetCommand: public HMGetGeneric {
+ public:
+    HMGetCommand()
+        :HMGetGeneric("hmget") {
+    }
 } hmgetCmd;
+
+class HMGetVsnCommand: public HMGetGeneric {
+ public:
+    HMGetVsnCommand()
+        :HMGetGeneric("hmgetvsn") {
+    }
+} hmgetvsnCmd;
 
 Status hmcas(Session *sess, const std::string& key,
              const std::vector<std::string>& subargs,
