@@ -47,6 +47,39 @@ class DbsizeCommand: public Command {
     }
 } dbsizeCmd;
 
+class PingCommand: public Command {
+ public:
+    PingCommand()
+        :Command("ping") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        if (sess->getArgs().size() == 1) {
+            return Command::fmtBulk("PONG");
+        }
+        if (sess->getArgs().size() != 2) {
+            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments"};
+        }
+        return Command::fmtBulk(sess->getArgs()[1]);
+    }
+} pingCmd;
+
 class EchoCommand: public Command {
  public:
     EchoCommand()

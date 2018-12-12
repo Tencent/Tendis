@@ -552,7 +552,7 @@ std::string Command::fmtZero() {
     return ":0\r\n";
 }
 
-std::string Command::fmtLongLong(uint64_t v) {
+std::string Command::fmtLongLong(int64_t v) {
     std::stringstream ss;
     ss << ":" << v << "\r\n";
     return ss.str();
@@ -580,7 +580,7 @@ std::stringstream& Command::fmtNull(std::stringstream& ss) {
     return ss;
 }
 
-std::stringstream& Command::fmtLongLong(std::stringstream& ss, uint64_t v) {
+std::stringstream& Command::fmtLongLong(std::stringstream& ss, int64_t v) {
     ss << ":" << v << "\r\n";
     return ss;
 }

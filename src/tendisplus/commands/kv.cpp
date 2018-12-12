@@ -1197,9 +1197,81 @@ class IncrDecrGeneral: public GetSetGeneral {
         if (!val.ok()) {
             return val.status();
         }
+        LOG(INFO) << "incrdecr ret str:" << Command::fmtLongLong(val.value()) << ' ' << val.value();
         return Command::fmtLongLong(val.value());
     }
 };
+
+class IncrbyfloatCommand: public GetSetGeneral {
+ public:
+    IncrbyfloatCommand()
+        :GetSetGeneral("incrbyfloat") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<long double> sumIncr(const Expected<RecordValue>& esum,
+                              long double incr) const {
+        long double sum = 0;
+        if (esum.ok()) {
+            Expected<long double> val =
+                ::tendisplus::stold(esum.value().getValue());
+            if (!val.ok()) {
+                return {ErrorCodes::ERR_DECODE, "value is not double"};
+            }
+            sum = val.value();
+        }
+
+        sum += incr;
+        return sum;
+    }
+
+    virtual Expected<std::string> run(Session *sess) {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        Expected<long double> val = ::tendisplus::stold(rv.value().getValue());
+        if (!val.ok()) {
+            return val.status();
+        }
+        return Command::fmtBulk(redis_port::ldtos(val.value()));
+    }
+
+    Expected<RecordValue> newValueFromOld(
+            Session* sess, const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[2];
+        Expected<long double> eInc = ::tendisplus::stold(val);
+        if (!eInc.ok()) {
+            return eInc.status();
+        }
+        Expected<long double> newSum = sumIncr(oldValue, eInc.value());
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(redis_port::ldtos(newSum.value()), ttl);
+    }
+} incrbyfloatCmd;
 
 class IncrbyCommand: public IncrDecrGeneral {
  public:
@@ -1320,6 +1392,7 @@ class DecrbyCommand: public IncrDecrGeneral {
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
         }
+        LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
         return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } decrbyCmd;
