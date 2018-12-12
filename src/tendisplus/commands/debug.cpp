@@ -617,4 +617,35 @@ class DebugCommand: public Command {
     }
 } debugCommand;
 
+class ShutdownCommand: public Command {
+ public:
+    ShutdownCommand()
+        :Command("shutdown") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        svr->stop();
+
+        // avoid compiler complains
+        return Command::fmtOK();
+    }
+} shutdownCmd;
+
 }  // namespace tendisplus

@@ -212,6 +212,34 @@ class HScanCommand: public ScanGenericCommand {
     }
 } hscanCmd;
 
+class ScanCommand: public Command {
+ public:
+    ScanCommand()
+        :Command("scan") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    // NOTE(deyukong): tendis did not impl this api
+    Expected<std::string> run(Session* sess) final {
+        return Command::fmtZeroBulkLen();
+    }
+} scanCmd;
+
 class KeysCommand: public Command {
  public:
     KeysCommand()
