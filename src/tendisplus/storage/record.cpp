@@ -157,6 +157,22 @@ std::string RecordKey::prefixPk() const {
                 key.data()), key.size());
 }
 
+std::string RecordKey::prefixDbidType() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+
+    // --------key encoding
+    // DBID
+    for (size_t i = 0; i < sizeof(_dbId); ++i) {
+        key.emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
+    }
+
+    // Type
+    key.emplace_back(rt2Char(_type));
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
+}
+
 const std::string& RecordKey::prefixReplLog() {
     static std::string s = []() {
         std::string result;

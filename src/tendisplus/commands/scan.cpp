@@ -212,4 +212,91 @@ class HScanCommand: public ScanGenericCommand {
     }
 } hscanCmd;
 
+class KeysCommand: public Command {
+ public:
+    KeysCommand()
+        :Command("keys") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        const std::string& pat = sess->getArgs()[1];
+        bool allkeys = (pat == "*");
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey rv(pCtx->getDbId(), RecordType::RT_KV, "fake", "");
+
+        auto storeLock = std::make_unique<StoreLock>(0, mgl::LockMode::LOCK_IS, sess);
+
+        PStore kvstore = Command::getStoreById(sess, 0);
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        std::string pfx = rv.prefixDbidType();
+        auto cursor = txn->createCursor();
+        cursor->seek(pfx);
+
+        std::list<Record> result;
+        constexpr uint64_t LIM = 1024;
+        uint64_t currentTs = nsSinceEpoch()/1000000;
+
+        while (true) {
+            if (result.size() >= LIM) {
+                break;
+            }
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            Record& rcd = exptRcd.value();
+            const RecordKey& rcdKey = rcd.getRecordKey();
+            if (rcdKey.getRecordType() != RecordType::RT_KV) {
+                break;
+            }
+            if (!allkeys && !redis_port::stringmatchlen(pat.c_str(),
+                               pat.size(),
+                               rcdKey.getPrimaryKey().c_str(), 
+                               rcdKey.getPrimaryKey().size(),
+                               0)) {
+                continue;
+            }
+            uint64_t targetTtl = rcd.getRecordValue().getTtl();
+            if (targetTtl != 0 && currentTs >= targetTtl) {
+                continue;
+            }
+            result.emplace_back(std::move(exptRcd.value()));
+        }
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, result.size());
+        for (const auto& v : result) {
+            Command::fmtBulk(ss, v.getRecordKey().getPrimaryKey());
+        }
+        return ss.str();
+    }
+} keysCmd;
+
 }  // namespace tendisplus

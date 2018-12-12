@@ -1601,4 +1601,66 @@ TEST(Command, common) {
     testScan(server);
 }
 
+TEST(Command, keys) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    // EXPECT_TRUE(filesystem::create_directory("db/0"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+
+    auto server = std::make_shared<ServerEntry>();
+    std::vector<PStore> tmpStores;
+    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        std::stringstream ss;
+        ss << i;
+        std::string dbId = ss.str();
+        tmpStores.emplace_back(std::unique_ptr<KVStore>(
+            new RocksKVStore(dbId, cfg, blockCache)));
+    }
+    server->installStoresInLock(tmpStores);
+    auto segMgr = std::unique_ptr<SegmentMgr>(
+            new SegmentMgrFnvHash64(tmpStores));
+    server->installSegMgrInLock(std::move(segMgr));
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
+        KVStore::INSTANCE_NUM);
+    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"set", "a", "a"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "b", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "c", "c"});
+    expect = Command::runSessionCmd(&sess);
+
+    sess.setArgs({"keys", "*"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "b");
+    Command::fmtBulk(ss, "c");
+    EXPECT_EQ(expect.value(), ss.str());
+
+    sess.setArgs({"keys", "a*"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "a");
+    EXPECT_EQ(expect.value(), ss.str());
+}
 }  // namespace tendisplus
