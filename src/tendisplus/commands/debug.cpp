@@ -681,4 +681,66 @@ class ShutdownCommand: public Command {
     }
 } shutdownCmd;
 
+class ObjectCommand: public Command {
+ public:
+    ObjectCommand()
+        :Command("object") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+        SessionCtx *pCtx = sess->getCtx();
+
+        const std::map<RecordType, std::string> m = {
+            {RecordType::RT_KV, "raw"},
+            {RecordType::RT_LIST_META, "linkedlist"},
+            {RecordType::RT_HASH_META, "hashtable"},
+            {RecordType::RT_SET_META, "ziplist"},
+            {RecordType::RT_ZSET_META, "skiplist"},
+        };
+        for (auto type : {RecordType::RT_KV,
+                          RecordType::RT_LIST_META,
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
+            RecordKey rk(pCtx->getDbId(), type, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            if (sess->getArgs()[2] == "recount") {
+                return Command::fmtOne();
+            } else if (sess->getArgs()[2] == "encoding") {
+                return Command::fmtBulk(m.at(type));
+            } else if (sess->getArgs()[2] == "idletime") {
+                return Command::fmtLongLong(0);
+            }
+        }
+        return Command::fmtNull();
+    }
+} objectCmd;
+
 }  // namespace tendisplus
