@@ -57,12 +57,19 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly)
          _store(store),
          _done(false),
          _replOnly(replOnly) {
+    // NOTE(deyukong): the rocks-layer's snapshot should be opened in
+    // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
+    // or, we are not able to guarantee the oplog order is the same as the
+    // local commit,
+    // In other words, to the same key, a txn with greater id can be committed
+    // before a txn with smaller id, and they have no conflicts, it's wrong.
+    // so ensureTxn() should be done in RocksOptTxn's constructor
+    ensureTxn();
 }
 
 std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
                                 uint64_t begin,
                                 bool ignoreReadBarrier) {
-    ensureTxn();
     auto cursor = createCursor();
 
     uint64_t hv = _store->getHighestBinlogId();
@@ -73,7 +80,6 @@ std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
 }
 
 std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
-    ensureTxn();
     rocksdb::ReadOptions readOpts;
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
@@ -192,7 +198,6 @@ uint64_t RocksOptTxn::getTxnId() const {
 }
 
 Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
-    ensureTxn();
     rocksdb::ReadOptions readOpts;
     std::string value;
     auto s = _txn->Get(readOpts, key, &value);
@@ -210,7 +215,6 @@ Status RocksOptTxn::setKV(const std::string& key,
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
-    ensureTxn();
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -237,7 +241,6 @@ Status RocksOptTxn::delKV(const std::string& key) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
-    ensureTxn();
     auto s = _txn->Delete(key);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -264,7 +267,6 @@ Status RocksOptTxn::applyBinlog(const std::list<ReplLog>& ops) {
     if (!_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is not replOnly"};
     }
-    ensureTxn();
     for (const auto& log : ops) {
         const ReplLogValue& logVal = log.getReplLogValue();
 

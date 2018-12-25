@@ -26,8 +26,8 @@ namespace tendisplus {
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
     :_isRunning(false),
      _svr(svr),
-     _incrPaused(false),
      _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
+     _incrPaused(false),
      _firstBinlogId(0),
      _clientIdGen(0),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),

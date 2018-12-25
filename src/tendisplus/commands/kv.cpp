@@ -1197,7 +1197,6 @@ class IncrDecrGeneral: public GetSetGeneral {
         if (!val.ok()) {
             return val.status();
         }
-        LOG(INFO) << "incrdecr ret str:" << Command::fmtLongLong(val.value()) << ' ' << val.value();
         return Command::fmtLongLong(val.value());
     }
 };
