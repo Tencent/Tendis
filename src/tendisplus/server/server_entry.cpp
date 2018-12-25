@@ -29,7 +29,8 @@ ServerEntry::ServerEntry()
          _reqMatrix(std::make_shared<RequestMatrix>()),
          _ftmcThd(nullptr),
          _requirepass(nullptr),
-         _masterauth(nullptr) {
+         _masterauth(nullptr),
+         _versionIncrease(true) {
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -159,6 +160,10 @@ const std::shared_ptr<std::string> ServerEntry::requirepass() const {
 const std::shared_ptr<std::string> ServerEntry::masterauth() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _masterauth;
+}
+
+bool ServerEntry::versionIncrease() const {
+    return _versionIncrease;
 }
 
 void ServerEntry::addSession(std::shared_ptr<Session> sess) {

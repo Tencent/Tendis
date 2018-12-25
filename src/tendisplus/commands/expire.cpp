@@ -98,7 +98,8 @@ Expected<std::string> expireGeneric(Session *sess,
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -111,7 +112,8 @@ Expected<std::string> expireGeneric(Session *sess,
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             auto done = expireBeforeNow(sess, type, key);
             if (!done.ok()) {
                 return done.status();
@@ -124,10 +126,10 @@ Expected<std::string> expireGeneric(Session *sess,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-class ExpireCommand: public Command {
+class GeneralExpireCommand: public Command {
  public:
-    ExpireCommand()
-        :Command("expire") {
+    GeneralExpireCommand(const std::string& name)
+        :Command(name) {
     }
 
     ssize_t arity() const {
@@ -148,16 +150,114 @@ class ExpireCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
-        auto expSecs = ::tendisplus::stoll(sess->getArgs()[2]);
-        if (!expSecs.ok()) {
-            return expSecs.status();
+        auto expt = ::tendisplus::stoll(sess->getArgs()[2]);
+        if (!expt.ok()) {
+            return expt.status();
         }
-        uint64_t millsecs = expSecs.value()*1000;
-        uint64_t now = nsSinceEpoch()/1000000;
 
-        return expireGeneric(sess, now+millsecs, key);
+        uint64_t millsecs = 0;
+        if (Command::getName() == "expire") {
+            millsecs = nsSinceEpoch()/1000000 + expt.value()*1000;
+        } else if (Command::getName() == "pexpire") {
+            millsecs = nsSinceEpoch()/1000000 + expt.value();
+        } else if (Command::getName() == "expireat") {
+            millsecs = expt.value()*1000;
+        } else if (Command::getName() == "pexpireat") {
+            millsecs = expt.value();
+        } else {
+            INVARIANT(0);
+        }
+        return expireGeneric(sess, millsecs, key);
+    }
+};
+
+class ExpireCommand: public GeneralExpireCommand {
+ public:
+    ExpireCommand()
+        :GeneralExpireCommand("expire") {
     }
 } expireCmd;
+
+class PExpireCommand: public GeneralExpireCommand {
+ public:
+    PExpireCommand()
+        :GeneralExpireCommand("pexpire") {
+    }
+} pexpireCmd;
+
+class ExpireAtCommand: public GeneralExpireCommand {
+ public:
+    ExpireAtCommand()
+        :GeneralExpireCommand("expireat") {
+    }
+} expireatCmd;
+
+class PExpireAtCommand: public GeneralExpireCommand {
+ public:
+    PExpireAtCommand()
+        :GeneralExpireCommand("pexpireat") {
+    }
+} pexpireatCmd;
+
+class GenericTtlCommand: public Command {
+ public:
+    GenericTtlCommand(const std::string& name)
+        :Command(name) {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+
+        for (auto type : {RecordType::RT_KV,
+                          RecordType::RT_LIST_META,
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
+            RecordKey rk(pCtx->getDbId(), type, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            if (rv.value().getTtl() == 0) {
+                return Command::fmtLongLong(-1);
+            }
+            int64_t ms = rv.value().getTtl() - nsSinceEpoch()/1000000;
+            if (ms < 0) {
+                ms = 1;
+            }
+            if (Command::getName() == "ttl") {
+                return Command::fmtLongLong(ms/1000);
+            } else if (Command::getName() == "pttl") {
+                return Command::fmtLongLong(ms);
+            } else {
+                INVARIANT(0);
+            }
+        }
+        return Command::fmtLongLong(-2);
+    }
+};
+
+class TtlCommand: public GeneralExpireCommand {
+ public:
+    TtlCommand()
+        :GeneralExpireCommand("ttl") {
+    }
+} ttlCmd;
+
+class PTtlCommand: public GeneralExpireCommand {
+ public:
+    PTtlCommand()
+        :GeneralExpireCommand("pttl") {
+    }
+} pttlCmd;
 
 class ExistsCommand: public Command {
  public:
@@ -190,7 +290,8 @@ class ExistsCommand: public Command {
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META}) {
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
             RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, storeId, rk);
@@ -240,6 +341,7 @@ class TypeCommand: public Command {
             {RecordType::RT_LIST_META, "list"},
             {RecordType::RT_HASH_META, "hash"},
             {RecordType::RT_SET_META, "set"},
+            {RecordType::RT_ZSET_META, "zset"},
         };
         for (const auto& typestr : lookup) {
             RecordKey rk(pCtx->getDbId(), typestr.first, key, "");

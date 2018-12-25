@@ -1,5 +1,6 @@
 #include <limits.h>
 #include <string.h>
+#include <math.h>
 #include <sstream>
 #include <utility>
 
@@ -9,6 +10,128 @@
 
 namespace tendisplus {
 namespace redis_port {
+
+int stringmatchlen(const char *pattern, int patternLen,
+    const char *string, int stringLen, int nocase)
+{
+  while(patternLen) {
+    switch(pattern[0]) {
+      case '*':
+        while (pattern[1] == '*') {
+          pattern++;
+          patternLen--;
+        }
+        if (patternLen == 1)
+          return 1; /* match */
+        while(stringLen) {
+          if (stringmatchlen(pattern+1, patternLen-1,
+                string, stringLen, nocase))
+            return 1; /* match */
+          string++;
+          stringLen--;
+        }
+        return 0; /* no match */
+        break;
+      case '?':
+        if (stringLen == 0)
+          return 0; /* no match */
+        string++;
+        stringLen--;
+        break;
+      case '[':
+        {
+          int cnot, match;
+
+          pattern++;
+          patternLen--;
+          cnot = pattern[0] == '^';
+          if (cnot) {
+            pattern++;
+            patternLen--;
+          }
+          match = 0;
+          while(1) {
+            if (pattern[0] == '\\') {
+              pattern++;
+              patternLen--;
+              if (pattern[0] == string[0])
+                match = 1;
+            } else if (pattern[0] == ']') {
+              break;
+            } else if (patternLen == 0) {
+              pattern--;
+              patternLen++;
+              break;
+            } else if (pattern[1] == '-' && patternLen >= 3) {
+              int start = pattern[0];
+              int end = pattern[2];
+              int c = string[0];
+              if (start > end) {
+                int t = start;
+                start = end;
+                end = t;
+              }
+              if (nocase) {
+                start = tolower(start);
+                end = tolower(end);
+                c = tolower(c);
+              }
+              pattern += 2;
+              patternLen -= 2;
+              if (c >= start && c <= end)
+                match = 1;
+            } else {
+              if (!nocase) {
+                if (pattern[0] == string[0])
+                  match = 1;
+              } else {
+                if (tolower((int)pattern[0]) == tolower((int)string[0]))
+                  match = 1;
+              }
+            }
+            pattern++;
+            patternLen--;
+          }
+          if (cnot)
+            match = !match;
+          if (!match)
+            return 0; /* no match */
+          string++;
+          stringLen--;
+          break;
+        }
+      case '\\':
+        if (patternLen >= 2) {
+          pattern++;
+          patternLen--;
+        }
+        /* fall through */
+      default:
+        if (!nocase) {
+          if (pattern[0] != string[0])
+            return 0; /* no match */
+        } else {
+          if (tolower((int)pattern[0]) != tolower((int)string[0]))
+            return 0; /* no match */
+        }
+        string++;
+        stringLen--;
+        break;
+    }
+    pattern++;
+    patternLen--;
+    if (stringLen == 0) {
+      while(*pattern == '*') {
+        pattern++;
+        patternLen--;
+      }
+      break;
+    }
+  }
+  if (patternLen == 0 && stringLen == 0)
+    return 1;
+  return 0;
+}
 
 long bitPos(const void *s, size_t count, uint32_t bit) {
     unsigned long *l;
@@ -29,7 +152,7 @@ long bitPos(const void *s, size_t count, uint32_t bit) {
     /* Skip initial bits not aligned to sizeof(unsigned long) byte by byte. */
     skipval = bit ? 0 : UCHAR_MAX;
     c = (unsigned char*) s;
-    while((unsigned long)c & (sizeof(*l)-1) && count) {
+    while ((unsigned long)c & (sizeof(*l)-1) && count) {
         if (*c != skipval) break;
         c++;
         count--;
@@ -78,7 +201,7 @@ long bitPos(const void *s, size_t count, uint32_t bit) {
     one >>= 1;       /* All bits set to 1 but the MSB. */
     one = ~one;      /* All bits set to 0 but the MSB. */
 
-    while(one) {
+    while (one) {
         if (((one & word) != 0) == bit) return pos;
         pos++;
         one >>= 1;
@@ -251,6 +374,67 @@ int hex_digit_to_int(char c) {
     case 'f': case 'F': return 15;
     default: return 0;
     }
+}
+
+int zslParseLexRangeItem(const char *c, std::string* dest, int *ex) {
+    switch(c[0]) {
+    case '+': 
+        if (c[1] != '\0') return -1;
+        *ex = 0; 
+        *dest = ZLEXMAX;
+        return 0;
+    case '-': 
+        if (c[1] != '\0') return -1;
+        *ex = 0; 
+        *dest = ZLEXMIN;
+        return 0;
+    case '(': 
+        *ex = 1; 
+        *dest = std::string(c+1,strlen(c)-1);
+        return 0;
+    case '[': 
+        *ex = 0; 
+        *dest = std::string(c+1,strlen(c)-1);
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec) {
+    if (zslParseLexRangeItem(min, &spec->min, &spec->minex) != 0 ||
+            zslParseLexRangeItem(max, &spec->max, &spec->maxex) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+int zslParseRange(const char *min, const char *max, Zrangespec *spec) {
+    char *eptr;
+    spec->minex = spec->maxex = 0;
+
+    /* Parse the min-max interval. If one of the values is prefixed
+     * by the "(" character, it's considered "open". For instance
+     * ZRANGEBYSCORE zset (1.5 (2.5 will match min < x < max
+     * ZRANGEBYSCORE zset 1.5 2.5 will instead match min <= x <= max */
+    if (min[0] == '(') {
+        spec->min = strtod(min+1, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->min)) return -1;
+        spec->minex = 1;
+    } else {
+        spec->min = strtod(min, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->min)) return -1;
+    }
+
+    if (max[0] == '(') {
+        spec->max = strtod(max+1, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->max)) return -1;
+        spec->maxex = 1;
+    } else {
+        spec->max = strtod(max, &eptr);
+        if (eptr[0] != '\0' || isnan(spec->max)) return -1;
+    }
+    return 0;
 }
 
 std::vector<std::string> splitargs(const std::string& lineStr) {

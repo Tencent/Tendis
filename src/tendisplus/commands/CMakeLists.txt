@@ -1,9 +1,9 @@
-add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp)
-target_link_libraries(commands session status server network utils_common lock)
+add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp zset.cpp scan.cpp)
+target_link_libraries(commands status skiplist network utils_common lock)
 
-add_library(commands_debug STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp)
+add_library(commands_debug STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp zset.cpp scan.cpp)
 target_compile_definitions(commands_debug PRIVATE WITH_SYNC_POINT)
-target_link_libraries(commands_debug session status server network utils_common lock sync_point)
+target_link_libraries(commands_debug status skiplist network utils_common lock sync_point)
 
 add_executable(commmand_test command_test.cpp)
 target_compile_definitions(commmand_test PRIVATE WITH_SYNC_POINT)

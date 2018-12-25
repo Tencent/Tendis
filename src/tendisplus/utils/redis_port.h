@@ -26,6 +26,28 @@ size_t popCount(const void *s, long count); // (NOLINT)
 
 int64_t bitPos(const void *s, size_t count, uint32_t bit);
 
+struct Zrangespec {
+    double min;
+    double max;
+    int minex;
+    int maxex;
+};
+
+struct Zlexrangespec {
+    std::string min;
+    std::string max;
+    int minex;
+    int maxex;
+};
+
+#define ZLEXMIN "minstring"
+#define ZLEXMAX "maxstring"
+
+int zslParseRange(const char *min, const char *max, Zrangespec *spec);
+int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
+int stringmatchlen(const char *pattern, int patternLen,
+    const char *string, int stringLen, int nocase);
+
 }  // namespace redis_port
 }  // namespace tendisplus
 

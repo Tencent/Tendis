@@ -586,11 +586,36 @@ class BitCountCommand: public Command {
     }
 } bitcntCmd;
 
-
-class GetCommand: public Command {
+class GetGenericCmd: public Command {
  public:
-    GetCommand()
-        :Command("get") {
+    GetGenericCmd(const std::string& name)
+        :Command(name) {
+    }
+
+    virtual Expected<std::string> run(Session *sess) {
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        const std::string& key = sess->getArgs()[1];
+        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        uint32_t storeId = Command::getStoreId(sess, key);
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, storeId, rk);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return std::string("");
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return std::string("");
+        } else if (!rv.status().ok()) {
+            return rv.status();
+        } else {
+            return rv.value().getValue();
+        }
+    }
+};
+
+class GetVsnCommand: public Command {
+ public:
+    GetVsnCommand()
+        :Command("getvsn") {
     }
 
     ssize_t arity() const {
@@ -602,7 +627,7 @@ class GetCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return -1;
+        return 1;
     }
 
     int32_t keystep() const {
@@ -617,17 +642,138 @@ class GetCommand: public Command {
         uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, storeId, rk);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return fmtNull();
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return fmtNull();
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            Command::fmtLongLong(ss, -1);
+            Command::fmtNull(ss);
+            return ss.str();
         } else if (!rv.status().ok()) {
             return rv.status();
         } else {
-            return fmtBulk(rv.value().getValue());
+            Command::fmtLongLong(ss, rv.value().getCas());
+            if (rv.value().getValue() == "") {
+                Command::fmtNull(ss);
+            } else {
+                Command::fmtBulk(ss, rv.value().getValue());
+            }
+            return ss.str();
         }
     }
+} getvsnCmd;
+
+class GetCommand: public GetGenericCmd {
+ public:
+    GetCommand()
+        :GetGenericCmd("get") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto v = GetGenericCmd::run(sess);
+        if (!v.ok()) {
+            return v.status();
+        }
+        if (v.value() == "") {
+            return Command::fmtNull();
+        }
+        return Command::fmtBulk(v.value());
+    }
 } getCommand;
+
+// TODO(deyukong): unittest
+class GetRangeGenericCommand: public GetGenericCmd {
+ public:
+    GetRangeGenericCommand(const std::string& name)
+        :GetGenericCmd(name) {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        Expected<int64_t> estart = ::tendisplus::stoll(sess->getArgs()[2]);
+        if (!estart.ok()) {
+            return estart.status();
+        }
+        int64_t start = estart.value();
+
+        Expected<int64_t> eend = ::tendisplus::stoll(sess->getArgs()[3]);
+        if (!eend.ok()) {
+            return eend.status();
+        }
+        int64_t end = eend.value();
+
+        auto v = GetGenericCmd::run(sess);
+        if (!v.ok()) {
+            return v.status();
+        }
+        std::string s = std::move(v.value());
+        if (start < 0) {
+            start = s.size() + start;
+        }
+        if (end < 0) {
+            end = s.size() + end;
+        }
+        if (start < 0) {
+            start = 0;
+        }
+        if (end < 0) {
+            end = 0;
+        }
+        if (end >= static_cast<ssize_t>(s.size())) {
+            end = s.size() - 1;
+        }
+        if (start > end || s.size() == 0) {
+            return Command::fmtBulk("");
+        }
+        return Command::fmtBulk(s.substr(start, end-start+1));
+    }
+};
+
+class GetRangeCommand: public GetRangeGenericCommand {
+ public:
+    GetRangeCommand()
+        :GetRangeGenericCommand("getrange") {
+    }
+} getrangeCmd;
+
+class Substrcommand: public GetRangeGenericCommand {
+ public:
+    Substrcommand()
+        :GetRangeGenericCommand("substr") {
+    }
+} substrCmd;
 
 class GetSetGeneral: public Command {
  public:
@@ -705,6 +851,59 @@ class GetSetGeneral: public Command {
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
+
+class CasCommand: public GetSetGeneral {
+ public:
+    CasCommand()
+        :GetSetGeneral("cas") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(Session* sess,
+                          const Expected<RecordValue>& oldValue) const {
+        Expected<uint64_t> ecas = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!ecas.ok()) {
+            return ecas.status();
+        }
+
+        RecordValue ret(sess->getArgs()[3]);
+        if (!oldValue.ok()) {
+            ret.setCas(ecas.value());
+            return ret;
+        }
+
+        if (ecas.value() != oldValue.value().getCas()) {
+            return {ErrorCodes::ERR_CAS, "cas unmatch"};
+        }
+
+        ret.setCas(ecas.value() + 1);
+        ret.setTtl(oldValue.value().getTtl());
+        return std::move(ret);
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        return Command::fmtOK();
+    }
+} casCommand;
 
 class AppendCommand: public GetSetGeneral {
  public:
@@ -998,9 +1197,81 @@ class IncrDecrGeneral: public GetSetGeneral {
         if (!val.ok()) {
             return val.status();
         }
+        LOG(INFO) << "incrdecr ret str:" << Command::fmtLongLong(val.value()) << ' ' << val.value();
         return Command::fmtLongLong(val.value());
     }
 };
+
+class IncrbyfloatCommand: public GetSetGeneral {
+ public:
+    IncrbyfloatCommand()
+        :GetSetGeneral("incrbyfloat") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<long double> sumIncr(const Expected<RecordValue>& esum,
+                              long double incr) const {
+        long double sum = 0;
+        if (esum.ok()) {
+            Expected<long double> val =
+                ::tendisplus::stold(esum.value().getValue());
+            if (!val.ok()) {
+                return {ErrorCodes::ERR_DECODE, "value is not double"};
+            }
+            sum = val.value();
+        }
+
+        sum += incr;
+        return sum;
+    }
+
+    virtual Expected<std::string> run(Session *sess) {
+        const Expected<RecordValue>& rv = runGeneral(sess);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+        Expected<long double> val = ::tendisplus::stold(rv.value().getValue());
+        if (!val.ok()) {
+            return val.status();
+        }
+        return Command::fmtBulk(redis_port::ldtos(val.value()));
+    }
+
+    Expected<RecordValue> newValueFromOld(
+            Session* sess, const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[2];
+        Expected<long double> eInc = ::tendisplus::stold(val);
+        if (!eInc.ok()) {
+            return eInc.status();
+        }
+        Expected<long double> newSum = sumIncr(oldValue, eInc.value());
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        // incrby wont clear ttl
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
+        return RecordValue(redis_port::ldtos(newSum.value()), ttl);
+    }
+} incrbyfloatCmd;
 
 class IncrbyCommand: public IncrDecrGeneral {
  public:
@@ -1121,6 +1392,7 @@ class DecrbyCommand: public IncrDecrGeneral {
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
         }
+        LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
         return RecordValue(std::to_string(newSum.value()), ttl);
     }
 } decrbyCmd;

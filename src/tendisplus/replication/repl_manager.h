@@ -73,6 +73,7 @@ class ReplManager {
     explicit ReplManager(std::shared_ptr<ServerEntry> svr);
     Status startup();
     void stop();
+    void togglePauseState(bool isPaused) { _incrPaused = isPaused; }
     Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
             uint32_t sourceStoreId);
     void supplyFullSync(asio::ip::tcp::socket sock,
@@ -132,6 +133,9 @@ class ReplManager {
 
     // master's pov, workerpool of pushing incr backup
     std::unique_ptr<WorkerPool> _incrPusher;
+
+    // master's pov, as its name
+    bool _incrPaused;
 
     // slave's pov, workerpool of receiving full backup
     std::unique_ptr<WorkerPool> _fullReceiver;

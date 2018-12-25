@@ -53,6 +53,12 @@ class Command {
                                     uint32_t storeId,
                                     const RecordKey& mk);
 
+    static Expected<std::pair<std::string, std::list<Record>>>
+    scan(const std::string& pk,
+         const std::string& from,
+         uint64_t cnt,
+         Transaction *txn);
+
     static Status delKey(Session *sess, uint32_t storeId,
                             const RecordKey& rk);
 
@@ -67,7 +73,7 @@ class Command {
     static std::string fmtOK();
     static std::string fmtOne();
     static std::string fmtZero();
-    static std::string fmtLongLong(uint64_t);
+    static std::string fmtLongLong(int64_t);
 
     static std::string fmtBulk(const std::string& s);
 
@@ -75,6 +81,7 @@ class Command {
     static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
     static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
     static std::stringstream& fmtNull(std::stringstream&);
+    static std::stringstream& fmtLongLong(std::stringstream&, int64_t);
 
     static constexpr int32_t RETRY_CNT = 3;
 

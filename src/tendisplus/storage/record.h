@@ -21,6 +21,9 @@ enum class RecordType {
     RT_HASH_ELE,
     RT_SET_META,
     RT_SET_ELE,
+    RT_ZSET_META,
+    RT_ZSET_S_ELE,
+    RT_ZSET_H_ELE,
     RT_BINLOG,
 };
 
@@ -65,6 +68,10 @@ class RecordKey {
     // an encoded prefix until prefix and a padding zero.
     // mainly for prefix scan.
     std::string prefixPk() const;
+
+    // an encoded prefix with db & type, with no padding zero.
+    std::string prefixDbidType() const;
+
     static const std::string& prefixReplLog();
 
     RecordType getRecordType() const;
@@ -91,16 +98,19 @@ class RecordValue {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
-    explicit RecordValue(const std::string& val, uint64_t ttl = 0);
-    explicit RecordValue(std::string&& val, uint64_t ttl = 0);
+    explicit RecordValue(const std::string& val, uint64_t ttl = 0, uint64_t cas = 0);
+    explicit RecordValue(std::string&& val, uint64_t ttl = 0, uint64_t cas = 0);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);
+    uint64_t getCas() const;
+    void setCas(uint64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     bool operator==(const RecordValue& other) const;
 
  private:
+    uint64_t _cas;
     uint64_t _ttl;
     std::string _value;
 };
@@ -242,7 +252,7 @@ class ListMetaValue {
 class HashMetaValue {
  public:
     HashMetaValue();
-    HashMetaValue(uint64_t count, uint64_t cas);
+    HashMetaValue(uint64_t count);
     HashMetaValue(HashMetaValue&&);
     static Expected<HashMetaValue> decode(const std::string&);
     HashMetaValue& operator=(HashMetaValue&&);
@@ -254,7 +264,6 @@ class HashMetaValue {
 
  private:
     uint64_t _count;
-    uint64_t _cas;
 };
 
 class SetMetaValue {
@@ -268,6 +277,61 @@ class SetMetaValue {
 
  private:
     uint64_t _count;
+};
+
+// ZsetSkipListMetaValue
+class ZSlMetaValue {
+ public:
+    ZSlMetaValue();
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
+                 uint32_t count, uint64_t tail);
+    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
+                 uint32_t count, uint64_t tail, uint64_t alloc);
+    static Expected<ZSlMetaValue> decode(const std::string&);
+    std::string encode() const;
+    uint8_t getMaxLevel() const;
+    uint8_t getLevel() const;
+    uint32_t getCount() const;
+    uint64_t getTail() const;
+    uint64_t getPosAlloc() const;
+    // can not dynamicly change
+    static constexpr int8_t MAX_LAYER = 24;
+    static constexpr uint32_t MAX_NUM = (1<<31);
+    static constexpr uint64_t MIN_POS = 128;
+    // NOTE(deyukong): static constexpr uint32_t HEAD_ID = 1
+    // fails to unlink, I don't know why, and give up, the
+    // definition of HEAD_ID is in record.cpp
+    static uint32_t HEAD_ID;
+
+ private:
+    uint8_t _level;
+    uint8_t _maxLevel;
+    uint32_t _count;
+    uint64_t _tail;
+    uint64_t _posAlloc;
+};
+
+class ZSlEleValue {
+ public:
+    ZSlEleValue();
+    ZSlEleValue(uint64_t score, const std::string& subkey);
+    static Expected<ZSlEleValue> decode(const std::string&);
+    std::string encode() const;
+    uint64_t getForward(uint8_t layer) const;
+    uint64_t getBackward() const;
+    void setForward(uint8_t layer, uint64_t pointer);
+    void setBackward(uint64_t pointer);
+    uint64_t getScore() const;
+    const std::string& getSubKey() const;
+    uint32_t getSpan(uint8_t layer) const;
+    void setSpan(uint8_t layer, uint32_t span);
+
+ private:
+    std::vector<uint64_t> _forward;
+    std::vector<uint32_t> _span;
+    uint64_t _score;
+    uint64_t _backward;
+    std::string _subKey;
 };
 
 namespace rcd_util {

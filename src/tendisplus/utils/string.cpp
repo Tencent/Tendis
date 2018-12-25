@@ -18,6 +18,9 @@ std::string toLower(const std::string& s) {
 Expected<uint64_t> stoul(const std::string& s) {
     uint64_t result;
     try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
+            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+        }
         result = static_cast<uint64_t>(std::stoul(s));
         return result;
     } catch (const std::exception& ex) {
@@ -28,6 +31,9 @@ Expected<uint64_t> stoul(const std::string& s) {
 Expected<int64_t> stoll(const std::string& s) {
     int64_t result;
     try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
+            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+        }
         result = static_cast<int64_t>(std::stoll(s));
         return result;
     } catch (const std::exception& ex) {
@@ -38,6 +44,9 @@ Expected<int64_t> stoll(const std::string& s) {
 Expected<long double> stold(const std::string& s) {
     long double result;
     try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
+            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+        }
         result = static_cast<long double>(std::stold(s));
         return result;
     } catch (const std::exception& ex) {

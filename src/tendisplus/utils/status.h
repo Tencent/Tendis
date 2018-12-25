@@ -26,6 +26,7 @@ enum class ErrorCodes {
     ERR_EXHAUST,  // for cursor
     ERR_EXPIRED,
     ERR_OVERFLOW,
+    ERR_CAS,
 };
 
 class Status {

@@ -30,6 +30,12 @@ uint8_t rt2Char(RecordType t) {
             return 'S';
         case RecordType::RT_SET_ELE:
             return 's';
+        case RecordType::RT_ZSET_META:
+            return 'Z';
+        case RecordType::RT_ZSET_H_ELE:
+            return 'c';
+        case RecordType::RT_ZSET_S_ELE:
+            return 'z';
         // it's convinent (for seek) to have BINLOG to pos
         // at the rightmost of a lsmtree
         // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
@@ -62,10 +68,16 @@ RecordType char2Rt(uint8_t t) {
             return RecordType::RT_SET_META;
         case 's':
             return RecordType::RT_SET_ELE;
+        case 'Z':
+            return RecordType::RT_ZSET_META;
+        case 'z':
+            return RecordType::RT_ZSET_S_ELE;
+        case 'c':
+            return RecordType::RT_ZSET_H_ELE;
         case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
-            LOG(FATAL) << "invalid recordchar:" << t;
+            LOG(FATAL) << "invalid rcdchr:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
             return RecordType::RT_INVALID;
     }
@@ -141,6 +153,22 @@ std::string RecordKey::prefixPk() const {
     std::vector<uint8_t> key;
     key.reserve(128);
     encodePrefixPk(&key);
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
+}
+
+std::string RecordKey::prefixDbidType() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+
+    // --------key encoding
+    // DBID
+    for (size_t i = 0; i < sizeof(_dbId); ++i) {
+        key.emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
+    }
+
+    // Type
+    key.emplace_back(rt2Char(_type));
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
 }
@@ -257,34 +285,44 @@ bool RecordKey::operator==(const RecordKey& other) const {
 }
 
 RecordValue::RecordValue()
-    :_ttl(0),
+    :_cas(0),
+     _ttl(0),
      _value("") {
 }
 
 RecordValue::RecordValue(RecordValue&& o)
-        :_ttl(o._ttl),
+        :_cas(o._cas),
+         _ttl(o._ttl),
          _value(std::move(o._value)) {
     o._ttl = 0;
+    o._cas = 0;
 }
 
-RecordValue::RecordValue(const std::string& val, uint64_t ttl)
-        :_ttl(ttl),
+RecordValue::RecordValue(const std::string& val, uint64_t ttl, uint64_t cas)
+        :_cas(cas),
+         _ttl(ttl),
          _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, uint64_t ttl)
-        :_ttl(ttl),
+RecordValue::RecordValue(std::string&& val, uint64_t ttl, uint64_t cas)
+        :_cas(cas),
+         _ttl(ttl),
          _value(std::move(val)) {
 }
 
 std::string RecordValue::encode() const {
-    // TTL
     std::vector<uint8_t> value;
     value.reserve(128);
+
+    // CAS
+    auto casBytes = varintEncode(_cas);
+    value.insert(value.end(), casBytes.begin(), casBytes.end());
+
+    // TTL
     auto ttlBytes = varintEncode(_ttl);
+    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
 
     // Value
-    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
     if (_value.size() > 0) {
         value.insert(value.end(), _value.begin(), _value.end());
     }
@@ -293,17 +331,22 @@ std::string RecordValue::encode() const {
 }
 
 Expected<RecordValue> RecordValue::decode(const std::string& value) {
-    // value
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+    size_t offset = 0;
     auto expt = varintDecodeFwd(valueCstr, value.size());
     if (!expt.ok()) {
         return expt.status();
     }
-    size_t offset = expt.value().second;
+    offset += expt.value().second;
+    uint64_t cas = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
     uint64_t ttl = expt.value().first;
 
-    // NOTE(deyukong): value must not be empty
-    // so we use >= rather than > here
     if (offset > value.size()) {
         std::stringstream ss;
         ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
@@ -314,7 +357,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         rawValue = std::string(value.c_str() + offset,
             value.size() - offset);
     }
-    return RecordValue(std::move(rawValue), ttl);
+    return RecordValue(std::move(rawValue), ttl, cas);
 }
 
 const std::string& RecordValue::getValue() const {
@@ -329,8 +372,16 @@ void RecordValue::setTtl(uint64_t ttl) {
     _ttl = ttl;
 }
 
+uint64_t RecordValue::getCas() const {
+    return _cas;
+}
+
+void RecordValue::setCas(uint64_t cas) {
+    _cas = cas;
+}
+
 bool RecordValue::operator==(const RecordValue& other) const {
-    return _ttl == other._ttl && _value == other._value;
+    return _ttl == other._ttl && _value == other._value && _cas == other._cas;
 }
 
 Record::Record()
@@ -668,19 +719,16 @@ bool ReplLog::operator==(const ReplLog& o) const {
 }
 
 HashMetaValue::HashMetaValue()
-    :HashMetaValue(0, 0) {
+    :HashMetaValue(0) {
 }
 
-HashMetaValue::HashMetaValue(uint64_t count, uint64_t cas)
-    :_count(count),
-     _cas(cas) {
+HashMetaValue::HashMetaValue(uint64_t count)
+    :_count(count) {
 }
 
 HashMetaValue::HashMetaValue(HashMetaValue&& o)
-        :_count(o._count),
-         _cas(o._cas) {
+        :_count(o._count) {
     o._count = 0;
-    o._cas = 0;
 }
 
 std::string HashMetaValue::encode() const {
@@ -688,8 +736,6 @@ std::string HashMetaValue::encode() const {
     value.reserve(128);
     auto countBytes = varintEncode(_count);
     value.insert(value.end(), countBytes.begin(), countBytes.end());
-    auto casBytes = varintEncode(_cas);
-    value.insert(value.end(), casBytes.begin(), casBytes.end());
     return std::string(reinterpret_cast<const char *>(
                 value.data()), value.size());
 }
@@ -698,7 +744,6 @@ Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
     size_t offset = 0;
     uint64_t count = 0;
-    uint64_t cas = 0;
     auto expt = varintDecodeFwd(valCstr + offset, val.size());
     if (!expt.ok()) {
         return expt.status();
@@ -706,13 +751,7 @@ Expected<HashMetaValue> HashMetaValue::decode(const std::string& val) {
     offset += expt.value().second;
     count = expt.value().first;
 
-    expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    cas = expt.value().first;
-    return HashMetaValue(count, cas);
+    return HashMetaValue(count);
 }
 
 HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {
@@ -720,9 +759,7 @@ HashMetaValue& HashMetaValue::operator=(HashMetaValue&& o) {
         return *this;
     }
     _count = o._count;
-    _cas = o._cas;
     o._count = 0;
-    o._cas = 0;
     return *this;
 }
 
@@ -730,16 +767,8 @@ void HashMetaValue::setCount(uint64_t count) {
     _count = count;
 }
 
-void HashMetaValue::setCas(uint64_t cas) {
-    _cas = cas;
-}
-
 uint64_t HashMetaValue::getCount() const {
     return _count;
-}
-
-uint64_t HashMetaValue::getCas() const {
-    return _cas;
 }
 
 ListMetaValue::ListMetaValue(uint64_t head, uint64_t tail)
@@ -850,6 +879,298 @@ uint64_t SetMetaValue::getCount() const {
     return _count;
 }
 
+uint32_t ZSlMetaValue::HEAD_ID = 1;
+
+ZSlMetaValue::ZSlMetaValue()
+        :ZSlMetaValue(0, 0, 0, 0) {
+}
+
+ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
+                           uint8_t maxLvl,
+                           uint32_t count,
+                           uint64_t tail)
+        :_level(lvl),
+         _maxLevel(maxLvl),
+         _count(count),
+         _tail(tail),
+         _posAlloc(ZSlMetaValue::MIN_POS) {
+}
+
+ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
+                           uint8_t maxLvl,
+                           uint32_t count,
+                           uint64_t tail,
+                           uint64_t alloc)
+        :_level(lvl),
+         _maxLevel(maxLvl),
+         _count(count),
+         _tail(tail),
+         _posAlloc(alloc) {
+}
+
+std::string ZSlMetaValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+
+    auto bytes = varintEncode(_level);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_maxLevel);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_count);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_tail);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_posAlloc);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    ZSlMetaValue result;
+
+    // _level
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._level = expt.value().first;
+
+    // _maxLevel
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._maxLevel = expt.value().first;
+
+    // _count
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._count = expt.value().first;
+
+    // _tail
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._tail = expt.value().first;
+
+    // _posAlloc
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._posAlloc = expt.value().first;
+
+    return result;
+}
+
+uint8_t ZSlMetaValue::getMaxLevel() const {
+    return _maxLevel;
+}
+
+uint8_t ZSlMetaValue::getLevel() const {
+    return _level;
+}
+
+uint32_t ZSlMetaValue::getCount() const {
+    return _count;
+}
+
+uint64_t ZSlMetaValue::getTail() const {
+    return _tail;
+}
+
+uint64_t ZSlMetaValue::getPosAlloc() const {
+    return _posAlloc;
+}
+
+/*
+ZslEleSubKey::ZslEleSubKey()
+    :ZslEleSubKey(0, "") {
+}
+
+ZslEleSubKey::ZslEleSubKey(uint64_t score, const std::string& subkey)
+    :ZslEleSubKey(score, subkey) {
+}
+
+std::string ZslEleSubKey::encode() const {
+    std::vector<uint8_t> key;
+    key.reserve(128);
+    const uint8_t *scoreBuf = reinterpret_cast<const uint8_t*>(&_score);
+    for (size_t i = 0; i < sizeof(_score); i++) {
+        key.emplace_back(scoreBuf[sizeof(_score)-1-i]);
+    }
+    key.insert(key.end(), _subKey.begin(), _subKey.end());
+    return std::string(reinterpret_cast<const char *>(
+                key.data()), key.size());
+}
+
+Expected<ZslEleSubKey> ZslEleSubKey::decode(const std::string& key) {
+    uint64_t score = 0;
+    std::string subKey;
+
+    if (key.size() <= sizeof(score)) {
+        return {ErrorCodes::ERR_DECODE, "ZslEleSubKey bad size"};
+    }
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    size_t offset = 0;
+
+    for (size_t i = 0; i < sizeof(score); i++) {
+        score = (score << 8)|keyCstr[i];
+    }
+    offset += sizeof(score);
+    subKey = std::string(key.c_str()+offset, key.size()-offset);
+    return ZslEleSubKey(score, subKey);
+}
+*/
+
+ZSlEleValue::ZSlEleValue()
+        :ZSlEleValue(0, "") {
+}
+
+ZSlEleValue::ZSlEleValue(uint64_t score, const std::string& subkey)
+         :_score(score),
+          _backward(0),
+          _subKey(subkey) {
+    _forward.resize(ZSlMetaValue::MAX_LAYER+1);
+    _span.resize(ZSlMetaValue::MAX_LAYER+1);
+    for (size_t i = 0; i < _forward.size(); ++i) {
+        _forward[i] = 0;
+    }
+    for (size_t i = 0; i < _span.size(); ++i) {
+        _span[i] = 0;
+    }
+}
+
+uint64_t ZSlEleValue::getBackward() const {
+    return _backward;
+}
+
+void ZSlEleValue::setBackward(uint64_t pointer) {
+    _backward = pointer;
+}
+
+uint64_t ZSlEleValue::getForward(uint8_t layer) const {
+    return _forward[layer];
+}
+
+void ZSlEleValue::setForward(uint8_t layer, uint64_t pointer) {
+    _forward[layer] = pointer;
+}
+
+uint32_t ZSlEleValue::getSpan(uint8_t layer) const {
+    return _span[layer];
+}
+
+void ZSlEleValue::setSpan(uint8_t layer, uint32_t span) {
+    _span[layer] = span;
+}
+
+uint64_t ZSlEleValue::getScore() const {
+    return _score;
+}
+
+const std::string& ZSlEleValue::getSubKey() const {
+    return _subKey;
+}
+
+std::string ZSlEleValue::encode() const {
+    std::vector<uint8_t> value;
+    value.reserve(128);
+    for (auto& v : _forward) {
+        auto bytes = varintEncode(v);
+        value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+    for (auto& v : _span) {
+        auto bytes = varintEncode(v);
+        value.insert(value.end(), bytes.begin(), bytes.end());
+    }
+
+    auto bytes = varintEncode(_score);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_backward);
+    value.insert(value.end(), bytes.begin(), bytes.end());
+
+    bytes = varintEncode(_subKey.size());
+    value.insert(value.end(), bytes.begin(), bytes.end());
+    value.insert(value.end(), _subKey.begin(), _subKey.end());
+
+    return std::string(reinterpret_cast<const char *>(
+                value.data()), value.size());
+}
+
+Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+    size_t offset = 0;
+    ZSlEleValue result;
+
+    // forwardlist
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        result._forward[i] = expt.value().first;
+    }
+
+    // spanlist
+    for (uint32_t i = 0; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        result._span[i] = expt.value().first;
+    }
+
+    // score
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._score = expt.value().first;
+
+    // backward
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    result._backward = expt.value().first;
+
+    // subKey
+    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    size_t keyLen = expt.value().first;
+    if (offset + keyLen != val.size()) {
+        return {ErrorCodes::ERR_DECODE, "invalid skiplist key len"};
+    }
+    result._subKey = std::string(val.c_str()+offset, keyLen);
+    offset += keyLen;
+    return result;
+}
+
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
@@ -873,6 +1194,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
         }
         case RecordType::RT_SET_META: {
             auto v = SetMetaValue::decode(val.getValue());
+            if (!v.ok()) {
+                return v.status();
+            }
+            return v.value().getCount();
+        }
+        case RecordType::RT_ZSET_META: {
+            auto v = ZSlMetaValue::decode(val.getValue());
             if (!v.ok()) {
                 return v.status();
             }

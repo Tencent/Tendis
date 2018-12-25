@@ -12,6 +12,42 @@
 
 namespace tendisplus {
 
+class SelectCommand: public Command {
+ public:
+    SelectCommand()
+        :Command("select") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        Expected<uint64_t> dbId = ::tendisplus::stoul(sess->getArgs()[1]);
+        if (!dbId.ok()) {
+            return dbId.status();
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        pCtx->setDbId(dbId.value());
+
+        return Command::fmtOK();
+    }
+} selectCommand;
+
 class AuthCommand: public Command {
  public:
     AuthCommand()

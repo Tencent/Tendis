@@ -36,6 +36,8 @@ const (
 	// determining if a response is a string
 	Str = SimpleStr | BulkStr
 
+    Raw
+
 	// Err combines both IOErr and AppErr, which both indicate that the Err
 	// field on their Resp is filled. To determine if a Resp is an error you'll
 	// most often want to simply check if the Err field on it is nil
@@ -128,6 +130,14 @@ func NewRespReader(r io.Reader) *RespReader {
 		br = bufio.NewReader(r)
 	}
 	return &RespReader{br}
+}
+
+func (rr *RespReader) ReadRaw() ([]byte, error) {
+	b, err := rr.r.ReadBytes(delimEnd)
+	if err != nil {
+        return nil, err
+	}
+    return b[: len(b)-2], nil
 }
 
 // ReadResp attempts to read a message object from the given io.Reader, parse

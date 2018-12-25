@@ -1,3 +1,4 @@
+#include <sys/time.h>
 #include <string>
 #include <sstream>
 #include <utility>
@@ -18,6 +19,250 @@
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
+
+class DbsizeCommand: public Command {
+ public:
+    DbsizeCommand()
+        :Command("dbsize") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtLongLong(0);
+    }
+} dbsizeCmd;
+
+class PingCommand: public Command {
+ public:
+    PingCommand()
+        :Command("ping") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        if (sess->getArgs().size() == 1) {
+            return Command::fmtBulk("PONG");
+        }
+        if (sess->getArgs().size() != 2) {
+            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments"};
+        }
+        return Command::fmtBulk(sess->getArgs()[1]);
+    }
+} pingCmd;
+
+class EchoCommand: public Command {
+ public:
+    EchoCommand()
+        :Command("echo") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtBulk(sess->getArgs()[1]);
+    }
+} echoCmd;
+
+class TimeCommand: public Command {
+ public:
+    TimeCommand()
+        :Command("time") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        Command::fmtBulk(ss, std::to_string(tv.tv_sec));
+        Command::fmtBulk(ss, std::to_string(tv.tv_usec));
+        return ss.str();
+    }
+} timeCmd;
+
+class IterAllCommand: public Command {
+ public:
+    IterAllCommand()
+        :Command("iterall") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // @input iterall storeId start_record_hex batchSize
+    // @output next_record_hex + listof(type key subkey value)
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> estoreId = ::tendisplus::stoul(args[1]);
+        if (!estoreId.ok()) {
+            return estoreId.status();
+        }
+        Expected<uint64_t> ebatchSize = ::tendisplus::stoul(args[3]);
+        if (!ebatchSize.ok()) {
+            return ebatchSize.status();
+        }
+        if (ebatchSize.value() > 10000) {
+            return {ErrorCodes::ERR_PARSEOPT, "batch exceed lim"};
+        }
+        if (estoreId.value() >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
+        }
+        auto storeLock = std::make_unique<StoreLock>(
+            estoreId.value(), 
+            mgl::LockMode::LOCK_IS,
+            sess);
+        PStore kvstore = Command::getStoreById(sess, estoreId.value());
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        auto cursor = txn->createCursor();
+        if (args[2] == "0") {
+            cursor->seek("");
+        } else {
+            auto unhex = unhexlify(args[2]);
+            if (!unhex.ok()) {
+                return unhex.status();
+            }
+            cursor->seek(unhex.value());
+        }
+
+        std::list<Record> result;
+        while (true) {
+            if (result.size() >= ebatchSize.value() + 1) {
+                break;
+            }
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            auto type = exptRcd.value().getRecordKey().getRecordType();
+            if (type == RecordType::RT_BINLOG) {
+                break;
+            }
+            if (type == RecordType::RT_META ||
+                type == RecordType::RT_LIST_META ||
+                    type == RecordType::RT_HASH_META ||
+                    type == RecordType::RT_SET_META ||
+                    type == RecordType::RT_ZSET_META ||
+                    type == RecordType::RT_ZSET_S_ELE) {
+                continue;
+            }
+            result.emplace_back(std::move(exptRcd.value()));
+        }
+        std::string nextCursor;
+        if (result.size() == ebatchSize.value() + 1) {
+            nextCursor = hexlify(result.back().getRecordKey().encode());
+            result.pop_back();
+        } else {
+            nextCursor = "0";
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        Command::fmtBulk(ss, nextCursor);
+        Command::fmtMultiBulkLen(ss, result.size());
+        for (const auto& o : result) {
+            Command::fmtMultiBulkLen(ss, 4);
+            const auto& t = o.getRecordKey().getRecordType();
+            Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(t)));
+            switch (t) {
+                case RecordType::RT_KV:
+                    Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                    Command::fmtBulk(ss, "");
+                    Command::fmtBulk(ss, o.getRecordValue().getValue());
+                    break;
+                case RecordType::RT_HASH_ELE:
+                case RecordType::RT_LIST_ELE:
+                case RecordType::RT_SET_ELE:
+                case RecordType::RT_ZSET_H_ELE:
+                    Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                    Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
+                    Command::fmtBulk(ss, o.getRecordValue().getValue());
+                    break;
+                default:
+                    INVARIANT(0);
+            }
+        }
+        return ss.str();
+    }
+} iterAllCmd;
 
 class ShowCommand: public Command {
  public:
@@ -241,7 +486,8 @@ class BinlogTimeCommand: public Command {
         if (!explog.ok()) {
             return explog.status();
         }
-        return Command::fmtLongLong(explog.value().getReplLogKey().getTimestamp());
+        return Command::fmtLongLong(
+            explog.value().getReplLogKey().getTimestamp());
     }
 } binlogTimeCmd;
 
@@ -403,5 +649,98 @@ class DebugCommand: public Command {
         return Command::fmtBulk(std::string(sb.GetString()));
     }
 } debugCommand;
+
+class ShutdownCommand: public Command {
+ public:
+    ShutdownCommand()
+        :Command("shutdown") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        svr->stop();
+
+        // avoid compiler complains
+        return Command::fmtOK();
+    }
+} shutdownCmd;
+
+class ObjectCommand: public Command {
+ public:
+    ObjectCommand()
+        :Command("object") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        const std::string& key = sess->getArgs()[1];
+        uint32_t storeId = Command::getStoreId(sess, key);
+        SessionCtx *pCtx = sess->getCtx();
+
+        const std::map<RecordType, std::string> m = {
+            {RecordType::RT_KV, "raw"},
+            {RecordType::RT_LIST_META, "linkedlist"},
+            {RecordType::RT_HASH_META, "hashtable"},
+            {RecordType::RT_SET_META, "ziplist"},
+            {RecordType::RT_ZSET_META, "skiplist"},
+        };
+        for (auto type : {RecordType::RT_KV,
+                          RecordType::RT_LIST_META,
+                          RecordType::RT_HASH_META,
+                          RecordType::RT_SET_META,
+                          RecordType::RT_ZSET_META}) {
+            RecordKey rk(pCtx->getDbId(), type, key, "");
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, storeId, rk);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+            if (sess->getArgs()[2] == "recount") {
+                return Command::fmtOne();
+            } else if (sess->getArgs()[2] == "encoding") {
+                return Command::fmtBulk(m.at(type));
+            } else if (sess->getArgs()[2] == "idletime") {
+                return Command::fmtLongLong(0);
+            }
+        }
+        return Command::fmtNull();
+    }
+} objectCmd;
 
 }  // namespace tendisplus

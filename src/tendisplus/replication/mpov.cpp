@@ -74,7 +74,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     uint32_t dstStoreId = 0;
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        if (_pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+        if (_incrPaused ||
+                _pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
             nextSched = nextSched + std::chrono::seconds(1);
             return;
         }
