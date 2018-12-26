@@ -21,7 +21,7 @@ using Zlexrangespec = redis_port::Zlexrangespec;
 class SkipList {
  public:
     using PSE = std::unique_ptr<ZSlEleValue>;
-    SkipList(uint32_t dbId, const std::string& pk,
+    SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
              const ZSlMetaValue& meta, PStore store);
     Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
     Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
@@ -86,6 +86,7 @@ class SkipList {
     uint32_t _count;
     uint64_t _tail;
     uint64_t _posAlloc;
+    uint32_t _chunkId;
     uint32_t _dbId;
     std::string _pk;
     PStore _store;

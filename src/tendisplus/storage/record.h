@@ -63,6 +63,7 @@ class RecordKey {
         std::string&& pk, std::string&& sk);
     const std::string& getPrimaryKey() const;
     const std::string& getSecondaryKey() const;
+    uint32_t getChunkId() const;
     uint32_t getDbId() const;
 
     // an encoded prefix until prefix and a padding zero.
@@ -80,8 +81,6 @@ class RecordKey {
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
     bool operator==(const RecordKey& other) const;
-
-    static constexpr uint32_t DEFAULT_CHUNK = 0XFFFFFFFEU;
 
  private:
     void encodePrefixPk(std::vector<uint8_t>*) const;

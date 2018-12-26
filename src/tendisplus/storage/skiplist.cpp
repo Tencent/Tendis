@@ -54,7 +54,7 @@ int slCmp(uint64_t score0, const std::string& subk0,
     INVARIANT(0);
 }
 
-SkipList::SkipList(uint32_t dbId, const std::string& pk,
+SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
                    const ZSlMetaValue& meta,
                    PStore store)
     :_maxLevel(meta.getMaxLevel()),
@@ -62,6 +62,7 @@ SkipList::SkipList(uint32_t dbId, const std::string& pk,
      _count(meta.getCount()),
      _tail(meta.getTail()),
      _posAlloc(meta.getPosAlloc()),
+     _chunkId(chunkId),
      _dbId(dbId),
      _pk(pk),
      _store(store) {
@@ -130,7 +131,7 @@ Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer,
         return it->second.get();
     }
     std::string pointerStr = std::to_string(pointer);
-    RecordKey rk(_dbId, RecordType::RT_ZSET_S_ELE, _pk, pointerStr);
+    RecordKey rk(_chunkId, _dbId, RecordType::RT_ZSET_S_ELE, _pk, pointerStr);
     Expected<RecordValue> rv = _store->getKV(rk, txn);
     if (!rv.ok()) {
         return rv.status();
@@ -147,7 +148,7 @@ Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer,
 }
 
 Status SkipList::delNode(uint64_t pointer, Transaction* txn) {
-    RecordKey rk(_dbId,
+    RecordKey rk(_chunkId, _dbId,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
                  std::to_string(pointer));
@@ -157,7 +158,7 @@ Status SkipList::delNode(uint64_t pointer, Transaction* txn) {
 Status SkipList::saveNode(uint64_t pointer,
                           const ZSlEleValue& val,
                           Transaction* txn) {
-    RecordKey rk(_dbId,
+    RecordKey rk(_chunkId, _dbId,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
                  std::to_string(pointer));
@@ -166,7 +167,7 @@ Status SkipList::saveNode(uint64_t pointer,
 }
 
 Status SkipList::save(Transaction* txn) {
-    RecordKey rk(_dbId, RecordType::RT_ZSET_META, _pk, "");
+    RecordKey rk(_chunkId, _dbId, RecordType::RT_ZSET_META, _pk, "");
     ZSlMetaValue mv(_level, _maxLevel, _count, _tail, _posAlloc);
     RecordValue rv(mv.encode());
     return _store->setKV(rk, rv, txn);

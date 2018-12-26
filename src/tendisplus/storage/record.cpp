@@ -84,7 +84,7 @@ RecordType char2Rt(uint8_t t) {
 }
 
 RecordKey::RecordKey()
-    :_chunkId(DEFAULT_CHUNK),
+    :_chunkId(0),
      _dbId(0),
      _type(RecordType::RT_INVALID),
      _pk(""),
@@ -148,6 +148,10 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     // a padding 0 avoids prefixes intersect with
     // each other in physical space
     arr->push_back(0);
+}
+
+uint32_t RecordKey::getChunkId() const {
+    return _chunkId;
 }
 
 uint32_t RecordKey::getDbId() const {
