@@ -93,13 +93,14 @@ TEST(Record, Common) {
     srand(time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
+        uint32_t chunkid = genRand();
         auto type = randomType();
         auto pk = randomStr(5, false);
         auto sk = randomStr(5, true);
         uint64_t ttl = genRand()*genRand();
         uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
-        auto rk = RecordKey(dbid, type, pk, sk);
+        auto rk = RecordKey(chunkid, dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl, cas);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
@@ -110,13 +111,14 @@ TEST(Record, Common) {
 
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
+        uint32_t chunkid = genRand();
         auto type = randomType();
         auto pk = randomStr(5, false);
         auto sk = randomStr(5, true);
         uint64_t ttl = genRand()*genRand();
         uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
-        auto rk = RecordKey(dbid, type, pk, sk);
+        auto rk = RecordKey(chunkid, dbid, type, pk, sk);
         auto rv = RecordValue(val, ttl, cas);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
@@ -129,7 +131,8 @@ TEST(Record, Common) {
 
 TEST(ReplRecord, Prefix) {
     auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), genRand());
-    RecordKey rk(ReplLogKey::DBID, RecordType::RT_BINLOG, rlk.encode(), "");
+    RecordKey rk(ReplLogKey::CHUNKID, ReplLogKey::DBID,
+                 RecordType::RT_BINLOG, rlk.encode(), "");
     const std::string s = rk.encode();
     EXPECT_EQ(s[0], '\xff');
     EXPECT_EQ(s[1], '\xff');

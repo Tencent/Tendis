@@ -84,7 +84,8 @@ RecordType char2Rt(uint8_t t) {
 }
 
 RecordKey::RecordKey()
-    :_dbId(0),
+    :_chunkId(DEFAULT_CHUNK),
+     _dbId(0),
      _type(RecordType::RT_INVALID),
      _pk(""),
      _sk(""),
@@ -92,33 +93,32 @@ RecordKey::RecordKey()
 }
 
 RecordKey::RecordKey(RecordKey&& o)
-        :_dbId(o._dbId),
+        :_chunkId(o._chunkId),
+         _dbId(o._dbId),
          _type(o._type),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
          _fmtVsn(o._fmtVsn) {
+    o._chunkId = 0;
     o._dbId = 0;
     o._type = RecordType::RT_INVALID;
     o._fmtVsn = 0;
 }
 
-RecordKey::RecordKey(uint32_t dbid, RecordType type,
+RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
     const std::string& pk, const std::string& sk)
-        :_dbId(dbid),
+        :_chunkId(chunkId),
+         _dbId(dbid),
          _type(type),
          _pk(pk),
          _sk(sk),
          _fmtVsn(0) {
 }
 
-RecordKey::RecordKey(RecordType type, const std::string& pk,
-    const std::string& sk)
-        :RecordKey(0, type, pk, sk) {
-}
-
-RecordKey::RecordKey(uint32_t dbid, RecordType type,
-        std::string&& pk, std::string&& sk)
-    :_dbId(dbid),
+RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid,
+    RecordType type, std::string&& pk, std::string&& sk)
+    :_chunkId(chunkId),
+     _dbId(dbid),
      _type(type),
      _pk(std::move(pk)),
      _sk(std::move(sk)),
@@ -127,6 +127,11 @@ RecordKey::RecordKey(uint32_t dbid, RecordType type,
 
 void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     // --------key encoding
+    // CHUNKID
+    for (size_t i = 0; i < sizeof(_chunkId); ++i) {
+        arr->emplace_back((_chunkId>>((sizeof(_chunkId)-i-1)*8))&0xff);
+    }
+
     // DBID
     for (size_t i = 0; i < sizeof(_dbId); ++i) {
         arr->emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
@@ -157,6 +162,8 @@ std::string RecordKey::prefixPk() const {
                 key.data()), key.size());
 }
 
+/* NOTE(deyukong): after chunkid prefix, the dbid-type prefix is
+// meaningless
 std::string RecordKey::prefixDbidType() const {
     std::vector<uint8_t> key;
     key.reserve(128);
@@ -172,12 +179,19 @@ std::string RecordKey::prefixDbidType() const {
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
 }
+*/
 
 const std::string& RecordKey::prefixReplLog() {
     static std::string s = []() {
         std::string result;
-        static_assert(ReplLogKey::DBID == 0xffffffff,
+        static_assert(ReplLogKey::DBID == 0XFFFFFFFFU,
                         "invalid ReplLogKey::DBID");
+        static_assert(ReplLogKey::CHUNKID == 0XFFFFFFFFU,
+                        "invalid ReplLogKey::CHUNKID");
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
         result.push_back(0xFF);
         result.push_back(0xFF);
         result.push_back(0xFF);
@@ -228,15 +242,22 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     size_t rvsOffset = 0;
     uint64_t pkLen = 0;
     uint64_t skLen = 0;
+    uint32_t chunkid = 0;
     uint32_t dbid = 0;
     RecordType type = RecordType::RT_INVALID;
     std::string pk = "";
     std::string sk = "";
 
-    // dbid
+    // chunkid
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    for (size_t i = 0; i < sizeof(chunkid); i++) {
+        chunkid = (chunkid << 8) | keyCstr[i+offset];
+    }
+    offset += sizeof(chunkid);
+
+    // dbid
     for (size_t i = 0; i < sizeof(dbid); i++) {
-        dbid = (dbid << 8) | keyCstr[i];
+        dbid = (dbid << 8) | keyCstr[i+offset];
     }
     offset += sizeof(dbid);
 
@@ -273,11 +294,12 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(dbid, type, unhexPk.value(), sk);
+    return RecordKey(chunkid, dbid, type, unhexPk.value(), sk);
 }
 
 bool RecordKey::operator==(const RecordKey& other) const {
-    return _dbId == other._dbId &&
+    return  _chunkId == other._chunkId &&
+            _dbId == other._dbId &&
             _type == other._type &&
             _pk == other._pk &&
             _sk == other._sk &&
@@ -542,7 +564,8 @@ std::string ReplLogKey::encode() const {
     }
     key.emplace_back(_reserved);
     std::string partial(reinterpret_cast<const char *>(key.data()), key.size());
-    RecordKey tmpRk(ReplLogKey::DBID,
+    RecordKey tmpRk(ReplLogKey::CHUNKID,
+                    ReplLogKey::DBID,
                     RecordType::RT_BINLOG,
                     std::move(partial), "");
     return tmpRk.encode();
