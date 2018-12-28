@@ -65,7 +65,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     void stop();
     void waitStopComplete();
-    const SegmentMgr* getSegmentMgr() const;
+    SegmentMgr* getSegmentMgr() const;
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
     PessimisticMgr* getPessimisticMgr();

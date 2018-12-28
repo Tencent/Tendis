@@ -19,9 +19,9 @@ class ScanGenericCommand: public Command {
         :Command(name) {
     }
 
-    virtual RecordKey genMetaRcd(uint32_t dbId, const std::string& key) = 0;
+    virtual RecordType getRcdType() const = 0;
 
-    virtual RecordKey genFakeRcd(uint32_t dbId, const std::string& key) = 0;
+    virtual RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const = 0;
 
     virtual Expected<std::string> genResult(const std::string& cursor,
                     const std::list<Record>& rcds) = 0;
@@ -72,15 +72,8 @@ class ScanGenericCommand: public Command {
             }
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-
-        RecordKey metaRk = genMetaRcd(pCtx->getDbId(), key);
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, getRcdType());
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             std::stringstream ss;
@@ -92,21 +85,28 @@ class ScanGenericCommand: public Command {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IS);
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        SessionCtx *pCtx = sess->getCtx();
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), getRcdType(), key, "");
+        uint32_t storeId = expdb.value().dbId;
+        std::string metaKeyEnc = metaRk.encode();
+        PStore kvstore = expdb.value().store;
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        RecordKey fake = genFakeRcd(pCtx->getDbId(), key);
+        RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
         auto batch = Command::scan(fake.prefixPk(), cursor, count, txn.get());
         if (!batch.ok()) {
@@ -135,12 +135,12 @@ class ZScanCommand: public ScanGenericCommand {
         :ScanGenericCommand("zscan") {
     }
 
-    RecordKey genMetaRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_ZSET_META, key, ""};
+    RecordType getRcdType() const final {
+        return RecordType::RT_ZSET_META;
     }
 
-    RecordKey genFakeRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_ZSET_H_ELE, key, ""};
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+        return {chunkId, dbId, RecordType::RT_ZSET_H_ELE, key, ""};
     }
 
     Expected<std::string> genResult(const std::string& cursor,
@@ -163,12 +163,12 @@ class SScanCommand: public ScanGenericCommand {
         :ScanGenericCommand("sscan") {
     }
 
-    RecordKey genMetaRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_SET_META, key, ""};
+    RecordType getRcdType() const final {
+        return RecordType::RT_SET_META;
     }
 
-    RecordKey genFakeRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_SET_ELE, key, ""};
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+        return {chunkId, dbId, RecordType::RT_SET_ELE, key, ""};
     }
 
     Expected<std::string> genResult(const std::string& cursor,
@@ -190,12 +190,12 @@ class HScanCommand: public ScanGenericCommand {
         :ScanGenericCommand("hscan") {
     }
 
-    RecordKey genMetaRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_HASH_META, key, ""};
+    RecordType getRcdType() const final {
+        return RecordType::RT_HASH_META;
     }
 
-    RecordKey genFakeRcd(uint32_t dbId, const std::string& key) final {
-        return {dbId, RecordType::RT_HASH_ELE, key, ""};
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+        return {chunkId, dbId, RecordType::RT_HASH_ELE, key, ""};
     }
 
     Expected<std::string> genResult(const std::string& cursor,
@@ -240,6 +240,7 @@ class ScanCommand: public Command {
     }
 } scanCmd;
 
+/*
 class KeysCommand: public Command {
  public:
     KeysCommand()
@@ -326,5 +327,5 @@ class KeysCommand: public Command {
         return ss.str();
     }
 } keysCmd;
-
+*/
 }  // namespace tendisplus

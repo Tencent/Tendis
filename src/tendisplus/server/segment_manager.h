@@ -4,8 +4,19 @@
 #include <string>
 #include <vector>
 #include "tendisplus/storage/kvstore.h"
+#include "tendisplus/server/session.h"
+#include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
+
+struct DbWithLock {
+    DbWithLock(const DbWithLock&) = delete;
+    DbWithLock(DbWithLock&&) = default;
+    uint32_t dbId;
+    uint32_t chunkId;
+    PStore store;
+    std::unique_ptr<StoreLock> lk;
+};
 
 class SegmentMgr {
  public:
@@ -13,14 +24,8 @@ class SegmentMgr {
     virtual ~SegmentMgr() = default;
     SegmentMgr(const SegmentMgr&) = delete;
     SegmentMgr(SegmentMgr&&) = delete;
-    virtual uint32_t calcSegId(const std::string&) const = 0;
-    virtual uint32_t calcInstanceId(const std::string&) const = 0;
-    virtual PStore calcInstance(const std::string&) const = 0;
-    virtual PStore getInstanceById(uint32_t) const = 0;
-    // instances intersecting with this range
-    // it maybe meaningless useful in a range-based SegmentMgr
-    virtual std::vector<PStore> calcInstances(
-        const std::string& begin, const std::string& end) const = 0;
+    virtual Expected<DbWithLock> getDb(Session* sess, const std::string& key, mgl::LockMode mode) = 0;
+    virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) = 0;
 
  private:
     const std::string _name;
@@ -32,12 +37,8 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     virtual ~SegmentMgrFnvHash64() = default;
     SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
-    uint32_t calcSegId(const std::string&) const final;
-    uint32_t calcInstanceId(const std::string&) const final;
-    PStore calcInstance(const std::string&) const final;
-    PStore getInstanceById(uint32_t) const final;
-    std::vector<PStore> calcInstances(
-        const std::string& begin, const std::string& end) const final;
+    Expected<DbWithLock> getDb(Session* sess, const std::string& key, mgl::LockMode mode) final;
+    Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) final;
 
  private:
     std::vector<PStore> _instances;

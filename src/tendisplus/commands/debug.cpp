@@ -180,11 +180,12 @@ class IterAllCommand: public Command {
         if (estoreId.value() >= KVStore::INSTANCE_NUM) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
         }
-        auto storeLock = std::make_unique<StoreLock>(
-            estoreId.value(), 
-            mgl::LockMode::LOCK_IS,
-            sess);
-        PStore kvstore = Command::getStoreById(sess, estoreId.value());
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, estoreId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -473,8 +474,13 @@ class BinlogTimeCommand: public Command {
         if (!binlogId.ok()) {
             return binlogId.status();
         }
-        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
-        PStore kvstore = Command::getStoreById(sess, storeId.value());
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -522,8 +528,13 @@ class BinlogPosCommand: public Command {
         if (storeId.value() >= KVStore::INSTANCE_NUM) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
         }
-        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
-        PStore kvstore = Command::getStoreById(sess, storeId.value());
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -580,7 +591,7 @@ class DebugCommand: public Command {
         }
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        const SegmentMgr *segMgr = svr->getSegmentMgr();
+        SegmentMgr *segMgr = svr->getSegmentMgr();
         INVARIANT(segMgr != nullptr);
         ReplManager *replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
@@ -593,7 +604,11 @@ class DebugCommand: public Command {
             writer.Key("stores");
             writer.StartObject();
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                PStore store = segMgr->getInstanceById(i);
+                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
                 std::stringstream ss;
                 ss << "stores_" << i;
                 writer.Key(ss.str().c_str());
@@ -704,10 +719,7 @@ class ObjectCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         const std::string& key = sess->getArgs()[1];
-        uint32_t storeId = Command::getStoreId(sess, key);
-        SessionCtx *pCtx = sess->getCtx();
 
         const std::map<RecordType, std::string> m = {
             {RecordType::RT_KV, "raw"},
@@ -721,9 +733,8 @@ class ObjectCommand: public Command {
                           RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
                           RecordType::RT_ZSET_META}) {
-            RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {

@@ -10,3 +10,6 @@ target_compile_definitions(commmand_test PRIVATE WITH_SYNC_POINT)
 # command uses global variables to self-regist, linking flag whole-archive is required.
 target_link_libraries(commmand_test -Wl,--whole-archive commands_debug -Wl,--no-whole-archive)
 target_link_libraries(commmand_test status server session network server_params stdc++fs utils_common sync_point gtest_main ${SYS_LIBS})
+
+add_library(command_single STATIC command.cpp kv.cpp repl.cpp set.cpp auth.cpp hash.cpp list.cpp scan.cpp zset.cpp del.cpp)
+target_link_libraries(commands status network utils_common lock)

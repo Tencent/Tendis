@@ -17,11 +17,7 @@ namespace tendisplus {
 Expected<bool> expireBeforeNow(Session *sess,
                         RecordType type,
                         const std::string& key) {
-    SessionCtx *pCtx = sess->getCtx();
-    INVARIANT(pCtx != nullptr);
-    RecordKey rk(pCtx->getDbId(), type, key, "");
-    uint32_t storeId = Command::getStoreId(sess, key);
-    return Command::delKeyChkExpire(sess, storeId, rk);
+    return Command::delKeyChkExpire(sess, key, type);
 }
 
 // return true if exists
@@ -31,12 +27,8 @@ Expected<bool> expireAfterNow(Session *sess,
                         RecordType type,
                         const std::string& key,
                         uint64_t expireAt) {
-    SessionCtx *pCtx = sess->getCtx();
-    INVARIANT(pCtx != nullptr);
-    RecordKey rk(pCtx->getDbId(), type, key, "");
-    uint32_t storeId = Command::getStoreId(sess, key);
     Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, storeId, rk);
+        Command::expireKeyIfNeeded(sess, key, type);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
         return false;
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -46,12 +38,18 @@ Expected<bool> expireAfterNow(Session *sess,
     }
 
     // record exists and not expired
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
-
+    auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    uint32_t storeId = expdb.value().dbId;
+    PStore kvstore = expdb.value().store;
+    SessionCtx *pCtx = sess->getCtx();
+    RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), type, key, "");
     if (Command::isKeyLocked(sess, storeId, rk.encode())) {
         return {ErrorCodes::ERR_BUSY, "key locked"};
     }
-    PStore kvstore = Command::getStoreById(sess, storeId);
     for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -206,19 +204,15 @@ class GenericTtlCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        uint32_t storeId = Command::getStoreId(sess, key);
 
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
                           RecordType::RT_ZSET_META}) {
-            RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -282,19 +276,15 @@ class ExistsCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        uint32_t storeId = Command::getStoreId(sess, key);
 
         for (auto type : {RecordType::RT_KV,
                           RecordType::RT_LIST_META,
                           RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
                           RecordType::RT_ZSET_META}) {
-            RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -331,10 +321,7 @@ class TypeCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        uint32_t storeId = Command::getStoreId(sess, key);
 
         const std::map<RecordType, std::string> lookup = {
             {RecordType::RT_KV, "string"},
@@ -344,9 +331,8 @@ class TypeCommand: public Command {
             {RecordType::RT_ZSET_META, "zset"},
         };
         for (const auto& typestr : lookup) {
-            RecordKey rk(pCtx->getDbId(), typestr.first, key, "");
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, typestr.first);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {

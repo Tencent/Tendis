@@ -144,7 +144,7 @@ ReplManager* ServerEntry::getReplManager() {
     return _replMgr.get();
 }
 
-const SegmentMgr* ServerEntry::getSegmentMgr() const {
+SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
 }
 
