@@ -86,6 +86,12 @@ class BackupInfo {
     uint64_t _binlogPos;
 };
 
+class BinlogObserver {
+ public:
+    virtual void onCommit(const std::vector<ReplLog>& binlogs) = 0;
+    virtual ~BinlogObserver() = default;
+};
+
 class KVStore {
  public:
     enum class StoreMode {
@@ -110,6 +116,8 @@ class KVStore {
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
                                Transaction* txn) = 0;
+
+    virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
 
     // remove all data in db
     virtual Status clear() = 0;

@@ -51,12 +51,13 @@ Expected<Record> RocksKVCursor::next() {
     return result.status();
 }
 
-RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly)
+RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, std::shared_ptr<tendisplus::BinlogObserver> ob)
         :_txnId(txnId),
          _txn(nullptr),
          _store(store),
          _done(false),
-         _replOnly(replOnly) {
+         _replOnly(replOnly),
+         _logOb(ob) {
     // NOTE(deyukong): the rocks-layer's snapshot should be opened in
     // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
     // or, we are not able to guarantee the oplog order is the same as the
@@ -135,6 +136,9 @@ Expected<uint64_t> RocksOptTxn::commit() {
     TEST_SYNC_POINT("RocksOptTxn::commit()::2");
     auto s = _txn->Commit();
     if (s.ok()) {
+        if (_logOb) {
+            _logOb->onCommit(_binlogs);
+        }
         return _txnId;
     } else {
         binlogTxnId = Transaction::TXNID_UNINITED;
@@ -418,6 +422,18 @@ Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
     return txn->applyBinlog(txnLog);
 }
 
+Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (!_isRunning) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    if (_logOb != nullptr) {
+        return {ErrorCodes::ERR_INTERNAL, "logOb already exists"};
+    }
+    _logOb = ob;
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 Status RocksKVStore::clear() {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
@@ -544,7 +560,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _stats(rocksdb::CreateDBStatistics()),
          _blockCache(blockCache),
          _nextTxnSeq(0),
-         _highestVisible(Transaction::TXNID_UNINITED) {
+         _highestVisible(Transaction::TXNID_UNINITED),
+         _logOb(nullptr) {
     Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
@@ -643,7 +660,7 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
     uint64_t txnId = _nextTxnSeq++;
     bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
     auto ret = std::unique_ptr<Transaction>(
-                                new RocksOptTxn(this, txnId, replOnly));
+                                new RocksOptTxn(this, txnId, replOnly, _logOb));
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);
 }

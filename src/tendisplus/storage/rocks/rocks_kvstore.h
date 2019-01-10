@@ -27,7 +27,7 @@ class RocksKVStore;
 // Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public Transaction {
  public:
-    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly);
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn();
@@ -62,6 +62,8 @@ class RocksOptTxn: public Transaction {
     bool _done;
 
     bool _replOnly;
+
+    std::shared_ptr<BinlogObserver> _logOb;
 };
 
 class RocksKVCursor: public Cursor {
@@ -92,6 +94,8 @@ class RocksKVStore: public KVStore {
     Status delKV(const RecordKey& key, Transaction* txn) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog,
                        Transaction *txn) final;
+
+    Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
 
     Status clear() final;
     bool isRunning() const final;
@@ -148,6 +152,8 @@ class RocksKVStore: public KVStore {
     // NOTE(deyukong): _highestVisible is the largest committed binlog
     // before _aliveTxns.begin()
     uint64_t _highestVisible;
+
+    std::shared_ptr<BinlogObserver> _logOb;
 };
 
 }  // namespace tendisplus
