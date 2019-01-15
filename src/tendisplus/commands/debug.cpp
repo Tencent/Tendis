@@ -696,6 +696,152 @@ class ShutdownCommand: public Command {
     }
 } shutdownCmd;
 
+class ClientCommand: public Command {
+ public:
+    ClientCommand()
+        :Command("client") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> listClients(Session *sess) {
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto sesses = svr->getAllSessions();
+
+        std::stringstream ss;
+        for (auto& v : sesses) {
+            if (v->getFd() == -1) {
+                // local sess
+                continue;
+            }
+            SessionCtx *ctx = sess->getCtx();
+            ss << "id=" << v->id()
+                << " addr=" << v->getRemote()
+                << " fd=" << v->getFd()
+                << " name=" << v->getName()
+                << " db=" << ctx->getDbId()
+                << "\n";
+        }
+        return Command::fmtBulk(ss.str());
+    }
+
+    Expected<std::string> killClients(Session *sess) {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        int skipme = 0;
+        std::string remote = "";
+        uint64_t id = 0;
+
+        if (args.size() == 3) {
+            remote = args[2];
+            skipme = 0;
+        } else if (args.size() > 3) {
+            size_t i = 2;
+            while (i < args.size()) {
+                int moreargs = args.size() > i+1;
+                if (args[i] == "id" && moreargs) {
+                    Expected<uint64_t> eid = ::tendisplus::stoul(args[i+1]);
+                    if (!eid.ok()) {
+                        return eid.status();
+                    }
+                    id = eid.value();
+                } else if (args[i] == "addr" && moreargs) {
+                    remote = args[i+1];
+                } else if (args[i] == "skipme" && moreargs) {
+                    if (args[i+1] == "yes") {
+                        skipme = 1;
+                    } else if (args[i+1] == "no") {
+                        skipme = 0;
+                    } else {
+                        return {ErrorCodes::ERR_PARSEOPT, "skipme yes|no"};
+                    }
+                } else {
+                        return {ErrorCodes::ERR_PARSEOPT, "invalid syntax"};
+                }
+                i += 2;
+            }
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto sesses = svr->getAllSessions();
+        int closeThisClient = 0;
+        for (auto& v : sesses) {
+            if (v->getFd() == -1) {
+                continue;
+            }
+            if (id != 0 && v->id() != id) {
+                continue;
+            }
+            if (remote != "" && v->getRemote() != remote) {
+                continue;
+            }
+            if (v->id() == sess->id()) {
+                if (skipme) {
+                    continue;
+                } else {
+                    closeThisClient = 1;
+                }
+            } else {
+                v->cancel();
+                return Command::fmtOK();
+            }
+        }
+        if (closeThisClient) {
+            auto vv = dynamic_cast<NetSession*>(sess);
+            INVARIANT(vv != nullptr);
+            vv->setCloseAfterRsp();
+            return Command::fmtOK();
+        }
+        return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        if (args[1] == "LIST" || args[1] == "list") {
+            return listClients(sess);
+        } else if (args[1] == "getname" || args[1] == "GETNAME") {
+            std::string name = sess->getName();
+            if (name == "") {
+                return Command::fmtNull();
+            } else {
+                return Command::fmtBulk(name);
+            }
+        } else if ((args[1] == "setname" || args[1] == "SETNAME") && args.size() == 3) {
+            for (auto v : args[2]) {
+                if (v < '!' || v > '~') {
+                    LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
+                    return {ErrorCodes::ERR_PARSEOPT, "Client names cannot contain spaces, newlines or special characters."};
+                }
+            }
+            sess->setName(args[2]);
+            return Command::fmtOK();
+        } else if (args[1] == "KILL" || args[1] == "kill") {
+            return killClients(sess);
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT,
+                "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};
+        }
+    }
+
+} clientCmd;
+
 class ObjectCommand: public Command {
  public:
     ObjectCommand()

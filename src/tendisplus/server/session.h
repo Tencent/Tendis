@@ -27,6 +27,10 @@ class Session: public std::enable_shared_from_this<Session> {
 
     virtual void start() = 0;
     virtual Status cancel() = 0;
+    virtual int getFd() = 0;
+    virtual std::string getRemote() const = 0;
+    std::string getName() const;
+    void setName(const std::string&);
 
  protected:
     std::vector<std::string> _args;
@@ -35,7 +39,9 @@ class Session: public std::enable_shared_from_this<Session> {
     std::unique_ptr<SessionCtx> _ctx;
 
  private:
-    uint64_t _sessId;
+    mutable std::mutex _mutex;
+    std::string _name;
+    const uint64_t _sessId;
     static std::atomic<uint64_t> _idGen;
     static std::atomic<uint64_t> _aliveCnt;
 };
@@ -45,6 +51,8 @@ class LocalSession: public Session {
     explicit LocalSession(std::shared_ptr<ServerEntry> svr);
     void start() final;
     Status cancel() final;
+    int getFd() final;
+    std::string getRemote() const final;
 };
 
 class LocalSessionGuard {

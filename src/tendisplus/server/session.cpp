@@ -21,6 +21,16 @@ Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
 }
 
+std::string Session::getName() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _name;
+}
+
+void Session::setName(const std::string& name) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _name = name;
+}
+
 uint64_t Session::id() const {
     return _sessId;
 }
@@ -53,6 +63,14 @@ void LocalSession::start() {
 Status LocalSession::cancel() {
     return {ErrorCodes::ERR_INTERNAL,
         "LocalSession::cancel should not be called"};
+}
+
+int LocalSession::getFd() {
+    return -1;
+}
+
+std::string LocalSession::getRemote() const {
+    return "";
 }
 
 LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
