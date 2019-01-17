@@ -1222,6 +1222,24 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtLongLong(ss, 1);
     Command::fmtBulk(ss, "2");
+
+    // bitop
+    sess.setArgs({"set", "bitopkey1", "foobar"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"set", "bitopkey2", "abcdef"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({"bitop", "and", "bitopdestkey", "bitopkey1", "bitopkey2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(6));
+    sess.setArgs({"get", "bitopdestkey"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("`bc`ab"));
 }
 
 void testExpire(std::shared_ptr<ServerEntry> svr) {

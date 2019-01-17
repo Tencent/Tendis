@@ -1480,6 +1480,136 @@ class MGetCommand: public Command {
     }
 } mgetCmd;
 
+class BitopCommand: public Command {
+ public:
+    BitopCommand()
+        :Command("bitop") {
+    }
+
+    enum class Op {
+        BITOP_AND,
+        BITOP_OR,
+        BITOP_XOR,
+        BITOP_NOT,
+    };
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 2;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        const std::string& opName = args[1];
+        const std::string& targetKey = args[2];
+        Op op;
+        if (opName == "and" || opName == "AND") {
+            op = Op::BITOP_AND;
+        } else if (opName == "or" || opName == "OR") {
+            op = Op::BITOP_OR;
+        } else if (opName == "xor" || opName == "XOR") {
+            op = Op::BITOP_XOR;
+        } else if (opName == "not" || opName == "NOT") {
+            op = Op::BITOP_NOT;
+        } else {
+            return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
+        }
+        if (op == Op::BITOP_NOT && args.size() != 4) {
+            return {ErrorCodes::ERR_PARSEPKT, "BITOP NOT must be called with a single source key."};
+        }
+        size_t numKeys = args.size() - 3;
+        size_t maxLen = 0;
+        std::vector<std::string> vals;
+        for (size_t j = 0; j < numKeys; ++j) {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, args[j+3], RecordType::RT_KV);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                vals.push_back(rv.value().getValue());
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                vals.push_back(rv.value().getValue());
+            } else if (!rv.status().ok()) {
+                return rv.status();
+            } else {
+                vals.push_back(rv.value().getValue());
+                if (vals[j].size() > maxLen) {
+                    maxLen = vals[j].size();
+                }
+            }
+        }
+        if (maxLen == 0) {
+            Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV);
+            return Command::fmtZero();
+        }
+        std::string result(maxLen, 0);
+        for (size_t i = 0; i < maxLen; ++i) {
+            unsigned char output = (vals[0].size() <= i) ? 0 : vals[0][i];
+            if (op == Op::BITOP_NOT) output = ~output;
+            for (size_t j = 1; j < numKeys; ++j) {
+                unsigned char byte = (vals[j].size() <= i) ? 0 : vals[j][i];
+                switch (op) {
+                    case Op::BITOP_AND: output &= byte; break;
+                    case Op::BITOP_OR: output |= byte; break;
+                    case Op::BITOP_XOR: output ^= byte; break;
+                    default:
+                        INVARIANT(0);
+                }
+            }
+            result[i] = output;
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, targetKey, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, targetKey, "");
+        RecordValue rv(result);
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto setRes = setGeneric(kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NO_FLAGS,
+                                     rk,
+                                     rv,
+                                     "",
+                                     "");
+            if (setRes.ok()) {
+                return Command::fmtLongLong(result.size());
+            }
+            if (setRes.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return setRes.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return setRes.status();
+            } else {
+                continue;
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} bitopCmd;
+
 // NOTE(deyukong): redis guarantees mset is atomic. not partially
 // visible to other clients, to implement this, we can take all
 // related stores' X lock to do this. we didnt do this for better
@@ -1522,11 +1652,6 @@ class MSetCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
             RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
             RecordValue rv(val);
