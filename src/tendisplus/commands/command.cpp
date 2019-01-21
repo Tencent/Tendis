@@ -146,6 +146,7 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
 
     // lock key with X-lock held
     {
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_X);
         if (Command::isKeyLocked(sess, storeId, keyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key is locked"};
         }
