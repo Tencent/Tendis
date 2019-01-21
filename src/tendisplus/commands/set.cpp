@@ -749,11 +749,92 @@ class SRemCommand: public Command {
     }
 } sremCommand;
 
-/*
-class SDiffCommand: public Command {
+class SdiffgenericCommand: public Command {
  public:
-    SDiffCommand()
-        :Command("sdiff") {
+    SdiffgenericCommand(const std::string& name, bool store)
+        :Command(name),
+         _store(store) {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        size_t startkey = _store ? 2 : 1;
+        std::set<std::string> result;
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+
+        for (size_t i = startkey; i < args.size(); ++i) {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                // nothing to do
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                // nothing to do
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+
+            auto expdb = server->getSegmentMgr()->getDb(sess, args[i], mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            uint32_t storeId = expdb.value().dbId;
+            RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
+            std::string metaKeyEnc = metaRk.encode();
+            PStore kvstore = expdb.value().store;
+
+            if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+                return {ErrorCodes::ERR_BUSY, "key locked"};
+            }
+
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto cursor = txn->createCursor();
+            RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], ""};
+            cursor->seek(fake.prefixPk());
+            while (true) {
+                Expected<Record> exptRcd = cursor->next();
+                if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                if (!exptRcd.ok()) {
+                    return exptRcd.status();
+                }
+                Record& rcd = exptRcd.value();
+                const RecordKey& rcdkey = rcd.getRecordKey();
+                if (rcdkey.prefixPk() != fake.prefixPk()) {
+                    break;
+                }
+                if (i == startkey) {
+                    result.insert(rcdkey.getSecondaryKey());
+                } else {
+                    result.erase(rcdkey.getSecondaryKey());
+                }
+            }
+        }
+
+        if (!_store) {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, result.size());
+            for (auto& v : result) {
+                Command::fmtBulk(ss, v);
+            }
+            return ss.str();
+        }
+        return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
+    }
+
+ private:
+    bool _store;
+};
+
+class SdiffCommand: public SdiffgenericCommand {
+ public:
+    SdiffCommand()
+        :SdiffgenericCommand("sdiff", false) {
     }
 
     ssize_t arity() const {
@@ -771,7 +852,5 @@ class SDiffCommand: public Command {
     int32_t keystep() const {
         return 1;
     }
-
-} sdiffCommand;
-*/
+} sdiffcmd;
 }  // namespace tendisplus

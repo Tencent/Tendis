@@ -33,6 +33,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     ServerEntry(ServerEntry&&) = delete;
     Catalog* getCatalog();
     Status startup(const std::shared_ptr<ServerParams>& cfg);
+    uint64_t getStartupTimeNs() const;
     template <typename fn>
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));
@@ -86,6 +87,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::atomic<bool> _ftmcEnabled;
     std::atomic<bool> _isRunning;
     std::atomic<bool> _isStopped;
+    uint64_t _startupTime;
     mutable std::mutex _mutex;
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;

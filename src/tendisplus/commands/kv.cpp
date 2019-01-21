@@ -1685,4 +1685,85 @@ class MSetCommand: public Command {
     }
 } msetCmd;
 
+class MoveCommand: public Command {
+ public:
+    MoveCommand()
+        :Command("move") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} moveCmd;
+
+class RenameCommand: public Command {
+ public:
+    RenameCommand()
+        :Command("rename") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 2;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} renameCmd;
+
+class RenamenxCommand: public Command {
+ public:
+    RenamenxCommand()
+        :Command("renamenx") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 2;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} renamenxCmd;
+
 }  // namespace tendisplus
