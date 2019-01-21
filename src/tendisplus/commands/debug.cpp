@@ -1,4 +1,5 @@
 #include <sys/time.h>
+#include <sys/utsname.h>
 #include <string>
 #include <sstream>
 #include <utility>
@@ -841,6 +842,73 @@ class ClientCommand: public Command {
     }
 
 } clientCmd;
+
+class InfoCommand: public Command {
+ public:
+    InfoCommand()
+        :Command("info") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::stringstream result;
+        std::string section;
+        if (sess->getArgs().size() == 1) {
+            section = "default";
+        } else {
+            section = sess->getArgs()[1];
+        }
+        auto server = sess->getServerEntry();
+        uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
+
+        bool allsections = (section == "all");
+        bool defsections = (section == "default");
+        if (allsections || defsections || section == "server") {
+            std::stringstream ss;
+            static int call_uname = 1;
+            static struct utsname name;
+            if (call_uname) {
+                call_uname = 0;
+                uname(&name);
+            }
+            ss << "# Server\r\n"
+                << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
+                << "arch_bits:" << ((sizeof(long) == 8) ? 64 : 32) << "\r\n"
+                << "multiplexing_api:asio\r\n"
+#ifdef __GNUC__
+                << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"
+#else
+                << "gcc_version:0.0.0\r\n"
+#endif
+                << "process_id:" << getpid() << "\r\n"
+                << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
+                << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n";
+            result << ss.str();
+        }
+        if (allsections || defsections || section == "clients") {
+            std::stringstream ss;
+            ss << "# Clients\r\n"
+                << "connected_clients:" << server->getAllSessions().size() << "\r\n";
+            result << ss.str();
+        }
+        return  Command::fmtBulk(result.str());
+    }
+} infoCmd;
 
 class ObjectCommand: public Command {
  public:
