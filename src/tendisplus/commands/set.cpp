@@ -767,9 +767,9 @@ class SdiffgenericCommand: public Command {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                // nothing to do
+                continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                // nothing to do
+                continue;
             } else if (!rv.ok()) {
                 return rv.status();
             }
