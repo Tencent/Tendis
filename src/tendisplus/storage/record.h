@@ -31,8 +31,10 @@ uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
 
 // ********************* key format ***********************************
-// DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
-// DBID is an int32 in big-endian
+// ChunkId + DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
+// ChunkId is an uint32 in big-endian, it's mainly used for logic migra
+// -tion
+// DBID is an uint32 in big-endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE an so on, see rt2Char
 // PK is primarykey, its length is described in len(PK)
@@ -55,22 +57,23 @@ class RecordKey {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordKey(RecordKey&&);
-    RecordKey(RecordType type, const std::string& pk,
-        const std::string& sk);
-    RecordKey(uint32_t dbid, RecordType type, const std::string& pk,
-        const std::string& sk);
-    RecordKey(uint32_t dbid, RecordType type, std::string&& pk,
-        std::string&& sk);
+    RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
+        const std::string& pk, const std::string& sk);
+    RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
+        std::string&& pk, std::string&& sk);
     const std::string& getPrimaryKey() const;
     const std::string& getSecondaryKey() const;
+    uint32_t getChunkId() const;
     uint32_t getDbId() const;
 
     // an encoded prefix until prefix and a padding zero.
     // mainly for prefix scan.
     std::string prefixPk() const;
 
+    /*
     // an encoded prefix with db & type, with no padding zero.
     std::string prefixDbidType() const;
+    */
 
     static const std::string& prefixReplLog();
 
@@ -81,6 +84,7 @@ class RecordKey {
 
  private:
     void encodePrefixPk(std::vector<uint8_t>*) const;
+    uint32_t _chunkId;
     uint32_t _dbId;
     RecordType _type;
     std::string _pk;
@@ -181,7 +185,8 @@ class ReplLogKey {
     ReplFlag getFlag() const { return _flag; }
 
     static std::string prefix(uint64_t commitId);
-    static constexpr uint32_t DBID = std::numeric_limits<uint32_t>::max();
+    static constexpr uint32_t DBID = 0XFFFFFFFFU;
+    static constexpr uint32_t CHUNKID = 0XFFFFFFFFU;
 
  private:
     uint64_t _txnId;

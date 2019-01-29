@@ -126,17 +126,7 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     return it->second->run(sess);
 }
 
-std::unique_ptr<StoreLock> Command::lockDBByKey(Session *sess,
-                                                const std::string& key,
-                                                mgl::LockMode mode) {
-    auto server = sess->getServerEntry();
-    INVARIANT(server != nullptr);
-    auto segMgr = server->getSegmentMgr();
-    INVARIANT(segMgr != nullptr);
-    uint32_t storeId = segMgr->calcInstanceId(key);
-    return std::make_unique<StoreLock>(storeId, mode, sess);
-}
-
+// should be called with store locked
 bool Command::isKeyLocked(Session *sess,
                           uint32_t storeId,
                           const std::string& encodedKey) {
@@ -152,13 +142,14 @@ bool Command::isKeyLocked(Session *sess,
 Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
                           const RecordKey& mk) {
     std::string keyEnc = mk.encode();
+    auto server = sess->getServerEntry();
+
     // lock key with X-lock held
     {
-        StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_X);
         if (Command::isKeyLocked(sess, storeId, keyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key is locked"};
         }
-        auto server = sess->getServerEntry();
         auto pessimisticMgr = server->getPessimisticMgr();
         auto shard = pessimisticMgr->getShard(storeId);
         shard->lock(keyEnc);
@@ -168,15 +159,17 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
 
     // storeLock destructs after guard, it's guaranteed.
     // unlock the key at last
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
-    auto guard = MakeGuard([sess, storeId, &keyEnc]() {
-        auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto guard = MakeGuard([sess, storeId, &keyEnc, &server]() {
         auto pessimisticMgr = server->getPessimisticMgr();
         auto shard = pessimisticMgr->getShard(storeId);
         shard->unlock(keyEnc);
     });
 
-    PStore kvstore = Command::getStoreById(sess, storeId);
+    PStore kvstore = expdb.value().store;
     uint64_t totalCount = 0;
     const uint32_t batchSize = 2048;
     while (true) {
@@ -275,7 +268,13 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     if (deleteMeta && subCount != std::numeric_limits<uint32_t>::max()) {
         return {ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount"};
     }
-    PStore kvstore = Command::getStoreById(sess, storeId);
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+    auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
     if (mk.getRecordType() == RecordType::RT_KV) {
         Status s = kvstore->delKV(mk, txn);
         if (!s.ok()) {
@@ -289,30 +288,35 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     }
     std::vector<std::string> prefixes;
     if (mk.getRecordType() == RecordType::RT_HASH_META) {
-        RecordKey fakeEle(mk.getDbId(),
+        RecordKey fakeEle(mk.getChunkId(),
+                          mk.getDbId(),
                           RecordType::RT_HASH_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
     } else if (mk.getRecordType() == RecordType::RT_LIST_META) {
-        RecordKey fakeEle(mk.getDbId(),
+        RecordKey fakeEle(mk.getChunkId(),
+                          mk.getDbId(),
                           RecordType::RT_LIST_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
     } else if (mk.getRecordType() == RecordType::RT_SET_META) {
-        RecordKey fakeEle(mk.getDbId(),
+        RecordKey fakeEle(mk.getChunkId(),
+                          mk.getDbId(),
                           RecordType::RT_SET_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
     } else if (mk.getRecordType() == RecordType::RT_ZSET_META) {
-        RecordKey fakeEle(mk.getDbId(),
+        RecordKey fakeEle(mk.getChunkId(),
+                          mk.getDbId(),
                           RecordType::RT_ZSET_S_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
-        RecordKey fakeEle1(mk.getDbId(),
+        RecordKey fakeEle1(mk.getChunkId(),
+                          mk.getDbId(),
                           RecordType::RT_ZSET_H_ELE,
                           mk.getPrimaryKey(),
                           "");
@@ -364,10 +368,10 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
 }
 
 Expected<bool> Command::delKeyChkExpire(Session *sess,
-                                        uint32_t storeId,
-                                        const RecordKey& rk) {
+                                        const std::string& key,
+                                        RecordType tp) {
     Expected<RecordValue> rv =
-        Command::expireKeyIfNeeded(sess, storeId, rk);
+        Command::expireKeyIfNeeded(sess, key, tp);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
         return false;
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -377,7 +381,7 @@ Expected<bool> Command::delKeyChkExpire(Session *sess,
     }
 
     // key exists and not expired, now we delete it
-    Status s = Command::delKey(sess, storeId, rk);
+    Status s = Command::delKey(sess, key, tp);
     if (s.code() == ErrorCodes::ERR_NOTFOUND) {
         return false;
     }
@@ -387,10 +391,20 @@ Expected<bool> Command::delKeyChkExpire(Session *sess,
     return s;
 }
 
-Status Command::delKey(Session *sess, uint32_t storeId,
-                       const RecordKey& mk) {
-    auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX, sess);
+Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+    SessionCtx *pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+
+    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    uint32_t storeId = expdb.value().dbId;
+
+    RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -398,7 +412,6 @@ Status Command::delKey(Session *sess, uint32_t storeId,
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
     }
-    PStore kvstore = Command::getStoreById(sess, storeId);
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -419,7 +432,7 @@ Status Command::delKey(Session *sess, uint32_t storeId,
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
             // reset storelock, or will deadlock
-            storeLock.reset();
+            expdb.value().lk.reset();
             // reset txn, it is no longer used
             txn.reset();
             return Command::delKeyPessimistic(sess, storeId, mk);
@@ -437,11 +450,17 @@ Status Command::delKey(Session *sess, uint32_t storeId,
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
-                                  uint32_t storeId,
-                                  const RecordKey& mk) {
-    auto storeLock = std::make_unique<StoreLock>(storeId,
-                    mgl::LockMode::LOCK_IX, sess);
+Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::string& key, RecordType tp) {
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto storeLock = std::move(expdb.value().lk);
+    uint32_t storeId = expdb.value().dbId;
+    RecordKey mk(expdb.value().chunkId, expdb.value().dbId, tp, key, "");
+
     // currently, a simple kv will not be locked
     if (mk.getRecordType() != RecordType::RT_KV) {
         std::string mkEnc = mk.encode();
@@ -449,7 +468,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
     }
-    PStore kvstore = Command::getStoreById(sess, storeId);
+    PStore kvstore = expdb.value().store;
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -499,32 +518,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
     // should never reach here
     INVARIANT(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
-}
-
-PStore Command::getStore(Session *sess, const std::string& key) {
-    auto server = sess->getServerEntry();
-    INVARIANT(server != nullptr);
-    auto segMgr = server->getSegmentMgr();
-    INVARIANT(segMgr != nullptr);
-    auto kvStore = segMgr->calcInstance(key);
-    INVARIANT(kvStore != nullptr);
-    return kvStore;
-}
-
-uint32_t Command::getStoreId(Session *sess, const std::string& key) {
-    auto server = sess->getServerEntry();
-    INVARIANT(server != nullptr);
-    auto segMgr = server->getSegmentMgr();
-    INVARIANT(segMgr != nullptr);
-    return segMgr->calcInstanceId(key);
-}
-
-PStore Command::getStoreById(Session *sess, uint32_t storeId) {
-    auto server = sess->getServerEntry();
-    INVARIANT(server != nullptr);
-    auto segMgr = server->getSegmentMgr();
-    INVARIANT(segMgr != nullptr);
-    return segMgr->getInstanceById(storeId);
 }
 
 std::string Command::fmtErr(const std::string& s) {

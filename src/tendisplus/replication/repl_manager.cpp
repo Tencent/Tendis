@@ -26,8 +26,8 @@ namespace tendisplus {
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
     :_isRunning(false),
      _svr(svr),
-     _incrPaused(false),
      _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
+     _incrPaused(false),
      _firstBinlogId(0),
      _clientIdGen(0),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
@@ -122,7 +122,9 @@ Status ReplManager::startup() {
 
     for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
         // here we are starting up, dont acquire a storelock.
-        PStore store = _svr->getSegmentMgr()->getInstanceById(i);
+        auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_NONE);
+        INVARIANT(expdb.ok());
+        auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
         if (_syncMeta[i]->syncFromHost == "") {
@@ -306,7 +308,9 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
     }
     auto segMgr = _svr->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
-    PStore kvstore = segMgr->getInstanceById(storeId);
+    auto expdb = segMgr->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    INVARIANT(expdb.ok());
+    auto kvstore = std::move(expdb.value().store);
 
     auto newMeta = _syncMeta[storeId]->copy();
     if (ip != "") {

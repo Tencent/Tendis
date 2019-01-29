@@ -51,11 +51,11 @@ TEST(SkipList, BackWardTail) {
 
     ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
-    RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
+    RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
 
-    RecordKey head(0,
+    RecordKey head(0, 0,
                    RecordType::RT_ZSET_S_ELE,
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
@@ -68,7 +68,7 @@ TEST(SkipList, BackWardTail) {
     Expected<uint64_t> commitStatus = eTxn1.value()->commit();
     EXPECT_TRUE(commitStatus.ok());
 
-    SkipList sl(0, "test", meta, store);
+    SkipList sl(0, 0, "test", meta, store);
     constexpr uint32_t CNT = 1000;
     std::vector<uint32_t> keys;
     for (uint32_t i = 1; i <= CNT; ++i) {
@@ -88,7 +88,7 @@ TEST(SkipList, BackWardTail) {
         EXPECT_TRUE(s.ok());
 
         std::string pointerStr = std::to_string(sl.getTail());
-        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        RecordKey rk(0, 0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
         Expected<RecordValue> rv = store->getKV(rk, eTxn.value().get());
         EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
@@ -118,7 +118,7 @@ TEST(SkipList, BackWardTail) {
         currMax = *std::max_element(keys.begin(), keys.end());
 
         std::string pointerStr = std::to_string(sl.getTail());
-        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        RecordKey rk(0, 0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
         Expected<RecordValue> rv = store->getKV(rk, eTxn.value().get());
         EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
@@ -139,12 +139,12 @@ TEST(SkipList, BackWardTail) {
     EXPECT_TRUE(eMetaContent.ok());
     meta = eMetaContent.value();
     EXPECT_EQ(meta.getCount(), CNT/2+1);
-    SkipList sl2(mk.getDbId(), mk.getPrimaryKey(), meta, store);
+    SkipList sl2(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(), meta, store);
     std::sort(keys.begin(), keys.end());
     uint64_t now = sl2.getTail();
     for (uint32_t i = CNT/2; i >= 1; --i) {
         std::string pointerStr = std::to_string(now);
-        RecordKey rk(0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
+        RecordKey rk(0, 0, RecordType::RT_ZSET_S_ELE, "test", pointerStr);
         Expected<RecordValue> rv = store->getKV(rk, eTxn2.value().get());
         EXPECT_TRUE(rv.ok()) << rv.status().toString();
 
@@ -173,11 +173,11 @@ TEST(SkipList, Mix) {
 
     ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
-    RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
+    RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
 
-    RecordKey head(0,
+    RecordKey head(0, 0,
                    RecordType::RT_ZSET_S_ELE,
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
@@ -190,7 +190,7 @@ TEST(SkipList, Mix) {
     Expected<uint64_t> commitStatus = eTxn1.value()->commit();
     EXPECT_TRUE(commitStatus.ok());
 
-    SkipList sl(0, "test", meta, store);
+    SkipList sl(0, 0, "test", meta, store);
 
     std::vector<uint32_t> keys;
 
@@ -244,11 +244,11 @@ TEST(SkipList, Common) {
 
     ZSlMetaValue meta(1, 20, 1, 0);
     RecordValue rv(meta.encode());
-    RecordKey mk(0, RecordType::RT_ZSET_META, "test", "");
+    RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
 
-    RecordKey head(0,
+    RecordKey head(0, 0,
                    RecordType::RT_ZSET_S_ELE,
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
@@ -261,7 +261,7 @@ TEST(SkipList, Common) {
     Expected<uint64_t> commitStatus = eTxn1.value()->commit();
     EXPECT_TRUE(commitStatus.ok());
 
-    SkipList sl(0, "test", meta, store);
+    SkipList sl(0, 0, "test", meta, store);
 
     std::vector<uint32_t> keys;
     std::vector<uint32_t> sortedkeys;

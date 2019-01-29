@@ -1,4 +1,5 @@
 #include <sys/time.h>
+#include <sys/utsname.h>
 #include <string>
 #include <sstream>
 #include <utility>
@@ -180,11 +181,12 @@ class IterAllCommand: public Command {
         if (estoreId.value() >= KVStore::INSTANCE_NUM) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
         }
-        auto storeLock = std::make_unique<StoreLock>(
-            estoreId.value(), 
-            mgl::LockMode::LOCK_IS,
-            sess);
-        PStore kvstore = Command::getStoreById(sess, estoreId.value());
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, estoreId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -473,8 +475,13 @@ class BinlogTimeCommand: public Command {
         if (!binlogId.ok()) {
             return binlogId.status();
         }
-        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
-        PStore kvstore = Command::getStoreById(sess, storeId.value());
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -522,8 +529,13 @@ class BinlogPosCommand: public Command {
         if (storeId.value() >= KVStore::INSTANCE_NUM) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
         }
-        StoreLock storeLock(storeId.value(), mgl::LockMode::LOCK_IS, sess);
-        PStore kvstore = Command::getStoreById(sess, storeId.value());
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -580,7 +592,7 @@ class DebugCommand: public Command {
         }
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        const SegmentMgr *segMgr = svr->getSegmentMgr();
+        SegmentMgr *segMgr = svr->getSegmentMgr();
         INVARIANT(segMgr != nullptr);
         ReplManager *replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
@@ -593,7 +605,11 @@ class DebugCommand: public Command {
             writer.Key("stores");
             writer.StartObject();
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                PStore store = segMgr->getInstanceById(i);
+                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
                 std::stringstream ss;
                 ss << "stores_" << i;
                 writer.Key(ss.str().c_str());
@@ -681,6 +697,219 @@ class ShutdownCommand: public Command {
     }
 } shutdownCmd;
 
+class ClientCommand: public Command {
+ public:
+    ClientCommand()
+        :Command("client") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> listClients(Session *sess) {
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto sesses = svr->getAllSessions();
+
+        std::stringstream ss;
+        for (auto& v : sesses) {
+            if (v->getFd() == -1) {
+                // local sess
+                continue;
+            }
+            SessionCtx *ctx = sess->getCtx();
+            ss << "id=" << v->id()
+                << " addr=" << v->getRemote()
+                << " fd=" << v->getFd()
+                << " name=" << v->getName()
+                << " db=" << ctx->getDbId()
+                << "\n";
+        }
+        return Command::fmtBulk(ss.str());
+    }
+
+    Expected<std::string> killClients(Session *sess) {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        int skipme = 0;
+        std::string remote = "";
+        uint64_t id = 0;
+
+        if (args.size() == 3) {
+            remote = args[2];
+            skipme = 0;
+        } else if (args.size() > 3) {
+            size_t i = 2;
+            while (i < args.size()) {
+                int moreargs = args.size() > i+1;
+                if (args[i] == "id" && moreargs) {
+                    Expected<uint64_t> eid = ::tendisplus::stoul(args[i+1]);
+                    if (!eid.ok()) {
+                        return eid.status();
+                    }
+                    id = eid.value();
+                } else if (args[i] == "addr" && moreargs) {
+                    remote = args[i+1];
+                } else if (args[i] == "skipme" && moreargs) {
+                    if (args[i+1] == "yes") {
+                        skipme = 1;
+                    } else if (args[i+1] == "no") {
+                        skipme = 0;
+                    } else {
+                        return {ErrorCodes::ERR_PARSEOPT, "skipme yes|no"};
+                    }
+                } else {
+                        return {ErrorCodes::ERR_PARSEOPT, "invalid syntax"};
+                }
+                i += 2;
+            }
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        auto sesses = svr->getAllSessions();
+        int closeThisClient = 0;
+        for (auto& v : sesses) {
+            if (v->getFd() == -1) {
+                continue;
+            }
+            if (id != 0 && v->id() != id) {
+                continue;
+            }
+            if (remote != "" && v->getRemote() != remote) {
+                continue;
+            }
+            if (v->id() == sess->id()) {
+                if (skipme) {
+                    continue;
+                } else {
+                    closeThisClient = 1;
+                }
+            } else {
+                v->cancel();
+                return Command::fmtOK();
+            }
+        }
+        if (closeThisClient) {
+            auto vv = dynamic_cast<NetSession*>(sess);
+            INVARIANT(vv != nullptr);
+            vv->setCloseAfterRsp();
+            return Command::fmtOK();
+        }
+        return {ErrorCodes::ERR_NOTFOUND, "No such client"};
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        if (args[1] == "LIST" || args[1] == "list") {
+            return listClients(sess);
+        } else if (args[1] == "getname" || args[1] == "GETNAME") {
+            std::string name = sess->getName();
+            if (name == "") {
+                return Command::fmtNull();
+            } else {
+                return Command::fmtBulk(name);
+            }
+        } else if ((args[1] == "setname" || args[1] == "SETNAME") && args.size() == 3) {
+            for (auto v : args[2]) {
+                if (v < '!' || v > '~') {
+                    LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
+                    return {ErrorCodes::ERR_PARSEOPT, "Client names cannot contain spaces, newlines or special characters."};
+                }
+            }
+            sess->setName(args[2]);
+            return Command::fmtOK();
+        } else if (args[1] == "KILL" || args[1] == "kill") {
+            return killClients(sess);
+        } else {
+            return {ErrorCodes::ERR_PARSEOPT,
+                "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};
+        }
+    }
+
+} clientCmd;
+
+class InfoCommand: public Command {
+ public:
+    InfoCommand()
+        :Command("info") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::stringstream result;
+        std::string section;
+        if (sess->getArgs().size() == 1) {
+            section = "default";
+        } else {
+            section = sess->getArgs()[1];
+        }
+        auto server = sess->getServerEntry();
+        uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
+
+        bool allsections = (section == "all");
+        bool defsections = (section == "default");
+        if (allsections || defsections || section == "server") {
+            std::stringstream ss;
+            static int call_uname = 1;
+            static struct utsname name;
+            if (call_uname) {
+                call_uname = 0;
+                uname(&name);
+            }
+            ss << "# Server\r\n"
+                << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
+                << "arch_bits:" << ((sizeof(long) == 8) ? 64 : 32) << "\r\n"
+                << "multiplexing_api:asio\r\n"
+#ifdef __GNUC__
+                << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"
+#else
+                << "gcc_version:0.0.0\r\n"
+#endif
+                << "process_id:" << getpid() << "\r\n"
+                << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
+                << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n";
+            result << ss.str();
+        }
+        if (allsections || defsections || section == "clients") {
+            std::stringstream ss;
+            ss << "# Clients\r\n"
+                << "connected_clients:" << server->getAllSessions().size() << "\r\n";
+            result << ss.str();
+        }
+        return  Command::fmtBulk(result.str());
+    }
+} infoCmd;
+
 class ObjectCommand: public Command {
  public:
     ObjectCommand()
@@ -704,10 +933,7 @@ class ObjectCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         const std::string& key = sess->getArgs()[1];
-        uint32_t storeId = Command::getStoreId(sess, key);
-        SessionCtx *pCtx = sess->getCtx();
 
         const std::map<RecordType, std::string> m = {
             {RecordType::RT_KV, "raw"},
@@ -721,9 +947,8 @@ class ObjectCommand: public Command {
                           RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
                           RecordType::RT_ZSET_META}) {
-            RecordKey rk(pCtx->getDbId(), type, key, "");
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {

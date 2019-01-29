@@ -117,9 +117,10 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
          client->getRemoteRepr(),
          std::to_string(dstStoreId),
          std::to_string(binlogPos)});
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS, sg.getSession());
 
-    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+    INVARIANT(expdb.ok());
+    auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
     auto ptxn = store->createTransaction();
@@ -304,12 +305,14 @@ void ReplManager::supplyFullSyncRoutine(
         {"masterfullsync",
          client->getRemoteRepr(),
          std::to_string(storeId)});
-    StoreLock storeLock(storeId, mgl::LockMode::LOCK_IS, sg.getSession());
     LOG(INFO) << "client:" << client->getRemoteRepr()
               << ",storeId:" << storeId
               << ",begins fullsync";
-    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+    INVARIANT(expdb.ok());
+    auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
+
     if (!store->isRunning()) {
         client->writeLine("-ERR store is not running", std::chrono::seconds(1));
         return;

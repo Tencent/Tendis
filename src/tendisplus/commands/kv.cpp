@@ -156,10 +156,13 @@ class SetCommand: public Command {
         // NOTE(deyukong): no need to do a expireKeyIfNeeded
         // on a simple kv. We will overwrite it.
         const SetParams& params = exptParams.value();
-        auto storeLock = Command::lockDBByKey(sess,
-                                              params.key,
-                                              mgl::LockMode::LOCK_IX);
-        PStore kvstore = Command::getStore(sess, params.key);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, params.key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -169,8 +172,8 @@ class SetCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                     params.key, "");
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
+                     RecordType::RT_KV, params.key, "");
 
         uint64_t ts = 0;
         if (params.expire != 0) {
@@ -221,15 +224,17 @@ class SetexGeneralCommand: public Command {
                                      const std::string& key,
                                      const std::string& val,
                                      uint64_t ttl) {
-        uint32_t storeId = Command::getStoreId(sess, key);
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
         RecordValue rv(val, ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -323,16 +328,19 @@ class SetNxCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         const std::string& val = sess->getArgs()[2];
-        uint32_t storeId = Command::getStoreId(sess, key);
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
-        PStore kvstore = Command::getStoreById(sess, storeId);
+
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV,
-                     key, "");
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
+                     RecordType::RT_KV, key, "");
         RecordValue rv(val);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -391,10 +399,8 @@ class StrlenCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return Command::fmtZero();
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -444,10 +450,8 @@ class BitPosCommand: public Command {
             return {ErrorCodes::ERR_PARSEOPT,
                     "The bit argument must be 1 or 0."};
         }
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return Command::fmtLongLong(-1);
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -535,10 +539,8 @@ class BitCountCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return Command::fmtZero();
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -596,10 +598,8 @@ class GetGenericCmd: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return std::string("");
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -638,10 +638,8 @@ class GetVsnCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         const std::string& key = sess->getArgs()[1];
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
 
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, 2);
@@ -794,20 +792,22 @@ class GetSetGeneral: public Command {
         INVARIANT(pCtx != nullptr);
 
         // expire if possible
-        RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-        uint32_t storeId = Command::getStoreId(sess, key);
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, rk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() != ErrorCodes::ERR_OK &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED &&
                 rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
 
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -820,8 +820,7 @@ class GetSetGeneral: public Command {
                     && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
                 return eValue.status();
             }
-            const Expected<RecordValue>& newValue =
-                newValueFromOld(sess, eValue);
+            const Expected<RecordValue>& newValue = newValueFromOld(sess, eValue);
             if (!newValue.ok()) {
                 return newValue.status();
             }
@@ -1197,7 +1196,6 @@ class IncrDecrGeneral: public GetSetGeneral {
         if (!val.ok()) {
             return val.status();
         }
-        LOG(INFO) << "incrdecr ret str:" << Command::fmtLongLong(val.value()) << ' ' << val.value();
         return Command::fmtLongLong(val.value());
     }
 };
@@ -1465,10 +1463,8 @@ class MGetCommand: public Command {
         Command::fmtMultiBulkLen(ss, sess->getArgs().size()-1);
         for (size_t i = 1; i < sess->getArgs().size(); ++i) {
             const std::string& key = sess->getArgs()[i];
-            RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
-            uint32_t storeId = Command::getStoreId(sess, key);
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, rk);
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 Command::fmtNull(ss);
                 continue;
@@ -1483,6 +1479,136 @@ class MGetCommand: public Command {
         return ss.str();
     }
 } mgetCmd;
+
+class BitopCommand: public Command {
+ public:
+    BitopCommand()
+        :Command("bitop") {
+    }
+
+    enum class Op {
+        BITOP_AND,
+        BITOP_OR,
+        BITOP_XOR,
+        BITOP_NOT,
+    };
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 2;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        const std::string& opName = args[1];
+        const std::string& targetKey = args[2];
+        Op op;
+        if (opName == "and" || opName == "AND") {
+            op = Op::BITOP_AND;
+        } else if (opName == "or" || opName == "OR") {
+            op = Op::BITOP_OR;
+        } else if (opName == "xor" || opName == "XOR") {
+            op = Op::BITOP_XOR;
+        } else if (opName == "not" || opName == "NOT") {
+            op = Op::BITOP_NOT;
+        } else {
+            return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
+        }
+        if (op == Op::BITOP_NOT && args.size() != 4) {
+            return {ErrorCodes::ERR_PARSEPKT, "BITOP NOT must be called with a single source key."};
+        }
+        size_t numKeys = args.size() - 3;
+        size_t maxLen = 0;
+        std::vector<std::string> vals;
+        for (size_t j = 0; j < numKeys; ++j) {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, args[j+3], RecordType::RT_KV);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                vals.push_back(rv.value().getValue());
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                vals.push_back(rv.value().getValue());
+            } else if (!rv.status().ok()) {
+                return rv.status();
+            } else {
+                vals.push_back(rv.value().getValue());
+                if (vals[j].size() > maxLen) {
+                    maxLen = vals[j].size();
+                }
+            }
+        }
+        if (maxLen == 0) {
+            Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV);
+            return Command::fmtZero();
+        }
+        std::string result(maxLen, 0);
+        for (size_t i = 0; i < maxLen; ++i) {
+            unsigned char output = (vals[0].size() <= i) ? 0 : vals[0][i];
+            if (op == Op::BITOP_NOT) output = ~output;
+            for (size_t j = 1; j < numKeys; ++j) {
+                unsigned char byte = (vals[j].size() <= i) ? 0 : vals[j][i];
+                switch (op) {
+                    case Op::BITOP_AND: output &= byte; break;
+                    case Op::BITOP_OR: output |= byte; break;
+                    case Op::BITOP_XOR: output ^= byte; break;
+                    default:
+                        INVARIANT(0);
+                }
+            }
+            result[i] = output;
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDb(sess, targetKey, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, targetKey, "");
+        RecordValue rv(result);
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto setRes = setGeneric(kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NO_FLAGS,
+                                     rk,
+                                     rv,
+                                     "",
+                                     "");
+            if (setRes.ok()) {
+                return Command::fmtLongLong(result.size());
+            }
+            if (setRes.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return setRes.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return setRes.status();
+            } else {
+                continue;
+            }
+        }
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} bitopCmd;
 
 // NOTE(deyukong): redis guarantees mset is atomic. not partially
 // visible to other clients, to implement this, we can take all
@@ -1519,17 +1645,15 @@ class MSetCommand: public Command {
         for (size_t i = 1; i < sess->getArgs().size(); i+= 2) {
             const std::string& key = sess->getArgs()[i];
             const std::string& val = sess->getArgs()[i+1];
-            auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
-            PStore kvstore = Command::getStore(sess, key);
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
+            auto server = sess->getServerEntry();
+            INVARIANT(server != nullptr);
+            auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+            if (!expdb.ok()) {
+                return expdb.status();
             }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            PStore kvstore = expdb.value().store;
 
-            RecordKey rk(pCtx->getDbId(), RecordType::RT_KV, key, "");
+            RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
             RecordValue rv(val);
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
                 auto ptxn = kvstore->createTransaction();
@@ -1560,5 +1684,86 @@ class MSetCommand: public Command {
         return Command::fmtOK();
     }
 } msetCmd;
+
+class MoveCommand: public Command {
+ public:
+    MoveCommand()
+        :Command("move") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} moveCmd;
+
+class RenameCommand: public Command {
+ public:
+    RenameCommand()
+        :Command("rename") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 2;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} renameCmd;
+
+class RenamenxCommand: public Command {
+ public:
+    RenamenxCommand()
+        :Command("renamenx") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 2;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return {ErrorCodes::ERR_INTERNAL, "not support"};
+    }
+} renamenxCmd;
 
 }  // namespace tendisplus

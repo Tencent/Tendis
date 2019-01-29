@@ -9,6 +9,7 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 
@@ -18,6 +19,7 @@ ServerEntry::ServerEntry()
         :_ftmcEnabled(false),
          _isRunning(false),
          _isStopped(true),
+         _startupTime(nsSinceEpoch()),
          _network(nullptr),
          _executor(nullptr),
          _segmentMgr(nullptr),
@@ -136,6 +138,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+uint64_t ServerEntry::getStartupTimeNs() const {
+    return _startupTime;
+}
+
 NetworkAsio* ServerEntry::getNetwork() {
     return _network.get();
 }
@@ -144,7 +150,7 @@ ReplManager* ServerEntry::getReplManager() {
     return _replMgr.get();
 }
 
-const SegmentMgr* ServerEntry::getSegmentMgr() const {
+SegmentMgr* ServerEntry::getSegmentMgr() const {
     return _segmentMgr.get();
 }
 

@@ -8,6 +8,7 @@ add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)
 
 add_library(segment_mgr segment_manager.cpp)
+target_link_libraries(segment_mgr status session lock)
 
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog ${SYS_LIBS})

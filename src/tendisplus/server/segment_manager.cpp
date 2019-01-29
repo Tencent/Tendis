@@ -13,33 +13,31 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
          _instances(ins) {
 }
 
-uint32_t SegmentMgrFnvHash64::calcSegId(const std::string& key) const {
+Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, const std::string& key, mgl::LockMode mode) {
     uint32_t hash = static_cast<uint32_t>(FNV_64_INIT);
     for (auto v : key) {
         uint32_t val = static_cast<uint32_t>(v);
         hash ^= val;
         hash *= static_cast<uint32_t>(FNV_64_PRIME);
     }
-    return hash % HASH_SPACE;
+    uint32_t chunkId = hash % HASH_SPACE;
+    uint32_t segId = chunkId % _instances.size();
+    std::unique_ptr<StoreLock> lk = nullptr;
+    if (mode != mgl::LockMode::LOCK_NONE) {
+        lk = std::make_unique<StoreLock>(segId, mode, sess);
+    }
+    return DbWithLock{segId, chunkId, _instances[segId], std::move(lk)};
 }
 
-uint32_t SegmentMgrFnvHash64::calcInstanceId(const std::string& key) const {
-    uint32_t segId = calcSegId(key);
-    return segId % _instances.size();
-}
-
-PStore SegmentMgrFnvHash64::calcInstance(const std::string& key) const {
-    uint32_t segId = calcSegId(key);
-    return _instances[segId % _instances.size()];
-}
-
-PStore SegmentMgrFnvHash64::getInstanceById(uint32_t id) const {
-    return _instances[id];
-}
-
-std::vector<PStore> SegmentMgrFnvHash64::calcInstances(
-        const std::string& beginKey, const std::string& endKey) const {
-    return _instances;
+Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId, mgl::LockMode mode) {
+    if (insId >= HASH_SPACE) {
+        return {ErrorCodes::ERR_INTERNAL, "invalid instance id"};
+    }
+    std::unique_ptr<StoreLock> lk = nullptr;
+    if (mode != mgl::LockMode::LOCK_NONE) {
+        lk = std::make_unique<StoreLock>(insId, mode, sess);
+    }
+    return DbWithLock{insId, 0, _instances[insId], std::move(lk)};
 }
 
 }  // namespace tendisplus

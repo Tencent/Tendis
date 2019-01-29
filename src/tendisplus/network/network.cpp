@@ -224,16 +224,30 @@ void NetSession::setState(State s) {
     _state.store(s, std::memory_order_relaxed);
 }
 
+std::string NetSession::getRemote() const {
+    return getRemoteRepr();
+}
+
+int NetSession::getFd() {
+    return _sock.native_handle();
+}
+
 std::string NetSession::getRemoteRepr() const {
     if (_sock.is_open()) {
-        return _sock.remote_endpoint().address().to_string();
+        std::stringstream ss;
+        ss << _sock.remote_endpoint().address().to_string()
+            << ":" << _sock.remote_endpoint().port();
+        return ss.str();
     }
     return "closed conn";
 }
 
 std::string NetSession::getLocalRepr() const {
     if (_sock.is_open()) {
-        return _sock.local_endpoint().address().to_string();
+        std::stringstream ss;
+        ss << _sock.local_endpoint().address().to_string()
+            << ":" << _sock.local_endpoint().port();
+        return ss.str();
     }
     return "closed conn";
 }
@@ -270,6 +284,10 @@ void NetSession::setArgs(const std::vector<std::string>& args) {
 
 const std::vector<std::string>& NetSession::getArgs() const {
     return _args;
+}
+
+void NetSession::setCloseAfterRsp() {
+    _closeAfterRsp = true;
 }
 
 void NetSession::setRspAndClose(const std::string& s) {

@@ -33,14 +33,6 @@ class Command {
     // precheck returns command name
     static Expected<std::string> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
-    // where should I put this function ?
-    static PStore getStore(Session *sess, const std::string&);
-    static uint32_t getStoreId(Session *sess, const std::string&);
-    static PStore getStoreById(Session *sess, uint32_t storeId);
-
-    static std::unique_ptr<StoreLock> lockDBByKey(Session *sess,
-                                                  const std::string& key,
-                                                  mgl::LockMode mode);
 
     static bool isKeyLocked(Session *sess,
                             uint32_t storeId,
@@ -49,9 +41,7 @@ class Command {
     // return ERR_OK if not expired
     // return ERR_EXPIRED if expired
     // return errors on other unexpected conditions
-    static Expected<RecordValue> expireKeyIfNeeded(Session *sess,
-                                    uint32_t storeId,
-                                    const RecordKey& mk);
+    static Expected<RecordValue> expireKeyIfNeeded(Session *sess, const std::string& key, RecordType tp);
 
     static Expected<std::pair<std::string, std::list<Record>>>
     scan(const std::string& pk,
@@ -59,14 +49,12 @@ class Command {
          uint64_t cnt,
          Transaction *txn);
 
-    static Status delKey(Session *sess, uint32_t storeId,
-                            const RecordKey& rk);
+    static Status delKey(Session *sess, const std::string& key, RecordType tp);
 
     // return true if exists and delete succ
     // return false if not exists
     // return error if has error
-    static Expected<bool> delKeyChkExpire(Session *sess, uint32_t storeId,
-                                          const RecordKey& rk);
+    static Expected<bool> delKeyChkExpire(Session *sess, const std::string& key, RecordType tp);
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();

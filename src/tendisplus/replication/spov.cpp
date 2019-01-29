@@ -96,12 +96,11 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // since it's on stack
     sg.getSession()->getCtx()->setArgsBrief(
         {"slavefullsync", std::to_string(metaSnapshot.id)});
-    StoreLock storeLock(metaSnapshot.id,
-                        mgl::LockMode::LOCK_X,
-                        sg.getSession());
 
     // 1) stop store and clean it's directory
-    PStore store = _svr->getSegmentMgr()->getInstanceById(metaSnapshot.id);
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), metaSnapshot.id, mgl::LockMode::LOCK_X);
+    INVARIANT(expdb.ok());
+    auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
     Status stopStatus = store->stop();
@@ -428,9 +427,12 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
     return {ErrorCodes::ERR_OK, ""};
 }
 
+// NOTE(deyukong): should be called with lock held
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                                    const std::list<ReplLog>& ops) {
-    PStore store = _svr->getSegmentMgr()->getInstanceById(storeId);
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    INVARIANT(expdb.ok());
+    auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
     auto ptxn = store->createTransaction();
     if (!ptxn.ok()) {

@@ -39,7 +39,8 @@ Expected<std::string> genericSRem(Session *sess,
 
     uint64_t cnt = 0;
     for (size_t i = 0; i < args.size(); ++i) {
-        RecordKey subRk(metaRk.getDbId(),
+        RecordKey subRk(metaRk.getChunkId(),
+                        metaRk.getDbId(),
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
@@ -100,7 +101,8 @@ Expected<std::string> genericSAdd(Session *sess,
 
     uint64_t cnt = 0;
     for (size_t i = 2; i < args.size(); ++i) {
-        RecordKey subRk(metaRk.getDbId(),
+        RecordKey subRk(metaRk.getChunkId(),
+                        metaRk.getDbId(),
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
@@ -158,13 +160,9 @@ class SMembersCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         {
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, metaRk);
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 return Command::fmtZeroBulkLen();
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -173,14 +171,21 @@ class SMembersCommand: public Command {
                 return rv.status();
             }
         }
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IS);
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        uint32_t storeId = expdb.value().dbId;
+        std::string metaKeyEnc = metaRk.encode();
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -204,7 +209,7 @@ class SMembersCommand: public Command {
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, ssize);
         auto cursor = txn->createCursor();
-        RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+        RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
         cursor->seek(fake.prefixPk());
         while (true) {
             Expected<Record> exptRcd = cursor->next();
@@ -263,12 +268,8 @@ class SIsMemberCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return fmtZero();
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -277,21 +278,28 @@ class SIsMemberCommand: public Command {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IS);
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        uint32_t storeId = expdb.value().dbId;
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        RecordKey subRk(pCtx->getDbId(),
+        RecordKey subRk(expdb.value().chunkId,
+                        pCtx->getDbId(),
                         RecordType::RT_SET_ELE,
                         key,
                         subkey);
@@ -345,13 +353,9 @@ class SrandMemberCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         {
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, storeId, metaRk);
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 return fmtZero();
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -360,14 +364,21 @@ class SrandMemberCommand: public Command {
                 return rv.status();
             }
         }
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IS);
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        uint32_t storeId = expdb.value().dbId;
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -402,7 +413,7 @@ class SrandMemberCommand: public Command {
             int64_t offset = ssize - (bulk == 0 ? 1 : bulk) + 1;
             beginIdx = rand() % (offset > 1024 * 16 ? 1024 * 16 : offset);
         }
-        RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+        RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
         cursor->seek(fake.prefixPk());
         while (true) {
             Expected<Record> exptRcd = cursor->next();
@@ -466,33 +477,35 @@ class SpopCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
         if (rv.status().code() != ErrorCodes::ERR_OK &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED &&
                 rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        uint32_t storeId = expdb.value().dbId;
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        PStore kvstore = expdb.value().store;
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            RecordKey fake = {pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+            RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
             auto batch = Command::scan(fake.prefixPk(), "0", 1, txn.get());
             if (!batch.ok()) {
                 return batch.status();
@@ -555,26 +568,27 @@ class SaddCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
         if (rv.status().code() != ErrorCodes::ERR_OK &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED &&
                 rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        uint32_t storeId = expdb.value().dbId;
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
+        PStore kvstore = expdb.value().store;
+
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
-
-        PStore kvstore = Command::getStoreById(sess, storeId);
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -630,12 +644,8 @@ class ScardCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
 
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
             return fmtZero();
@@ -687,26 +697,27 @@ class SRemCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        RecordKey metaRk(pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        uint32_t storeId = Command::getStoreId(sess, key);
-
         Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, storeId, metaRk);
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
         if (rv.status().code() != ErrorCodes::ERR_OK &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED &&
                 rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return rv.status();
         }
 
-        auto storeLock = Command::lockDBByKey(sess,
-                                              key,
-                                              mgl::LockMode::LOCK_IX);
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        uint32_t storeId = expdb.value().dbId;
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        std::string metaKeyEnc = metaRk.encode();
         if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             return {ErrorCodes::ERR_BUSY, "key locked"};
         }
 
-        PStore kvstore = Command::getStoreById(sess, storeId);
+        PStore kvstore = expdb.value().store;
 
         std::vector<std::string> valArgs;
         for (uint32_t i = 2; i < args.size(); ++i) {
@@ -738,11 +749,92 @@ class SRemCommand: public Command {
     }
 } sremCommand;
 
-/*
-class SDiffCommand: public Command {
+class SdiffgenericCommand: public Command {
  public:
-    SDiffCommand()
-        :Command("sdiff") {
+    SdiffgenericCommand(const std::string& name, bool store)
+        :Command(name),
+         _store(store) {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        size_t startkey = _store ? 2 : 1;
+        std::set<std::string> result;
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+
+        for (size_t i = startkey; i < args.size(); ++i) {
+            Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                continue;
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+
+            auto expdb = server->getSegmentMgr()->getDb(sess, args[i], mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            uint32_t storeId = expdb.value().dbId;
+            RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
+            std::string metaKeyEnc = metaRk.encode();
+            PStore kvstore = expdb.value().store;
+
+            if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+                return {ErrorCodes::ERR_BUSY, "key locked"};
+            }
+
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto cursor = txn->createCursor();
+            RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], ""};
+            cursor->seek(fake.prefixPk());
+            while (true) {
+                Expected<Record> exptRcd = cursor->next();
+                if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                if (!exptRcd.ok()) {
+                    return exptRcd.status();
+                }
+                Record& rcd = exptRcd.value();
+                const RecordKey& rcdkey = rcd.getRecordKey();
+                if (rcdkey.prefixPk() != fake.prefixPk()) {
+                    break;
+                }
+                if (i == startkey) {
+                    result.insert(rcdkey.getSecondaryKey());
+                } else {
+                    result.erase(rcdkey.getSecondaryKey());
+                }
+            }
+        }
+
+        if (!_store) {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, result.size());
+            for (auto& v : result) {
+                Command::fmtBulk(ss, v);
+            }
+            return ss.str();
+        }
+        return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
+    }
+
+ private:
+    bool _store;
+};
+
+class SdiffCommand: public SdiffgenericCommand {
+ public:
+    SdiffCommand()
+        :SdiffgenericCommand("sdiff", false) {
     }
 
     ssize_t arity() const {
@@ -760,7 +852,5 @@ class SDiffCommand: public Command {
     int32_t keystep() const {
         return 1;
     }
-
-} sdiffCommand;
-*/
+} sdiffcmd;
 }  // namespace tendisplus

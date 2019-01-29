@@ -39,7 +39,7 @@ Catalog::Catalog(std::unique_ptr<KVStore> store)
 Status Catalog::setStoreMeta(const StoreMeta& meta) {
     std::stringstream ss;
     ss << "store_" << meta.id;
-    RecordKey rk(0, RecordType::RT_META, ss.str(), "");
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
@@ -88,7 +88,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
     auto result = std::make_unique<StoreMeta>();
     std::stringstream ss;
     ss << "store_" << idx;
-    RecordKey rk(0, RecordType::RT_META, ss.str(), "");
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
 
     auto exptxn = _store->createTransaction();
     if (!exptxn.ok()) {
