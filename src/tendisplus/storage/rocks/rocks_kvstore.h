@@ -105,7 +105,7 @@ class RocksKVStore: public KVStore {
 
     Expected<uint64_t> restart(bool restore = false) final;
 
-    Expected<BackupInfo> backup() final;
+    Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
     Status releaseBackup() final;
 
     void appendJSONStat(

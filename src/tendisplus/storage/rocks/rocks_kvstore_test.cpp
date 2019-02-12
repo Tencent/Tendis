@@ -281,12 +281,14 @@ TEST(RocksKVStore, Backup) {
     Expected<uint64_t> exptCommitId = txn1->commit();
     EXPECT_EQ(exptCommitId.ok(), true);
 
-    Expected<BackupInfo> expBk = kvstore->backup();
+    Expected<BackupInfo> expBk = kvstore->backup(
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
     EXPECT_TRUE(expBk.ok()) << expBk.status().toString();
     for (auto& bk : expBk.value().getFileList()) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
     }
-    Expected<BackupInfo> expBk1 = kvstore->backup();
+    Expected<BackupInfo> expBk1 = kvstore->backup(
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
     EXPECT_FALSE(expBk1.ok());
 
     s = kvstore->stop();

@@ -162,7 +162,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     auto backupExists = [store]() -> Expected<bool> {
         std::error_code ec;
         bool exists = filesystem::exists(
-                        filesystem::path(store->backupDir()), ec);
+                        filesystem::path(store->dftBackupDir()), ec);
         if (ec) {
             return {ErrorCodes::ERR_INTERNAL, ec.message()};
         }
@@ -189,7 +189,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         if (flist.find(s.value()) == flist.end()) {
             LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
         }
-        std::string fullFileName = store->backupDir() + "/" + s.value();
+        std::string fullFileName = store->dftBackupDir() + "/" + s.value();
         filesystem::path fileDir =
                 filesystem::path(fullFileName).remove_filename();
         if (!filesystem::exists(fileDir)) {

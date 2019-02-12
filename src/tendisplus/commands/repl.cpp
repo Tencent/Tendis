@@ -15,6 +15,50 @@
 
 namespace tendisplus {
 
+class BackupCommand: public Command {
+ public:
+    BackupCommand()
+        :Command("backup") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& dir = sess->getArgs()[1];
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+            // NOTE(deyukong): here we acquire IS lock
+            auto expdb = svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            auto store = std::move(expdb.value().store);
+            Expected<BackupInfo> bkInfo = store->backup(
+                dir, KVStore::BackupMode::BACKUP_COPY);
+            if (!bkInfo.ok()) {
+                return bkInfo.status();
+            }
+        }
+        return {ErrorCodes::ERR_OK, ""};
+    }
+
+} bkupCmd;
+
 class FullSyncCommand: public Command {
  public:
     FullSyncCommand()

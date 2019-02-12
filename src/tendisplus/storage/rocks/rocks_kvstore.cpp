@@ -469,13 +469,13 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
                     << " should not exist when restore";
                 return {ErrorCodes::ERR_INTERNAL, ss.str()};
             }
-            if (!filesystem::exists(backupDir())) {
+            if (!filesystem::exists(dftBackupDir())) {
                 std::stringstream ss;
-                ss << "recover path:" << backupDir()
+                ss << "recover path:" << dftBackupDir()
                     << " not exist when restore";
                 return {ErrorCodes::ERR_INTERNAL, ss.str()};
             }
-            filesystem::rename(backupDir(), path);
+            filesystem::rename(dftBackupDir(), path);
         } catch(std::exception& ex) {
             LOG(WARNING) << "dbId:" << dbId()
                         << "restore exception" << ex.what();
@@ -485,9 +485,9 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 
     try {
         // this happens due to a bad terminate
-        if (filesystem::exists(backupDir())) {
-            LOG(WARNING) << backupDir() << " exists, remove it";
-            filesystem::remove_all(backupDir());
+        if (filesystem::exists(dftBackupDir())) {
+            LOG(WARNING) << dftBackupDir() << " exists, remove it";
+            filesystem::remove_all(dftBackupDir());
         }
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
@@ -571,12 +571,12 @@ RocksKVStore::RocksKVStore(const std::string& id,
 
 Status RocksKVStore::releaseBackup() {
     try {
-        if (!filesystem::exists(backupDir())) {
+        if (!filesystem::exists(dftBackupDir())) {
             return {ErrorCodes::ERR_OK, ""};
         }
-        filesystem::remove_all(backupDir());
+        filesystem::remove_all(dftBackupDir());
     } catch (const std::exception& ex) {
-        LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
+        LOG(FATAL) << "remove " << dftBackupDir() << " ex:" << ex.what();
     }
     {
         std::lock_guard<std::mutex> lk(_mutex);
@@ -589,28 +589,44 @@ Status RocksKVStore::releaseBackup() {
 
 // this function guarantees that if backup is failed,
 // there should be no remaining dirs left to clean.
-Expected<BackupInfo> RocksKVStore::backup() {
-    {
+Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::BackupMode mode) {
+    bool succ = false;
+    auto guard = MakeGuard([this, &dir, &succ]() {
+        if (succ) {
+            return;
+        }
+        std::lock_guard<std::mutex> lk(_mutex);
+        _hasBackup = false;
+        try {
+            if (!filesystem::exists(dir)) {
+                return;
+            }
+            filesystem::remove_all(dir);
+        } catch (const std::exception& ex) {
+            LOG(FATAL) << "remove " << dir << " ex:" << ex.what();
+        }
+    });
+
+    // NOTE(deyukong): tendis uses BackupMode::BACKUP_COPY, we should keep compatible.
+    // For tendisplus master/slave initial-sync, we use BackupMode::BACKUP_CKPT, it's faster.
+    // here we assume BACKUP_CKPT works with default backupdir and BACKUP_COPY works
+    // with arbitory dir except the default one.
+    // But if someone feels it necessary to add one more param make it clearer, go ahead.
+    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
+        // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
+        if (dir != dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT invalid dir"};
+        }
         std::lock_guard<std::mutex> lk(_mutex);
         if (_hasBackup) {
             return {ErrorCodes::ERR_INTERNAL, "already have backup"};
         }
         _hasBackup = true;
+    } else {
+        if (dir == dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_COPY invalid dir"};
+        }
     }
-    bool succ = false;
-    auto guard = MakeGuard([this, &succ]() {
-        if (succ) {
-            return;
-        }
-        try {
-            if (!filesystem::exists(backupDir())) {
-                return;
-            }
-            filesystem::remove_all(backupDir());
-        } catch (const std::exception& ex) {
-            LOG(FATAL) << "remove " << backupDir() << " ex:" << ex.what();
-        }
-    });
 
     // NOTE(deyukong): we should get highVisible before making a ckpt
     BackupInfo result;
@@ -620,28 +636,41 @@ Expected<BackupInfo> RocksKVStore::backup() {
     }
     result.setBinlogPos(highVisible);
 
-    rocksdb::Checkpoint* checkpoint;
-    auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
-    if (!s.ok()) {
-        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
+        rocksdb::Checkpoint* checkpoint;
+        auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        s = checkpoint->CreateCheckpoint(dir);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+    } else {
+        rocksdb::BackupEngine* bkEngine;
+        auto s = rocksdb::BackupEngine::Open(rocksdb::Env::Default(),
+            rocksdb::BackupableDBOptions(dir), &bkEngine);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        std::unique_ptr<rocksdb::BackupEngine> pBkEngine(bkEngine);
+        s = pBkEngine->CreateNewBackup(_db->GetBaseDB());
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
     }
-    s = checkpoint->CreateCheckpoint(backupDir());
-    if (!s.ok()) {
-        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-    }
-
     std::map<std::string, uint64_t> flist;
     try {
-        for (auto& p : filesystem::recursive_directory_iterator(backupDir())) {
+        for (auto& p : filesystem::recursive_directory_iterator(dir)) {
             const filesystem::path& path = p.path();
             if (!filesystem::is_regular_file(p)) {
                 LOG(INFO) << "backup ignore:" << p.path();
                 continue;
             }
             size_t filesize = filesystem::file_size(path);
-            // assert path with backupDir prefix
-            INVARIANT(path.string().find(backupDir()) == 0);
-            std::string relative = path.string().erase(0, backupDir().size());
+            // assert path with bkupdir prefix
+            INVARIANT(path.string().find(dir) == 0);
+            std::string relative = path.string().erase(0, dir.size());
             flist[relative] = filesize;
         }
     } catch (const std::exception& ex) {
