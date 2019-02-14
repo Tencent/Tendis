@@ -235,14 +235,14 @@ class HExistsCommand: public Command {
             return expdb.status();
         }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -305,13 +305,13 @@ class HAllCommand: public Command {
             return expdb.status();
         }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -457,14 +457,14 @@ class HGetRecordCommand: public Command {
             return expdb.status();
         }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -600,7 +600,7 @@ class HIncrByFloatCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
@@ -608,9 +608,9 @@ class HIncrByFloatCommand: public Command {
         // now, we have no need to deal with expire, though it may still
         // be expired in a very rare situation since expireHash is in
         // a seperate txn (from code below)
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         // here maybe one more time io than the original tendis
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
@@ -673,7 +673,7 @@ class HIncrByCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
@@ -681,9 +681,9 @@ class HIncrByCommand: public Command {
         // now, we have no need to deal with expire, though it may still
         // be expired in a very rare situation since expireHash is in
         // a seperate txn (from code below)
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         // here maybe one more time io than the original tendis
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
@@ -743,13 +743,13 @@ class HMGetGeneric: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -828,13 +828,13 @@ Status hmcas(Session *sess, const std::string& key,
         return expdb.status();
     }
     RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-    uint32_t storeId = expdb.value().dbId;
+    // uint32_t storeId = expdb.value().dbId;
     std::string metaKeyEnc = metaRk.encode();
     PStore kvstore = expdb.value().store;
 
-    if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        return {ErrorCodes::ERR_BUSY, "key locked"};
-    }
+    // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+    //     return {ErrorCodes::ERR_BUSY, "key locked"};
+    // }
 
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
@@ -1198,13 +1198,13 @@ class HMSetCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
         std::vector<Record> rcds;
         for (size_t i = 2; i < args.size(); i+=2) {
             RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
@@ -1267,7 +1267,7 @@ class HSetGeneric: public Command {
             return expdb.status();
         }
         RecordKey metaKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaKey.encode();
         PStore kvstore = expdb.value().store;
         RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
@@ -1276,9 +1276,9 @@ class HSetGeneric: public Command {
         // now, we have no need to deal with expire, though it may still
         // be expired in a very rare situation since expireHash is in
         // a seperate txn (from code below)
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         // here maybe one more time io than the original tendis
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
@@ -1481,13 +1481,13 @@ class HDelCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         std::vector<RecordKey> rcds;
         for (size_t i = 2; i < args.size(); ++i) {

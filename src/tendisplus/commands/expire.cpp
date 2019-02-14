@@ -43,13 +43,13 @@ Expected<bool> expireAfterNow(Session *sess,
     if (!expdb.ok()) {
         return expdb.status();
     }
-    uint32_t storeId = expdb.value().dbId;
+    // uint32_t storeId = expdb.value().dbId;
     PStore kvstore = expdb.value().store;
     SessionCtx *pCtx = sess->getCtx();
     RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), type, key, "");
-    if (Command::isKeyLocked(sess, storeId, rk.encode())) {
-        return {ErrorCodes::ERR_BUSY, "key locked"};
-    }
+    // if (Command::isKeyLocked(sess, storeId, rk.encode())) {
+    //     return {ErrorCodes::ERR_BUSY, "key locked"};
+    // }
     for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
