@@ -51,24 +51,16 @@ Expected<Record> RocksKVCursor::next() {
     return result.status();
 }
 
-RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, std::shared_ptr<tendisplus::BinlogObserver> ob)
+RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, std::shared_ptr<tendisplus::BinlogObserver> ob)
         :_txnId(txnId),
          _txn(nullptr),
          _store(store),
          _done(false),
          _replOnly(replOnly),
          _logOb(ob) {
-    // NOTE(deyukong): the rocks-layer's snapshot should be opened in
-    // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
-    // or, we are not able to guarantee the oplog order is the same as the
-    // local commit,
-    // In other words, to the same key, a txn with greater id can be committed
-    // before a txn with smaller id, and they have no conflicts, it's wrong.
-    // so ensureTxn() should be done in RocksOptTxn's constructor
-    ensureTxn();
 }
 
-std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
+std::unique_ptr<BinlogCursor> RocksTxn::createBinlogCursor(
                                 uint64_t begin,
                                 bool ignoreReadBarrier) {
     auto cursor = createCursor();
@@ -80,7 +72,7 @@ std::unique_ptr<BinlogCursor> RocksOptTxn::createBinlogCursor(
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
 }
 
-std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
+std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
@@ -89,7 +81,7 @@ std::unique_ptr<Cursor> RocksOptTxn::createCursor() {
             std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
 }
 
-Expected<uint64_t> RocksOptTxn::commit() {
+Expected<uint64_t> RocksTxn::commit() {
     INVARIANT(!_done);
     _done = true;
 
@@ -132,8 +124,8 @@ Expected<uint64_t> RocksOptTxn::commit() {
         }
     }
 
-    TEST_SYNC_POINT("RocksOptTxn::commit()::1");
-    TEST_SYNC_POINT("RocksOptTxn::commit()::2");
+    TEST_SYNC_POINT("RocksTxn::commit()::1");
+    TEST_SYNC_POINT("RocksTxn::commit()::2");
     auto s = _txn->Commit();
     if (s.ok()) {
         if (_logOb) {
@@ -150,7 +142,7 @@ Expected<uint64_t> RocksOptTxn::commit() {
     }
 }
 
-Status RocksOptTxn::rollback() {
+Status RocksTxn::rollback() {
     INVARIANT(!_done);
     _done = true;
 
@@ -170,38 +162,11 @@ Status RocksOptTxn::rollback() {
     }
 }
 
-void RocksOptTxn::ensureTxn() {
-    INVARIANT(!_done);
-    if (_txn != nullptr) {
-        return;
-    }
-    rocksdb::WriteOptions writeOpts;
-    rocksdb::OptimisticTransactionOptions txnOpts;
-
-    // NOTE(deyukong): the optimistic_txn won't save a snapshot
-    // (mainly for read in our cases) automaticly.
-    // We must set_snapshot manually.
-    // if set_snapshot == false, the RC-level is guaranteed.
-    // if set_snapshot == true, the RR-level is guaranteed.
-    // Of course we need RR-level, not RC-level.
-
-    // refer to rocks' document, even if set_snapshot == true,
-    // the uncommitted data in this txn's writeBatch are still
-    // visible to reads, and this behavior is what we need.
-    txnOpts.set_snapshot = true;
-    auto db = _store->getUnderlayerDB();
-    if (!db) {
-        LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
-    }
-    _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
-    INVARIANT(_txn != nullptr);
-}
-
-uint64_t RocksOptTxn::getTxnId() const {
+uint64_t RocksTxn::getTxnId() const {
     return _txnId;
 }
 
-Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
+Expected<std::string> RocksTxn::getKV(const std::string& key) {
     rocksdb::ReadOptions readOpts;
     std::string value;
     auto s = _txn->Get(readOpts, key, &value);
@@ -214,7 +179,7 @@ Expected<std::string> RocksOptTxn::getKV(const std::string& key) {
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }
 
-Status RocksOptTxn::setKV(const std::string& key,
+Status RocksTxn::setKV(const std::string& key,
                           const std::string& val) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
@@ -241,7 +206,7 @@ Status RocksOptTxn::setKV(const std::string& key,
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksOptTxn::delKV(const std::string& key) {
+Status RocksTxn::delKV(const std::string& key) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -267,7 +232,7 @@ Status RocksOptTxn::delKV(const std::string& key) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksOptTxn::applyBinlog(const std::list<ReplLog>& ops) {
+Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
     if (!_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is not replOnly"};
     }
@@ -316,12 +281,92 @@ Status RocksOptTxn::applyBinlog(const std::list<ReplLog>& ops) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-RocksOptTxn::~RocksOptTxn() {
+RocksTxn::~RocksTxn() {
     if (_done) {
         return;
     }
     _txn.reset();
     _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
+}
+
+RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
+            std::shared_ptr<tendisplus::BinlogObserver> ob)
+    :RocksTxn(store, txnId, replOnly, ob) {
+    // NOTE(deyukong): the rocks-layer's snapshot should be opened in
+    // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
+    // or, we are not able to guarantee the oplog order is the same as the
+    // local commit,
+    // In other words, to the same key, a txn with greater id can be committed
+    // before a txn with smaller id, and they have no conflicts, it's wrong.
+    // so ensureTxn() should be done in RocksOptTxn's constructor
+    ensureTxn();
+}
+
+void RocksOptTxn::ensureTxn() {
+    INVARIANT(!_done);
+    if (_txn != nullptr) {
+        return;
+    }
+    rocksdb::WriteOptions writeOpts;
+    rocksdb::OptimisticTransactionOptions txnOpts;
+
+    // NOTE(deyukong): the optimistic_txn won't save a snapshot
+    // (mainly for read in our cases) automaticly.
+    // We must set_snapshot manually.
+    // if set_snapshot == false, the RC-level is guaranteed.
+    // if set_snapshot == true, the RR-level is guaranteed.
+    // Of course we need RR-level, not RC-level.
+
+    // refer to rocks' document, even if set_snapshot == true,
+    // the uncommitted data in this txn's writeBatch are still
+    // visible to reads, and this behavior is what we need.
+    txnOpts.set_snapshot = true;
+    auto db = _store->getUnderlayerOptDB();
+    if (!db) {
+        LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
+    }
+    _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
+    INVARIANT(_txn != nullptr);
+}
+
+RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+            std::shared_ptr<BinlogObserver> ob)
+    :RocksTxn(store, txnId, replOnly, ob) {
+    // NOTE(deyukong): the rocks-layer's snapshot should be opened in
+    // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
+    // or, we are not able to guarantee the oplog order is the same as the
+    // local commit,
+    // In other words, to the same key, a txn with greater id can be committed
+    // before a txn with smaller id, and they have no conflicts, it's wrong.
+    // so ensureTxn() should be done in RocksOptTxn's constructor
+    ensureTxn();
+}
+
+void RocksPesTxn::ensureTxn() {
+    INVARIANT(!_done);
+    if (_txn != nullptr) {
+        return;
+    }
+    rocksdb::WriteOptions writeOpts;
+    rocksdb::TransactionOptions txnOpts;
+
+    // NOTE(deyukong): the optimistic_txn won't save a snapshot
+    // (mainly for read in our cases) automaticly.
+    // We must set_snapshot manually.
+    // if set_snapshot == false, the RC-level is guaranteed.
+    // if set_snapshot == true, the RR-level is guaranteed.
+    // Of course we need RR-level, not RC-level.
+
+    // refer to rocks' document, even if set_snapshot == true,
+    // the uncommitted data in this txn's writeBatch are still
+    // visible to reads, and this behavior is what we need.
+    txnOpts.set_snapshot = true;
+    auto db = _store->getUnderlayerPesDB();
+    if (!db) {
+        LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
+    }
+    _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
+    INVARIANT(_txn != nullptr);
 }
 
 rocksdb::Options RocksKVStore::options() {
@@ -382,7 +427,8 @@ Status RocksKVStore::stop() {
             "it's upperlayer's duty to guarantee no pinning txns alive"};
     }
     _isRunning = false;
-    _db.reset();
+    _optdb.reset();
+    _pesdb.reset();
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -415,6 +461,10 @@ Status RocksKVStore::setMode(StoreMode mode) {
               << ",changes to:" << _nextTxnSeq;
     _mode = mode;
     return {ErrorCodes::ERR_OK, ""};
+}
+
+RocksKVStore::TxnMode RocksKVStore::getTxnMode() const {
+    return _txnMode;
 }
 
 Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
@@ -493,20 +543,38 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
 
-    rocksdb::OptimisticTransactionDB *tmpDb;
-    rocksdb::Options dbOpts = options();
-    auto status = rocksdb::OptimisticTransactionDB::Open(
-        dbOpts, dbname, &tmpDb);
-    if (!status.ok()) {
-        return {ErrorCodes::ERR_INTERNAL, status.ToString()};
+    std::unique_ptr<rocksdb::Iterator> iter = nullptr;
+    if (_txnMode == TxnMode::TXN_OPT) {
+        rocksdb::OptimisticTransactionDB *tmpDb;
+        rocksdb::Options dbOpts = options();
+        auto status = rocksdb::OptimisticTransactionDB::Open(
+            dbOpts, dbname, &tmpDb);
+        if (!status.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, status.ToString()};
+        }
+        rocksdb::ReadOptions readOpts;
+        iter.reset(tmpDb->GetBaseDB()->NewIterator(readOpts));
+        _optdb.reset(tmpDb);
+    } else {
+        rocksdb::TransactionDB* tmpDb;
+        rocksdb::TransactionDBOptions txnDbOptions;
+        // txnDbOptions.max_num_locks unlimit
+        // txnDbOptions.transaction_lock_timeout 1sec
+        // txnDbOptions.default_lock_timeout 1sec
+        // txnDbOptions.write_policy WRITE_COMMITTED
+        rocksdb::Options dbOpts = options();
+        auto status = rocksdb::TransactionDB::Open(
+            dbOpts, txnDbOptions, dbname, &tmpDb);
+        if (!status.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, status.ToString()};
+        }
+        rocksdb::ReadOptions readOpts;
+        iter.reset(tmpDb->GetBaseDB()->NewIterator(readOpts));
+        _pesdb.reset(tmpDb);
     }
-
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
     // TODO(deyukong): use BinlogCursor to rewrite
-    rocksdb::ReadOptions readOpts;
-    auto iter = std::unique_ptr<rocksdb::Iterator>(
-        tmpDb->GetBaseDB()->NewIterator(readOpts));
     RocksKVCursor cursor(std::move(iter));
 
     cursor.seekToLast();
@@ -544,19 +612,21 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
         return expRcd.status();
     }
 
-    _db.reset(tmpDb);
     _isRunning = true;
     return maxCommitId;
 }
 
 RocksKVStore::RocksKVStore(const std::string& id,
             const std::shared_ptr<ServerParams>& cfg,
-            std::shared_ptr<rocksdb::Cache> blockCache)
+            std::shared_ptr<rocksdb::Cache> blockCache,
+            TxnMode txnMode)
         :KVStore(id, cfg->dbPath),
          _isRunning(false),
          _hasBackup(false),
          _mode(KVStore::StoreMode::READ_WRITE),
-         _db(nullptr),
+         _txnMode(txnMode),
+         _optdb(nullptr),
+         _pesdb(nullptr),
          _stats(rocksdb::CreateDBStatistics()),
          _blockCache(blockCache),
          _nextTxnSeq(0),
@@ -587,8 +657,8 @@ Status RocksKVStore::releaseBackup() {
     }
 }
 
-// this function guarantees that if backup is failed,
-// there should be no remaining dirs left to clean.
+// this function guarantees that:
+// If backup failed, there should be no remaining dirs left to clean, and the _hasBackup flag set to false
 Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::BackupMode mode) {
     bool succ = false;
     auto guard = MakeGuard([this, &dir, &succ]() {
@@ -638,7 +708,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::Backu
 
     if (mode == KVStore::BackupMode::BACKUP_CKPT) {
         rocksdb::Checkpoint* checkpoint;
-        auto s = rocksdb::Checkpoint::Create(_db->GetBaseDB(), &checkpoint);
+        auto s = rocksdb::Checkpoint::Create(getBaseDB(), &checkpoint);
         if (!s.ok()) {
             return {ErrorCodes::ERR_INTERNAL, s.ToString()};
         }
@@ -654,7 +724,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::Backu
             return {ErrorCodes::ERR_INTERNAL, s.ToString()};
         }
         std::unique_ptr<rocksdb::BackupEngine> pBkEngine(bkEngine);
-        s = pBkEngine->CreateNewBackup(_db->GetBaseDB());
+        s = pBkEngine->CreateNewBackup(getBaseDB());
         if (!s.ok()) {
             return {ErrorCodes::ERR_INTERNAL, s.ToString()};
         }
@@ -688,19 +758,31 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
     }
     uint64_t txnId = _nextTxnSeq++;
     bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
-    auto ret = std::unique_ptr<Transaction>(
-                                new RocksOptTxn(this, txnId, replOnly, _logOb));
+    std::unique_ptr<Transaction> ret = nullptr;
+    if (_txnMode == TxnMode::TXN_OPT) {
+        ret.reset(new RocksOptTxn(this, txnId, replOnly, _logOb));
+    } else {
+        ret.reset(new RocksPesTxn(this, txnId, replOnly, _logOb));
+    }
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);
 }
 
-rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerDB() {
-    return _db.get();
+rocksdb::OptimisticTransactionDB* RocksKVStore::getUnderlayerOptDB() {
+    return _optdb.get();
+}
+
+rocksdb::TransactionDB* RocksKVStore::getUnderlayerPesDB() {
+    return _pesdb.get();
 }
 
 uint64_t RocksKVStore::getHighestBinlogId() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _highestVisible;
+}
+
+rocksdb::DB* RocksKVStore::getBaseDB() const {
+    return _optdb.get() ? _optdb->GetBaseDB() : _pesdb->GetBaseDB();
 }
 
 void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
@@ -860,7 +942,7 @@ void RocksKVStore::appendJSONStat(
     w.StartObject();
     for (const auto& kv : properties) {
         uint64_t tmp;
-        bool ok = _db->GetBaseDB()->GetIntProperty(kv.first, &tmp);
+        bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
         if (!ok) {
             LOG(WARNING) << "db:" << dbId()
                          << " getProperity:" << kv.first << " failed";

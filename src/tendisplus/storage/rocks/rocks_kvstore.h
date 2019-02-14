@@ -13,6 +13,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
+#include "rocksdb/utilities/transaction_db.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/storage/kvstore.h"
 
@@ -20,17 +21,12 @@ namespace tendisplus {
 
 class RocksKVStore;
 
-// TODO(deyukong): donot modify store's unCommittedTxn list if
-// its only a read-transaction
-
-// NOTE(deyukong): RocksOptTxn does not guarantee thread-safety
-// Do not use one RocksOptTxn to do parallel things.
-class RocksOptTxn: public Transaction {
+class RocksTxn: public Transaction {
  public:
-    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
-    RocksOptTxn(const RocksOptTxn&) = delete;
-    RocksOptTxn(RocksOptTxn&&) = delete;
-    virtual ~RocksOptTxn();
+    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksTxn(const RocksTxn&) = delete;
+    RocksTxn(RocksTxn&&) = delete;
+    virtual ~RocksTxn();
     std::unique_ptr<Cursor> createCursor() final;
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
@@ -44,15 +40,15 @@ class RocksOptTxn: public Transaction {
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const;
 
- private:
-    void ensureTxn();
+ protected:
+    virtual void ensureTxn() {};
 
     uint64_t _txnId;
 
     // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
     std::unique_ptr<rocksdb::Transaction> _txn;
 
-    // NOTE(deyukong): not owned by RocksOptTxn
+    // NOTE(deyukong): not owned by me
     RocksKVStore *_store;
 
     // TODO(deyukong): it's double buffered in rocks, optimize
@@ -64,6 +60,33 @@ class RocksOptTxn: public Transaction {
     bool _replOnly;
 
     std::shared_ptr<BinlogObserver> _logOb;
+};
+
+// TODO(deyukong): donot modify store's unCommittedTxn list if
+// its only a read-transaction
+
+// NOTE(deyukong): RocksOptTxn does not guarantee thread-safety
+// Do not use one RocksOptTxn to do parallel things.
+class RocksOptTxn: public RocksTxn {
+ public:
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksOptTxn(const RocksOptTxn&) = delete;
+    RocksOptTxn(RocksOptTxn&&) = delete;
+    virtual ~RocksOptTxn() = default;
+
+ protected:
+    void ensureTxn() final;
+};
+
+class RocksPesTxn: public RocksTxn {
+ public:
+    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksPesTxn(const RocksPesTxn&) = delete;
+    RocksPesTxn(RocksPesTxn&&) = delete;
+    virtual ~RocksPesTxn() = default;
+
+ protected:
+    void ensureTxn() final;
 };
 
 class RocksKVCursor: public Cursor {
@@ -80,9 +103,16 @@ class RocksKVCursor: public Cursor {
 
 class RocksKVStore: public KVStore {
  public:
+    enum class TxnMode {
+        TXN_OPT,
+        TXN_PES,
+    };
+
+ public:
     RocksKVStore(const std::string& id,
         const std::shared_ptr<ServerParams>& cfg,
-        std::shared_ptr<rocksdb::Cache> blockCache);
+        std::shared_ptr<rocksdb::Cache> blockCache,
+        TxnMode txnMode = TxnMode::TXN_OPT);
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
@@ -103,6 +133,8 @@ class RocksKVStore: public KVStore {
 
     Status setMode(StoreMode mode) final;
 
+    TxnMode getTxnMode() const;
+
     Expected<uint64_t> restart(bool restore = false) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
@@ -112,7 +144,8 @@ class RocksKVStore: public KVStore {
             rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
     void markCommitted(uint64_t txnId, uint64_t binlogTxnId);
-    rocksdb::OptimisticTransactionDB* getUnderlayerDB();
+    rocksdb::OptimisticTransactionDB* getUnderlayerOptDB();
+    rocksdb::TransactionDB* getUnderlayerPesDB();
 
     uint64_t getHighestBinlogId() const;
 
@@ -120,6 +153,7 @@ class RocksKVStore: public KVStore {
     std::set<uint64_t> getUncommittedTxns() const;
 
  private:
+    rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);
     void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::Options options();
@@ -130,7 +164,11 @@ class RocksKVStore: public KVStore {
 
     KVStore::StoreMode _mode;
 
-    std::unique_ptr<rocksdb::OptimisticTransactionDB> _db;
+    const TxnMode _txnMode;
+
+    std::unique_ptr<rocksdb::OptimisticTransactionDB> _optdb;
+    std::unique_ptr<rocksdb::TransactionDB> _pesdb;
+
     std::shared_ptr<rocksdb::Statistics> _stats;
     std::shared_ptr<rocksdb::Cache> _blockCache;
 
