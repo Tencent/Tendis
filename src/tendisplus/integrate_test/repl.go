@@ -5,6 +5,8 @@ import (
 	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
 	"math/rand"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"tendisplus/integrate_test/util"
@@ -139,11 +141,11 @@ func testReplMatch1(m, s *util.RedisServer) {
 	}
 }
 
-func testRepl() {
+func testRepl(m_port int, s_port int) {
 	m := util.RedisServer{}
 	s := util.RedisServer{}
-	m.Init(12345, "m_")
-	s.Init(12346, "s_")
+	m.Init(m_port, "m_")
+	s.Init(s_port, "s_")
 	if err := m.Setup(false); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
@@ -155,6 +157,13 @@ func testRepl() {
 }
 
 func main() {
+	if len(os.Args) != 3 {
+		fmt.Println("usage: repl m_port s_port")
+		return
+	}
+	m_port, _ := strconv.Atoi(os.Args[1])
+	s_port, _ := strconv.Atoi(os.Args[2])
+
 	rand.Seed(time.Now().UTC().UnixNano())
-	testRepl()
+	testRepl(m_port, s_port)
 }
