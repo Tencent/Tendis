@@ -319,7 +319,9 @@ void ReplManager::supplyFullSyncRoutine(
     }
 
     uint64_t currTime = nsSinceEpoch();
-    Expected<BackupInfo> bkInfo = store->backup();
+    Expected<BackupInfo> bkInfo = store->backup(
+        store->dftBackupDir(),
+        KVStore::BackupMode::BACKUP_CKPT);
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
@@ -373,7 +375,7 @@ void ReplManager::supplyFullSyncRoutine(
                         << " to client failed:" << s.toString();
             return;
         }
-        std::string fname = store->backupDir() + "/" + fileInfo.first;
+        std::string fname = store->dftBackupDir() + "/" + fileInfo.first;
         auto myfile = std::ifstream(fname, std::ios::binary);
         if (!myfile.is_open()) {
             LOG(ERROR) << "open file:" << fname << " for read failed";

@@ -245,13 +245,13 @@ class ListPopWrapper: public Command {
             return expdb.status();
         }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -349,12 +349,12 @@ class ListPushWrapper: public Command {
             return expdb.status();
         }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         std::vector<std::string> valargs;
         for (size_t i = 2; i < args.size(); ++i) {
@@ -474,7 +474,7 @@ class RPopLPushCommand: public Command {
             return expdb1.status();
         }
         RecordKey metaRk1(expdb1.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key1, "");
-        uint32_t storeId1 = expdb1.value().dbId;
+        // uint32_t storeId1 = expdb1.value().dbId;
         std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
         auto expdb2 = server->getSegmentMgr()->getDb(sess, key2, mgl::LockMode::LOCK_IX);
@@ -482,16 +482,16 @@ class RPopLPushCommand: public Command {
             return expdb2.status();
         }
         RecordKey metaRk2(expdb2.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key2, "");
-        uint32_t storeId2 = expdb2.value().dbId;
+        // uint32_t storeId2 = expdb2.value().dbId;
         std::string metaKeyEnc2 = metaRk2.encode();
         PStore kvstore2 = expdb2.value().store;
 
-        if (Command::isKeyLocked(sess, storeId1, metaKeyEnc1)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
-        if (Command::isKeyLocked(sess, storeId2, metaKeyEnc2)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId1, metaKeyEnc1)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
+        // if (Command::isKeyLocked(sess, storeId2, metaKeyEnc2)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -669,12 +669,12 @@ class LtrimCommand: public Command {
             if (!expdb.ok()) {
                 return expdb.status();
             }
-            lockshardId = expdb.value().dbId;
+            // lockshardId = expdb.value().dbId;
             metaRk.reset(new RecordKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, ""));
             metaKeyEnc = metaRk->encode();
-            if (Command::isKeyLocked(sess, lockshardId, metaKeyEnc)) {
-                return {ErrorCodes::ERR_BUSY, "key is locked"};
-            }
+            // if (Command::isKeyLocked(sess, lockshardId, metaKeyEnc)) {
+            //     return {ErrorCodes::ERR_BUSY, "key is locked"};
+            // }
             auto pessimisticMgr = server->getPessimisticMgr();
             auto shard = pessimisticMgr->getShard(lockshardId);
             shard->lock(metaKeyEnc);
@@ -793,13 +793,13 @@ class LRangeCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
         std::string metaKeyEnc = metaRk.encode();
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //     return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -912,13 +912,13 @@ class LIndexCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        uint32_t storeId = expdb.value().dbId;
+        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
         std::string metaKeyEnc = metaRk.encode();
 
-        if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
+        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
+        //    return {ErrorCodes::ERR_BUSY, "key locked"};
+        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {

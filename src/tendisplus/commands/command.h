@@ -34,9 +34,9 @@ class Command {
     static Expected<std::string> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
 
-    static bool isKeyLocked(Session *sess,
-                            uint32_t storeId,
-                            const std::string& encodedKey);
+    // static bool isKeyLocked(Session *sess,
+    //                         uint32_t storeId,
+    //                         const std::string& encodedKey);
 
     // return ERR_OK if not expired
     // return ERR_EXPIRED if expired

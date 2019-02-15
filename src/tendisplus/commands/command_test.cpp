@@ -1622,7 +1622,9 @@ TEST(Command, common) {
 
     testList(server);
     testKV(server);
-    testSetRetry(server);
+
+    // testSetRetry only works in TXN_OPT mode
+    // testSetRetry(server);
     testType(server);
     testHash1(server);
     testHash2(server);

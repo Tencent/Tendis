@@ -99,12 +99,16 @@ class KVStore {
         REPLICATE_ONLY,
     };
 
+    enum class BackupMode {
+        BACKUP_COPY,
+        BACKUP_CKPT,
+    };
  public:
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }
     const std::string& dbId() const { return _id; }
-    const std::string backupDir() const { return _backupDir; }
+    const std::string dftBackupDir() const { return _backupDir; }
     virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
                                         Transaction* txn) = 0;
@@ -132,7 +136,7 @@ class KVStore {
 
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
-    virtual Expected<BackupInfo> backup() = 0;
+    virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(

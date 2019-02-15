@@ -127,16 +127,16 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 }
 
 // should be called with store locked
-bool Command::isKeyLocked(Session *sess,
-                          uint32_t storeId,
-                          const std::string& encodedKey) {
-    auto server = sess->getServerEntry();
-    INVARIANT(server != nullptr);
-    auto pessimisticMgr = server->getPessimisticMgr();
-    INVARIANT(pessimisticMgr != nullptr);
-    auto shard = pessimisticMgr->getShard(storeId);
-    return shard->isLocked(encodedKey);
-}
+// bool Command::isKeyLocked(Session *sess,
+//                           uint32_t storeId,
+//                           const std::string& encodedKey) {
+//     auto server = sess->getServerEntry();
+//     INVARIANT(server != nullptr);
+//     auto pessimisticMgr = server->getPessimisticMgr();
+//     INVARIANT(pessimisticMgr != nullptr);
+//     auto shard = pessimisticMgr->getShard(storeId);
+//     return shard->isLocked(encodedKey);
+// }
 
 // requirement: StoreLock not held, add storelock inside
 Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
@@ -144,16 +144,6 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
 
-    // lock key with X-lock held
-    {
-        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_X);
-        if (Command::isKeyLocked(sess, storeId, keyEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key is locked"};
-        }
-        auto pessimisticMgr = server->getPessimisticMgr();
-        auto shard = pessimisticMgr->getShard(storeId);
-        shard->lock(keyEnc);
-    }
     LOG(INFO) << "begin delKeyPessimistic key:"
                 << hexlify(mk.getPrimaryKey());
 
@@ -163,11 +153,6 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
     if (!expdb.ok()) {
         return expdb.status();
     }
-    auto guard = MakeGuard([sess, storeId, &keyEnc, &server]() {
-        auto pessimisticMgr = server->getPessimisticMgr();
-        auto shard = pessimisticMgr->getShard(storeId);
-        shard->unlock(keyEnc);
-    });
 
     PStore kvstore = expdb.value().store;
     uint64_t totalCount = 0;
@@ -406,12 +391,12 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
 
     RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
     // currently, a simple kv will not be locked
-    if (mk.getRecordType() != RecordType::RT_KV) {
-        std::string mkEnc = mk.encode();
-        if (Command::isKeyLocked(sess, storeId, mkEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
-    }
+    // if (mk.getRecordType() != RecordType::RT_KV) {
+    //     std::string mkEnc = mk.encode();
+    //     if (Command::isKeyLocked(sess, storeId, mkEnc)) {
+    //         return {ErrorCodes::ERR_BUSY, "key locked"};
+    //     }
+    // }
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -462,12 +447,12 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::strin
     RecordKey mk(expdb.value().chunkId, expdb.value().dbId, tp, key, "");
 
     // currently, a simple kv will not be locked
-    if (mk.getRecordType() != RecordType::RT_KV) {
-        std::string mkEnc = mk.encode();
-        if (Command::isKeyLocked(sess, storeId, mkEnc)) {
-            return {ErrorCodes::ERR_BUSY, "key locked"};
-        }
-    }
+    // if (mk.getRecordType() != RecordType::RT_KV) {
+    //     std::string mkEnc = mk.encode();
+    //     if (Command::isKeyLocked(sess, storeId, mkEnc)) {
+    //         return {ErrorCodes::ERR_BUSY, "key locked"};
+    //     }
+    // }
     PStore kvstore = expdb.value().store;
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
