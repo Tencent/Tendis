@@ -481,4 +481,78 @@ TEST(RocksKVStore, PesCommon) {
     commonRoutine(kvstore.get());
 }
 
+TEST(RocksKVStore, PesTruncateBinlog) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    // EXPECT_TRUE(filesystem::create_directory("db/0"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache,
+        RocksKVStore::TxnMode::TXN_PES,
+        1 /* max keep logs */);
+
+    uint64_t firstBinlog = 1;
+    {
+        auto eTxn1 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn1.ok(), true);
+        std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+        RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(0), "");
+        RecordValue rv("txn1");
+        Status s = kvstore->setKV(rk, rv, txn1.get());
+        EXPECT_EQ(s.ok(), true);
+
+        Expected<uint64_t> exptCommitId = txn1->commit();
+        EXPECT_EQ(exptCommitId.ok(), true);
+    }
+    Expected<uint64_t> newFirst = kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
+    EXPECT_EQ(newFirst.ok(), true);
+    EXPECT_EQ(newFirst.value(), 1U);
+    {
+        auto eTxn1 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn1.ok(), true);
+        std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+        RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(1), "");
+        RecordValue rv("txn1");
+        Status s = kvstore->setKV(rk, rv, txn1.get());
+        EXPECT_EQ(s.ok(), true);
+
+        Expected<uint64_t> exptCommitId = txn1->commit();
+        EXPECT_EQ(exptCommitId.ok(), true);
+    }
+    Expected<uint64_t> newFirst1 = kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
+    EXPECT_EQ(newFirst1.ok(), true);
+    EXPECT_NE(newFirst1.value(), firstBinlog);
+    firstBinlog = newFirst1.value();
+    for (auto range : {10, 100, 1000, 10000, 100000}) {
+        for (int i = 0; i < range; ++i) {
+            auto eTxn1 = kvstore->createTransaction();
+            EXPECT_EQ(eTxn1.ok(), true);
+            std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+            RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(i), "");
+            RecordValue rv("txn1");
+            Status s = kvstore->setKV(rk, rv, txn1.get());
+            EXPECT_EQ(s.ok(), true);
+
+            Expected<uint64_t> exptCommitId = txn1->commit();
+            EXPECT_EQ(exptCommitId.ok(), true);
+        }
+        Expected<uint64_t> newFirst =
+            kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
+        EXPECT_EQ(newFirst.ok(), true);
+        EXPECT_NE(newFirst.value(), firstBinlog);
+        firstBinlog = newFirst.value();
+    }
+}
+
 }  // namespace tendisplus

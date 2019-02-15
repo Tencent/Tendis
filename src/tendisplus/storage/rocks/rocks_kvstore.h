@@ -112,7 +112,8 @@ class RocksKVStore: public KVStore {
     RocksKVStore(const std::string& id,
         const std::shared_ptr<ServerParams>& cfg,
         std::shared_ptr<rocksdb::Cache> blockCache,
-        TxnMode txnMode = TxnMode::TXN_OPT);
+        TxnMode txnMode = TxnMode::TXN_PES,
+        uint64_t maxKeepLogs = 1000000);
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
@@ -124,7 +125,7 @@ class RocksKVStore: public KVStore {
     Status delKV(const RecordKey& key, Transaction* txn) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog,
                        Transaction *txn) final;
-
+    Expected<uint64_t> truncateBinlog(uint64_t start, uint64_t end) final;
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
 
     Status clear() final;
@@ -192,6 +193,12 @@ class RocksKVStore: public KVStore {
     uint64_t _highestVisible;
 
     std::shared_ptr<BinlogObserver> _logOb;
+
+    // NOTE(deyukong): currently, we cant get the exact log count by
+    // _highestVisible - startLogId, because "readonly" binlogs also
+    // occupy txnIds, and in each txnId, there are more sub operations.
+    // So, _maxKeepLogs is not named precisely.
+    const uint64_t _maxKeepLogs;
 };
 
 }  // namespace tendisplus

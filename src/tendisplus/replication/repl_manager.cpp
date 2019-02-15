@@ -33,7 +33,8 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
      _incrPushMatrix(std::make_shared<PoolMatrix>()),
      _fullReceiveMatrix(std::make_shared<PoolMatrix>()),
-     _incrCheckMatrix(std::make_shared<PoolMatrix>()) {
+     _incrCheckMatrix(std::make_shared<PoolMatrix>()),
+     _logRecycleMatrix(std::make_shared<PoolMatrix>()) {
 }
 
 Status ReplManager::startup() {
@@ -110,6 +111,13 @@ Status ReplManager::startup() {
     _incrChecker = std::make_unique<WorkerPool>(
             "repl-scheck", _incrCheckMatrix);
     s = _incrChecker->startup(2);
+    if (!s.ok()) {
+        return s;
+    }
+
+    _logRecycler = std::make_unique<WorkerPool>(
+            "log-recyc", _logRecycleMatrix);
+    s = _logRecycler->startup(INCR_POOL_SIZE);
     if (!s.ok()) {
         return s;
     }
@@ -272,6 +280,35 @@ void ReplManager::controlRoutine() {
         }
         return doSth;
     };
+    auto schedRecycLogInLock = [this](const SCLOCK::time_point& now) {
+        bool doSth = false;
+        for (size_t i = 0; i < _pushStatus.size(); i++) {
+            uint64_t endLogId = std::numeric_limits<uint64_t>::max();
+            for (auto& mpov : _pushStatus[i]) {
+                endLogId = std::min(endLogId, mpov.second->binlogPos);
+            }
+            LocalSessionGuard sg(_svr);
+            sg.getSession()->getCtx()->setArgsBrief(
+                {"truncatelog",
+                 std::to_string(i),
+                 std::to_string(_firstBinlogId[i]),
+                 std::to_string(endLogId)});
+            auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i, mgl::LockMode::LOCK_IX);
+            INVARIANT(expdb.ok());
+            auto store = std::move(expdb.value().store);
+            INVARIANT(store != nullptr);
+            Expected<uint64_t> firstBinlog = store->truncateBinlog(_firstBinlogId[i], endLogId);
+            if (!firstBinlog.ok()) {
+                LOG(INFO) << "truncate binlog store:" << i
+                            << "failed:" << firstBinlog.status().toString();
+            } else if (firstBinlog.value() != _firstBinlogId[i]) {
+                INVARIANT(firstBinlog.value() > _firstBinlogId[i]);
+                _firstBinlogId[i] = firstBinlog.value();
+                doSth = true;
+            }
+        }
+        return doSth;
+    };
     while (_isRunning.load(std::memory_order_relaxed)) {
         bool doSth = false;
         {
@@ -279,6 +316,7 @@ void ReplManager::controlRoutine() {
             auto now = SCLOCK::now();
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
+            doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {
             std::this_thread::yield();
