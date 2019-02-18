@@ -467,6 +467,79 @@ RocksKVStore::TxnMode RocksKVStore::getTxnMode() const {
     return _txnMode;
 }
 
+Expected<uint64_t> RocksKVStore::truncateBinlog(uint64_t start, uint64_t end) {
+    auto eTxn = createTransaction();
+    if (!eTxn.ok()) {
+        return eTxn.status();
+    }
+    auto txn = std::move(eTxn.value());
+    std::unique_ptr<BinlogCursor> cursor =
+        txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
+    Expected<ReplLog> explog = cursor->next(); 
+    if (!explog.ok()) {
+        if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+            // NOTE(deyukong): perhaps INVARIANT here is better
+            if (start > Transaction::TXNID_UNINITED) {
+                return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
+            }
+            return Transaction::TXNID_UNINITED;
+        }
+        return explog.status();
+    }
+    if (start != explog.value().getReplLogKey().getTxnId()) {
+        return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
+    }
+    uint64_t gap = getHighestBinlogId() - start;
+    if (gap < _maxKeepLogs) {
+        return start;
+    }
+
+    // TODO(deyukong): put 10000 into configuration.
+    uint64_t cnt = std::min((uint64_t)10000, gap - _maxKeepLogs);
+    std::list<ReplLog> toDelete;
+    toDelete.push_back(std::move(explog.value()));
+    uint64_t nowTxnId = start;
+    uint64_t nextStart = start;
+    while (true) {
+        Expected<ReplLog> explog = cursor->next(); 
+        if (!explog.ok()) {
+            if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            return explog.status();
+        }
+        nextStart = explog.value().getReplLogKey().getTxnId();
+        if (nextStart > end) {
+            break;
+        }
+        if (nextStart == nowTxnId) {
+            toDelete.push_back(std::move(explog.value()));
+        } else if (toDelete.size() >= cnt) {
+            break;
+        } else {
+            nowTxnId = nextStart;
+            toDelete.push_back(std::move(explog.value()));
+        }
+    }
+    if (nextStart == start) {
+        return start;
+    }
+    for (auto& v : toDelete) {
+        if (v.getReplLogKey().getTxnId() == nextStart) {
+            break;
+        }
+        Status s = txn->delKV(v.getReplLogKey().encode());
+        if (!s.ok()) {
+            return s;
+        }
+    }
+    auto cmtStat = txn->commit();
+    if (!cmtStat.ok()) {
+        return cmtStat.status();
+    }
+    return nextStart;
+}
+
 Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
                                  Transaction *txn) {
     return txn->applyBinlog(txnLog);
@@ -619,7 +692,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 RocksKVStore::RocksKVStore(const std::string& id,
             const std::shared_ptr<ServerParams>& cfg,
             std::shared_ptr<rocksdb::Cache> blockCache,
-            TxnMode txnMode)
+            TxnMode txnMode,
+            uint64_t maxKeepLogs)
         :KVStore(id, cfg->dbPath),
          _isRunning(false),
          _hasBackup(false),
@@ -631,7 +705,9 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _blockCache(blockCache),
          _nextTxnSeq(0),
          _highestVisible(Transaction::TXNID_UNINITED),
-         _logOb(nullptr) {
+         _logOb(nullptr),
+         // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
+         _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)) {
     Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id

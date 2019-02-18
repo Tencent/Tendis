@@ -143,7 +143,10 @@ class ReplManager {
     // slave's pov, periodly check incr-sync status
     std::unique_ptr<WorkerPool> _incrChecker;
 
-    // master's pov, smallest binlogId, moves on when truncated
+    // master and slave's pov, log recycler
+    std::unique_ptr<WorkerPool> _logRecycler;
+
+    // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<uint64_t> _firstBinlogId;
 
     std::atomic<uint64_t> _clientIdGen;
@@ -154,6 +157,7 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _incrPushMatrix;
     std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
+    std::shared_ptr<PoolMatrix> _logRecycleMatrix;
 
     static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
 };
