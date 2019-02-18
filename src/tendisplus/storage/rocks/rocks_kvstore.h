@@ -195,7 +195,7 @@ class RocksKVStore: public KVStore {
     std::shared_ptr<BinlogObserver> _logOb;
 
     // NOTE(deyukong): currently, we cant get the exact log count by
-    // _highestVisible - startLogId, because "readonly" binlogs also
+    // _highestVisible - startLogId, because "readonly" txns also
     // occupy txnIds, and in each txnId, there are more sub operations.
     // So, _maxKeepLogs is not named precisely.
     const uint64_t _maxKeepLogs;

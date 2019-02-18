@@ -157,6 +157,98 @@ class IncrSyncCommand: public Command {
     }
 } incrSyncCommand;
 
+// @input pullbinlogs storeId startBinlogId
+// @output nextBinlogId [[k,v], [k,v]...]
+class PullBinlogsCommand: public Command {
+ public:
+    PullBinlogsCommand()
+        :Command("pullbinlogs") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        uint64_t storeId;
+        uint64_t binlogPos;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(sess->getArgs()[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        Expected<uint64_t> exptBinlogId = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!exptBinlogId.ok()) {
+            return exptBinlogId.status();
+        }
+        binlogPos = exptBinlogId.value();
+        if (exptStoreId.value() >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
+        }
+        storeId = exptStoreId.value();
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IS);
+        INVARIANT(expdb.ok());
+        auto store = std::move(expdb.value().store);
+        INVARIANT(store != nullptr);
+
+        auto ptxn = store->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        std::unique_ptr<BinlogCursor> cursor = txn->createBinlogCursor(binlogPos);
+
+        std::vector<ReplLog> binlogs;
+        uint64_t currId = Transaction::TXNID_UNINITED;
+        while (true) {
+            Expected<ReplLog> explog = cursor->next();
+            if (!explog.ok()) {
+                if (explog.status().code() != ErrorCodes::ERR_EXHAUST) {
+                    return explog.status();
+                }
+                break;
+            }
+            uint64_t tmpId = explog.value().getReplLogKey().getTxnId();
+            if (currId == Transaction::TXNID_UNINITED) {
+                currId = tmpId;
+            }
+            if (binlogs.size() >= 1000 && tmpId != currId) {
+                break;
+            }
+            binlogs.push_back(std::move(explog.value()));
+            currId = tmpId;
+        }
+        std::stringstream ss;
+        if (binlogs.size() == 0) {
+            Command::fmtMultiBulkLen(ss, 2);
+            Command::fmtLongLong(ss, binlogPos);
+            Command::fmtMultiBulkLen(ss, 0);
+        } else {
+            Command::fmtMultiBulkLen(ss, 2*binlogs.size()+1);
+            Command::fmtLongLong(ss, binlogs.back().getReplLogKey().getTxnId()+1);
+            for (const auto& v : binlogs) {
+                ReplLog::KV kv = v.encode();
+                Command::fmtBulk(ss, kv.first);
+                Command::fmtBulk(ss, kv.second);
+            }
+        }
+        return ss.str();
+    }
+} pullBinlogsCommand;
+
 class ApplyBinlogsCommand: public Command {
  public:
     ApplyBinlogsCommand()

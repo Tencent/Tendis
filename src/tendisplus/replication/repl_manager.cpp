@@ -280,30 +280,39 @@ void ReplManager::controlRoutine() {
         }
         return doSth;
     };
-    auto schedRecycLogInLock = [this](const SCLOCK::time_point& now) {
+    auto schedRecycLog = [this](const SCLOCK::time_point& now) {
         bool doSth = false;
         for (size_t i = 0; i < _pushStatus.size(); i++) {
-            uint64_t endLogId = std::numeric_limits<uint64_t>::max();
-            for (auto& mpov : _pushStatus[i]) {
-                endLogId = std::min(endLogId, mpov.second->binlogPos);
-            }
             LocalSessionGuard sg(_svr);
-            sg.getSession()->getCtx()->setArgsBrief(
-                {"truncatelog",
-                 std::to_string(i),
-                 std::to_string(_firstBinlogId[i]),
-                 std::to_string(endLogId)});
+            // NOTE(deyukong): acquire dbLock, then the mutex, the order should not flip
             auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i, mgl::LockMode::LOCK_IX);
             INVARIANT(expdb.ok());
             auto store = std::move(expdb.value().store);
             INVARIANT(store != nullptr);
-            Expected<uint64_t> firstBinlog = store->truncateBinlog(_firstBinlogId[i], endLogId);
+            uint64_t endLogId = std::numeric_limits<uint64_t>::max();
+            uint64_t oldFirstBinlog = 0;
+            {
+                std::lock_guard<std::mutex> lk(_mutex);
+                for (auto& mpov : _pushStatus[i]) {
+                    endLogId = std::min(endLogId, mpov.second->binlogPos);
+                }
+                oldFirstBinlog = _firstBinlogId[i];
+            }
+            sg.getSession()->getCtx()->setArgsBrief(
+                {"truncatelog",
+                 std::to_string(i),
+                 std::to_string(oldFirstBinlog),
+                 std::to_string(endLogId)});
+            Expected<uint64_t> firstBinlog = store->truncateBinlog(oldFirstBinlog, endLogId);
             if (!firstBinlog.ok()) {
                 LOG(INFO) << "truncate binlog store:" << i
                             << "failed:" << firstBinlog.status().toString();
-            } else if (firstBinlog.value() != _firstBinlogId[i]) {
-                INVARIANT(firstBinlog.value() > _firstBinlogId[i]);
-                _firstBinlogId[i] = firstBinlog.value();
+            } else if (firstBinlog.value() != oldFirstBinlog) {
+                INVARIANT(firstBinlog.value() > oldFirstBinlog);
+                {
+                    std::lock_guard<std::mutex> lk(_mutex);
+                    _firstBinlogId[i] = firstBinlog.value();
+                }
                 doSth = true;
             }
         }
@@ -311,13 +320,13 @@ void ReplManager::controlRoutine() {
     };
     while (_isRunning.load(std::memory_order_relaxed)) {
         bool doSth = false;
+        auto now = SCLOCK::now();
         {
             std::lock_guard<std::mutex> lk(_mutex);
-            auto now = SCLOCK::now();
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
-            doSth = schedRecycLogInLock(now) || doSth;
         }
+        doSth = schedRecycLog(now) || doSth;
         if (doSth) {
             std::this_thread::yield();
         } else {

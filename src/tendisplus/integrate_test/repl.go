@@ -142,8 +142,8 @@ func testReplMatch1(m, s *util.RedisServer) {
 func testRepl() {
 	m := util.RedisServer{}
 	s := util.RedisServer{}
-	m.Init(12345, "m_")
-	s.Init(12346, "s_")
+	m.Init(22345, "m_")
+	s.Init(22346, "s_")
 	if err := m.Setup(false); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
