@@ -12,7 +12,7 @@ TEST(Lock, Common) {
     bool locked1 = false, locked2 = false;
 
     std::thread thd1([&runFlag1, &locked1]() {
-        StoresLock v(mgl::LockMode::LOCK_IS);
+        StoresLock v(mgl::LockMode::LOCK_IS, nullptr);
         locked1 = true;
         while (runFlag1) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -22,7 +22,43 @@ TEST(Lock, Common) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     std::thread thd2([&runFlag2, &locked2]() {
-        StoresLock v(mgl::LockMode::LOCK_X);
+        StoresLock v(mgl::LockMode::LOCK_X, nullptr);
+        locked2 = true;
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    runFlag1 = false;
+    thd1.join();
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_TRUE(locked2);
+    runFlag2 = false;
+    thd2.join();
+}
+
+TEST(Lock, KeyLock) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess]() {
+        KeyLock v(1, "a", mgl::LockMode::LOCK_IS, sess.get());
+        KeyLock v1(1, "a", mgl::LockMode::LOCK_IX, sess.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &locked2, sess1]() {
+        KeyLock v(1, "a", mgl::LockMode::LOCK_X, sess1.get());
         locked2 = true;
         while (runFlag2) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -57,7 +93,7 @@ TEST(Lock, Parent) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     std::thread thd2([&runFlag2, &locked2]() {
-        StoresLock v(mgl::LockMode::LOCK_X);
+        StoresLock v(mgl::LockMode::LOCK_X, nullptr);
         locked2 = true;
         while (runFlag2) {
             std::this_thread::sleep_for(std::chrono::seconds(1));

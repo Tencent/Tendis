@@ -7,23 +7,40 @@ namespace tendisplus {
 
 const char StoresLock::_target[] = "stores";
 
-StoresLock::StoresLock(mgl::LockMode mode) {
-    _mgl = std::make_unique<mgl::MGLock>();
-    // a duration of 49 days. If lock still not acquired, fail it
-    uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
-    auto lockResult = _mgl->lock(_target, mode, timeoutMs);
-    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+ILock::ILock(ILock* parent, mgl::MGLock* lk, Session* sess)
+    :_parent(parent),
+     _mgl(lk),
+     _sess(sess) {
 }
 
-StoresLock::~StoresLock() {
-    _mgl->unlock();
+ILock::~ILock() {
+    if (_mgl) {
+        _mgl->unlock();
+    }
+    if (_parent) {
+        _parent.reset();
+    }
+    if (_sess) {
+        _sess->getCtx()->removeLock(this);
+    }
 }
 
-StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
-                     Session *sess)
-        :_storeId(storeId),
-         _mode(mode),
-         _sess(sess) {
+mgl::LockMode ILock::getMode() const {
+    if (_mgl == nullptr) { 
+        return mgl::LockMode::LOCK_NONE;
+    }
+    return _mgl->getMode();
+}
+
+uint32_t ILock::getStoreId() const {
+    return 0;
+}
+
+std::string ILock::getKey() const {
+    return "";
+}
+
+mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
     mgl::LockMode parentMode = mgl::LockMode::LOCK_NONE;
     switch (mode) {
         case mgl::LockMode::LOCK_IS:
@@ -37,29 +54,61 @@ StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
         default:
             INVARIANT(0);
     }
-    _parent = std::make_unique<StoresLock>(parentMode);
-    _mgl = std::make_unique<mgl::MGLock>();
+    return parentMode;
+}
+
+StoresLock::StoresLock(mgl::LockMode mode, Session* sess)
+        :ILock(nullptr, new mgl::MGLock, sess) {
+    // a duration of 49 days. If lock still not acquired, fail it
+    uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
+    auto lockResult = _mgl->lock(_target, mode, timeoutMs);
+    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+}
+
+StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
+                     Session *sess)
+        :ILock(new StoresLock(getParentMode(mode), nullptr), new mgl::MGLock, sess),
+         _storeId(storeId) {
     std::string target = "store_" + std::to_string(storeId);
     // a duration of 49 days. If lock still not acquired, fail it
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
-    _sess->getCtx()->setWaitLock(storeId, mode);
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(storeId, "", mode);
+    }
     auto lockResult = _mgl->lock(target, mode, timeoutMs);
     INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
-    _sess->getCtx()->setWaitLock(0, mgl::LockMode::LOCK_NONE);
-    _sess->getCtx()->addLock(this);
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
+        _sess->getCtx()->addLock(this);
+    }
 }
 
 uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
-mgl::LockMode StoreLock::getMode() const {
-    return _mode;
+KeyLock::KeyLock(uint32_t storeId, const std::string& key,
+                mgl::LockMode mode, Session *sess)
+        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr), new mgl::MGLock, sess),
+         _key(key) {
+    std::string target = "key_" + key;
+    uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(storeId, key, mode);
+    }
+    auto lockResult = _mgl->lock(target, mode, timeoutMs);
+    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
+        _sess->getCtx()->addLock(this);
+    }
 }
 
-StoreLock::~StoreLock() {
-    _mgl->unlock();
-    _parent.reset();
-    _sess->getCtx()->removeLock(this);
+uint32_t KeyLock::getStoreId() const {
+    return _parent->getStoreId();
+}
+
+std::string KeyLock::getKey() const {
+    return _key;
 }
 }  // namespace tendisplus

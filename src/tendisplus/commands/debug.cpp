@@ -325,11 +325,12 @@ class ShowCommand: public Command {
             writer.Uint64(sess.use_count());
 
             SLSP waitlockStat = ctx->getWaitlock();
-            if (waitlockStat.second != mgl::LockMode::LOCK_NONE) {
+            if (std::get<2>(waitlockStat) != mgl::LockMode::LOCK_NONE) {
                 writer.Key("waitlock");
                 writer.StartArray();
-                writer.Uint64(waitlockStat.first);
-                writer.String(lockModeRepr(waitlockStat.second));
+                writer.Uint64(std::get<0>(waitlockStat));
+                writer.String(std::get<1>(waitlockStat));
+                writer.String(lockModeRepr(std::get<2>(waitlockStat)));
                 writer.EndArray();
             }
             std::list<SLSP> lockStats = ctx->getLockStates();
@@ -338,8 +339,9 @@ class ShowCommand: public Command {
                 writer.StartArray();
                 for (const auto& v : lockStats) {
                     writer.StartArray();
-                    writer.Uint64(v.first);
-                    writer.String(lockModeRepr(v.second));
+                    writer.Uint64(std::get<0>(v));
+                    writer.String(std::get<1>(v));
+                    writer.String(lockModeRepr(std::get<2>(v)));
                     writer.EndArray();
                 }
                 writer.EndArray();
