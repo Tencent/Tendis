@@ -158,7 +158,7 @@ class SetCommand: public Command {
         const SetParams& params = exptParams.value();
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDb(sess, params.key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, params.key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -226,7 +226,7 @@ class SetexGeneralCommand: public Command {
                                      uint64_t ttl) {
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -331,7 +331,7 @@ class SetNxCommand: public Command {
 
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -802,7 +802,7 @@ class GetSetGeneral: public Command {
 
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1572,7 +1572,7 @@ class BitopCommand: public Command {
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDb(sess, targetKey, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, targetKey, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1647,7 +1647,7 @@ class MSetCommand: public Command {
             const std::string& val = sess->getArgs()[i+1];
             auto server = sess->getServerEntry();
             INVARIANT(server != nullptr);
-            auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
             if (!expdb.ok()) {
                 return expdb.status();
             }

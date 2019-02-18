@@ -240,7 +240,7 @@ class ListPopWrapper: public Command {
 
         // record exists
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -344,7 +344,7 @@ class ListPushWrapper: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -469,7 +469,7 @@ class RPopLPushCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb1 = server->getSegmentMgr()->getDb(sess, key1, mgl::LockMode::LOCK_IX);
+        auto expdb1 = server->getSegmentMgr()->getDbWithKeyLock(sess, key1, mgl::LockMode::LOCK_X);
         if (!expdb1.ok()) {
             return expdb1.status();
         }
@@ -477,7 +477,7 @@ class RPopLPushCommand: public Command {
         // uint32_t storeId1 = expdb1.value().dbId;
         std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
-        auto expdb2 = server->getSegmentMgr()->getDb(sess, key2, mgl::LockMode::LOCK_IX);
+        auto expdb2 = server->getSegmentMgr()->getDbWithKeyLock(sess, key2, mgl::LockMode::LOCK_X);
         if (!expdb2.ok()) {
             return expdb2.status();
         }
@@ -661,42 +661,18 @@ class LtrimCommand: public Command {
             }
         }
 
-        uint32_t lockshardId = 0;
-        std::string metaKeyEnc = "";
-        std::unique_ptr<RecordKey> metaRk = nullptr;
-        {
-            auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_X);
-            if (!expdb.ok()) {
-                return expdb.status();
-            }
-            // lockshardId = expdb.value().dbId;
-            metaRk.reset(new RecordKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, ""));
-            metaKeyEnc = metaRk->encode();
-            // if (Command::isKeyLocked(sess, lockshardId, metaKeyEnc)) {
-            //     return {ErrorCodes::ERR_BUSY, "key is locked"};
-            // }
-            auto pessimisticMgr = server->getPessimisticMgr();
-            auto shard = pessimisticMgr->getShard(lockshardId);
-            shard->lock(metaKeyEnc);
-        }
-        auto guard = MakeGuard([sess, &lockshardId, &metaKeyEnc]() {
-            auto server = sess->getServerEntry();
-            auto pessimisticMgr = server->getPessimisticMgr();
-            auto shard = pessimisticMgr->getShard(lockshardId);
-            shard->unlock(metaKeyEnc);
-        });
-
-        auto expdb = server->getSegmentMgr()->getDb(sess, lockshardId, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(*metaRk, txn.get());
+        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
         if (!rv.ok()) {
             if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtZeroBulkLen();
@@ -732,7 +708,7 @@ class LtrimCommand: public Command {
         if (end >= len) {
             end = len - 1;
         }
-        Status st = trimListPessimistic(sess, kvstore, *metaRk, lm, start, end, rv.value().getTtl());
+        Status st = trimListPessimistic(sess, kvstore, metaRk, lm, start, end, rv.value().getTtl());
         if (!st.ok()) {
             return st;
         }
@@ -788,7 +764,7 @@ class LRangeCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -907,7 +883,7 @@ class LIndexCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }

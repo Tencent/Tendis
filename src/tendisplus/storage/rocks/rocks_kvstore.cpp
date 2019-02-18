@@ -350,17 +350,12 @@ void RocksPesTxn::ensureTxn() {
     rocksdb::WriteOptions writeOpts;
     rocksdb::TransactionOptions txnOpts;
 
-    // NOTE(deyukong): the optimistic_txn won't save a snapshot
-    // (mainly for read in our cases) automaticly.
-    // We must set_snapshot manually.
+    // NOTE(deyukong): the txn won't set a snapshot automaticly.
     // if set_snapshot == false, the RC-level is guaranteed.
-    // if set_snapshot == true, the RR-level is guaranteed.
-    // Of course we need RR-level, not RC-level.
-
-    // refer to rocks' document, even if set_snapshot == true,
-    // the uncommitted data in this txn's writeBatch are still
-    // visible to reads, and this behavior is what we need.
-    txnOpts.set_snapshot = true;
+    // if set_snapshot == true, the SI-level is guaranteed.
+    // due to server-layer's keylock, RC-level can satisfy our
+    // requirements. so here set_snapshot = false
+    txnOpts.set_snapshot = false;
     auto db = _store->getUnderlayerPesDB();
     if (!db) {
         LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";

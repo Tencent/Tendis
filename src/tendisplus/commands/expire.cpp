@@ -39,7 +39,7 @@ Expected<bool> expireAfterNow(Session *sess,
 
     // record exists and not expired
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }

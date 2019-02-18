@@ -73,9 +73,6 @@ class SessionCtx {
     uint64_t _sendPacketEnd;
 
     mutable std::mutex _mutex;
-    // currently, we only use StoreLock, if more lock
-    // types are used, this list should be refined as
-    // std::list<Lock*>
 
     // protected by mutex
     std::vector<ILock*> _locks;

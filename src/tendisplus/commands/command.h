@@ -79,10 +79,10 @@ class Command {
     static std::map<std::string, uint64_t> _unSeenCmds;
 
  private:
-    static Status delKeyPessimistic(Session *sess, uint32_t storeId,
+    static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
                             const RecordKey& rk);
 
-    static Status delKeyOptimism(Session *sess, uint32_t storeId,
+    static Status delKeyOptimismInLock(Session *sess, uint32_t storeId,
                             const RecordKey& rk, Transaction* txn);
 
     static Expected<uint32_t> partialDelSubKeys(Session *sess,

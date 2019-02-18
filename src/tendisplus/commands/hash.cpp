@@ -230,7 +230,7 @@ class HExistsCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -300,7 +300,7 @@ class HAllCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -452,7 +452,7 @@ class HGetRecordCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -592,7 +592,7 @@ class HIncrByFloatCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -665,7 +665,7 @@ class HIncrByCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -736,7 +736,7 @@ class HMGetGeneric: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -823,7 +823,7 @@ Status hmcas(Session *sess, const std::string& key,
     }
 
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -1191,7 +1191,7 @@ class HMSetCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1262,7 +1262,7 @@ class HSetGeneric: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1474,7 +1474,7 @@ class HDelCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
