@@ -80,12 +80,12 @@ uint64_t SessionCtx::getSendPacketEnd() const {
     return _sendPacketEnd;
 }
 
-void SessionCtx::addLock(StoreLock *lock) {
+void SessionCtx::addLock(ILock *lock) {
     std::lock_guard<std::mutex> lk(_mutex);
     _locks.push_back(lock);
 }
 
-void SessionCtx::removeLock(StoreLock *lock) {
+void SessionCtx::removeLock(ILock *lock) {
     std::lock_guard<std::mutex> lk(_mutex);
     for (auto it = _locks.begin(); it != _locks.end(); ++it) {
         if (*it == lock) {
@@ -114,13 +114,15 @@ void SessionCtx::clearRequestCtx() {
     _argsBrief.clear();
 }
 
-void SessionCtx::setWaitLock(uint32_t storeId, mgl::LockMode mode) {
+void SessionCtx::setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode) {
     _waitlockStore = storeId;
     _waitlockMode = mode;
+    _waitlockKey = key;
 }
 
 SLSP SessionCtx::getWaitlock() const {
-    return std::pair<uint32_t, mgl::LockMode>(_waitlockStore, _waitlockMode);
+    return std::tuple<uint32_t, std::string, mgl::LockMode>(
+            _waitlockStore, _waitlockKey, _waitlockMode);
 }
 
 std::list<SLSP> SessionCtx::getLockStates() const {
@@ -128,7 +130,7 @@ std::list<SLSP> SessionCtx::getLockStates() const {
     std::list<SLSP> result;
     for (auto& lk : _locks) {
         result.push_back(
-            SLSP(lk->getStoreId(), lk->getMode()));
+            SLSP(lk->getStoreId(), lk->getKey(), lk->getMode()));
     }
     return result;
 }

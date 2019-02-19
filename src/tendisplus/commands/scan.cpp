@@ -86,7 +86,7 @@ class ScanGenericCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }

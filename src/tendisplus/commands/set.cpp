@@ -173,7 +173,7 @@ class SMembersCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -279,7 +279,7 @@ class SIsMemberCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -366,7 +366,7 @@ class SrandMemberCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -486,7 +486,7 @@ class SpopCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -577,7 +577,7 @@ class SaddCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -706,7 +706,7 @@ class SRemCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -774,7 +774,7 @@ class SdiffgenericCommand: public Command {
                 return rv.status();
             }
 
-            auto expdb = server->getSegmentMgr()->getDb(sess, args[i], mgl::LockMode::LOCK_IS);
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
             if (!expdb.ok()) {
                 return expdb.status();
             }

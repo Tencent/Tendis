@@ -13,7 +13,7 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
          _instances(ins) {
 }
 
-Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, const std::string& key, mgl::LockMode mode) {
+Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess, const std::string& key, mgl::LockMode mode) {
     uint32_t hash = static_cast<uint32_t>(FNV_64_INIT);
     for (auto v : key) {
         uint32_t val = static_cast<uint32_t>(v);
@@ -22,11 +22,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, const std::string
     }
     uint32_t chunkId = hash % HASH_SPACE;
     uint32_t segId = chunkId % _instances.size();
-    std::unique_ptr<StoreLock> lk = nullptr;
+    std::unique_ptr<KeyLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
-        lk = std::make_unique<StoreLock>(segId, mode, sess);
+        lk = std::make_unique<KeyLock>(segId, key, mode, sess);
     }
-    return DbWithLock{segId, chunkId, _instances[segId], std::move(lk)};
+    return DbWithLock{segId, chunkId, _instances[segId], nullptr, std::move(lk)};
 }
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId, mgl::LockMode mode) {
@@ -37,7 +37,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId, m
     if (mode != mgl::LockMode::LOCK_NONE) {
         lk = std::make_unique<StoreLock>(insId, mode, sess);
     }
-    return DbWithLock{insId, 0, _instances[insId], std::move(lk)};
+    return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
 }
 
 }  // namespace tendisplus

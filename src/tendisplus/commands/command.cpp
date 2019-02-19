@@ -138,8 +138,8 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 //     return shard->isLocked(encodedKey);
 // }
 
-// requirement: StoreLock not held, add storelock inside
-Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
+// requirement: intentionlock held
+Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
                           const RecordKey& mk) {
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
@@ -147,9 +147,7 @@ Status Command::delKeyPessimistic(Session *sess, uint32_t storeId,
     LOG(INFO) << "begin delKeyPessimistic key:"
                 << hexlify(mk.getPrimaryKey());
 
-    // storeLock destructs after guard, it's guaranteed.
-    // unlock the key at last
-    auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
+    auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_NONE);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -230,8 +228,8 @@ Command::scan(const std::string& pk, const std::string& from, uint64_t cnt, Tran
             nextCursor, std::move(result)));
 }
 
-// requirement: StoreLock held
-Status Command::delKeyOptimism(Session *sess,
+// requirement: intentionlock held 
+Status Command::delKeyOptimismInLock(Session *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
                                            Transaction* txn) {
@@ -382,7 +380,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -390,13 +388,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     uint32_t storeId = expdb.value().dbId;
 
     RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
-    // currently, a simple kv will not be locked
-    // if (mk.getRecordType() != RecordType::RT_KV) {
-    //     std::string mkEnc = mk.encode();
-    //     if (Command::isKeyLocked(sess, storeId, mkEnc)) {
-    //         return {ErrorCodes::ERR_BUSY, "key locked"};
-    //     }
-    // }
+
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -416,13 +408,11 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
-            // reset storelock, or will deadlock
-            expdb.value().lk.reset();
             // reset txn, it is no longer used
             txn.reset();
-            return Command::delKeyPessimistic(sess, storeId, mk);
+            return Command::delKeyPessimisticInLock(sess, storeId, mk);
         } else {
-            Status s = Command::delKeyOptimism(sess, storeId, mk, txn.get());
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get());
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
@@ -438,11 +428,10 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
 Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::string& key, RecordType tp) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
-    auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
-    auto storeLock = std::move(expdb.value().lk);
     uint32_t storeId = expdb.value().dbId;
     RecordKey mk(expdb.value().chunkId, expdb.value().dbId, tp, key, "");
 
@@ -477,18 +466,16 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::strin
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
-            // reset storelock, or will deadlock
-            storeLock.reset();
             // reset txn, it is no longer used
             txn.reset();
-            Status s = Command::delKeyPessimistic(sess, storeId, mk);
+            Status s = Command::delKeyPessimisticInLock(sess, storeId, mk);
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {
                 return s;
             }
         } else {
-            Status s = Command::delKeyOptimism(sess, storeId, mk, txn.get());
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get());
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;

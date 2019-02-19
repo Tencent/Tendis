@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <list>
 #include <vector>
+#include <tuple>
 
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
@@ -14,9 +15,9 @@
 namespace tendisplus {
 
 // storeLock state pair
-using SLSP = std::pair<uint32_t, mgl::LockMode>;
+using SLSP = std::tuple<uint32_t, std::string, mgl::LockMode>;
 
-class StoreLock;
+class ILock;
 class SessionCtx {
  public:
     SessionCtx();
@@ -44,12 +45,12 @@ class SessionCtx {
     void setSendPacketEnd(uint64_t);
     uint64_t getSendPacketEnd() const;
 
-    void setWaitLock(uint32_t storeId, mgl::LockMode mode);
+    void setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode);
     SLSP getWaitlock() const;
     std::list<SLSP> getLockStates() const;
 
-    void addLock(StoreLock *lock);
-    void removeLock(StoreLock *lock);
+    void addLock(ILock *lock);
+    void removeLock(ILock *lock);
 
     // return by value, only for stats
     std::vector<std::string> getArgsBrief() const;
@@ -62,6 +63,7 @@ class SessionCtx {
     uint32_t _dbId;
     uint32_t _waitlockStore;
     mgl::LockMode _waitlockMode;
+    std::string _waitlockKey;
 
     // single packet perf, not protected by mutex
     uint64_t _readPacketCost;
@@ -71,12 +73,9 @@ class SessionCtx {
     uint64_t _sendPacketEnd;
 
     mutable std::mutex _mutex;
-    // currently, we only use StoreLock, if more lock
-    // types are used, this list should be refined as
-    // std::list<Lock*>
 
     // protected by mutex
-    std::vector<StoreLock*> _locks;
+    std::vector<ILock*> _locks;
     std::vector<std::string> _argsBrief;
     std::list<std::string> _delBigKeys;
 };

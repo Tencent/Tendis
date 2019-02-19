@@ -455,7 +455,7 @@ class ZRemByRangeGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -561,7 +561,7 @@ class ZRemCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -679,7 +679,7 @@ class ZRankCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -737,7 +737,7 @@ class ZIncrCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -817,7 +817,7 @@ class ZCountCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -925,7 +925,7 @@ class ZlexCountCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1072,7 +1072,7 @@ class ZRangeByScoreGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1219,7 +1219,7 @@ class ZRangeByLexGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1339,7 +1339,7 @@ class ZRangeGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1464,7 +1464,7 @@ class ZScoreCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1557,7 +1557,7 @@ class ZAddCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, key, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }

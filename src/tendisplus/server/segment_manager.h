@@ -15,7 +15,8 @@ struct DbWithLock {
     uint32_t dbId;
     uint32_t chunkId;
     PStore store;
-    std::unique_ptr<StoreLock> lk;
+    std::unique_ptr<StoreLock> dbLock;
+    std::unique_ptr<KeyLock> keyLock;
 };
 
 class SegmentMgr {
@@ -24,7 +25,8 @@ class SegmentMgr {
     virtual ~SegmentMgr() = default;
     SegmentMgr(const SegmentMgr&) = delete;
     SegmentMgr(SegmentMgr&&) = delete;
-    virtual Expected<DbWithLock> getDb(Session* sess, const std::string& key, mgl::LockMode mode) = 0;
+    virtual Expected<DbWithLock> getDbWithKeyLock(Session* sess,
+            const std::string& key, mgl::LockMode keyLockMode) = 0;
     virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) = 0;
 
  private:
@@ -37,7 +39,8 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     virtual ~SegmentMgrFnvHash64() = default;
     SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
-    Expected<DbWithLock> getDb(Session* sess, const std::string& key, mgl::LockMode mode) final;
+    Expected<DbWithLock> getDbWithKeyLock(Session* sess,
+            const std::string& key, mgl::LockMode keyLockMode) final;
     Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) final;
 
  private:
