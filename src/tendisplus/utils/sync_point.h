@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <functional>
 #include <vector>
 
 #ifndef WITH_SYNC_POINT
