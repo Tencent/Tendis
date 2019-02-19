@@ -125,6 +125,7 @@ func (s *RedisServer) Setup(valgrind bool) error {
 	cfg = cfg + fmt.Sprintf("logdir ./%s/log\n", s.Path)
 	cfg = cfg + fmt.Sprintf("storage rocks\n")
 	cfg = cfg + fmt.Sprintf("dir ./%s/db\n", s.Path)
+	cfg = cfg + fmt.Sprintf("dumpdir ./%s/dump\n", s.Path)
 	cfg = cfg + "rocks.blockcachemb 4096\n"
 	cfg = cfg + fmt.Sprintf("pidfile %s/tendisplus.pid\n", s.Path)
 	if err := ioutil.WriteFile(cfgFilePath, []byte(cfg), 0600); err != nil {

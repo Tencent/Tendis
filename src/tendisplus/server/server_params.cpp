@@ -30,6 +30,7 @@ std::string ServerParams::toString() const {
         << ",\nport:" << port
         << ",\nlogLevel:" << logLevel
         << ",\nlogDir:" << logDir
+        << ",\ndumpDir:" << dumpPath
         << ",\nstorageEngine:" << storageEngine
         << ",\ndbPath:" << dbPath
         << ",\nrocksBlockCacheMB:" << rocksBlockcacheMB
@@ -94,6 +95,11 @@ Status ServerParams::parseFile(const std::string& filename) {
                 return {ErrorCodes::ERR_PARSEOPT, "invalid dir configure"};
             }
             dbPath = tokens[1];
+        } else if (tokens[0] == "dumpdir") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT, "invalid dumpdir configure"};
+            }
+            dumpPath = tokens[1];
         } else if (tokens[0] == "storage") {
             // currently only support rocks engine
             if (tokens.size() != 2 || tokens[1] != "rocks") {
@@ -139,6 +145,7 @@ ServerParams::ServerParams()
          logDir("./"),
          storageEngine("rocks"),
          dbPath("./db"),
+         dumpPath("./dump"),
          rocksBlockcacheMB(4096),
          requirepass(""),
          masterauth(""),

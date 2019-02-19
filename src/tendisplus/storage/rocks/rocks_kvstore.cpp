@@ -232,6 +232,16 @@ Status RocksTxn::delKV(const std::string& key) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksTxn::truncateBinlog(const std::list<ReplLog>& ops) {
+    for (const auto& v : ops) {
+        auto s = _txn->Delete(v.getReplLogKey().encode());
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
     if (!_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is not replOnly"};
@@ -246,10 +256,7 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
 
         auto strPair = log.encode();
         // write binlog
-        auto s = _txn->Put(strPair.first, strPair.second);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-        }
+        _binlogs.emplace_back(log);
         switch (logVal.getOp()) {
             case (ReplOp::REPL_OP_SET): {
                 Expected<RecordValue> expRv =
@@ -257,7 +264,7 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
                 if (!expRv.ok()) {
                     return expRv.status();
                 }
-                s = _txn->Put(expRk.value().encode(), expRv.value().encode());
+                auto s = _txn->Put(expRk.value().encode(), expRv.value().encode());
                 if (!s.ok()) {
                     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
                 } else {
@@ -265,7 +272,7 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
                 }
             }
             case (ReplOp::REPL_OP_DEL): {
-                s = _txn->Delete(expRk.value().encode());
+                auto s = _txn->Delete(expRk.value().encode());
                 if (!s.ok()) {
                     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
                 } else {
@@ -467,12 +474,15 @@ RocksKVStore::TxnMode RocksKVStore::getTxnMode() const {
     return _txnMode;
 }
 
-Expected<uint64_t> RocksKVStore::truncateBinlog(uint64_t start, uint64_t end) {
-    auto eTxn = createTransaction();
-    if (!eTxn.ok()) {
-        return eTxn.status();
+Expected<std::pair<uint64_t, std::list<ReplLog>>>
+RocksKVStore::getTruncateLog(uint64_t start, uint64_t end, Transaction *txn) {
+    // NOTE(deyukong): precheck non-io operations to reduce io
+    uint64_t gap = getHighestBinlogId() - start;
+    LOG(INFO) << "truncate gap:" << start << "," << gap + start << "," << _maxKeepLogs;
+    if (gap < _maxKeepLogs) {
+        return std::pair<uint64_t, std::list<ReplLog>>(start, {});
     }
-    auto txn = std::move(eTxn.value());
+
     std::unique_ptr<BinlogCursor> cursor =
         txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
     Expected<ReplLog> explog = cursor->next(); 
@@ -482,17 +492,14 @@ Expected<uint64_t> RocksKVStore::truncateBinlog(uint64_t start, uint64_t end) {
             if (start > Transaction::TXNID_UNINITED) {
                 return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
             }
-            return Transaction::TXNID_UNINITED;
+            return std::pair<uint64_t, std::list<ReplLog>>(Transaction::TXNID_UNINITED, {});
         }
         return explog.status();
     }
-    if (start != explog.value().getReplLogKey().getTxnId()) {
+    if (start != explog.value().getReplLogKey().getTxnId() && start != Transaction::TXNID_UNINITED) {
         return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
     }
-    uint64_t gap = getHighestBinlogId() - start;
-    if (gap < _maxKeepLogs) {
-        return start;
-    }
+    start = explog.value().getReplLogKey().getTxnId();
 
     // TODO(deyukong): put 10000 into configuration.
     uint64_t cnt = std::min((uint64_t)10000, gap - _maxKeepLogs);
@@ -522,22 +529,21 @@ Expected<uint64_t> RocksKVStore::truncateBinlog(uint64_t start, uint64_t end) {
         }
     }
     if (nextStart == start) {
-        return start;
+        return std::pair<uint64_t, std::list<ReplLog>>(start, {});
     }
-    for (auto& v : toDelete) {
-        if (v.getReplLogKey().getTxnId() == nextStart) {
-            break;
-        }
-        Status s = txn->delKV(v.getReplLogKey().encode());
-        if (!s.ok()) {
-            return s;
+    for (auto v = toDelete.begin(); v != toDelete.end();) {
+        if (v->getReplLogKey().getTxnId() == nextStart) {
+            v = toDelete.erase(v);
+        } else {
+            ++v;
         }
     }
-    auto cmtStat = txn->commit();
-    if (!cmtStat.ok()) {
-        return cmtStat.status();
-    }
-    return nextStart;
+    return std::pair<uint64_t, std::list<ReplLog>>(nextStart, std::move(toDelete));
+}
+
+Status RocksKVStore::truncateBinlog(const std::list<ReplLog>& toDelete,
+                                    Transaction *txn) {
+    return txn->truncateBinlog(toDelete);
 }
 
 Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
@@ -903,8 +909,17 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
                     binlogTxnId == Transaction::TXNID_UNINITED);
     } else {
         // currently, slaves do writes sequencially
-        INVARIANT(binlogTxnId > _highestVisible ||
-                    binlogTxnId == Transaction::TXNID_UNINITED);
+        // NOTE(deyukong): the INVARIANT will not always hold
+        // the physical-ckpt from master may have hole. slave
+        // starts incr-sync from master's backupinfo's highVisible
+        // id, which may have holes.
+        // INVARIANT(binlogTxnId > _highestVisible ||
+        //            binlogTxnId == Transaction::TXNID_UNINITED);
+        if (binlogTxnId != Transaction::TXNID_UNINITED && binlogTxnId <= _highestVisible) {
+            LOG(WARNING) << "db:" << dbId()
+                        << " markCommit with binlog:" << binlogTxnId
+                        << " larger than _highestVisible:" << _highestVisible;
+        }
     }
     it->second.first = true;
     it->second.second = binlogTxnId;

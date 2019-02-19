@@ -68,6 +68,7 @@ class Transaction {
                          const std::string& val) = 0;
     virtual Status delKV(const std::string& key) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
+    virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
 
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
@@ -121,8 +122,14 @@ class KVStore {
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
                                Transaction* txn) = 0;
-    // truncate binlogs in [start, end], and return the first binlog.
-    virtual Expected<uint64_t> truncateBinlog(uint64_t start, uint64_t end) = 0;
+
+    // get binlogs in [start, end], and check if start == "the first binlog"
+    // return the "next first binlog" and a list of binlogs to be deleted.
+    // if no visible binlogs, "next first binlog" == start
+    virtual Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
+            uint64_t start, uint64_t end, Transaction* txn) = 0;
+
+    virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
 
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
 

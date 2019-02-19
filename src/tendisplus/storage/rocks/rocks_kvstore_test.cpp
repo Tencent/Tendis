@@ -5,6 +5,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/server/server_params.h"
 
@@ -481,6 +482,20 @@ TEST(RocksKVStore, PesCommon) {
     commonRoutine(kvstore.get());
 }
 
+uint64_t getBinlogCount(Transaction *txn) {
+    auto bcursor = txn->createBinlogCursor(0);
+    uint64_t cnt = 0;
+    while (true) {
+        auto v = bcursor->next();
+        if (!v.ok()) {
+            INVARIANT(v.status().code() == ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    return cnt;
+}
+
 TEST(RocksKVStore, PesTruncateBinlog) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -513,9 +528,16 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         Expected<uint64_t> exptCommitId = txn1->commit();
         EXPECT_EQ(exptCommitId.ok(), true);
     }
-    Expected<uint64_t> newFirst = kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
-    EXPECT_EQ(newFirst.ok(), true);
-    EXPECT_EQ(newFirst.value(), 1U);
+
+    {
+        auto eTxn1 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn1.ok(), true);
+        std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+        auto newFirst = kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn1.get());
+        EXPECT_EQ(newFirst.ok(), true);
+        EXPECT_EQ(newFirst.value().first, 1U);
+    }
     {
         auto eTxn1 = kvstore->createTransaction();
         EXPECT_EQ(eTxn1.ok(), true);
@@ -528,11 +550,29 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 
         Expected<uint64_t> exptCommitId = txn1->commit();
         EXPECT_EQ(exptCommitId.ok(), true);
+
+        auto eTxn2 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn2.ok(), true);
+        std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+        uint64_t currentCnt = getBinlogCount(txn2.get());
+        EXPECT_EQ(currentCnt, 2U);
     }
-    Expected<uint64_t> newFirst1 = kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
-    EXPECT_EQ(newFirst1.ok(), true);
-    EXPECT_NE(newFirst1.value(), firstBinlog);
-    firstBinlog = newFirst1.value();
+    {
+        auto eTxn1 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn1.ok(), true);
+        std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+        auto newFirst1 = kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn1.get());
+        EXPECT_EQ(newFirst1.ok(), true);
+        EXPECT_NE(newFirst1.value().first, firstBinlog);
+        auto s = kvstore->truncateBinlog(newFirst1.value().second, txn1.get());
+        EXPECT_TRUE(s.ok());
+        firstBinlog = newFirst1.value().first;
+        uint64_t currentCnt = getBinlogCount(txn1.get());
+        EXPECT_EQ(currentCnt, 1U);
+
+        Expected<uint64_t> exptCommitId = txn1->commit();
+        EXPECT_EQ(exptCommitId.ok(), true);
+    }
     for (auto range : {10, 100, 1000, 10000, 100000}) {
         for (int i = 0; i < range; ++i) {
             auto eTxn1 = kvstore->createTransaction();
@@ -547,11 +587,21 @@ TEST(RocksKVStore, PesTruncateBinlog) {
             Expected<uint64_t> exptCommitId = txn1->commit();
             EXPECT_EQ(exptCommitId.ok(), true);
         }
-        Expected<uint64_t> newFirst =
-            kvstore->truncateBinlog(firstBinlog, std::numeric_limits<uint64_t>::max());
-        EXPECT_EQ(newFirst.ok(), true);
-        EXPECT_NE(newFirst.value(), firstBinlog);
-        firstBinlog = newFirst.value();
+        auto eTxn2 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn2.ok(), true);
+        std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+        uint64_t currentCnt = getBinlogCount(txn2.get());
+        auto newFirst =
+            kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn2.get());
+        EXPECT_EQ(newFirst.ok(), true) << ' ' << range << ' ' << firstBinlog << newFirst.status().toString();
+        EXPECT_NE(newFirst.value().first, firstBinlog);
+        auto s = kvstore->truncateBinlog(newFirst.value().second, txn2.get());
+        EXPECT_TRUE(s.ok());
+        uint64_t currentCnt1 = getBinlogCount(txn2.get());
+        EXPECT_EQ(currentCnt1, currentCnt - newFirst.value().second.size());
+        firstBinlog = newFirst.value().first;
+        Expected<uint64_t> exptCommitId = txn2->commit();
+        EXPECT_EQ(exptCommitId.ok(), true);
     }
 }
 

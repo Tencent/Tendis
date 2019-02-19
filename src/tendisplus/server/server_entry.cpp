@@ -116,7 +116,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // replication
     // replication relys on blocking-client
     // must startup after network prepares ok
-    _replMgr = std::make_unique<ReplManager>(shared_from_this());
+    _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
     s = _replMgr->startup();
     if (!s.ok()) {
         return s;
