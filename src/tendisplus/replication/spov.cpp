@@ -1,3 +1,4 @@
+#include <endian.h>
 #include <list>
 #include <chrono>
 #include <algorithm>
@@ -474,7 +475,7 @@ Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs
         (void) localtime_r(&time, &lt);
         strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
 
-        sprintf(fname, "%s/binlog-%d-%07d-%s.log", _dumpPath.c_str(), storeId,
+        sprintf(fname, "%s/%d/binlog-%d-%07d-%s.log", _dumpPath.c_str(), storeId, storeId,
             currentId+1, tbuf);
         fs = new std::ofstream(fname, std::ios::out|std::ios::app|std::ios::binary);
         if (!fs->is_open()) {
@@ -491,15 +492,24 @@ Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs
     }
 
     uint64_t written = 0;
+    // NOTE(deyukong):
+    // |txnId 8byte be|keyLen 4byte be|key|valLen 4byte be|val|
     for (const auto& v : logs) {
         auto kv = v.encode();
+        uint64_t txnId = v.getReplLogKey().getTxnId();
+        uint64_t txnIdTrans = htobe64(txnId);
+        fs->write((char*)&txnIdTrans, sizeof(txnIdTrans));
+
         uint32_t keyLen = kv.first.size();
-        fs->write((char*)&keyLen, sizeof(keyLen));
+        uint32_t keyLenTrans = htobe32(keyLen);
+        fs->write((char*)&keyLenTrans, sizeof(keyLenTrans));
         fs->write(kv.first.c_str(), keyLen);
+
         uint32_t valLen = kv.second.size();
-        fs->write((char*)&valLen, sizeof(valLen));
+        uint32_t valLenTrans = htobe32(valLen);
+        fs->write((char*)&valLenTrans, sizeof(valLenTrans));
         fs->write(kv.second.c_str(), valLen);
-        written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);
+        written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen) + sizeof(txnIdTrans);
     }
     INVARIANT(fs->good());
     {
