@@ -20,7 +20,7 @@ class Session: public std::enable_shared_from_this<Session> {
     virtual ~Session();
     uint64_t id() const;
 
-    void setResponse(const std::string& s);
+    virtual void setResponse(const std::string& s) = 0;
     const std::vector<std::string>& getArgs() const;
     SessionCtx *getCtx() const;
     std::shared_ptr<ServerEntry> getServerEntry() const;
@@ -34,12 +34,11 @@ class Session: public std::enable_shared_from_this<Session> {
 
  protected:
     std::vector<std::string> _args;
-    std::vector<char> _respBuf;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<SessionCtx> _ctx;
 
  private:
-    mutable std::mutex _mutex;
+    mutable std::mutex _baseMutex;
     std::string _name;
     const uint64_t _sessId;
     static std::atomic<uint64_t> _idGen;
@@ -53,6 +52,10 @@ class LocalSession: public Session {
     Status cancel() final;
     int getFd() final;
     std::string getRemote() const final;
+    void setResponse(const std::string& s) final;
+
+ private:
+    std::vector<char> _respBuf;
 };
 
 class LocalSessionGuard {

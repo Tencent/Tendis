@@ -10,7 +10,6 @@ std::atomic<uint64_t> Session::_aliveCnt(0);
 
 Session::Session(std::shared_ptr<ServerEntry> svr)
         :_args(std::vector<std::string>()),
-         _respBuf(std::vector<char>()),
          _server(svr),
          _ctx(std::make_unique<SessionCtx>()),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
@@ -22,22 +21,17 @@ Session::~Session() {
 }
 
 std::string Session::getName() const {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<std::mutex> lk(_baseMutex);
     return _name;
 }
 
 void Session::setName(const std::string& name) {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<std::mutex> lk(_baseMutex);
     _name = name;
 }
 
 uint64_t Session::id() const {
     return _sessId;
-}
-
-void Session::setResponse(const std::string& s) {
-    INVARIANT(_respBuf.size() == 0);
-    std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
 }
 
 const std::vector<std::string>& Session::getArgs() const {
@@ -71,6 +65,11 @@ int LocalSession::getFd() {
 
 std::string LocalSession::getRemote() const {
     return "";
+}
+
+void LocalSession::setResponse(const std::string& s) {
+    INVARIANT(_respBuf.size() == 0);
+    std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
 }
 
 LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {

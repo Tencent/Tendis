@@ -28,22 +28,8 @@ class SessionCtx {
     uint32_t getDbId() const;
     void setDbId(uint32_t);
 
-    void resetSingleReqCtx();
-
-    void addReadPacketCost(uint64_t);
-    uint64_t getReadPacketCost() const;
-
     void setProcessPacketStart(uint64_t);
     uint64_t getProcessPacketStart() const;
-
-    void setProcessPacketEnd(uint64_t);
-    uint64_t getProcessPacketEnd() const;
-
-    void setSendPacketStart(uint64_t);
-    uint64_t getSendPacketStart() const;
-
-    void setSendPacketEnd(uint64_t);
-    uint64_t getSendPacketEnd() const;
 
     void setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode);
     SLSP getWaitlock() const;
@@ -64,13 +50,7 @@ class SessionCtx {
     uint32_t _waitlockStore;
     mgl::LockMode _waitlockMode;
     std::string _waitlockKey;
-
-    // single packet perf, not protected by mutex
-    uint64_t _readPacketCost;
     uint64_t _processPacketStart;
-    uint64_t _processPacketEnd;
-    uint64_t _sendPacketStart;
-    uint64_t _sendPacketEnd;
 
     mutable std::mutex _mutex;
 

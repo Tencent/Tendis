@@ -6,6 +6,7 @@
 #include "tendisplus/network/network.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -18,7 +19,6 @@ constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
 std::string RequestMatrix::toString() const {
     std::stringstream ss;
     ss << "\nprocessed\t" << processed
-        << "\nreadPacketCost\t" << readPacketCost << "ns"
         << "\nprocessCost\t" << processCost << "ns"
         << "\nsendPacketCost\t" << sendPacketCost << "ns";
     return ss.str();
@@ -27,7 +27,6 @@ std::string RequestMatrix::toString() const {
 RequestMatrix RequestMatrix::operator-(const RequestMatrix& right) {
     RequestMatrix result;
     result.processed = processed - right.processed;
-    result.readPacketCost = readPacketCost - right.readPacketCost;
     result.processCost = processCost - right.processCost;
     result.sendPacketCost = sendPacketCost - right.sendPacketCost;
     return result;
@@ -208,6 +207,8 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
          _reqType(RedisReqMode::REDIS_REQ_UNKNOWN),
          _multibulklen(0),
          _bulkLen(-1),
+         _isSendRunning(false),
+         _isEnded(false),
          _netMatrix(netMatrix),
          _reqMatrix(reqMatrix) {
     if (initSock) {
@@ -265,6 +266,19 @@ asio::ip::tcp::socket NetSession::borrowConn() {
     return std::move(_sock);
 }
 
+void NetSession::setResponse(const std::string& s) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto v = std::make_shared<SendBuffer>();
+    std::copy(s.begin(), s.end(), std::back_inserter(v->buffer));
+    v->closeAfterThis = _closeAfterRsp;
+    if (_isSendRunning) {
+        _sendBuffer.push_back(v);
+    } else {
+        _isSendRunning = true;
+        drainRsp(v);
+    }
+}
+
 void NetSession::start() {
     stepState();
 }
@@ -292,10 +306,7 @@ void NetSession::setCloseAfterRsp() {
 
 void NetSession::setRspAndClose(const std::string& s) {
     _closeAfterRsp = true;
-
     setResponse(redis_port::errorReply(s));
-    setState(State::DrainRsp);
-    schedule();
 }
 
 void NetSession::processInlineBuffer() {
@@ -463,8 +474,7 @@ void NetSession::processMultibulkBuffer() {
 void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     if (ec) {
         LOG(WARNING) << "drainReqCallback:" << ec.message();
-        setState(State::End);
-        schedule();
+        endSession();
         return;
     }
 
@@ -536,7 +546,6 @@ void NetSession::resetMultiBulkCtx() {
     _multibulklen = 0;
     _bulkLen = -1;
     _args.clear();
-    _respBuf.clear();
 }
 
 void NetSession::drainReqBuf() {
@@ -563,7 +572,6 @@ void NetSession::drainReqNet() {
     _sock.
         async_read_some(asio::buffer(_queryBuf.data() + _queryBufPos, wantLen),
         [this, self, curr](const std::error_code& ec, size_t actualLen) {
-            _ctx->addReadPacketCost(nsSinceEpoch() - curr);
             drainReqCallback(ec, actualLen);
         });
 }
@@ -571,65 +579,74 @@ void NetSession::drainReqNet() {
 void NetSession::processReq() {
     _ctx->setProcessPacketStart(nsSinceEpoch());
     bool continueSched = _server->processRequest(id());
-    _ctx->setProcessPacketEnd(nsSinceEpoch());
+    _reqMatrix->processed += 1;
+    _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
+    _ctx->setProcessPacketStart(0);
+
     if (!continueSched) {
-        _state.store(State::End);
+        endSession();
+    } else if (!_closeAfterRsp) {
+        resetMultiBulkCtx();
+        if (_queryBufPos == 0) {
+            setState(State::DrainReqNet);
+        } else {
+            setState(State::DrainReqBuf);
+            ++_netMatrix->stickyPackets;
+        }
         schedule();
     } else {
-        _state.store(State::DrainRsp, std::memory_order_relaxed);
-        schedule();
+        // closeAfterRsp, donot process more requests
+        // let drainRspCallback end this session
     }
 }
 
-void NetSession::drainRsp() {
+void NetSession::drainRsp(std::shared_ptr<SendBuffer> buf) {
+    TEST_SYNC_POINT_CALLBACK("NetSession::drainRsp", buf.get());
     auto self(shared_from_this());
-    _ctx->setSendPacketStart(nsSinceEpoch());
-    asio::async_write(_sock, asio::buffer(_respBuf.data(), _respBuf.size()),
-        [this, self](const std::error_code& ec, size_t actualLen) {
-            _ctx->setSendPacketEnd(nsSinceEpoch());
-            drainRspCallback(ec, actualLen);
+    uint64_t now = nsSinceEpoch();
+    asio::async_write(_sock, asio::buffer(buf->buffer.data(), buf->buffer.size()),
+        [this, self, buf, now](const std::error_code& ec, size_t actualLen) {
+            _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
+            drainRspCallback(ec, actualLen, buf);
     });
+   
 }
 
-void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen) {
+void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen, std::shared_ptr<SendBuffer> buf) {
     if (ec) {
         LOG(WARNING) << "drainRspCallback:" << ec.message();
-        setState(State::End);
-        schedule();
+        endSession();
         return;
     }
-    if (actualLen != _respBuf.size()) {
-        LOG(FATAL) << "conn:" << _connId << ",data:" << _respBuf.data()
-            << ",actualLen:" << actualLen << ",bufsize:" << _respBuf.size()
+    if (actualLen != buf->buffer.size()) {
+        LOG(FATAL) << "conn:" << _connId << ",data:" << buf->buffer.data()
+            << ",actualLen:" << actualLen << ",bufsize:" << buf->buffer.size()
             << ",invalid drainRsp len";
     }
 
-    _reqMatrix->processed += 1;
-    _reqMatrix->readPacketCost += _ctx->getReadPacketCost();
-    _reqMatrix->processCost +=
-            _ctx->getProcessPacketEnd() - _ctx->getProcessPacketStart();
-    _reqMatrix->sendPacketCost +=
-            _ctx->getSendPacketEnd() - _ctx->getSendPacketStart();
-    _ctx->resetSingleReqCtx();
-
-    if (_closeAfterRsp) {
-        setState(State::End);
-        schedule();
+    if (buf->closeAfterThis) {
+        endSession();
         return;
     }
 
-    // clean reqMode and counters for multibulk mode
-    resetMultiBulkCtx();
-    if (_queryBufPos == 0) {
-        setState(State::DrainReqNet);
+    std::lock_guard<std::mutex> lk(_mutex);
+    INVARIANT(_isSendRunning);
+    if (_sendBuffer.size() > 0) {
+        auto it = _sendBuffer.front();
+        _sendBuffer.pop_front();
+        drainRsp(it);
     } else {
-        setState(State::DrainReqBuf);
-        ++_netMatrix->stickyPackets;
+        _isSendRunning = false;
     }
-    schedule();
+
 }
 
 void NetSession::endSession() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_isEnded) {
+        return;
+    }
+    _isEnded = true;
     ++_netMatrix->connReleased;
     LOG(INFO) << "net session, id:" << id()
                   << ",connId:" << _connId
@@ -653,12 +670,6 @@ void NetSession::stepState() {
             return;
         case State::Process:
             processReq();
-            return;
-        case State::DrainRsp:
-            drainRsp();
-            return;
-        case State::End:
-            endSession();
             return;
         default:
             LOG(FATAL) << "connId:" << _connId << ",invalid state:"

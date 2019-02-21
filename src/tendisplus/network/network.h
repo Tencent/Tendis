@@ -36,7 +36,6 @@ struct NetworkMatrix {
 
 struct RequestMatrix {
     Atom<uint64_t> processed{0};
-    Atom<uint64_t> readPacketCost{0};
     Atom<uint64_t> processCost{0};
     Atom<uint64_t> sendPacketCost{0};
     RequestMatrix operator -(const RequestMatrix& right);
@@ -76,6 +75,11 @@ class NetworkAsio {
     std::shared_ptr<RequestMatrix> _reqMatrix;
 };
 
+struct SendBuffer {
+    std::vector<char> buffer;
+    bool closeAfterThis;
+};
+
 // represent a ingress tcp-connection
 class NetSession: public Session {
  public:
@@ -91,6 +95,7 @@ class NetSession: public Session {
     std::string getRemoteRepr() const;
     std::string getLocalRepr() const;
     asio::ip::tcp::socket borrowConn();
+    void setResponse(const std::string& s) final;
     void setCloseAfterRsp();
     void start() final;
     Status cancel() final;
@@ -99,18 +104,11 @@ class NetSession: public Session {
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);
 
-    // normal clients
-    // Created-> [DrainReqNet]+ -> Process -> DrainRsp ->
-    // --> [DrainReqNet|DrainReqBuf]+
-    // clients with bad input
-    // Created -> [DrainReqNet]+ -> DrainRsp(with _closeAfterRsp set) -> End
     enum class State {
         Created,
         DrainReqNet,
         DrainReqBuf,
         Process,
-        DrainRsp,
-        End,
     };
 
  protected:
@@ -133,8 +131,8 @@ class NetSession: public Session {
     void processInlineBuffer();
 
     // send data to tcpbuff
-    void drainRsp();
-    void drainRspCallback(const std::error_code& ec, size_t actualLen);
+    void drainRsp(std::shared_ptr<SendBuffer>);
+    void drainRspCallback(const std::error_code& ec, size_t actualLen, std::shared_ptr<SendBuffer> buf);
 
     // close session, and the socket(by raii)
     void endSession();
@@ -162,6 +160,13 @@ class NetSession: public Session {
     RedisReqMode _reqType;
     int64_t _multibulklen;
     int64_t _bulkLen;
+
+    // _mutex protects _isSendRunning, _isEnded, _sendBuffer
+    // other variables will never be visited in send-threads.
+    std::mutex _mutex;
+    bool _isSendRunning;
+    bool _isEnded;
+    std::list<std::shared_ptr<SendBuffer>> _sendBuffer;
 
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<RequestMatrix> _reqMatrix;
