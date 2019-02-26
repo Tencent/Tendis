@@ -227,6 +227,93 @@ TEST(SkipList, Mix) {
     EXPECT_EQ(expRank.value(), 2U);
 }
 
+TEST(SkipList, InsertDelSameKeys) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto store = std::shared_ptr<KVStore>(
+        new RocksKVStore("0", cfg, blockCache));
+    auto eTxn1 = store->createTransaction();
+    EXPECT_TRUE(eTxn1.ok());
+
+    // init a key
+    ZSlMetaValue meta(1, 20, 1, 0);
+    RecordValue rv(meta.encode());
+    RecordKey mk(0, 0, RecordType::RT_ZSET_META, "skiplistkey", "");
+    Status s = store->setKV(mk, rv, eTxn1.value().get());
+    EXPECT_TRUE(s.ok());
+
+    RecordKey head(0, 0,
+                   RecordType::RT_ZSET_S_ELE,
+                   "skiplistkey",
+                   std::to_string(ZSlMetaValue::HEAD_ID));
+    ZSlEleValue headVal;
+    RecordValue subRv(headVal.encode());
+
+    s = store->setKV(head, subRv, eTxn1.value().get());
+    EXPECT_TRUE(s.ok());
+
+    Expected<uint64_t> commitStatus = eTxn1.value()->commit();
+    EXPECT_TRUE(commitStatus.ok());
+
+    bool exists1 = false;
+    bool exists2 = false;
+    uint64_t score1 = 0;
+    uint64_t score2 = 0;
+    for (int i = 0; i < 10; ++i) {
+        for (const auto& k : {std::string("k1"), std::string("k2")}) {
+            RecordKey mk(0, 0, RecordType::RT_ZSET_META, "skiplistkey", "");
+            auto eTxn = store->createTransaction();
+            EXPECT_TRUE(eTxn.ok());
+            Expected<RecordValue> eMeta = store->getKV(mk, eTxn.value().get());
+            auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+            EXPECT_TRUE(eMetaContent.ok());
+            auto meta = eMetaContent.value();
+            SkipList sl(0, 0, "skiplistkey", meta, store);
+            Status s;
+            if (k == "k1") {
+                if (exists1) {
+                    s = sl.remove(score1, k, eTxn.value().get());
+                    EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
+                    exists1 = false;
+                    score1 = 0;
+                } else {
+                    exists1 = true;
+                    score1 = rand();
+                    s = sl.insert(score1, k, eTxn.value().get());
+                    EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
+                }
+            } else {
+                if (exists2) {
+                    s = sl.remove(score2, k, eTxn.value().get());
+                    EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
+                    exists2 = false;
+                    score2 = 0;
+                } else {
+                    exists2 = true;
+                    score2 = rand();
+                    s = sl.insert(score2, k, eTxn.value().get());
+                    EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
+                }
+            }
+            std::stringstream ss;
+            //if (!s.ok()) {
+                sl.traverse(ss, eTxn.value().get());
+            // }
+            LOG(INFO) << "\n" << ss.str();
+            s = sl.save(eTxn.value().get());
+            EXPECT_TRUE(s.ok()) << s.toString();
+            eTxn.value()->commit();   
+        }
+    }
+}
+
 TEST(SkipList, Common) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));

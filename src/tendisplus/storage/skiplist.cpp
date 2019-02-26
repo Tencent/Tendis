@@ -205,16 +205,16 @@ Status SkipList::removeInternal(uint64_t pos,
         _tail = cache[pos]->getBackward();
     }
 
-    while (_level > 1 &&
-           cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
-        --_level;
-    }
     --_count;
     for (size_t i = 1; i <= _level; ++i) {
         Status s = saveNode(update[i], *cache[update[i]], txn);
         if (!s.ok()) {
             return s;
         }
+    }
+    while (_level > 1 &&
+           cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
+        --_level;
     }
     return delNode(pos, txn);
 }
@@ -1055,15 +1055,18 @@ Status SkipList::traverse(std::stringstream& ss, Transaction *txn) {
         ZSlEleValue* node = expNode.value();
         ss << "level:" << i << ":";
         while (node->getForward(i)) {
+            uint64_t myId = node->getForward(i);
             Expected<ZSlEleValue*> expNode =
                 getNode(node->getForward(i), &cache, txn);
             if (!expNode.ok()) {
                 return expNode.status();
             }
             node = expNode.value();
-            ss << "(" << node->getSubKey()
+            ss << "(" << myId
+               << "," << node->getSubKey()
                << "," << node->getScore()
                << "," << node->getSpan(i)
+               << "," << node->getForward(i)
                << "),";
         }
         ss << std::endl;
