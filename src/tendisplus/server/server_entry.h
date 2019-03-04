@@ -14,6 +14,7 @@
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/replication/repl_manager.h"
+#include "tendisplus/server/index_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
 
@@ -25,6 +26,7 @@ class PoolMatrix;
 class RequestMatrix;
 class Catalog;
 class ReplManager;
+class IndexManager;
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
@@ -70,10 +72,13 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
     PessimisticMgr* getPessimisticMgr();
+    IndexManager* getIndexMgr();
 
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
     bool versionIncrease() const;
+
+    std::vector<PStore> getStores() const;
 
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
@@ -95,6 +100,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<WorkerPool> _executor;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
+    std::unique_ptr<IndexManager> _indexMgr;
     std::unique_ptr<PessimisticMgr> _pessimisticMgr;
 
     std::vector<PStore> _kvstores;

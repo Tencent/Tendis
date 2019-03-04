@@ -140,14 +140,15 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 
 // requirement: intentionlock held
 Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
-                          const RecordKey& mk) {
+                          const RecordKey& mk, const TTLIndex *ictx) {
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
 
     LOG(INFO) << "begin delKeyPessimistic key:"
                 << hexlify(mk.getPrimaryKey());
 
-    auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_NONE);
+    auto expdb = server->getSegmentMgr()->getDb(
+        sess, storeId, mgl::LockMode::LOCK_NONE);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -180,13 +181,22 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
         if (!s.ok()) {
             return s;
         }
+
+        if (ictx) {
+            Status s = txn->delKV(ictx->encode());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
         Expected<uint64_t> commitStatus = txn->commit();
         return commitStatus.status();
     }
 }
 
 Expected<std::pair<std::string, std::list<Record>>>
-Command::scan(const std::string& pk, const std::string& from, uint64_t cnt, Transaction *txn) {
+Command::scan(const std::string& pk, const std::string& from,
+              uint64_t cnt, Transaction *txn) {
     auto cursor = txn->createCursor();
     if (from == "0") {
         cursor->seek(pk);
@@ -228,17 +238,19 @@ Command::scan(const std::string& pk, const std::string& from, uint64_t cnt, Tran
             nextCursor, std::move(result)));
 }
 
-// requirement: intentionlock held 
+// requirement: intentionlock held
 Status Command::delKeyOptimismInLock(Session *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
-                                           Transaction* txn) {
+                                           Transaction* txn,
+                                           const TTLIndex *ictx) {
     auto s = Command::partialDelSubKeys(sess,
                               storeId,
                               std::numeric_limits<uint32_t>::max(),
                               rk,
                               true,
-                              txn);
+                              txn,
+                              ictx);
     return s.status();
 }
 
@@ -247,7 +259,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        uint32_t subCount,
                                        const RecordKey& mk,
                                        bool deleteMeta,
-                                       Transaction* txn) {
+                                       Transaction* txn,
+                                       const TTLIndex *ictx) {
     if (deleteMeta && subCount != std::numeric_limits<uint32_t>::max()) {
         return {ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount"};
     }
@@ -263,6 +276,14 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         if (!s.ok()) {
             return s;
         }
+
+        if (ictx) {
+            Status s = txn->delKV(ictx->encode());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
         auto commitStatus = txn->commit();
         if (!commitStatus.ok()) {
             return commitStatus.status();
@@ -342,6 +363,14 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
             return s;
         }
     }
+
+    if (ictx) {
+        Status s = txn->delKV(ictx->encode());
+        if (!s.ok()) {
+            return s;
+        }
+    }
+
     Expected<uint64_t> commitStatus = txn->commit();
     if (commitStatus.ok()) {
         return pendingDelete.size();
@@ -403,6 +432,8 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         if (!cnt.ok()) {
             return cnt.status();
         }
+
+        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(), eValue.value().getTtl());
         if (cnt.value() >= 2048 ||
                 (mk.getRecordType() == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
@@ -410,9 +441,9 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            return Command::delKeyPessimisticInLock(sess, storeId, mk);
+            return Command::delKeyPessimisticInLock(sess, storeId, mk, &ictx);
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get());
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(), &ictx);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
@@ -433,8 +464,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::strin
         return expdb.status();
     }
     uint32_t storeId = expdb.value().dbId;
-    RecordKey mk(expdb.value().chunkId, expdb.value().dbId, tp, key, "");
-
+    RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
     // currently, a simple kv will not be locked
     // if (mk.getRecordType() != RecordType::RT_KV) {
     //     std::string mkEnc = mk.encode();
@@ -462,20 +492,22 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::strin
         if (!cnt.ok()) {
             return cnt.status();
         }
+
+        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(), targetTtl);
         if (cnt.value() >= 2048) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            Status s = Command::delKeyPessimisticInLock(sess, storeId, mk);
+            Status s = Command::delKeyPessimisticInLock(sess, storeId, mk, &ictx);
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {
                 return s;
             }
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get());
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(), &ictx);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;

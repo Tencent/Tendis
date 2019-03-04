@@ -6,6 +6,7 @@
 #include <vector>
 #include <list>
 #include <limits>
+#include <algorithm>
 #include "glog/logging.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
@@ -47,11 +48,40 @@ Expected<Record> RocksKVCursor::next() {
     _it->Next();
     if (result.ok()) {
         return std::move(result.value());
+    } else {
+        LOG(WARNING) << result.status().toString();
     }
     return result.status();
 }
 
-RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, std::shared_ptr<tendisplus::BinlogObserver> ob)
+Status RocksKVCursor::prev() {
+    if (!_it->status().ok()) {
+        return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
+    }
+
+    if (!_it->Valid()) {
+        return {ErrorCodes::ERR_EXHAUST, "no more data"};
+    }
+
+    _it->Prev();
+
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Expected<std::string> RocksKVCursor::key() {
+    if (!_it->status().ok()) {
+        return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
+    }
+
+    if (!_it->Valid()) {
+        return {ErrorCodes::ERR_EXHAUST, "no more data"};
+    }
+
+    return _it->key().ToString();
+}
+
+RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
+                   std::shared_ptr<tendisplus::BinlogObserver> ob)
         :_txnId(txnId),
          _txn(nullptr),
          _store(store),
@@ -70,6 +100,13 @@ std::unique_ptr<BinlogCursor> RocksTxn::createBinlogCursor(
         hv = Transaction::MAX_VALID_TXNID;
     }
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
+}
+
+std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
+    uint64_t until) {
+    auto cursor = createCursor();
+
+    return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
 }
 
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
@@ -264,7 +301,8 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
                 if (!expRv.ok()) {
                     return expRv.status();
                 }
-                auto s = _txn->Put(expRk.value().encode(), expRv.value().encode());
+                auto s = _txn->Put(expRk.value().encode(),
+                                   expRv.value().encode());
                 if (!s.ok()) {
                     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
                 } else {
@@ -470,28 +508,30 @@ RocksKVStore::TxnMode RocksKVStore::getTxnMode() const {
 }
 
 Expected<std::pair<uint64_t, std::list<ReplLog>>>
-RocksKVStore::getTruncateLog(uint64_t start, uint64_t end, Transaction *txn) {
+RocksKVStore::getTruncateLog(uint64_t start, uint64_t end,
+                             Transaction *txn) {
     // NOTE(deyukong): precheck non-io operations to reduce io
     uint64_t gap = getHighestBinlogId() - start;
-    LOG(INFO) << "truncate gap:" << start << "," << gap + start << "," << _maxKeepLogs;
     if (gap < _maxKeepLogs) {
         return std::pair<uint64_t, std::list<ReplLog>>(start, {});
     }
 
     std::unique_ptr<BinlogCursor> cursor =
         txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
-    Expected<ReplLog> explog = cursor->next(); 
+    Expected<ReplLog> explog = cursor->next();
     if (!explog.ok()) {
         if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
             // NOTE(deyukong): perhaps INVARIANT here is better
             if (start > Transaction::TXNID_UNINITED) {
                 return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
             }
-            return std::pair<uint64_t, std::list<ReplLog>>(Transaction::TXNID_UNINITED, {});
+            return std::pair<uint64_t, std::list<ReplLog>>(
+                Transaction::TXNID_UNINITED, {});
         }
         return explog.status();
     }
-    if (start != explog.value().getReplLogKey().getTxnId() && start != Transaction::TXNID_UNINITED) {
+    if (start != explog.value().getReplLogKey().getTxnId() &&
+        start != Transaction::TXNID_UNINITED) {
         return {ErrorCodes::ERR_INTERNAL, "invalid start binlog"};
     }
     start = explog.value().getReplLogKey().getTxnId();
@@ -503,7 +543,7 @@ RocksKVStore::getTruncateLog(uint64_t start, uint64_t end, Transaction *txn) {
     uint64_t nowTxnId = start;
     uint64_t nextStart = start;
     while (true) {
-        Expected<ReplLog> explog = cursor->next(); 
+        Expected<ReplLog> explog = cursor->next();
         if (!explog.ok()) {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;

@@ -63,10 +63,27 @@ Expected<bool> expireAfterNow(Session *sess,
             return eValue.status();
         }
         auto rv = eValue.value();
-        rv.setTtl(expireAt);
-        Status s = kvstore->setKV(rk, rv, txn.get());
+
+        // delete old index entry
+        auto oldTTL = rv.getTtl();
+        TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
+        Status s = txn->delKV(o_ictx.encode());
         if (!s.ok()) {
             return s;
+        }
+
+        // update
+        rv.setTtl(expireAt);
+        s = kvstore->setKV(rk, rv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+
+        // add new index entry
+        TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
+        s = txn->setKV(n_ictx.encode(), RecordValue().encode());
+        if (!s.ok()) {
+          return s;
         }
 
         auto commitStatus = txn->commit();
@@ -93,11 +110,11 @@ Expected<std::string> expireGeneric(Session *sess,
                                     const std::string& key) {
     if (expireAt >= nsSinceEpoch()/1000000) {
         bool atLeastOne = false;
-        for (auto type : {RecordType::RT_KV,
+        for (auto type : {RecordType::RT_HASH_META,
                           RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META}) {
+                          RecordType::RT_ZSET_META,
+                          RecordType::RT_KV}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -107,12 +124,13 @@ Expected<std::string> expireGeneric(Session *sess,
         return atLeastOne ? Command::fmtOne() : Command::fmtZero();
     } else {
         bool atLeastOne = false;
-        for (auto type : {RecordType::RT_KV,
+        for (auto type : {RecordType::RT_HASH_META,
                           RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META,
                           RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META}) {
+                          RecordType::RT_ZSET_META,
+                          RecordType::RT_KV}) {
             auto done = expireBeforeNow(sess, type, key);
+            LOG(WARNING) << " expire before " << key << " " << rt2Char(type);
             if (!done.ok()) {
                 return done.status();
             }

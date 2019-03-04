@@ -36,6 +36,8 @@ uint8_t rt2Char(RecordType t) {
             return 'c';
         case RecordType::RT_ZSET_S_ELE:
             return 'z';
+        case RecordType::RT_TTL_INDEX:
+            return std::numeric_limits<uint8_t>::max()-1;
         // it's convinent (for seek) to have BINLOG to pos
         // at the rightmost of a lsmtree
         // NOTE(deyukong): DO NOT change RT_BINLOG's char represent
@@ -74,6 +76,8 @@ RecordType char2Rt(uint8_t t) {
             return RecordType::RT_ZSET_S_ELE;
         case 'c':
             return RecordType::RT_ZSET_H_ELE;
+        case std::numeric_limits<uint8_t>::max()-1:
+            return RecordType::RT_TTL_INDEX;
         case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
@@ -203,6 +207,29 @@ const std::string& RecordKey::prefixReplLog() {
         result.push_back(rt2Char(RecordType::RT_BINLOG));
         return result;
     }();
+    return s;
+}
+
+const std::string& RecordKey::prefixTTLIndex() {
+    static std::string s = []() {
+      std::string result;
+
+      static_assert(TTLIndex::DBID == 0XFFFFFFFFU,
+                    "invalid TTLIndex::DBID");
+      static_assert(TTLIndex::CHUNKID == 0XFFFFFFFEU,
+                    "invalid TTLIndex::CHUNKID");
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFE);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(rt2Char(RecordType::RT_TTL_INDEX));
+      return result;
+    }();
+
     return s;
 }
 
@@ -1196,6 +1223,113 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
     result._subKey = std::string(val.c_str()+offset, keyLen);
     offset += keyLen;
     return result;
+}
+
+uint8_t it2Char(IndexType t) {
+  switch (t) {
+    case IndexType::IT_TTL:
+      return 't';
+    default:
+      LOG(FATAL) << "invalid index type: " << static_cast<uint8_t>(t);
+      return 0;
+  }
+}
+
+IndexType char2It(uint8_t t) {
+  switch (t) {
+    case 't':
+      return IndexType::IT_TTL;
+    default:
+      LOG(FATAL) << "invalid index type char:" << static_cast<uint8_t>(t);
+      return IndexType::IT_INVALID;
+  }
+}
+
+TTLIndex&
+TTLIndex::operator=(const TTLIndex& o) {
+    _ttl = o.getTTL();
+    _type = o.getType();
+    _priKey = o.getPriKey();
+    _dbId = o.getDbId();
+    return *this;
+}
+
+const std::string TTLIndex::ttlIndex() const {
+    std::string ttlIdx;
+
+    for (size_t i = 0; i < sizeof(_ttl); ++i) {
+        ttlIdx.push_back(
+            static_cast<char>((_ttl>>((sizeof(_ttl)-i-1)*8))&0xff));
+    }
+
+    for (size_t i = 0; i < sizeof(_dbId); ++i) {
+        ttlIdx.push_back(
+            static_cast<char>((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff));
+    }
+
+    ttlIdx.push_back(rt2Char(_type));
+    ttlIdx.append(_priKey);
+
+    return ttlIdx;
+}
+
+std::uint64_t TTLIndex::decodeTTL(const std::string &index) {
+    size_t offset = 0;
+    uint64_t ttl = 0;
+
+    for (size_t i = 0; i < sizeof(ttl); ++i) {
+        ttl = (ttl << 8) | static_cast<uint8_t>(index[offset+i]);
+    }
+
+    return ttl;
+}
+
+std::uint32_t TTLIndex::decodeDBId(const std::string &index) {
+    size_t offset = sizeof(_ttl);
+    uint32_t dbid = 0;
+
+    for (size_t i = 0; i < sizeof(dbid); ++i) {
+        dbid = (dbid << 8) | index[offset+i];
+    }
+
+    return dbid;
+}
+
+RecordType TTLIndex::decodeType(const std::string &index) {
+  size_t offset = sizeof(_ttl) + sizeof(_dbId);
+
+  return char2Rt(index[offset]);
+}
+
+std::string TTLIndex::decodePriKey(const std::string &index) {
+  size_t offset = sizeof(_ttl) + sizeof(_dbId) + sizeof(uint8_t);
+
+  return index.substr(offset);
+}
+
+std::string TTLIndex::encode() const {
+  std::string partial = ttlIndex();
+
+  RecordKey tmpRk(TTLIndex::CHUNKID,
+                  TTLIndex::DBID,
+                  RecordType::RT_TTL_INDEX,
+                  std::move(partial), "");
+
+  return tmpRk.encode();
+}
+
+Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
+    const std::string &index = rk.getPrimaryKey();
+    if (index.size() < sizeof(_ttl) + sizeof(uint8_t) + sizeof(_dbId)) {
+        return {ErrorCodes::ERR_DECODE, "Invalid keylen"};
+    }
+
+    uint64_t ttl = decodeTTL(index);
+    uint32_t dbId = decodeDBId(index);
+    RecordType type = decodeType(index);
+    std::string priKey = decodePriKey(index);
+
+    return TTLIndex(priKey, type, dbId, ttl);
 }
 
 namespace rcd_util {

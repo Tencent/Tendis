@@ -25,6 +25,7 @@ enum class RecordType {
     RT_ZSET_S_ELE,
     RT_ZSET_H_ELE,
     RT_BINLOG,
+    RT_TTL_INDEX,
 };
 
 uint8_t rt2Char(RecordType t);
@@ -76,6 +77,7 @@ class RecordKey {
     */
 
     static const std::string& prefixReplLog();
+    static const std::string& prefixTTLIndex();
 
     RecordType getRecordType() const;
     std::string encode() const;
@@ -257,7 +259,7 @@ class ListMetaValue {
 class HashMetaValue {
  public:
     HashMetaValue();
-    HashMetaValue(uint64_t count);
+    explicit HashMetaValue(uint64_t count);
     HashMetaValue(HashMetaValue&&);
     static Expected<HashMetaValue> decode(const std::string&);
     HashMetaValue& operator=(HashMetaValue&&);
@@ -337,6 +339,55 @@ class ZSlEleValue {
     uint64_t _score;
     uint64_t _backward;
     std::string _subKey;
+};
+
+enum class IndexType : std::uint8_t {
+  IT_TTL,
+  IT_INVALID,
+};
+
+uint8_t it2Char(IndexType t);
+IndexType char2It(uint8_t t);
+
+class TTLIndex {
+ public:
+    TTLIndex() = default;
+    TTLIndex&operator=(const TTLIndex &o);
+
+    TTLIndex(const std::string &priKey,
+             RecordType type,
+             uint32_t dbid,
+             uint64_t ttl = 0):
+        // more furthur index attributed put here
+        _priKey(priKey),
+        _type(type),
+        _dbId(dbid),
+        _ttl(ttl) {}
+
+    const std::string ttlIndex() const;
+
+    static std::string decodePriKey(const std::string &index);
+    static RecordType decodeType(const std::string &index);
+    static std::uint32_t decodeDBId(const std::string &index);
+    static std::uint64_t decodeTTL(const std::string &index);
+
+    std::string encode() const;
+    static Expected<TTLIndex> decode(const RecordKey& rk);
+
+    std::string getPriKey() const { return _priKey; }
+    RecordType getType() const { return _type; }
+    std::uint32_t getDbId() const { return _dbId; }
+    std::uint64_t getTTL() const { return _ttl; }
+
+ private:
+    std::string _priKey;
+    RecordType _type;
+    uint32_t _dbId;
+    uint64_t _ttl;
+
+ public:
+    static constexpr uint32_t CHUNKID = 0XFFFFFFFEU;
+    static constexpr uint32_t DBID = 0XFFFFFFFFU;
 };
 
 namespace rcd_util {
