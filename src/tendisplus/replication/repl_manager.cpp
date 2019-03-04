@@ -18,18 +18,19 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/lock/lock.h"
 
 namespace tendisplus {
 
-ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr)
+ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr, std::shared_ptr<ServerParams> cfg)
     :_isRunning(false),
      _svr(svr),
      _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
      _incrPaused(false),
-     _firstBinlogId(0),
      _clientIdGen(0),
+     _dumpPath(cfg->dumpPath),
      _fullPushMatrix(std::make_shared<PoolMatrix>()),
      _incrPushMatrix(std::make_shared<PoolMatrix>()),
      _fullReceiveMatrix(std::make_shared<PoolMatrix>()),
@@ -140,32 +141,49 @@ Status ReplManager::startup() {
         } else {
             store->setMode(KVStore::StoreMode::REPLICATE_ONLY);
         }
+        Expected<uint32_t> efileSeq = maxDumpFileSeq(i);
+        if (!efileSeq.ok()) {
+            return efileSeq.status();
+        }
+
+        auto recBinlogStat = std::unique_ptr<RecycleBinlogStatus>(
+            new RecycleBinlogStatus {
+                isRunning: false,
+                nextSchedTime: SCLOCK::now(),
+                firstBinlogId: Transaction::TXNID_UNINITED,
+                fileSeq: efileSeq.value(),
+                fileCreateTime: SCLOCK::now(),
+                fileSize: 0,
+                fs: nullptr,
+            });
+
         auto ptxn = store->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
-
         auto txn = std::move(ptxn.value());
         std::unique_ptr<BinlogCursor> cursor =
             txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
         Expected<ReplLog> explog = cursor->next();
         if (explog.ok()) {
             const auto& rlk = explog.value().getReplLogKey();
-            _firstBinlogId.emplace_back(rlk.getTxnId());
+            recBinlogStat->firstBinlogId = rlk.getTxnId();
+            _logRecycStatus.emplace_back(std::move(recBinlogStat));
         } else {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                 // void compiler ud-link about static constexpr
                 uint64_t v = Transaction::TXNID_UNINITED;
-                _firstBinlogId.emplace_back(v);
+                recBinlogStat->firstBinlogId = v;
+                _logRecycStatus.emplace_back(std::move(recBinlogStat));
             } else {
                 return explog.status();
             }
         }
         LOG(INFO) << "store:" << i
-                  << ",_firstBinlogId:" << *(_firstBinlogId.rbegin());
+                  << ",_firstBinlogId:" << _logRecycStatus.back()->firstBinlogId;
     }
 
-    INVARIANT(_firstBinlogId.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_logRecycStatus.size() == KVStore::INSTANCE_NUM);
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::thread([this]() {
@@ -186,6 +204,65 @@ void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
         }
     }
     _syncMeta[storeMeta.id] = std::move(storeMeta.copy());
+}
+
+Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
+    std::string subpath = _dumpPath + "/" + std::to_string(storeId);
+    try {
+        if (!filesystem::exists(_dumpPath)) {
+            filesystem::create_directory(_dumpPath);
+        }
+        if (!filesystem::exists(subpath)) {
+            filesystem::create_directory(subpath);
+        }
+    } catch (const std::exception& ex) {
+        LOG(ERROR) << "create dir:" << _dumpPath
+                    << " or " << subpath << " failed reason:" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
+    }
+    uint32_t maxFno = 0;
+    try {
+        for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
+            const filesystem::path& path = p.path();
+            if (!filesystem::is_regular_file(p)) {
+                LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
+                continue;
+            }
+            // assert path with dir prefix
+            INVARIANT(path.string().find(subpath) == 0);
+            std::string relative = path.string().erase(0, subpath.size());
+            if (relative.substr(0, 6) != "binlog") {
+                LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
+            }
+            size_t i = 0, start = 0, end = 0, first = 0;
+            for (; i < relative.size(); ++i) {
+                if (relative[i] == '-') {
+                    first += 1;
+                    if (first == 2) {
+                        start = i+1;
+                    }
+                    if (first == 3) {
+                        end = i;
+                        break;
+                    }
+                }
+            }
+            Expected<uint64_t> fno = ::tendisplus::stoul(relative.substr(start, end-start));
+            if (!fno.ok()) {
+                LOG(ERROR) << "parse fileno:" << relative << " failed:" << fno.status().toString();
+                return fno.value();
+            }
+            if (fno.value() >= std::numeric_limits<uint32_t>::max()) {
+                LOG(ERROR) << "invalid fileno:" << fno.value();
+                return {ErrorCodes::ERR_INTERNAL, "invalid fileno"};
+            }
+            maxFno = std::max(maxFno, (uint32_t)fno.value());
+        }
+    } catch (const std::exception& ex) {
+        LOG(ERROR) << "store:" << storeId << " get fileno failed:" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, "parse fileno failed"};
+    }
+    return maxFno;
 }
 
 void ReplManager::changeReplState(const StoreMeta& storeMeta,
@@ -280,41 +357,24 @@ void ReplManager::controlRoutine() {
         }
         return doSth;
     };
-    auto schedRecycLog = [this](const SCLOCK::time_point& now) {
+    auto schedRecycLogInLock = [this](const SCLOCK::time_point& now) {
         bool doSth = false;
-        for (size_t i = 0; i < _pushStatus.size(); i++) {
-            LocalSessionGuard sg(_svr);
-            // NOTE(deyukong): acquire dbLock, then the mutex, the order should not flip
-            auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i, mgl::LockMode::LOCK_IX);
-            INVARIANT(expdb.ok());
-            auto store = std::move(expdb.value().store);
-            INVARIANT(store != nullptr);
+        for (size_t i = 0; i < _logRecycStatus.size(); ++i) {
+            if (_logRecycStatus[i]->isRunning
+                    || now < _logRecycStatus[i]->nextSchedTime) {
+                continue;
+            }
+            doSth = true;
+            bool saveLogs = (_pushStatus[i].size() == 0);
+            _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
-            uint64_t oldFirstBinlog = 0;
-            {
-                std::lock_guard<std::mutex> lk(_mutex);
-                for (auto& mpov : _pushStatus[i]) {
-                    endLogId = std::min(endLogId, mpov.second->binlogPos);
-                }
-                oldFirstBinlog = _firstBinlogId[i];
+            uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;
+            for (auto& mpov : _pushStatus[i]) {
+                endLogId = std::min(endLogId, mpov.second->binlogPos);
             }
-            sg.getSession()->getCtx()->setArgsBrief(
-                {"truncatelog",
-                 std::to_string(i),
-                 std::to_string(oldFirstBinlog),
-                 std::to_string(endLogId)});
-            Expected<uint64_t> firstBinlog = store->truncateBinlog(oldFirstBinlog, endLogId);
-            if (!firstBinlog.ok()) {
-                LOG(INFO) << "truncate binlog store:" << i
-                            << "failed:" << firstBinlog.status().toString();
-            } else if (firstBinlog.value() != oldFirstBinlog) {
-                INVARIANT(firstBinlog.value() > oldFirstBinlog);
-                {
-                    std::lock_guard<std::mutex> lk(_mutex);
-                    _firstBinlogId[i] = firstBinlog.value();
-                }
-                doSth = true;
-            }
+            _logRecycler->schedule([this, i, oldFirstBinlog, endLogId, saveLogs]() {
+                recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
+            });
         }
         return doSth;
     };
@@ -325,8 +385,8 @@ void ReplManager::controlRoutine() {
             std::lock_guard<std::mutex> lk(_mutex);
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
+            doSth = schedRecycLogInLock(now) || doSth;
         }
-        doSth = schedRecycLog(now) || doSth;
         if (doSth) {
             std::this_thread::yield();
         } else {
@@ -334,6 +394,76 @@ void ReplManager::controlRoutine() {
         }
     }
     LOG(INFO) << "repl controller exits";
+}
+
+void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start, uint64_t end, bool saveLogs) {
+    SCLOCK::time_point nextSched = SCLOCK::now();
+    auto guard = MakeGuard([this, &nextSched, &start, storeId] {
+        std::lock_guard<std::mutex> lk(_mutex);
+        auto& v = _logRecycStatus[storeId];
+        INVARIANT(v->isRunning);
+        v->isRunning = false;
+        v->nextSchedTime = nextSched;
+        v->firstBinlogId = start;
+        // currently nothing waits for recycleBinlog's complete
+        // _cv.notify_all();
+    });
+    LocalSessionGuard sg(_svr);
+    sg.getSession()->getCtx()->setArgsBrief(
+        {"truncatelog",
+         std::to_string(storeId),
+         std::to_string(start),
+         std::to_string(end)});
+
+    auto segMgr = _svr->getSegmentMgr();
+    INVARIANT(segMgr != nullptr);
+    auto expdb = segMgr->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IX);
+    INVARIANT(expdb.ok());
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction();
+    if (!ptxn.ok()) {
+        LOG(ERROR) << "recycleBinlog create txn failed:" << ptxn.status().toString();
+        return;
+    }
+    auto txn = std::move(ptxn.value());
+
+    auto toDel = kvstore->getTruncateLog(start, end, txn.get());
+    if (!toDel.ok()) {
+        LOG(ERROR) << "get to be truncated binlog store:" << storeId
+                    << "start:" << start
+                    << ",end:" << end
+                    << ",failed:" << toDel.status().toString();
+        return;
+    }
+    if (start == toDel.value().first) {
+        INVARIANT(toDel.value().second.size() == 0);
+        nextSched = nextSched + std::chrono::seconds(1);
+        return;
+    }
+
+    if (saveLogs) {
+        auto s = saveBinlogs(storeId, toDel.value().second);
+        if (!s.ok()) {
+            LOG(ERROR) << "save binlog store:" << storeId
+                        << "failed:" << s.toString();
+            return;
+        }
+    }
+    auto s = kvstore->truncateBinlog(toDel.value().second, txn.get());
+    if (!s.ok()) {
+        LOG(ERROR) << "truncate binlog store:" << storeId
+                    << "failed:" << s.toString();
+        return;
+    }
+    auto commitStat = txn->commit();
+    if (!commitStat.ok()) {
+        LOG(ERROR) << "truncate binlog store:" << storeId
+                    << "commit failed:" << commitStat.status().toString();
+        return;
+    }
+    LOG(INFO) << "truncate binlog from:" << start
+                 << " to end:" << toDel.value().first << " success";
+    start = toDel.value().first;
 }
 
 // changeReplSource should be called with LOCK_X held
@@ -425,7 +555,7 @@ void ReplManager::appendJSONStat(
         w.StartObject();
 
         w.Key("first_binlog");
-        w.Uint64(_firstBinlogId[i]);
+        w.Uint64(_logRecycStatus[i]->firstBinlogId);
 
         w.Key("incr_paused");
         w.Uint64(_incrPaused);

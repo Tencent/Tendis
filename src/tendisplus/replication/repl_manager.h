@@ -7,6 +7,8 @@
 #include <list>
 #include <map>
 #include <string>
+#include <iostream>
+#include <fstream>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -36,6 +38,16 @@ struct MPovStatus {
     SCLOCK::time_point nextSchedTime;
     std::shared_ptr<BlockingTcpClient> client;
     uint64_t clientId;
+};
+
+struct RecycleBinlogStatus {
+    bool isRunning;
+    SCLOCK::time_point nextSchedTime;
+    uint64_t firstBinlogId;
+    uint32_t fileSeq;
+    SCLOCK::time_point fileCreateTime;
+    uint64_t fileSize;
+    std::unique_ptr<std::ofstream> fs;
 };
 
 // 1) a new slave store's state is default to REPL_NONE
@@ -70,7 +82,7 @@ class StoreMeta;
 
 class ReplManager {
  public:
-    explicit ReplManager(std::shared_ptr<ServerEntry> svr);
+    explicit ReplManager(std::shared_ptr<ServerEntry> svr, std::shared_ptr<ServerParams> cfg);
     Status startup();
     void stop();
     void togglePauseState(bool isPaused) { _incrPaused = isPaused; }
@@ -107,9 +119,15 @@ class ReplManager {
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
     void slaveSyncRoutine(uint32_t  storeId);
 
+    // truncate binlog in [start, end]
+    void recycleBinlog(uint32_t storeId, uint64_t start, uint64_t end, bool saveLogs);
+
  private:
     void changeReplState(const StoreMeta& storeMeta, bool persist);
     void changeReplStateInLock(const StoreMeta&, bool persist);
+
+    Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
+    Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
 
     mutable std::mutex _mutex;
     std::condition_variable _cv;
@@ -124,6 +142,10 @@ class ReplManager {
 
     // master's pov, living slave clients
     std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
+
+    // master and slave's pov, smallest binlogId, moves on when truncated
+    std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
+
 
     // master's pov, workerpool of pushing full backup
     std::unique_ptr<WorkerPool> _fullPusher;
@@ -146,10 +168,9 @@ class ReplManager {
     // master and slave's pov, log recycler
     std::unique_ptr<WorkerPool> _logRecycler;
 
-    // master and slave's pov, smallest binlogId, moves on when truncated
-    std::vector<uint64_t> _firstBinlogId;
-
     std::atomic<uint64_t> _clientIdGen;
+
+    const std::string _dumpPath;
 
     std::thread _controller;
 
@@ -160,6 +181,8 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _logRecycleMatrix;
 
     static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
+    static constexpr size_t BINLOGSIZE = 1024 * 1024 * 64;
+    static constexpr size_t BINLOGSYNCSECS = 20 * 60;
 };
 
 }  // namespace tendisplus

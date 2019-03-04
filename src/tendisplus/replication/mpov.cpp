@@ -240,7 +240,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 
     uint64_t firstPos = [this, storeId]() {
         std::lock_guard<std::mutex> lk(_mutex);
-        return _firstBinlogId[storeId];
+        return _logRecycStatus[storeId]->firstBinlogId;
     }();
 
     // NOTE(deyukong): this check is not precise
@@ -248,7 +248,10 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     // but it does not harm correctness.
     // A strict check may be too complicated to read.
     if (firstPos > binlogPos) {
-        client->writeLine("-ERR invalid binlogPos", std::chrono::seconds(1));
+        std::stringstream ss;
+        ss << "-ERR invalid binlogPos, firstPos:" << firstPos
+            << ",binlogPos:" << binlogPos;
+        client->writeLine(ss.str(), std::chrono::seconds(1));
         return;
     }
     client->writeLine("+OK", std::chrono::seconds(1));
@@ -271,7 +274,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
              binlogPos,
              client = std::move(client)]() mutable {
         std::lock_guard<std::mutex> lk(_mutex);
-        if (_firstBinlogId[storeId] > binlogPos) {
+        if (_logRecycStatus[storeId]->firstBinlogId > binlogPos) {
             return false;
         }
         uint64_t clientId = _clientIdGen.fetch_add(1);

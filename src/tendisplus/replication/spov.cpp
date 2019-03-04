@@ -1,3 +1,4 @@
+#include <endian.h>
 #include <list>
 #include <chrono>
 #include <algorithm>
@@ -340,7 +341,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         _syncStatus[metaSnapshot.id]->sessionId = sessionId;
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
-    LOG(INFO) << "store:" << metaSnapshot.id << " psync master succ";
+    LOG(INFO) << "store:" << metaSnapshot.id
+                << ",binlogId:" << metaSnapshot.binlogId
+                << " psync master succ";
 }
 
 void ReplManager::slaveSyncRoutine(uint32_t storeId) {
@@ -447,6 +450,77 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     Expected<uint64_t> expCmit = txn->commit();
     if (!expCmit.ok()) {
         return expCmit.status();
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs) {
+    if (logs.size() == 0) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    std::ofstream *fs = nullptr;
+    uint32_t currentId = 0;
+    {
+        std::unique_lock<std::mutex> lk(_mutex);
+        fs = _logRecycStatus[storeId]->fs.get();
+        currentId = _logRecycStatus[storeId]->fileSeq;
+    }
+    if (fs == nullptr) {
+        char fname[128], tbuf[128];
+        memset(fname, 0, 128);
+        memset(tbuf, 0, 128);
+
+        time_t time = (time_t)logs.front().getReplLogKey().getTimestamp();
+        struct tm lt;
+        (void) localtime_r(&time, &lt);
+        strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
+
+        sprintf(fname, "%s/%d/binlog-%d-%07d-%s.log", _dumpPath.c_str(), storeId, storeId,
+            currentId+1, tbuf);
+        fs = new std::ofstream(fname, std::ios::out|std::ios::app|std::ios::binary);
+        if (!fs->is_open()) {
+            std::stringstream ss;
+            ss << "open:" << fname << " failed";
+            return {ErrorCodes::ERR_INTERNAL, ss.str()};
+        }
+        std::unique_lock<std::mutex> lk(_mutex);
+        auto& v = _logRecycStatus[storeId];
+        v->fs.reset(fs);
+        v->fileSeq = currentId + 1;
+        v->fileCreateTime = SCLOCK::now();
+        v->fileSize = 0;
+    }
+
+    uint64_t written = 0;
+    // NOTE(deyukong):
+    // |txnId 8byte be|keyLen 4byte be|key|valLen 4byte be|val|
+    for (const auto& v : logs) {
+        auto kv = v.encode();
+        uint64_t txnId = v.getReplLogKey().getTxnId();
+        uint64_t txnIdTrans = htobe64(txnId);
+        fs->write((char*)&txnIdTrans, sizeof(txnIdTrans));
+
+        uint32_t keyLen = kv.first.size();
+        uint32_t keyLenTrans = htobe32(keyLen);
+        fs->write((char*)&keyLenTrans, sizeof(keyLenTrans));
+        fs->write(kv.first.c_str(), keyLen);
+
+        uint32_t valLen = kv.second.size();
+        uint32_t valLenTrans = htobe32(valLen);
+        fs->write((char*)&valLenTrans, sizeof(valLenTrans));
+        fs->write(kv.second.c_str(), valLen);
+        written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen) + sizeof(txnIdTrans);
+    }
+    INVARIANT(fs->good());
+    {
+        std::unique_lock<std::mutex> lk(_mutex);
+        auto& v = _logRecycStatus[storeId];
+        v->fileSize += written;
+        if (v->fileSize >= ReplManager::BINLOGSIZE
+            || v->fileCreateTime + std::chrono::seconds(ReplManager::BINLOGSYNCSECS) <= SCLOCK::now()) {
+            v->fs->close();
+            v->fs.reset();
+        }
     }
     return {ErrorCodes::ERR_OK, ""};
 }

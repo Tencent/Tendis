@@ -249,6 +249,110 @@ class PullBinlogsCommand: public Command {
     }
 } pullBinlogsCommand;
 
+class RestoreBinlogCommand: public Command {
+ public:
+    RestoreBinlogCommand()
+        :Command("restorebinlog") {
+    }
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restorebinlog storeId k1 v1 k2 v2 ...
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        if (args.size() % 2 != 0) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid param len"};
+        }
+        uint64_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        storeId = exptStoreId.value();
+        if (storeId >= KVStore::INSTANCE_NUM) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid storeid"};
+        }
+        std::vector<ReplLog> logs;
+        for (size_t i = 2; i < args.size(); i+=2) {
+            auto kv = ReplLog::decode(args[i], args[i+1]);
+            if (!kv.ok()) {
+                return kv.status();
+            }
+            logs.push_back(std::move(kv.value()));
+        }
+        uint64_t txnId = logs.front().getReplLogKey().getTxnId();
+        for (const auto& kv : logs) {
+            if (kv.getReplLogKey().getTxnId() != txnId) {
+                return {ErrorCodes::ERR_PARSEOPT, "txn id not all the same"};
+            }
+        }
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
+        INVARIANT(expdb.ok());
+        auto store = std::move(expdb.value().store);
+        INVARIANT(store != nullptr);
+
+        auto ptxn = store->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        for (const auto& kv : logs) {
+            Expected<RecordKey> expRk = RecordKey::decode(kv.getReplLogValue().getOpKey());
+            if (!expRk.ok()) {
+                return expRk.status();
+            }
+
+            switch (kv.getReplLogValue().getOp()) {
+                case (ReplOp::REPL_OP_SET): {
+                    Expected<RecordValue> expRv =
+                        RecordValue::decode(kv.getReplLogValue().getOpValue());
+                    if (!expRv.ok()) {
+                        return expRv.status();
+                    }
+                    auto s = txn->setKV(expRk.value().encode(), expRv.value().encode());
+                    if (!s.ok()) {
+                        return {ErrorCodes::ERR_INTERNAL, s.toString()};
+                    } else {
+                        break;
+                    }
+                }
+                case (ReplOp::REPL_OP_DEL): {
+                    auto s = txn->delKV(expRk.value().encode());
+                    if (!s.ok()) {
+                        return {ErrorCodes::ERR_INTERNAL, s.toString()};
+                    } else {
+                        break;
+                    }
+                }
+                default: {
+                    return {ErrorCodes::ERR_PARSEOPT, "invalid replop"};
+                }
+            }
+        }
+        auto commitId = txn->commit();
+        if (commitId.ok()) {
+            return Command::fmtOK();
+        }
+        return commitId.status();
+    }
+} restoreBinlogCmd;
+
 class ApplyBinlogsCommand: public Command {
  public:
     ApplyBinlogsCommand()

@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <functional>
 #include <vector>
+#include <functional>
 
 #ifndef WITH_SYNC_POINT
 #define TEST_SYNC_POINT(x)

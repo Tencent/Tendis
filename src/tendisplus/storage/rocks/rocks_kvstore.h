@@ -38,6 +38,7 @@ class RocksTxn: public Transaction {
                  const std::string& val) final;
     Status delKV(const std::string& key) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
+    Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const;
 
  protected:
@@ -125,7 +126,9 @@ class RocksKVStore: public KVStore {
     Status delKV(const RecordKey& key, Transaction* txn) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog,
                        Transaction *txn) final;
-    Expected<uint64_t> truncateBinlog(uint64_t start, uint64_t end) final;
+    Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
+        uint64_t start, uint64_t end, Transaction *txn) final;
+    Status truncateBinlog(const std::list<ReplLog>&, Transaction *txn) final;
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
 
     Status clear() final;
