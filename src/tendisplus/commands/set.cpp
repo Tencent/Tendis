@@ -258,12 +258,6 @@ class SIsMemberCommand: public Command {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
         const std::string& subkey = args[2];
-        int64_t idx = 0;
-        try {
-            idx = static_cast<int64_t>(std::stoll(args[2]));
-        } catch (std::exception& ex) {
-            return {ErrorCodes::ERR_PARSEOPT, ex.what()};
-        }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);

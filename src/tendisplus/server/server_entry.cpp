@@ -301,8 +301,6 @@ void ServerEntry::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w,
         w.StartObject();
         w.Key("processed");
         w.Uint64(_reqMatrix->processed.get());
-        w.Key("read_packet_cost");
-        w.Uint64(_reqMatrix->readPacketCost.get());
         w.Key("process_cost");
         w.Uint64(_reqMatrix->processCost.get());
         w.Key("send_packet_cost");

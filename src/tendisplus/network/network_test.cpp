@@ -5,6 +5,8 @@
 #include "glog/logging.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -26,65 +28,79 @@ class NoSchedNetSession: public NetSession {
 TEST(NetSession, drainReqInvalid) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NoSchedNetSession sess(nullptr,
-                           std::move(socket),
-                           1,
-                           false,
-                           std::make_shared<NetworkMatrix>(),
-                           std::make_shared<RequestMatrix>());
-    sess.setState(NetSession::State::DrainReqNet);
+    auto sess = std::make_shared<NoSchedNetSession>(
+           nullptr,
+           std::move(socket),
+           1,
+           false,
+           std::make_shared<NetworkMatrix>(),
+           std::make_shared<RequestMatrix>());
+
+    const auto guard = MakeGuard([] { 
+        SyncPoint::GetInstance()->ClearAllCallBacks(); 
+    });  
+    SyncPoint::GetInstance()->EnableProcessing(); 
+    bool hasCalled = false;
+    SyncPoint::GetInstance()->SetCallBack( 
+        "NetSession::drainRsp", [&](void* arg) { 
+            hasCalled = true;
+            SendBuffer* v = static_cast<SendBuffer*>(arg);
+            EXPECT_EQ(std::string(v->buffer.data(), v->buffer.size()),
+                "-ERR Protocol error: unbalanced quotes in request\r\n");
+        });
+    sess->setState(NetSession::State::DrainReqNet);
     const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
-    std::copy(s.begin(), s.end(), std::back_inserter(sess._queryBuf));
-    sess.drainReqCallback(std::error_code(), s.size());
-    EXPECT_EQ(sess._state.load(), NetSession::State::DrainRsp);
-    EXPECT_EQ(sess._closeAfterRsp, true);
-    EXPECT_EQ(std::string(sess._respBuf.data(), sess._respBuf.size()),
-        "-ERR Protocol error: unbalanced quotes in request\r\n");
+    std::copy(s.begin(), s.end(), std::back_inserter(sess->_queryBuf));
+    sess->drainReqCallback(std::error_code(), s.size());
+    EXPECT_EQ(sess->_closeAfterRsp, true);
+    EXPECT_TRUE(hasCalled);
 }
 
 TEST(NetSession, Completed) {
     std::string s = "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r";
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
-    NoSchedNetSession sess(nullptr,
-                           std::move(socket),
-                           1,
-                           false,
-                           std::make_shared<NetworkMatrix>(),
-                           std::make_shared<RequestMatrix>());
-    sess.setState(NetSession::State::DrainReqNet);
-    sess._queryBuf.resize(128, 0);
-    for (auto& c : s) {
-        sess._queryBuf[sess._queryBufPos] = c;
-        sess.drainReqCallback(std::error_code(), 1);
-        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReqNet);
-        EXPECT_EQ(sess._closeAfterRsp, false);
-    }
-    sess._queryBuf[sess._queryBufPos] = '\n';
-    sess.drainReqCallback(std::error_code(), 1);
-    EXPECT_EQ(sess._state.load(), NetSession::State::Process);
-    EXPECT_EQ(sess._closeAfterRsp, false);
-    EXPECT_EQ(sess._args.size(), size_t(2));
-    EXPECT_EQ(sess._args[0], "foo");
-    EXPECT_EQ(sess._args[1], "bar");
+    auto sess = std::make_shared<NoSchedNetSession>(
+           nullptr,
+           std::move(socket),
+           1,
+           false,
+           std::make_shared<NetworkMatrix>(),
+           std::make_shared<RequestMatrix>());
 
-    sess.resetMultiBulkCtx();
-    s = "FULLSYNC 1\r";
-    sess.setState(NetSession::State::DrainReqNet);
-    sess._queryBuf.resize(128, 0);
+    sess->setState(NetSession::State::DrainReqNet);
+    sess->_queryBuf.resize(128, 0);
     for (auto& c : s) {
-        sess._queryBuf[sess._queryBufPos] = c;
-        sess.drainReqCallback(std::error_code(), 1);
-        EXPECT_EQ(sess._state.load(), NetSession::State::DrainReqNet);
-        EXPECT_EQ(sess._closeAfterRsp, false);
+        sess->_queryBuf[sess->_queryBufPos] = c;
+        sess->drainReqCallback(std::error_code(), 1);
+        EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqNet);
+        EXPECT_EQ(sess->_closeAfterRsp, false);
     }
-    sess._queryBuf[sess._queryBufPos] = '\n';
-    sess.drainReqCallback(std::error_code(), 1);
-    EXPECT_EQ(sess._state.load(), NetSession::State::Process);
-    EXPECT_EQ(sess._closeAfterRsp, false);
-    EXPECT_EQ(sess._args.size(), size_t(2));
-    EXPECT_EQ(sess._args[0], "FULLSYNC");
-    EXPECT_EQ(sess._args[1], "1");
+    sess->_queryBuf[sess->_queryBufPos] = '\n';
+    sess->drainReqCallback(std::error_code(), 1);
+    EXPECT_EQ(sess->_state.load(), NetSession::State::Process);
+    EXPECT_EQ(sess->_closeAfterRsp, false);
+    EXPECT_EQ(sess->_args.size(), size_t(2));
+    EXPECT_EQ(sess->_args[0], "foo");
+    EXPECT_EQ(sess->_args[1], "bar");
+
+    sess->resetMultiBulkCtx();
+    s = "FULLSYNC 1\r";
+    sess->setState(NetSession::State::DrainReqNet);
+    sess->_queryBuf.resize(128, 0);
+    for (auto& c : s) {
+        sess->_queryBuf[sess->_queryBufPos] = c;
+        sess->drainReqCallback(std::error_code(), 1);
+        EXPECT_EQ(sess->_state.load(), NetSession::State::DrainReqNet);
+        EXPECT_EQ(sess->_closeAfterRsp, false);
+    }
+    sess->_queryBuf[sess->_queryBufPos] = '\n';
+    sess->drainReqCallback(std::error_code(), 1);
+    EXPECT_EQ(sess->_state.load(), NetSession::State::Process);
+    EXPECT_EQ(sess->_closeAfterRsp, false);
+    EXPECT_EQ(sess->_args.size(), size_t(2));
+    EXPECT_EQ(sess->_args[0], "FULLSYNC");
+    EXPECT_EQ(sess->_args[1], "1");
 }
 
 
