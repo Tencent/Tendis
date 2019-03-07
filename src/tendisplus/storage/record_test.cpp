@@ -90,7 +90,7 @@ std::string overflip(const std::string& s) {
 }
 
 TEST(Record, Common) {
-    srand(time(NULL));
+    srand((unsigned int)time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         uint32_t chunkid = genRand();
@@ -200,14 +200,14 @@ TEST(ZSl, Common) {
 
     for (size_t i = 0; i < 1000000; i++) {
         ZSlEleValue v(genRand(), randomStr(256, false));
-        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             v.setForward(i, genRand());
             v.setSpan(i, genRand());
         }
         std::string s = v.encode();
         Expected<ZSlEleValue> expv = ZSlEleValue::decode(s);
         EXPECT_TRUE(expv.ok());
-        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             EXPECT_EQ(expv.value().getForward(i), v.getForward(i));
             EXPECT_EQ(expv.value().getSpan(i), v.getSpan(i));
         }

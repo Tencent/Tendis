@@ -36,6 +36,18 @@ class LockSchedCtx {
     std::list<MGLock*> _pendingList;
 };
 
+/* First come first lock
+  for example:
+  lock sequences(different sessions): IS IS X IX S IS S
+  _runingModes = IS | IS
+  _pendingModes = X | IX | S | IS
+  _runningRefCnt = IS -> 2
+  _pendingRefCnt = IS -> 1, IX -> 1, S -> 2, X -> 1
+  _runningList = {IS, IS}
+  _pendingList = {X, IX, S, IS, S}
+
+  For same session: LOCK(IX), LOCK(X), it would lead to deadlock
+*/
 // class alignas(std::hardware_destructive_interference_size) LockShard {
 // hardware_destructive_interference_size requires quite high version
 // gcc. 128 should work for most cases

@@ -419,7 +419,7 @@ class ApplyBinlogsCommand: public Command {
             if (!(static_cast<uint16_t>(lastLogKey.getFlag()) &
                     static_cast<uint16_t>(ReplFlag::REPL_GROUP_END))) {
                 LOG(FATAL) << "txnId:" << lastLogKey.getTxnId()
-                    << " last record not marked begin";
+                    << " last record not marked end";
             }
         }
 
