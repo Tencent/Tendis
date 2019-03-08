@@ -82,7 +82,8 @@ class StoreMeta;
 
 class ReplManager {
  public:
-    explicit ReplManager(std::shared_ptr<ServerEntry> svr, std::shared_ptr<ServerParams> cfg);
+    explicit ReplManager(std::shared_ptr<ServerEntry> svr, 
+          const std::shared_ptr<ServerParams> cfg);
     Status startup();
     void stop();
     void togglePauseState(bool isPaused) { _incrPaused = isPaused; }

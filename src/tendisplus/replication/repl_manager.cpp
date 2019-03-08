@@ -24,7 +24,8 @@
 
 namespace tendisplus {
 
-ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr, std::shared_ptr<ServerParams> cfg)
+ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr, 
+                          const std::shared_ptr<ServerParams> cfg)
     :_isRunning(false),
      _svr(svr),
      _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
@@ -148,13 +149,13 @@ Status ReplManager::startup() {
 
         auto recBinlogStat = std::unique_ptr<RecycleBinlogStatus>(
             new RecycleBinlogStatus {
-                isRunning: false,
-                nextSchedTime: SCLOCK::now(),
-                firstBinlogId: Transaction::TXNID_UNINITED,
-                fileSeq: efileSeq.value(),
-                fileCreateTime: SCLOCK::now(),
-                fileSize: 0,
-                fs: nullptr,
+                false,
+                SCLOCK::now(),
+                Transaction::TXNID_UNINITED,
+                efileSeq.value(),
+                SCLOCK::now(),
+                0,
+                nullptr,
             });
 
         auto ptxn = store->createTransaction();

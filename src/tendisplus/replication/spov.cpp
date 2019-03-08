@@ -1,4 +1,3 @@
-#include <endian.h>
 #include <list>
 #include <chrono>
 #include <algorithm>
@@ -23,6 +22,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/lock.h"
+#include <endian.h>
 
 namespace tendisplus {
 

@@ -5,7 +5,7 @@
 #include <process.h> 
 
 #define __attribute__(x)
-#define __builtin_expect(EXP, C) (EXP)
+#define __builtin_expect(EXP, C) ((EXP) == (C))
 
 #ifndef _SSIZE_T
 #define _SSIZE_T
@@ -21,5 +21,6 @@ int gettimeofday(struct timeval *tp, void *tzp);
 void sleep(unsigned long seconds);
 
 int rand_r(unsigned int *seedp);
+struct tm * localtime_r(const time_t *timep, struct tm *tmp);
 
 #endif /* _UNISTD_H */

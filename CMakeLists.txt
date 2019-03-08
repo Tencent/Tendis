@@ -22,6 +22,9 @@ elseif(MSVC)
 	# for glog
 	add_definitions(-DGLOG_NO_ABBREVIATED_SEVERITIES)
 
+	# for asio 
+	#add_definitions(-DWIN32_LEAN_AND_MEAN)
+
 	# disable warnings 
 	#add_compile_options(/wC4099)
 else()

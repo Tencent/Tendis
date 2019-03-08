@@ -28,4 +28,10 @@ int rand_r(unsigned int *seedp)
 
 }
 
+//struct tm * localtime_r(const time_t *timep, struct tm *tmp)
+//{
+//  localtime_s(tmp, timep);
+//  return tmp;
+//}
+
 #endif // _WIN32
