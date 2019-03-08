@@ -441,9 +441,11 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            return Command::delKeyPessimisticInLock(sess, storeId, mk, &ictx);
+            return Command::delKeyPessimisticInLock(sess, storeId, mk,
+                                                    ictx.getTTL() > 0 ? &ictx : nullptr);
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(), &ictx);
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(),
+                                                     ictx.getTTL() > 0 ? &ictx : nullptr);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
