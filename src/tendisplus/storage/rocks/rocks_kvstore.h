@@ -31,6 +31,8 @@ class RocksTxn: public Transaction {
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
                                     bool ignoreReadBarrier) final;
+    std::unique_ptr<TTLIndexCursor> createTTLIndexCursor(
+                                      uint64_t until) final;
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
@@ -97,6 +99,8 @@ class RocksKVCursor: public Cursor {
     void seek(const std::string& prefix) final;
     void seekToLast() final;
     Expected<Record> next() final;
+    Status prev() final;
+    Expected<std::string> key() final;
 
  private:
     std::unique_ptr<rocksdb::Iterator> _it;

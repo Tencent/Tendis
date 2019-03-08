@@ -24,6 +24,7 @@ ServerEntry::ServerEntry()
          _executor(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
+         _indexMgr(nullptr),
          _pessimisticMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
@@ -122,6 +123,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    _indexMgr = std::make_unique<IndexManager>(shared_from_this());
+    s = _indexMgr->startup();
+    if (!s.ok()) {
+      return s;
+    }
+
     // listener should be the lastone to run.
     s = _network->run();
     if (!s.ok()) {
@@ -158,6 +165,10 @@ PessimisticMgr* ServerEntry::getPessimisticMgr() {
     return _pessimisticMgr.get();
 }
 
+IndexManager* ServerEntry::getIndexMgr() {
+    return _indexMgr.get();
+}
+
 const std::shared_ptr<std::string> ServerEntry::requirepass() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
@@ -176,7 +187,7 @@ void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->id()
-            << "comes when stopping, ignore it";
+            << " comes when stopping, ignore it";
         return;
     }
     // TODO(deyukong): max conns
@@ -372,7 +383,15 @@ void ServerEntry::stop() {
     _network->stop();
     _executor->stop();
     _replMgr->stop();
+    _indexMgr->stop();
     _sessions.clear();
+
+    _network.reset();
+    _replMgr.reset();
+    _indexMgr.reset();
+    _pessimisticMgr.reset();
+    _segmentMgr.reset();
+
     _ftmcThd->join();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);

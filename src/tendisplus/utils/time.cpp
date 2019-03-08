@@ -18,6 +18,12 @@ uint32_t sinceEpoch() {
     return  static_cast<uint32_t>(count);
 }
 
+uint64_t msSinceEpoch() {
+    using MS = std::chrono::milliseconds;
+    return std::chrono::duration_cast<MS>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 std::string timePointRepr(const SCLOCK::time_point& tp) {
     std::stringstream ss;
     using SYSCLOCK = std::chrono::system_clock;

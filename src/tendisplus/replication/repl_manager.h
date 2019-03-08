@@ -172,7 +172,7 @@ class ReplManager {
 
     const std::string _dumpPath;
 
-    std::thread _controller;
+    std::unique_ptr<std::thread> _controller;
 
     std::shared_ptr<PoolMatrix> _fullPushMatrix;
     std::shared_ptr<PoolMatrix> _incrPushMatrix;

@@ -80,17 +80,19 @@ class Command {
 
  private:
     static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
-                            const RecordKey& rk);
+                            const RecordKey& rk, const TTLIndex *ictx = nullptr);
 
     static Status delKeyOptimismInLock(Session *sess, uint32_t storeId,
-                            const RecordKey& rk, Transaction* txn);
+                            const RecordKey& rk, Transaction* txn,
+                            const TTLIndex *ictx = nullptr);
 
     static Expected<uint32_t> partialDelSubKeys(Session *sess,
                                  uint32_t storeId,
                                  uint32_t subCount,
                                  const RecordKey& mk,
                                  bool deleteMeta,
-                                 Transaction *txn);
+                                 Transaction *txn,
+                                 const TTLIndex *ictx = nullptr);
 
     const std::string _name;
     // NOTE(deyukong): all commands have been loaded at startup time

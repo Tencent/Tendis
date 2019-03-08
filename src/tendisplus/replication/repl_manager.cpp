@@ -186,9 +186,9 @@ Status ReplManager::startup() {
     INVARIANT(_logRecycStatus.size() == KVStore::INSTANCE_NUM);
 
     _isRunning.store(true, std::memory_order_relaxed);
-    _controller = std::thread([this]() {
+    _controller = std::make_unique<std::thread>(std::move([this]() {
         controlRoutine();
-    });
+    }));
 
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -605,11 +605,16 @@ void ReplManager::appendJSONStat(
 void ReplManager::stop() {
     LOG(WARNING) << "repl manager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
-    _controller.join();
+    _controller->join();
+
+    // make sure all workpool has been stopped; otherwise calling
+    // the destructor of a std::thread that is running will crash
     _fullPusher->stop();
     _incrPusher->stop();
     _fullReceiver->stop();
     _incrChecker->stop();
+    _logRecycler->stop();
+
     LOG(WARNING) << "repl manager stops succ";
 }
 

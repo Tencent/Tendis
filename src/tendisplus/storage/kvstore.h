@@ -20,6 +20,7 @@ namespace tendisplus {
 class KVStore;
 class Record;
 class ReplLog;
+class TTLIndex;
 class RecordKey;
 class RecordValue;
 
@@ -33,6 +34,8 @@ class Cursor {
     // seek to last of the collection, Not the prefix
     virtual void seekToLast() = 0;
     virtual Expected<Record> next() = 0;
+    virtual Status prev() = 0;
+    virtual Expected<std::string> key() = 0;
 };
 
 class BinlogCursor {
@@ -52,6 +55,23 @@ class BinlogCursor {
     const uint64_t _end;
 };
 
+class TTLIndexCursor {
+ public:
+    TTLIndexCursor() = delete;
+    TTLIndexCursor(std::unique_ptr<Cursor> cursor, std::uint64_t until);
+    ~TTLIndexCursor() = default;
+    Expected<TTLIndex> next();
+    void prev();
+    void seek(const std::string &target);
+    Expected<std::string> key();
+
+ private:
+    const uint64_t _until;
+
+ protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
+
 class Transaction {
  public:
     Transaction() = default;
@@ -63,6 +83,8 @@ class Transaction {
     virtual std::unique_ptr<Cursor> createCursor() = 0;
     virtual std::unique_ptr<BinlogCursor>
         createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
+    virtual std::unique_ptr<TTLIndexCursor>
+        createTTLIndexCursor(std::uint64_t until) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val) = 0;
@@ -117,6 +139,7 @@ class KVStore {
     virtual Status setKV(const RecordKey&,
                          const RecordValue&, Transaction*) = 0;
     virtual Status setKV(const Record& kv, Transaction* txn) = 0;
+    // TODO(eliotwang) deprecate this member function
     virtual Status setKV(const std::string& key, const std::string& val,
                          Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
@@ -153,7 +176,7 @@ class KVStore {
         rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(1);
+    static constexpr size_t INSTANCE_NUM = size_t(10);
 
  private:
     const std::string _id;

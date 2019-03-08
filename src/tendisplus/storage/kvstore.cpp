@@ -43,6 +43,46 @@ Expected<ReplLog> BinlogCursor::next() {
     }
 }
 
+TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor, std::uint64_t until)
+  : _until(until), _baseCursor(std::move(cursor)) {
+    _baseCursor->seek(RecordKey::prefixTTLIndex());
+}
+
+void TTLIndexCursor::seek(const std::string& target) {
+    _baseCursor->seek(target);
+}
+
+void TTLIndexCursor::prev() {
+    _baseCursor->prev();
+}
+
+Expected<std::string> TTLIndexCursor::key() {
+    return _baseCursor->key();
+}
+
+Expected<TTLIndex> TTLIndexCursor::next() {
+    Expected<Record> expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        const RecordKey& rk = expRcd.value().getRecordKey();
+        if (rk.getRecordType() != RecordType::RT_TTL_INDEX) {
+            return {ErrorCodes::ERR_EXHAUST, "no more ttl index"};
+        }
+
+        auto explk = TTLIndex::decode(rk);
+        if (!explk.ok()) {
+            return explk.status();
+        }
+
+        if (explk.value().getTTL() > _until) {
+            return {ErrorCodes::ERR_NOT_EXPIRED, "read until ttl"};
+        }
+
+        return explk;
+    } else {
+        return expRcd.status();
+    }
+}
+
 KVStore::KVStore(const std::string& id, const std::string& path)
      :_id(id),
       _dbPath(path),
