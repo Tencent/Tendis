@@ -21,5 +21,10 @@ add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog ${SYS_LIBS})
 
 add_executable(tendisplus main.cpp)
-target_link_libraries(tendisplus -Wl,--whole-archive commands -Wl,--no-whole-archive)
-target_link_libraries(tendisplus server_params server ${SYS_LIBS})
+if(CMAKE_COMPILER_IS_GNUCC)
+	# command uses global variables to self-regist, linking flag whole-archive is required.
+	target_link_libraries(tendisplus -Wl,--whole-archive commands -Wl,--no-whole-archive)
+	target_link_libraries(tendisplus server_params server ${SYS_LIBS})
+else()
+	target_link_libraries(tendisplus commands server_params server ${SYS_LIBS})
+endif()

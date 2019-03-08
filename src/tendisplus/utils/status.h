@@ -5,7 +5,11 @@
 #include <utility>
 #include <string>
 #include <memory>
+#ifndef _WIN32
 #include <execinfo.h>
+#else
+#include <optional.h>
+#endif
 #include <type_traits>
 #include "tendisplus/utils/portable.h"
 
@@ -64,6 +68,7 @@ class Expected {
     Expected(const Status& other)  // NOLINT(runtime/explicit)
             :_status(other) {
         if (_status.ok()) {
+		#ifndef _WIN32
             static const char *s =
                 "can not use OK as Expected input"
                 ", this makes data field empty,"
@@ -80,6 +85,7 @@ class Expected {
             }
             free(strings);
             throw std::invalid_argument(ss.str());
+		#endif
         }
     }
 

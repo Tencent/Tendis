@@ -90,9 +90,11 @@ KVStore::KVStore(const std::string& id, const std::string& path)
       _dbPath(path),
       _backupDir(path+"/"+id+"_bak") {
     filesystem::path mypath = _dbPath;
+#ifndef _WIN32
     if (filesystem::equivalent(mypath, "/")) {
         LOG(FATAL) << "dbpath set to root dir!";
     }
+#endif
 }
 
 uint32_t KVStore::getBinlogTime() {

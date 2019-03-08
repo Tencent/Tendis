@@ -1,5 +1,5 @@
 add_library(kvstore STATIC kvstore.cpp)
-target_link_libraries(kvstore status stdc++fs glog)
+target_link_libraries(kvstore status ${STDFS_LIB} glog)
 
 add_library(pessimistic STATIC pessimistic.cpp)
 target_link_libraries(pessimistic glog)

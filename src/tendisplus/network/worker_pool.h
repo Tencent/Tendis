@@ -14,7 +14,8 @@
 
 namespace tendisplus {
 
-struct PoolMatrix {
+class PoolMatrix {
+public:
     PoolMatrix operator-(const PoolMatrix& right);
     Atom<uint64_t> inQueue{0};
     Atom<uint64_t> executed{0};

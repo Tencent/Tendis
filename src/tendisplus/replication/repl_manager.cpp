@@ -75,10 +75,10 @@ Status ReplManager::startup() {
         _syncStatus.emplace_back(
             std::unique_ptr<SPovStatus>(
                 new SPovStatus {
-                    isRunning: false,
-                    sessionId: std::numeric_limits<uint64_t>::max(),
-                    nextSchedTime: SCLOCK::now(),
-                    lastSyncTime: SCLOCK::now(),
+                     false,
+                     std::numeric_limits<uint64_t>::max(),
+                     SCLOCK::now(),
+                     SCLOCK::now(),
                 }));
     }
 

@@ -14,6 +14,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/atomic_utility.h"
 #include "gtest/gtest.h"
+#include "unistd.h"
 
 namespace tendisplus {
 
@@ -25,7 +26,8 @@ enum class RedisReqMode: std::uint8_t {
     REDIS_REQ_MULTIBULK = 2,
 };
 
-struct NetworkMatrix {
+class NetworkMatrix {
+public:
     Atom<uint64_t> stickyPackets{0};
     Atom<uint64_t> connCreated{0};
     Atom<uint64_t> connReleased{0};
@@ -34,7 +36,8 @@ struct NetworkMatrix {
     std::string toString() const;
 };
 
-struct RequestMatrix {
+class RequestMatrix {
+public:
     Atom<uint64_t> processed{0};
     Atom<uint64_t> processCost{0};
     Atom<uint64_t> sendPacketCost{0};

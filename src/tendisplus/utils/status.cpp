@@ -1,5 +1,6 @@
 #include <utility>
 #include "tendisplus/utils/status.h"
+#include <sstream>
 
 namespace tendisplus {
 Status::Status()

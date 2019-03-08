@@ -71,6 +71,9 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
         return {ErrorCodes::ERR_NOTFOUND, "flist not json obj"};
     }
     std::map<std::string, uint64_t> result;
+#ifdef _WIN32
+#undef GetObject
+#endif // 
     for (auto& o : doc.GetObject()) {
         if (!o.value.IsUint64()) {
             return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};

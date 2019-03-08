@@ -33,6 +33,7 @@ static void waitForExit() {
 }
 
 static void setupSignals() {
+#ifndef _WIN32 
     struct sigaction ignore;
     memset(&ignore, 0, sizeof(ignore));
     ignore.sa_handler = SIG_IGN;
@@ -49,6 +50,7 @@ static void setupSignals() {
 
     INVARIANT(sigaction(SIGTERM, &exits, nullptr) == 0);
     INVARIANT(sigaction(SIGINT, &exits, nullptr) == 0);
+#endif // !_WIN32 
 }
 
 static void usage() {
@@ -68,12 +70,14 @@ int main(int argc, char *argv[]) {
         LOG(INFO) << "start server with cfg:" << params->toString();
     }
 
+#ifndef _WIN32
     if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
         // NOTE(deyukong): it should rarely fail.
         // but if code reaches here, cerr may have been redirected to
         // /dev/null and nothing printed.
         LOG(FATAL) << "daemonlize failed:" << errno;
     }
+#endif
 
     // Log messages at or above this level. Again, the numbers of severity
     // levels INFO, WARNING, ERROR, and FATAL are 0, 1, 2, and 3,
@@ -98,14 +102,16 @@ int main(int argc, char *argv[]) {
 
     FLAGS_logbufsecs = 1;
     ::google::InitGoogleLogging("tendisplus");
+#ifndef _WIN32
     ::google::InstallFailureSignalHandler();
     ::google::InstallFailureWriter([](const char *data, int size) {
         LOG(ERROR) << "Failure:" << std::string(data, size);
-        google::FlushLogFiles(google::INFO);
-        google::FlushLogFiles(google::WARNING);
-        google::FlushLogFiles(google::ERROR);
-        google::FlushLogFiles(google::FATAL);
+        google::FlushLogFiles(google::GLOG_INFO);
+        google::FlushLogFiles(google::GLOG_WARNING);
+        google::FlushLogFiles(google::GLOG_ERROR);
+        google::FlushLogFiles(google::GLOG_FATAL);
     });
+#endif
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();
     s = tendisplus::gServer->startup(params);
     if (!s.ok()) {

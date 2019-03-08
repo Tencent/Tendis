@@ -137,7 +137,11 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
     INVARIANT(doc["replState"].IsUint64());
     result->replState = static_cast<ReplState>(doc["replState"].GetUint64());
 
-    return result;
+#ifdef _WIN32
+    return std::move(result);
+#else
+	  return result;
+#endif
 }
 
 }  // namespace tendisplus
