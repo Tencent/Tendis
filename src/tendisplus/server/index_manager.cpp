@@ -16,15 +16,25 @@
 
 namespace tendisplus {
 
-  IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr)
+  IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
+                             std::shared_ptr<ServerParams> cfg)
         : _isRunning(false),
         _svr(svr),
         _scannerMatrix(std::make_shared<PoolMatrix>()),
         _deleterMatrix(std::make_shared<PoolMatrix>()),
         _totalDequeue(0),
-        _totalEnqueue(0) {
+        _totalEnqueue(0),
+        _scanBatch(cfg->scanCntIndexMgr),
+        _scanPoolSize(cfg->scanJobCntIndexMgr),
+        _delBatch(cfg->delCntIndexMgr),
+        _delPoolSize(cfg->delJobCntIndexMgr),
+        _pauseTime(cfg->pauseTimeIndexMgr) {
           for (size_t storeId = 0; storeId < KVStore::INSTANCE_NUM; ++storeId) {
                 _scanPoints[storeId] = std::move(std::string());
+                _scanJobStatus[storeId] = { false };
+                _delJobStatus[storeId] = { false };
+                _scanJobCnt[storeId] = { 0u };
+                _delJobCnt[storeId] = { 0u };
             }
         }
 
@@ -33,14 +43,14 @@ namespace tendisplus {
 
       _indexScanner = std::make_unique<WorkerPool>("index-scanner",
                                                    _scannerMatrix);
-      s = _indexScanner->startup(1);
+      s = _indexScanner->startup(_scanPoolSize);
       if (!s.ok()) {
           return s;
       }
 
-      _keyDeleter = std::make_unique<WorkerPool>("expired-key-deleter",
+      _keyDeleter = std::make_unique<WorkerPool>("index-deleter",
                                                  _deleterMatrix);
-      s = _keyDeleter->startup(1);
+      s = _keyDeleter->startup(_delPoolSize);
       if (!s.ok()) {
           return s;
       }
@@ -54,16 +64,27 @@ namespace tendisplus {
   }
 
   Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
+      bool expected = false;
+      if (!_scanJobStatus[storeId].compare_exchange_strong(
+              expected, true, std::memory_order_acq_rel)) {
+          return {ErrorCodes::ERR_OK, ""};
+      }
+
+      _scanJobCnt[storeId]++;
       LocalSessionGuard sg(_svr);
       auto expd = _svr->getSegmentMgr()->getDb(sg.getSession(),
                                                storeId,
                                                mgl::LockMode::LOCK_IS);
       if (!expd.ok()) {
+          _scanJobCnt[storeId]--;
+          _scanJobStatus[storeId].store(false, std::memory_order_release);
           return expd.status();
       }
 
       auto ptxn = expd.value().store->createTransaction();
       if (!ptxn.ok()) {
+          _scanJobCnt[storeId]--;
+          _scanJobStatus[storeId].store(false, std::memory_order_release);
           return ptxn.status();
       }
 
@@ -72,9 +93,15 @@ namespace tendisplus {
       INVARIANT(_scanPoints.find(storeId) != _scanPoints.end());
       // seek to the place where we left NOTE: skip the entry
       // already push into list
-      if (_scanPoints[storeId].size() > 0) {
-          cursor->seek(_scanPoints[storeId]);
-          if (!_scanPoints[storeId].compare(cursor->key().value())) {
+      std::string prefix;
+      {
+          std::lock_guard<std::mutex> lk(_mutex);
+          prefix = _scanPoints[storeId];
+      }
+
+      if (prefix.size() > 0) {
+          cursor->seek(prefix);
+          if (!prefix.compare(cursor->key().value())) {
               cursor->next();
           }
       }
@@ -95,27 +122,38 @@ namespace tendisplus {
               break;
           }
 
-          _scanPoints[storeId].assign(record.value().encode());
           {
               std::lock_guard<std::mutex> lk(_mutex);
+              _scanPoints[storeId].assign(record.value().encode());
               _expiredKeys[storeId].push_back(std::move(record.value()));
               _totalEnqueue++;
-              if (_expiredKeys[storeId].size() == 10000) {
+              if (_expiredKeys[storeId].size() == _scanBatch) {
                   break;
               }
           }
 
           TEST_SYNC_POINT_CALLBACK("InspectTotalEnqueue", &_totalEnqueue);
+          TEST_SYNC_POINT_CALLBACK("InspectScanJobCnt", &_scanJobCnt[storeId]);
       }
 
+      _scanJobCnt[storeId]--;
+      _scanJobStatus[storeId].store(false, std::memory_order_release);
       return {ErrorCodes::ERR_OK, ""};
   }
 
-  bool IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
-      int deletes = 0;
+  int IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
+      bool expect = false;
+      if (!_delJobStatus[storeId].compare_exchange_strong(
+              expect, true, std::memory_order_acq_rel)) {
+          return 0;
+      }
+
+      _delJobCnt[storeId]++;
+      uint32_t deletes = 0;
 
       while (true) {
           TTLIndex index;
+
           {
               std::lock_guard<std::mutex> lk(_mutex);
               if (_expiredKeys[storeId].empty()) {
@@ -142,13 +180,16 @@ namespace tendisplus {
 
           // break if delete a number of keys in the current store
           // TODO(eliotwang): make 1000 a config item
-          if (deletes == 1000) {
+          if (deletes == _delBatch) {
               break;
           }
 
           TEST_SYNC_POINT_CALLBACK("InspectTotalDequeue", &_totalDequeue);
+          TEST_SYNC_POINT_CALLBACK("InspectDelJobCnt", &_delJobCnt[storeId]);
       }
 
+      _delJobCnt[storeId]--;
+      _delJobStatus[storeId].store(false, std::memory_order_release);
       return deletes;
   }
 
@@ -187,7 +228,7 @@ namespace tendisplus {
       while (_isRunning.load(std::memory_order_relaxed)) {
           scheScanExpired();
           schedDelExpired();
-          std::this_thread::sleep_for(std::chrono::seconds(10));
+          std::this_thread::sleep_for(std::chrono::seconds(_pauseTime));
       }
 
       return {ErrorCodes::ERR_OK, ""};

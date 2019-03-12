@@ -63,27 +63,34 @@ Expected<bool> expireAfterNow(Session *sess,
             return eValue.status();
         }
         auto rv = eValue.value();
+        Status s;
 
-        // delete old index entry
-        auto oldTTL = rv.getTtl();
-        TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
-        Status s = txn->delKV(o_ictx.encode());
-        if (!s.ok()) {
-            return s;
-        }
+        if (type == RecordType::RT_LIST_META ||
+            type == RecordType::RT_HASH_META ||
+            type == RecordType::RT_SET_META ||
+            type == RecordType::RT_ZSET_META) {
+            // delete old index entry
+            auto oldTTL = rv.getTtl();
+            TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
 
-        // update
-        rv.setTtl(expireAt);
-        s = kvstore->setKV(rk, rv, txn.get());
-        if (!s.ok()) {
-            return s;
-        }
+            s = txn->delKV(o_ictx.encode());
+            if (!s.ok()) {
+                return s;
+            }
 
-        // add new index entry
-        TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
-        s = txn->setKV(n_ictx.encode(), RecordValue().encode());
-        if (!s.ok()) {
-          return s;
+            // update
+            rv.setTtl(expireAt);
+            s = kvstore->setKV(rk, rv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+
+            // add new index entry
+            TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
+            s = txn->setKV(n_ictx.encode(), RecordValue().encode());
+            if (!s.ok()) {
+                return s;
+            }
         }
 
         auto commitStatus = txn->commit();

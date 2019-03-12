@@ -23,6 +23,12 @@ class ServerParams {
     std::string requirepass;
     std::string masterauth;
     std::string pidFile;
+
+    uint32_t scanCntIndexMgr;
+    uint32_t scanJobCntIndexMgr;
+    uint32_t delCntIndexMgr;
+    uint32_t delJobCntIndexMgr;
+    uint32_t pauseTimeIndexMgr;
 };
 }  // namespace tendisplus
 

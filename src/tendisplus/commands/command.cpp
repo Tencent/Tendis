@@ -182,7 +182,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
             return s;
         }
 
-        if (ictx) {
+        if (ictx && ictx->getType() != RecordType::RT_KV) {
             Status s = txn->delKV(ictx->encode());
             if (!s.ok()) {
                 return s;
@@ -364,7 +364,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         }
     }
 
-    if (ictx) {
+    if (ictx && ictx->getType() != RecordType::RT_KV) {
         Status s = txn->delKV(ictx->encode());
         if (!s.ok()) {
             return s;
