@@ -72,7 +72,7 @@ class PingCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         if (sess->getArgs().size() == 1) {
-            return Command::fmtBulk("PONG");
+            return std::string("+PONG\r\n");
         }
         if (sess->getArgs().size() != 2) {
             return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments"};

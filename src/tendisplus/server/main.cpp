@@ -8,6 +8,7 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/portable.h"
 #include "glog/logging.h"
 
 namespace tendisplus {
@@ -79,9 +80,18 @@ int main(int argc, char *argv[]) {
     } else {
         FLAGS_v = 0;
     }
+
     if (params->logDir != "") {
         FLAGS_log_dir = params->logDir;
+        std::cout << FLAGS_log_dir << std::endl;
+        if (!tendisplus::filesystem::exists(FLAGS_log_dir)) {
+            std::error_code ec;
+            if (!tendisplus::filesystem::create_directories(FLAGS_log_dir, ec)) {
+                LOG(WARNING) << " create log path failed: " << ec.message();
+            }
+        }
     }
+
     FLAGS_logbufsecs = 1;
     ::google::InitGoogleLogging("tendisplus");
     ::google::InstallFailureSignalHandler();

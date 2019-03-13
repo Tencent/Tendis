@@ -134,6 +134,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     s = _network->run();
     if (!s.ok()) {
         return s;
+    } else {
+        LOG(WARNING) << "ready to accept connections at "
+            << cfg->bindIp << ":" << cfg->port;
     }
 
     _isRunning.store(true, std::memory_order_relaxed);
