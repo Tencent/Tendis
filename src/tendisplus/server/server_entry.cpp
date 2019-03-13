@@ -120,10 +120,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
     s = _replMgr->startup();
     if (!s.ok()) {
+        LOG(WARNING) << "start up repl manager failed!";
         return s;
     }
 
-    _indexMgr = std::make_unique<IndexManager>(shared_from_this());
+    _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
     s = _indexMgr->startup();
     if (!s.ok()) {
       return s;
@@ -133,6 +134,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     s = _network->run();
     if (!s.ok()) {
         return s;
+    } else {
+        LOG(WARNING) << "ready to accept connections at "
+            << cfg->bindIp << ":" << cfg->port;
     }
 
     _isRunning.store(true, std::memory_order_relaxed);

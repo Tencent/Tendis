@@ -85,7 +85,7 @@ void testScanJobRunning(std::shared_ptr<ServerEntry> server,
         {"BeforeIndexManagerLoop", "ScanThreadRunning"},
     });
 
-    std::atomic<bool> status(false);
+    std::atomic<bool> status = { true };
     SyncPoint::GetInstance()->SetCallBack(
         "BeforeIndexManagerLoop",
         [&](void *arg) {
@@ -103,6 +103,9 @@ void testScanJobRunning(std::shared_ptr<ServerEntry> server,
     ASSERT_TRUE(status.load());
 
     server->stop();
+
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
 void testScanIndex(std::shared_ptr<ServerEntry> server,
@@ -115,13 +118,11 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
         [&](void *arg) mutable {
             uint64_t *tmp = reinterpret_cast<uint64_t *>(arg);
             totalEnqueue = *tmp;
-            // LOG(WARNING) << "total enqueue: " << totalEnqueue;
         });
     SyncPoint::GetInstance()->SetCallBack("InspectTotalDequeue",
         [&](void *arg) mutable {
             uint64_t *tmp  = reinterpret_cast<uint64_t *>(arg);
             totalDequeue = *tmp;
-            // LOG(WARNING) << "total dequeue: " << totalDequeue;
         });
     SyncPoint::GetInstance()->EnableProcessing();
 
@@ -147,7 +148,7 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
     TEST_SYNC_POINT("BeforeGenerateTTLIndex");
     work.expireKeys(keys_written, ttl);
     TEST_SYNC_POINT("AfterGenerateTTLIndex");
-    
+
     while (true) {
         auto cnt = countTTLIndex(server, session, ttl);
         if (cnt > 0) {
@@ -180,7 +181,7 @@ TEST(IndexManager, scanJobRunning) {
 
     testScanJobRunning(server, cfg);
 
-    EXPECT_EQ(server.use_count(), 1);
+    ASSERT_EQ(server.use_count(), 1);
 }
 
 TEST(IndexManager, scanIndexAfterExpire) {
@@ -189,6 +190,7 @@ TEST(IndexManager, scanIndexAfterExpire) {
 
     EXPECT_TRUE(setupEnv());
 
+    SyncPoint::GetInstance()->ClearAllCallBacks();
     SyncPoint::GetInstance()->LoadDependency({
         {"AfterGenerateTTLIndex", "BeforeIndexManagerLoop"},
     });
@@ -196,17 +198,20 @@ TEST(IndexManager, scanIndexAfterExpire) {
     auto cfg = makeServerParam();
     auto server = std::make_shared<ServerEntry>();
 
-    testScanIndex(server, cfg, 1024*4, 10, true, totalEnqueue, totalDequeue);
+    testScanIndex(server, cfg, 2048*4, 10, true, totalEnqueue, totalDequeue);
 
     server->stop();
 
-    ASSERT_EQ(totalDequeue, 1024*4*5u);
-    ASSERT_EQ(totalEnqueue, 1024*4*5u);
+    ASSERT_EQ(totalDequeue, 2048*4*4u);
+    ASSERT_EQ(totalEnqueue, 2048*4*4u);
 
     ASSERT_EQ(server.use_count(), 1);
+
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
-TEST(IndexManager, scanIndexWhileWrite) {
+TEST(IndexManager, scanIndexWhileExpire) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
 
@@ -223,9 +228,56 @@ TEST(IndexManager, scanIndexWhileWrite) {
 
     server->stop();
 
-    ASSERT_EQ(totalDequeue, 2048*4*5u);
-    ASSERT_EQ(totalEnqueue, 2048*4*5u);
+    ASSERT_EQ(totalDequeue, 2048*4*4u);
+    ASSERT_EQ(totalEnqueue, 2048*4*4u);
 
     ASSERT_EQ(server.use_count(), 1);
+
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+}
+
+TEST(IndexManager, singleJobRunning) {
+    uint64_t totalDequeue = 0;
+    uint64_t totalEnqueue = 0;
+
+    EXPECT_TRUE(setupEnv());
+
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+    SyncPoint::GetInstance()->LoadDependency({
+        {"BeforeGenerateTTLIndex", "BeforeIndexManagerLoop"},
+    });
+
+    SyncPoint::GetInstance()->SetCallBack("InspectScanJobCnt",
+        [&](void *arg) {
+            auto scanJobCnt = reinterpret_cast<std::atomic<uint32_t>*>(arg);
+            ASSERT_EQ(*scanJobCnt, 1);
+        });
+
+    SyncPoint::GetInstance()->SetCallBack("InspectDelJobCnt",
+        [&](void *arg) {
+            auto delJobCnt = reinterpret_cast<std::atomic<uint32_t>*>(arg);
+            ASSERT_EQ(*delJobCnt, 1);
+        });
+
+    auto cfg = makeServerParam();
+    cfg->scanCntIndexMgr = 1000;
+    cfg->scanJobCntIndexMgr = 8;
+    cfg->delCntIndexMgr = 2000;
+    cfg->delJobCntIndexMgr = 8;
+    cfg->pauseTimeIndexMgr = 1;
+
+    auto server = std::make_shared<ServerEntry>();
+    testScanIndex(server, cfg, 2048*4, 1, true, totalEnqueue, totalDequeue);
+
+    server->stop();
+
+    ASSERT_EQ(totalEnqueue, 2048*4*4u);
+    ASSERT_EQ(totalDequeue, 2048*4*4u);
+
+    ASSERT_EQ(server.use_count(), 1);
+
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 }  // namespace tendisplus

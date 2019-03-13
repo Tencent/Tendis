@@ -3,6 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #include "glog/logging.h"
 #include "tendisplus/utils/status.h"
@@ -58,8 +59,10 @@ Status ServerParams::parseFile(const std::string& filename) {
         std::vector<std::string> tokens;
         std::string tmp;
         while (std::getline(ss, tmp, ' ')) {
+            std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
             tokens.emplace_back(tmp);
         }
+
         if (tokens.size() == 0) {
             continue;
         } else if (tokens[0] == "bind") {
@@ -133,6 +136,36 @@ Status ServerParams::parseFile(const std::string& filename) {
                     "invalid pidfile configure"};
             }
             pidFile = tokens[1];
+        } else if (tokens[0] == "delcntindexmgr") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid delcntindexmgr config"};
+            }
+            delCntIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "deljobcntindexmgr") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid deljobcntindexmgr config"};
+            }
+            delJobCntIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "scancntindexmgr") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid scancntindexmgr config"};
+            }
+            scanCntIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "scanjobcntindexmgr") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid scanjobcntindexmgr config"};
+            }
+            scanJobCntIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "pausetimeindexmgr") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid pausetimeindexmgr config"};
+            }
+            pauseTimeIndexMgr = std::stoi(tokens[1]);
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -150,6 +183,11 @@ ServerParams::ServerParams()
          requirepass(""),
          masterauth(""),
          pidFile("./tendisplus.pid") {
+    scanCntIndexMgr = 1000;
+    scanJobCntIndexMgr = 1;
+    delCntIndexMgr = 10000;
+    delJobCntIndexMgr= 1;
+    pauseTimeIndexMgr = 10;
 }
 
 
