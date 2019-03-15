@@ -37,7 +37,9 @@ namespace filesystem = std::experimental::filesystem;
 #else
 
 #include <filesystem>
+namespace tendisplus {
 namespace filesystem = std::experimental::filesystem::v1;
+}  // namespace tendisplus
 
 #include <optional.h>
 namespace tendisplus {
