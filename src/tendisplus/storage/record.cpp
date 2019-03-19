@@ -267,6 +267,45 @@ const std::string& RecordKey::getSecondaryKey() const {
     return _sk;
 }
 
+#define INVALID_RK_OFFSET ((size_t)-1)
+
+static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
+        size_t* chunkidOut, uint32_t* dbidOut, RecordType* typeOut) {
+    size_t offset = 0;
+    uint32_t chunkid = 0;
+    uint32_t dbid = 0;
+    uint8_t typec;
+    RecordType type = RecordType::RT_INVALID;
+
+    if (size < sizeof(chunkid) + sizeof(dbid) + sizeof(uint8_t)
+        + sizeof(RecordKey::TRSV)) {
+        // invalid key
+        return INVALID_RK_OFFSET;
+    }
+
+    // chunkid
+    for (size_t i = 0; i < sizeof(chunkid); i++) {
+        chunkid = (chunkid << 8) | keyCstr[i + offset];
+    }
+    offset += sizeof(chunkid);
+
+    // dbid
+    for (size_t i = 0; i < sizeof(dbid); i++) {
+        dbid = (dbid << 8) | keyCstr[i + offset];
+    }
+    offset += sizeof(dbid);
+
+    // type
+    typec = keyCstr[offset++];
+    type = char2Rt(typec);
+
+    *chunkidOut = chunkid;
+    *dbidOut = dbid;
+    *typeOut = type;
+
+    return offset;
+}
+
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
@@ -279,22 +318,12 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     std::string pk = "";
     std::string sk = "";
 
-    // chunkid
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
-    for (size_t i = 0; i < sizeof(chunkid); i++) {
-        chunkid = (chunkid << 8) | keyCstr[i+offset];
+    offset = recordKeyDecodeFixPrefix(keyCstr, key.size(),
+            &chunkid, &dbid, &type);
+    if (offset == INVALID_RK_OFFSET) {
+        return {ErrorCodes::ERR_DECODE, "invalid recordkey"};
     }
-    offset += sizeof(chunkid);
-
-    // dbid
-    for (size_t i = 0; i < sizeof(dbid); i++) {
-        dbid = (dbid << 8) | keyCstr[i+offset];
-    }
-    offset += sizeof(dbid);
-
-    // type
-    uint8_t typec = keyCstr[offset++];
-    type = char2Rt(typec);
 
     // pklen is stored in the reverse order
     // pklen
@@ -326,6 +355,18 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
     return RecordKey(chunkid, dbid, type, unhexPk.value(), sk);
+}
+
+RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
+    size_t offset = 0;
+    uint32_t chunkid = 0;
+    uint32_t dbid = 0;
+    RecordType type = RecordType::RT_INVALID;
+
+    offset = recordKeyDecodeFixPrefix(reinterpret_cast<const uint8_t*>(key),
+        size, &chunkid, &dbid, &type);
+
+    return type;
 }
 
 bool RecordKey::operator==(const RecordKey& other) const {
@@ -411,6 +452,26 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
             value.size() - offset);
     }
     return RecordValue(std::move(rawValue), ttl, cas);
+}
+
+uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
+    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value);
+    size_t offset = 0;
+    auto expt = varintDecodeFwd(valueCstr, size);
+    if (!expt.ok()) {
+        return 0;
+    }
+    offset += expt.value().second;
+    uint64_t cas = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr + offset, size - offset);
+    if (!expt.ok()) {
+        return 0;
+    }
+    offset += expt.value().second;
+    uint64_t ttl = expt.value().first;;
+
+    return ttl;
 }
 
 const std::string& RecordValue::getValue() const {

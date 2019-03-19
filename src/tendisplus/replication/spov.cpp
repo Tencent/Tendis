@@ -99,7 +99,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         {"slavefullsync", std::to_string(metaSnapshot.id)});
 
     // 1) stop store and clean it's directory
-    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), metaSnapshot.id, mgl::LockMode::LOCK_X);
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), metaSnapshot.id,
+        mgl::LockMode::LOCK_X);
     INVARIANT(expdb.ok());
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
@@ -433,7 +434,8 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
 // NOTE(deyukong): should be called with lock held
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                                    const std::list<ReplLog>& ops) {
-    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
+        mgl::LockMode::LOCK_NONE);
     INVARIANT(expdb.ok());
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
@@ -451,10 +453,14 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     if (!expCmit.ok()) {
         return expCmit.status();
     }
+
+    // NOTE(vinchen): store the binlog time spov when txn commited.
+    store->setBinlogTime(txn->getBinlogTime());
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs) {
+Status ReplManager::saveBinlogs(uint32_t storeId,
+    const std::list<ReplLog>& logs) {
     if (logs.size() == 0) {
         return {ErrorCodes::ERR_OK, ""};
     }
@@ -475,9 +481,10 @@ Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs
         (void) localtime_r(&time, &lt);
         strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
 
-        sprintf(fname, "%s/%d/binlog-%d-%07d-%s.log", _dumpPath.c_str(), storeId, storeId,
-            currentId+1, tbuf);
-        fs = new std::ofstream(fname, std::ios::out|std::ios::app|std::ios::binary);
+        snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
+            _dumpPath.c_str(), storeId, storeId, currentId+1, tbuf);
+        fs = new std::ofstream(fname,
+            std::ios::out|std::ios::app|std::ios::binary);
         if (!fs->is_open()) {
             std::stringstream ss;
             ss << "open:" << fname << " failed";
@@ -498,18 +505,19 @@ Status ReplManager::saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs
         auto kv = v.encode();
         uint64_t txnId = v.getReplLogKey().getTxnId();
         uint64_t txnIdTrans = htobe64(txnId);
-        fs->write((char*)&txnIdTrans, sizeof(txnIdTrans));
+        fs->write(reinterpret_cast<char*>(&txnIdTrans), sizeof(txnIdTrans));
 
         uint32_t keyLen = kv.first.size();
         uint32_t keyLenTrans = htobe32(keyLen);
-        fs->write((char*)&keyLenTrans, sizeof(keyLenTrans));
+        fs->write(reinterpret_cast<char*>(&keyLenTrans), sizeof(keyLenTrans));
         fs->write(kv.first.c_str(), keyLen);
 
         uint32_t valLen = kv.second.size();
         uint32_t valLenTrans = htobe32(valLen);
-        fs->write((char*)&valLenTrans, sizeof(valLenTrans));
+        fs->write(reinterpret_cast<char*>(&valLenTrans), sizeof(valLenTrans));
         fs->write(kv.second.c_str(), valLen);
-        written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen) + sizeof(txnIdTrans);
+        written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen) +
+            sizeof(txnIdTrans);
     }
     INVARIANT(fs->good());
     {

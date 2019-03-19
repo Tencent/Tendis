@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <list>
+#include <set>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -27,6 +28,9 @@ class RequestMatrix;
 class Catalog;
 class ReplManager;
 class IndexManager;
+
+class ServerEntry;
+std::shared_ptr<ServerEntry> getGlobalServer();
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:

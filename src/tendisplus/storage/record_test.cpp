@@ -105,6 +105,12 @@ TEST(Record, Common) {
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);
+        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(), 
+            kv.first.size());
+        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
+            kv.second.size());
+        EXPECT_EQ(type_, type);
+        EXPECT_EQ(ttl_, ttl);
         EXPECT_TRUE(prcd1.ok());
         EXPECT_EQ(prcd1.value(), rcd);
     }
