@@ -270,7 +270,7 @@ const std::string& RecordKey::getSecondaryKey() const {
 #define INVALID_RK_OFFSET ((size_t)-1)
 
 static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
-        size_t* chunkidOut, uint32_t* dbidOut, RecordType* typeOut) {
+        uint32_t* chunkidOut, uint32_t* dbidOut, RecordType* typeOut) {
     size_t offset = 0;
     uint32_t chunkid = 0;
     uint32_t dbid = 0;
@@ -462,7 +462,6 @@ uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
         return 0;
     }
     offset += expt.value().second;
-    uint64_t cas = expt.value().first;
 
     expt = varintDecodeFwd(valueCstr + offset, size - offset);
     if (!expt.ok()) {

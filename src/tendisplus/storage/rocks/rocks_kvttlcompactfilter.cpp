@@ -67,7 +67,7 @@ std::unique_ptr<CompactionFilter>
 KVTtlCompactionFilterFactory::CreateCompactionFilter(
     const CompactionFilter::Context& context) {
 
-    uint64_t currentTs;
+    uint64_t currentTs = 0;
     if (_store) {
         // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
         // should get the binlog time in slave point.
@@ -76,7 +76,7 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
 
     if (currentTs == 0) {
         LOG(WARNING) << "The currentTs is 0, the kvttlcompaction would do nothing;"
-            << "the _store is " << _store ? "not NULL" : "NULL";
+            << "the _store is " << (_store ? "not NULL" : "NULL");
         currentTs = std::numeric_limits<uint64_t>::max();
     }
 

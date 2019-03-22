@@ -21,7 +21,7 @@ using KeysWritten = std::set<std::string>;
 using AllKeys = std::vector<KeysWritten>;
 
 bool setupEnv();
-bool destroyEnv();
+void destroyEnv();
 std::shared_ptr<ServerParams> makeServerParam();
 std::shared_ptr<ServerEntry> makeServerEntry(std::shared_ptr<ServerParams> cfg);
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
