@@ -67,7 +67,11 @@ void LockSchedCtx::schedPendingLocks() {
         MGLock* tmpLock = *it;
         if (isConflict(_runningModes, tmpLock->getMode())) {
             it++;
-            continue;
+            // NOTE(vinchen): Here, it should be break instead of continue.
+            // Because of first come first lock/unlock, it can't release the
+            // lock after the conflict pending lock. Otherwise, it would lead
+            // to this lock starve.
+            break;
         }
         incrRunningRef(tmpLock->getMode());
         decPendingRef(tmpLock->getMode());

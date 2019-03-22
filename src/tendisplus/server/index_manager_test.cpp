@@ -10,6 +10,7 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
@@ -112,17 +113,17 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
                    std::shared_ptr<ServerParams> cfg,
                    uint32_t count, uint64_t ttl,
                    bool sharename,
-                   uint64_t& totalEnqueue,
-                   uint64_t& totalDequeue) {
+                   uint64_t* totalEnqueue,
+                   uint64_t* totalDequeue) {
     SyncPoint::GetInstance()->SetCallBack("InspectTotalEnqueue",
         [&](void *arg) mutable {
             uint64_t *tmp = reinterpret_cast<uint64_t *>(arg);
-            totalEnqueue = *tmp;
+            *totalEnqueue = *tmp;
         });
     SyncPoint::GetInstance()->SetCallBack("InspectTotalDequeue",
         [&](void *arg) mutable {
             uint64_t *tmp  = reinterpret_cast<uint64_t *>(arg);
-            totalDequeue = *tmp;
+            *totalDequeue = *tmp;
         });
     SyncPoint::GetInstance()->EnableProcessing();
 
@@ -141,7 +142,8 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
          RecordType::RT_HASH_META,
          RecordType::RT_SET_META,
          RecordType::RT_ZSET_META}) {
-        auto keys = work.writeWork(type, count, type == RecordType::RT_KV ? 0 : 32, sharename);
+        auto keys = work.writeWork(type, count,
+                   type == RecordType::RT_KV ? 0 : 32, sharename);
         keys_written.emplace_back(keys);
     }
 
@@ -163,6 +165,10 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
 }
 
 TEST(IndexManager, generateIndex) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
     EXPECT_TRUE(setupEnv());
 
     auto cfg = makeServerParam();
@@ -174,6 +180,10 @@ TEST(IndexManager, generateIndex) {
 }
 
 TEST(IndexManager, scanJobRunning) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
     EXPECT_TRUE(setupEnv());
 
     auto cfg = makeServerParam();
@@ -188,6 +198,10 @@ TEST(IndexManager, scanIndexAfterExpire) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
 
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
     EXPECT_TRUE(setupEnv());
 
     SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -198,7 +212,7 @@ TEST(IndexManager, scanIndexAfterExpire) {
     auto cfg = makeServerParam();
     auto server = std::make_shared<ServerEntry>();
 
-    testScanIndex(server, cfg, 2048*4, 10, true, totalEnqueue, totalDequeue);
+    testScanIndex(server, cfg, 2048*4, 10, true, &totalEnqueue, &totalDequeue);
 
     server->stop();
 
@@ -215,6 +229,10 @@ TEST(IndexManager, scanIndexWhileExpire) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
 
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
     EXPECT_TRUE(setupEnv());
 
     SyncPoint::GetInstance()->LoadDependency({
@@ -224,7 +242,7 @@ TEST(IndexManager, scanIndexWhileExpire) {
     auto cfg = makeServerParam();
     auto server = std::make_shared<ServerEntry>();
 
-    testScanIndex(server, cfg, 2048*4, 1, true, totalEnqueue, totalDequeue);
+    testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
 
     server->stop();
 
@@ -240,6 +258,10 @@ TEST(IndexManager, scanIndexWhileExpire) {
 TEST(IndexManager, singleJobRunning) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
+
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
     EXPECT_TRUE(setupEnv());
 
@@ -268,7 +290,7 @@ TEST(IndexManager, singleJobRunning) {
     cfg->pauseTimeIndexMgr = 1;
 
     auto server = std::make_shared<ServerEntry>();
-    testScanIndex(server, cfg, 2048*4, 1, true, totalEnqueue, totalDequeue);
+    testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
 
     server->stop();
 
