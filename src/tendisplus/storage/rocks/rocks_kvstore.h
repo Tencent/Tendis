@@ -145,6 +145,8 @@ class RocksKVStore: public KVStore {
         uint64_t start, uint64_t end, Transaction *txn) final;
     Status truncateBinlog(const std::list<ReplLog>&, Transaction *txn) final;
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
+    Status compactRange(const std::string* begin, const std::string* end) final;
+    Status fullCompact() final;
 
     Status clear() final;
     bool isRunning() const final;

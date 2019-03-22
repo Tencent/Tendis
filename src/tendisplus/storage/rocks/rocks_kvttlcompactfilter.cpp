@@ -6,6 +6,8 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time.h"
+#include "tendisplus/utils/sync_point.h"
+#include "glog/logging.h"
 
 namespace tendisplus {
 class KVTtlCompactionFilter : public CompactionFilter {
@@ -15,6 +17,8 @@ class KVTtlCompactionFilter : public CompactionFilter {
 
     ~KVTtlCompactionFilter() override {
         // TODO(vinchen) do something statistics here
+        TEST_SYNC_POINT_CALLBACK("InspectKvTtlExpiredCount", &_expiredCount);
+        TEST_SYNC_POINT_CALLBACK("InspectKvTtlFilterCount", &_filterCount);
     }
 
     const char* Name() const override { return "KVTTLCompactionFilter"; }
@@ -25,11 +29,12 @@ class KVTtlCompactionFilter : public CompactionFilter {
       bool* /*value_changed*/) const {
         RecordType type = RecordKey::getRecordTypeRaw(key.data(), key.size());
         uint64_t ttl;
+        _filterCount++;
         switch (type) {
         case RecordType::RT_KV:
             ttl = RecordValue::getTtlRaw(existing_value.data(),
                 existing_value.size());
-            if (ttl < _currentTime) {
+            if (ttl > 0 && ttl < _currentTime) {
                 // Expired
                 _expiredCount++;
                 _expiredSize += key.size() + existing_value.size();
@@ -48,26 +53,33 @@ class KVTtlCompactionFilter : public CompactionFilter {
     }
 
  private:
+    // millisecond, same as ttl in the record
     const uint64_t _currentTime;
     // It is safe to not using std::atomic since the compaction filter,
-    // created from a compaction filter factroy, will not be called
+    // created from a compaction filter factory, will not be called
     // from multiple threads.
     mutable uint64_t _expiredCount = 0;
     mutable uint64_t _expiredSize = 0;
+    mutable uint64_t _filterCount = 0;
 };
 
 std::unique_ptr<CompactionFilter>
 KVTtlCompactionFilterFactory::CreateCompactionFilter(
     const CompactionFilter::Context& context) {
 
-    uint32_t currentTs = std::numeric_limits<uint32_t>::max();
+    uint64_t currentTs;
     if (_store) {
         // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
         // should get the binlog time in slave point.
-        currentTs = _store->getCurrentTime();
+        currentTs = ((uint64_t)_store->getCurrentTime()) * 1000;
     }
 
-    INVARIANT(currentTs > 0);
+    if (currentTs == 0) {
+        LOG(WARNING) << "The currentTs is 0, the kvttlcompaction would do nothing;"
+            << "the _store is " << _store ? "not NULL" : "NULL";
+        currentTs = std::numeric_limits<uint64_t>::max();
+    }
+
     return std::unique_ptr<CompactionFilter>(
         new KVTtlCompactionFilter(currentTs));
 }

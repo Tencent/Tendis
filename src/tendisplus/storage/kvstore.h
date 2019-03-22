@@ -162,6 +162,9 @@ class KVStore {
     virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
 
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
+    virtual Status compactRange(const std::string* begin,
+                                const std::string* end) = 0;
+    virtual Status fullCompact() = 0;
 
     // remove all data in db
     virtual Status clear() = 0;
@@ -189,7 +192,6 @@ class KVStore {
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
     static constexpr size_t INSTANCE_NUM = size_t(10);
-    
 
  private:
     const std::string _id;

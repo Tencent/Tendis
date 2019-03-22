@@ -617,6 +617,40 @@ Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksKVStore::compactRange(const std::string* begin,
+    const std::string* end) {
+    // TODO(vinchen): need lock_guard?
+    auto compactionOptions = rocksdb::CompactRangeOptions();
+    auto db =  getBaseDB();
+
+    rocksdb::Slice* sbegin = nullptr;
+    rocksdb::Slice* send = nullptr;
+    const auto guard = MakeGuard([&] {
+        if (sbegin) {
+            delete sbegin;
+        }
+        if (send) {
+            delete send;
+        }
+    });
+    if (begin != nullptr) {
+        sbegin = new rocksdb::Slice(*begin);
+    }
+    if (end != nullptr) {
+        send = new rocksdb::Slice(*end);
+    }
+    rocksdb::Status status =  db->CompactRange(compactionOptions,
+                sbegin, send);
+    if (!status.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, status.getState()};
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::fullCompact() {
+    return compactRange(nullptr, nullptr);
+}
+
 Status RocksKVStore::clear() {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
@@ -878,8 +912,11 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
                 continue;
             }
             size_t filesize = filesystem::file_size(path);
+#ifndef _WIN32
             // assert path with bkupdir prefix
+            // for win32, the dir should change to "\\"
             INVARIANT(path.string().find(dir) == 0);
+#endif
             std::string relative = path.string().erase(0, dir.size());
             flist[relative] = filesize;
         }

@@ -106,11 +106,9 @@ void KVStore::setBinlogTime(uint32_t timestamp) {
 uint32_t KVStore::getCurrentTime() {
     uint32_t ts = 0;
     if ( getMode() == KVStore::StoreMode::REPLICATE_ONLY ) {
+        // NOTE(vinchen): Here it may return zero, because the
+        // slave never apply on binlog yet.
         ts = getBinlogTime();
-        if (!ts) {
-            // Maybe the slave never apply one binlog
-            ts = std::numeric_limits<uint32_t>::max();
-        }
     } else {
         ts = sinceEpoch();
     }
