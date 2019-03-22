@@ -106,10 +106,10 @@ int main(int argc, char *argv[]) {
     ::google::InstallFailureSignalHandler();
     ::google::InstallFailureWriter([](const char *data, int size) {
         LOG(ERROR) << "Failure:" << std::string(data, size);
-        google::FlushLogFiles(google::GLOG_INFO);
-        google::FlushLogFiles(google::GLOG_WARNING);
-        google::FlushLogFiles(google::GLOG_ERROR);
-        google::FlushLogFiles(google::GLOG_FATAL);
+        google::FlushLogFiles(google::INFO);
+        google::FlushLogFiles(google::WARNING);
+        google::FlushLogFiles(google::ERROR);
+        google::FlushLogFiles(google::FATAL);
     });
 #endif
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();

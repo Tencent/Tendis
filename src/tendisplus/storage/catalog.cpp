@@ -140,7 +140,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
 #ifdef _WIN32
     return std::move(result);
 #else
-	  return result;
+    return result;
 #endif
 }
 

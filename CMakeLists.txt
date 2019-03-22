@@ -28,7 +28,7 @@ elseif(MSVC)
 	# disable warnings 
 	#add_compile_options(/wC4099)
 else()
-    message(FATAL_ERROR "gcc or vs2015+ is required")
+    message(FATAL_ERROR "gcc or vs2015(update 2)+ is required")
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
