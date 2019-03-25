@@ -23,6 +23,10 @@ if (COMMAND pre_project_set_up_hermetic_build)
   pre_project_set_up_hermetic_build()
 endif()
 
+if (MSVC)
+	add_compile_options(/MDd) 
+endif()
+
 ########################################################################
 #
 # Project-wide settings
