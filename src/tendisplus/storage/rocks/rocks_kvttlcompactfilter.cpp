@@ -12,13 +12,18 @@
 namespace tendisplus {
 class KVTtlCompactionFilter : public CompactionFilter {
  public:
-    explicit KVTtlCompactionFilter(uint64_t current_time)
-    : _currentTime(current_time) {}
+    explicit KVTtlCompactionFilter(KVStore* store, uint64_t current_time)
+    : _store(store), _currentTime(current_time) {}
 
     ~KVTtlCompactionFilter() override {
-        // TODO(vinchen) do something statistics here
         TEST_SYNC_POINT_CALLBACK("InspectKvTtlExpiredCount", &_expiredCount);
         TEST_SYNC_POINT_CALLBACK("InspectKvTtlFilterCount", &_filterCount);
+
+        // do something statistics here
+        _store->compactStat.filterCount.fetch_add(_filterCount,
+                            std::memory_order_relaxed);
+        _store->compactStat.kvExpiredCount.fetch_add(_expiredCount,
+                            std::memory_order_relaxed);
     }
 
     const char* Name() const override { return "KVTTLCompactionFilter"; }
@@ -53,6 +58,7 @@ class KVTtlCompactionFilter : public CompactionFilter {
     }
 
  private:
+    KVStore* _store;
     // millisecond, same as ttl in the record
     const uint64_t _currentTime;
     // It is safe to not using std::atomic since the compaction filter,
@@ -68,20 +74,19 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
     const CompactionFilter::Context& context) {
 
     uint64_t currentTs = 0;
-    if (_store) {
-        // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
-        // should get the binlog time in slave point.
-        currentTs = ((uint64_t)_store->getCurrentTime()) * 1000;
-    }
+    INVARIANT(_store != nullptr);
+    // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
+    // should get the binlog time in slave point.
+    currentTs = ((uint64_t)_store->getCurrentTime()) * 1000;
 
     if (currentTs == 0) {
-        LOG(WARNING) << "The currentTs is 0, the kvttlcompaction would do nothing;"
-            << "the _store is " << (_store ? "not NULL" : "NULL");
+        LOG(WARNING) <<
+            "The currentTs is 0, the kvttlcompaction would do nothing";
         currentTs = std::numeric_limits<uint64_t>::max();
     }
 
     return std::unique_ptr<CompactionFilter>(
-        new KVTtlCompactionFilter(currentTs));
+        new KVTtlCompactionFilter(_store, currentTs));
 }
 
 }  // namespace tendisplus

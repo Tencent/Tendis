@@ -1125,6 +1125,12 @@ void RocksKVStore::appendJSONStat(
         w.Key("high_visible");
         w.Uint64(_highestVisible);
     }
+
+    w.Key("compact_filter_count");
+    w.Uint64(compactStat.filterCount.load(std::memory_order_relaxed));
+    w.Key("compact_kvexpired_count");
+    w.Uint64(compactStat.kvExpiredCount.load(std::memory_order_relaxed));
+
     w.Key("rocksdb");
     w.StartObject();
     for (const auto& kv : properties) {

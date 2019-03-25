@@ -319,8 +319,6 @@ class RestoreBinlogCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         for (const auto& kv : logs) {
-            // uint32_t timestamp = kv.getReplLogKey().getTimestamp();
-            // txn->setBinlogTime(timestamp);
             // NOTE(vinchen): It don't need to get the timestamp of binlog 
             // for restorebinlog, because it isn't under the mode of 
             // REPLICATE_ONLY 
@@ -339,8 +337,6 @@ class RestoreBinlogCommand: public Command {
                     if (!expRv.ok()) {
                         return expRv.status();
                     }
-                    // the timestamp should be get from the binlog,
-                    // it can't use system time here.
                     auto s = txn->setKV(expRk.value().encode(),
                         expRv.value().encode(), timestamp);
                     if (!s.ok()) {

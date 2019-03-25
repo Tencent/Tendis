@@ -107,7 +107,7 @@ uint32_t KVStore::getCurrentTime() {
     uint32_t ts = 0;
     if ( getMode() == KVStore::StoreMode::REPLICATE_ONLY ) {
         // NOTE(vinchen): Here it may return zero, because the
-        // slave never apply on binlog yet.
+        // slave never apply one binlog yet.
         ts = getBinlogTime();
     } else {
         ts = sinceEpoch();

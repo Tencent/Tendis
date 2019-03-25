@@ -124,6 +124,11 @@ class BinlogObserver {
     virtual ~BinlogObserver() = default;
 };
 
+struct compactionStat {
+    std::atomic<uint64_t> filterCount;
+    std::atomic<uint64_t> kvExpiredCount;
+};
+
 class KVStore {
  public:
     enum class StoreMode {
@@ -189,6 +194,8 @@ class KVStore {
     uint32_t getBinlogTime();
     void setBinlogTime(uint32_t timestamp);
     uint32_t getCurrentTime();
+
+    compactionStat compactStat;
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
     static constexpr size_t INSTANCE_NUM = size_t(10);

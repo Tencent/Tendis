@@ -84,7 +84,11 @@ size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
             bool allDiff) {
     size_t kvCount = 0;
     srand((unsigned int)time(NULL));
-    for (size_t i = 0; i < count; i++) {
+
+    // easy to be different
+    static size_t i = 0;
+    size_t end = i + count;
+    for (; i < end ; i++) {
         uint32_t dbid = genRand();
         uint32_t chunkid = genRand();
         auto type = randomType();
@@ -753,9 +757,12 @@ TEST(RocksKVStore, Compaction) {
         totalExpired = *tmp;
     });
 
+    uint32_t waitSec = 10;
     // if we want to check the totalFilter, all data should be different
     genData(kvstore.get(), 1000, 0, true);
     size_t kvCount = genData(kvstore.get(), 1000, msSinceEpoch(), true);
+    size_t kvCount2 = genData(kvstore.get(), 1000,
+                    msSinceEpoch() + waitSec * 1000, true);
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -763,8 +770,17 @@ TEST(RocksKVStore, Compaction) {
     EXPECT_TRUE(status.ok());
     EXPECT_TRUE(hasCalled);
     // because there are repl_log for each set(), it should * 2 here
-    EXPECT_EQ(totalFilter, 2000*2);
+    EXPECT_EQ(totalFilter, 3000*2);
     EXPECT_EQ(totalExpired, kvCount);
+
+    std::this_thread::sleep_for(std::chrono::seconds(waitSec));
+
+    status = kvstore->fullCompact();
+    EXPECT_TRUE(status.ok());
+    EXPECT_TRUE(hasCalled);
+    // because there are repl_log for each set(), it should * 2 here
+    EXPECT_EQ(totalFilter, 3000*2 - kvCount);
+    EXPECT_EQ(totalExpired, kvCount2);
 }
 
 }  // namespace tendisplus
