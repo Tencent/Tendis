@@ -13,6 +13,7 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -70,26 +71,35 @@ namespace tendisplus {
           return {ErrorCodes::ERR_OK, ""};
       }
 
+      auto guard = MakeGuard([this, storeId]() {
+          _scanJobCnt[storeId]--;
+          _scanJobStatus[storeId].store(false, std::memory_order_release);
+      });
+
       _scanJobCnt[storeId]++;
       LocalSessionGuard sg(_svr);
       auto expd = _svr->getSegmentMgr()->getDb(sg.getSession(),
                                                storeId,
                                                mgl::LockMode::LOCK_IS);
       if (!expd.ok()) {
-          _scanJobCnt[storeId]--;
-          _scanJobStatus[storeId].store(false, std::memory_order_release);
           return expd.status();
       }
 
-      auto ptxn = expd.value().store->createTransaction();
+      PStore store = expd.value().store;
+      // do nothing when it's a slave
+      if (store->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+          return {ErrorCodes::ERR_OK, ""};
+      }
+
+      auto ptxn = store->createTransaction();
       if (!ptxn.ok()) {
-          _scanJobCnt[storeId]--;
-          _scanJobStatus[storeId].store(false, std::memory_order_release);
           return ptxn.status();
       }
 
       std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      auto cursor = txn->createTTLIndexCursor(msSinceEpoch());
+      // Here, it's safe to use msSinceEpoch(), because it can't be a slave here.
+      // In fact, it maybe more safe to use store->getCurrentTime()
+      auto cursor = txn->createTTLIndexCursor(store->getCurrentTime());
       INVARIANT(_scanPoints.find(storeId) != _scanPoints.end());
       // seek to the place where we left NOTE: skip the entry
       // already push into list
@@ -136,8 +146,6 @@ namespace tendisplus {
           TEST_SYNC_POINT_CALLBACK("InspectScanJobCnt", &_scanJobCnt[storeId]);
       }
 
-      _scanJobCnt[storeId]--;
-      _scanJobStatus[storeId].store(false, std::memory_order_release);
       return {ErrorCodes::ERR_OK, ""};
   }
 
@@ -179,7 +187,6 @@ namespace tendisplus {
           }
 
           // break if delete a number of keys in the current store
-          // TODO(eliotwang): make 1000 a config item
           if (deletes == _delBatch) {
               break;
           }

@@ -77,7 +77,7 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
     INVARIANT(_store != nullptr);
     // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
     // should get the binlog time in slave point.
-    currentTs = ((uint64_t)_store->getCurrentTime()) * 1000;
+    currentTs = _store->getCurrentTime();
 
     if (currentTs == 0) {
         LOG(WARNING) <<
