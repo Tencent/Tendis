@@ -26,7 +26,7 @@ ILock::~ILock() {
 }
 
 mgl::LockMode ILock::getMode() const {
-    if (_mgl == nullptr) { 
+    if (_mgl == nullptr) {
         return mgl::LockMode::LOCK_NONE;
     }
     return _mgl->getMode();
@@ -67,7 +67,8 @@ StoresLock::StoresLock(mgl::LockMode mode, Session* sess)
 
 StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
                      Session *sess)
-        :ILock(new StoresLock(getParentMode(mode), nullptr), new mgl::MGLock, sess),
+        :ILock(new StoresLock(getParentMode(mode), nullptr),
+                                new mgl::MGLock, sess),
          _storeId(storeId) {
     std::string target = "store_" + std::to_string(storeId);
     // a duration of 49 days. If lock still not acquired, fail it
@@ -89,7 +90,8 @@ uint32_t StoreLock::getStoreId() const {
 
 KeyLock::KeyLock(uint32_t storeId, const std::string& key,
                 mgl::LockMode mode, Session *sess)
-        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr), new mgl::MGLock, sess),
+        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr),
+                            new mgl::MGLock, sess),
          _key(key) {
     std::string target = "key_" + key;
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();

@@ -8,12 +8,16 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <vector>
+#include <atomic>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
+
+#define CATALOG_NAME "catalog"
 
 namespace tendisplus {
 
@@ -87,10 +91,14 @@ class Transaction {
         createTTLIndexCursor(std::uint64_t until) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
-                         const std::string& val) = 0;
-    virtual Status delKV(const std::string& key) = 0;
+                         const std::string& val,
+                         const uint32_t ts = 0) = 0;
+    virtual Status delKV(const std::string& key, const uint32_t ts = 0) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
+
+    virtual uint32_t getBinlogTime() = 0;
+    virtual void setBinlogTime(uint32_t timestamp) = 0;
 
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
@@ -116,6 +124,11 @@ class BinlogObserver {
     virtual ~BinlogObserver() = default;
 };
 
+struct compactionStat {
+    std::atomic<uint64_t> filterCount;
+    std::atomic<uint64_t> kvExpiredCount;
+};
+
 class KVStore {
  public:
     enum class StoreMode {
@@ -127,7 +140,6 @@ class KVStore {
         BACKUP_COPY,
         BACKUP_CKPT,
     };
- public:
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }
@@ -155,6 +167,9 @@ class KVStore {
     virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
 
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
+    virtual Status compactRange(const std::string* begin,
+                                const std::string* end) = 0;
+    virtual Status fullCompact() = 0;
 
     // remove all data in db
     virtual Status clear() = 0;
@@ -163,6 +178,7 @@ class KVStore {
     virtual Status stop() = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
+    virtual KVStore::StoreMode getMode() = 0;
 
     // return the greatest commitId
     virtual Expected<uint64_t> restart(bool restore = false) = 0;
@@ -175,6 +191,12 @@ class KVStore {
     virtual void appendJSONStat(
         rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
 
+    uint32_t getBinlogTime();
+    void setBinlogTime(uint32_t timestamp);
+    uint32_t getCurrentTime();
+
+    compactionStat compactStat;
+
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
     static constexpr size_t INSTANCE_NUM = size_t(10);
 
@@ -182,6 +204,7 @@ class KVStore {
     const std::string _id;
     const std::string _dbPath;
     const std::string _backupDir;
+    std::atomic<uint32_t> _binlogTimeSpov;
 };
 
 }  // namespace tendisplus

@@ -53,7 +53,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         uint64_t currentTs = 0;
         uint64_t targetTtl = 0;
         if (eValue.ok()) {
-            currentTs = nsSinceEpoch()/1000000;
+            currentTs = msSinceEpoch();
             targetTtl = eValue.value().getTtl();
         }
         bool needExpire = (targetTtl != 0
@@ -177,7 +177,7 @@ class SetCommand: public Command {
 
         uint64_t ts = 0;
         if (params.expire != 0) {
-            ts = nsSinceEpoch() / 1000000 + params.expire;
+            ts = msSinceEpoch() + params.expire;
         }
         RecordValue rv(params.value, ts);
 
@@ -281,7 +281,7 @@ class SetExCommand: public SetexGeneralCommand {
             return eexpire.status();
         }
         return runGeneral(sess, key, val,
-                          nsSinceEpoch()/1000000 + eexpire.value()*1000);
+                          msSinceEpoch() + eexpire.value()*1000);
     }
 } setexCmd;
 
@@ -299,7 +299,7 @@ class PSetExCommand: public SetexGeneralCommand {
             return eexpire.status();
         }
         return runGeneral(sess, key, val,
-                          nsSinceEpoch()/1000000 + eexpire.value());
+                          msSinceEpoch() + eexpire.value());
     }
 } psetexCmd;
 

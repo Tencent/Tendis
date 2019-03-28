@@ -51,6 +51,9 @@ TEST(NetSession, drainReqInvalid) {
     sess->setState(NetSession::State::DrainReqNet);
     const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
     std::copy(s.begin(), s.end(), std::back_inserter(sess->_queryBuf));
+#ifdef _WIN32
+    sess->_queryBuf.resize(s.size() + 1);
+#endif
     sess->drainReqCallback(std::error_code(), s.size());
     EXPECT_EQ(sess->_closeAfterRsp, true);
     EXPECT_TRUE(hasCalled);

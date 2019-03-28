@@ -43,7 +43,8 @@ class BackupCommand: public Command {
         INVARIANT(svr != nullptr);
         for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
             // NOTE(deyukong): here we acquire IS lock
-            auto expdb = svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+            auto expdb = svr->getSegmentMgr()->getDb(sess, i,
+                mgl::LockMode::LOCK_IS);
             if (!expdb.ok()) {
                 return expdb.status();
             }
@@ -56,7 +57,6 @@ class BackupCommand: public Command {
         }
         return {ErrorCodes::ERR_OK, ""};
     }
-
 } bkupCmd;
 
 class FullSyncCommand: public Command {
@@ -184,11 +184,13 @@ class PullBinlogsCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         uint64_t storeId;
         uint64_t binlogPos;
-        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(sess->getArgs()[1]);
+        Expected<uint64_t> exptStoreId =
+            ::tendisplus::stoul(sess->getArgs()[1]);
         if (!exptStoreId.ok()) {
             return exptStoreId.status();
         }
-        Expected<uint64_t> exptBinlogId = ::tendisplus::stoul(sess->getArgs()[2]);
+        Expected<uint64_t> exptBinlogId =
+            ::tendisplus::stoul(sess->getArgs()[2]);
         if (!exptBinlogId.ok()) {
             return exptBinlogId.status();
         }
@@ -198,7 +200,8 @@ class PullBinlogsCommand: public Command {
         }
         storeId = exptStoreId.value();
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS);
         INVARIANT(expdb.ok());
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
@@ -209,7 +212,8 @@ class PullBinlogsCommand: public Command {
         }
 
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        std::unique_ptr<BinlogCursor> cursor = txn->createBinlogCursor(binlogPos);
+        std::unique_ptr<BinlogCursor> cursor =
+            txn->createBinlogCursor(binlogPos);
 
         std::vector<ReplLog> binlogs;
         uint64_t currId = Transaction::TXNID_UNINITED;
@@ -238,7 +242,8 @@ class PullBinlogsCommand: public Command {
             Command::fmtMultiBulkLen(ss, 0);
         } else {
             Command::fmtMultiBulkLen(ss, 2*binlogs.size()+1);
-            Command::fmtLongLong(ss, binlogs.back().getReplLogKey().getTxnId()+1);
+            Command::fmtLongLong(ss,
+                binlogs.back().getReplLogKey().getTxnId()+1);
             for (const auto& v : binlogs) {
                 ReplLog::KV kv = v.encode();
                 Command::fmtBulk(ss, kv.first);
@@ -302,7 +307,8 @@ class RestoreBinlogCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
         INVARIANT(expdb.ok());
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
@@ -313,7 +319,13 @@ class RestoreBinlogCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         for (const auto& kv : logs) {
-            Expected<RecordKey> expRk = RecordKey::decode(kv.getReplLogValue().getOpKey());
+            // NOTE(vinchen): It don't need to get the timestamp of binlog 
+            // for restorebinlog, because it isn't under the mode of 
+            // REPLICATE_ONLY 
+            uint32_t timestamp = 0;
+
+            Expected<RecordKey> expRk =
+                RecordKey::decode(kv.getReplLogValue().getOpKey());
             if (!expRk.ok()) {
                 return expRk.status();
             }
@@ -325,7 +337,8 @@ class RestoreBinlogCommand: public Command {
                     if (!expRv.ok()) {
                         return expRv.status();
                     }
-                    auto s = txn->setKV(expRk.value().encode(), expRv.value().encode());
+                    auto s = txn->setKV(expRk.value().encode(),
+                        expRv.value().encode(), timestamp);
                     if (!s.ok()) {
                         return {ErrorCodes::ERR_INTERNAL, s.toString()};
                     } else {
@@ -333,7 +346,7 @@ class RestoreBinlogCommand: public Command {
                     }
                 }
                 case (ReplOp::REPL_OP_DEL): {
-                    auto s = txn->delKV(expRk.value().encode());
+                    auto s = txn->delKV(expRk.value().encode(), timestamp);
                     if (!s.ok()) {
                         return {ErrorCodes::ERR_INTERNAL, s.toString()};
                     } else {
@@ -419,7 +432,7 @@ class ApplyBinlogsCommand: public Command {
             if (!(static_cast<uint16_t>(lastLogKey.getFlag()) &
                     static_cast<uint16_t>(ReplFlag::REPL_GROUP_END))) {
                 LOG(FATAL) << "txnId:" << lastLogKey.getTxnId()
-                    << " last record not marked begin";
+                    << " last record not marked end";
             }
         }
 

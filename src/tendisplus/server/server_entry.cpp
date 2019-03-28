@@ -68,7 +68,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore("catalog", cfg, nullptr))));
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr))));
     installCatalog(std::move(catalog));
 
     // kvstore init

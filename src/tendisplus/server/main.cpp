@@ -15,6 +15,10 @@ namespace tendisplus {
 
 static std::shared_ptr<ServerEntry> gServer(nullptr);
 
+std::shared_ptr<ServerEntry> getGlobalServer() {
+    return gServer;
+}
+
 }  // namespace tendisplus
 
 static void shutdown(int sigNum) {

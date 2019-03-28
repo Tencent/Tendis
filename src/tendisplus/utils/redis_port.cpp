@@ -133,7 +133,7 @@ int stringmatchlen(const char *pattern, int patternLen,
   return 0;
 }
 
-long bitPos(const void *s, size_t count, uint32_t bit) {
+int64_t bitPos(const void *s, size_t count, uint32_t bit) {
     unsigned long *l;
     unsigned char *c;
     unsigned long skipval, word = 0, one;

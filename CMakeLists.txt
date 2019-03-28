@@ -21,11 +21,16 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+
 option(ENABLE_JEMALLOC "enable jemalloc" ON)
 list(APPEND SYS_LIBS "dl" "pthread" "rt")
 if(ENABLE_JEMALLOC)
 list(APPEND SYS_LIBS jemalloc)
 endif()
+
+# TODO(vinchen): in the future it should disable sync_ponit in production
+add_definitions(-DWITH_SYNC_POINT)
+list(APPEND SYS_LIBS sync_point)
 
 # thirdparty code
 # do not set unnecessary flags before thirdparty dirs

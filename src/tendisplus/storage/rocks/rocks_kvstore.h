@@ -23,7 +23,8 @@ class RocksKVStore;
 
 class RocksTxn: public Transaction {
  public:
-    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+        std::shared_ptr<BinlogObserver> logob);
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
@@ -37,14 +38,18 @@ class RocksTxn: public Transaction {
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
     Status setKV(const std::string& key,
-                 const std::string& val) final;
-    Status delKV(const std::string& key) final;
+                 const std::string& val,
+                 const uint32_t ts = 0) final;
+    Status delKV(const std::string& key, const uint32_t ts = 0) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const;
 
+    uint32_t getBinlogTime() { return _binlogTimeSpov; }
+    void setBinlogTime(uint32_t timestamp);
+
  protected:
-    virtual void ensureTxn() {};
+    virtual void ensureTxn() {}
 
     uint64_t _txnId;
 
@@ -63,6 +68,10 @@ class RocksTxn: public Transaction {
     bool _replOnly;
 
     std::shared_ptr<BinlogObserver> _logOb;
+
+ private:
+    // 0 for master, otherwise it's the latest commit binlog timestamp
+    uint32_t _binlogTimeSpov = 0;
 };
 
 // TODO(deyukong): donot modify store's unCommittedTxn list if
@@ -72,7 +81,8 @@ class RocksTxn: public Transaction {
 // Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public RocksTxn {
  public:
-    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+        std::shared_ptr<BinlogObserver> logob);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn() = default;
@@ -83,7 +93,8 @@ class RocksOptTxn: public RocksTxn {
 
 class RocksPesTxn: public RocksTxn {
  public:
-    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, std::shared_ptr<BinlogObserver> logob);
+    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+        std::shared_ptr<BinlogObserver> logob);
     RocksPesTxn(const RocksPesTxn&) = delete;
     RocksPesTxn(RocksPesTxn&&) = delete;
     virtual ~RocksPesTxn() = default;
@@ -134,12 +145,15 @@ class RocksKVStore: public KVStore {
         uint64_t start, uint64_t end, Transaction *txn) final;
     Status truncateBinlog(const std::list<ReplLog>&, Transaction *txn) final;
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
+    Status compactRange(const std::string* begin, const std::string* end) final;
+    Status fullCompact() final;
 
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
 
     Status setMode(StoreMode mode) final;
+    KVStore::StoreMode getMode() final { return _mode; }
 
     TxnMode getTxnMode() const;
 

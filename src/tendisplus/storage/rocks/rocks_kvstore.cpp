@@ -14,10 +14,12 @@
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -217,7 +219,8 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
 }
 
 Status RocksTxn::setKV(const std::string& key,
-                          const std::string& val) {
+                       const std::string& val,
+                       const uint32_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -230,7 +233,7 @@ Status RocksTxn::setKV(const std::string& key,
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
     ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+                ReplFlag::REPL_GROUP_MID, ts ? ts : sinceEpoch());
     ReplLogValue logVal(ReplOp::REPL_OP_SET, key, val);
     if (_binlogs.size() == 0) {
         uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
@@ -243,7 +246,7 @@ Status RocksTxn::setKV(const std::string& key,
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksTxn::delKV(const std::string& key) {
+Status RocksTxn::delKV(const std::string& key, const uint32_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -256,7 +259,7 @@ Status RocksTxn::delKV(const std::string& key) {
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
     ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, sinceEpoch());
+                ReplFlag::REPL_GROUP_MID, ts ? ts : sinceEpoch());
     ReplLogValue logVal(ReplOp::REPL_OP_DEL, key, "");
     if (_binlogs.size() == 0) {
         uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
@@ -285,6 +288,8 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
     }
     for (const auto& log : ops) {
         const ReplLogValue& logVal = log.getReplLogValue();
+        uint32_t timestamp = log.getReplLogKey().getTimestamp();
+        this->setBinlogTime(timestamp);
 
         Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
         if (!expRk.ok()) {
@@ -324,6 +329,13 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
         }
     }
     return {ErrorCodes::ERR_OK, ""};
+}
+
+void RocksTxn::setBinlogTime(uint32_t timestamp) {
+    INVARIANT(_store->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
+
+    _binlogTimeSpov = timestamp > _binlogTimeSpov ?
+        timestamp : _binlogTimeSpov;
 }
 
 RocksTxn::~RocksTxn() {
@@ -452,6 +464,12 @@ rocksdb::Options RocksKVStore::options() {
     options.create_if_missing = true;
 
     options.max_total_wal_size = uint64_t(4294967296);  // 4GB
+
+    if (dbId() != CATALOG_NAME) {
+        // setup the ttlcompactionfilter expect "catalog" db
+        options.compaction_filter_factory.reset(
+            new KVTtlCompactionFilterFactory(this));
+    }
     return options;
 }
 
@@ -573,7 +591,8 @@ RocksKVStore::getTruncateLog(uint64_t start, uint64_t end,
             ++v;
         }
     }
-    return std::pair<uint64_t, std::list<ReplLog>>(nextStart, std::move(toDelete));
+    return std::pair<uint64_t, std::list<ReplLog>>(nextStart,
+        std::move(toDelete));
 }
 
 Status RocksKVStore::truncateBinlog(const std::list<ReplLog>& toDelete,
@@ -596,6 +615,40 @@ Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
     }
     _logOb = ob;
     return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::compactRange(const std::string* begin,
+    const std::string* end) {
+    // TODO(vinchen): need lock_guard?
+    auto compactionOptions = rocksdb::CompactRangeOptions();
+    auto db =  getBaseDB();
+
+    rocksdb::Slice* sbegin = nullptr;
+    rocksdb::Slice* send = nullptr;
+    const auto guard = MakeGuard([&] {
+        if (sbegin) {
+            delete sbegin;
+        }
+        if (send) {
+            delete send;
+        }
+    });
+    if (begin != nullptr) {
+        sbegin = new rocksdb::Slice(*begin);
+    }
+    if (end != nullptr) {
+        send = new rocksdb::Slice(*end);
+    }
+    rocksdb::Status status =  db->CompactRange(compactionOptions,
+                sbegin, send);
+    if (!status.ok()) {
+        return {ErrorCodes::ERR_INTERNAL, status.getState()};
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::fullCompact() {
+    return compactRange(nullptr, nullptr);
 }
 
 Status RocksKVStore::clear() {
@@ -775,8 +828,10 @@ Status RocksKVStore::releaseBackup() {
 }
 
 // this function guarantees that:
-// If backup failed, there should be no remaining dirs left to clean, and the _hasBackup flag set to false
-Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::BackupMode mode) {
+// If backup failed, there should be no remaining dirs left to clean,
+// and the _hasBackup flag set to false
+Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
+    KVStore::BackupMode mode) {
     bool succ = false;
     auto guard = MakeGuard([this, &dir, &succ]() {
         if (succ) {
@@ -794,11 +849,13 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::Backu
         }
     });
 
-    // NOTE(deyukong): tendis uses BackupMode::BACKUP_COPY, we should keep compatible.
-    // For tendisplus master/slave initial-sync, we use BackupMode::BACKUP_CKPT, it's faster.
-    // here we assume BACKUP_CKPT works with default backupdir and BACKUP_COPY works
-    // with arbitory dir except the default one.
-    // But if someone feels it necessary to add one more param make it clearer, go ahead.
+    // NOTE(deyukong):
+    // tendis uses BackupMode::BACKUP_COPY, we should keep compatible.
+    // For tendisplus master/slave initial-sync, we use BackupMode::BACKUP_CKPT,
+    // it's faster. here we assume BACKUP_CKPT works with default backupdir and
+    // BACKUP_COPY works with arbitory dir except the default one.
+    // But if someone feels it necessary to add one more param make it clearer,
+    // go ahead.
     if (mode == KVStore::BackupMode::BACKUP_CKPT) {
         // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
         if (dir != dftBackupDir()) {
@@ -855,8 +912,11 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir, KVStore::Backu
                 continue;
             }
             size_t filesize = filesystem::file_size(path);
+#ifndef _WIN32
             // assert path with bkupdir prefix
+            // for win32, the dir should change to "\\"
             INVARIANT(path.string().find(dir) == 0);
+#endif
             std::string relative = path.string().erase(0, dir.size());
             flist[relative] = filesize;
         }
@@ -950,7 +1010,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
         // id, which may have holes.
         // INVARIANT(binlogTxnId > _highestVisible ||
         //            binlogTxnId == Transaction::TXNID_UNINITED);
-        if (binlogTxnId != Transaction::TXNID_UNINITED && binlogTxnId <= _highestVisible) {
+        if (binlogTxnId != Transaction::TXNID_UNINITED &&
+            binlogTxnId <= _highestVisible) {
             LOG(WARNING) << "db:" << dbId()
                         << " markCommit with binlog:" << binlogTxnId
                         << " larger than _highestVisible:" << _highestVisible;
@@ -1064,6 +1125,12 @@ void RocksKVStore::appendJSONStat(
         w.Key("high_visible");
         w.Uint64(_highestVisible);
     }
+
+    w.Key("compact_filter_count");
+    w.Uint64(compactStat.filterCount.load(std::memory_order_relaxed));
+    w.Key("compact_kvexpired_count");
+    w.Uint64(compactStat.kvExpiredCount.load(std::memory_order_relaxed));
+
     w.Key("rocksdb");
     w.StartObject();
     for (const auto& kv : properties) {

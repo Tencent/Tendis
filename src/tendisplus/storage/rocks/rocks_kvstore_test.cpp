@@ -1,5 +1,7 @@
 #include <fstream>
 #include <utility>
+#include <limits>
+#include <thread>
 #include "glog/logging.h"
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
@@ -8,8 +10,116 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
+
+static int genRand() {
+    static int grand = 0;
+    grand = rand_r(reinterpret_cast<unsigned int *>(&grand));
+    return grand;
+}
+
+RecordType randomType() {
+    switch ((genRand() % 4)) {
+        case 0:
+            return RecordType::RT_META;
+        case 1:
+            return RecordType::RT_KV;
+        case 2:
+            return RecordType::RT_LIST_META;
+        case 3:
+            return RecordType::RT_LIST_ELE;
+        default:
+            return RecordType::RT_INVALID;
+    }
+}
+
+ReplFlag randomReplFlag() {
+    switch ((genRand() % 3)) {
+        case 0:
+            return ReplFlag::REPL_GROUP_MID;
+        case 1:
+            return ReplFlag::REPL_GROUP_START;
+        case 2:
+            return ReplFlag::REPL_GROUP_END;
+        default:
+            INVARIANT(0);
+            // void compiler complain
+            return ReplFlag::REPL_GROUP_MID;
+    }
+}
+
+ReplOp randomReplOp() {
+    switch ((genRand() % 3)) {
+        case 0:
+            return ReplOp::REPL_OP_NONE;
+        case 1:
+            return ReplOp::REPL_OP_SET;
+        case 2:
+            return ReplOp::REPL_OP_DEL;
+        default:
+            INVARIANT(0);
+            // void compiler complain
+            return ReplOp::REPL_OP_NONE;
+    }
+}
+
+std::string randomStr(size_t s, bool maybeEmpty) {
+    if (s == 0) {
+        s = genRand() % 256;
+    }
+    if (!maybeEmpty) {
+        s++;
+    }
+    std::vector<uint8_t> v;
+    for (size_t i = 0; i < s; i++) {
+        v.emplace_back(genRand() % 256);
+    }
+    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+}
+
+size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
+            bool allDiff) {
+    size_t kvCount = 0;
+    srand((unsigned int)time(NULL));
+
+    // easy to be different
+    static size_t i = 0;
+    size_t end = i + count;
+    for (; i < end ; i++) {
+        uint32_t dbid = genRand();
+        uint32_t chunkid = genRand();
+        auto type = randomType();
+        if (type == RecordType::RT_KV) {
+            kvCount++;
+        }
+        std::string pk;
+        if (allDiff) {
+            pk.append(std::to_string(i)).append(randomStr(5, false));
+        } else {
+            pk.append(randomStr(5, false));
+        }
+        auto sk = randomStr(5, true);
+        uint64_t cas = genRand()*genRand();
+        auto val = randomStr(5, true);
+        auto rk = RecordKey(chunkid, dbid, type, pk, sk);
+        auto rv = RecordValue(val, ttl, cas);
+
+        auto eTxn1 = kvstore->createTransaction();
+        EXPECT_EQ(eTxn1.ok(), true);
+        std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+        Status s = kvstore->setKV(rk, rv, txn1.get());
+        EXPECT_EQ(s.ok(), true);
+
+        Expected<uint64_t> exptCommitId = txn1->commit();
+        EXPECT_EQ(exptCommitId.ok(), true);
+    }
+
+    return kvCount;
+}
 
 std::shared_ptr<ServerParams> genParams() {
     const auto guard = MakeGuard([] {
@@ -311,7 +421,8 @@ TEST(RocksKVStore, Backup) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
     }
 
-    // backup failed, it should clean the remaining files, and set the backup state to false
+    // backup failed, it should clean the remaining files,
+    // and set the backup state to false
     Expected<BackupInfo> expBk1 = kvstore->backup(
         kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
     EXPECT_FALSE(expBk1.ok());
@@ -534,7 +645,8 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         EXPECT_EQ(eTxn1.ok(), true);
         std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-        auto newFirst = kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn1.get());
+        auto newFirst = kvstore->getTruncateLog(firstBinlog,
+            std::numeric_limits<uint64_t>::max(), txn1.get());
         EXPECT_EQ(newFirst.ok(), true);
         EXPECT_EQ(newFirst.value().first, 1U);
     }
@@ -561,7 +673,8 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         auto eTxn1 = kvstore->createTransaction();
         EXPECT_EQ(eTxn1.ok(), true);
         std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
-        auto newFirst1 = kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn1.get());
+        auto newFirst1 = kvstore->getTruncateLog(firstBinlog,
+            std::numeric_limits<uint64_t>::max(), txn1.get());
         EXPECT_EQ(newFirst1.ok(), true);
         EXPECT_NE(newFirst1.value().first, firstBinlog);
         auto s = kvstore->truncateBinlog(newFirst1.value().second, txn1.get());
@@ -591,9 +704,10 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         EXPECT_EQ(eTxn2.ok(), true);
         std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
         uint64_t currentCnt = getBinlogCount(txn2.get());
-        auto newFirst =
-            kvstore->getTruncateLog(firstBinlog, std::numeric_limits<uint64_t>::max(), txn2.get());
-        EXPECT_EQ(newFirst.ok(), true) << ' ' << range << ' ' << firstBinlog << newFirst.status().toString();
+        auto newFirst = kvstore->getTruncateLog(firstBinlog,
+               std::numeric_limits<uint64_t>::max(), txn2.get());
+        EXPECT_EQ(newFirst.ok(), true) << ' '
+            << range << ' ' << firstBinlog << newFirst.status().toString();
         EXPECT_NE(newFirst.value().first, firstBinlog);
         auto s = kvstore->truncateBinlog(newFirst.value().second, txn2.get());
         EXPECT_TRUE(s.ok());
@@ -603,6 +717,70 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         Expected<uint64_t> exptCommitId = txn2->commit();
         EXPECT_EQ(exptCommitId.ok(), true);
     }
+}
+
+TEST(RocksKVStore, Compaction) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    // EXPECT_TRUE(filesystem::create_directory("db/0"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+        SyncPoint::GetInstance()->DisableProcessing();
+        SyncPoint::GetInstance()->ClearAllCallBacks();
+    });
+    auto blockCache =
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+        "0",
+        cfg,
+        blockCache,
+        RocksKVStore::TxnMode::TXN_PES);
+
+    SyncPoint::GetInstance()->EnableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+
+    uint64_t totalFilter = 0;
+    SyncPoint::GetInstance()->SetCallBack("InspectKvTtlFilterCount",
+        [&](void *arg) mutable {
+        uint64_t *tmp = reinterpret_cast<uint64_t *>(arg);
+        totalFilter = *tmp;
+    });
+
+    uint64_t totalExpired = 0;
+    bool hasCalled = false;
+    SyncPoint::GetInstance()->SetCallBack("InspectKvTtlExpiredCount",
+        [&](void *arg) mutable {
+        hasCalled = true;
+        uint64_t *tmp = reinterpret_cast<uint64_t *>(arg);
+        totalExpired = *tmp;
+    });
+
+    uint32_t waitSec = 10;
+    // if we want to check the totalFilter, all data should be different
+    genData(kvstore.get(), 1000, 0, true);
+    size_t kvCount = genData(kvstore.get(), 1000, msSinceEpoch(), true);
+    size_t kvCount2 = genData(kvstore.get(), 1000,
+                    msSinceEpoch() + waitSec * 1000, true);
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto status = kvstore->fullCompact();
+    EXPECT_TRUE(status.ok());
+    EXPECT_TRUE(hasCalled);
+    // because there are repl_log for each set(), it should * 2 here
+    EXPECT_EQ(totalFilter, 3000*2);
+    EXPECT_EQ(totalExpired, kvCount);
+
+    std::this_thread::sleep_for(std::chrono::seconds(waitSec));
+
+    status = kvstore->fullCompact();
+    EXPECT_TRUE(status.ok());
+    EXPECT_TRUE(hasCalled);
+    // because there are repl_log for each set(), it should * 2 here
+    EXPECT_EQ(totalFilter, 3000*2 - kvCount);
+    EXPECT_EQ(totalExpired, kvCount2);
 }
 
 }  // namespace tendisplus

@@ -49,6 +49,12 @@ bool setupEnv() {
     return true;
 }
 
+void destroyEnv() {
+    std::error_code ec;
+    filesystem::remove_all("./log", ec);
+    filesystem::remove_all("./db", ec);
+}
+
 std::shared_ptr<ServerEntry> makeServerEntry(
     std::shared_ptr<ServerParams> cfg) {
     auto block_cache =

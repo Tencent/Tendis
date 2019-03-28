@@ -266,7 +266,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     }
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
-    auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
+    auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId,
+                    mgl::LockMode::LOCK_NONE);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -409,7 +410,8 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                    mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -433,7 +435,8 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
             return cnt.status();
         }
 
-        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(), eValue.value().getTtl());
+        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(),
+                        eValue.value().getTtl());
         if (cnt.value() >= 2048 ||
                 (mk.getRecordType() == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
@@ -458,7 +461,8 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
-Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::string& key, RecordType tp) {
+Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
+                        const std::string& key, RecordType tp) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
@@ -485,7 +489,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess, const std::strin
         if (!eValue.ok()) {
             return eValue.status();
         }
-        uint64_t currentTs = nsSinceEpoch()/1000000;
+        uint64_t currentTs = msSinceEpoch();
         uint64_t targetTtl = eValue.value().getTtl();
         if (targetTtl == 0 || currentTs < targetTtl) {
             return eValue.value();

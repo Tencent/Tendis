@@ -1,6 +1,7 @@
 #include "glog/logging.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -43,7 +44,8 @@ Expected<ReplLog> BinlogCursor::next() {
     }
 }
 
-TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor, std::uint64_t until)
+TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor,
+    std::uint64_t until)
   : _until(until), _baseCursor(std::move(cursor)) {
     _baseCursor->seek(RecordKey::prefixTTLIndex());
 }
@@ -91,6 +93,26 @@ KVStore::KVStore(const std::string& id, const std::string& path)
     if (filesystem::equivalent(mypath, "/")) {
         LOG(FATAL) << "dbpath set to root dir!";
     }
+}
+
+uint32_t KVStore::getBinlogTime() {
+    return _binlogTimeSpov.load(std::memory_order_relaxed);
+}
+
+void KVStore::setBinlogTime(uint32_t timestamp) {
+    _binlogTimeSpov.store(timestamp, std::memory_order_relaxed);
+}
+
+uint32_t KVStore::getCurrentTime() {
+    uint32_t ts = 0;
+    if ( getMode() == KVStore::StoreMode::REPLICATE_ONLY ) {
+        // NOTE(vinchen): Here it may return zero, because the
+        // slave never apply one binlog yet.
+        ts = getBinlogTime();
+    } else {
+        ts = sinceEpoch();
+    }
+    return ts;
 }
 
 BackupInfo::BackupInfo()

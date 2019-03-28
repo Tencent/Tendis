@@ -90,7 +90,7 @@ std::string overflip(const std::string& s) {
 }
 
 TEST(Record, Common) {
-    srand(time(NULL));
+    srand((unsigned int)time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
         uint32_t dbid = genRand();
         uint32_t chunkid = genRand();
@@ -105,6 +105,12 @@ TEST(Record, Common) {
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);
+        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(), 
+            kv.first.size());
+        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
+            kv.second.size());
+        EXPECT_EQ(type_, type);
+        EXPECT_EQ(ttl_, ttl);
         EXPECT_TRUE(prcd1.ok());
         EXPECT_EQ(prcd1.value(), rcd);
     }
@@ -200,14 +206,14 @@ TEST(ZSl, Common) {
 
     for (size_t i = 0; i < 1000000; i++) {
         ZSlEleValue v(genRand(), randomStr(256, false));
-        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             v.setForward(i, genRand());
             v.setSpan(i, genRand());
         }
         std::string s = v.encode();
         Expected<ZSlEleValue> expv = ZSlEleValue::decode(s);
         EXPECT_TRUE(expv.ok());
-        for (size_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
+        for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             EXPECT_EQ(expv.value().getForward(i), v.getForward(i));
             EXPECT_EQ(expv.value().getSpan(i), v.getSpan(i));
         }

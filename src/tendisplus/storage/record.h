@@ -82,6 +82,7 @@ class RecordKey {
     RecordType getRecordType() const;
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
+    static RecordType getRecordTypeRaw(const char* key, size_t size);
     bool operator==(const RecordKey& other) const;
 
  private:
@@ -113,6 +114,7 @@ class RecordValue {
     void setCas(uint64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
+    static uint64_t getTtlRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
 
  private:

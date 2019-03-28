@@ -39,7 +39,8 @@ Expected<bool> expireAfterNow(Session *sess,
 
     // record exists and not expired
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
+                key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -68,26 +69,29 @@ Expected<bool> expireAfterNow(Session *sess,
         if (type == RecordType::RT_LIST_META ||
             type == RecordType::RT_HASH_META ||
             type == RecordType::RT_SET_META ||
-            type == RecordType::RT_ZSET_META) {
-            // delete old index entry
-            auto oldTTL = rv.getTtl();
-            TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
+            type == RecordType::RT_ZSET_META ||
+            type == RecordType::RT_KV) {
+            if (type != RecordType::RT_KV) {
+                // delete old index entry
+                auto oldTTL = rv.getTtl();
+                TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
 
-            s = txn->delKV(o_ictx.encode());
-            if (!s.ok()) {
-                return s;
+                s = txn->delKV(o_ictx.encode());
+                if (!s.ok()) {
+                    return s;
+                }
+
+                // add new index entry
+                TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
+                s = txn->setKV(n_ictx.encode(), RecordValue().encode());
+                if (!s.ok()) {
+                    return s;
+                }
             }
 
             // update
             rv.setTtl(expireAt);
             s = kvstore->setKV(rk, rv, txn.get());
-            if (!s.ok()) {
-                return s;
-            }
-
-            // add new index entry
-            TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
-            s = txn->setKV(n_ictx.encode(), RecordValue().encode());
             if (!s.ok()) {
                 return s;
             }
@@ -115,7 +119,7 @@ Expected<bool> expireAfterNow(Session *sess,
 Expected<std::string> expireGeneric(Session *sess,
                                     uint64_t expireAt,
                                     const std::string& key) {
-    if (expireAt >= nsSinceEpoch()/1000000) {
+    if (expireAt >= msSinceEpoch()) {
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_HASH_META,
                           RecordType::RT_LIST_META,
@@ -180,9 +184,9 @@ class GeneralExpireCommand: public Command {
 
         uint64_t millsecs = 0;
         if (Command::getName() == "expire") {
-            millsecs = nsSinceEpoch()/1000000 + expt.value()*1000;
+            millsecs = msSinceEpoch() + expt.value()*1000;
         } else if (Command::getName() == "pexpire") {
-            millsecs = nsSinceEpoch()/1000000 + expt.value();
+            millsecs = msSinceEpoch() + expt.value();
         } else if (Command::getName() == "expireat") {
             millsecs = expt.value()*1000;
         } else if (Command::getName() == "pexpireat") {
@@ -248,7 +252,7 @@ class GenericTtlCommand: public Command {
             if (rv.value().getTtl() == 0) {
                 return Command::fmtLongLong(-1);
             }
-            int64_t ms = rv.value().getTtl() - nsSinceEpoch()/1000000;
+            int64_t ms = rv.value().getTtl() - msSinceEpoch();
             if (ms < 0) {
                 ms = 1;
             }

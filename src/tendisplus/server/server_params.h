@@ -19,7 +19,7 @@ class ServerParams {
     std::string storageEngine;
     std::string dbPath;
     std::string dumpPath;
-    uint64_t  rocksBlockcacheMB;
+    uint32_t  rocksBlockcacheMB;
     std::string requirepass;
     std::string masterauth;
     std::string pidFile;
