@@ -12,6 +12,7 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -95,11 +96,31 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
     std::vector<PStore> tmpStores;
     for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        auto meta = _catalog->getStoreMainMeta(i);
+        KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE;
+
+        if (meta.ok()) {
+            mode = meta.value()->storeMode;
+        } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            auto pMeta = std::unique_ptr<StoreMainMeta>(
+                    new StoreMainMeta(i, KVStore::StoreMode::READ_WRITE));
+            Status s = _catalog->setStoreMainMeta(*pMeta);
+            if (!s.ok()) {
+                LOG(FATAL) << "catalog setStoreMainMeta error:"
+                    << s.toString();
+                return s;
+            }
+        } else {
+            LOG(FATAL) << "catalog getStoreMainMeta error:"
+                << meta.status().toString();
+            return meta.status();
+        }
+
         std::stringstream ss;
         ss << i;
         std::string dbId = ss.str();
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
+            new RocksKVStore(dbId, cfg, blockCache, mode)));
     }
     installStoresInLock(tmpStores);
 
@@ -357,6 +378,33 @@ void ServerEntry::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w,
         w.Uint64(_poolMatrix->executeTime.get());
         w.EndObject();
     }
+}
+
+Status ServerEntry::setStoreMode(PStore store,
+    KVStore::StoreMode mode) {
+
+    // assert held the X lock of store
+    if (store->getMode() == mode) {
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    auto catalog = getCatalog();
+    Status status = store->setMode(mode);
+    if (!status.ok()) {
+        LOG(FATAL) << "ServerEntry::setStoreMode error, "
+                << status.toString();
+        return status;
+    }
+    auto storeId = tendisplus::stoul(store->dbId());
+    if (!storeId.ok()) {
+        return storeId.status();
+    }
+    auto meta = catalog->getStoreMainMeta(storeId.value());
+    meta.value()->storeMode = mode;
+
+    // TODO(vinchen): Does it need to store in the binlog, and send
+    // to its slaves?
+    return catalog->setStoreMainMeta(*meta.value());
 }
 
 // full-time matrix collect

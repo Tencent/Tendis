@@ -133,8 +133,9 @@ struct compactionStat {
 class KVStore {
  public:
     enum class StoreMode {
-        READ_WRITE,
-        REPLICATE_ONLY,
+        READ_WRITE = 0,
+        REPLICATE_ONLY = 1,
+        STORE_NONE = 2
     };
 
     enum class BackupMode {
@@ -176,6 +177,7 @@ class KVStore {
     virtual Status clear() = 0;
 
     virtual bool isRunning() const = 0;
+    virtual bool isOpen() const = 0;
     virtual Status stop() = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
@@ -194,7 +196,7 @@ class KVStore {
 
     uint32_t getBinlogTime();
     void setBinlogTime(uint32_t timestamp);
-    uint32_t getCurrentTime();
+    uint64_t getCurrentTime();
 
     compactionStat compactStat;
 

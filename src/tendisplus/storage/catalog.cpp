@@ -32,6 +32,11 @@ std::unique_ptr<StoreMeta> StoreMeta::copy() const {
         new StoreMeta(*this)));
 }
 
+std::unique_ptr<StoreMainMeta> StoreMainMeta::copy() const {
+    return std::move(std::unique_ptr<StoreMainMeta>(
+        new StoreMainMeta(*this)));
+}
+
 Catalog::Catalog(std::unique_ptr<KVStore> store)
     :_store(std::move(store)) {
 }
@@ -148,4 +153,84 @@ Status Catalog::stop() {
     return _store->stop();
 }
 
+Status Catalog::setStoreMainMeta(const StoreMainMeta& meta) {
+    std::stringstream ss;
+    ss << "store_main_" << meta.id;
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+
+    writer.Key("Version");
+    writer.String("1");
+
+    writer.Key("storeMode");
+    writer.Uint64(static_cast<uint8_t>(meta.storeMode));
+
+    writer.Key("id");
+    writer.Uint64(meta.id);
+
+    writer.EndObject();
+
+    RecordValue rv(sb.GetString());
+
+    auto exptxn = _store->createTransaction();
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+
+    Record rd(std::move(rk), std::move(rv));
+    Status s = _store->setKV(rd, txn);
+    if (!s.ok()) {
+        return s;
+    }
+    return txn->commit().status();
+}
+
+Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
+                    uint32_t idx) {
+    auto result = std::make_unique<StoreMainMeta>();
+    std::stringstream ss;
+    ss << "store_main_" << idx;
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+
+    auto exptxn = _store->createTransaction();
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+    Expected<RecordValue> exprv = _store->getKV(rk, txn);
+    if (!exprv.ok()) {
+        return exprv.status();
+    }
+    RecordValue rv = exprv.value();
+    const std::string& json = rv.getValue();
+
+    rapidjson::Document doc;
+    doc.Parse(json);
+    if (doc.HasParseError()) {
+        LOG(FATAL) << "parse meta failed"
+            << rapidjson::GetParseError_En(doc.GetParseError());
+    }
+
+    INVARIANT(doc.IsObject());
+
+    INVARIANT(doc.HasMember("id"));
+    INVARIANT(doc["id"].IsUint64());
+    result->id = doc["id"].GetUint64();
+
+    INVARIANT(doc.HasMember("storeMode"));
+    INVARIANT(doc["storeMode"].IsUint64());
+    result->storeMode = static_cast<KVStore::StoreMode>(
+                        doc["storeMode"].GetUint64());
+
+#ifdef _WIN32
+    return std::move(result);
+#else
+    return result;
+#endif
+}
 }  // namespace tendisplus

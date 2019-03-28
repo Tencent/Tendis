@@ -80,14 +80,16 @@ namespace tendisplus {
       LocalSessionGuard sg(_svr);
       auto expd = _svr->getSegmentMgr()->getDb(sg.getSession(),
                                                storeId,
-                                               mgl::LockMode::LOCK_IS);
+                                               mgl::LockMode::LOCK_IS,
+                                               true);
       if (!expd.ok()) {
           return expd.status();
       }
 
       PStore store = expd.value().store;
       // do nothing when it's a slave
-      if (store->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+      if (store->getMode() == KVStore::StoreMode::REPLICATE_ONLY ||
+          !store->isOpen()) {
           return {ErrorCodes::ERR_OK, ""};
       }
 

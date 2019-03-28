@@ -129,6 +129,7 @@ class RocksKVStore: public KVStore {
     RocksKVStore(const std::string& id,
         const std::shared_ptr<ServerParams>& cfg,
         std::shared_ptr<rocksdb::Cache> blockCache,
+        KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
         TxnMode txnMode = TxnMode::TXN_PES,
         uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
     virtual ~RocksKVStore() = default;
@@ -155,6 +156,10 @@ class RocksKVStore: public KVStore {
 
     Status setMode(StoreMode mode) final;
     KVStore::StoreMode getMode() final { return _mode; }
+
+    bool isOpen() const final {
+        return _mode != KVStore::StoreMode::STORE_NONE;
+    }
 
     TxnMode getTxnMode() const;
 

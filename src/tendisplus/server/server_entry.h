@@ -89,6 +89,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
                         const std::set<std::string>& sections) const;
     void logGeneral(Session *sess);
     void handleShutdownCmd();
+    Status setStoreMode(PStore store, KVStore::StoreMode mode);
 
  private:
     void ftmc();

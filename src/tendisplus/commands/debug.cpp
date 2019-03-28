@@ -621,7 +621,7 @@ class DebugCommand: public Command {
             writer.Key("stores");
             writer.StartObject();
             for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS);
+                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS, true);
                 if (!expdb.ok()) {
                     return expdb.status();
                 }

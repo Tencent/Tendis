@@ -75,7 +75,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_incrPaused ||
-                _pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+                _pushStatus[storeId].find(clientId) ==
+                            _pushStatus[storeId].end()) {
             nextSched = nextSched + std::chrono::seconds(1);
             return;
         }
@@ -118,8 +119,11 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
          std::to_string(dstStoreId),
          std::to_string(binlogPos)});
 
-    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
-    INVARIANT(expdb.ok());
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
+                    storeId, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
@@ -239,6 +243,25 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         return;
     }
 
+    // NOTE(vinchen): In the cluster view, storeID of source and dest must be
+    // same.
+    if (storeId != dstStoreId) {
+        client->writeLine("-ERR source storeId is different from dstStoreId ",
+                    std::chrono::seconds(1));
+        return;
+    }
+
+    LocalSessionGuard sg(_svr);
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
+        storeId, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        std::stringstream ss;
+        ss << "-ERR store " << storeId << " error: "
+            << expdb.status().toString();
+        client->writeLine(ss.str(), std::chrono::seconds(1));
+        return;
+    }
+
     uint64_t firstPos = [this, storeId]() {
         std::lock_guard<std::mutex> lk(_mutex);
         return _logRecycStatus[storeId]->firstBinlogId;
@@ -312,8 +335,15 @@ void ReplManager::supplyFullSyncRoutine(
     LOG(INFO) << "client:" << client->getRemoteRepr()
               << ",storeId:" << storeId
               << ",begins fullsync";
-    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
-    INVARIANT(expdb.ok());
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
+                storeId, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        std::stringstream ss;
+        ss << "-ERR store " << storeId << " error: "
+            << expdb.status().toString();
+        client->writeLine(ss.str(), std::chrono::seconds(1));
+        return;
+    }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 

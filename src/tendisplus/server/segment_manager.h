@@ -27,7 +27,9 @@ class SegmentMgr {
     SegmentMgr(SegmentMgr&&) = delete;
     virtual Expected<DbWithLock> getDbWithKeyLock(Session* sess,
             const std::string& key, mgl::LockMode keyLockMode) = 0;
-    virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) = 0;
+    virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
+                                mgl::LockMode mode,
+                                bool canOpenStoreNoneDB = false) = 0;
 
  private:
     const std::string _name;
@@ -41,7 +43,9 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
     Expected<DbWithLock> getDbWithKeyLock(Session* sess,
             const std::string& key, mgl::LockMode keyLockMode) final;
-    Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) final;
+    Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
+                                mgl::LockMode mode,
+                                bool canOpenStoreNoneDB = false) final;
 
  private:
     std::vector<PStore> _instances;
