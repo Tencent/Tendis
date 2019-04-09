@@ -404,8 +404,9 @@ class SrandMemberCommand: public Command {
         if (bulk > ssize) {
             beginIdx = 0;
         } else {
+            std::srand(std::time(nullptr));
             int64_t offset = ssize - (bulk == 0 ? 1 : bulk) + 1;
-            beginIdx = rand() % (offset > 1024 * 16 ? 1024 * 16 : offset);
+            beginIdx = std::rand() % (offset > 1024 * 16 ? 1024 * 16 : offset);
         }
         RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
         cursor->seek(fake.prefixPk());

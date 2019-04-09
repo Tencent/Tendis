@@ -741,9 +741,21 @@ class HMGetGeneric: public Command {
 
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
-        if (rv.status().code() != ErrorCodes::ERR_OK &&
-                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+        if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+            rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            std::stringstream ss;
+            if (_returnVsn) {
+                Command::fmtMultiBulkLen(ss, args.size()-1);
+                Command::fmtNull(ss);
+            } else {
+                Command::fmtMultiBulkLen(ss, args.size()-2);
+            }
+
+            for (size_t i = 2; i < args.size(); ++i) {
+                Command::fmtNull(ss);
+            }
+            return ss.str();
+        } else if (!rv.ok()) {
             return rv.status();
         }
 

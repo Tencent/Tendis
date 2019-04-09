@@ -438,17 +438,18 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         TTLIndex ictx(key, tp, sess->getCtx()->getDbId(),
                         eValue.value().getTtl());
         if (cnt.value() >= 2048 ||
-                (mk.getRecordType() == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
+                (mk.getRecordType() == RecordType::RT_ZSET_META
+                                    && cnt.value() >= 1024)) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                       << ",rcdType:" << rt2Char(mk.getRecordType())
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
             return Command::delKeyPessimisticInLock(sess, storeId, mk,
-                                                    ictx.getTTL() > 0 ? &ictx : nullptr);
+                                   ictx.getTTL() > 0 ? &ictx : nullptr);
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(),
-                                                     ictx.getTTL() > 0 ? &ictx : nullptr);
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+                                txn.get(), ictx.getTTL() > 0 ? &ictx : nullptr);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
@@ -465,7 +466,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                         const std::string& key, RecordType tp) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -487,12 +489,18 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
         if (!eValue.ok()) {
+            // maybe ErrorCodes::ERR_NOTFOUND
             return eValue.status();
         }
+        // TODO(vinchen) : Should it use store->getCurrentTime() instead?
         uint64_t currentTs = msSinceEpoch();
         uint64_t targetTtl = eValue.value().getTtl();
         if (targetTtl == 0 || currentTs < targetTtl) {
             return eValue.value();
+        } else if (txn->isReplOnly()) {
+            // NOTE(vinchen): if replOnly, it can't delete record, but return
+            // ErrorCodes::ERR_EXPIRED
+            return{ ErrorCodes::ERR_EXPIRED, "" };
         }
         auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
         if (!cnt.ok()) {
@@ -506,14 +514,16 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            Status s = Command::delKeyPessimisticInLock(sess, storeId, mk, &ictx);
+            Status s = Command::delKeyPessimisticInLock(sess, storeId,
+                                    mk, &ictx);
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {
                 return s;
             }
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, txn.get(), &ictx);
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+                                txn.get(), &ictx);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;

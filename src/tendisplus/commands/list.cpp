@@ -452,9 +452,10 @@ class RPopLPushCommand: public Command {
         {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key1, RecordType::RT_LIST_META);
-            if (rv.status().code() != ErrorCodes::ERR_OK &&
-                    rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                    rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtNull();
+            } else if (!rv.ok()) {
                 return rv.status();
             }
         }

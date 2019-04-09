@@ -47,6 +47,7 @@ class RocksTxn: public Transaction {
 
     uint32_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint32_t timestamp);
+    bool isReplOnly() const { return _replOnly; }
 
  protected:
     virtual void ensureTxn() {}
