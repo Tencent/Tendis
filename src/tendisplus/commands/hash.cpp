@@ -230,14 +230,17 @@ class HExistsCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
-        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
         // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
@@ -300,11 +303,13 @@ class HAllCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
@@ -449,14 +454,17 @@ class HGetRecordCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+            mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
-        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
         // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
@@ -589,17 +597,20 @@ class HIncrByFloatCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
-        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
         // now, we have no need to deal with expire, though it may still
@@ -662,17 +673,20 @@ class HIncrByCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                            mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
-        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(),
+                RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
         // now, we have no need to deal with expire, though it may still
@@ -734,13 +748,15 @@ class HMGetGeneric: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
@@ -758,7 +774,8 @@ class HMGetGeneric: public Command {
         if (_returnVsn) {
             Command::fmtMultiBulkLen(ss, args.size()-1);
             Expected<RecordValue> eValue = kvstore->getKV(metaRk, txn.get());
-            if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            if (!eValue.ok() &&
+                eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
                 return eValue.status();
             }
             if (!eValue.ok()) {
@@ -771,7 +788,8 @@ class HMGetGeneric: public Command {
         }
 
         for (size_t i = 2; i < args.size(); ++i) {
-            RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
+            RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_ELE, key, args[i]);
             Expected<RecordValue> eValue = kvstore->getKV(subKey, txn.get());
             if (!eValue.ok()) {
                 if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -821,11 +839,13 @@ Status hmcas(Session *sess, const std::string& key,
     }
 
     auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                    mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
         return expdb.status();
     }
-    RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+    RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_META, key, "");
     // uint32_t storeId = expdb.value().dbId;
     std::string metaKeyEnc = metaRk.encode();
     PStore kvstore = expdb.value().store;
@@ -876,7 +896,8 @@ Status hmcas(Session *sess, const std::string& key,
     constexpr int OPADD = 1;
     for (const auto& keyPos : uniqkeys) {
         bool exists = true;
-        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_ELE, key, keyPos.first);
         Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
         if (rv.ok()) {
             existkvs[keyPos.first] = rv.value().getValue();
@@ -892,7 +913,8 @@ Status hmcas(Session *sess, const std::string& key,
             return eop.status();
         }
 
-        RecordKey subrk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
+        RecordKey subrk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_ELE, key, keyPos.first);
         if (eop.value() == OPSET || !exists) {
             RecordValue subrv(subargs[keyPos.second+2]);
             Status s = kvstore->setKV(subrk, subrv, txn.get());
@@ -904,7 +926,8 @@ Status hmcas(Session *sess, const std::string& key,
             if (!ev.ok()) {
                 return ev.status();
             }
-            Expected<int64_t> ev1 = ::tendisplus::stoll(subargs[keyPos.second+2]);
+            Expected<int64_t> ev1 =
+                        ::tendisplus::stoll(subargs[keyPos.second+2]);
             if (!ev1.ok()) {
                 return ev1.status();
             }
@@ -965,7 +988,8 @@ class HMCasV2Command: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         if ((args.size() - 5)%3 != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments for hmcas"};
+            return {ErrorCodes::ERR_PARSEOPT,
+                "wrong number of arguments for hmcas"};
         }
         const std::string& key = args[1];
         Expected<uint64_t> ecmp = ::tendisplus::stoull(args[2]);
@@ -989,7 +1013,8 @@ class HMCasV2Command: public Command {
         auto server = sess->getServerEntry();
         if (server->versionIncrease()) {
             if (newvsn <= vsn) {
-                return {ErrorCodes::ERR_PARSEOPT, "new version must be greater than old version"};
+                return {ErrorCodes::ERR_PARSEOPT,
+                    "new version must be greater than old version"};
             }
         }
 
@@ -1068,7 +1093,8 @@ class HMCasCommand: public Command {
             subargs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Status s = hmcas(sess, key, subargs, cmp, vsn, {ErrorCodes::ERR_NOTFOUND, ""});
+            Status s = hmcas(sess, key, subargs, cmp, vsn,
+                        {ErrorCodes::ERR_NOTFOUND, ""});
             if (!s.ok()) {
                 if (s.code() == ErrorCodes::ERR_CAS) {
                     return Command::fmtZero();
@@ -1147,7 +1173,8 @@ class HMSetCommand: public Command {
                 }
                 inserted += 1;
             }
-            Status setStatus = kvstore->setKV(v.getRecordKey(), v.getRecordValue(), txn.get());
+            Status setStatus = kvstore->setKV(v.getRecordKey(),
+                            v.getRecordValue(), txn.get());
             if (!setStatus.ok()) {
                 return setStatus;
             }
@@ -1187,13 +1214,15 @@ class HMSetCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                    mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
@@ -1203,7 +1232,8 @@ class HMSetCommand: public Command {
         // }
         std::vector<Record> rcds;
         for (size_t i = 2; i < args.size(); i+=2) {
-            RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, args[i]);
+            RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_ELE, key, args[i]);
             RecordValue subRv(args[i+1]);
             rcds.emplace_back(Record(std::move(subKey), std::move(subRv)));
         }
@@ -1258,15 +1288,18 @@ class HSetGeneric: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                    mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaKey(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaKey.encode();
         PStore kvstore = expdb.value().store;
-        RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, subkey);
+        RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_ELE, key, subkey);
         RecordValue subRv(val);
 
         // now, we have no need to deal with expire, though it may still
@@ -1470,13 +1503,15 @@ class HDelCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                        RecordType::RT_HASH_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;

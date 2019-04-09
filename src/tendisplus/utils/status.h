@@ -68,7 +68,7 @@ class Expected {
     Expected(const Status& other)  // NOLINT(runtime/explicit)
             :_status(other) {
         if (_status.ok()) {
-		#ifndef _WIN32
+#ifndef _WIN32
             static const char *s =
                 "can not use OK as Expected input"
                 ", this makes data field empty,"
@@ -85,7 +85,7 @@ class Expected {
             }
             free(strings);
             throw std::invalid_argument(ss.str());
-		#endif
+#endif
         }
     }
 

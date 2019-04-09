@@ -65,11 +65,10 @@ Status ServerParams::parseFile(const std::string& filename) {
                         tokens[0] == "logdir" ||
                         tokens[0] == "dumpdir" ||
                         tokens[0] == "pidfile") {
-
                     // can't change dir to lower
                     isDir = true;
                 }
-            } 
+            }
             if (!isDir) {
                 std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
             }
@@ -199,7 +198,7 @@ ServerParams::ServerParams()
     scanCntIndexMgr = 1000;
     scanJobCntIndexMgr = 1;
     delCntIndexMgr = 10000;
-    delJobCntIndexMgr= 1;
+    delJobCntIndexMgr = 1;
     pauseTimeIndexMgr = 10;
 }
 
