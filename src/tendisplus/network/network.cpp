@@ -78,14 +78,19 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
-    asio::ip::address address = asio::ip::make_address(ip);
-    auto ep = tcp::endpoint(address, port);
-    std::error_code ec;
-    _acceptor = std::make_unique<tcp::acceptor>(*_acceptCtx, ep);
-    _acceptor->set_option(tcp::acceptor::reuse_address(true));
-    _acceptor->non_blocking(true, ec);
-    if (ec.value()) {
-        return {ErrorCodes::ERR_NETWORK, ec.message()};
+    try {
+        asio::ip::address address = asio::ip::make_address(ip);
+        auto ep = tcp::endpoint(address, port);
+        std::error_code ec;
+        _acceptor = std::make_unique<tcp::acceptor>(*_acceptCtx, ep);
+        _acceptor->set_option(tcp::acceptor::reuse_address(true));
+        _acceptor->non_blocking(true, ec);
+        if (ec.value()) {
+            return {ErrorCodes::ERR_NETWORK, ec.message()};
+        }
+    } catch (std::exception& e) {
+        return {ErrorCodes::ERR_NETWORK, e.what()};
+
     }
     return {ErrorCodes::ERR_OK, ""};
 }
