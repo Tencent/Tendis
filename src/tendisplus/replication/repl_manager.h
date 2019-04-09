@@ -85,6 +85,7 @@ class ReplManager {
     explicit ReplManager(std::shared_ptr<ServerEntry> svr, 
           const std::shared_ptr<ServerParams> cfg);
     Status startup();
+    Status stopStore(uint32_t storeId);
     void stop();
     void togglePauseState(bool isPaused) { _incrPaused = isPaused; }
     Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,

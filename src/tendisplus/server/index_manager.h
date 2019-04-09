@@ -22,6 +22,7 @@ class IndexManager {
     Status scanExpiredKeysJob(uint32_t storeId);
     int tryDelExpiredKeysJob(uint32_t storeId);
     bool isRunning();
+    Status stopStore(uint32_t storeId);
 
  private:
     std::unique_ptr<WorkerPool> _indexScanner;
@@ -30,6 +31,8 @@ class IndexManager {
     std::unordered_map<std::size_t, std::string> _scanPoints;
     JobStatus _scanJobStatus;
     JobStatus _delJobStatus;
+    // when destroystore, _disableStatus[storeId] = true
+    JobStatus _disableStatus;
     JobCnt _scanJobCnt;
     JobCnt _delJobCnt;
 

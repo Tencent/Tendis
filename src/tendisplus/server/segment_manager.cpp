@@ -1,6 +1,7 @@
 #include <memory>
 #include <utility>
 #include "tendisplus/server/segment_manager.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -9,9 +10,11 @@ SegmentMgr::SegmentMgr(const std::string& name)
 }
 
 SegmentMgrFnvHash64::SegmentMgrFnvHash64(
-            const std::vector<std::shared_ptr<KVStore>>& ins)
+            const std::vector<std::shared_ptr<KVStore>>& ins,
+            const size_t chunkSize)
         :SegmentMgr("fnv_hash_64"),
-         _instances(ins) {
+         _instances(ins),
+         _chunkSize(chunkSize) {
 }
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
@@ -22,12 +25,24 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
         hash ^= val;
         hash *= static_cast<uint32_t>(FNV_64_PRIME);
     }
-    uint32_t chunkId = hash % HASH_SPACE;
+    uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
     if (!_instances[segId]->isOpen()) {
+        _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
+            std::memory_order_relaxed);
+
         std::stringstream ss;
         ss << "store id " << segId << " is not opened";
+        return{ ErrorCodes::ERR_INTERNAL, ss.str() };
+    }
+
+    if (_instances[segId]->isPaused()) {
+        _instances[segId]->stat.pausedErrorCount.fetch_add(1,
+            std::memory_order_relaxed);
+
+        std::stringstream ss;
+        ss << "store id " << segId << " is paused";
         return{ ErrorCodes::ERR_INTERNAL, ss.str() };
     }
 
@@ -43,12 +58,15 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
                                             mgl::LockMode mode,
                                             bool canOpenStoreNoneDB) {
-    if (insId >= KVStore::INSTANCE_NUM) {
+    if (insId >= _instances.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid instance id"};
     }
 
     if (!canOpenStoreNoneDB) {
         if (!_instances[insId]->isOpen()) {
+            _instances[insId]->stat.destroyedErrorCount.fetch_add(1,
+                        std::memory_order_relaxed);
+
             std::stringstream ss;
             ss << "store id " << insId << " is not opened";
             return{ ErrorCodes::ERR_INTERNAL, ss.str() };

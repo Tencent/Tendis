@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/lock/lock.h"
@@ -37,7 +38,7 @@ class SegmentMgr {
 
 class SegmentMgrFnvHash64: public SegmentMgr {
  public:
-    explicit SegmentMgrFnvHash64(const std::vector<PStore>& ins);
+    SegmentMgrFnvHash64(const std::vector<PStore>& ins, const size_t hashSpace);
     virtual ~SegmentMgrFnvHash64() = default;
     SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
@@ -49,7 +50,7 @@ class SegmentMgrFnvHash64: public SegmentMgr {
 
  private:
     std::vector<PStore> _instances;
-    static constexpr size_t HASH_SPACE = 420000U;
+    size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
     static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;
 };

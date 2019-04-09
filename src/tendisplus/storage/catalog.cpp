@@ -37,8 +37,41 @@ std::unique_ptr<StoreMainMeta> StoreMainMeta::copy() const {
         new StoreMainMeta(*this)));
 }
 
-Catalog::Catalog(std::unique_ptr<KVStore> store)
-    :_store(std::move(store)) {
+std::unique_ptr<MainMeta> MainMeta::copy() const {
+    return std::move(std::unique_ptr<MainMeta>(
+        new MainMeta(*this)));
+}
+
+Catalog::Catalog(std::unique_ptr<KVStore> store,
+        uint32_t kvStoreCount, uint32_t chunkSize)
+    :_store(std::move(store)),
+    _kvStoreCount(kvStoreCount),
+    _chunkSize(chunkSize) {
+    auto mainMeta = getMainMeta();
+    if (mainMeta.ok()) {
+        if (_kvStoreCount != mainMeta.value()->kvStoreCount ||
+            _chunkSize != mainMeta.value()->chunkSize) {
+            LOG(FATAL) << "kvStoreCount(" << _kvStoreCount  << ","
+                << mainMeta.value()->kvStoreCount
+                << ") or chunkSize(" << _chunkSize << ","
+                << mainMeta.value()->chunkSize
+                << ") not equal";
+            INVARIANT(0);
+        }
+    } else if (mainMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        auto pMeta = std::unique_ptr<MainMeta>(
+            new MainMeta(kvStoreCount, chunkSize));
+        Status s = setMainMeta(*pMeta);
+        if (!s.ok()) {
+            LOG(FATAL) << "catalog setMainMeta error:"
+                << s.toString();
+            INVARIANT(0);
+        }
+    } else {
+       LOG(FATAL) << "catalog getMainMeta error:"
+                << mainMeta.status().toString();
+            INVARIANT(0);
+    }
 }
 
 Status Catalog::setStoreMeta(const StoreMeta& meta) {
@@ -128,7 +161,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
 
     INVARIANT(doc.HasMember("id"));
     INVARIANT(doc["id"].IsUint64());
-    result->id = doc["id"].GetUint64();
+    result->id = (uint32_t)doc["id"].GetUint64();
 
     INVARIANT(doc.HasMember("syncFromId"));
     INVARIANT(doc["syncFromId"].IsUint64());
@@ -220,12 +253,91 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
 
     INVARIANT(doc.HasMember("id"));
     INVARIANT(doc["id"].IsUint64());
-    result->id = doc["id"].GetUint64();
+    result->id = (uint32_t)doc["id"].GetUint64();
 
     INVARIANT(doc.HasMember("storeMode"));
     INVARIANT(doc["storeMode"].IsUint64());
     result->storeMode = static_cast<KVStore::StoreMode>(
                         doc["storeMode"].GetUint64());
+
+#ifdef _WIN32
+    return std::move(result);
+#else
+    return result;
+#endif
+}
+
+Status Catalog::setMainMeta(const MainMeta& meta) {
+    std::stringstream ss;
+    ss << "main_meta";
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+
+    writer.Key("Version");
+    writer.String("1");
+
+    writer.Key("kvStoreCount");
+    writer.Uint64(static_cast<uint8_t>(meta.kvStoreCount));
+
+    writer.Key("chunkSize");
+    writer.Uint64(meta.chunkSize);
+
+    writer.EndObject();
+
+    RecordValue rv(sb.GetString());
+
+    auto exptxn = _store->createTransaction();
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+
+    Record rd(std::move(rk), std::move(rv));
+    Status s = _store->setKV(rd, txn);
+    if (!s.ok()) {
+        return s;
+    }
+    return txn->commit().status();
+}
+
+Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
+    auto result = std::make_unique<MainMeta>();
+    std::stringstream ss;
+    ss << "main_meta";
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+
+    auto exptxn = _store->createTransaction();
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+    Expected<RecordValue> exprv = _store->getKV(rk, txn);
+    if (!exprv.ok()) {
+        return exprv.status();
+    }
+    RecordValue rv = exprv.value();
+    const std::string& json = rv.getValue();
+
+    rapidjson::Document doc;
+    doc.Parse(json);
+    if (doc.HasParseError()) {
+        LOG(FATAL) << "parse meta failed"
+            << rapidjson::GetParseError_En(doc.GetParseError());
+    }
+
+    INVARIANT(doc.IsObject());
+
+    INVARIANT(doc.HasMember("kvStoreCount"));
+    INVARIANT(doc["kvStoreCount"].IsUint64());
+    result->kvStoreCount = (uint32_t)doc["kvStoreCount"].GetUint64();
+
+    INVARIANT(doc.HasMember("chunkSize"));
+    INVARIANT(doc["chunkSize"].IsUint64());
+    result->chunkSize = (uint32_t)doc["chunkSize"].GetUint64();
 
 #ifdef _WIN32
     return std::move(result);

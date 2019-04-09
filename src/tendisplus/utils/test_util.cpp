@@ -62,15 +62,52 @@ std::shared_ptr<ServerEntry> makeServerEntry(
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto server = std::make_shared<ServerEntry>();
 
+    uint32_t kvStoreCount = cfg->kvStoreCount;
+    uint32_t chunkSize = cfg->chunkSize;
+
+    // catalog init
+    auto catalog = std::make_unique<Catalog>(
+        std::move(std::unique_ptr<KVStore>(
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr))),
+        kvStoreCount, chunkSize);
+    server->installCatalog(std::move(catalog));
+
     std::vector<PStore> tmpStores;
-    for (size_t dbId = 0; dbId < KVStore::INSTANCE_NUM; ++dbId) {
+    for (size_t dbId = 0; dbId < kvStoreCount; ++dbId) {
+        KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE;
+
+        auto meta = server->getCatalog()->getStoreMainMeta(dbId);
+        if (meta.ok()) {
+            mode = meta.value()->storeMode;
+        }
+        else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            auto pMeta = std::unique_ptr<StoreMainMeta>(
+                new StoreMainMeta(dbId, KVStore::StoreMode::READ_WRITE));
+            Status s = server->getCatalog()->setStoreMainMeta(*pMeta);
+            if (!s.ok()) {
+                LOG(FATAL) << "catalog setStoreMainMeta error:"
+                    << s.toString();
+                return nullptr;
+            }
+        }
+        else {
+            LOG(FATAL) << "catalog getStoreMainMeta error:"
+                << meta.status().toString();
+            return nullptr;
+        }
+
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
-                new RocksKVStore(std::to_string(dbId), cfg, block_cache)));
+                new RocksKVStore(std::to_string(dbId), cfg,
+                    block_cache, mode)));
     }
     server->installStoresInLock(tmpStores);
     auto seg_mgr = std::unique_ptr<SegmentMgr>(
-        new SegmentMgrFnvHash64(tmpStores));
+        new SegmentMgrFnvHash64(tmpStores, chunkSize));
     server->installSegMgrInLock(std::move(seg_mgr));
+
+    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
+        kvStoreCount);
+    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
     return server;
 }
@@ -112,7 +149,9 @@ KeysWritten WorkLoad::writeWork(RecordType type,
             _session->setArgs({"set", key, std::to_string(i)});
             auto expect = Command::runSessionCmd(_session.get());
             EXPECT_TRUE(expect.status().ok());
-            EXPECT_EQ(expect.value(), Command::fmtOK());
+            if (expect.status().ok()) {
+                EXPECT_EQ(expect.value(), Command::fmtOK());
+            }
             total++;
         } else {
             uint32_t len = static_cast<uint32_t>(std::rand() % maxlen) + 1;
@@ -122,8 +161,10 @@ KeysWritten WorkLoad::writeWork(RecordType type,
                     _session->setArgs({"lpush", key, std::to_string(j)});
                     auto expect = Command::runSessionCmd(_session.get());
                     EXPECT_TRUE(expect.status().ok());
-                    EXPECT_EQ(expect.value(),
+                    if (expect.status().ok()) {
+                        EXPECT_EQ(expect.value(),
                               Command::fmtLongLong(static_cast<uint64_t>(j+1)));
+                    }
                 } else  {
                     if (type == RecordType::RT_HASH_META) {
                         _session->setArgs({"hset", key,
@@ -141,7 +182,9 @@ KeysWritten WorkLoad::writeWork(RecordType type,
 
                     auto expect = Command::runSessionCmd(_session.get());
                     EXPECT_TRUE(expect.status().ok());
-                    EXPECT_EQ(expect.value(), Command::fmtOne());
+                    if (expect.status().ok()) {
+                        EXPECT_EQ(expect.value(), Command::fmtOne());
+                    }
                 }
             }
 

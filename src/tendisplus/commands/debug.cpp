@@ -182,11 +182,13 @@ class IterAllCommand: public Command {
         if (ebatchSize.value() > 10000) {
             return {ErrorCodes::ERR_PARSEOPT, "batch exceed lim"};
         }
-        if (estoreId.value() >= KVStore::INSTANCE_NUM) {
+
+        auto server = sess->getServerEntry();
+        if (estoreId.value() >= server->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
         }
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, estoreId.value(), mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDb(sess, estoreId.value(),
+                        mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -484,7 +486,9 @@ class BinlogTimeCommand: public Command {
         if (!storeId.ok()) {
             return storeId.status();
         }
-        if (storeId.value() >= KVStore::INSTANCE_NUM) {
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
         }
         Expected<uint64_t> binlogId = ::tendisplus::stoul(args[2]);
@@ -492,8 +496,8 @@ class BinlogTimeCommand: public Command {
             return binlogId.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
+                            mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -542,12 +546,14 @@ class BinlogPosCommand: public Command {
         if (!storeId.ok()) {
             return storeId.status();
         }
-        if (storeId.value() >= KVStore::INSTANCE_NUM) {
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(), mgl::LockMode::LOCK_IS);
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
+                    mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -620,8 +626,9 @@ class DebugCommand: public Command {
         if (sections.find("stores") != sections.end()) {
             writer.Key("stores");
             writer.StartObject();
-            for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS, true);
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                auto expdb = segMgr->getDb(sess, i, mgl::LockMode::LOCK_IS,
+                                    true);
                 if (!expdb.ok()) {
                     return expdb.status();
                 }
@@ -845,11 +852,13 @@ class ClientCommand: public Command {
             } else {
                 return Command::fmtBulk(name);
             }
-        } else if ((args[1] == "setname" || args[1] == "SETNAME") && args.size() == 3) {
+        } else if ((args[1] == "setname" || args[1] == "SETNAME")
+                        && args.size() == 3) {
             for (auto v : args[2]) {
                 if (v < '!' || v > '~') {
                     LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
-                    return {ErrorCodes::ERR_PARSEOPT, "Client names cannot contain spaces, newlines or special characters."};
+                    return {ErrorCodes::ERR_PARSEOPT,
+                               "Client names cannot contain spaces, newlines or special characters."};
                 }
             }
             sess->setName(args[2]);
@@ -927,7 +936,8 @@ class InfoCommand: public Command {
         if (allsections || defsections || section == "clients") {
             std::stringstream ss;
             ss << "# Clients\r\n"
-                << "connected_clients:" << server->getAllSessions().size() << "\r\n";
+                << "connected_clients:"
+                << server->getAllSessions().size() << "\r\n";
             result << ss.str();
         }
         return  Command::fmtBulk(result.str());
@@ -1078,5 +1088,171 @@ class MonitorCommand : public Command {
         return{ ErrorCodes::ERR_INTERNAL, "monitor not supported yet" };
     }
 } monitorCmd;
+
+// destroystore storeId [force]
+// force is optional, it means whether check the store is empty.
+// if force, no check
+class DestroyStoreCommand : public Command {
+ public:
+    DestroyStoreCommand()
+        :Command("destroystore") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        bool isForce = false;
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid instance num" };
+        }
+
+        if (args.size() > 2) {
+            if (args[2] != "force") {
+                return{ ErrorCodes::ERR_PARSEOPT,
+                    "please use destroystore storeId [force]" };
+            }
+            isForce = true;
+        }
+
+        Status status = server->destroyStore(sess, storeId.value(), isForce);
+        if (!status.ok()) {
+            return status;
+        }
+
+        return Command::fmtOK();
+    }
+} destroyStoreCmd;
+
+// pausestore storeId
+// only disable get/set of the store
+// when the server restart, the store should be resumed
+// It should be safe to pausestore first, and destroystore later
+class PauseStoreCommand : public Command {
+ public:
+    PauseStoreCommand()
+        :Command("pausestore") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid instance num" };
+        }
+
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
+                        mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        auto store = expdb.value().store;
+        Status status = store->pause();
+        if (!status.ok()) {
+            LOG(ERROR) << "pause store :" << storeId.value()
+                << " failed:" << status.toString();
+            return status;
+        }
+        INVARIANT(store->isRunning() && store->isPaused());
+
+        return Command::fmtOK();
+    }
+} pauseStoreCmd;
+
+// resumestore storeId
+class ResumeStoreCommand : public Command {
+ public:
+    ResumeStoreCommand()
+        :Command("resumestore") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid instance num" };
+        }
+
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
+            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        auto store = expdb.value().store;
+        Status status = store->resume();
+        if (!status.ok()) {
+            LOG(ERROR) << "pause store :" << storeId.value()
+                << " failed:" << status.toString();
+            return status;
+        }
+        INVARIANT(store->isRunning() && !store->isPaused());
+
+        return Command::fmtOK();
+    }
+} resumeStoreCmd;
 
 }  // namespace tendisplus

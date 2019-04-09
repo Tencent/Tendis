@@ -64,7 +64,9 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         }
         INVARIANT(mpov[clientId]->isRunning);
         mpov[clientId]->isRunning = false;
-        mpov[clientId]->nextSchedTime = nextSched;
+        if (nextSched > mpov[clientId]->nextSchedTime) {
+            mpov[clientId]->nextSchedTime = nextSched;
+        }
         // currently nothing waits for master's push process
         // _cv.notify_all();
     });
@@ -237,8 +239,8 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         return;
     }
 
-    if (storeId >= KVStore::INSTANCE_NUM ||
-            dstStoreId >= KVStore::INSTANCE_NUM) {
+    if (storeId >= _svr->getKVStoreCount() ||
+            dstStoreId >= _svr->getKVStoreCount()) {
         client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
         return;
     }

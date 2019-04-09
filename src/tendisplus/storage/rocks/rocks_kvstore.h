@@ -161,6 +161,15 @@ class RocksKVStore: public KVStore {
         return _mode != KVStore::StoreMode::STORE_NONE;
     }
 
+    // check whether there is any data in the store
+    bool isEmpty() const final;
+    // check whether the store get do get/set operations
+    bool isPaused() const final;
+    Status pause() final;
+    Status resume() final;
+    // stop() && clear()
+    Status destroy() final;
+
     TxnMode getTxnMode() const;
 
     Expected<uint64_t> restart(bool restore = false) final;
@@ -188,6 +197,10 @@ class RocksKVStore: public KVStore {
     mutable std::mutex _mutex;
 
     bool _isRunning;
+    // _isPaused = true, it means that the rocksdb can't do any 
+    // get/set operations. But the rocksdb is running. It can be
+    // reopen again.
+    bool _isPaused;
     bool _hasBackup;
 
     KVStore::StoreMode _mode;

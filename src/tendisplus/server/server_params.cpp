@@ -39,6 +39,8 @@ std::string ServerParams::toString() const {
         << ",\nmasterauth:" << masterauth
         << ",\npidFile:" << pidFile
         << ",\ngenerallog:" << generalLog
+        << ",\nchunkSize:" << chunkSize
+        << ",\nkvStoreCount:" << kvStoreCount
         << std::endl;
     return ss.str();
 }
@@ -50,155 +52,177 @@ Status ServerParams::parseFile(const std::string& filename) {
         ss << "open file:" << filename << " failed";
         return {ErrorCodes::ERR_PARSEOPT, ss.str()};
     }
-    std::string line;
-    while (std::getline(file, line)) {
-        line = trim(line);
-        if (line.size() == 0 || line[0] == '#') {
-            continue;
-        }
-        std::stringstream ss(line);
-        std::vector<std::string> tokens;
-        std::string tmp;
-        while (std::getline(ss, tmp, ' ')) {
-            bool isDir = false;
-            if (tokens.size() == 1) {
-                if (tokens[0] == "dir" ||
+    std::vector<std::string> tokens;
+    try {
+        std::string line;
+        while (std::getline(file, line)) {
+            line = trim(line);
+            if (line.size() == 0 || line[0] == '#') {
+                continue;
+            }
+            std::stringstream ss(line);
+            tokens.clear();
+            std::string tmp;
+            while (std::getline(ss, tmp, ' ')) {
+                bool isDir = false;
+                if (tokens.size() == 1) {
+                    if (tokens[0] == "dir" ||
                         tokens[0] == "logdir" ||
                         tokens[0] == "dumpdir" ||
                         tokens[0] == "pidfile") {
-                    // can't change dir to lower
-                    isDir = true;
+                        // can't change dir to lower
+                        isDir = true;
+                    }
+                }
+                if (!isDir) {
+                    std::transform(tmp.begin(), tmp.end(),
+                                    tmp.begin(), tolower);
+                }
+
+                tokens.emplace_back(tmp);
+            }
+
+            if (tokens.size() == 0) {
+                continue;
+            } else if (tokens[0] == "bind") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                "invalid bind configure" };
+                }
+                bindIp = tokens[1];
+            } else if (tokens[0] == "port") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                "invalid port configure" };
+                }
+                port = static_cast<uint16_t>(std::stoi(tokens[1]));
+            } else if (tokens[0] == "loglevel") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                               "invalid loglevel configure" };
+                }
+                if (tokens[1] != "debug" && tokens[1] != "verbose"
+                    && tokens[1] != "notice" && tokens[1] != "warning") {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                    "invalid loglevel configure" };
+                }
+                logLevel = tokens[1];
+            } else if (tokens[0] == "logdir") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                    "invalid logdir configure" };
+                }
+                logDir = tokens[1];
+            } else if (tokens[0] == "dir") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                    "invalid dir configure" };
+                }
+                dbPath = tokens[1];
+            } else if (tokens[0] == "dumpdir") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                "invalid dumpdir configure" };
+                }
+                dumpPath = tokens[1];
+            } else if (tokens[0] == "storage") {
+                // currently only support rocks engine
+                if (tokens.size() != 2 || tokens[1] != "rocks") {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                                "invalid storage configure" };
+                }
+            } else if (tokens[0] == "rocks.blockcachemb") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid rocks.blockcache configure" };
+                }
+                rocksBlockcacheMB = std::stoi(tokens[1]);
+            } else if (tokens[0] == "requirepass") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid requirepass configure" };
+                }
+                requirepass = tokens[1];
+            } else if (tokens[0] == "masterauth") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid masterauth configure" };
+                }
+                masterauth = tokens[1];
+            } else if (tokens[0] == "pidfile") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid pidfile configure" };
+                }
+                pidFile = tokens[1];
+            } else if (tokens[0] == "delcntindexmgr") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid delcntindexmgr config" };
+                }
+                delCntIndexMgr = std::stoi(tokens[1]);
+            } else if (tokens[0] == "deljobcntindexmgr") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid deljobcntindexmgr config" };
+                }
+                delJobCntIndexMgr = std::stoi(tokens[1]);
+            } else if (tokens[0] == "scancntindexmgr") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid scancntindexmgr config" };
+                }
+                scanCntIndexMgr = std::stoi(tokens[1]);
+            } else if (tokens[0] == "scanjobcntindexmgr") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid scanjobcntindexmgr config" };
+                }
+                scanJobCntIndexMgr = std::stoi(tokens[1]);
+            } else if (tokens[0] == "pausetimeindexmgr") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid pausetimeindexmgr config" };
+                }
+                pauseTimeIndexMgr = std::stoi(tokens[1]);
+            } else if (tokens[0] == "chunkSize") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid chunkSize config" };
+                }
+                chunkSize = std::stoi(tokens[1]);
+            } else if (tokens[0] == "kvStoreCount") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid kvStoreCount config" };
+                }
+                kvStoreCount = std::stoi(tokens[1]);
+            } else if (tokens[0] == "version-increase") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                      "invalid version-increase config" };
+                }
+                if (tokens[1] == "off" || tokens[1] == "false"
+                    || tokens[1] == "0") {
+                    versionIncrease = false;
+                }
+            } else if (tokens[0] == "generallog") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid version-increase config" };
+                }
+                if (tokens[1] == "on" || tokens[1] == "true"
+                    || tokens[1] == "1") {
+                    generalLog = true;
                 }
             }
-            if (!isDir) {
-                std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
-            }
-            tokens.emplace_back(tmp);
         }
-
-        if (tokens.size() == 0) {
-            continue;
-        } else if (tokens[0] == "bind") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid bind configure"};
-            }
-            bindIp = tokens[1];
-        } else if (tokens[0] == "port") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid port configure"};
-            }
-            try {
-                port = static_cast<uint16_t>(std::stoi(tokens[1]));
-            } catch (std::exception& ex) {
-                return {ErrorCodes::ERR_PARSEOPT, ex.what()};
-            }
-        } else if (tokens[0] == "loglevel") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
-            }
-            if (tokens[1] != "debug" && tokens[1] != "verbose"
-                    && tokens[1] != "notice" && tokens[1] != "warning") {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid loglevel configure"};
-            }
-            logLevel = tokens[1];
-        } else if (tokens[0] == "logdir") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid logdir configure"};
-            }
-            logDir = tokens[1];
-        } else if (tokens[0] == "dir") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid dir configure"};
-            }
-            dbPath = tokens[1];
-        } else if (tokens[0] == "dumpdir") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid dumpdir configure"};
-            }
-            dumpPath = tokens[1];
-        } else if (tokens[0] == "storage") {
-            // currently only support rocks engine
-            if (tokens.size() != 2 || tokens[1] != "rocks") {
-                return {ErrorCodes::ERR_PARSEOPT, "invalid storage configure"};
-            }
-        } else if (tokens[0] == "rocks.blockcachemb") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid rocks.blockcache configure"};
-            }
-            try {
-                rocksBlockcacheMB = std::stoi(tokens[1]);
-            } catch (std::exception& ex) {
-                return {ErrorCodes::ERR_PARSEOPT, ex.what()};
-            }
-        } else if (tokens[0] == "requirepass") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid requirepass configure"};
-            }
-            requirepass = tokens[1];
-        } else if (tokens[0] == "masterauth") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid masterauth configure"};
-            }
-            masterauth = tokens[1];
-        } else if (tokens[0] == "pidfile") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid pidfile configure"};
-            }
-            pidFile = tokens[1];
-        } else if (tokens[0] == "delcntindexmgr") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid delcntindexmgr config"};
-            }
-            delCntIndexMgr = std::stoi(tokens[1]);
-        } else if (tokens[0] == "deljobcntindexmgr") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid deljobcntindexmgr config"};
-            }
-            delJobCntIndexMgr = std::stoi(tokens[1]);
-        } else if (tokens[0] == "scancntindexmgr") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid scancntindexmgr config"};
-            }
-            scanCntIndexMgr = std::stoi(tokens[1]);
-        } else if (tokens[0] == "scanjobcntindexmgr") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid scanjobcntindexmgr config"};
-            }
-            scanJobCntIndexMgr = std::stoi(tokens[1]);
-        } else if (tokens[0] == "pausetimeindexmgr") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid pausetimeindexmgr config"};
-            }
-            pauseTimeIndexMgr = std::stoi(tokens[1]);
-        } else if (tokens[0] == "version-increase") {
-            if (tokens.size() != 2) {
-                return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid version-increase config"};
-            }
-            if (tokens[1] == "off" || tokens[1] == "false"
-                || tokens[1] == "0") {
-                versionIncrease = false;
-            }
-        } else if (tokens[0] == "generallog") {
-            if (tokens.size() != 2) {
-                return{ ErrorCodes::ERR_PARSEOPT,
-                    "invalid version-increase config" };
-            }
-            if (tokens[1] == "on" || tokens[1] == "true"
-                || tokens[1] == "1") {
-                generalLog = true;
-            }
-        }
+    } catch (const std::exception& ex) {
+        std::stringstream ss;
+        ss << "invalid " << tokens[0] << " config: " << ex.what();
+        return{ ErrorCodes::ERR_PARSEOPT, ss.str() };
     }
+
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -221,6 +245,8 @@ ServerParams::ServerParams()
     pauseTimeIndexMgr = 10;
     versionIncrease = true;
     generalLog = false;
+    kvStoreCount = 10;
+    chunkSize = 4000;
 }
 
 

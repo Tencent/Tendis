@@ -19,7 +19,7 @@ uint32_t countTTLIndex(std::shared_ptr<ServerEntry> server,
                        std::shared_ptr<NetSession> session,
                        uint64_t ttl) {
     uint32_t scanned = 0;
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
         auto expdb = server->getSegmentMgr()->getDb(
             session.get(), i, mgl::LockMode::LOCK_IS);
         EXPECT_TRUE(expdb.ok());

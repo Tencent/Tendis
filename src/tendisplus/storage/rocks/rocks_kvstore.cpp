@@ -478,6 +478,40 @@ bool RocksKVStore::isRunning() const {
     return _isRunning;
 }
 
+bool RocksKVStore::isPaused() const {
+    //std::lock_guard<std::mutex> lk(_mutex);
+    return _isPaused;
+}
+
+bool RocksKVStore::isEmpty() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    // TODO(vinchen)
+    return false;
+}
+
+Status RocksKVStore::pause() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_aliveTxns.size() != 0) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive" };
+    }
+
+    _isPaused = true;
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::resume() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_aliveTxns.size() != 0) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive" };
+    }
+
+    _isPaused = false;
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 Status RocksKVStore::stop() {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_aliveTxns.size() != 0) {
@@ -488,6 +522,21 @@ Status RocksKVStore::stop() {
     _optdb.reset();
     _pesdb.reset();
     return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::destroy() {
+    Status status;
+    if (_isRunning) {
+        status = stop();
+        if (!status.ok()) {
+            return status;
+        }
+    }
+
+    _mode = KVStore::StoreMode::STORE_NONE;
+    status = clear();
+
+    return status;
 }
 
 Status RocksKVStore::setMode(StoreMode mode) {
@@ -685,7 +734,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
 
-    // NOTE(vinchen): if stateMode is STORE_NONE, the store no need 
+    // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
     // to open in rocksdb layer.
     if (getMode() == KVStore::StoreMode::STORE_NONE) {
         return {ErrorCodes::ERR_OK, "" };
@@ -806,6 +855,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
             uint64_t maxKeepLogs)
         :KVStore(id, cfg->dbPath),
          _isRunning(false),
+         _isPaused(false),
          _hasBackup(false),
          _mode(mode),
          _txnMode(txnMode),
@@ -1126,6 +1176,8 @@ void RocksKVStore::appendJSONStat(
     w.String(dbId().c_str());
     w.Key("is_running");
     w.Uint64(_isRunning);
+    w.Key("is_paused");
+    w.Uint64(_isPaused);
     w.Key("has_backup");
     w.Uint64(_hasBackup);
     w.Key("next_txn_seq");
@@ -1143,9 +1195,13 @@ void RocksKVStore::appendJSONStat(
     }
 
     w.Key("compact_filter_count");
-    w.Uint64(compactStat.filterCount.load(std::memory_order_relaxed));
+    w.Uint64(stat.compactFilterCount.load(std::memory_order_relaxed));
     w.Key("compact_kvexpired_count");
-    w.Uint64(compactStat.kvExpiredCount.load(std::memory_order_relaxed));
+    w.Uint64(stat.compactKvExpiredCount.load(std::memory_order_relaxed));
+    w.Key("paused_error_count");
+    w.Uint64(stat.pausedErrorCount.load(std::memory_order_relaxed));
+    w.Key("destroyed_error_count");
+    w.Uint64(stat.destroyedErrorCount.load(std::memory_order_relaxed));
 
     w.Key("rocksdb");
     w.StartObject();

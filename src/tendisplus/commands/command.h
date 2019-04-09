@@ -20,6 +20,9 @@ class Command {
     explicit Command(const std::string& name);
     virtual ~Command() = default;
     virtual Expected<std::string> run(Session *sess) = 0;
+
+    // if arity() > 0, it means the arguments count must equal to arity();
+    // else, it means the arguments count must bigger than -arity();
     virtual ssize_t arity() const = 0;
     virtual int32_t firstkey() const = 0;
     virtual int32_t lastkey() const = 0;

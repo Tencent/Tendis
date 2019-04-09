@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <string>
 
 #include "glog/logging.h"
 
@@ -30,10 +31,12 @@ namespace tendisplus {
         _delBatch(cfg->delCntIndexMgr),
         _delPoolSize(cfg->delJobCntIndexMgr),
         _pauseTime(cfg->pauseTimeIndexMgr) {
-          for (size_t storeId = 0; storeId < KVStore::INSTANCE_NUM; ++storeId) {
+          for (size_t storeId = 0;
+                    storeId < svr->getKVStoreCount(); ++storeId) {
                 _scanPoints[storeId] = std::move(std::string());
                 _scanJobStatus[storeId] = { false };
                 _delJobStatus[storeId] = { false };
+                _disableStatus[storeId] = { false };
                 _scanJobCnt[storeId] = { 0u };
                 _delJobCnt[storeId] = { 0u };
             }
@@ -71,6 +74,10 @@ namespace tendisplus {
           return {ErrorCodes::ERR_OK, ""};
       }
 
+      if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
+          return {ErrorCodes::ERR_OK, ""};
+      }
+
       auto guard = MakeGuard([this, storeId]() {
           _scanJobCnt[storeId]--;
           _scanJobStatus[storeId].store(false, std::memory_order_release);
@@ -99,8 +106,9 @@ namespace tendisplus {
       }
 
       std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      // Here, it's safe to use msSinceEpoch(), because it can't be a slave here.
-      // In fact, it maybe more safe to use store->getCurrentTime()
+      // Here, it's safe to use msSinceEpoch(), because it can't be a
+      // slave here. In fact, it maybe more safe to use
+      // store->getCurrentTime()
       auto cursor = txn->createTTLIndexCursor(store->getCurrentTime());
       INVARIANT(_scanPoints.find(storeId) != _scanPoints.end());
       // seek to the place where we left NOTE: skip the entry
@@ -151,6 +159,19 @@ namespace tendisplus {
       return {ErrorCodes::ERR_OK, ""};
   }
 
+  Status IndexManager::stopStore(uint32_t storeId) {
+      std::lock_guard<std::mutex> lk(_mutex);
+
+      _expiredKeys[storeId].clear();
+
+      _scanPoints[storeId] = std::move(std::string());
+      _scanJobCnt[storeId] = { 0u };
+      _delJobCnt[storeId] = { 0u };
+      _disableStatus[storeId].store(true, std::memory_order_relaxed);
+
+      return {ErrorCodes::ERR_OK, ""};
+  }
+
   int IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
       bool expect = false;
       if (!_delJobStatus[storeId].compare_exchange_strong(
@@ -158,6 +179,10 @@ namespace tendisplus {
           return 0;
       }
 
+      if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
+          return 0;
+      }
+     
       _delJobCnt[storeId]++;
       uint32_t deletes = 0;
 
@@ -205,7 +230,7 @@ namespace tendisplus {
   // call this in a forever loop
   Status IndexManager::run() {
       auto scheScanExpired = [this]() {
-          for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+          for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
               _indexScanner->schedule([this, i]() {
                   scanExpiredKeysJob(i);
               });
@@ -217,7 +242,7 @@ namespace tendisplus {
 
           {
               std::lock_guard<std::mutex> lk(_mutex);
-              for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+              for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
                   if (_expiredKeys[i].size() > 0) {
                       stored_with_expires.push_back(i);
                   }

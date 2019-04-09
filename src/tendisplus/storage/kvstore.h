@@ -125,9 +125,13 @@ class BinlogObserver {
     virtual ~BinlogObserver() = default;
 };
 
-struct compactionStat {
-    std::atomic<uint64_t> filterCount;
-    std::atomic<uint64_t> kvExpiredCount;
+struct KVStoreStat {
+    std::atomic<uint64_t> compactFilterCount;
+    std::atomic<uint64_t> compactKvExpiredCount;
+    // number of request when store is paused
+    std::atomic<uint64_t> pausedErrorCount;
+    // number of request when store is destroyed
+    std::atomic<uint64_t> destroyedErrorCount;
 };
 
 class KVStore {
@@ -178,7 +182,12 @@ class KVStore {
 
     virtual bool isRunning() const = 0;
     virtual bool isOpen() const = 0;
+    virtual bool isEmpty() const = 0;
+    virtual bool isPaused() const = 0;
     virtual Status stop() = 0;
+    virtual Status pause() = 0;
+    virtual Status resume() = 0;
+    virtual Status destroy() = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
     virtual KVStore::StoreMode getMode() = 0;
@@ -198,10 +207,10 @@ class KVStore {
     void setBinlogTime(uint32_t timestamp);
     uint64_t getCurrentTime();
 
-    compactionStat compactStat;
+    KVStoreStat stat;
 
     // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    static constexpr size_t INSTANCE_NUM = size_t(10);
+    //static constexpr size_t INSTANCE_NUM = size_t(10);
 
  private:
     const std::string _id;

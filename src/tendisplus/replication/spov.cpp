@@ -360,7 +360,9 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
         std::lock_guard<std::mutex> lk(_mutex);
         INVARIANT(_syncStatus[storeId]->isRunning);
         _syncStatus[storeId]->isRunning = false;
-        _syncStatus[storeId]->nextSchedTime = nextSched;
+        if (nextSched > _syncStatus[storeId]->nextSchedTime) {
+            _syncStatus[storeId]->nextSchedTime = nextSched;
+        }
         _cv.notify_all();
     });
 

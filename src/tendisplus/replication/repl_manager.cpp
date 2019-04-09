@@ -39,12 +39,28 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
      _logRecycleMatrix(std::make_shared<PoolMatrix>()) {
 }
 
+Status ReplManager::stopStore(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    INVARIANT(storeId < _svr->getKVStoreCount());
+
+    _syncStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
+
+    _logRecycStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
+
+    for (auto& mpov : _pushStatus[storeId]) {
+        mpov.second->nextSchedTime = SCLOCK::time_point::max();
+    }
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
 Status ReplManager::startup() {
     std::lock_guard<std::mutex> lk(_mutex);
     Catalog *catalog = _svr->getCatalog();
     INVARIANT(catalog != nullptr);
 
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+    for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
         Expected<std::unique_ptr<StoreMeta>> meta = catalog->getStoreMeta(i);
         if (meta.ok()) {
             _syncMeta.emplace_back(std::move(meta.value()));
@@ -62,7 +78,7 @@ Status ReplManager::startup() {
         }
     }
 
-    INVARIANT(_syncMeta.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_syncMeta.size() == _svr->getKVStoreCount());
 
     for (size_t i = 0; i < _syncMeta.size(); ++i) {
         if (i != _syncMeta[i]->id) {
@@ -113,7 +129,7 @@ Status ReplManager::startup() {
         return s;
     }
 
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+    for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
         // here we are starting up, dont acquire a storelock.
         auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
                             mgl::LockMode::LOCK_NONE, true);
@@ -217,7 +233,7 @@ Status ReplManager::startup() {
         }
     }
 
-    INVARIANT(_logRecycStatus.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::make_unique<std::thread>(std::move([this]() {
@@ -441,7 +457,10 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         auto& v = _logRecycStatus[storeId];
         INVARIANT(v->isRunning);
         v->isRunning = false;
-        v->nextSchedTime = nextSched;
+        // v->nextSchedTime maybe time_point::max() 
+        if (v->nextSchedTime < nextSched) {
+            v->nextSchedTime = nextSched;
+        }
         v->firstBinlogId = start;
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();
@@ -593,9 +612,9 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
 void ReplManager::appendJSONStat(
         rapidjson::Writer<rapidjson::StringBuffer>& w) const {
     std::lock_guard<std::mutex> lk(_mutex);
-    INVARIANT(_pushStatus.size() == KVStore::INSTANCE_NUM);
-    INVARIANT(_syncStatus.size() == KVStore::INSTANCE_NUM);
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+    INVARIANT(_pushStatus.size() == _svr->getKVStoreCount());
+    INVARIANT(_syncStatus.size() == _svr->getKVStoreCount());
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         std::stringstream ss;
         ss << i;
         w.Key(ss.str().c_str());
