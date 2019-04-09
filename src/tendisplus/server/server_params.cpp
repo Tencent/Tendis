@@ -59,7 +59,20 @@ Status ServerParams::parseFile(const std::string& filename) {
         std::vector<std::string> tokens;
         std::string tmp;
         while (std::getline(ss, tmp, ' ')) {
-            std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
+            bool isDir = false;
+            if (tokens.size() == 1) {
+                if (tokens[0] == "dir" ||
+                        tokens[0] == "logdir" ||
+                        tokens[0] == "dumpdir" ||
+                        tokens[0] == "pidfile") {
+
+                    // can't change dir to lower
+                    isDir = true;
+                }
+            } 
+            if (!isDir) {
+                std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
+            }
             tokens.emplace_back(tmp);
         }
 
