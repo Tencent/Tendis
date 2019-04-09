@@ -10,7 +10,8 @@ namespace tendisplus {
 
 enum class ReplState: std::uint8_t;
 
-struct StoreMeta {
+// for MSVC, it must be class , but not struct
+class StoreMeta {
  public:
     StoreMeta();
     StoreMeta(const StoreMeta&) = default;
@@ -36,7 +37,7 @@ class Catalog {
     Status setStoreMeta(const StoreMeta& meta);
 
  private:
-     std::unique_ptr<KVStore> _store;
+    std::unique_ptr<KVStore> _store;
 };
 
 }  // namespace tendisplus

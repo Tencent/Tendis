@@ -155,6 +155,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
                 binlogs.emplace_back(std::move(explog.value()));
             }
         } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+            // no more data
             break;
         } else {
             LOG(ERROR) << "iter binlog failed:"
@@ -281,12 +282,12 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         _pushStatus[storeId][clientId] =
             std::move(std::unique_ptr<MPovStatus>(
                 new MPovStatus {
-                    isRunning: false,
-                    dstStoreId: static_cast<uint32_t>(dstStoreId),
-                    binlogPos: binlogPos,
-                    nextSchedTime: SCLOCK::now(),
-                    client: std::move(client),
-                    clientId: clientId}));
+                     false,
+                     static_cast<uint32_t>(dstStoreId),
+                     binlogPos,
+                     SCLOCK::now(),
+                     std::move(client),
+                     clientId}));
         return true;
     }();
     LOG(INFO) << "slave:" << remoteHost

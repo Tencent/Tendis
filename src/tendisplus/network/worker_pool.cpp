@@ -45,19 +45,20 @@ void WorkerPool::consumeTasks(size_t idx) {
     memset(threadName, 0, sizeof threadName);
     pthread_getname_np(pthread_self(), threadName, sizeof threadName);
     LOG(INFO) << "workerthread:" << threadName << " starts";
-    const auto guard = MakeGuard([this, threadName] {
+    char* pname = &threadName[0];
+    const auto guard = MakeGuard([this, pname]{
         std::lock_guard<std::mutex> lk(_mutex);
         const auto& thd_id = std::this_thread::get_id();
         for (auto v = _threads.begin(); v != _threads.end(); v++) {
             if (v->get_id() == thd_id) {
                 LOG(INFO) << "thd:" << thd_id
-                          << ",name:" << threadName
+                          << ",name:" << pname
                           << ", clean and exit";
                 return;
             }
         }
         LOG(FATAL) << "thd:" << thd_id
-                   << ",name:" << threadName
+                   << ",name:" << pname
                    << "not found in threads_list";
     });
 

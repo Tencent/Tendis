@@ -1,4 +1,3 @@
-#include <endian.h>
 #include <list>
 #include <chrono>
 #include <algorithm>
@@ -23,6 +22,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/lock.h"
+#include <endian.h>
 
 namespace tendisplus {
 
@@ -71,6 +71,9 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
         return {ErrorCodes::ERR_NOTFOUND, "flist not json obj"};
     }
     std::map<std::string, uint64_t> result;
+#ifdef _WIN32
+#undef GetObject
+#endif // 
     for (auto& o : doc.GetObject()) {
         if (!o.value.IsUint64()) {
             return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};

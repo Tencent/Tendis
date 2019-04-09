@@ -17,4 +17,12 @@ target_link_libraries(atomic_utility_test status gtest_main ${SYS_LIBS})
 
 add_library(sync_point STATIC sync_point.cpp)
 
-add_library(utils_common STATIC status.cpp redis_port.cpp time.cpp string.cpp)
+if(CMAKE_COMPILER_IS_GNUCC)
+	set(STD "")
+else()
+	set(STD unistd.cpp)
+	# fake rt(a dummy lib)
+	add_library(rt STATIC dummy.cpp)
+endif()
+
+add_library(utils_common STATIC status.cpp redis_port.cpp time.cpp string.cpp ${STD})

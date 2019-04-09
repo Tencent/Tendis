@@ -1,6 +1,10 @@
 #include <chrono>
 #include <sstream>
 #include "tendisplus/utils/time.h"
+#ifdef _WIN32 
+#include <time.h>
+#endif // !
+
 
 namespace tendisplus {
 
@@ -27,8 +31,12 @@ uint64_t msSinceEpoch() {
 std::string timePointRepr(const SCLOCK::time_point& tp) {
     std::stringstream ss;
     using SYSCLOCK = std::chrono::system_clock;
-    auto t = SYSCLOCK::to_time_t(SYSCLOCK::now() + (tp - SCLOCK::now()));
+    auto t = SYSCLOCK::to_time_t(SYSCLOCK::now() + std::chrono::duration_cast<SYSCLOCK::duration>(tp - SCLOCK::now()));
+#ifndef _WIN32
     ss << std::ctime(&t);
+#else
+    ss << _ctime64(&t);
+#endif // _WIN32
     return ss.str();
 }
 

@@ -1,5 +1,8 @@
+#ifndef _WIN32
 #include <sys/time.h>
 #include <sys/utsname.h>
+#endif
+
 #include <string>
 #include <sstream>
 #include <utility>
@@ -883,13 +886,17 @@ class InfoCommand: public Command {
         if (allsections || defsections || section == "server") {
             std::stringstream ss;
             static int call_uname = 1;
+#ifndef _WIN32
             static struct utsname name;
             if (call_uname) {
                 call_uname = 0;
                 uname(&name);
             }
+#endif
             ss << "# Server\r\n"
+#ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
+#endif
                 << "arch_bits:" << ((sizeof(long) == 8) ? 64 : 32) << "\r\n"
                 << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__

@@ -13,34 +13,59 @@ if(CMAKE_COMPILER_IS_GNUCC)
         you may remove CMakeCache.txt and run export CXX=/path/to/your/prefered/cxx_compiler before run cmake \
         to solve this problem")
     endif()
+elseif(MSVC AND MSVC_VERSION GREATER_EQUAL 1900)
+	message("using MSVC ${MSVC_VERSION}")
+	# TODO: check msvc version
+	# for rocksdb, disable warning as errors
+	add_compile_options(/WX-) 
+
+	# for glog
+	add_definitions(-DGLOG_NO_ABBREVIATED_SEVERITIES)
+
+	# for asio 
+	#add_definitions(-DWIN32_LEAN_AND_MEAN)
+
+	# disable warnings 
+	#add_compile_options(/wC4099)
 else()
-    message(FATAL_ERROR "gcc is required")
+    message(FATAL_ERROR "gcc or vs2015(update 2)+ is required")
+endif()
+
+if(CMAKE_COMPILER_IS_GNUCC)
+	set(STDFS_LIB "stdc++fs")
+	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
+else()
+	set(STDFS_LIB "")
+	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0")
 endif()
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+if(CMAKE_COMPILER_IS_GNUCC)
+	option(ENABLE_JEMALLOC "enable jemalloc" ON)
+	list(APPEND SYS_LIBS "dl" "pthread" "rt")
+	if(ENABLE_JEMALLOC)
+		list(APPEND SYS_LIBS jemalloc)
+	endif()
 
-option(ENABLE_JEMALLOC "enable jemalloc" ON)
-list(APPEND SYS_LIBS "dl" "pthread" "rt")
-if(ENABLE_JEMALLOC)
-list(APPEND SYS_LIBS jemalloc)
+	# thirdparty code
+	# do not set unnecessary flags before thirdparty dirs
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
 endif()
 
 # TODO(vinchen): in the future it should disable sync_ponit in production
 add_definitions(-DWITH_SYNC_POINT)
 list(APPEND SYS_LIBS sync_point)
 
-# thirdparty code
-# do not set unnecessary flags before thirdparty dirs
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
 add_subdirectory(src/thirdparty/gflags)
 add_subdirectory(src/thirdparty/googletest-release-1.8.0)
 add_subdirectory(src/thirdparty/glog-0.3.5)
-add_subdirectory(src/thirdparty/rocksdb-5.13.4/rocksdb)
+add_subdirectory(${ROCKSDB_DIR}/rocksdb)
 add_subdirectory(src/thirdparty/rapidjson-1.1.0)
 
+if(CMAKE_COMPILER_IS_GNUCC)
 set(WARN_C_CXX
 "-Wall \
 -Wextra \
@@ -90,6 +115,12 @@ set(WARN_CXX_ONLY
 
 set(WARN_C_ONLY
 "-Werror-implicit-function-declaration")
+else()
+include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
+
+# gflags
+include_directories("src/thirdparty/include")
+ENDIF()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
 
@@ -99,7 +130,7 @@ add_definitions(-DRAPIDJSON_HAS_STDSTRING)
 message("${CMAKE_BUILD_TYPE}")
 message("${CMAKE_CXX_FLAGS_RELEASE}")
 include_directories("${PROJECT_SOURCE_DIR}/src")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb/include")
+include_directories("${ROCKSDB_DIR}/rocksdb/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
