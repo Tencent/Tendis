@@ -15,6 +15,20 @@ std::string toLower(const std::string& s) {
     return result;
 }
 
+Expected<int32_t> stol(const std::string& s) {
+    int32_t result;
+    try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size() - 1] == ' ')) {
+            return{ ErrorCodes::ERR_DECODE, "trailing empty chars" };
+        }
+        result = static_cast<int32_t>(std::stol(s));
+        return result;
+    }
+    catch (const std::exception& ex) {
+        return{ ErrorCodes::ERR_DECODE, ex.what() };
+    }
+}
+
 Expected<uint64_t> stoul(const std::string& s) {
     uint64_t result;
     try {
@@ -35,6 +49,19 @@ Expected<int64_t> stoll(const std::string& s) {
             return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
         }
         result = static_cast<int64_t>(std::stoll(s));
+        return result;
+    } catch (const std::exception& ex) {
+        return {ErrorCodes::ERR_DECODE, ex.what()};
+    }
+}
+
+Expected<uint64_t> stoull(const std::string& s) {
+    uint64_t result;
+    try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
+            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+        }
+        result = static_cast<uint64_t>(std::stoull(s));
         return result;
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_DECODE, ex.what()};
@@ -67,22 +94,22 @@ std::string hexlify(const std::string& s) {
 
 Expected<std::string> unhexlify(const std::string& s) {
     static int table_hex[256] = {
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-       0, 1, 2, 3,  4, 5, 6, 7,  8, 9,-1,-1, -1,-1,-1,-1,
-      -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,10,11,12, 13,14,15,-1, -1,-1,-1,-1, -1,-1,-1,-1,
-      -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+         0,  1,  2,  3,   4,  5,  6,  7,   8,  9, -1, -1,  -1, -1, -1, -1,
+        -1, 10, 11, 12,  13, 14, 15, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, 10, 11, 12,  13, 14, 15, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,
+        -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1,  -1, -1, -1, -1
     };
     if (s.size()%2 == 1) {
         return {ErrorCodes::ERR_DECODE, "invalid hex size"};
@@ -95,7 +122,7 @@ Expected<std::string> unhexlify(const std::string& s) {
         if (high == -1 || low == -1) {
             return {ErrorCodes::ERR_DECODE, "invalid hex str"};
         }
-        result[i/2] = (high<<4)|low;
+        result[i/2] = (high << 4)|low;
     }
     return result;
 }

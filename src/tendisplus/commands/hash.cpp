@@ -339,9 +339,6 @@ class HAllCommand: public Command {
             Record& rcd = exptRcd.value();
             const RecordKey& rcdKey = rcd.getRecordKey();
             if (rcdKey.prefixPk() != prefix) {
-                //LOG(INFO) << "rcdkey:" << rcdKey.getPrimaryKey() << ' ' << int(rcdKey.getRecordType())
-                //            << ",metaPk:" << metaRk.getPrimaryKey() << ' ' << int(metaRk.getRecordType());
-                //INVARIANT(rcdKey.getPrimaryKey() != metaRk.getPrimaryKey());
                 break;
             }
             result.emplace_back(std::move(rcd));
@@ -702,7 +699,8 @@ class HMGetGeneric: public Command {
             :Command(name) {
         if (name == "hmget") {
             _returnVsn = false;
-        } else { // hmgetvsn
+        } else {
+            // hmgetvsn
             _returnVsn = true;
         }
     }
@@ -808,7 +806,7 @@ class HMGetVsnCommand: public HMGetGeneric {
 
 Status hmcas(Session *sess, const std::string& key,
              const std::vector<std::string>& subargs,
-             uint64_t cmp, uint64_t vsn, const Expected<uint64_t>& newvsn) {
+             uint64_t cmp, int64_t vsn, const Expected<int64_t>& newvsn) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
@@ -876,8 +874,7 @@ Status hmcas(Session *sess, const std::string& key,
 
     constexpr int OPSET = 0;
     constexpr int OPADD = 1;
-    for (const auto& keyPos: uniqkeys) {
-
+    for (const auto& keyPos : uniqkeys) {
         bool exists = true;
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
         Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
@@ -940,7 +937,7 @@ Status hmcas(Session *sess, const std::string& key,
         return s;
     }
     auto commitStat = txn->commit();
-    return commitStat.status(); 
+    return commitStat.status();
 }
 
 class HMCasV2Command: public Command {
@@ -971,21 +968,21 @@ class HMCasV2Command: public Command {
             return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments for hmcas"};
         }
         const std::string& key = args[1];
-        Expected<uint64_t> ecmp = ::tendisplus::stoul(args[2]);
+        Expected<uint64_t> ecmp = ::tendisplus::stoull(args[2]);
         if (!ecmp.ok()) {
             return ecmp.status();
         }
-        Expected<uint64_t> evsn = ::tendisplus::stoul(args[3]);
+        Expected<int64_t> evsn = ::tendisplus::stoll(args[3]);
         if (!evsn.ok()) {
             return evsn.status();
         }
-        Expected<uint64_t> enewvsn = ::tendisplus::stoul(args[4]); 
+        Expected<int64_t> enewvsn = ::tendisplus::stoll(args[4]);
         if (!enewvsn.ok()) {
             return enewvsn.status();
         }
         uint64_t cmp = ecmp.value();
-        int64_t vsn = (int64_t)evsn.value();
-        int64_t newvsn = (int64_t)enewvsn.value();
+        int64_t vsn = evsn.value();
+        int64_t newvsn = enewvsn.value();
         if (cmp != 0 && cmp != 1) {
             return {ErrorCodes::ERR_PARSEOPT, "cmp should be 0 or 1"};
         }
@@ -1020,7 +1017,6 @@ class HMCasV2Command: public Command {
         }
         INVARIANT(0);
         return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
- 
     }
 } hmcasV2Cmd;
 
@@ -1049,19 +1045,20 @@ class HMCasCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         if ((args.size() - 4)%3 != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments for hmcas"};
+            return {ErrorCodes::ERR_PARSEOPT,
+                "wrong number of arguments for hmcas"};
         }
         const std::string& key = args[1];
         Expected<uint64_t> ecmp = ::tendisplus::stoul(args[2]);
         if (!ecmp.ok()) {
             return ecmp.status();
         }
-        Expected<uint64_t> evsn = ::tendisplus::stoul(args[3]);
+        Expected<int64_t> evsn = ::tendisplus::stoll(args[3]);
         if (!evsn.ok()) {
             return evsn.status();
         }
         uint64_t cmp = ecmp.value();
-        uint64_t vsn = evsn.value();
+        int64_t vsn = evsn.value();
         if (cmp != 0 && cmp != 1) {
             return {ErrorCodes::ERR_PARSEOPT, "cmp should be 0 or 1"};
         }
