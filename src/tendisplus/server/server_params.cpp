@@ -178,6 +178,15 @@ Status ServerParams::parseFile(const std::string& filename) {
                   "invalid pausetimeindexmgr config"};
             }
             pauseTimeIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "version-increase") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid version-increase config"};
+            }
+            if (tokens[1] == "off" || tokens[1] == "false"
+                || tokens[1] == "0") {
+                versionIncrease = false;
+            }
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -200,6 +209,7 @@ ServerParams::ServerParams()
     delCntIndexMgr = 10000;
     delJobCntIndexMgr = 1;
     pauseTimeIndexMgr = 10;
+    versionIncrease = true;
 }
 
 

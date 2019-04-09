@@ -64,6 +64,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     _requirepass = std::make_shared<std::string>(cfg->requirepass);
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
+    _versionIncrease = cfg->versionIncrease;
 
     // catalog init
     auto catalog = std::make_unique<Catalog>(
