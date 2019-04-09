@@ -51,6 +51,7 @@ func CheckPidFile(pidPath string, timeout time.Duration) (int, error) {
 			pid, _ := strconv.Atoi(strings.Trim(string(pidBuf), "\n"))
 			exist, _ := FileExist(fmt.Sprintf("/proc/%d", pid))
 			if !exist {
+		        log.Errorf("/proc/%d not exists", pid)
 				time.Sleep(time.Millisecond * 200)
 				continue
 			}
@@ -109,12 +110,17 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	}
 }
 
-func (s *RedisServer) Init(port int, path string) {
+func (s *RedisServer) Init(port int, pwd string, path string) {
 	s.Port = port
-	s.Path = path + RandStrAlpha(6)
+	s.Path = pwd + "/" + path + RandStrAlpha(6)
+}
+
+func (s *RedisServer) Destroy() {
+    os.RemoveAll(s.Path)
 }
 
 func (s *RedisServer) Setup(valgrind bool) error {
+    log.Debugf("mkdir " + s.Path)
 	os.MkdirAll(s.Path, os.ModePerm)
 	os.MkdirAll(s.Path+"/db", os.ModePerm)
 	os.MkdirAll(s.Path+"/log", os.ModePerm)
@@ -122,10 +128,10 @@ func (s *RedisServer) Setup(valgrind bool) error {
 	cfg := "bind 127.0.0.1\n"
 	cfg = cfg + fmt.Sprintf("port %d\n", s.Port)
 	cfg = cfg + "loglevel debug\n"
-	cfg = cfg + fmt.Sprintf("logdir ./%s/log\n", s.Path)
+	cfg = cfg + fmt.Sprintf("logdir %s/log\n", s.Path)
 	cfg = cfg + fmt.Sprintf("storage rocks\n")
-	cfg = cfg + fmt.Sprintf("dir ./%s/db\n", s.Path)
-	cfg = cfg + fmt.Sprintf("dumpdir ./%s/dump\n", s.Path)
+	cfg = cfg + fmt.Sprintf("dir %s/db\n", s.Path)
+	cfg = cfg + fmt.Sprintf("dumpdir %s/dump\n", s.Path)
 	cfg = cfg + "rocks.blockcachemb 4096\n"
 	cfg = cfg + fmt.Sprintf("pidfile %s/tendisplus.pid\n", s.Path)
 	if err := ioutil.WriteFile(cfgFilePath, []byte(cfg), 0600); err != nil {

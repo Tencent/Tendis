@@ -10,11 +10,15 @@ import (
 	"sync/atomic"
 	"tendisplus/integrate_test/util"
 	"time"
+    "os"
+    "path/filepath"
+    "strings"
 )
 
 var (
-	mport     = flag.Int("masterport", 0, "master port")
-	sport     = flag.Int("slaveport", 0, "slave port")
+	mport     = flag.Int("masterport", 12345, "master port")
+	sport     = flag.Int("slaveport", 12346, "slave port")
+	kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 	zsetcount = flag.Int("zsetcount", 1, "zset count")
 	setcount  = flag.Int("setcount", 100, "set count")
 	listcount = flag.Int("listcount", 100, "list count")
@@ -45,7 +49,7 @@ func getRandomType() TendisType {
 	return typelist[rand.Int()%len(typelist)]
 }
 
-func testReplMatch2(m, s *util.RedisServer) {
+func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer) {
 	var wg sync.WaitGroup
 	running := int32(1)
 	buf := make(chan *Record)
@@ -123,32 +127,36 @@ func testReplMatch2(m, s *util.RedisServer) {
 	if err != nil {
 		log.Fatalf("dial slave failed:%v", err)
 	}
-	mPos, err := cli1.Cmd("binlogpos", "0").Int64()
-	if err != nil {
-		log.Fatalf("binlogpos of master failed:%v", err)
-	}
-	for {
-		sPos, err := cli2.Cmd("binlogpos", "0").Int64()
-		if err != nil {
-			log.Fatalf("binlogpos of slave failed:%v", err)
-		}
-		if sPos == mPos {
-			log.Infof("m/s binlog matches")
-			break
-		} else {
-			log.Infof("mpos:%d, spos:%d", mPos, sPos)
-			time.Sleep(1 * time.Second)
-		}
-	}
+
+    for i:=0; i < kvstore_count; i++ {
+        mPos, err := cli1.Cmd("binlogpos", fmt.Sprintf("%d", i)).Int64()
+        if err != nil {
+            log.Fatalf("binlogpos of master failed:%v", err)
+        }
+        for {
+            sPos, err := cli2.Cmd("binlogpos", fmt.Sprintf("%d", i)).Int64()
+            if err != nil {
+                log.Fatalf("binlogpos of slave failed:%v", err)
+            }
+            if sPos == mPos {
+                log.Infof("m/s binlog matches")
+                break
+            } else {
+                log.Infof("mpos:%d, spos:%d", mPos, sPos)
+                time.Sleep(1 * time.Second)
+            }
+        }
+    }
 	for _, o := range keys {
+		log.Infof("%s", o.Pk)
 		if o.Type == KV {
 			r, err := cli2.Cmd("get", o.Pk).Str()
 			if err != nil {
-				log.Fatalf("do get on slave failed:%v", err)
+				log.Fatalf("do get on slave failed:%v, get %s", err, o.Pk)
 			}
 			r1, err := cli1.Cmd("get", o.Pk).Str()
 			if err != nil {
-				log.Fatalf("do get on master failed:%v", err)
+				log.Fatalf("do get on master failed:%v, get %s", err, o.Pk)
 			}
 			if r != r1 {
 				log.Fatalf("kv:%s not match", o.Pk)
@@ -168,11 +176,11 @@ func testReplMatch2(m, s *util.RedisServer) {
 		} else if o.Type == ZSET {
 			r, err := cli2.Cmd("zscore", o.Pk, o.Sk).Str()
 			if err != nil {
-				log.Fatalf("do zscore on slave failed:%v", err)
+				log.Fatalf("do zscore on slave failed:%v, zscore %s %s", err, o.Pk, o.Sk)
 			}
 			r1, err := cli1.Cmd("zscore", o.Pk, o.Sk).Str()
 			if err != nil {
-				log.Fatalf("do zscore on master failed:%v", err)
+				log.Fatalf("do zscore on master failed:%v, zscore %s %s", err, o.Pk, o.Sk)
 			}
 			if r != r1 {
 				log.Fatalf("zscore:%s,%s not match", o.Pk, o.Sk)
@@ -182,9 +190,30 @@ func testReplMatch2(m, s *util.RedisServer) {
 	log.Infof("compare complete")
 }
 
-func testReplMatch1(m, s *util.RedisServer) {
+func shutdownServer(m *util.RedisServer) {
 	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    if err != nil {
+        log.Fatalf("can't connect to %d: %v", m.Port, err)
+    }
+
+	if r, err := cli1.Cmd("shutdown").Str(); err != nil {
+		log.Fatalf("do shutdown failed:%v", err)
+	} else if r != "OK" {
+		log.Fatalf("do shutdown error:%s", r)
+	}
+
+    m.Destroy();
+}
+
+func testReplMatch1(kvstore_count int, m *util.RedisServer, s *util.RedisServer) {
+	cli1, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    if err != nil {
+        log.Fatalf("can't connect to %d: %v", m.Port, err)
+    }
 	cli2, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
+    if err != nil {
+        log.Fatalf("can't connect to %d: %v", s.Port, err)
+    }
 
 	if r, err := cli2.Cmd("slaveof", "127.0.0.1", fmt.Sprintf("%d", m.Port)).Str(); err != nil {
 		log.Fatalf("do slaveof failed:%v", err)
@@ -201,23 +230,25 @@ func testReplMatch1(m, s *util.RedisServer) {
 		}
 	}
 	time.Sleep(10 * time.Second)
-	mPos, err := cli1.Cmd("binlogpos", "0").Int64()
-	if err != nil {
-		log.Fatalf("binlogpos of master failed:%v", err)
-	}
-	for {
-		sPos, err := cli2.Cmd("binlogpos", "0").Int64()
-		if err != nil {
-			log.Fatalf("binlogpos of slave failed:%v", err)
-		}
-		if sPos == mPos {
-			log.Infof("m/s binlog matches")
-			break
-		} else {
-			log.Infof("mpos:%d, spos:%d", mPos, sPos)
-			time.Sleep(1 * time.Second)
-		}
-	}
+    for i:=0; i < kvstore_count; i++ {
+        mPos, err := cli1.Cmd("binlogpos", i).Int64()
+        if err != nil {
+            log.Fatalf("binlogpos of master store %d failed:%v", i, err)
+        }
+        for {
+            sPos, err := cli2.Cmd("binlogpos", i).Int64()
+            if err != nil {
+                log.Fatalf("binlogpos of slave store %d failed:%v", i, err)
+            }
+            if sPos == mPos {
+                log.Infof("store %d m/s binlog matches", i)
+                break
+            } else {
+                log.Infof("store %d, mpos:%d, spos:%d",i, mPos, sPos)
+                time.Sleep(1 * time.Second)
+            }
+        }
+    }
 
 	for i := 0; i < 10000; i += 1 {
 		r, err := cli2.Cmd("get", fmt.Sprintf("%d", i)).Str()
@@ -229,23 +260,36 @@ func testReplMatch1(m, s *util.RedisServer) {
 	}
 }
 
-func testRepl(m_port int, s_port int) {
+func getCurrentDirectory() string {
+    dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+    if err != nil {
+        log.Fatal(err)
+    }
+    return strings.Replace(dir, "\\", "/", -1)
+}
+
+func testRepl(m_port int, s_port int, kvstore_count int) {
 	m := util.RedisServer{}
 	s := util.RedisServer{}
-	m.Init(m_port, "m_")
-	s.Init(s_port, "s_")
+    pwd := getCurrentDirectory()
+    log.Infof("current pwd:" + pwd)
+	m.Init(m_port, pwd, "m_")
+	s.Init(s_port, pwd, "s_")
 	if err := m.Setup(false); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
 	if err := s.Setup(false); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
 	}
-	testReplMatch1(&m, &s)
-	testReplMatch2(&m, &s)
+	testReplMatch1(kvstore_count, &m, &s)
+	testReplMatch2(kvstore_count, &m, &s)
+
+    shutdownServer(&s);
+    shutdownServer(&m);
 }
 
 func main() {
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
-	testRepl(*mport, *sport)
+	testRepl(*mport, *sport, *kvstorecount)
 }
