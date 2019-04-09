@@ -848,7 +848,7 @@ Status hmcas(Session *sess, const std::string& key,
 
     HashMetaValue hashMeta;
     uint64_t ttl = 0;
-    uint64_t cas = 0;
+    int64_t cas = -1;
     if (eValue.ok()) {
         ttl = eValue.value().getTtl();
         Expected<HashMetaValue> exptHashMeta =
@@ -862,7 +862,7 @@ Status hmcas(Session *sess, const std::string& key,
 
     if (cmp) {
         // kv should exist for comparison
-        if (eValue.ok() && vsn != cas) {
+        if (eValue.ok() && (int64_t)vsn != cas && cas != -1) {
             return {ErrorCodes::ERR_CAS, ""};
         }
     }
@@ -871,25 +871,24 @@ Status hmcas(Session *sess, const std::string& key,
     std::map<std::string, std::string> existkvs;
     for (size_t i = 0; i < subargs.size(); i += 3) {
         std::string subk = subargs[i];
-        if (uniqkeys.find(subk) != uniqkeys.end()) {
-            continue;
-        }
         uniqkeys[subk] = i;
-    }
-
-    for (const auto& keyPos: uniqkeys) {
-        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
-        Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
-        if (rv.ok()) {
-            existkvs[keyPos.first] = rv.value().getValue();
-        } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            continue;
-        }
     }
 
     constexpr int OPSET = 0;
     constexpr int OPADD = 1;
     for (const auto& keyPos: uniqkeys) {
+
+        bool exists = true;
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
+        Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
+        if (rv.ok()) {
+            existkvs[keyPos.first] = rv.value().getValue();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            exists = false;
+        } else {
+            return rv.status();
+        }
+
         const std::string& opstr = subargs[keyPos.second+1];
         Expected<uint64_t> eop = ::tendisplus::stoul(opstr);
         if (!eop.ok()) {
@@ -897,7 +896,7 @@ Status hmcas(Session *sess, const std::string& key,
         }
 
         RecordKey subrk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_ELE, key, keyPos.first);
-        if (eop.value() == OPSET) {
+        if (eop.value() == OPSET || !exists) {
             RecordValue subrv(subargs[keyPos.second+2]);
             Status s = kvstore->setKV(subrk, subrv, txn.get());
             if (!s.ok()) {
@@ -925,7 +924,7 @@ Status hmcas(Session *sess, const std::string& key,
     } else {
         if (cmp) {
             // if the kv does not exist before, use user passed cas
-            if (eValue.ok()) {
+            if (eValue.ok() && cas != -1) {
                 cas += 1;
             } else {
                 cas = vsn;
@@ -985,14 +984,14 @@ class HMCasV2Command: public Command {
             return enewvsn.status();
         }
         uint64_t cmp = ecmp.value();
-        uint64_t vsn = evsn.value();
-        uint64_t newvsn = enewvsn.value();
+        int64_t vsn = (int64_t)evsn.value();
+        int64_t newvsn = (int64_t)enewvsn.value();
         if (cmp != 0 && cmp != 1) {
             return {ErrorCodes::ERR_PARSEOPT, "cmp should be 0 or 1"};
         }
         auto server = sess->getServerEntry();
         if (server->versionIncrease()) {
-            if (cmp && newvsn <= vsn) {
+            if (newvsn <= vsn) {
                 return {ErrorCodes::ERR_PARSEOPT, "new version must be greater than old version"};
             }
         }

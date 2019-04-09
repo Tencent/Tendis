@@ -53,7 +53,7 @@ proc kill_server config {
     }
 
     # kill server and wait for the process to be totally exited
-    catch {exec kill $pid}
+    catch {exec kill -9 $pid}
     while {[is_alive $config]} {
         incr wait 10
 

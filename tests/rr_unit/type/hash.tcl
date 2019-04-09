@@ -253,11 +253,11 @@ start_server {tags {"hash"}} {
         lappend rv [r hexists bighash nokey]
     } {1 0 1 0}
 
-    test {Is a ziplist encoded Hash promoted on big payload?} {
-        r hset smallhash foo [string repeat a 1024]
+    #test {Is a ziplist encoded Hash promoted on big payload?} {
+        #r hset smallhash foo [string repeat a 1024]
         #debug object does not work
         #r debug object smallhash
-    } {*hashtable*}
+    #} {*hashtable*}
 
     test {HINCRBY against non existing database key} {
         r del htest
@@ -467,7 +467,7 @@ start_server {tags {"hash"}} {
     }
 
     test {Stress test the hash ziplist -> hashtable encoding conversion} {
-        r config set hash-max-ziplist-entries 32
+        #r config set hash-max-ziplist-entries 32
         for {set j 0} {$j < 100} {incr j} {
             r del myhash
             for {set i 0} {$i < 64} {incr i} {
@@ -607,23 +607,26 @@ start_server {tags {"hash"}} {
     r hmgetvsn hash a
   } {-1 b}
 
-  test "hmcasv2 version increase: new data version can be negative when update" {
-    r del hash
-    r hmcasv2 hash 0 -1 -10 a 0 b
-    r hmgetvsn hash a
-  } {-10 b}
+  # TODO(vinchen) disable now
+  #test "hmcasv2 version increase: new data version can be negative when update" {
+  #  r del hash
+  #  r hmcasv2 hash 0 -1 -10 a 0 b
+  #  r hmgetvsn hash a
+  #} {-10 b}
 
   test "hmcasv2 version increase: new data version must be greater when update" {
     r del hash
     r hmcasv2 hash 0 -1 199 a 0 c
-    assert_error "*new version must be greater than*" {r hmcasv2 hash 1 199 -100 a 0 d}
-  }
+    catch {r hmcasv2 hash 1 199 -100 a 0 d} err
+    format $err
+  } {*new version must be greater than*}
 
   test "hmcasv2 version increase: new data version cannot be smaller" {
     r del hash
     r hmcasv2 hash 0 -1 199 a 0 c
-    assert_error "*new version must be greater than*" {r hmcasv2 hash 1 199 100 a 0 d}
-  }
+    catch {r hmcasv2 hash 1 199 100 a 0 d} err
+    format $err
+  } {*new version must be greater than*}
 
   test "hmcasv2 add operator: wrong number of arguments" {
     r del hash

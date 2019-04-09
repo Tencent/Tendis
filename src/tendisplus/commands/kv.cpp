@@ -886,7 +886,7 @@ class CasCommand: public GetSetGeneral {
             return ret;
         }
 
-        if (ecas.value() != oldValue.value().getCas()) {
+        if ((int64_t)ecas.value() != oldValue.value().getCas() && oldValue.value().getCas() != -1) {
             return {ErrorCodes::ERR_CAS, "cas unmatch"};
         }
 

@@ -105,20 +105,20 @@ class RecordValue {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
-    explicit RecordValue(const std::string& val, uint64_t ttl = 0, uint64_t cas = 0);
-    explicit RecordValue(std::string&& val, uint64_t ttl = 0, uint64_t cas = 0);
+    explicit RecordValue(const std::string& val, uint64_t ttl = 0, int64_t cas = -1);
+    explicit RecordValue(std::string&& val, uint64_t ttl = 0, int64_t cas = -1);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);
-    uint64_t getCas() const;
-    void setCas(uint64_t);
+    int64_t getCas() const;
+    void setCas(int64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
 
  private:
-    uint64_t _cas;
+    int64_t _cas;
     uint64_t _ttl;
     std::string _value;
 };
@@ -267,9 +267,9 @@ class HashMetaValue {
     HashMetaValue& operator=(HashMetaValue&&);
     std::string encode() const;
     void setCount(uint64_t count);
-    void setCas(uint64_t cas);
+    //void setCas(int64_t cas);
     uint64_t getCount() const;
-    uint64_t getCas() const;
+    //uint64_t getCas() const;
 
  private:
     uint64_t _count;

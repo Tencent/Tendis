@@ -379,7 +379,7 @@ bool RecordKey::operator==(const RecordKey& other) const {
 }
 
 RecordValue::RecordValue()
-    :_cas(0),
+    :_cas(-1),
      _ttl(0),
      _value("") {
 }
@@ -392,13 +392,13 @@ RecordValue::RecordValue(RecordValue&& o)
     o._cas = 0;
 }
 
-RecordValue::RecordValue(const std::string& val, uint64_t ttl, uint64_t cas)
+RecordValue::RecordValue(const std::string& val, uint64_t ttl, int64_t cas)
         :_cas(cas),
          _ttl(ttl),
          _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, uint64_t ttl, uint64_t cas)
+RecordValue::RecordValue(std::string&& val, uint64_t ttl, int64_t cas)
         :_cas(cas),
          _ttl(ttl),
          _value(std::move(val)) {
@@ -409,7 +409,10 @@ std::string RecordValue::encode() const {
     value.reserve(128);
 
     // CAS
-    auto casBytes = varintEncode(_cas);
+    // NOTE(vinchen): cas should initialize -1, not zero.
+    // And it should be store as (cas + 1) in the kvstore
+    // to improve storage efficiency
+    auto casBytes = varintEncode(_cas + 1);
     value.insert(value.end(), casBytes.begin(), casBytes.end());
 
     // TTL
@@ -432,7 +435,10 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         return expt.status();
     }
     offset += expt.value().second;
-    uint64_t cas = expt.value().first;
+    // NOTE(vinchen): cas should initialize -1, not zero.
+    // And it should be store as (cas + 1) in the kvstore
+    // to improve storage efficiency
+    int64_t cas = expt.value().first - 1;
 
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
     if (!expt.ok()) {
@@ -485,11 +491,11 @@ void RecordValue::setTtl(uint64_t ttl) {
     _ttl = ttl;
 }
 
-uint64_t RecordValue::getCas() const {
+int64_t RecordValue::getCas() const {
     return _cas;
 }
 
-void RecordValue::setCas(uint64_t cas) {
+void RecordValue::setCas(int64_t cas) {
     _cas = cas;
 }
 
