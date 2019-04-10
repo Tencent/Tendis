@@ -87,6 +87,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
                         const std::set<std::string>& sections) const;
+    void logGeneral(Session *sess);
 
  private:
     void ftmc();
@@ -121,6 +122,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<std::string> _requirepass;
     std::shared_ptr<std::string> _masterauth;
     bool _versionIncrease;
+    bool _generalLog;
 };
 }  // namespace tendisplus
 

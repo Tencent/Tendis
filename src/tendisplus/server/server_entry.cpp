@@ -59,12 +59,28 @@ Catalog* ServerEntry::getCatalog() {
     return _catalog.get();
 }
 
+void ServerEntry::logGeneral(Session *sess) {
+    if (!_generalLog) {
+        return;
+    }
+    const std::vector<std::string>& args = sess->getArgs();
+
+    std::stringstream ss;
+    ss << "Command: ";
+    for (auto arg : args) {
+        ss << arg << " ";
+    }
+
+    LOG(INFO) << ss.str();
+}
+
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
     _requirepass = std::make_shared<std::string>(cfg->requirepass);
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
     _versionIncrease = cfg->versionIncrease;
+    _generalLog = cfg->generalLog;
 
     // catalog init
     auto catalog = std::make_unique<Catalog>(
@@ -262,6 +278,9 @@ bool ServerEntry::processRequest(uint64_t connId) {
             LOG(FATAL) << "conn:" << connId << ",null in servermap";
         }
     }
+    // general log if nessarry
+    sess->getServerEntry()->logGeneral(sess);
+
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
         sess->setResponse(

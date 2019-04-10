@@ -38,6 +38,7 @@ std::string ServerParams::toString() const {
         << ",\nrequirepass:" << requirepass
         << ",\nmasterauth:" << masterauth
         << ",\npidFile:" << pidFile
+        << ",\ngenerallog:" << generalLog
         << std::endl;
     return ss.str();
 }
@@ -187,6 +188,15 @@ Status ServerParams::parseFile(const std::string& filename) {
                 || tokens[1] == "0") {
                 versionIncrease = false;
             }
+        } else if (tokens[0] == "generallog") {
+            if (tokens.size() != 2) {
+                return{ ErrorCodes::ERR_PARSEOPT,
+                    "invalid version-increase config" };
+            }
+            if (tokens[1] == "on" || tokens[1] == "true"
+                || tokens[1] == "1") {
+                generalLog = true;
+            }
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -210,6 +220,7 @@ ServerParams::ServerParams()
     delJobCntIndexMgr = 1;
     pauseTimeIndexMgr = 10;
     versionIncrease = true;
+    generalLog = false;
 }
 
 
