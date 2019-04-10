@@ -652,11 +652,7 @@ class GetVsnCommand: public Command {
             return rv.status();
         } else {
             Command::fmtLongLong(ss, rv.value().getCas());
-            if (rv.value().getValue() == "") {
-                Command::fmtNull(ss);
-            } else {
-                Command::fmtBulk(ss, rv.value().getValue());
-            }
+            Command::fmtBulk(ss, rv.value().getValue());
             return ss.str();
         }
     }
@@ -688,9 +684,6 @@ class GetCommand: public GetGenericCmd {
         auto v = GetGenericCmd::run(sess);
         if (!v.ok()) {
             return v.status();
-        }
-        if (v.value() == "") {
-            return Command::fmtNull();
         }
         return Command::fmtBulk(v.value());
     }
@@ -1535,9 +1528,9 @@ class BitopCommand: public Command {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, args[j+3], RecordType::RT_KV);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                vals.push_back(rv.value().getValue());
+                vals.push_back("");
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                vals.push_back(rv.value().getValue());
+                vals.push_back("");
             } else if (!rv.status().ok()) {
                 return rv.status();
             } else {
