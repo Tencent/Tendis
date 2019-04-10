@@ -334,6 +334,7 @@ class SrandMemberCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         int64_t bulk = 0;
+        bool negative = false;
         if (sess->getArgs().size() >= 3) {
             Expected<int64_t> ebulk = ::tendisplus::stoll(sess->getArgs()[2]);
             if (!ebulk.ok()) {
@@ -341,6 +342,7 @@ class SrandMemberCommand: public Command {
             }
             bulk = ebulk.value();
             if (bulk < 0) {
+                negative = true;
                 bulk = -bulk;
             }
         }
@@ -400,13 +402,28 @@ class SrandMemberCommand: public Command {
         int64_t beginIdx = 0;
         int64_t cnt = 0;
         int64_t peek = 0;
+        int64_t remain = 0;
         std::vector<std::string> vals;
         if (bulk > ssize) {
             beginIdx = 0;
+            if (!negative) {
+                remain = ssize;
+            } else {
+                remain = bulk;
+            }
         } else {
+            remain = (bulk == 0) ? 1 : bulk;
+
             std::srand(std::time(nullptr));
-            int64_t offset = ssize - (bulk == 0 ? 1 : bulk) + 1;
-            beginIdx = std::rand() % (offset > 1024 * 16 ? 1024 * 16 : offset);
+            int64_t offset = ssize - remain + 1;
+            int r = std::rand();
+            // TODO(vinchen): max scan count should be configable
+            beginIdx = r % (offset > 1024 * 16 ? 1024 * 16 : offset);
+        }
+
+        if (remain > 1024 * 16) {
+            // TODO(vinchen):  should be configable
+            return{ ErrorCodes::ERR_INTERNAL, "bulk too big" };
         }
         RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
         cursor->seek(fake.prefixPk());
@@ -418,27 +435,36 @@ class SrandMemberCommand: public Command {
             if (!exptRcd.ok()) {
                 return exptRcd.status();
             }
-            cnt++;
-            if (cnt < beginIdx) {
+            if (cnt++ < beginIdx) {
                 continue;
             }
-            if (peek < (bulk == 0 ? 1 : bulk)) {
+            if (cnt >= ssize) {
+                break;
+            }
+            if (peek < remain) {
                 vals.emplace_back(exptRcd.value().getRecordKey().getSecondaryKey());
                 peek++;
             } else {
                 break;
             }
         }
+        // TODO(vinchen): vals should be shuffle here
         INVARIANT(vals.size() != 0);
         if (!bulk) {
             return Command::fmtBulk(vals[0]);
         } else {
             std::stringstream ss;
-            Command::fmtMultiBulkLen(ss, vals.size());
-            for (auto& v : vals) {
-                Command::fmtBulk(ss, v);
+            INVARIANT(remain == vals.size() || negative);
+            Command::fmtMultiBulkLen(ss, remain);
+            while (remain) {
+                for (auto& v : vals) {
+                    if (!remain)
+                        break;
+                    Command::fmtBulk(ss, v);
+                    remain--;
+                }
             }
-            return ss.str();
+           return ss.str();
         }
     }
 } srandmembercmd;
