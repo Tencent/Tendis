@@ -19,6 +19,7 @@ ServerEntry::ServerEntry()
         :_ftmcEnabled(false),
          _isRunning(false),
          _isStopped(true),
+         _isShutdowned(false),
          _startupTime(nsSinceEpoch()),
          _network(nullptr),
          _executor(nullptr),
@@ -373,6 +374,9 @@ void ServerEntry::ftmc() {
             LOG(INFO) << "server ftmc thread exits";
             return;
         }
+
+
+
         if (!_ftmcEnabled.load(std::memory_order_relaxed)) {
             continue;
         }
@@ -382,6 +386,7 @@ void ServerEntry::ftmc() {
         oldNetMatrix = *_netMatrix;
         oldPoolMatrix = *_poolMatrix;
         oldReqMatrix = *_reqMatrix;
+        // TODO(vinchen): we should create a view here
         LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
         LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
         LOG(INFO) << "req matrix status:\n" << tmpReqMatrix.toString();
@@ -389,11 +394,33 @@ void ServerEntry::ftmc() {
 }
 
 void ServerEntry::waitStopComplete() {
-    std::unique_lock<std::mutex> lk(_mutex);
-    _eventCV.wait(lk, [this] {
-        return _isRunning.load(std::memory_order_relaxed) == false
-            && _isStopped.load(std::memory_order_relaxed) == true;
-    });
+    using namespace std::chrono_literals;  // NOLINT(build/namespaces)
+    bool shutdowned = false;
+    while (_isRunning.load(std::memory_order_relaxed)) {
+        std::unique_lock<std::mutex> lk(_mutex);
+        bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
+            return _isRunning.load(std::memory_order_relaxed) == false
+                && _isStopped.load(std::memory_order_relaxed) == true;
+        });
+        if (ok) {
+            return;
+        }
+
+        if (_isShutdowned.load(std::memory_order_relaxed)) {
+            LOG(INFO) << "shutdown command";
+            shutdowned = true;
+            break;
+        }
+    }
+
+    // NOTE(vinchen): it can't hold the _mutex before stop()
+    if (shutdowned) {
+        stop();
+    }
+}
+
+void ServerEntry::handleShutdownCmd() {
+    _isShutdowned.store(true, std::memory_order_relaxed);
 }
 
 void ServerEntry::stop() {
@@ -410,11 +437,31 @@ void ServerEntry::stop() {
     _indexMgr->stop();
     _sessions.clear();
 
-    _network.reset();
-    _replMgr.reset();
-    _indexMgr.reset();
-    _pessimisticMgr.reset();
-    _segmentMgr.reset();
+    // _network.reset();
+    // _executor.reset();
+    // _replMgr.reset();
+    // _indexMgr.reset();
+    // _pessimisticMgr.reset();
+    // _segmentMgr.reset();
+
+    // stop the rocksdb
+    std::stringstream ss;
+    Status status = _catalog->stop();
+    if (!status.ok()) {
+        ss << "stop kvstore catalog failed: "
+                        << status.toString();
+        LOG(ERROR) << ss.str();
+    }
+
+    for (auto& store : _kvstores) {
+        Status status = store->stop();
+        if (!status.ok()) {
+            ss.clear();
+            ss << "stop kvstore " << store->dbId() << "failed: "
+                        << status.toString();
+            LOG(ERROR) << ss.str();
+        }
+    }
 
     _ftmcThd->join();
     LOG(INFO) << "server stops complete...";

@@ -18,6 +18,7 @@ namespace tendisplus {
 
 std::mutex Command::_mutex;
 
+// TODO(vinchen): limit the size of _unSeenCmds
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
 
 std::map<std::string, Command*>& commandMap() {

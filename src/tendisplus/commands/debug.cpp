@@ -694,8 +694,13 @@ class ShutdownCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
-        svr->stop();
+        // auto vv = dynamic_cast<NetSession*>(sess);
+        // INVARIANT(vv != nullptr);
+        // vv->setCloseAfterRsp();
+
+        // TODO(vinchen): maybe it should log something here
+        // shutdown asnyc
+        sess->getServerEntry()->handleShutdownCmd();
 
         // avoid compiler complains
         return Command::fmtOK();
@@ -845,7 +850,6 @@ class ClientCommand: public Command {
                 "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};
         }
     }
-
 } clientCmd;
 
 class InfoCommand: public Command {
@@ -897,7 +901,7 @@ class InfoCommand: public Command {
 #ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
 #endif
-                << "arch_bits:" << ((sizeof(long) == 8) ? 64 : 32) << "\r\n"
+                << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
                 << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
                 << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"
@@ -976,5 +980,36 @@ class ObjectCommand: public Command {
         return Command::fmtNull();
     }
 } objectCmd;
+
+class MonitorCommand : public Command {
+ public:
+    MonitorCommand()
+        :Command("monitor") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto vv = dynamic_cast<NetSession*>(sess);
+        INVARIANT(vv != nullptr);
+        // TODO(vinchen): support it later
+        vv->setCloseAfterRsp();
+        return{ ErrorCodes::ERR_INTERNAL, "monitor not supported yet" };
+    }
+} monitorCmd;
 
 }  // namespace tendisplus

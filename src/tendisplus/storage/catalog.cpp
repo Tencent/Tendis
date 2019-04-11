@@ -144,4 +144,8 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
 #endif
 }
 
+Status Catalog::stop() {
+    return _store->stop();
+}
+
 }  // namespace tendisplus

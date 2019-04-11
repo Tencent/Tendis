@@ -35,6 +35,7 @@ class Catalog {
     virtual ~Catalog() = default;
     Expected<std::unique_ptr<StoreMeta>> getStoreMeta(uint32_t idx);
     Status setStoreMeta(const StoreMeta& meta);
+    Status stop();
 
  private:
     std::unique_ptr<KVStore> _store;
