@@ -267,7 +267,6 @@ class ListPopWrapper: public Command {
             if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtNull();
             }
- 
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
@@ -449,6 +448,12 @@ class RPopLPushCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
+        // TODO(vinchen): key lock order should be same to avoid deadlock
+        bool sameKey = false;
+        if (key1 == key2) {
+            sameKey = true;
+        }
+
         {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key1, RecordType::RT_LIST_META);
@@ -459,7 +464,7 @@ class RPopLPushCommand: public Command {
                 return rv.status();
             }
         }
-        {
+        if (!sameKey) {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
             if (rv.status().code() != ErrorCodes::ERR_OK &&
@@ -478,7 +483,12 @@ class RPopLPushCommand: public Command {
         // uint32_t storeId1 = expdb1.value().dbId;
         std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
-        auto expdb2 = server->getSegmentMgr()->getDbWithKeyLock(sess, key2, mgl::LockMode::LOCK_X);
+        mgl::LockMode lockMode = mgl::LockMode::LOCK_X;
+        if (sameKey) {
+            // if sameKey, the key has been locked
+            lockMode = mgl::LockMode::LOCK_NONE;
+        }
+        auto expdb2 = server->getSegmentMgr()->getDbWithKeyLock(sess, key2, lockMode);
         if (!expdb2.ok()) {
             return expdb2.status();
         }
@@ -486,13 +496,6 @@ class RPopLPushCommand: public Command {
         // uint32_t storeId2 = expdb2.value().dbId;
         std::string metaKeyEnc2 = metaRk2.encode();
         PStore kvstore2 = expdb2.value().store;
-
-        // if (Command::isKeyLocked(sess, storeId1, metaKeyEnc1)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
-        // if (Command::isKeyLocked(sess, storeId2, metaKeyEnc2)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
