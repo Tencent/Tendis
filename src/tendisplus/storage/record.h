@@ -288,6 +288,23 @@ class SetMetaValue {
     uint64_t _count;
 };
 
+
+/*
+
+META: *1
+CHUNK|DBID|ZSET_META|KEY|
+LEVEL|MAX_LEVEL|COUNT+1|TAIL|POSALLOC|
+
+S_ELE: *(COUNT+1)
+CHUNK|DBID|S_ELE|KEY|POS|  -- HEAD_ID(first element)
+forword*(MAX_LEVEL+1)|span*(MAX_LEVEL+1)|score|backward|subkey|
+
+H_ELE: *(COUNT)
+CHUNK|DBID|H_ELE|KEY|SUBKEY|
+score
+
+*/
+
 // ZsetSkipListMetaValue
 class ZSlMetaValue {
  public:
@@ -336,9 +353,12 @@ class ZSlEleValue {
     void setSpan(uint8_t layer, uint32_t span);
 
  private:
+    // forward elements index in each level
     std::vector<uint64_t> _forward;
+    // step to forward element in each level
     std::vector<uint32_t> _span;
     uint64_t _score;
+    // backward element index in level 1
     uint64_t _backward;
     std::string _subKey;
 };

@@ -952,7 +952,10 @@ Status SkipList::insert(uint64_t score,
     if (_count >= std::numeric_limits<int32_t>::max() / 2) {
         return {ErrorCodes::ERR_INTERNAL, "zset count reach limit"};
     }
+    // the previous position of the inserted node in level i 
     std::vector<uint64_t> update(_maxLevel+1, 0);
+    // rank[1] means the index of the inserted node
+    // other means index of the update[i] node
     std::vector<uint32_t> rank(_maxLevel+1, 0);
     std::map<uint64_t, SkipList::PSE> cache;
     Expected<ZSlEleValue*> expHead =

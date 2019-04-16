@@ -258,6 +258,9 @@ size_t popCount(const void *s, long count) {  // (NOLINT)
 std::string ldtos(long double value) {
     char buf[256];
     int len;
+    
+    // TODO(vinchen) inf, humanfriendly
+    // detailed in util.c/ld2string()
 
     /* We use 17 digits precision since with 128 bit floats that precision
      * after rounding is able to represent most small decimal numbers in a way
