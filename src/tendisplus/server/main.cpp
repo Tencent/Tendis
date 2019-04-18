@@ -70,6 +70,8 @@ int main(int argc, char *argv[]) {
         LOG(INFO) << "start server with cfg:" << params->toString();
     }
 
+    INVARIANT(sizeof(double) == 8);
+
 #ifndef _WIN32
     if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
         // NOTE(deyukong): it should rarely fail.

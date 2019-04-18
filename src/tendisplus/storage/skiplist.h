@@ -23,9 +23,9 @@ class SkipList {
     using PSE = std::unique_ptr<ZSlEleValue>;
     SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
              const ZSlMetaValue& meta, PStore store);
-    Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
-    Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
-    Expected<uint32_t> rank(uint64_t score,
+    Status insert(double score, const std::string& subkey, Transaction* txn);
+    Status remove(double score, const std::string& subkey, Transaction* txn);
+    Expected<uint32_t> rank(double score,
                             const std::string& subkey, Transaction* txn);
 
     Expected<bool> isInRange(const Zrangespec& spec, Transaction* txn);
@@ -37,24 +37,24 @@ class SkipList {
     Expected<PSE> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
     Expected<PSE> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByLex(
+    Expected<std::list<std::pair<double, std::string>>> scanByLex(
             const Zlexrangespec& range, int64_t offset, int64_t limit,
             bool rev, Transaction *txn);
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByRank(
+    Expected<std::list<std::pair<double, std::string>>> scanByRank(
         int64_t start, int64_t len, bool rev, Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByScore(
+    Expected<std::list<std::pair<double, std::string>>> scanByScore(
             const Zrangespec& range, int64_t offset, int64_t limit,
             bool rev, Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByScore(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByScore(
             const Zrangespec& range, Transaction* txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByLex(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByLex(
             const Zlexrangespec& range, Transaction* txn);
 
     // 1-based index
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByRank(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByRank(
             uint32_t start, uint32_t end, Transaction* txn);
 
 
@@ -79,7 +79,7 @@ class SkipList {
     Expected<ZSlEleValue*> getNode(uint64_t pointer,
                           std::map<uint64_t, SkipList::PSE>* cache,
                           Transaction* txn);
-    std::pair<uint64_t, PSE> makeNode(uint64_t score,
+    std::pair<uint64_t, PSE> makeNode(double score,
                                       const std::string& subkey);
     const uint8_t _maxLevel;
     uint8_t _level;

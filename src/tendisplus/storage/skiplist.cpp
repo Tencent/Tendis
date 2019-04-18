@@ -17,11 +17,11 @@ int compareStringObjectsForLexRange(const std::string& a,
     return a < b ? -1 : 1;
 }
 
-bool zslValueGteMin(uint64_t value, const Zrangespec& spec) {
+bool zslValueGteMin(double value, const Zrangespec& spec) {
     return spec.minex ? (value > spec.min) : (value >= spec.min);
 }
 
-bool zslValueLteMax(uint64_t value, const Zrangespec& spec) {
+bool zslValueLteMax(double value, const Zrangespec& spec) {
     return spec.maxex ? (value < spec.max) : (value <= spec.max);
 }
 
@@ -40,8 +40,8 @@ bool zslLexValueLteMax(const std::string& value, const Zlexrangespec& spec) {
 // 0 ==
 // 1 <
 // 2 >
-int slCmp(uint64_t score0, const std::string& subk0,
-          uint64_t score1, const std::string& subk1) {
+int slCmp(double score0, const std::string& subk0,
+          double score1, const std::string& subk1) {
     if ((score0 == score1) && (subk0 == subk1)) {
         return 0;
     }
@@ -80,7 +80,7 @@ uint8_t SkipList::randomLevel() {
 }
 
 std::pair<uint64_t, SkipList::PSE> SkipList::makeNode(
-                                             uint64_t score,
+                                             double score,
                                              const std::string& subkey) {
     auto result = std::make_unique<ZSlEleValue>(score, subkey);
     return {++_posAlloc, std::move(result)};
@@ -219,7 +219,7 @@ Status SkipList::removeInternal(uint64_t pos,
     return delNode(pos, txn);
 }
 
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::removeRangeByRank(uint32_t start, uint32_t end, Transaction* txn) {
     std::vector<uint64_t> update(_maxLevel+1);
     std::map<uint64_t, SkipList::PSE> cache;
@@ -253,7 +253,7 @@ SkipList::removeRangeByRank(uint32_t start, uint32_t end, Transaction* txn) {
     }
     traversed += 1;
 
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     pos = cache[pos]->getForward(1);
     while (pos && traversed <= end) {
         result.push_back({cache[pos]->getScore(), cache[pos]->getSubKey()});
@@ -277,7 +277,7 @@ SkipList::removeRangeByRank(uint32_t start, uint32_t end, Transaction* txn) {
     return result;
 }
 
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::removeRangeByLex(const Zlexrangespec& range, Transaction* txn) {
     std::vector<uint64_t> update(_maxLevel+1);
     std::map<uint64_t, SkipList::PSE> cache;
@@ -308,7 +308,7 @@ SkipList::removeRangeByLex(const Zlexrangespec& range, Transaction* txn) {
         update[i] = pos;
     }
 
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     pos = cache[pos]->getForward(1);
 
     while (pos != 0 && zslLexValueLteMax(cache[pos]->getSubKey(), range)) {
@@ -332,7 +332,7 @@ SkipList::removeRangeByLex(const Zlexrangespec& range, Transaction* txn) {
     return result;
 }
  
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::removeRangeByScore(const Zrangespec& range, Transaction* txn) {
     std::vector<uint64_t> update(_maxLevel+1);
     std::map<uint64_t, SkipList::PSE> cache;
@@ -364,11 +364,12 @@ SkipList::removeRangeByScore(const Zrangespec& range, Transaction* txn) {
         update[i] = pos;
     }
 
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     pos = cache[pos]->getForward(1);
     while (pos != 0 &&
         (range.maxex ? cache[pos]->getScore() < range.max : cache[pos]->getScore() <= range.max)) {
         result.push_back({cache[pos]->getScore(), cache[pos]->getSubKey()});
+        // TODO(vinchen)
         if (result.size() > 1000) {
             return {ErrorCodes::ERR_INTERNAL, "exceed batch limit"};
         }
@@ -388,7 +389,7 @@ SkipList::removeRangeByScore(const Zrangespec& range, Transaction* txn) {
     return result;
 }
 
-Status SkipList::remove(uint64_t score,
+Status SkipList::remove(double score,
                         const std::string& subkey,
                         Transaction *txn) {
     std::vector<uint64_t> update(_maxLevel+1);
@@ -420,6 +421,7 @@ Status SkipList::remove(uint64_t score,
         update[i] = pos;
     }
     pos = cache[pos]->getForward(1);
+    // TODO(vinchen): Precision loss
     // donot allow empty del, check existence before del
     INVARIANT(slCmp(cache[pos]->getScore(),
                     cache[pos]->getSubKey(),
@@ -428,7 +430,7 @@ Status SkipList::remove(uint64_t score,
     return removeInternal(pos, update, &cache, txn);
 }
 
-Expected<uint32_t> SkipList::rank(uint64_t score,
+Expected<uint32_t> SkipList::rank(double score,
                                   const std::string& subkey,
                                   Transaction *txn) {
     uint32_t rank = 0;
@@ -716,7 +718,7 @@ Expected<SkipList::PSE> SkipList::lastInLexRange(const Zlexrangespec& range, Tra
     return std::move(cache[pos]);
 }
 
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByScore(const Zrangespec& range, int64_t offset,
         int64_t limit, bool rev, Transaction *txn) {
     PSE pse = nullptr;
@@ -734,10 +736,10 @@ SkipList::scanByScore(const Zrangespec& range, int64_t offset,
         pse = std::move(tmp.value());
     }
     if (pse == nullptr) {
-        return std::list<std::pair<uint64_t, std::string>>();
+        return std::list<std::pair<double, std::string>>();
     }
 
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     std::map<uint64_t, SkipList::PSE> cache;
     ZSlEleValue *ln = pse.get();
 
@@ -800,7 +802,7 @@ SkipList::scanByScore(const Zrangespec& range, int64_t offset,
     return std::move(result);
 }
 
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
         int64_t limit, bool rev, Transaction *txn) {
     PSE pse = nullptr;
@@ -818,9 +820,9 @@ SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
         pse = std::move(tmp.value());
     }
     if (pse == nullptr) {
-        return std::list<std::pair<uint64_t, std::string>>();
+        return std::list<std::pair<double, std::string>>();
     }
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     std::map<uint64_t, SkipList::PSE> cache;
     ZSlEleValue *ln = pse.get();
 
@@ -883,7 +885,7 @@ SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
     return std::move(result);
 }
 
-Expected<std::list<std::pair<uint64_t, std::string>>>
+Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByRank(int64_t start, int64_t len, bool rev, Transaction *txn) {
     // std::cout<< start << ' ' << len << ' ' << rev << ' ' << _count << std::endl;
     std::map<uint64_t, SkipList::PSE> cache;
@@ -921,7 +923,7 @@ SkipList::scanByRank(int64_t start, int64_t len, bool rev, Transaction *txn) {
             ln = tmp.value();
         }
     }
-    std::list<std::pair<uint64_t, std::string>> result;
+    std::list<std::pair<double, std::string>> result;
     while (len--) {
         INVARIANT(ln != nullptr);
         // std::cout << ln->getScore() << ' ' << ln->getSubKey() << std::endl;
@@ -946,7 +948,7 @@ SkipList::scanByRank(int64_t start, int64_t len, bool rev, Transaction *txn) {
     return std::move(result);
 }
 
-Status SkipList::insert(uint64_t score,
+Status SkipList::insert(double score,
                         const std::string& subkey,
                         Transaction *txn) {
     if (_count >= std::numeric_limits<int32_t>::max() / 2) {
@@ -957,6 +959,7 @@ Status SkipList::insert(uint64_t score,
     // rank[1] means the index of the inserted node
     // other means index of the update[i] node
     std::vector<uint32_t> rank(_maxLevel+1, 0);
+    // TODO(vinchen): should it be the global cache?
     std::map<uint64_t, SkipList::PSE> cache;
     Expected<ZSlEleValue*> expHead =
             getNode(ZSlMetaValue::HEAD_ID, &cache, txn);
@@ -1038,6 +1041,7 @@ Status SkipList::insert(uint64_t score,
         _tail = p.first;
     }
     for (size_t i = 1; i <= _level; ++i) {
+        // TODO(vinchen) same node maybe save more than one time
         Status s = saveNode(update[i], *cache[update[i]], txn);
         if (!s.ok()) {
             return s;

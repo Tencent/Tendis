@@ -32,7 +32,7 @@ uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
 
 // ********************* key format ***********************************
-// ChunkId + DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
+// ChunkId + DBID + Type + PK + 0 + SK + len(PK) + 1B reserved
 // ChunkId is an uint32 in big-endian, it's mainly used for logic migra
 // -tion
 // DBID is an uint32 in big-endian
@@ -44,7 +44,8 @@ RecordType char2Rt(uint8_t t);
 // from the end backwards.
 // the last 1B are reserved.
 // ********************* value format *********************************
-// TTL + UserValue
+// CAS + TTL + UserValue
+// CAS is a varint64
 // TTL is a varint64
 // ********************************************************************
 
@@ -340,14 +341,14 @@ class ZSlMetaValue {
 class ZSlEleValue {
  public:
     ZSlEleValue();
-    ZSlEleValue(uint64_t score, const std::string& subkey);
+    ZSlEleValue(double score, const std::string& subkey);
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
     uint64_t getForward(uint8_t layer) const;
     uint64_t getBackward() const;
     void setForward(uint8_t layer, uint64_t pointer);
     void setBackward(uint64_t pointer);
-    uint64_t getScore() const;
+    double getScore() const;
     const std::string& getSubKey() const;
     uint32_t getSpan(uint8_t layer) const;
     void setSpan(uint8_t layer, uint32_t span);
@@ -357,7 +358,7 @@ class ZSlEleValue {
     std::vector<uint64_t> _forward;
     // step to forward element in each level
     std::vector<uint32_t> _span;
-    uint64_t _score;
+    double _score;
     // backward element index in level 1
     uint64_t _backward;
     std::string _subKey;

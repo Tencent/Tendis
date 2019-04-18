@@ -58,8 +58,8 @@ Expected<std::string> genericZrem(Session *sess,
             continue;
         } else {
             cnt += 1;
-            Expected<uint64_t> oldScore =
-                ::tendisplus::stoul(eValue.value().getValue());
+            Expected<double> oldScore =
+                ::tendisplus::stod(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
@@ -102,10 +102,10 @@ Expected<std::string> genericZrem(Session *sess,
 Expected<std::string> genericZadd(Session *sess,
                             PStore kvstore,
                             const RecordKey& mk,
-                            const std::map<std::string, uint64_t>& subKeys,
+                            const std::map<std::string, double>& subKeys,
                             bool isUpdate) {
     uint32_t cnt = 0;
-    uint64_t scores = 0;
+    double scores = 0;
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     auto ptxn = kvstore->createTransaction();
@@ -169,7 +169,8 @@ Expected<std::string> genericZadd(Session *sess,
                      RecordType::RT_ZSET_H_ELE,
                      mk.getPrimaryKey(),
                      entry.first);
-        RecordValue hv(std::to_string(entry.second));
+        // TODO(vinchen), original score in string?
+        RecordValue hv(::tendisplus::dtos(entry.second));
         Expected<RecordValue> eValue = kvstore->getKV(hk, txn.get());
         if (!eValue.ok() &&
                 eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
@@ -177,7 +178,9 @@ Expected<std::string> genericZadd(Session *sess,
         }
         if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
             cnt += 1;
+            // TODO(vinchen)
             scores += entry.second;
+            // TODO(vinchen): skip list should not savenode() in every insert
             Status s = sl.insert(entry.second, entry.first, txn.get());
             if (!s.ok()) {
                 return s;
@@ -188,8 +191,8 @@ Expected<std::string> genericZadd(Session *sess,
             }
         } else {
             // change score
-            Expected<uint64_t> oldScore =
-                ::tendisplus::stoul(eValue.value().getValue());
+            Expected<double> oldScore =
+                ::tendisplus::stod(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
@@ -197,7 +200,7 @@ Expected<std::string> genericZadd(Session *sess,
             if (!s.ok()) {
                 return s;
             }
-            uint64_t newScore = entry.second;
+            double newScore = entry.second;
             if (isUpdate) {
                 newScore += oldScore.value();
             }
@@ -221,6 +224,7 @@ Expected<std::string> genericZadd(Session *sess,
         return commitStatus.status();
     }
     if (isUpdate) {
+        // TODO(vinchen)
         return Command::fmtLongLong(scores);
     } else {
         return Command::fmtLongLong(cnt);
@@ -249,7 +253,7 @@ Expected<std::string> genericZRank(Session *sess,
         }
         return eValue.status();
     }
-    Expected<uint64_t> score = ::tendisplus::stoul(eValue.value().getValue());
+    Expected<double> score = ::tendisplus::stod(eValue.value().getValue());
     if (!score.ok()) {
         return score.status();
     }
@@ -358,7 +362,7 @@ class ZRemByRangeGenericCommand: public Command {
             }
         }
 
-        std::list<std::pair<uint64_t, std::string>> result;
+        std::list<std::pair<double, std::string>> result;
         if (_type == Type::RANK) {
             auto tmp = sl.removeRangeByRank(start+1, end+1, txn.get());
             if (!tmp.ok()) {
@@ -720,7 +724,7 @@ class ZIncrCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-        Expected<uint64_t> score = ::tendisplus::stoul(args[2]);
+        Expected<double> score = ::tendisplus::stod(args[2]);
         if (!score.ok()) {
             return score.status();
         }
@@ -1099,7 +1103,7 @@ class ZRangeByScoreGenericCommand: public Command {
         for (const auto& v : arr.value()) {
             Command::fmtBulk(ss, v.second);
             if (withscore) {
-                Command::fmtBulk(ss, std::to_string(v.first));
+                Command::fmtBulk(ss, ::tendisplus::dtos(v.first));
             }
         }
         return ss.str();
@@ -1372,7 +1376,7 @@ class ZRangeGenericCommand: public Command {
         for (const auto& v : arr.value()) {
             Command::fmtBulk(ss, v.second);
             if (withscore) {
-                Command::fmtBulk(ss, std::to_string(v.first));
+                Command::fmtBulk(ss, ::tendisplus::dtos(v.first));
             }
         }
         return ss.str();
@@ -1461,12 +1465,12 @@ class ZScoreCommand: public Command {
         if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtNull();
         }
-        Expected<uint64_t> oldScore =
-            ::tendisplus::stoul(eValue.value().getValue());
+        Expected<double> oldScore =
+            ::tendisplus::stod(eValue.value().getValue());
         if (!oldScore.ok()) {
             return oldScore.status();
         }
-        return Command::fmtBulk(std::to_string(oldScore.value()));
+        return Command::fmtBulk(::tendisplus::dtos(oldScore.value()));
     }
 } zscoreCmd;
 
@@ -1498,10 +1502,10 @@ class ZAddCommand: public Command {
             return {ErrorCodes::ERR_PARSEOPT, "invalid zadd params len"};
         }
         const std::string& key = args[1];
-        std::map<std::string, uint64_t> scoreMap;
+        std::map<std::string, double> scoreMap;
         for (size_t i = 2; i < args.size(); i += 2) {
             const std::string& subkey = args[i+1];
-            Expected<uint64_t> score = ::tendisplus::stoul(args[i]);
+            Expected<double> score = ::tendisplus::stod(args[i]);
             if (!score.ok()) {
                 return score.status();
             }

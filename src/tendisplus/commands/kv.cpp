@@ -600,10 +600,9 @@ class GetGenericCmd: public Command {
         const std::string& key = sess->getArgs()[1];
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return std::string("");
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return std::string("");
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||  
+             rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return rv.status();
         } else if (!rv.status().ok()) {
             return rv.status();
         } else {
@@ -682,6 +681,10 @@ class GetCommand: public GetGenericCmd {
 
     Expected<std::string> run(Session *sess) final {
         auto v = GetGenericCmd::run(sess);
+        if (v.status().code() == ErrorCodes::ERR_EXPIRED ||
+            v.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        }
         if (!v.ok()) {
             return v.status();
         }
@@ -726,7 +729,10 @@ class GetRangeGenericCommand: public GetGenericCmd {
         int64_t end = eend.value();
 
         auto v = GetGenericCmd::run(sess);
-        if (!v.ok()) {
+        if (v.status().code() == ErrorCodes::ERR_EXPIRED ||
+            v.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtBulk("");
+        } else if (!v.ok()) {
             return v.status();
         }
         std::string s = std::move(v.value());
@@ -1240,7 +1246,7 @@ class IncrbyfloatCommand: public GetSetGeneral {
         if (!val.ok()) {
             return val.status();
         }
-        return Command::fmtBulk(redis_port::ldtos(val.value()));
+        return Command::fmtBulk(::tendisplus::ldtos(val.value(), true));
     }
 
     Expected<RecordValue> newValueFromOld(
@@ -1260,7 +1266,7 @@ class IncrbyfloatCommand: public GetSetGeneral {
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
         }
-        return RecordValue(redis_port::ldtos(newSum.value()), ttl);
+        return RecordValue(::tendisplus::ldtos(newSum.value(), true), ttl);
     }
 } incrbyfloatCmd;
 

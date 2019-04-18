@@ -35,7 +35,9 @@ uint32_t countTTLIndex(std::shared_ptr<ServerEntry> server,
             if (record.ok()) {
                 scanned++;
             } else {
-                LOG(WARNING) << record.status().toString();
+                if (record.status().code() != ErrorCodes::ERR_EXHAUST) {
+                    LOG(WARNING) << record.status().toString();
+                }
                 break;
             }
         }

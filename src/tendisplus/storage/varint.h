@@ -22,6 +22,9 @@ Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,
 Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t *input,
         size_t maxSize);
 
+std::vector<uint8_t> doubleEncode(double val);
+Expected<double> doubleDecode(const uint8_t *input, size_t maxSize);
+
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_VARINT_H_

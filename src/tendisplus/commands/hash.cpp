@@ -58,7 +58,7 @@ Expected<std::string> hincrfloatGeneric(const RecordKey& metaRk,
     }
 
     nowVal += inc;
-    RecordValue newVal(redis_port::ldtos(nowVal));
+    RecordValue newVal(::tendisplus::ldtos(nowVal, true));
     RecordValue metaValue(hashMeta.encode(), ttl);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
@@ -72,7 +72,7 @@ Expected<std::string> hincrfloatGeneric(const RecordKey& metaRk,
     if (!exptCommit.ok()) {
         return exptCommit.status();
     } else {
-        return Command::fmtBulk(redis_port::ldtos(nowVal));
+        return Command::fmtBulk(tendisplus::ldtos(nowVal, true));
     }
 }
 

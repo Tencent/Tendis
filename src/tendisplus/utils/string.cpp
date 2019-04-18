@@ -3,6 +3,7 @@
 #include <iostream>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -79,6 +80,42 @@ Expected<long double> stold(const std::string& s) {
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_DECODE, ex.what()};
     }
+}
+
+Expected<double> stod(const std::string& s) {
+    double result;
+    try {
+        if (s.size() != 0 && (s[0] == ' ' || s[s.size() - 1] == ' ')) {
+            return{ ErrorCodes::ERR_DECODE, "trailing empty chars" };
+        }
+        result = static_cast<double>(std::stod(s));
+        return result;
+    }
+    catch (const std::exception& ex) {
+        return{ ErrorCodes::ERR_DECODE, ex.what() };
+    }
+}
+
+// port from networking.c addReplyDouble()
+std::string dtos(const double d) {
+    if (std::isinf(d)) {
+        /* Libc in odd systems (Hi Solaris!) will format infinite in a
+        * different way, so better to handle it in an explicit way. */
+        return d > 0 ? "inf" : "-inf";
+    } else {
+        char dbuf[128];
+        uint32_t dlen = snprintf(dbuf, sizeof(dbuf), "%.17g", d);
+        return std::string(dbuf, dlen);
+    }
+}
+
+std::string ldtos(const long double d, bool humanfriendly) {
+    char buf[256];
+
+    // TODO(vinchen) inf, humanfriendly
+    // detailed in util.c/ld2string()
+    int len = redis_port::ld2string(buf, sizeof(buf), d, humanfriendly);
+    return std::string(buf, len);
 }
 
 std::string hexlify(const std::string& s) {

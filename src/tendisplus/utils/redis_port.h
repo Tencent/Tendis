@@ -20,7 +20,7 @@ std::string errorReply(const std::string& s);
 std::vector<std::string> splitargs(const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
-std::string ldtos(long double value);
+int ld2string(char *buf, size_t len, long double value, int humanfriendly);
 
 size_t popCount(const void *s, long count); // (NOLINT)
 

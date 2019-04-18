@@ -268,17 +268,49 @@ class GenericTtlCommand: public Command {
     }
 };
 
-class TtlCommand: public GeneralExpireCommand {
+class TtlCommand: public GenericTtlCommand {
  public:
     TtlCommand()
-        :GeneralExpireCommand("ttl") {
+        :GenericTtlCommand("ttl") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
     }
 } ttlCmd;
 
-class PTtlCommand: public GeneralExpireCommand {
+class PTtlCommand: public GenericTtlCommand {
  public:
     PTtlCommand()
-        :GeneralExpireCommand("pttl") {
+        :GenericTtlCommand("pttl") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
     }
 } pttlCmd;
 

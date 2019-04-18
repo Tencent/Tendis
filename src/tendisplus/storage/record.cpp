@@ -248,6 +248,7 @@ std::string RecordKey::encode() const {
 
     // len(PK)
     auto lenPK = varintEncode(_pk.size());
+    // NOTE(vinchen): big endian
     key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
 
     // reserved
@@ -1163,7 +1164,7 @@ ZSlEleValue::ZSlEleValue()
         :ZSlEleValue(0, "") {
 }
 
-ZSlEleValue::ZSlEleValue(uint64_t score, const std::string& subkey)
+ZSlEleValue::ZSlEleValue(double score, const std::string& subkey)
          :_score(score),
           _backward(0),
           _subKey(subkey) {
@@ -1201,7 +1202,7 @@ void ZSlEleValue::setSpan(uint8_t layer, uint32_t span) {
     _span[layer] = span;
 }
 
-uint64_t ZSlEleValue::getScore() const {
+double ZSlEleValue::getScore() const {
     return _score;
 }
 
@@ -1221,7 +1222,7 @@ std::string ZSlEleValue::encode() const {
         value.insert(value.end(), bytes.begin(), bytes.end());
     }
 
-    auto bytes = varintEncode(_score);
+    auto bytes = doubleEncode(_score);
     value.insert(value.end(), bytes.begin(), bytes.end());
 
     bytes = varintEncode(_backward);
@@ -1261,15 +1262,15 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
     }
 
     // score
-    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
+    auto d = doubleDecode(keyCstr + offset, val.size()-offset);
+    if (!d.ok()) {
+        return d.status();
     }
-    offset += expt.value().second;
-    result._score = expt.value().first;
+    offset += sizeof(double);
+    result._score = d.value();
 
     // backward
-    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
     if (!expt.ok()) {
         return expt.status();
     }
