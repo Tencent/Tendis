@@ -20,7 +20,7 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_TIMEOUT,
     ERR_INTERNAL,
-    ERR_PARSEOPT,
+    ERR_PARSEOPT,               /* addReply(c,shared.syntaxerr); */
     ERR_PARSEPKT,
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
@@ -32,7 +32,8 @@ enum class ErrorCodes {
     ERR_OVERFLOW,
     ERR_CAS,
     ERR_NOT_EXPIRED,
-};
+    ERR_NAN,      /* "resulting score is not a number (NaN)"  */
+}; 
 
 class Status {
  public:

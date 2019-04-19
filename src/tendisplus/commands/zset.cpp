@@ -103,15 +103,38 @@ Expected<std::string> genericZadd(Session *sess,
                             PStore kvstore,
                             const RecordKey& mk,
                             const std::map<std::string, double>& subKeys,
-                            bool isUpdate) {
-    uint32_t cnt = 0;
-    double scores = 0;
+                            int flags) {
+    /* The following vars are used in order to track what the command actually
+    * did during the execution, to reply to the client and to trigger the
+    * notification of keyspace change. */
+    int added = 0;      /* Number of new elements added. */
+    int updated = 0;    /* Number of elements with updated score. */
+    /* Number of elements processed, may remain zero with options like XX. */
+    int processed = 0;
+    /* Turn options into simple to check vars. */
+    bool incr = (flags & ZADD_INCR) != 0;
+    bool nx = (flags & ZADD_NX) != 0;
+    bool xx = (flags & ZADD_XX) != 0;
+    bool ch = (flags & ZADD_CH) != 0;
+
+    /* Check for incompatible options. */
+    if (nx && xx) {
+        return{ ErrorCodes::ERR_PARSEPKT,
+            "XX and NX options at the same time are not compatible" };
+    }
+
+    if (incr && subKeys.size() > 1) {
+        return{ ErrorCodes::ERR_PARSEPKT,
+            "INCR option supports a single increment-element pair" };
+    }
+
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
         return ptxn.status();
     }
+
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     ZSlMetaValue meta;
 
@@ -162,6 +185,7 @@ Expected<std::string> genericZadd(Session *sess,
 
     SkipList sl(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(), meta, kvstore);
     std::stringstream ss;
+    double newScore = 0;
     // sl.traverse(ss, txn.get());
     for (const auto& entry : subKeys) {
         RecordKey hk(mk.getChunkId(),
@@ -169,46 +193,62 @@ Expected<std::string> genericZadd(Session *sess,
                      RecordType::RT_ZSET_H_ELE,
                      mk.getPrimaryKey(),
                      entry.first);
-        // TODO(vinchen), original score in string?
-        RecordValue hv(::tendisplus::dtos(entry.second));
+        newScore = entry.second;
+        if (std::isnan(newScore)) {
+            return { ErrorCodes::ERR_NAN, "" };
+        }
         Expected<RecordValue> eValue = kvstore->getKV(hk, txn.get());
         if (!eValue.ok() &&
                 eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return eValue.status();
         }
         if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            cnt += 1;
-            // TODO(vinchen)
-            scores += entry.second;
+            if (xx) {
+                continue;
+            }
+            added++;
+            processed++;
             // TODO(vinchen): skip list should not savenode() in every insert
             Status s = sl.insert(entry.second, entry.first, txn.get());
             if (!s.ok()) {
                 return s;
             }
+            RecordValue hv(::tendisplus::dtos(newScore));
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
             }
         } else {
-            // change score
+            if (nx) {
+                continue;
+            }
             Expected<double> oldScore =
                 ::tendisplus::stod(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
+            if (incr) {
+                newScore += oldScore.value();
+                if (std::isnan(newScore)) {
+                    return { ErrorCodes::ERR_NAN, "" };
+                }
+            }
+
+            if (newScore == oldScore.value()) {
+                continue;
+            }
+            updated++;
+            processed++;
+            // change score
             Status s = sl.remove(oldScore.value(), entry.first, txn.get());
             if (!s.ok()) {
                 return s;
             }
-            double newScore = entry.second;
-            if (isUpdate) {
-                newScore += oldScore.value();
-            }
-            scores += newScore;
             s = sl.insert(newScore, entry.first, txn.get());
             if (!s.ok()) {
                 return s;
             }
+            RecordValue hv(::tendisplus::dtos(newScore));
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -223,11 +263,13 @@ Expected<std::string> genericZadd(Session *sess,
     if (!commitStatus.ok()) {
         return commitStatus.status();
     }
-    if (isUpdate) {
-        // TODO(vinchen)
-        return Command::fmtLongLong(scores);
-    } else {
-        return Command::fmtLongLong(cnt);
+    if (incr) { /* ZINCRBY or INCR option. */
+        if (processed)
+            return Command::fmtBulk(::tendisplus::dtos(newScore));
+        else
+            return Command::fmtNull();
+    } else { /* ZADD */
+        return Command::fmtLongLong(ch ? added + updated : added);
     }
 }
 
@@ -549,9 +591,6 @@ class ZRemCommand: public Command {
         for (size_t i = 2; i < args.size(); ++i) {
             subkeys.push_back(args[i]);
         }
-        if (subkeys.size() > 1000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed batch lim"};
-        }
 
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
@@ -749,13 +788,13 @@ class ZIncrCommand: public Command {
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-        constexpr bool ISUPDATE = true;
+        int flag = ZADD_INCR;
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             Expected<std::string> s = genericZadd(sess,
                                             kvstore,
                                             metaRk,
                                             {{subkey, score.value()}},
-                                            ISUPDATE);
+                                            flag);
             if (s.ok()) {
                 return s.value();
             }
@@ -843,32 +882,34 @@ class ZCountCommand: public Command {
         }
         ZSlMetaValue meta = eMetaContent.value();
         SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
-        auto first = sl.firstInRange(range, txn.get());
-        if (!first.ok()) {
-            return first.status();
+        auto f = sl.firstInRange(range, txn.get());
+        if (!f.ok()) {
+            return f.status();
         }
-        if (first.value() == nullptr) {
+        if (f.value() == -1) {
             return Command::fmtZero();
         }
+        auto first = sl.getCacheNode(f.value());
         Expected<uint32_t> rank = sl.rank(
-                    first.value()->getScore(),
-                    first.value()->getSubKey(),
+                    first->getScore(),
+                    first->getSubKey(),
                     txn.get());
         if (!rank.ok()) {
             return rank.status();
         }
         // sl.getCount()-1 : total skiplist nodes exclude head
         uint32_t count = (sl.getCount() - 1 - (rank.value() - 1));
-        auto last = sl.lastInRange(range, txn.get());
-        if (!last.ok()) {
-            return last.status();
+        auto l = sl.lastInRange(range, txn.get());
+        if (!l.ok()) {
+            return l.status();
         }
-        if (last.value() == nullptr) {
+        if (l.value() == -1) {
             return Command::fmtLongLong(count);
         }
+        auto last = sl.getCacheNode(l.value());
         rank = sl.rank(
-                last.value()->getScore(),
-                last.value()->getSubKey(),
+                last->getScore(),
+                last->getSubKey(),
                 txn.get());
         if (!rank.ok()) {
             return rank.status();
@@ -947,32 +988,34 @@ class ZlexCountCommand: public Command {
         ZSlMetaValue meta = eMetaContent.value();
         SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
 
-        auto first = sl.firstInLexRange(range, txn.get());
-        if (!first.ok()) {
-            return first.status();
+        auto f = sl.firstInLexRange(range, txn.get());
+        if (!f.ok()) {
+            return f.status();
         }
-        if (first.value() == nullptr) {
+        if (f.value() == -1) {
             return Command::fmtZero();
         }
+        auto first = sl.getCacheNode(f.value());
         Expected<uint32_t> rank = sl.rank(
-                    first.value()->getScore(),
-                    first.value()->getSubKey(),
+                    first->getScore(),
+                    first->getSubKey(),
                     txn.get());
         if (!rank.ok()) {
             return rank.status();
         }
         // sl.getCount()-1 : total skiplist nodes exclude head
         uint32_t count = (sl.getCount() - 1 - (rank.value() - 1));
-        auto last = sl.lastInLexRange(range, txn.get());
-        if (!last.ok()) {
-            return last.status();
+        auto l = sl.lastInLexRange(range, txn.get());
+        if (!l.ok()) {
+            return l.status();
         }
-        if (last.value() == nullptr) {
+        if (l.value() == -1) {
             return Command::fmtLongLong(count);
         }
+        auto last = sl.getCacheNode(l.value());
         rank = sl.rank(
-                last.value()->getScore(),
-                last.value()->getSubKey(),
+                last->getScore(),
+                last->getSubKey(),
                 txn.get());
         if (!rank.ok()) {
             return rank.status();
@@ -1496,23 +1539,82 @@ class ZAddCommand: public Command {
         return 1;
     }
 
+    /* Add a new element or update the score of an existing element in a sorted
+    * set, regardless of its encoding.
+    *
+    * The set of flags change the command behavior. They are passed with an integer
+    * pointer since the function will clear the flags and populate them with
+    * other flags to indicate different conditions.
+    *
+    * The input flags are the following:
+    *
+    * ZADD_INCR: Increment the current element score by 'score' instead of updating
+    *            the current element score. If the element does not exist, we
+    *            assume 0 as previous score.
+    * ZADD_NX:   Perform the operation only if the element does not exist.
+    * ZADD_XX:   Perform the operation only if the element already exist.
+    *
+    * When ZADD_INCR is used, the new score of the element is stored in
+    * '*newscore' if 'newscore' is not NULL.
+    *
+    * The returned flags are the following:
+    *
+    * ZADD_NAN:     The resulting score is not a number.
+    * ZADD_ADDED:   The element was added (not present before the call).
+    * ZADD_UPDATED: The element score was updated.
+    * ZADD_NOP:     No operation was performed because of NX or XX.
+    *
+    * Return value:
+    *
+    * The function returns 1 on success, and sets the appropriate flags
+    * ADDED or UPDATED to signal what happened during the operation (note that
+    * none could be set if we re-added an element using the same score it used
+    * to have, or in the case a zero increment is used).
+    *
+    * The function returns 0 on erorr, currently only when the increment
+    * produces a NAN condition, or when the 'score' value is NAN since the
+    * start.
+    *
+    * The commad as a side effect of adding a new element may convert the sorted
+    * set internal encoding from ziplist to hashtable+skiplist.
+    *
+    * Memory managemnet of 'ele':
+    *
+    * The function does not take ownership of the 'ele' SDS string, but copies
+    * it if needed. */
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
-        if ((args.size() - 2)%2 != 0) {
+
+        int flag = ZADD_NONE;
+
+        size_t i = 2;
+        while (i < args.size()) {
+            if (toLower(args[i]) == "nx") {
+                flag |= ZADD_NX;
+            } else if (toLower(args[i]) == "xx") {
+                flag |= ZADD_XX;
+            } else if (toLower(args[i]) == "ch") {
+                flag |= ZADD_CH;
+            } else if (toLower(args[i]) == "incr") {
+                flag |= ZADD_INCR;
+            } else {
+                break;
+            }
+            i++;
+        }
+
+        if ((args.size() - i)%2 != 0 || args.size() - i == 0) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid zadd params len"};
         }
         const std::string& key = args[1];
         std::map<std::string, double> scoreMap;
-        for (size_t i = 2; i < args.size(); i += 2) {
+        for (; i < args.size(); i += 2) {
             const std::string& subkey = args[i+1];
             Expected<double> score = ::tendisplus::stod(args[i]);
             if (!score.ok()) {
                 return score.status();
             }
             scoreMap[subkey] = score.value();
-        }
-        if (scoreMap.size() > 1000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed batch lim"};
         }
 
         Expected<RecordValue> rv =
@@ -1533,10 +1635,9 @@ class ZAddCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_ZSET_META, key, "");
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-        constexpr bool ISUPDATE = false;
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             Expected<std::string> s =
-                genericZadd(sess, kvstore, metaRk, scoreMap, ISUPDATE);
+                genericZadd(sess, kvstore, metaRk, scoreMap, flag);
             if (s.ok()) {
                 return s.value();
             }

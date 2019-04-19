@@ -7,15 +7,15 @@
 #include "glog/logging.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 namespace redis_port {
 
 int stringmatchlen(const char *pattern, int patternLen,
-    const char *string, int stringLen, int nocase)
-{
-  while(patternLen) {
-    switch(pattern[0]) {
+    const char *string, int stringLen, int nocase) {
+  while (patternLen) {
+    switch (pattern[0]) {
       case '*':
         while (pattern[1] == '*') {
           pattern++;
@@ -23,7 +23,7 @@ int stringmatchlen(const char *pattern, int patternLen,
         }
         if (patternLen == 1)
           return 1; /* match */
-        while(stringLen) {
+        while (stringLen) {
           if (stringmatchlen(pattern+1, patternLen-1,
                 string, stringLen, nocase))
             return 1; /* match */
@@ -50,7 +50,7 @@ int stringmatchlen(const char *pattern, int patternLen,
             patternLen--;
           }
           match = 0;
-          while(1) {
+          while (1) {
             if (pattern[0] == '\\') {
               pattern++;
               patternLen--;
@@ -85,7 +85,8 @@ int stringmatchlen(const char *pattern, int patternLen,
                 if (pattern[0] == string[0])
                   match = 1;
               } else {
-                if (tolower((int)pattern[0]) == tolower((int)string[0]))
+                if (tolower(static_cast<int>(pattern[0]))
+                        == tolower(static_cast<int>(string[0])))
                   match = 1;
               }
             }
@@ -111,7 +112,8 @@ int stringmatchlen(const char *pattern, int patternLen,
           if (pattern[0] != string[0])
             return 0; /* no match */
         } else {
-          if (tolower((int)pattern[0]) != tolower((int)string[0]))
+          if (tolower(static_cast<int>(pattern[0]))
+              != tolower(static_cast<int>(string[0])))
             return 0; /* no match */
         }
         string++;
@@ -121,7 +123,7 @@ int stringmatchlen(const char *pattern, int patternLen,
     pattern++;
     patternLen--;
     if (stringLen == 0) {
-      while(*pattern == '*') {
+      while (*pattern == '*') {
         pattern++;
         patternLen--;
       }
@@ -134,11 +136,12 @@ int stringmatchlen(const char *pattern, int patternLen,
 }
 
 int64_t bitPos(const void *s, size_t count, uint32_t bit) {
-    unsigned long *l;
+    unsigned long *l;       // NOLINT:runtime/int
     unsigned char *c;
-    unsigned long skipval, word = 0, one;
-    long pos = 0; /* Position of bit, to return to the caller. */
-    unsigned long j;
+    unsigned long skipval, word = 0, one; // NOLINT:runtime/int
+    /* Position of bit, to return to the caller. */
+    long pos = 0;           // NOLINT:runtime/int
+    unsigned long j;        // NOLINT:runtime/int
 
     /* Process whole words first, seeking for first word that is not
      * all ones or all zeros respectively if we are lookig for zeros
@@ -152,7 +155,7 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit) {
     /* Skip initial bits not aligned to sizeof(unsigned long) byte by byte. */
     skipval = bit ? 0 : UCHAR_MAX;
     c = (unsigned char*) s;
-    while ((unsigned long)c & (sizeof(*l)-1) && count) {
+    while ((unsigned long)c & (sizeof(*l)-1) && count) { // NOLINT:runtime/int
         if (*c != skipval) break;
         c++;
         count--;
@@ -161,7 +164,7 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit) {
 
     /* Skip bits with full word step. */
     skipval = bit ? 0 : ULONG_MAX;
-    l = (unsigned long*) c;
+    l = (unsigned long*) c;   // NOLINT:runtime/int
     while (count >= sizeof(*l)) {
         if (*l != skipval) break;
         l++;
@@ -272,13 +275,11 @@ int ld2string(char *buf, size_t len, long double value, int humanfriendly) {
         if (value > 0) {
             memcpy(buf, "inf", 3);
             l = 3;
-        }
-        else {
+        } else {
             memcpy(buf, "-inf", 4);
             l = 4;
         }
-    }
-    else if (humanfriendly) {
+    } else if (humanfriendly) {
         /* We use 17 digits precision since with 128 bit floats that precision
         * after rounding is able to represent most small decimal numbers in a
         * way that is "non surprising" for the user (that is, most small
@@ -286,7 +287,7 @@ int ld2string(char *buf, size_t len, long double value, int humanfriendly) {
         * back into a string are exactly the same as what the user typed.) */
         l = snprintf(buf, len, "%.17Lf", value);
         if (l + 1 > len) return 0; /* No room. */
-                                   /* Now remove trailing zeroes after the '.' */
+                              /* Now remove trailing zeroes after the '.' */
         if (strchr(buf, '.') != NULL) {
             char *p = buf + l - 1;
             while (*p == '0') {
@@ -295,8 +296,7 @@ int ld2string(char *buf, size_t len, long double value, int humanfriendly) {
             }
             if (*p == '.') l--;
         }
-    }
-    else {
+    } else {
         l = snprintf(buf, len, "%.17Lg", value);
         if (l + 1 > len) return 0; /* No room. */
     }
@@ -403,25 +403,41 @@ int hex_digit_to_int(char c) {
     }
 }
 
+int random() {
+    std::srand((uint32_t)msSinceEpoch());
+    return std::rand();
+}
+
+/* Returns a random level for the new skiplist node we are going to create.
+* The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
+* (both inclusive), with a powerlaw-alike distribution where higher
+* levels are less likely to be returned. */
+int zslRandomLevel(int maxLevel) {
+    int level = 1;
+    while ((random() & 0xFFFF) < (ZSKIPLIST_P * 0xFFFF))
+        level += 1;
+    return (level < maxLevel) ? level : maxLevel;
+}
+
 int zslParseLexRangeItem(const char *c, std::string* dest, int *ex) {
-    switch(c[0]) {
-    case '+': 
+    switch (c[0]) {
+    case '+':
         if (c[1] != '\0') return -1;
-        *ex = 0; 
+        *ex = 0;
         *dest = ZLEXMAX;
         return 0;
-    case '-': 
+    case '-':
         if (c[1] != '\0') return -1;
-        *ex = 0; 
+        *ex = 0;
         *dest = ZLEXMIN;
         return 0;
-    case '(': 
-        *ex = 1; 
-        *dest = std::string(c+1,strlen(c)-1);
+    case '(':
+        *ex = 1;
+        *dest = std::string(c+1, strlen(c)-1);
         return 0;
-    case '[': 
-        *ex = 0; 
-        *dest = std::string(c+1,strlen(c)-1);
+    case '[':
+        *ex = 0;
+        *dest = std::string(c+1, strlen(c)-1);
         return 0;
     default:
         return -1;

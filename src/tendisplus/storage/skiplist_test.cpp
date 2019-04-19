@@ -139,7 +139,8 @@ TEST(SkipList, BackWardTail) {
     EXPECT_TRUE(eMetaContent.ok());
     meta = eMetaContent.value();
     EXPECT_EQ(meta.getCount(), CNT/2+1);
-    SkipList sl2(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(), meta, store);
+    SkipList sl2(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(),
+                    meta, store);
     std::sort(keys.begin(), keys.end());
     uint64_t now = sl2.getTail();
     for (uint32_t i = CNT/2; i >= 1; --i) {
@@ -303,13 +304,13 @@ TEST(SkipList, InsertDelSameKeys) {
                 }
             }
             std::stringstream ss;
-            //if (!s.ok()) {
+            // if (!s.ok()) {
                 sl.traverse(ss, eTxn.value().get());
             // }
             LOG(INFO) << "\n" << ss.str();
             s = sl.save(eTxn.value().get());
             EXPECT_TRUE(s.ok()) << s.toString();
-            eTxn.value()->commit();   
+            eTxn.value()->commit();
         }
     }
 }
@@ -376,7 +377,14 @@ TEST(SkipList, Common) {
         EXPECT_TRUE(expRank.ok());
         EXPECT_EQ(expRank.value(), i);
     }
-    // head also counts
+    std::cout << "SkipList:" << " size(" << sl.getCount() <<") "
+        "level(" << (int32_t)sl.getLevel() << ") " ;
+    {
+        // auto eTxn = store->createTransaction();
+        // std::stringstream ss;
+        // sl.traverse(ss, eTxn.value().get());
+        // std::cout << ss.str() << std::endl;
+    }  // head also counts
     EXPECT_EQ(sl.getCount(), CNT+1);
     EXPECT_EQ(sl.getAlloc(), CNT+ZSlMetaValue::MIN_POS);
     for (uint32_t i = 1; i <= CNT; ++i) {
@@ -387,6 +395,13 @@ TEST(SkipList, Common) {
             sl.rank(CNT, std::to_string(CNT), eTxn.value().get());
         EXPECT_TRUE(expRank.ok());
         EXPECT_EQ(expRank.value(), CNT-i+1);
+
+        for (size_t j = CNT; j > i; j--) {
+            Expected<uint32_t> expRank =
+                sl.rank(j, std::to_string(j), eTxn.value().get());
+            EXPECT_TRUE(expRank.ok());
+            EXPECT_EQ(expRank.value(), j - i + 1);
+        }
 
         Status s = sl.remove(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());

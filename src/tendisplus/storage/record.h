@@ -8,6 +8,7 @@
 #include <limits>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -322,7 +323,7 @@ class ZSlMetaValue {
     uint64_t getTail() const;
     uint64_t getPosAlloc() const;
     // can not dynamicly change
-    static constexpr int8_t MAX_LAYER = 24;
+    static constexpr int8_t MAX_LAYER = ZSKIPLIST_MAXLEVEL;
     static constexpr uint32_t MAX_NUM = (1<<31);
     static constexpr uint64_t MIN_POS = 128;
     // NOTE(deyukong): static constexpr uint32_t HEAD_ID = 1
@@ -352,6 +353,7 @@ class ZSlEleValue {
     const std::string& getSubKey() const;
     uint32_t getSpan(uint8_t layer) const;
     void setSpan(uint8_t layer, uint32_t span);
+    bool isChanged() { return _changed; }
 
  private:
     // forward elements index in each level
@@ -362,6 +364,9 @@ class ZSlEleValue {
     // backward element index in level 1
     uint64_t _backward;
     std::string _subKey;
+
+    // whether _changed after skiplist::getnode()
+    bool _changed;
 };
 
 enum class IndexType : std::uint8_t {

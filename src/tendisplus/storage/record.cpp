@@ -1183,6 +1183,7 @@ uint64_t ZSlEleValue::getBackward() const {
 }
 
 void ZSlEleValue::setBackward(uint64_t pointer) {
+    _changed = true;
     _backward = pointer;
 }
 
@@ -1191,6 +1192,7 @@ uint64_t ZSlEleValue::getForward(uint8_t layer) const {
 }
 
 void ZSlEleValue::setForward(uint8_t layer, uint64_t pointer) {
+    _changed = true;
     _forward[layer] = pointer;
 }
 
@@ -1199,6 +1201,7 @@ uint32_t ZSlEleValue::getSpan(uint8_t layer) const {
 }
 
 void ZSlEleValue::setSpan(uint8_t layer, uint32_t span) {
+    _changed = true;
     _span[layer] = span;
 }
 
