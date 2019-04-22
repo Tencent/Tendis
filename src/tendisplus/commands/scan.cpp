@@ -11,6 +11,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 class ScanGenericCommand: public Command {
@@ -151,7 +152,12 @@ class ZScanCommand: public ScanGenericCommand {
         Command::fmtMultiBulkLen(ss, rcds.size()*2);
         for (const auto& v : rcds) {
             Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
-            Command::fmtBulk(ss, v.getRecordValue().getValue());
+            auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
+            INVARIANT(d.ok());
+            if (!d.ok()) {
+                return d.status();
+            }
+            Command::fmtBulk(ss, tendisplus::dtos(d.value()));
         }
         return ss.str();
     }

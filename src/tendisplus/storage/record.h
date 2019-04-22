@@ -102,6 +102,9 @@ class RecordValue {
     RecordValue();
     RecordValue(const RecordValue&) = default;
 
+    // for zset score
+    RecordValue(double v);
+
     // we should not rely on default move constructor.
     // refer to the manual, int types have no move constructor
     // so copy constructor is applied, the move-from object will

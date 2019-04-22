@@ -75,16 +75,17 @@ SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
 }
 
 uint8_t SkipList::randomLevel() {
-    // static thread_local std::mt19937 generator(
-    //    std::chrono::system_clock::now().time_since_epoch().count());
-    // std::uniform_int_distribution<int> distribution(0, 1);
-    // uint8_t lvl = 1;
-    // while (distribution(generator) && lvl < _maxLevel) {
-    //    ++lvl;
-    // }
-    // return lvl;
+    static thread_local std::mt19937 generator(
+        std::chrono::system_clock::now().time_since_epoch().count());
+    // TODO(vinchen): which is the beset?
+    std::uniform_int_distribution<int> distribution(0, 3);  // ZSKIPLIST_P = 0.25
+    uint8_t lvl = 1;
+    while (distribution(generator) < 1 && lvl < _maxLevel) {
+        ++lvl;
+    }
+    return lvl;
 
-    return redis_port::zslRandomLevel(_maxLevel);
+    // return redis_port::zslRandomLevel(_maxLevel);
 }
 
 std::pair<uint64_t, SkipList::PSE> SkipList::makeNode(
@@ -568,8 +569,7 @@ Expected<uint64_t> SkipList::lastInRange(
 Expected<bool> SkipList::isInRange(const Zrangespec& range, Transaction *txn) {
     // TODO(vinchen)
     if (range.min > range.max ||
-            (fabs(range.min - range.max) < 0.001 &&
-                (range.minex || range.maxex))) {
+            (range.min == range.max && (range.minex || range.maxex))) {
         return false;
     }
 

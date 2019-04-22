@@ -13,6 +13,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/storage/skiplist.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -59,7 +60,7 @@ Expected<std::string> genericZrem(Session *sess,
         } else {
             cnt += 1;
             Expected<double> oldScore =
-                ::tendisplus::stod(eValue.value().getValue());
+                ::tendisplus::doubleDecode(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
@@ -207,12 +208,11 @@ Expected<std::string> genericZadd(Session *sess,
             }
             added++;
             processed++;
-            // TODO(vinchen): skip list should not savenode() in every insert
             Status s = sl.insert(entry.second, entry.first, txn.get());
             if (!s.ok()) {
                 return s;
             }
-            RecordValue hv(::tendisplus::dtos(newScore));
+            RecordValue hv(newScore);
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -222,7 +222,7 @@ Expected<std::string> genericZadd(Session *sess,
                 continue;
             }
             Expected<double> oldScore =
-                ::tendisplus::stod(eValue.value().getValue());
+                ::tendisplus::doubleDecode(eValue.value().getValue());
             if (!oldScore.ok()) {
                 return oldScore.status();
             }
@@ -247,7 +247,7 @@ Expected<std::string> genericZadd(Session *sess,
             if (!s.ok()) {
                 return s;
             }
-            RecordValue hv(::tendisplus::dtos(newScore));
+            RecordValue hv(newScore);
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -295,7 +295,7 @@ Expected<std::string> genericZRank(Session *sess,
         }
         return eValue.status();
     }
-    Expected<double> score = ::tendisplus::stod(eValue.value().getValue());
+    Expected<double> score = ::tendisplus::doubleDecode(eValue.value().getValue());
     if (!score.ok()) {
         return score.status();
     }
@@ -1509,7 +1509,7 @@ class ZScoreCommand: public Command {
             return Command::fmtNull();
         }
         Expected<double> oldScore =
-            ::tendisplus::stod(eValue.value().getValue());
+            ::tendisplus::doubleDecode(eValue.value().getValue());
         if (!oldScore.ok()) {
             return oldScore.status();
         }

@@ -24,6 +24,7 @@ Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t *input,
 
 std::vector<uint8_t> doubleEncode(double val);
 Expected<double> doubleDecode(const uint8_t *input, size_t maxSize);
+Expected<double> doubleDecode(const std::string& input);
 
 }  // namespace tendisplus
 

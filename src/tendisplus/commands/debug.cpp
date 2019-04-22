@@ -21,6 +21,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -256,11 +257,21 @@ class IterAllCommand: public Command {
                 case RecordType::RT_HASH_ELE:
                 case RecordType::RT_LIST_ELE:
                 case RecordType::RT_SET_ELE:
-                case RecordType::RT_ZSET_H_ELE:
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
                     break;
+                case RecordType::RT_ZSET_H_ELE:
+                {
+                    Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                    Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
+                    auto d = tendisplus::doubleDecode(o.getRecordValue().getValue());
+                    if (!d.ok()) {
+                        return d.status();
+                    }
+                    Command::fmtBulk(ss, tendisplus::dtos(d.value()));
+                    break;
+                }
                 default:
                     INVARIANT(0);
             }

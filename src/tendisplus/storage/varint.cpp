@@ -1,3 +1,4 @@
+#include <string>
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
 
@@ -71,6 +72,12 @@ Expected<double> doubleDecode(const uint8_t *input, size_t maxSize) {
     }
 
     return val;
+}
+
+Expected<double> doubleDecode(const std::string& input) {
+    INVARIANT(input.size() == 8);
+    return doubleDecode(reinterpret_cast<const uint8_t*>(input.c_str()),
+                        input.size());
 }
 
 }  // namespace tendisplus

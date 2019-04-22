@@ -385,6 +385,16 @@ RecordValue::RecordValue()
      _value("") {
 }
 
+RecordValue::RecordValue(double v)
+    : _cas(-1),
+    _ttl(0) {
+    auto d = ::tendisplus::doubleEncode(v);
+
+    std::string str;
+    str.insert(str.end(), d.begin(), d.end());
+    _value = std::move(str);
+}
+
 RecordValue::RecordValue(RecordValue&& o)
         :_cas(o._cas),
          _ttl(o._ttl),
