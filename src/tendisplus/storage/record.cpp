@@ -1003,30 +1003,28 @@ uint64_t SetMetaValue::getCount() const {
 uint32_t ZSlMetaValue::HEAD_ID = 1;
 
 ZSlMetaValue::ZSlMetaValue()
-        :ZSlMetaValue(0, 0, 0, 0) {
+        :ZSlMetaValue(0, 0, 0) {
 }
 
 ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
-                           uint8_t maxLvl,
                            uint32_t count,
                            uint64_t tail)
         :_level(lvl),
-         _maxLevel(maxLvl),
+         _maxLevel(MAX_LAYER),
          _count(count),
          _tail(tail),
          _posAlloc(ZSlMetaValue::MIN_POS) {
+    // NOTE(vinchen): _maxLevel can't change. If you want to
+    // change it, the constructor of ZSlEleValue should add new
+    // parameter of it.
 }
 
 ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
-                           uint8_t maxLvl,
                            uint32_t count,
                            uint64_t tail,
                            uint64_t alloc)
-        :_level(lvl),
-         _maxLevel(maxLvl),
-         _count(count),
-         _tail(tail),
-         _posAlloc(alloc) {
+        : ZSlMetaValue(lvl, count, tail) {
+    _posAlloc = alloc;
 }
 
 std::string ZSlMetaValue::encode() const {
@@ -1038,6 +1036,7 @@ std::string ZSlMetaValue::encode() const {
 
     bytes = varintEncode(_maxLevel);
     value.insert(value.end(), bytes.begin(), bytes.end());
+    INVARIANT(_maxLevel == ZSlMetaValue::MAX_LAYER);
 
     bytes = varintEncode(_count);
     value.insert(value.end(), bytes.begin(), bytes.end());
@@ -1072,6 +1071,7 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
     }
     offset += expt.value().second;
     result._maxLevel = expt.value().first;
+    INVARIANT(result._maxLevel == ZSlMetaValue::MAX_LAYER);
 
     // _count
     expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
@@ -1164,12 +1164,15 @@ ZSlEleValue::ZSlEleValue()
         :ZSlEleValue(0, "") {
 }
 
-ZSlEleValue::ZSlEleValue(double score, const std::string& subkey)
+ZSlEleValue::ZSlEleValue(double score, const std::string& subkey,
+                        uint32_t maxLevel)
          :_score(score),
           _backward(0),
+          _changed(false),
           _subKey(subkey) {
-    _forward.resize(ZSlMetaValue::MAX_LAYER+1);
-    _span.resize(ZSlMetaValue::MAX_LAYER+1);
+    INVARIANT(maxLevel == ZSlMetaValue::MAX_LAYER);
+    _forward.resize(maxLevel+1);
+    _span.resize(maxLevel+1);
     for (size_t i = 0; i < _forward.size(); ++i) {
         _forward[i] = 0;
     }

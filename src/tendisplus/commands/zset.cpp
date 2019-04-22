@@ -153,7 +153,6 @@ Expected<std::string> genericZadd(Session *sess,
         INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         // head node also included into the count
         ZSlMetaValue tmp(1/*lvl*/,
-                         ZSlMetaValue::MAX_LAYER,
                          1/*count*/,
                          0/*tail*/);
         RecordValue rv(tmp.encode());
@@ -255,6 +254,7 @@ Expected<std::string> genericZadd(Session *sess,
             }
         }
     }
+    // NOTE(vinchen): skiplist save one time
     Status s = sl.save(txn.get());
     if (!s.ok()) {
         return s;

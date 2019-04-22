@@ -28,14 +28,14 @@ bool zslValueLteMax(double value, const Zrangespec& spec) {
 
 bool zslLexValueGteMin(const std::string& value, const Zlexrangespec& spec) {
     return spec.minex ?
-        (compareStringObjectsForLexRange(value,spec.min) > 0) :
-        (compareStringObjectsForLexRange(value,spec.min) >= 0);
+        (compareStringObjectsForLexRange(value, spec.min) > 0) :
+        (compareStringObjectsForLexRange(value, spec.min) >= 0);
 }
 
 bool zslLexValueLteMax(const std::string& value, const Zlexrangespec& spec) {
     return spec.maxex ?
-        (compareStringObjectsForLexRange(value,spec.max) < 0) :
-        (compareStringObjectsForLexRange(value,spec.max) <= 0);
+        (compareStringObjectsForLexRange(value, spec.max) < 0) :
+        (compareStringObjectsForLexRange(value, spec.max) <= 0);
 }
 
 // 0 ==
@@ -66,18 +66,25 @@ SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
      _chunkId(chunkId),
      _dbId(dbId),
      _pk(pk),
-     _store(store) {
+     _store(store),
+     nGetFromCache(0),
+     nGetFromStore(0),
+     nInserted(0),
+     nUpdated(0),
+     nDeleted(0) {
 }
 
 uint8_t SkipList::randomLevel() {
-    static thread_local std::mt19937 generator(
-        std::chrono::system_clock::now().time_since_epoch().count());
-    std::uniform_int_distribution<int> distribution(0, 1);
-    uint8_t lvl = 1;
-    while (distribution(generator) && lvl < _maxLevel) {
-        ++lvl;
-    }
-    return lvl;
+    // static thread_local std::mt19937 generator(
+    //    std::chrono::system_clock::now().time_since_epoch().count());
+    // std::uniform_int_distribution<int> distribution(0, 1);
+    // uint8_t lvl = 1;
+    // while (distribution(generator) && lvl < _maxLevel) {
+    //    ++lvl;
+    // }
+    // return lvl;
+
+    return redis_port::zslRandomLevel(_maxLevel);
 }
 
 std::pair<uint64_t, SkipList::PSE> SkipList::makeNode(
@@ -121,10 +128,20 @@ Expected<ZSlEleValue*> SkipList::getEleByRank(uint32_t rank,
     return nullptr;
 }
 
+ZSlEleValue* SkipList::getCacheNode(uint64_t pos) {
+    auto it = cache.find(pos);
+    if (it != cache.end()) {
+        ++nGetFromCache;
+        return it->second.get();
+    }
+    INVARIANT(0);
+}
+
 Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer,
                                  Transaction *txn) {
     auto it = cache.find(pointer);
     if (it != cache.end()) {
+        ++nGetFromCache;
         return it->second.get();
     }
     std::string pointerStr = std::to_string(pointer);
@@ -141,12 +158,14 @@ Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer,
     auto ptr = std::make_unique<ZSlEleValue>(std::move(result.value()));
     ZSlEleValue* toReturn = ptr.get();
     cache[pointer] = std::move(ptr);
+    ++nGetFromStore;
     return toReturn;
 }
 
 Status SkipList::delNode(uint64_t pointer, Transaction* txn) {
     // TODO(vinchen)
     cache.erase(pointer);
+    ++nDeleted;
     RecordKey rk(_chunkId, _dbId,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
@@ -162,12 +181,28 @@ Status SkipList::saveNode(uint64_t pointer,
                  _pk,
                  std::to_string(pointer));
     RecordValue rv(val.encode());
+
+    // NOTE(vinchen): after saveNode, reset the change flag in ZSLEleValue
+    INVARIANT(cache.find(pointer) != cache.end());
+    INVARIANT(cache[pointer]->isChanged());
+    cache[pointer]->setChanged(false);
+    ++nUpdated;
     return _store->setKV(rk, rv, txn);
 }
 
 Status SkipList::save(Transaction* txn) {
+    // saveNode one time
+    for (auto& v : cache) {
+        if (v.second->isChanged()) {
+            auto s = saveNode(v.first, *v.second, txn);
+            if (!s.ok()) {
+                return s;
+            }
+        }
+    }
+
     RecordKey rk(_chunkId, _dbId, RecordType::RT_ZSET_META, _pk, "");
-    ZSlMetaValue mv(_level, _maxLevel, _count, _tail, _posAlloc);
+    ZSlMetaValue mv(_level, _count, _tail, _posAlloc);
     RecordValue rv(mv.encode());
     return _store->setKV(rk, rv, txn);
 }
@@ -194,21 +229,11 @@ Status SkipList::removeInternal(uint64_t pos,
             return node.status();
         }
         node.value()->setBackward(cache[pos]->getBackward());
-        Status s = saveNode(btmFwd, *cache[btmFwd], txn);
-        if (!s.ok()) {
-            return s;
-        }
     } else {
         _tail = cache[pos]->getBackward();
     }
 
     --_count;
-    for (size_t i = 1; i <= _level; ++i) {
-        Status s = saveNode(update[i], *cache[update[i]], txn);
-        if (!s.ok()) {
-            return s;
-        }
-    }
     while (_level > 1 &&
            cache[ZSlMetaValue::HEAD_ID]->getForward(_level) == 0) {
         --_level;
@@ -254,9 +279,6 @@ SkipList::removeRangeByRank(uint32_t start, uint32_t end, Transaction* txn) {
     while (pos && traversed <= end) {
         result.push_back({cache[pos]->getScore(), cache[pos]->getSubKey()});
         traversed += 1;
-        //if (result.size() > 1000) {
-        //    return {ErrorCodes::ERR_INTERNAL, "exceed batch limit"};
-        //}
         uint64_t nxt = cache[pos]->getForward(1);
         Status s = removeInternal(pos, update, txn);
         if (!s.ok()) {
@@ -308,9 +330,6 @@ SkipList::removeRangeByLex(const Zlexrangespec& range, Transaction* txn) {
 
     while (pos != 0 && zslLexValueLteMax(cache[pos]->getSubKey(), range)) {
         result.push_back({cache[pos]->getScore(), cache[pos]->getSubKey()});
-        //if (result.size() > 1000) {
-        //    return {ErrorCodes::ERR_INTERNAL, "exceed batch limit"};
-        //}
         uint64_t nxt = cache[pos]->getForward(1);
         Status s = removeInternal(pos, update, txn);
         if (!s.ok()) {
@@ -326,7 +345,7 @@ SkipList::removeRangeByLex(const Zlexrangespec& range, Transaction* txn) {
     }
     return result;
 }
- 
+
 Expected<std::list<std::pair<double, std::string>>>
 SkipList::removeRangeByScore(const Zrangespec& range, Transaction* txn) {
     std::vector<uint64_t> update(_maxLevel+1);
@@ -361,11 +380,9 @@ SkipList::removeRangeByScore(const Zrangespec& range, Transaction* txn) {
     std::list<std::pair<double, std::string>> result;
     pos = cache[pos]->getForward(1);
     while (pos != 0 &&
-        (range.maxex ? cache[pos]->getScore() < range.max : cache[pos]->getScore() <= range.max)) {
+        (range.maxex ? cache[pos]->getScore() < range.max
+                            : cache[pos]->getScore() <= range.max)) {
         result.push_back({cache[pos]->getScore(), cache[pos]->getSubKey()});
-        //if (result.size() > 1000) {
-        //    return {ErrorCodes::ERR_INTERNAL, "exceed batch limit"};
-        //}
         uint64_t nxt = cache[pos]->getForward(1);
         Status s = removeInternal(pos, update, txn);
         if (!s.ok()) {
@@ -625,7 +642,8 @@ Expected<bool> SkipList::isInLexRange(const Zlexrangespec& range,
     return true;
 }
 
-Expected<uint64_t> SkipList::firstInLexRange(const Zlexrangespec& range, Transaction *txn) {
+Expected<uint64_t> SkipList::firstInLexRange(const Zlexrangespec& range,
+                                              Transaction *txn) {
     Expected<bool> inrange = isInLexRange(range, txn);
     if (!inrange.ok()) {
         return inrange.status();
@@ -666,7 +684,8 @@ Expected<uint64_t> SkipList::firstInLexRange(const Zlexrangespec& range, Transac
     return pos;
 }
 
-Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range, Transaction *txn) {
+Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range,
+                                            Transaction *txn) {
     Expected<bool> inrange = isInLexRange(range, txn);
     if (!inrange.ok()) {
         return inrange.status();
@@ -873,7 +892,6 @@ SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
 
 Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByRank(int64_t start, int64_t len, bool rev, Transaction *txn) {
-    // std::cout<< start << ' ' << len << ' ' << rev << ' ' << _count << std::endl;
     ZSlEleValue* ln = nullptr;
     if (rev) {
         Expected<ZSlEleValue*> expTail = getNode(_tail, txn);
@@ -939,7 +957,7 @@ Status SkipList::insert(double score,
     if (_count >= std::numeric_limits<int32_t>::max() / 2) {
         return {ErrorCodes::ERR_INTERNAL, "zset count reach limit"};
     }
-    // the previous position of the inserted node in level i 
+    // the previous position of the inserted node in level i
     std::vector<uint64_t> update(_maxLevel+1, 0);
     // rank[1] means the index of the inserted node
     // other means index of the update[i] node
@@ -1017,22 +1035,11 @@ Status SkipList::insert(double score,
             return node.status();
         }
         cache[btmFwd]->setBackward(p.first);
-        Status s = saveNode(btmFwd, *cache[btmFwd], txn);
-        if (!s.ok()) {
-            return s;
-        }
     } else {
         _tail = p.first;
     }
-    for (size_t i = 1; i <= _level; ++i) {
-        // TODO(vinchen) same node maybe save more than one time
-        Status s = saveNode(update[i], *cache[update[i]], txn);
-        if (!s.ok()) {
-            return s;
-        }
-    }
     ++_count;
-    return saveNode(p.first, *cache[p.first], txn);
+    return{ ErrorCodes::ERR_OK, "" };
 }
 
 Status SkipList::traverse(std::stringstream& ss, Transaction *txn) {

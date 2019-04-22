@@ -49,7 +49,7 @@ TEST(SkipList, BackWardTail) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1, 0);
+    ZSlMetaValue meta(1, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -172,7 +172,7 @@ TEST(SkipList, Mix) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1, 0);
+    ZSlMetaValue meta(1, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -244,7 +244,7 @@ TEST(SkipList, InsertDelSameKeys) {
     EXPECT_TRUE(eTxn1.ok());
 
     // init a key
-    ZSlMetaValue meta(1, 20, 1, 0);
+    ZSlMetaValue meta(1, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "skiplistkey", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -330,7 +330,7 @@ TEST(SkipList, Common) {
     auto eTxn1 = store->createTransaction();
     EXPECT_TRUE(eTxn1.ok());
 
-    ZSlMetaValue meta(1, 20, 1, 0);
+    ZSlMetaValue meta(1, 1, 0);
     RecordValue rv(meta.encode());
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
@@ -346,17 +346,38 @@ TEST(SkipList, Common) {
     s = store->setKV(head, subRv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
 
-    Expected<uint64_t> commitStatus = eTxn1.value()->commit();
-    EXPECT_TRUE(commitStatus.ok());
+    Expected<uint64_t> commitStatus1 = eTxn1.value()->commit();
+    EXPECT_TRUE(commitStatus1.ok());
 
     SkipList sl(0, 0, "test", meta, store);
 
     std::vector<uint32_t> keys;
     std::vector<uint32_t> sortedkeys;
 
-    constexpr uint32_t CNT = 1000;
+    // sl.save one time
+    uint32_t CNT = 1000;
     for (uint32_t i = 1; i <= CNT; ++i) {
         keys.push_back(i);
+    }
+    std::random_shuffle(keys.begin(), keys.end());
+    auto eTxn2 = store->createTransaction();
+    EXPECT_TRUE(eTxn2.ok());
+    for (auto& i : keys) {
+        Status s = sl.insert(i, std::to_string(i), eTxn2.value().get());
+        EXPECT_TRUE(s.ok());
+   }
+    s = sl.save(eTxn2.value().get());
+    EXPECT_TRUE(s.ok());
+    Expected<uint64_t> commitStatus2 = eTxn2.value()->commit();
+    EXPECT_TRUE(commitStatus2.ok());
+
+    EXPECT_EQ(sl.getCount(), sl.nUpdated);
+
+    // sl.save every insert
+    keys.clear();
+    uint32_t tmp = CNT;
+    for (uint32_t i = 1; i <= CNT; ++i) {
+        keys.push_back(i+tmp);
     }
     std::random_shuffle(keys.begin(), keys.end());
     for (auto& i : keys) {
@@ -369,6 +390,8 @@ TEST(SkipList, Common) {
         Expected<uint64_t> commitStatus = eTxn.value()->commit();
         EXPECT_TRUE(commitStatus.ok());
     }
+    CNT += tmp;
+
     for (uint32_t i = 1; i <= CNT; ++i) {
         auto eTxn = store->createTransaction();
         EXPECT_TRUE(eTxn.ok());
@@ -378,7 +401,7 @@ TEST(SkipList, Common) {
         EXPECT_EQ(expRank.value(), i);
     }
     std::cout << "SkipList:" << " size(" << sl.getCount() <<") "
-        "level(" << (int32_t)sl.getLevel() << ") " ;
+        "level(" << (int32_t)sl.getLevel() << ") " << std::endl ;
     {
         // auto eTxn = store->createTransaction();
         // std::stringstream ss;

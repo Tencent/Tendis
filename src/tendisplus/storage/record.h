@@ -107,7 +107,8 @@ class RecordValue {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
-    explicit RecordValue(const std::string& val, uint64_t ttl = 0, int64_t cas = -1);
+    explicit RecordValue(const std::string& val, uint64_t ttl = 0,
+                        int64_t cas = -1);
     explicit RecordValue(std::string&& val, uint64_t ttl = 0, int64_t cas = -1);
     const std::string& getValue() const;
     uint64_t getTtl() const;
@@ -269,9 +270,9 @@ class HashMetaValue {
     HashMetaValue& operator=(HashMetaValue&&);
     std::string encode() const;
     void setCount(uint64_t count);
-    //void setCas(int64_t cas);
+    // void setCas(int64_t cas);
     uint64_t getCount() const;
-    //uint64_t getCas() const;
+    // uint64_t getCas() const;
 
  private:
     uint64_t _count;
@@ -311,10 +312,8 @@ score
 class ZSlMetaValue {
  public:
     ZSlMetaValue();
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
-                 uint32_t count, uint64_t tail);
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
-                 uint32_t count, uint64_t tail, uint64_t alloc);
+    ZSlMetaValue(uint8_t lvl, uint32_t count, uint64_t tail);
+    ZSlMetaValue(uint8_t lvl, uint32_t count, uint64_t tail, uint64_t alloc);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;
@@ -342,7 +341,10 @@ class ZSlMetaValue {
 class ZSlEleValue {
  public:
     ZSlEleValue();
-    ZSlEleValue(double score, const std::string& subkey);
+    // NOTE(vinchen): if we want to change maxLevel,
+    // it can't use default value here
+    ZSlEleValue(double score, const std::string& subkey,
+                        uint32_t maxLevel = ZSlMetaValue::MAX_LAYER);
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
     uint64_t getForward(uint8_t layer) const;
@@ -354,6 +356,7 @@ class ZSlEleValue {
     uint32_t getSpan(uint8_t layer) const;
     void setSpan(uint8_t layer, uint32_t span);
     bool isChanged() { return _changed; }
+    void setChanged(bool v) { _changed = v; }
 
  private:
     // forward elements index in each level

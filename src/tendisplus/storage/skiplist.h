@@ -35,8 +35,10 @@ class SkipList {
     Expected<uint64_t> firstInRange(const Zrangespec& range, Transaction *txn);
     Expected<uint64_t> lastInRange(const Zrangespec& range, Transaction *txn);
 
-    Expected<uint64_t> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
-    Expected<uint64_t> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
+    Expected<uint64_t> firstInLexRange(const Zlexrangespec& range,
+                                Transaction *txn);
+    Expected<uint64_t> lastInLexRange(const Zlexrangespec& range,
+                                Transaction *txn);
 
     Expected<std::list<std::pair<double, std::string>>> scanByLex(
             const Zlexrangespec& range, int64_t offset, int64_t limit,
@@ -67,9 +69,15 @@ class SkipList {
     uint8_t getLevel() const;
     ZSlEleValue* getCacheNode(uint64_t pos);
 
+    uint32_t nGetFromCache;
+    uint32_t nGetFromStore;
+    uint32_t nInserted;
+    uint32_t nUpdated;
+    uint32_t nDeleted;
+
  private:
     uint8_t randomLevel();
-    Status removeInternal(uint64_t pointer, 
+    Status removeInternal(uint64_t pointer,
                           const std::vector<uint64_t>& update,
                           Transaction* txn);
     Status saveNode(uint64_t pointer, const ZSlEleValue& val, Transaction* txn);
@@ -89,7 +97,7 @@ class SkipList {
     uint32_t _dbId;
     std::string _pk;
     PStore _store;
-	PSE_MAP cache;
+    PSE_MAP cache;
 };
 
 }  // namespace tendisplus
