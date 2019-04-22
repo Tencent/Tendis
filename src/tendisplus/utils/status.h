@@ -46,6 +46,7 @@ class Status {
     bool ok() const;
     std::string toString() const;
     ErrorCodes code() const;
+    static std::string getErrStr(ErrorCodes code);
  private:
     std::string _errmsg;
     ErrorCodes _code;
