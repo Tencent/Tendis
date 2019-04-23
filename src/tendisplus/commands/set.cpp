@@ -333,6 +333,7 @@ class SrandMemberCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
+        bool explictBulk = false;
         int64_t bulk = 1;
         bool negative = false;
         if (sess->getArgs().size() >= 3) {
@@ -350,6 +351,7 @@ class SrandMemberCommand: public Command {
             if (!bulk) {
                 return Command::fmtZeroBulkLen();
             }
+            explictBulk = true;
         }
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
@@ -359,7 +361,7 @@ class SrandMemberCommand: public Command {
                 Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                if (bulk==1) {
+                if (bulk == 1 && !explictBulk) {
                     return Command::fmtNull();
                 } else {
                     return Command::fmtZeroBulkLen();
@@ -398,7 +400,7 @@ class SrandMemberCommand: public Command {
             ssize = exptSm.value().getCount();
             INVARIANT(ssize != 0);
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            if (bulk == 1) {
+            if (bulk == 1 && !explictBulk) {
                 return Command::fmtNull();
             } else {
                 return Command::fmtZeroBulkLen();
@@ -459,7 +461,7 @@ class SrandMemberCommand: public Command {
         }
         // TODO(vinchen): vals should be shuffle here
         INVARIANT(vals.size() != 0);
-        if (bulk == 1) {
+        if (bulk == 1 && !explictBulk) {
             return Command::fmtBulk(vals[0]);
         } else {
             std::stringstream ss;
