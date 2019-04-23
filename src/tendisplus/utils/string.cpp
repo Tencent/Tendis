@@ -21,13 +21,13 @@ Expected<int32_t> stol(const std::string& s) {
     int32_t result;
     try {
         if (s.size() != 0 && (s[0] == ' ' || s[s.size() - 1] == ' ')) {
-            return{ ErrorCodes::ERR_DECODE, "trailing empty chars" };
+            return {ErrorCodes::ERR_INTERGER, ""};
         }
         result = static_cast<int32_t>(std::stol(s));
         return result;
     }
-    catch (const std::exception& ex) {
-        return{ ErrorCodes::ERR_DECODE, ex.what() };
+    catch (const std::exception&) {
+        return {ErrorCodes::ERR_INTERGER, ""};
     }
 }
 
@@ -35,12 +35,12 @@ Expected<uint64_t> stoul(const std::string& s) {
     uint64_t result;
     try {
         if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
-            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+            return {ErrorCodes::ERR_INTERGER, ""};
         }
         result = static_cast<uint64_t>(std::stoul(s));
         return result;
-    } catch (const std::exception& ex) {
-        return {ErrorCodes::ERR_DECODE, ex.what()};
+    } catch (const std::exception&) {
+        return {ErrorCodes::ERR_INTERGER, ""};
     }
 }
 
@@ -48,12 +48,12 @@ Expected<int64_t> stoll(const std::string& s) {
     int64_t result;
     try {
         if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
-            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+            return {ErrorCodes::ERR_INTERGER, ""};
         }
         result = static_cast<int64_t>(std::stoll(s));
         return result;
-    } catch (const std::exception& ex) {
-        return {ErrorCodes::ERR_DECODE, ex.what()};
+    } catch (const std::exception&) {
+        return {ErrorCodes::ERR_INTERGER, ""};
     }
 }
 
@@ -61,39 +61,61 @@ Expected<uint64_t> stoull(const std::string& s) {
     uint64_t result;
     try {
         if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
-            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+            return {ErrorCodes::ERR_INTERGER, ""};
         }
         result = static_cast<uint64_t>(std::stoull(s));
         return result;
-    } catch (const std::exception& ex) {
-        return {ErrorCodes::ERR_DECODE, ex.what()};
+    } catch (const std::exception&) {
+        return {ErrorCodes::ERR_INTERGER, ""};
     }
 }
 
 Expected<long double> stold(const std::string& s) {
     long double result;
     try {
-        if (s.size() != 0 && (s[0] == ' ' || s[s.size()-1] == ' ')) {
-            return {ErrorCodes::ERR_DECODE, "trailing empty chars"};
+        size_t pos = 0;
+        result = std::stold(s, &pos);
+        if (s.size() == 0 ||
+            isspace(s[0]) ||
+            pos != s.size() ||
+            isnan(result)) {
+            return{ ErrorCodes::ERR_FLOAT, "" };
         }
-        result = static_cast<long double>(std::stold(s));
         return result;
-    } catch (const std::exception& ex) {
-        return {ErrorCodes::ERR_DECODE, ex.what()};
+    }
+    catch (const std::exception&) {
+        return{ ErrorCodes::ERR_FLOAT, "" };
     }
 }
 
+// object.c getDoubleFromObject()
+/*
+
+value = strtod(o->ptr, &eptr);
+if (sdslen(o->ptr) == 0 ||
+isspace(((const char*)o->ptr)[0]) ||
+(size_t)(eptr-(char*)o->ptr) != sdslen(o->ptr) ||
+(errno == ERANGE &&
+(value == HUGE_VAL || value == -HUGE_VAL || value == 0)) ||
+isnan(value))
+return C_ERR;
+
+*/
 Expected<double> stod(const std::string& s) {
     double result;
     try {
-        if (s.size() != 0 && (s[0] == ' ' || s[s.size() - 1] == ' ')) {
-            return{ ErrorCodes::ERR_DECODE, "trailing empty chars" };
+        size_t pos = 0;
+        result = std::stod(s, &pos);
+        if (s.size() == 0 ||
+            isspace(s[0]) ||
+            pos != s.size() ||
+            isnan(result)) {
+            return{ ErrorCodes::ERR_FLOAT, "" };
         }
-        result = static_cast<double>(std::stod(s));
         return result;
     }
-    catch (const std::exception& ex) {
-        return{ ErrorCodes::ERR_DECODE, ex.what() };
+    catch (const std::exception&) {
+        return{ ErrorCodes::ERR_FLOAT, "" };
     }
 }
 

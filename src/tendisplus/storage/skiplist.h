@@ -42,13 +42,13 @@ class SkipList {
                                 Transaction *txn);
 
     Expected<std::list<std::pair<double, std::string>>> scanByLex(
-            const Zlexrangespec& range, int64_t offset, int64_t limit,
+            const Zlexrangespec& range, uint64_t offset, uint64_t limit,
             bool rev, Transaction *txn);
     Expected<std::list<std::pair<double, std::string>>> scanByRank(
         int64_t start, int64_t len, bool rev, Transaction *txn);
 
     Expected<std::list<std::pair<double, std::string>>> scanByScore(
-            const Zrangespec& range, int64_t offset, int64_t limit,
+            const Zrangespec& range, uint64_t offset, uint64_t limit,
             bool rev, Transaction *txn);
 
     Expected<std::list<std::pair<double, std::string>>> removeRangeByScore(

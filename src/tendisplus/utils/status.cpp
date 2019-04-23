@@ -75,6 +75,12 @@ std::string Status::getErrStr(ErrorCodes code) {
     switch (code) {
     case ErrorCodes::ERR_NAN:
         return "resulting score is not a number (NaN)";
+    case ErrorCodes::ERR_FLOAT:
+        return "value is not a valid float";
+    case ErrorCodes::ERR_INTERGER:
+        return "value is not an integer or out of range";
+    case ErrorCodes::ERR_PARSEOPT:
+        return "syntax error";
     default:
         break;
     }

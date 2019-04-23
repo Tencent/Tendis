@@ -726,8 +726,8 @@ Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range,
 }
 
 Expected<std::list<std::pair<double, std::string>>>
-SkipList::scanByScore(const Zrangespec& range, int64_t offset,
-        int64_t limit, bool rev, Transaction *txn) {
+SkipList::scanByScore(const Zrangespec& range, uint64_t offset,
+        uint64_t limit, bool rev, Transaction *txn) {
     uint64_t pos = INVALID_POS;
     if (rev) {
         auto tmp = lastInRange(range, txn);
@@ -809,8 +809,8 @@ SkipList::scanByScore(const Zrangespec& range, int64_t offset,
 }
 
 Expected<std::list<std::pair<double, std::string>>>
-SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
-        int64_t limit, bool rev, Transaction *txn) {
+SkipList::scanByLex(const Zlexrangespec& range, uint64_t offset,
+        uint64_t limit, bool rev, Transaction *txn) {
     uint64_t pos = INVALID_POS;
     if (rev) {
         auto tmp = lastInLexRange(range, txn);

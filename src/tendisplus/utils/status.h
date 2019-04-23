@@ -33,6 +33,8 @@ enum class ErrorCodes {
     ERR_CAS,
     ERR_NOT_EXPIRED,
     ERR_NAN,      /* "resulting score is not a number (NaN)"  */
+    ERR_FLOAT,    /* "value is not a valid float" */
+    ERR_INTERGER, /* "value is not an integer or out of range" */
 }; 
 
 class Status {

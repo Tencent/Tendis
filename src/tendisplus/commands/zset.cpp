@@ -1136,8 +1136,8 @@ class ZRangeByScoreGenericCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-        int64_t offset = 0;
-        int64_t limit = -1;
+        uint64_t offset = 0;
+        uint64_t limit = (uint64_t)-1;
         int withscore = 0;
         int minidx, maxidx;
         Zrangespec range;
@@ -1164,11 +1164,13 @@ class ZRangeByScoreGenericCommand: public Command {
                     if (!eoffset.ok()) {
                         return eoffset.status();
                     }
+                    offset = (uint64_t)eoffset.value();
                     Expected<int64_t> elimit =
                                     ::tendisplus::stoll(args[pos+2]);
                     if (!elimit.ok()) {
                         return elimit.status();
                     }
+                    limit = (uint64_t)elimit.value();
                     pos += 3;
                     remaining -= 3;
                 } else {
@@ -1286,8 +1288,8 @@ class ZRangeByLexGenericCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-        int64_t offset = 0;
-        int64_t limit = -1;
+        uint64_t offset = 0;
+        uint64_t limit = -1;
         int minidx, maxidx;
         if (_rev) {
             maxidx = 2; minidx = 3;
@@ -1310,11 +1312,13 @@ class ZRangeByLexGenericCommand: public Command {
                     if (!eoffset.ok()) {
                         return eoffset.status();
                     }
+                    offset = (uint64_t)eoffset.value();
                     Expected<int64_t> elimit =
                                     ::tendisplus::stoll(args[pos+2]);
                     if (!elimit.ok()) {
                         return elimit.status();
                     }
+                    limit = (uint64_t)elimit.value();
                     pos += 3;
                     remaining -= 3;
                 } else {
@@ -1699,7 +1703,7 @@ class ZAddCommand: public Command {
         }
 
         if ((args.size() - i)%2 != 0 || args.size() - i == 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "invalid zadd params len"};
+            return {ErrorCodes::ERR_PARSEOPT, ""};
         }
         const std::string& key = args[1];
         std::map<std::string, double> scoreMap;
