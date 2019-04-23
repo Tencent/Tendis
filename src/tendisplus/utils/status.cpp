@@ -81,6 +81,11 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "value is not an integer or out of range";
     case ErrorCodes::ERR_PARSEOPT:
         return "syntax error";
+    case ErrorCodes::ERR_ZSLPARSERANGE:
+        return "min or max is not a float";
+    case ErrorCodes::ERR_ZSLPARSELEXRANGE:
+        return "min or max not valid string range item";
+ 
     default:
         break;
     }

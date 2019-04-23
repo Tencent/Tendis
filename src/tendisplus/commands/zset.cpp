@@ -493,11 +493,11 @@ class ZRemByRangeGenericCommand: public Command {
             end = eend.value();
         } else if (_type == Type::SCORE) {
             if (zslParseRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
-                return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+                return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
             }
         } else if (_type == Type::LEX) {
             if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &lexrange) != 0) {  // NOLINT:whitespace/line_length
-                return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+                return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""};
             }
         }
 
@@ -919,7 +919,7 @@ class ZCountCommand: public Command {
 
         Zrangespec range;
         if (zslParseRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+            return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
         }
 
         Expected<RecordValue> rv =
@@ -1026,7 +1026,7 @@ class ZlexCountCommand: public Command {
 
         Zlexrangespec range;
         if (zslParseLexRange(args[2].c_str(), args[3].c_str(), &range) != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+            return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""};
         }
 
         Expected<RecordValue> rv =
@@ -1147,7 +1147,7 @@ class ZRangeByScoreGenericCommand: public Command {
             minidx = 2; maxidx = 3;
         }
         if (zslParseRange(args[minidx].c_str(), args[maxidx].c_str(), &range) != 0) {  // NOLINT:whitespace/line_length
-            return {ErrorCodes::ERR_PARSEOPT, "parse range failed"};
+            return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
         }
 
         if (args.size() > 4) {
@@ -1299,7 +1299,7 @@ class ZRangeByLexGenericCommand: public Command {
 
         Zlexrangespec range;
         if (zslParseLexRange(args[minidx].c_str(), args[maxidx].c_str(), &range) != 0) { // NOLINT:whitespace/line_length
-            return {ErrorCodes::ERR_PARSEOPT, "min or max not valid string range item"}; // NOLINT:whitespace/line_length
+            return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""}; 
         }
 
         if (args.size() > 4) {

@@ -35,6 +35,8 @@ enum class ErrorCodes {
     ERR_NAN,      /* "resulting score is not a number (NaN)"  */
     ERR_FLOAT,    /* "value is not a valid float" */
     ERR_INTERGER, /* "value is not an integer or out of range" */
+    ERR_ZSLPARSERANGE, /* "min or max is not a float" */
+    ERR_ZSLPARSELEXRANGE, /* "min or max not valid string range item" */
 }; 
 
 class Status {

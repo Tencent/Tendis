@@ -469,7 +469,9 @@ Expected<uint32_t> SkipList::rank(double score,
                 break;
             }
         }
-        if (x->getSubKey() == subkey) {
+        // NOTE(vinchen): rank == 0, it means that ZSlMetaValue::HEAD_ID,
+        // and the subkey is "", it can't return the rank  
+        if (rank != 0 && x->getSubKey() == subkey) {
             return rank;
         }
     }
