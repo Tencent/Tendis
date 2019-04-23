@@ -58,7 +58,12 @@ int slCmp(double score0, const std::string& subk0,
 SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
                    const ZSlMetaValue& meta,
                    PStore store)
-    :_maxLevel(meta.getMaxLevel()),
+    :nGetFromCache(0),
+     nGetFromStore(0),
+     nInserted(0),
+     nUpdated(0),
+     nDeleted(0),
+     _maxLevel(meta.getMaxLevel()),
      _level(meta.getLevel()),
      _count(meta.getCount()),
      _tail(meta.getTail()),
@@ -66,12 +71,7 @@ SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
      _chunkId(chunkId),
      _dbId(dbId),
      _pk(pk),
-     _store(store),
-     nGetFromCache(0),
-     nGetFromStore(0),
-     nInserted(0),
-     nUpdated(0),
-     nDeleted(0) {
+     _store(store) {
 }
 
 uint8_t SkipList::randomLevel() {
@@ -478,7 +478,7 @@ Expected<uint32_t> SkipList::rank(double score,
 }
 
 /* Find the first node index that is contained in the specified range.
- * Returns -1 when no element is contained in the range. */
+ * Returns INVALID_POS when no element is contained in the range. */
 Expected<uint64_t> SkipList::firstInRange(
         const Zrangespec& range,
         Transaction *txn) {
@@ -487,7 +487,7 @@ Expected<uint64_t> SkipList::firstInRange(
         return inrange.status();
     }
     if (!inrange.value()) {
-        return -1;
+        return INVALID_POS;
     }
 
     Expected<ZSlEleValue*> expHead =
@@ -517,7 +517,7 @@ Expected<uint64_t> SkipList::firstInRange(
     pos = cache[pos]->getForward(1);
     INVARIANT(pos != 0);
     if (!zslValueLteMax(cache[pos]->getScore(), range)) {
-        return -1;
+        return INVALID_POS;
     }
     return pos;
 }
@@ -532,7 +532,7 @@ Expected<uint64_t> SkipList::lastInRange(
         return inrange.status();
     }
     if (!inrange.value()) {
-        return -1;
+        return INVALID_POS;
     }
 
     Expected<ZSlEleValue*> expHead =
@@ -561,7 +561,7 @@ Expected<uint64_t> SkipList::lastInRange(
     }
     INVARIANT(pos != 0);
     if (!zslValueGteMin(cache[pos]->getScore(), range)) {
-        return -1;
+        return INVALID_POS;
     }
     return pos;
 }
@@ -649,7 +649,7 @@ Expected<uint64_t> SkipList::firstInLexRange(const Zlexrangespec& range,
         return inrange.status();
     }
     if (!inrange.value()) {
-        return -1;
+        return INVALID_POS;
     }
 
     Expected<ZSlEleValue*> expHead =
@@ -679,7 +679,7 @@ Expected<uint64_t> SkipList::firstInLexRange(const Zlexrangespec& range,
     pos = cache[pos]->getForward(1);
     INVARIANT(pos != 0);
     if (!zslLexValueLteMax(cache[pos]->getSubKey(), range)) {
-        return -1;
+        return INVALID_POS;
     }
     return pos;
 }
@@ -691,7 +691,7 @@ Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range,
         return inrange.status();
     }
     if (!inrange.value()) {
-        return -1;
+        return INVALID_POS;
     }
 
     Expected<ZSlEleValue*> expHead =
@@ -720,7 +720,7 @@ Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range,
     }
     INVARIANT(pos != 0);
     if (!zslLexValueGteMin(cache[pos]->getSubKey(), range)) {
-        return -1;
+        return INVALID_POS;
     }
     return pos;
 }
@@ -728,7 +728,7 @@ Expected<uint64_t> SkipList::lastInLexRange(const Zlexrangespec& range,
 Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByScore(const Zrangespec& range, int64_t offset,
         int64_t limit, bool rev, Transaction *txn) {
-    uint64_t pos = -1;
+    uint64_t pos = INVALID_POS;
     if (rev) {
         auto tmp = lastInRange(range, txn);
         if (!tmp.ok()) {
@@ -742,7 +742,7 @@ SkipList::scanByScore(const Zrangespec& range, int64_t offset,
         }
         pos = tmp.value();
     }
-    if (pos == -1) {
+    if (pos == INVALID_POS) {
         return std::list<std::pair<double, std::string>>();
     }
 
@@ -811,7 +811,7 @@ SkipList::scanByScore(const Zrangespec& range, int64_t offset,
 Expected<std::list<std::pair<double, std::string>>>
 SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
         int64_t limit, bool rev, Transaction *txn) {
-    uint64_t pos = -1;
+    uint64_t pos = INVALID_POS;
     if (rev) {
         auto tmp = lastInLexRange(range, txn);
         if (!tmp.ok()) {
@@ -825,7 +825,7 @@ SkipList::scanByLex(const Zlexrangespec& range, int64_t offset,
         }
         pos = tmp.value();
     }
-    if (pos == -1) {
+    if (pos == INVALID_POS) {
         return std::list<std::pair<double, std::string>>();
     }
     std::list<std::pair<double, std::string>> result;

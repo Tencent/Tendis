@@ -1224,7 +1224,7 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     ss.str("");
     Command::fmtMultiBulkLen(ss, 2);
-    Command::fmtLongLong(ss, 0);
+    Command::fmtLongLong(ss, -1);
     Command::fmtBulk(ss, "1");
     EXPECT_EQ(expect.value(), ss.str());
     sess.setArgs({"cas", "caskey", "0", "2"});

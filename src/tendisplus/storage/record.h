@@ -369,10 +369,10 @@ class ZSlEleValue {
     double _score;
     // backward element index in level 1
     uint64_t _backward;
-    std::string _subKey;
-
     // whether _changed after skiplist::getnode()
     bool _changed;
+
+    std::string _subKey;
 };
 
 enum class IndexType : std::uint8_t {

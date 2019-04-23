@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <cmath>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"

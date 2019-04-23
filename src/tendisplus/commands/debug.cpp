@@ -992,6 +992,62 @@ class ObjectCommand: public Command {
     }
 } objectCmd;
 
+class ConfigCommand : public Command {
+ public:
+    ConfigCommand()
+        :Command("config") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        // TODO(vinchen): support it later
+        return Command::fmtOK();
+    }
+} configCmd;
+
+class FulshAllDiskCommand : public Command {
+ public:
+    FulshAllDiskCommand()
+        :Command("flushalldisk") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        // TODO(vinchen): support it later
+        return Command::fmtOK();
+    }
+} flushalldiskCmd;
+
 class MonitorCommand : public Command {
  public:
     MonitorCommand()

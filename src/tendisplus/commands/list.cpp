@@ -936,4 +936,33 @@ class LIndexCommand: public Command {
     }
 } lindexCommand;
 
+class LSetCommand: public Command {
+ public:
+    LSetCommand()
+        :Command("lset") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        // TODO(vinchen) lset
+        return fmtOK();
+
+    }
+} lsetCmd;
+
 }  // namespace tendisplus

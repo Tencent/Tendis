@@ -59,15 +59,15 @@ TEST(Varint, Common) {
 }
 
 double genDouble() {
-    static int rank = 0;
-    std::srand((int32_t)time(0)+rank*rank*rank++);
+    // static int rank = 0;
+    std::srand((int32_t)time(0));
     int r = std::rand();
 
-    std::srand((int32_t)time(0)+rank*rank*rank++);
+    std::srand((int32_t)time(0));
     int r2 = std::rand();
 
     int x = r % 1111;
-    int y = r % 111;
+    int y = r2 % 111;
     return (double)(x*y) / 1111;
 }
 

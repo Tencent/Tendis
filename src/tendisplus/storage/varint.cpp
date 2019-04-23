@@ -52,7 +52,7 @@ std::vector<uint8_t> doubleEncode(double val) {
 
     INVARIANT(sizeof(double) == 8);
 
-    for (int i = 0; i < sizeof(val); ++i) {
+    for (uint32_t i = 0; i < sizeof(val); ++i) {
         result.emplace_back(ptr[i]);
     }
 

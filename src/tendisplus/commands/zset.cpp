@@ -6,6 +6,7 @@
 #include <clocale>
 #include <vector>
 #include <map>
+#include <cmath>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -886,7 +887,7 @@ class ZCountCommand: public Command {
         if (!f.ok()) {
             return f.status();
         }
-        if (f.value() == -1) {
+        if (f.value() == SkipList::INVALID_POS) {
             return Command::fmtZero();
         }
         auto first = sl.getCacheNode(f.value());
@@ -903,7 +904,7 @@ class ZCountCommand: public Command {
         if (!l.ok()) {
             return l.status();
         }
-        if (l.value() == -1) {
+        if (l.value() == SkipList::INVALID_POS) {
             return Command::fmtLongLong(count);
         }
         auto last = sl.getCacheNode(l.value());
@@ -992,7 +993,7 @@ class ZlexCountCommand: public Command {
         if (!f.ok()) {
             return f.status();
         }
-        if (f.value() == -1) {
+        if (f.value() == SkipList::INVALID_POS) {
             return Command::fmtZero();
         }
         auto first = sl.getCacheNode(f.value());
@@ -1009,7 +1010,7 @@ class ZlexCountCommand: public Command {
         if (!l.ok()) {
             return l.status();
         }
-        if (l.value() == -1) {
+        if (l.value() == SkipList::INVALID_POS) {
             return Command::fmtLongLong(count);
         }
         auto last = sl.getCacheNode(l.value());
