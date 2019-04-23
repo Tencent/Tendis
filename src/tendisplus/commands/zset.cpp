@@ -1154,11 +1154,11 @@ class ZRangeByScoreGenericCommand: public Command {
             int remaining = args.size() - 4;
             int pos = 4;
             while (remaining) {
-                if (remaining >= 1 && args[pos] == "withscores") {
+                if (remaining >= 1 && toLower(args[pos]) == "withscores") {
                     pos++;
                     remaining--;
                     withscore = 1;
-                } else if (remaining >= 3 && args[pos] == "limit") {
+                } else if (remaining >= 3 && toLower(args[pos]) == "limit") {
                     Expected<int64_t> eoffset =
                                     ::tendisplus::stoll(args[pos+1]);
                     if (!eoffset.ok()) {
@@ -1304,7 +1304,7 @@ class ZRangeByLexGenericCommand: public Command {
             int remaining = args.size() - 4;
             int pos = 4;
             while (remaining) {
-                if (remaining >= 3 && args[pos] == "limit") {
+                if (remaining >= 3 && toLower(args[pos]) == "limit") {
                     Expected<int64_t> eoffset =
                                     ::tendisplus::stoll(args[pos+1]);
                     if (!eoffset.ok()) {
@@ -1435,7 +1435,7 @@ class ZRangeGenericCommand: public Command {
         }
         int64_t start = estart.value();
         int64_t end = eend.value();
-        bool withscore = (args.size() == 5 && args[4] == "withscores");
+        bool withscore = (args.size() == 5 && toLower(args[4]) == "withscores");
         if (args.size() > 5) {
             return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
