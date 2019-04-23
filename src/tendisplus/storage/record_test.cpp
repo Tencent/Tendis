@@ -185,12 +185,12 @@ TEST(ReplRecord, Common) {
 TEST(ZSl, Common) {
     srand(time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
-        uint8_t maxLvl = genRand() % std::numeric_limits<uint8_t>::max();
-        maxLvl = std::max(maxLvl, static_cast<uint8_t>(10));
+        // uint8_t maxLvl = genRand() % std::numeric_limits<uint8_t>::max();
+        uint8_t maxLvl = ZSlMetaValue::MAX_LAYER;
         uint8_t lvl = genRand() % maxLvl;
         uint32_t count = static_cast<uint32_t>(genRand());
         uint64_t tail = static_cast<uint64_t>(genRand()) * genRand();
-        ZSlMetaValue m(lvl, maxLvl, count, tail);
+        ZSlMetaValue m(lvl, count, tail);
         EXPECT_EQ(m.getMaxLevel(), maxLvl);
         EXPECT_EQ(m.getLevel(), lvl);
         EXPECT_EQ(m.getCount(), count);
