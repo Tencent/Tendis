@@ -14,6 +14,8 @@
 
 namespace tendisplus {
 
+Expected<bool> delGeneric(Session *sess, const std::string& key);
+
 Expected<std::string> genericSRem(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
@@ -855,6 +857,49 @@ class SdiffgenericCommand: public Command {
             }
             return ss.str();
         }
+
+        if (result.size() >= 30000) {
+            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
+        }
+
+	// first two args are empty
+        std::vector<std::string> newKeys(2);
+        for (auto& v : result) {
+            newKeys.push_back(std::move(v));
+        }
+
+        const std::string& storeKey = args[1];
+        Expected<bool> deleted = delGeneric(sess, storeKey);
+        // Expected<bool> deleted = Command::delKeyChkExpire(sess, storeKey, RecordType::RT_SET_META);
+        if (!deleted.ok()) {
+            return deleted.status();
+        }
+
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
+        for (uint32_t i=0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
+            if (addStore.ok()) {
+                return addStore.value();
+            }
+            if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return addStore.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return addStore.status();
+            } else {
+                continue;
+            }
+        }
         return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
     }
 
@@ -907,5 +952,219 @@ public:
         return 1;
     }
 } sdiffstoreCommand;
+
+// Implement O(n*m) intersection
+// which n is the cardinality of the smallest set
+// m is the num of sets input
+class SintergenericCommand: public Command {
+public:
+    SintergenericCommand(const std::string& name, bool store)
+            :Command(name),
+             _store(store) {
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        size_t startkey = _store ? 2 : 1;
+        std::set<std::string> result;
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+
+        // stored all sets sorted by their length
+        std::vector<std::pair<size_t, uint64_t>> setList;
+        for (size_t i = startkey; i < args.size(); i++) {
+            Expected<RecordValue> rv =
+                    Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
+
+            // if one set is empty, their intersection is empty set, so just return it.
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                if (_store) {
+                    continue;
+                }
+                return Command::fmtNull();
+            } else if (!rv.ok()) {
+                return rv.status();
+            }
+
+            Expected<SetMetaValue> expSetMeta =
+                    SetMetaValue::decode(rv.value().getValue());
+
+            uint64_t setLength = expSetMeta.value().getCount();
+            if (setLength == 0) {
+                if (_store) {
+                    continue;
+                }
+                return Command::fmtNull();
+            }
+            setList.push_back(std::make_pair(i, setLength));
+        }
+        std::sort(setList.begin(), setList.end(), [](auto &left, auto &right) {
+            return left.second < right.second;
+        });
+
+        for (size_t i = 0; i < setList.size(); i++) {
+            const std::string& key = args[setList[i].first];
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            if (i == 0) {
+                auto cursor = txn->createCursor();
+                RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, "");
+                cursor->seek(fakeRk.prefixPk());
+                while (true) {
+                    Expected<Record> expRcd = cursor->next();
+                    if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                        break;
+                    }
+                    if (!expRcd.ok()) {
+                        return expRcd.status();
+                    }
+                    Record& rcd = expRcd.value();
+                    const RecordKey& rcdKey = rcd.getRecordKey();
+                    if (rcdKey.prefixPk() != fakeRk.prefixPk()) {
+                        break;
+                    }
+                    result.insert(rcdKey.getSecondaryKey());
+                }
+                // for the smallest set
+                // input all its keys into set, then goto next loop;
+                continue;
+            }
+            if (result.size() == 0) {
+                if (_store) {
+                    // we must del the storeKey before we return
+                    break;
+                }
+                // has no intersection, just return empty set
+                return Command::fmtNull();
+            }
+
+            for (auto iter = result.begin(); iter != result.end();) {
+                RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, *iter);
+                Expected<RecordValue> subValue = kvstore->getKV(subRk, txn.get());
+                // if key not found, erase it
+                if (!subValue.ok() || subValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                    // then the old iterator will be invalid
+                    // new value is the iterator to the next element
+                    iter = result.erase(iter);
+                } else {
+                    // otherwise move forward manually
+                    iter++;
+                }
+            }
+        }
+
+        if (!_store) {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, result.size());
+            for (auto& v : result) {
+                Command::fmtBulk(ss, v);
+            }
+            return ss.str();
+        }
+
+        if (result.size() >= 30000) {
+            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
+        }
+
+        const std::string& storeKey = args[1];
+        Expected<bool> deleted = delGeneric(sess, storeKey);
+        // Expected<bool> deleted = Command::delKeyChkExpire(sess, storeKey, RecordType::RT_SET_META);
+        if (!deleted.ok()) {
+            return deleted.status();
+        }
+
+        std::vector<std::string> newKeys(2);
+        for (auto& v : result) {
+            newKeys.push_back(std::move(v));
+        }
+        if (newKeys.size() == 2) {
+            return Command::fmtZero();
+        }
+
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
+        for (uint32_t i=0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
+            if (addStore.ok()) {
+                return addStore.value();
+            }
+            if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return addStore.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return addStore.status();
+            } else {
+                continue;
+            }
+        }
+        return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
+    }
+private:
+    bool _store;
+};
+
+class SinterCommand: public SintergenericCommand {
+public:
+    SinterCommand()
+        :SintergenericCommand("sinter", false) {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+} sinterCommand;
+
+class SinterStoreCommand: public SintergenericCommand {
+public:
+    SinterStoreCommand()
+        :SintergenericCommand("sinterstore", true) {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+} sinterstoreCommand;
 
 }  // namespace tendisplus
