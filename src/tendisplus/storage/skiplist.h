@@ -21,40 +21,44 @@ using Zlexrangespec = redis_port::Zlexrangespec;
 class SkipList {
  public:
     using PSE = std::unique_ptr<ZSlEleValue>;
+    using PSE_MAP = std::map<uint64_t, SkipList::PSE>;
+    static constexpr uint64_t INVALID_POS = (uint64_t)-1;
     SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
              const ZSlMetaValue& meta, PStore store);
-    Status insert(uint64_t score, const std::string& subkey, Transaction* txn);
-    Status remove(uint64_t score, const std::string& subkey, Transaction* txn);
-    Expected<uint32_t> rank(uint64_t score,
+    Status insert(double score, const std::string& subkey, Transaction* txn);
+    Status remove(double score, const std::string& subkey, Transaction* txn);
+    Expected<uint32_t> rank(double score,
                             const std::string& subkey, Transaction* txn);
 
     Expected<bool> isInRange(const Zrangespec& spec, Transaction* txn);
     Expected<bool> isInLexRange(const Zlexrangespec& spec, Transaction* txn);
 
-    Expected<PSE> firstInRange(const Zrangespec& range, Transaction *txn);
-    Expected<PSE> lastInRange(const Zrangespec& range, Transaction *txn);
+    Expected<uint64_t> firstInRange(const Zrangespec& range, Transaction *txn);
+    Expected<uint64_t> lastInRange(const Zrangespec& range, Transaction *txn);
 
-    Expected<PSE> firstInLexRange(const Zlexrangespec& range, Transaction *txn);
-    Expected<PSE> lastInLexRange(const Zlexrangespec& range, Transaction *txn);
+    Expected<uint64_t> firstInLexRange(const Zlexrangespec& range,
+                                Transaction *txn);
+    Expected<uint64_t> lastInLexRange(const Zlexrangespec& range,
+                                Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByLex(
-            const Zlexrangespec& range, int64_t offset, int64_t limit,
+    Expected<std::list<std::pair<double, std::string>>> scanByLex(
+            const Zlexrangespec& range, uint64_t offset, uint64_t limit,
             bool rev, Transaction *txn);
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByRank(
+    Expected<std::list<std::pair<double, std::string>>> scanByRank(
         int64_t start, int64_t len, bool rev, Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> scanByScore(
-            const Zrangespec& range, int64_t offset, int64_t limit,
+    Expected<std::list<std::pair<double, std::string>>> scanByScore(
+            const Zrangespec& range, uint64_t offset, uint64_t limit,
             bool rev, Transaction *txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByScore(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByScore(
             const Zrangespec& range, Transaction* txn);
 
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByLex(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByLex(
             const Zlexrangespec& range, Transaction* txn);
 
     // 1-based index
-    Expected<std::list<std::pair<uint64_t, std::string>>> removeRangeByRank(
+    Expected<std::list<std::pair<double, std::string>>> removeRangeByRank(
             uint32_t start, uint32_t end, Transaction* txn);
 
 
@@ -64,22 +68,26 @@ class SkipList {
     uint64_t getAlloc() const;
     uint64_t getTail() const;
     uint8_t getLevel() const;
+    ZSlEleValue* getCacheNode(uint64_t pos);
+
+    uint32_t nGetFromCache;
+    uint32_t nGetFromStore;
+    uint32_t nInserted;
+    uint32_t nUpdated;
+    uint32_t nDeleted;
 
  private:
     uint8_t randomLevel();
-    Status removeInternal(uint64_t pointer, 
+    Status removeInternal(uint64_t pointer,
                           const std::vector<uint64_t>& update,
-                          std::map<uint64_t, SkipList::PSE>* cache,
                           Transaction* txn);
     Status saveNode(uint64_t pointer, const ZSlEleValue& val, Transaction* txn);
     Status delNode(uint64_t pointer, Transaction* txn);
     Expected<ZSlEleValue*> getEleByRank(uint32_t rank,
-                          std::map<uint64_t, SkipList::PSE>* cache,
                           Transaction* txn);
     Expected<ZSlEleValue*> getNode(uint64_t pointer,
-                          std::map<uint64_t, SkipList::PSE>* cache,
                           Transaction* txn);
-    std::pair<uint64_t, PSE> makeNode(uint64_t score,
+    std::pair<uint64_t, PSE> makeNode(double score,
                                       const std::string& subkey);
     const uint8_t _maxLevel;
     uint8_t _level;
@@ -90,6 +98,7 @@ class SkipList {
     uint32_t _dbId;
     std::string _pk;
     PStore _store;
+    PSE_MAP cache;
 };
 
 }  // namespace tendisplus

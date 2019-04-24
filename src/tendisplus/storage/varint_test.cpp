@@ -58,4 +58,36 @@ TEST(Varint, Common) {
         {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01});
 }
 
+double genDouble() {
+    // static int rank = 0;
+    std::srand((int32_t)time(0));
+    int r = std::rand();
+
+    std::srand((int32_t)time(0));
+    int r2 = std::rand();
+
+    int x = r % 1111;
+    int y = r2 % 111;
+    return (double)(x*y) / 1111;
+}
+
+void testdouble(double val) {
+    auto en = doubleEncode(val);
+    auto ret = doubleDecode(en.data(), en.size());
+    EXPECT_EQ(val, ret.value());
+}
+
+TEST(Double, Common) {
+    testdouble(1);
+    testdouble(1.0);
+    testdouble(1.1);
+    testdouble(0.00001);
+    testdouble(10e2);
+
+    for (int i = 0; i < 100000; i++) {
+        double v = genDouble();
+        testdouble(v);
+    }
+}
+
 }  // namespace tendisplus

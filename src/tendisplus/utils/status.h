@@ -20,7 +20,7 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_TIMEOUT,
     ERR_INTERNAL,
-    ERR_PARSEOPT,
+    ERR_PARSEOPT,               /* addReply(c,shared.syntaxerr); */
     ERR_PARSEPKT,
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
@@ -32,7 +32,12 @@ enum class ErrorCodes {
     ERR_OVERFLOW,
     ERR_CAS,
     ERR_NOT_EXPIRED,
-};
+    ERR_NAN,      /* "resulting score is not a number (NaN)"  */
+    ERR_FLOAT,    /* "value is not a valid float" */
+    ERR_INTERGER, /* "value is not an integer or out of range" */
+    ERR_ZSLPARSERANGE, /* "min or max is not a float" */
+    ERR_ZSLPARSELEXRANGE, /* "min or max not valid string range item" */
+}; 
 
 class Status {
  public:
@@ -45,6 +50,7 @@ class Status {
     bool ok() const;
     std::string toString() const;
     ErrorCodes code() const;
+    static std::string getErrStr(ErrorCodes code);
  private:
     std::string _errmsg;
     ErrorCodes _code;
@@ -68,7 +74,7 @@ class Expected {
     Expected(const Status& other)  // NOLINT(runtime/explicit)
             :_status(other) {
         if (_status.ok()) {
-		#ifndef _WIN32
+#ifndef _WIN32
             static const char *s =
                 "can not use OK as Expected input"
                 ", this makes data field empty,"
@@ -85,7 +91,7 @@ class Expected {
             }
             free(strings);
             throw std::invalid_argument(ss.str());
-		#endif
+#endif
         }
     }
 

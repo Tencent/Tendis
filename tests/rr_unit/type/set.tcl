@@ -271,83 +271,84 @@ start_server {
         create_set myset2 {2 3 4}
     }
 
-    test "SMOVE basics - from regular set to hashtable" {
-        # move a non-integer element to an hashtable should convert encoding
-        setup_move
-        assert_equal 1 [r smove myset1 myset2 a]
-        assert_equal {1 b} [lsort [r smembers myset1]]
-        assert_equal {2 3 4 a} [lsort [r smembers myset2]]
+    # TODO(vinchen): disable smove
+   # test "SMOVE basics - from regular set to hashtable" {
+   #     # move a non-integer element to an hashtable should convert encoding
+   #     setup_move
+   #     assert_equal 1 [r smove myset1 myset2 a]
+   #     assert_equal {1 b} [lsort [r smembers myset1]]
+   #     assert_equal {2 3 4 a} [lsort [r smembers myset2]]
 
-        # move an integer element should not convert the encoding
-        setup_move
-        assert_equal 1 [r smove myset1 myset2 1]
-        assert_equal {a b} [lsort [r smembers myset1]]
-        assert_equal {1 2 3 4} [lsort [r smembers myset2]]
-    }
+   #     # move an integer element should not convert the encoding
+   #     setup_move
+   #     assert_equal 1 [r smove myset1 myset2 1]
+   #     assert_equal {a b} [lsort [r smembers myset1]]
+   #     assert_equal {1 2 3 4} [lsort [r smembers myset2]]
+   # }
 
-    test "SMOVE basics - from hashtable to regular set" {
-        setup_move
-        assert_equal 1 [r smove myset2 myset1 2]
-        assert_equal {1 2 a b} [lsort [r smembers myset1]]
-        assert_equal {3 4} [lsort [r smembers myset2]]
-    }
+   # test "SMOVE basics - from hashtable to regular set" {
+   #     setup_move
+   #     assert_equal 1 [r smove myset2 myset1 2]
+   #     assert_equal {1 2 a b} [lsort [r smembers myset1]]
+   #     assert_equal {3 4} [lsort [r smembers myset2]]
+   # }
 
-    test "SMOVE non existing key" {
-        setup_move
-        assert_equal 0 [r smove myset1 myset2 foo]
-        assert_equal {1 a b} [lsort [r smembers myset1]]
-        assert_equal {2 3 4} [lsort [r smembers myset2]]
-    }
+   # test "SMOVE non existing key" {
+   #     setup_move
+   #     assert_equal 0 [r smove myset1 myset2 foo]
+   #     assert_equal {1 a b} [lsort [r smembers myset1]]
+   #     assert_equal {2 3 4} [lsort [r smembers myset2]]
+   # }
 
-    test "SMOVE non existing src set" {
-        setup_move
-        assert_equal 0 [r smove noset myset2 foo]
-        assert_equal {2 3 4} [lsort [r smembers myset2]]
-    }
+   # test "SMOVE non existing src set" {
+   #     setup_move
+   #     assert_equal 0 [r smove noset myset2 foo]
+   #     assert_equal {2 3 4} [lsort [r smembers myset2]]
+   # }
 
-    test "SMOVE from regular set to non existing destination set" {
-        setup_move
-        assert_equal 1 [r smove myset1 myset3 a]
-        assert_equal {1 b} [lsort [r smembers myset1]]
-        assert_equal {a} [lsort [r smembers myset3]]
-    }
+   # test "SMOVE from regular set to non existing destination set" {
+   #     setup_move
+   #     assert_equal 1 [r smove myset1 myset3 a]
+   #     assert_equal {1 b} [lsort [r smembers myset1]]
+   #     assert_equal {a} [lsort [r smembers myset3]]
+   # }
 
-    test "SMOVE from hashtable to non existing destination set" {
-        setup_move
-        assert_equal 1 [r smove myset2 myset3 2]
-        assert_equal {3 4} [lsort [r smembers myset2]]
-        assert_equal {2} [lsort [r smembers myset3]]
-    }
+   # test "SMOVE from hashtable to non existing destination set" {
+   #     setup_move
+   #     assert_equal 1 [r smove myset2 myset3 2]
+   #     assert_equal {3 4} [lsort [r smembers myset2]]
+   #     assert_equal {2} [lsort [r smembers myset3]]
+   # }
 
-    test "SMOVE wrong src key type" {
-        setup_move
-        r set x 10
-        assert_equal 0 [r smove x myset2 2]
-    }
+   # test "SMOVE wrong src key type" {
+   #     setup_move
+   #     r set x 10
+   #     assert_equal 0 [r smove x myset2 2]
+   # }
 
-    test "SMOVE wrong dst key type" {
-        setup_move
-        r set x 10
-        assert_equal 1 [r smove myset2 x 2]
-    }
+   # test "SMOVE wrong dst key type" {
+   #     setup_move
+   #     r set x 10
+   #     assert_equal 1 [r smove myset2 x 2]
+   # }
 
-    test "SMOVE with identical source and destination" {
-        r del set
-        r sadd set a b c
-        r smove set set b
-        lsort [r smembers set]
-    } {a b c}
+   # test "SMOVE with identical source and destination" {
+   #     r del set
+   #     r sadd set a b c
+   #     r smove set set b
+   #     lsort [r smembers set]
+   # } {a b c}
 
-    test "SMOVE a member exists in destination set" {
-        r del set1 set2
-        r sadd set1 a b c d
-	      r sadd set2 a b c d e
-        r smove set1 set2 a
-        assert_equal {b c d} [lsort [r smembers set1]]
-        assert_equal {a b c d e} [lsort [r smembers set2]]
-	      assert_equal 3 [r scard set1]
-	      assert_equal 5 [r scard set2]
-    }
+   # test "SMOVE a member exists in destination set" {
+   #     r del set1 set2
+   #     r sadd set1 a b c d
+   #       r sadd set2 a b c d e
+   #     r smove set1 set2 a
+   #     assert_equal {b c d} [lsort [r smembers set1]]
+   #     assert_equal {a b c d e} [lsort [r smembers set2]]
+   #       assert_equal 3 [r scard set1]
+   #       assert_equal 5 [r scard set2]
+   # }
 
     tags {slow} {
         test {hashtables implementation stress testing} {

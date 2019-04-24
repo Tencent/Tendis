@@ -248,6 +248,7 @@ std::string RecordKey::encode() const {
 
     // len(PK)
     auto lenPK = varintEncode(_pk.size());
+    // NOTE(vinchen): big endian
     key.insert(key.end(), lenPK.rbegin(), lenPK.rend());
 
     // reserved
@@ -379,9 +380,19 @@ bool RecordKey::operator==(const RecordKey& other) const {
 }
 
 RecordValue::RecordValue()
-    :_cas(0),
+    :_cas(-1),
      _ttl(0),
      _value("") {
+}
+
+RecordValue::RecordValue(double v)
+    : _cas(-1),
+    _ttl(0) {
+    auto d = ::tendisplus::doubleEncode(v);
+
+    std::string str;
+    str.insert(str.end(), d.begin(), d.end());
+    _value = std::move(str);
 }
 
 RecordValue::RecordValue(RecordValue&& o)
@@ -392,13 +403,13 @@ RecordValue::RecordValue(RecordValue&& o)
     o._cas = 0;
 }
 
-RecordValue::RecordValue(const std::string& val, uint64_t ttl, uint64_t cas)
+RecordValue::RecordValue(const std::string& val, uint64_t ttl, int64_t cas)
         :_cas(cas),
          _ttl(ttl),
          _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, uint64_t ttl, uint64_t cas)
+RecordValue::RecordValue(std::string&& val, uint64_t ttl, int64_t cas)
         :_cas(cas),
          _ttl(ttl),
          _value(std::move(val)) {
@@ -409,7 +420,10 @@ std::string RecordValue::encode() const {
     value.reserve(128);
 
     // CAS
-    auto casBytes = varintEncode(_cas);
+    // NOTE(vinchen): cas should initialize -1, not zero.
+    // And it should be store as (cas + 1) in the kvstore
+    // to improve storage efficiency
+    auto casBytes = varintEncode(_cas + 1);
     value.insert(value.end(), casBytes.begin(), casBytes.end());
 
     // TTL
@@ -432,7 +446,10 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         return expt.status();
     }
     offset += expt.value().second;
-    uint64_t cas = expt.value().first;
+    // NOTE(vinchen): cas should initialize -1, not zero.
+    // And it should be store as (cas + 1) in the kvstore
+    // to improve storage efficiency
+    int64_t cas = expt.value().first - 1;
 
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
     if (!expt.ok()) {
@@ -485,11 +502,11 @@ void RecordValue::setTtl(uint64_t ttl) {
     _ttl = ttl;
 }
 
-uint64_t RecordValue::getCas() const {
+int64_t RecordValue::getCas() const {
     return _cas;
 }
 
-void RecordValue::setCas(uint64_t cas) {
+void RecordValue::setCas(int64_t cas) {
     _cas = cas;
 }
 
@@ -996,30 +1013,28 @@ uint64_t SetMetaValue::getCount() const {
 uint32_t ZSlMetaValue::HEAD_ID = 1;
 
 ZSlMetaValue::ZSlMetaValue()
-        :ZSlMetaValue(0, 0, 0, 0) {
+        :ZSlMetaValue(0, 0, 0) {
 }
 
 ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
-                           uint8_t maxLvl,
                            uint32_t count,
                            uint64_t tail)
         :_level(lvl),
-         _maxLevel(maxLvl),
+         _maxLevel(MAX_LAYER),
          _count(count),
          _tail(tail),
          _posAlloc(ZSlMetaValue::MIN_POS) {
+    // NOTE(vinchen): _maxLevel can't change. If you want to
+    // change it, the constructor of ZSlEleValue should add new
+    // parameter of it.
 }
 
 ZSlMetaValue::ZSlMetaValue(uint8_t lvl,
-                           uint8_t maxLvl,
                            uint32_t count,
                            uint64_t tail,
                            uint64_t alloc)
-        :_level(lvl),
-         _maxLevel(maxLvl),
-         _count(count),
-         _tail(tail),
-         _posAlloc(alloc) {
+        : ZSlMetaValue(lvl, count, tail) {
+    _posAlloc = alloc;
 }
 
 std::string ZSlMetaValue::encode() const {
@@ -1031,6 +1046,7 @@ std::string ZSlMetaValue::encode() const {
 
     bytes = varintEncode(_maxLevel);
     value.insert(value.end(), bytes.begin(), bytes.end());
+    INVARIANT(_maxLevel == ZSlMetaValue::MAX_LAYER);
 
     bytes = varintEncode(_count);
     value.insert(value.end(), bytes.begin(), bytes.end());
@@ -1065,6 +1081,7 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
     }
     offset += expt.value().second;
     result._maxLevel = expt.value().first;
+    INVARIANT(result._maxLevel == ZSlMetaValue::MAX_LAYER);
 
     // _count
     expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
@@ -1157,12 +1174,15 @@ ZSlEleValue::ZSlEleValue()
         :ZSlEleValue(0, "") {
 }
 
-ZSlEleValue::ZSlEleValue(uint64_t score, const std::string& subkey)
+ZSlEleValue::ZSlEleValue(double score, const std::string& subkey,
+                        uint32_t maxLevel)
          :_score(score),
           _backward(0),
+          _changed(false),
           _subKey(subkey) {
-    _forward.resize(ZSlMetaValue::MAX_LAYER+1);
-    _span.resize(ZSlMetaValue::MAX_LAYER+1);
+    INVARIANT(maxLevel == ZSlMetaValue::MAX_LAYER);
+    _forward.resize(maxLevel+1);
+    _span.resize(maxLevel+1);
     for (size_t i = 0; i < _forward.size(); ++i) {
         _forward[i] = 0;
     }
@@ -1176,6 +1196,7 @@ uint64_t ZSlEleValue::getBackward() const {
 }
 
 void ZSlEleValue::setBackward(uint64_t pointer) {
+    _changed = true;
     _backward = pointer;
 }
 
@@ -1184,6 +1205,7 @@ uint64_t ZSlEleValue::getForward(uint8_t layer) const {
 }
 
 void ZSlEleValue::setForward(uint8_t layer, uint64_t pointer) {
+    _changed = true;
     _forward[layer] = pointer;
 }
 
@@ -1192,10 +1214,11 @@ uint32_t ZSlEleValue::getSpan(uint8_t layer) const {
 }
 
 void ZSlEleValue::setSpan(uint8_t layer, uint32_t span) {
+    _changed = true;
     _span[layer] = span;
 }
 
-uint64_t ZSlEleValue::getScore() const {
+double ZSlEleValue::getScore() const {
     return _score;
 }
 
@@ -1215,7 +1238,7 @@ std::string ZSlEleValue::encode() const {
         value.insert(value.end(), bytes.begin(), bytes.end());
     }
 
-    auto bytes = varintEncode(_score);
+    auto bytes = doubleEncode(_score);
     value.insert(value.end(), bytes.begin(), bytes.end());
 
     bytes = varintEncode(_backward);
@@ -1255,15 +1278,15 @@ Expected<ZSlEleValue> ZSlEleValue::decode(const std::string& val) {
     }
 
     // score
-    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
+    auto d = doubleDecode(keyCstr + offset, val.size()-offset);
+    if (!d.ok()) {
+        return d.status();
     }
-    offset += expt.value().second;
-    result._score = expt.value().first;
+    offset += sizeof(double);
+    result._score = d.value();
 
     // backward
-    expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
+    auto expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
     if (!expt.ok()) {
         return expt.status();
     }

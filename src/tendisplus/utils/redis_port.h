@@ -20,11 +20,29 @@ std::string errorReply(const std::string& s);
 std::vector<std::string> splitargs(const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
-std::string ldtos(long double value);
+int ld2string(char *buf, size_t len, long double value, int humanfriendly);
 
 size_t popCount(const void *s, long count); // (NOLINT)
 
 int64_t bitPos(const void *s, size_t count, uint32_t bit);
+
+/* Input flags. */
+#define ZADD_NONE 0
+#define ZADD_INCR (1<<0)    /* Increment the score instead of setting it. */
+#define ZADD_NX (1<<1)      /* Don't touch elements not already existing. */
+#define ZADD_XX (1<<2)      /* Only touch elements already exisitng. */
+
+/* Output flags. */
+#define ZADD_NOP (1<<3)     /* Operation not performed because of conditionals.*/
+#define ZADD_NAN (1<<4)     /* Only touch elements already exisitng. */
+#define ZADD_ADDED (1<<5)   /* The element was new and was added. */
+#define ZADD_UPDATED (1<<6) /* The element already existed, score updated. */
+
+/* Flags only used by the ZADD command but not by zsetAdd() API: */
+#define ZADD_CH (1<<16)      /* Return num of elements added or updated. */
+
+#define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^32 elements */
+#define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
 
 struct Zrangespec {
     double min;
@@ -43,6 +61,7 @@ struct Zlexrangespec {
 #define ZLEXMIN "minstring"
 #define ZLEXMAX "maxstring"
 
+int zslRandomLevel(int maxLevel);
 int zslParseRange(const char *min, const char *max, Zrangespec *spec);
 int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
 int stringmatchlen(const char *pattern, int patternLen,

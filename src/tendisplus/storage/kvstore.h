@@ -99,6 +99,7 @@ class Transaction {
 
     virtual uint32_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint32_t timestamp) = 0;
+    virtual bool isReplOnly() const = 0;
 
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;

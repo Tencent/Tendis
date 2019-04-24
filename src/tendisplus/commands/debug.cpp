@@ -21,6 +21,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -256,11 +257,21 @@ class IterAllCommand: public Command {
                 case RecordType::RT_HASH_ELE:
                 case RecordType::RT_LIST_ELE:
                 case RecordType::RT_SET_ELE:
-                case RecordType::RT_ZSET_H_ELE:
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
                     break;
+                case RecordType::RT_ZSET_H_ELE:
+                {
+                    Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                    Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
+                    auto d = tendisplus::doubleDecode(o.getRecordValue().getValue());
+                    if (!d.ok()) {
+                        return d.status();
+                    }
+                    Command::fmtBulk(ss, tendisplus::dtos(d.value()));
+                    break;
+                }
                 default:
                     INVARIANT(0);
             }
@@ -694,8 +705,13 @@ class ShutdownCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
-        svr->stop();
+        // auto vv = dynamic_cast<NetSession*>(sess);
+        // INVARIANT(vv != nullptr);
+        // vv->setCloseAfterRsp();
+
+        // TODO(vinchen): maybe it should log something here
+        // shutdown asnyc
+        sess->getServerEntry()->handleShutdownCmd();
 
         // avoid compiler complains
         return Command::fmtOK();
@@ -845,7 +861,6 @@ class ClientCommand: public Command {
                 "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};
         }
     }
-
 } clientCmd;
 
 class InfoCommand: public Command {
@@ -897,7 +912,7 @@ class InfoCommand: public Command {
 #ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
 #endif
-                << "arch_bits:" << ((sizeof(long) == 8) ? 64 : 32) << "\r\n"
+                << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
                 << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
                 << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"
@@ -976,5 +991,92 @@ class ObjectCommand: public Command {
         return Command::fmtNull();
     }
 } objectCmd;
+
+class ConfigCommand : public Command {
+ public:
+    ConfigCommand()
+        :Command("config") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        // TODO(vinchen): support it later
+        return Command::fmtOK();
+    }
+} configCmd;
+
+class FulshAllDiskCommand : public Command {
+ public:
+    FulshAllDiskCommand()
+        :Command("flushalldisk") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        // TODO(vinchen): support it later
+        return Command::fmtOK();
+    }
+} flushalldiskCmd;
+
+class MonitorCommand : public Command {
+ public:
+    MonitorCommand()
+        :Command("monitor") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto vv = dynamic_cast<NetSession*>(sess);
+        INVARIANT(vv != nullptr);
+        // TODO(vinchen): support it later
+        vv->setCloseAfterRsp();
+        return{ ErrorCodes::ERR_INTERNAL, "monitor not supported yet" };
+    }
+} monitorCmd;
 
 }  // namespace tendisplus

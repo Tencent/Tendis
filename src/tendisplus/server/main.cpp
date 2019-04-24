@@ -33,7 +33,7 @@ static void waitForExit() {
 }
 
 static void setupSignals() {
-#ifndef _WIN32 
+#ifndef _WIN32
     struct sigaction ignore;
     memset(&ignore, 0, sizeof(ignore));
     ignore.sa_handler = SIG_IGN;
@@ -50,7 +50,7 @@ static void setupSignals() {
 
     INVARIANT(sigaction(SIGTERM, &exits, nullptr) == 0);
     INVARIANT(sigaction(SIGINT, &exits, nullptr) == 0);
-#endif // !_WIN32 
+#endif  // !_WIN32
 }
 
 static void usage() {
@@ -69,6 +69,8 @@ int main(int argc, char *argv[]) {
     } else {
         LOG(INFO) << "start server with cfg:" << params->toString();
     }
+
+    INVARIANT(sizeof(double) == 8);
 
 #ifndef _WIN32
     if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
@@ -94,7 +96,8 @@ int main(int argc, char *argv[]) {
         std::cout << FLAGS_log_dir << std::endl;
         if (!tendisplus::filesystem::exists(FLAGS_log_dir)) {
             std::error_code ec;
-            if (!tendisplus::filesystem::create_directories(FLAGS_log_dir, ec)) {
+            if (!tendisplus::filesystem::create_directories(
+                                    FLAGS_log_dir, ec)) {
                 LOG(WARNING) << " create log path failed: " << ec.message();
             }
         }

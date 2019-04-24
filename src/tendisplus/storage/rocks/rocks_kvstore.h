@@ -47,6 +47,7 @@ class RocksTxn: public Transaction {
 
     uint32_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint32_t timestamp);
+    bool isReplOnly() const { return _replOnly; }
 
  protected:
     virtual void ensureTxn() {}
@@ -129,7 +130,7 @@ class RocksKVStore: public KVStore {
         const std::shared_ptr<ServerParams>& cfg,
         std::shared_ptr<rocksdb::Cache> blockCache,
         TxnMode txnMode = TxnMode::TXN_PES,
-        uint64_t maxKeepLogs = 1000000);
+        uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;

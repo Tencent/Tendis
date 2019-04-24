@@ -8,6 +8,7 @@
 #include <limits>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -32,7 +33,7 @@ uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
 
 // ********************* key format ***********************************
-// ChunkId + DBID + Type + PK + SK + 0 + len(PK) + 1B reserved
+// ChunkId + DBID + Type + PK + 0 + SK + len(PK) + 1B reserved
 // ChunkId is an uint32 in big-endian, it's mainly used for logic migra
 // -tion
 // DBID is an uint32 in big-endian
@@ -44,7 +45,8 @@ RecordType char2Rt(uint8_t t);
 // from the end backwards.
 // the last 1B are reserved.
 // ********************* value format *********************************
-// TTL + UserValue
+// CAS + TTL + UserValue
+// CAS is a varint64
 // TTL is a varint64
 // ********************************************************************
 
@@ -100,25 +102,29 @@ class RecordValue {
     RecordValue();
     RecordValue(const RecordValue&) = default;
 
+    // for zset score
+    RecordValue(double v);
+
     // we should not rely on default move constructor.
     // refer to the manual, int types have no move constructor
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
-    explicit RecordValue(const std::string& val, uint64_t ttl = 0, uint64_t cas = 0);
-    explicit RecordValue(std::string&& val, uint64_t ttl = 0, uint64_t cas = 0);
+    explicit RecordValue(const std::string& val, uint64_t ttl = 0,
+                        int64_t cas = -1);
+    explicit RecordValue(std::string&& val, uint64_t ttl = 0, int64_t cas = -1);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);
-    uint64_t getCas() const;
-    void setCas(uint64_t);
+    int64_t getCas() const;
+    void setCas(int64_t);
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
 
  private:
-    uint64_t _cas;
+    int64_t _cas;
     uint64_t _ttl;
     std::string _value;
 };
@@ -267,9 +273,9 @@ class HashMetaValue {
     HashMetaValue& operator=(HashMetaValue&&);
     std::string encode() const;
     void setCount(uint64_t count);
-    void setCas(uint64_t cas);
+    // void setCas(int64_t cas);
     uint64_t getCount() const;
-    uint64_t getCas() const;
+    // uint64_t getCas() const;
 
  private:
     uint64_t _count;
@@ -288,14 +294,29 @@ class SetMetaValue {
     uint64_t _count;
 };
 
+
+/*
+
+META: *1
+CHUNK|DBID|ZSET_META|KEY|
+LEVEL|MAX_LEVEL|COUNT+1|TAIL|POSALLOC|
+
+S_ELE: *(COUNT+1)
+CHUNK|DBID|S_ELE|KEY|POS|  -- HEAD_ID(first element)
+forword*(MAX_LEVEL+1)|span*(MAX_LEVEL+1)|score|backward|subkey|
+
+H_ELE: *(COUNT)
+CHUNK|DBID|H_ELE|KEY|SUBKEY|
+score
+
+*/
+
 // ZsetSkipListMetaValue
 class ZSlMetaValue {
  public:
     ZSlMetaValue();
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
-                 uint32_t count, uint64_t tail);
-    ZSlMetaValue(uint8_t lvl, uint8_t maxLvl,
-                 uint32_t count, uint64_t tail, uint64_t alloc);
+    ZSlMetaValue(uint8_t lvl, uint32_t count, uint64_t tail);
+    ZSlMetaValue(uint8_t lvl, uint32_t count, uint64_t tail, uint64_t alloc);
     static Expected<ZSlMetaValue> decode(const std::string&);
     std::string encode() const;
     uint8_t getMaxLevel() const;
@@ -304,7 +325,7 @@ class ZSlMetaValue {
     uint64_t getTail() const;
     uint64_t getPosAlloc() const;
     // can not dynamicly change
-    static constexpr int8_t MAX_LAYER = 24;
+    static constexpr int8_t MAX_LAYER = ZSKIPLIST_MAXLEVEL;
     static constexpr uint32_t MAX_NUM = (1<<31);
     static constexpr uint64_t MIN_POS = 128;
     // NOTE(deyukong): static constexpr uint32_t HEAD_ID = 1
@@ -323,23 +344,34 @@ class ZSlMetaValue {
 class ZSlEleValue {
  public:
     ZSlEleValue();
-    ZSlEleValue(uint64_t score, const std::string& subkey);
+    // NOTE(vinchen): if we want to change maxLevel,
+    // it can't use default value here
+    ZSlEleValue(double score, const std::string& subkey,
+                        uint32_t maxLevel = ZSlMetaValue::MAX_LAYER);
     static Expected<ZSlEleValue> decode(const std::string&);
     std::string encode() const;
     uint64_t getForward(uint8_t layer) const;
     uint64_t getBackward() const;
     void setForward(uint8_t layer, uint64_t pointer);
     void setBackward(uint64_t pointer);
-    uint64_t getScore() const;
+    double getScore() const;
     const std::string& getSubKey() const;
     uint32_t getSpan(uint8_t layer) const;
     void setSpan(uint8_t layer, uint32_t span);
+    bool isChanged() { return _changed; }
+    void setChanged(bool v) { _changed = v; }
 
  private:
+    // forward elements index in each level
     std::vector<uint64_t> _forward;
+    // step to forward element in each level
     std::vector<uint32_t> _span;
-    uint64_t _score;
+    double _score;
+    // backward element index in level 1
     uint64_t _backward;
+    // whether _changed after skiplist::getnode()
+    bool _changed;
+
     std::string _subKey;
 };
 

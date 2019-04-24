@@ -11,6 +11,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 class ScanGenericCommand: public Command {
@@ -21,7 +22,8 @@ class ScanGenericCommand: public Command {
 
     virtual RecordType getRcdType() const = 0;
 
-    virtual RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const = 0;
+    virtual RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId,
+                                const std::string& key) const = 0;
 
     virtual Expected<std::string> genResult(const std::string& cursor,
                     const std::list<Record>& rcds) = 0;
@@ -53,7 +55,7 @@ class ScanGenericCommand: public Command {
         uint64_t count = 10;
         while (i < args.size()) {
             j = args.size() - i;
-            if (args[i] == "count" && j >= 2) {
+            if (toLower(args[i]) == "count" && j >= 2) {
                 Expected<uint64_t> ecnt = ::tendisplus::stoul(args[i+1]);
                 if (!ecnt.ok()) {
                     return ecnt.status();
@@ -63,7 +65,7 @@ class ScanGenericCommand: public Command {
                 }
                 count = ecnt.value();
                 i += 2;
-            } else if (args[i] == "match" && j >= 2) {
+            } else if (toLower(args[i]) == "match" && j >= 2) {
                 pat = args[i+1];
                 usePatten = !(pat[0] == '*' && pat.size() == 1);
                 i += 2;
@@ -86,12 +88,14 @@ class ScanGenericCommand: public Command {
         }
 
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
         SessionCtx *pCtx = sess->getCtx();
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), getRcdType(), key, "");
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                            getRcdType(), key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
@@ -106,7 +110,8 @@ class ScanGenericCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
+        RecordKey fake = genFakeRcd(expdb.value().chunkId,
+                                    pCtx->getDbId(), key);
 
         auto batch = Command::scan(fake.prefixPk(), cursor, count, txn.get());
         if (!batch.ok()) {
@@ -117,7 +122,7 @@ class ScanGenericCommand: public Command {
                 it != batch.value().second.end(); ) {
              if (usePatten && !redis_port::stringmatchlen(pat.c_str(),
                                pat.size(),
-                               it->getRecordKey().getSecondaryKey().c_str(), 
+                               it->getRecordKey().getSecondaryKey().c_str(),
                                it->getRecordKey().getSecondaryKey().size(),
                                NOCASE)) {
                 it = batch.value().second.erase(it);
@@ -139,7 +144,8 @@ class ZScanCommand: public ScanGenericCommand {
         return RecordType::RT_ZSET_META;
     }
 
-    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId,
+                        const std::string& key) const final {
         return {chunkId, dbId, RecordType::RT_ZSET_H_ELE, key, ""};
     }
 
@@ -151,7 +157,12 @@ class ZScanCommand: public ScanGenericCommand {
         Command::fmtMultiBulkLen(ss, rcds.size()*2);
         for (const auto& v : rcds) {
             Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
-            Command::fmtBulk(ss, v.getRecordValue().getValue());
+            auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
+            INVARIANT(d.ok());
+            if (!d.ok()) {
+                return d.status();
+            }
+            Command::fmtBulk(ss, tendisplus::dtos(d.value()));
         }
         return ss.str();
     }
@@ -167,7 +178,8 @@ class SScanCommand: public ScanGenericCommand {
         return RecordType::RT_SET_META;
     }
 
-    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId,
+                        const std::string& key) const final {
         return {chunkId, dbId, RecordType::RT_SET_ELE, key, ""};
     }
 
@@ -194,7 +206,8 @@ class HScanCommand: public ScanGenericCommand {
         return RecordType::RT_HASH_META;
     }
 
-    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId, const std::string& key) const final {
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId,
+                        const std::string& key) const final {
         return {chunkId, dbId, RecordType::RT_HASH_ELE, key, ""};
     }
 

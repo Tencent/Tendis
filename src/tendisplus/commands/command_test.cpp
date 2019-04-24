@@ -14,6 +14,7 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -220,10 +221,10 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
     const long double pi = 3.14159265358979323846L;
     long double floatSum = sum + pi;
     sess.setArgs({"hincrbyfloat", "testkey", "testsubkey",
-                  redis_port::ldtos(pi)});
+                  tendisplus::ldtos(pi, true)});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    std::string result = redis_port::ldtos(floatSum);
+    std::string result = tendisplus::ldtos(floatSum, true);
     EXPECT_EQ(Command::fmtBulk(result), expect.value());
 
     // hmcas key, cmp, vsn, [subkey1, op1, val1]
@@ -1223,7 +1224,7 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     ss.str("");
     Command::fmtMultiBulkLen(ss, 2);
-    Command::fmtLongLong(ss, 0);
+    Command::fmtLongLong(ss, -1);
     Command::fmtBulk(ss, "1");
     EXPECT_EQ(expect.value(), ss.str());
     sess.setArgs({"cas", "caskey", "0", "2"});

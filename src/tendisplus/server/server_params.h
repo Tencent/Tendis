@@ -23,6 +23,8 @@ class ServerParams {
     std::string requirepass;
     std::string masterauth;
     std::string pidFile;
+    bool versionIncrease;
+    bool generalLog;
 
     uint32_t scanCntIndexMgr;
     uint32_t scanJobCntIndexMgr;

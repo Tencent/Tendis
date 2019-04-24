@@ -38,6 +38,7 @@ std::string ServerParams::toString() const {
         << ",\nrequirepass:" << requirepass
         << ",\nmasterauth:" << masterauth
         << ",\npidFile:" << pidFile
+        << ",\ngenerallog:" << generalLog
         << std::endl;
     return ss.str();
 }
@@ -59,7 +60,19 @@ Status ServerParams::parseFile(const std::string& filename) {
         std::vector<std::string> tokens;
         std::string tmp;
         while (std::getline(ss, tmp, ' ')) {
-            std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
+            bool isDir = false;
+            if (tokens.size() == 1) {
+                if (tokens[0] == "dir" ||
+                        tokens[0] == "logdir" ||
+                        tokens[0] == "dumpdir" ||
+                        tokens[0] == "pidfile") {
+                    // can't change dir to lower
+                    isDir = true;
+                }
+            }
+            if (!isDir) {
+                std::transform(tmp.begin(), tmp.end(), tmp.begin(), tolower);
+            }
             tokens.emplace_back(tmp);
         }
 
@@ -166,6 +179,24 @@ Status ServerParams::parseFile(const std::string& filename) {
                   "invalid pausetimeindexmgr config"};
             }
             pauseTimeIndexMgr = std::stoi(tokens[1]);
+        } else if (tokens[0] == "version-increase") {
+            if (tokens.size() != 2) {
+                return {ErrorCodes::ERR_PARSEOPT,
+                  "invalid version-increase config"};
+            }
+            if (tokens[1] == "off" || tokens[1] == "false"
+                || tokens[1] == "0") {
+                versionIncrease = false;
+            }
+        } else if (tokens[0] == "generallog") {
+            if (tokens.size() != 2) {
+                return{ ErrorCodes::ERR_PARSEOPT,
+                    "invalid version-increase config" };
+            }
+            if (tokens[1] == "on" || tokens[1] == "true"
+                || tokens[1] == "1") {
+                generalLog = true;
+            }
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -186,8 +217,10 @@ ServerParams::ServerParams()
     scanCntIndexMgr = 1000;
     scanJobCntIndexMgr = 1;
     delCntIndexMgr = 10000;
-    delJobCntIndexMgr= 1;
+    delJobCntIndexMgr = 1;
     pauseTimeIndexMgr = 10;
+    versionIncrease = true;
+    generalLog = false;
 }
 
 

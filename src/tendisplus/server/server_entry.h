@@ -87,6 +87,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
                         const std::set<std::string>& sections) const;
+    void logGeneral(Session *sess);
+    void handleShutdownCmd();
 
  private:
     void ftmc();
@@ -96,6 +98,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::atomic<bool> _ftmcEnabled;
     std::atomic<bool> _isRunning;
     std::atomic<bool> _isStopped;
+    // whether shutdown command is excuted
+    std::atomic<bool> _isShutdowned;
     uint64_t _startupTime;
     mutable std::mutex _mutex;
     std::condition_variable _eventCV;
@@ -121,6 +125,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<std::string> _requirepass;
     std::shared_ptr<std::string> _masterauth;
     bool _versionIncrease;
+    bool _generalLog;
 };
 }  // namespace tendisplus
 
