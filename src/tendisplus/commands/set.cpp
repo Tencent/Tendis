@@ -884,4 +884,28 @@ class SdiffCommand: public SdiffgenericCommand {
         return 1;
     }
 } sdiffcmd;
+
+class SdiffStoreCommand: public SdiffgenericCommand {
+public:
+    SdiffStoreCommand()
+        :SdiffgenericCommand("sdiffstore", true) {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+} sdiffstoreCommand;
+
 }  // namespace tendisplus

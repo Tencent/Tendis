@@ -1796,4 +1796,55 @@ class RenamenxCommand: public Command {
     }
 } renamenxCmd;
 
+class GetBitCommand: public GetGenericCmd {
+public:
+    GetBitCommand()
+        :GetGenericCmd("getbit"){
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        Expected<uint64_t> epos = ::tendisplus::stoul(sess->getArgs()[2]);
+        if (!epos.ok()) {
+            return epos.status();
+        }
+        auto pos = epos.value();
+        if ((pos >> 3) >= (512*1024*1024)) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "bit offset is not an integer or out of range"};
+        }
+        auto v = GetGenericCmd::run(sess);
+        if (!v.ok()) {
+            return v.status();
+        }
+        if (v.value() == "") {
+            return Command::fmtZero();
+        }
+
+        std::string bitValue = v.value();
+        size_t byte, bit;
+        uint8_t bitval = 0;
+
+        byte = pos >> 3;
+        bit = 7 - (pos & 0x7);
+        bitval = static_cast<uint8_t>(bitValue[byte]) & (1 << bit);
+        return bitval ? Command::fmtOne() : Command::fmtZero();
+    }
+} getbitCommand;
+
 }  // namespace tendisplus
