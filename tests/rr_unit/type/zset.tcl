@@ -272,7 +272,7 @@ start_server {tags {"zset"}} {
             assert_equal {} [r zrevrangebyscore zset (-6 (-inf]
 
             # empty inner range
-            assert_equal {c} [r zrangebyscore zset 2.4 2.6]
+            assert_equal {} [r zrangebyscore zset 2.4 2.6]
             assert_equal {} [r zrangebyscore zset (2.4 2.6]
             assert_equal {} [r zrangebyscore zset 2.4 (2.6]
             assert_equal {} [r zrangebyscore zset (2.4 (2.6]
@@ -796,15 +796,17 @@ start_server {tags {"zset"}} {
                     set ele [lindex [r zrange myzset $index $index] 0]
 
                     set score1 [r zscore myzset $ele]
-                    while {$index > 0} {
-                        incr index -1
-                        set ele1 [lindex [r zrange myzset $index $index] 0]
-                        set score2 [r zscore myzset $ele1]
-                        if {$score2 != $score1} {
-                            incr index
-                            break
-                        }
-                    }
+                    # tendis ssd: when the score is the same, the rank is the
+                    # same, which is different from redis
+                    #while {$index > 0} {
+                    #    incr index -1
+                    #    set ele1 [lindex [r zrange myzset $index $index] 0]
+                    #    set score2 [r zscore myzset $ele1]
+                    #    if {$score2 != $score1} {
+                    #        incr index
+                    #        break
+                    #    }
+                    #}
 
                     set rank [r zrank myzset $ele]
                     if {$rank != $index} {

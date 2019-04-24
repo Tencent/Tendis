@@ -2,7 +2,7 @@ start_server {tags {"scan"}} {
      test "HSCAN" {
          # Create the Hash
          r del hash
-         set count 100000
+         set count 1000
          set elements {}
 
          for {set j 0} {$j < $count} {incr j} {

@@ -69,7 +69,7 @@ void ServerEntry::logGeneral(Session *sess) {
     std::stringstream ss;
     ss << "Command: ";
     for (auto arg : args) {
-        ss << arg << " ";
+        ss << (arg.size() > 0 ? arg : "\"\"") << " ";
     }
 
     LOG(INFO) << ss.str();

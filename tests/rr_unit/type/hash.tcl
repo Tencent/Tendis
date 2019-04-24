@@ -701,7 +701,7 @@ start_server {tags {"hash"}} {
     r hmcasv2 hash 1 1009 1010 a 0 8888
 
     start_server {} {
-      r flushalldisk
+      #r flushalldisk
       r slaveof [srv -1 host] [srv -1 port]
       after 5000
       assert_equal [r 0 hmgetvsn hash a] [r -1 hmgetvsn hash a]
@@ -727,7 +727,7 @@ start_server {tags {"hash"}} {
     r hmcasv2 hash 1 1009 1010 a 0 8888
 
     start_server {} {
-      r flushalldisk
+      #r flushalldisk
       r slaveof [srv -1 host] [srv -1 port]
       after 5000
       assert_equal [r 0 hmgetvsn hash a] [r -1 hmgetvsn hash a]
@@ -744,9 +744,9 @@ start_server {tags {"hash"}} {
   }
 
   test "hmcasv2 version-increase 0" {
-    start_server {config nondefault.conf} {
+    start_server {config tendisplus.nodefault.conf} {
       test "start to test" {
-        r flushalldisk
+        #r flushalldisk
 
         r hmcasv2 hash 0 -300 -500 fuck 0 you
         r hmcasv2 hash 1 -500 -1088 fuck 0 fuckbbbbbbbbb
