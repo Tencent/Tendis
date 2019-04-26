@@ -52,7 +52,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 
 	# thirdparty code
 	# do not set unnecessary flags before thirdparty dirs
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
 endif()
 
 # TODO(vinchen): in the future it should disable sync_ponit in production
@@ -60,6 +60,7 @@ add_definitions(-DWITH_SYNC_POINT)
 list(APPEND SYS_LIBS sync_point)
 
 add_subdirectory(src/thirdparty/gflags)
+add_subdirectory(src/thirdparty/snappy-1.1.7)
 add_subdirectory(src/thirdparty/googletest-release-1.8.0)
 add_subdirectory(src/thirdparty/glog-0.3.5)
 add_subdirectory(${ROCKSDB_DIR}/rocksdb)
@@ -115,11 +116,17 @@ set(WARN_CXX_ONLY
 
 set(WARN_C_ONLY
 "-Werror-implicit-function-declaration")
-else()
-include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
 
 # gflags
+
 include_directories("src/thirdparty/include")
+include_directories("src/thirdparty/include/snappy/")
+else()
+include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
+#include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include/snappy")
+
+# gflags
+include_directories("src/thirdparty/include/Windows/")
 ENDIF()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
