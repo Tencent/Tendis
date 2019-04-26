@@ -51,13 +51,15 @@
 // Must be overwritten when this header file is used with the optionally also
 // built static library instead; set by CMake's INTERFACE_COMPILE_DEFINITIONS.
 #ifndef GFLAGS_IS_A_DLL
-#  define GFLAGS_IS_A_DLL 0
+#  define GFLAGS_IS_A_DLL 1
 #endif
 
 // We always want to import the symbols of the gflags library.
 #ifndef GFLAGS_DLL_DECL
 #  if GFLAGS_IS_A_DLL && defined(_MSC_VER)
 #    define GFLAGS_DLL_DECL __declspec(dllimport)
+#  elif defined(__GNUC__) && __GNUC__ >= 4
+#    define GFLAGS_DLL_DECL __attribute__((visibility("default")))
 #  else
 #    define GFLAGS_DLL_DECL
 #  endif
@@ -67,6 +69,8 @@
 #ifndef GFLAGS_DLL_DECLARE_FLAG
 #  if GFLAGS_IS_A_DLL && defined(_MSC_VER)
 #    define GFLAGS_DLL_DECLARE_FLAG __declspec(dllimport)
+#  elif defined(__GNUC__) && __GNUC__ >= 4
+#    define GFLAGS_DLL_DECLARE_FLAG __attribute__((visibility("default")))
 #  else
 #    define GFLAGS_DLL_DECLARE_FLAG
 #  endif
@@ -79,13 +83,13 @@
 #  include <stdint.h>                   // the normal place uint32_t is defined
 #elif 1
 #  include <sys/types.h>                // the normal place u_int32_t is defined
-#elif 0
+#elif 1
 #  include <inttypes.h>                 // a third place for uint32_t or u_int32_t
 #endif
 
 namespace GFLAGS_NAMESPACE {
 
-#if 0 // C99
+#if 1 // C99
 typedef int32_t          int32;
 typedef uint32_t         uint32;
 typedef int64_t          int64;
@@ -95,7 +99,7 @@ typedef int32_t          int32;
 typedef u_int32_t        uint32;
 typedef int64_t          int64;
 typedef u_int64_t        uint64;
-#elif 1 // Windows
+#elif 0 // Windows
 typedef __int32          int32;
 typedef unsigned __int32 uint32;
 typedef __int64          int64;
@@ -144,7 +148,6 @@ typedef std::string clstring;
 #define DECLARE_string(name) \
   /* We always want to import declared variables, dll or no */ \
   namespace fLS { \
-  using ::fLS::clstring; \
   extern GFLAGS_DLL_DECLARE_FLAG ::fLS::clstring& FLAGS_##name; \
   } \
   using fLS::FLAGS_##name

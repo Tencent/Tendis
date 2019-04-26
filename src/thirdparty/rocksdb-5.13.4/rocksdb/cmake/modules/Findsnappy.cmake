@@ -5,13 +5,19 @@
 # SNAPPY_LIBRARIES - List of libraries when using snappy.
 # SNAPPY_FOUND - True if snappy found.
 
-find_path(SNAPPY_INCLUDE_DIR
-  NAMES snappy.h
-  HINTS ${SNAPPY_ROOT_DIR}/include)
+#find_path(SNAPPY_INCLUDE_DIR
+#  NAMES snappy.h
+#  HINTS ${SNAPPY_ROOT_DIR}/include)
 
-find_library(SNAPPY_LIBRARIES
-  NAMES snappy
-  HINTS ${SNAPPY_ROOT_DIR}/lib)
+#set(SNAPPY_INCLUDE_DIR "/data/home/vinchen/git/tendisplus/libs/snappy/")
+set(SNAPPY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/")
+
+#find_library(SNAPPY_LIBRARIES
+#  NAMES snappy
+#  HINTS ${SNAPPY_ROOT_DIR}/lib)
+
+set(SNAPPY_LIBRARIES "${CMAKE_SOURCE_DIR}/src/thirdparty/libs/libsnappy.a")
+#set(SNAPPY_LIBRARIES "libsnappy.a")
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(snappy DEFAULT_MSG SNAPPY_LIBRARIES SNAPPY_INCLUDE_DIR)
