@@ -1167,4 +1167,122 @@ public:
     }
 } sinterstoreCommand;
 
+class SmoveCommand: public Command {
+public:
+    SmoveCommand()
+        :Command("smove") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& source = sess->getArgs()[1];
+        const std::string& dest = sess->getArgs()[2];
+        const std::string& member = sess->getArgs()[3];
+
+        SessionCtx *pCtx = sess->getCtx();
+
+        Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, source, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        }
+
+        auto server = sess->getServerEntry();
+
+        // make sure any client cannot read the intermediate state
+        // that both keys have that "member", watch out lock order
+        std::string firstKey, secondKey;
+        bool firstSource = false;
+        if (source.compare(dest) < 0) {
+            firstKey = source;
+            secondKey = dest;
+            firstSource = true;
+        } else {
+            firstKey = dest;
+            secondKey = source;
+        }
+
+        auto firstdb = server->getSegmentMgr()->getDbWithKeyLock(sess, firstKey, mgl::LockMode::LOCK_X);
+        if (!firstdb.ok()) {
+            return firstdb.status();
+        }
+        auto seconddb = server->getSegmentMgr()->getDbWithKeyLock(sess, secondKey, mgl::LockMode::LOCK_X);
+        if (!seconddb.ok()) {
+            return seconddb.status();
+        }
+
+        DbWithLock srcDb = firstSource ? std::move(firstdb.value()) : std::move(seconddb.value());
+        DbWithLock destDb = firstSource ? std::move(seconddb.value()) : std::move(firstdb.value());
+
+        PStore srcStore = srcDb.store;
+        PStore destStore = destDb.store;
+
+        RecordKey remRk(srcDb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
+        RecordKey addRk(destDb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
+        // directly remove member from source
+        const std::string& formatRet = Command::fmtLongLong(1);
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = srcStore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> remRet = genericSRem(sess, srcStore, remRk, {member});
+            if (remRet.ok()) {
+                if (remRet.value() == formatRet) {
+                    break;
+                } else {
+                    return Command::fmtZero();
+                }
+            }
+            if (remRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return remRet.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return remRet.status();
+            } else {
+                continue;
+            }
+        }
+
+        // add member to dest
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = destStore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, {member});
+            if (addRet.ok()) {
+                return addRet.value();
+            }
+            if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return addRet.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return addRet.status();
+            } else {
+                continue;
+            }
+        }
+
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} smoveCommand;
+
 }  // namespace tendisplus
