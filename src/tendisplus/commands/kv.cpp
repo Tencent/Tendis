@@ -1829,11 +1829,12 @@ public:
                     "bit offset is not an integer or out of range"};
         }
         auto v = GetGenericCmd::run(sess);
+        if (v.status().code() == ErrorCodes::ERR_EXPIRED ||
+            v.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        }
         if (!v.ok()) {
             return v.status();
-        }
-        if (v.value() == "") {
-            return Command::fmtZero();
         }
 
         std::string bitValue = v.value();
