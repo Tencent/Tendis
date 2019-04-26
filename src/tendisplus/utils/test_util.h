@@ -13,6 +13,9 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/network/network.h"
 
+// disable one test if needed
+#define TEST_NO(a, b) void Test_no_##a##_##b()
+
 namespace tendisplus {
 
 using TestServer = std::shared_ptr<ServerEntry>;

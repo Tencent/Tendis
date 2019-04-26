@@ -78,6 +78,7 @@ void ServerEntry::logGeneral(Session *sess) {
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
+    LOG(INFO) << "ServerEntry::startup,,,";
     _requirepass = std::make_shared<std::string>(cfg->requirepass);
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
     _versionIncrease = cfg->versionIncrease;
@@ -437,12 +438,16 @@ void ServerEntry::stop() {
     _indexMgr->stop();
     _sessions.clear();
 
-    // _network.reset();
-    // _executor.reset();
-    // _replMgr.reset();
-    // _indexMgr.reset();
-    // _pessimisticMgr.reset();
-    // _segmentMgr.reset();
+    if (!_isShutdowned.load(std::memory_order_relaxed)) {
+        // NOTE(vinchen): if it's not the shutdown command, it should reset the 
+        // workerpool to decr the referent count of share_ptr<server>
+        _network.reset();
+        _executor.reset();
+        _replMgr.reset();
+        _indexMgr.reset();
+        _pessimisticMgr.reset();
+        _segmentMgr.reset();
+    }
 
     // stop the rocksdb
     std::stringstream ss;

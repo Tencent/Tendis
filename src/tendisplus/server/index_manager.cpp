@@ -223,6 +223,7 @@ namespace tendisplus {
 
           return stored_with_expires.size() > 0;
       };
+      LOG(WARNING) << "index manager running...";
 
       TEST_SYNC_POINT_CALLBACK("BeforeIndexManagerLoop", &_isRunning);
       while (_isRunning.load(std::memory_order_relaxed)) {
@@ -230,6 +231,8 @@ namespace tendisplus {
           schedDelExpired();
           std::this_thread::sleep_for(std::chrono::seconds(_pauseTime));
       }
+
+      LOG(WARNING) << "index manager exiting...";
 
       return {ErrorCodes::ERR_OK, ""};
   }
