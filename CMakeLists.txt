@@ -120,12 +120,13 @@ set(WARN_C_ONLY
 # gflags
 
 include_directories("src/thirdparty/include")
+include_directories("src/thirdparty/include/snappy/")
 else()
 include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
-include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include/snappy")
+#include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include/snappy")
 
 # gflags
-include_directories("src/thirdparty/include")
+include_directories("src/thirdparty/include/Windows/")
 ENDIF()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
