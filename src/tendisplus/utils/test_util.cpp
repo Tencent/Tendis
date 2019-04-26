@@ -26,6 +26,7 @@ std::shared_ptr<ServerParams> makeServerParam() {
     myfile << "storage rocks\n";
     myfile << "dir ./db\n";
     myfile << "rocks.blockcachemb 4096\n";
+    myfile << "generallog on\n";
     myfile.close();
 
     auto cfg = std::make_shared<ServerParams>();
