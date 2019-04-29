@@ -10,8 +10,6 @@ add_library(time_util STATIC time.cpp)
 
 add_library(string_util STATIC string.cpp)
 
-add_library(test_util STATIC test_util.cpp)
-
 add_executable(atomic_utility_test atomic_utility_test.cpp)
 target_link_libraries(atomic_utility_test status gtest_main ${SYS_LIBS})
 
@@ -26,3 +24,7 @@ else()
 endif()
 
 add_library(utils_common STATIC status.cpp redis_port.cpp time.cpp string.cpp ${STD})
+target_link_libraries(utils_common glog)
+
+add_library(test_util STATIC test_util.cpp)
+target_link_libraries(test_util utils_common server_params)

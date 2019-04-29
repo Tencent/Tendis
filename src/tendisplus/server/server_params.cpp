@@ -7,6 +7,7 @@
 
 #include "glog/logging.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/server/server_params.h"
 
 namespace tendisplus {
@@ -64,17 +65,19 @@ Status ServerParams::parseFile(const std::string& filename) {
             tokens.clear();
             std::string tmp;
             while (std::getline(ss, tmp, ' ')) {
-                bool isDir = false;
+                bool caseSensitive = false;
                 if (tokens.size() == 1) {
-                    if (tokens[0] == "dir" ||
-                        tokens[0] == "logdir" ||
-                        tokens[0] == "dumpdir" ||
-                        tokens[0] == "pidfile") {
+                    if (toLower(tokens[0]) == "dir" ||
+                        toLower(tokens[0]) == "logdir" ||
+                        toLower(tokens[0]) == "dumpdir" ||
+                        toLower(tokens[0]) == "pidfile" ||
+                        toLower(tokens[0]) == "masterauth" ||
+                        toLower(tokens[0]) == "requirepass") {
                         // can't change dir to lower
-                        isDir = true;
+                        caseSensitive = true;
                     }
                 }
-                if (!isDir) {
+                if (!caseSensitive) {
                     std::transform(tmp.begin(), tmp.end(),
                                     tmp.begin(), tolower);
                 }
