@@ -42,6 +42,11 @@ class SessionCtx {
     std::vector<std::string> getArgsBrief() const;
     void setArgsBrief(const std::vector<std::string>& v);
     void clearRequestCtx();
+    void setExtendProtocol(bool v);
+    void setExtendProtocolValue(uint64_t ts, uint64_t version);
+    uint64_t getEpTs() const { return _timestamp; }
+    uint64_t getEpVersion() const { return _version; }
+    bool isEp() const { return _extendProtocol; }
 
  private:
     // not protected by mutex
@@ -51,6 +56,9 @@ class SessionCtx {
     mgl::LockMode _waitlockMode;
     std::string _waitlockKey;
     uint64_t _processPacketStart;
+    uint64_t _timestamp;
+    uint64_t _version;
+    bool _extendProtocol;
 
     mutable std::mutex _mutex;
 

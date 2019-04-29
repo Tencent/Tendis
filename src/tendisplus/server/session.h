@@ -22,6 +22,7 @@ class Session: public std::enable_shared_from_this<Session> {
 
     virtual void setResponse(const std::string& s) = 0;
     const std::vector<std::string>& getArgs() const;
+    Status processExtendProtocol();
     SessionCtx *getCtx() const;
     std::shared_ptr<ServerEntry> getServerEntry() const;
 

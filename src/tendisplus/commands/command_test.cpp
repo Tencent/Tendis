@@ -1493,6 +1493,48 @@ TEST(Command, expire) {
     testExpire2(server);
 }
 
+void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "config", "set", "session",
+                            "tendis_extended_protocol", "1" });
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "sadd", "ss", "a", "100", "100", "v1" });
+    auto s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(sess.getServerEntry()->getTsEp(), 100);
+
+    sess.setArgs({ "sadd", "ss", "b", "101", "100", "v1" });
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(sess.getServerEntry()->getTsEp(), 101);
+
+    sess.setArgs({ "sadd", "ss", "c", "102", "a", "v1" });
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(!s.ok());
+    EXPECT_EQ(sess.getServerEntry()->getTsEp(), 101);
+
+    std::stringstream ss1;
+    sess.setArgs({"smembers", "ss", "102", "100", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    EXPECT_EQ(ss1.str(), expect.value());
+}
+
 void testScan(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1562,7 +1604,6 @@ TEST(Command, common) {
     testZset3(server);
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
-
 }
 
 TEST(Command, common_scan) {
@@ -1577,6 +1618,20 @@ TEST(Command, common_scan) {
     auto server = makeServerEntry(cfg);
 
     testScan(server);
+}
+
+TEST(Command, tendisex) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    // need 420000
+    cfg->chunkSize = 420000;
+    auto server = makeServerEntry(cfg);
+
+    testExtendedProtocol(server);
 }
 /*
 TEST(Command, keys) {

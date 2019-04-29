@@ -124,7 +124,11 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
         sess->getCtx()->clearRequestCtx();
         it->second->incrNanos(nsSinceEpoch() - now);
     });
-    return it->second->run(sess);
+    auto v = it->second->run(sess);
+    if (v.ok()) {
+        sess->getServerEntry()->setTsEp(sess->getCtx()->getEpTs());
+    }
+    return v;
 }
 
 // should be called with store locked

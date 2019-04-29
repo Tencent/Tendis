@@ -92,6 +92,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status setStoreMode(PStore store, KVStore::StoreMode mode);
     Status destroyStore(Session* sess, uint32_t storeId, bool isForce);
     uint32_t getKVStoreCount() const;
+    void setTsEp(uint64_t timestamp);
+    uint64_t getTsEp() const;
 
  private:
     void ftmc();
@@ -129,6 +131,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<std::string> _masterauth;
     bool _versionIncrease;
     bool _generalLog;
+    std::atomic<uint64_t> _tsFromExtendedProtocol;
 };
 }  // namespace tendisplus
 

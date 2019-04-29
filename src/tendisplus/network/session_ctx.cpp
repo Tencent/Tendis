@@ -15,7 +15,10 @@ SessionCtx::SessionCtx()
      _waitlockStore(0),
      _waitlockMode(mgl::LockMode::LOCK_NONE),
      _waitlockKey(""),
-     _processPacketStart(0) {
+     _processPacketStart(0),
+     _timestamp(-1),
+     _version(-1),
+     _extendProtocol(false) {
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -74,6 +77,8 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 void SessionCtx::clearRequestCtx() {
     std::lock_guard<std::mutex> lk(_mutex);
     _argsBrief.clear();
+    _timestamp = -1;
+    _version = -1;
 }
 
 void SessionCtx::setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode) {
@@ -95,6 +100,14 @@ std::list<SLSP> SessionCtx::getLockStates() const {
             SLSP(lk->getStoreId(), lk->getKey(), lk->getMode()));
     }
     return result;
+}
+
+void SessionCtx::setExtendProtocol(bool v) {
+    _extendProtocol = v;
+}
+void SessionCtx::setExtendProtocolValue(uint64_t ts, uint64_t version) {
+    _timestamp = ts;
+    _version = version;
 }
 
 }  // namespace tendisplus
