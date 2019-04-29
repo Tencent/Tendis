@@ -133,6 +133,151 @@ start_server {
         for {set i 1} {$i <= 5} {incr i} {
             r sadd [format "set%d" $i] $large
         }
+
+        #test "Generated sets must be encoded as $type" {
+        #    for {set i 1} {$i <= 5} {incr i} {
+        #        assert_encoding $type [format "set%d" $i]
+        #    }
+        #}
+
+        test "SINTER with two sets - $type" {
+            assert_equal [list 195 196 197 198 199 $large] [lsort [r sinter set1 set2]]
+        }
+
+        test "SINTERSTORE with two sets - $type" {
+            r sinterstore setres set1 set2
+            #assert_encoding $type setres
+            assert_equal [list 195 196 197 198 199 $large] [lsort [r smembers setres]]
+        }
+
+        test "SINTERSTORE with two sets, after a DEBUG RELOAD - $type" {
+            r debug reload
+            r sinterstore setres set1 set2
+            #assert_encoding $type setres
+            assert_equal [list 195 196 197 198 199 $large] [lsort [r smembers setres]]
+        }
+
+        test "SUNION with two sets - $type" {
+            set expected [lsort -uniq "[r smembers set1] [r smembers set2]"]
+            assert_equal $expected [lsort [r sunion set1 set2]]
+        }
+
+        test "SUNIONSTORE with two sets - $type" {
+            r sunionstore setres set1 set2
+            #assert_encoding $type setres
+            set expected [lsort -uniq "[r smembers set1] [r smembers set2]"]
+            assert_equal $expected [lsort [r smembers setres]]
+        }
+
+        test "SINTER against three sets - $type" {
+            assert_equal [list 195 199 $large] [lsort [r sinter set1 set2 set3]]
+        }
+
+        test "SINTERSTORE with three sets - $type" {
+            r sinterstore setres set1 set2 set3
+            assert_equal [list 195 199 $large] [lsort [r smembers setres]]
+        }
+
+        test "SUNION with non existing keys - $type" {
+            set expected [lsort -uniq "[r smembers set1] [r smembers set2]"]
+            assert_equal $expected [lsort [r sunion nokey1 set1 set2 nokey2]]
+        }
+
+        test "SDIFF with two sets - $type" {
+            assert_equal {0 1 2 3 4} [lsort [r sdiff set1 set4]]
+        }
+
+        test "SDIFF with three sets - $type" {
+            assert_equal {1 2 3 4} [lsort [r sdiff set1 set4 set5]]
+        }
+
+        test "SDIFFSTORE with three sets - $type" {
+            r sdiffstore setres set1 set4 set5
+            # When we start with intsets, we should always end with intsets.
+            #if {$type eq {intset}} {
+                #assert_encoding intset setres
+            #}
+            assert_equal {1 2 3 4} [lsort [r smembers setres]]
+        }
+    }
+
+    test "SDIFF with first set empty" {
+        r del set1 set2 set3
+        r sadd set2 1 2 3 4
+        r sadd set3 a b c d
+        r sdiff set1 set2 set3
+    } {}
+
+    test "SDIFF with same set two times" {
+        r del set1
+        r sadd set1 a b c 1 2 3 4 5 6
+        r sdiff set1 set1
+    } {}
+
+    test "SDIFF fuzzing" {
+        for {set j 0} {$j < 100} {incr j} {
+            unset -nocomplain s
+            array set s {}
+            set args {}
+            set num_sets [expr {[randomInt 10]+1}]
+            for {set i 0} {$i < $num_sets} {incr i} {
+                set num_elements [randomInt 100]
+                r del set_$i
+                lappend args set_$i
+                while {$num_elements} {
+                    set ele [randomValue]
+                    r sadd set_$i $ele
+                    if {$i == 0} {
+                        set s($ele) x
+                    } else {
+                        unset -nocomplain s($ele)
+                    }
+                    incr num_elements -1
+                }
+            }
+            set result [lsort [r sdiff {*}$args]]
+            assert_equal $result [lsort [array names s]]
+        }
+    }
+
+    # now we can have multi keys that share the same name
+    #test "SINTER against non-set should throw error" {
+    #    r set key1 x
+    #    assert_error "WRONGTYPE*" {r sinter key1 noset}
+    #}
+    #
+    #test "SUNION against non-set should throw error" {
+    #    r set key1 x
+    #    assert_error "WRONGTYPE*" {r sunion key1 noset}
+    #}
+
+    test "SINTER should handle non existing key as empty" {
+        r del set1 set2 set3
+        r sadd set1 a b c
+        r sadd set2 b c d
+        r sinter set1 set2 set3
+    } {}
+
+    test "SINTER with same integer elements but different encoding" {
+        r del set1 set2
+        r sadd set1 1 2 3
+        r sadd set2 1 2 3 a
+        r srem set2 a
+        #assert_encoding intset set1
+        #assert_encoding hashtable set2
+        lsort [r sinter set1 set2]
+    } {1 2 3}
+
+    test "SINTERSTORE against non existing keys should delete dstkey" {
+        r set setres xxx
+        assert_equal 0 [r sinterstore setres foo111 bar222]
+        assert_equal 0 [r exists setres]
+    }
+
+    test "SUNIONSTORE against non existing keys should delete dstkey" {
+        r set setres xxx
+        assert_equal 0 [r sunionstore setres foo111 bar222]
+        assert_equal 0 [r exists setres]
     }
 
     foreach {type contents} {hashtable {a b c} hashtable {1 2 3}} {
@@ -271,84 +416,83 @@ start_server {
         create_set myset2 {2 3 4}
     }
 
-    # TODO(vinchen): disable smove
-   # test "SMOVE basics - from regular set to hashtable" {
-   #     # move a non-integer element to an hashtable should convert encoding
-   #     setup_move
-   #     assert_equal 1 [r smove myset1 myset2 a]
-   #     assert_equal {1 b} [lsort [r smembers myset1]]
-   #     assert_equal {2 3 4 a} [lsort [r smembers myset2]]
+    test "SMOVE basics - from regular set to hashtable" {
+        # move a non-integer element to an hashtable should convert encoding
+        setup_move
+        assert_equal 1 [r smove myset1 myset2 a]
+        assert_equal {1 b} [lsort [r smembers myset1]]
+        assert_equal {2 3 4 a} [lsort [r smembers myset2]]
 
-   #     # move an integer element should not convert the encoding
-   #     setup_move
-   #     assert_equal 1 [r smove myset1 myset2 1]
-   #     assert_equal {a b} [lsort [r smembers myset1]]
-   #     assert_equal {1 2 3 4} [lsort [r smembers myset2]]
-   # }
+        # move an integer element should not convert the encoding
+        setup_move
+        assert_equal 1 [r smove myset1 myset2 1]
+        assert_equal {a b} [lsort [r smembers myset1]]
+        assert_equal {1 2 3 4} [lsort [r smembers myset2]]
+    }
 
-   # test "SMOVE basics - from hashtable to regular set" {
-   #     setup_move
-   #     assert_equal 1 [r smove myset2 myset1 2]
-   #     assert_equal {1 2 a b} [lsort [r smembers myset1]]
-   #     assert_equal {3 4} [lsort [r smembers myset2]]
-   # }
+    test "SMOVE basics - from hashtable to regular set" {
+        setup_move
+        assert_equal 1 [r smove myset2 myset1 2]
+        assert_equal {1 2 a b} [lsort [r smembers myset1]]
+        assert_equal {3 4} [lsort [r smembers myset2]]
+    }
 
-   # test "SMOVE non existing key" {
-   #     setup_move
-   #     assert_equal 0 [r smove myset1 myset2 foo]
-   #     assert_equal {1 a b} [lsort [r smembers myset1]]
-   #     assert_equal {2 3 4} [lsort [r smembers myset2]]
-   # }
+    test "SMOVE non existing key" {
+        setup_move
+        assert_equal 0 [r smove myset1 myset2 foo]
+        assert_equal {1 a b} [lsort [r smembers myset1]]
+        assert_equal {2 3 4} [lsort [r smembers myset2]]
+    }
 
-   # test "SMOVE non existing src set" {
-   #     setup_move
-   #     assert_equal 0 [r smove noset myset2 foo]
-   #     assert_equal {2 3 4} [lsort [r smembers myset2]]
-   # }
+    test "SMOVE non existing src set" {
+        setup_move
+        assert_equal 0 [r smove noset myset2 foo]
+        assert_equal {2 3 4} [lsort [r smembers myset2]]
+    }
 
-   # test "SMOVE from regular set to non existing destination set" {
-   #     setup_move
-   #     assert_equal 1 [r smove myset1 myset3 a]
-   #     assert_equal {1 b} [lsort [r smembers myset1]]
-   #     assert_equal {a} [lsort [r smembers myset3]]
-   # }
+    test "SMOVE from regular set to non existing destination set" {
+        setup_move
+        assert_equal 1 [r smove myset1 myset3 a]
+        assert_equal {1 b} [lsort [r smembers myset1]]
+        assert_equal {a} [lsort [r smembers myset3]]
+    }
 
-   # test "SMOVE from hashtable to non existing destination set" {
-   #     setup_move
-   #     assert_equal 1 [r smove myset2 myset3 2]
-   #     assert_equal {3 4} [lsort [r smembers myset2]]
-   #     assert_equal {2} [lsort [r smembers myset3]]
-   # }
+    test "SMOVE from hashtable to non existing destination set" {
+        setup_move
+        assert_equal 1 [r smove myset2 myset3 2]
+        assert_equal {3 4} [lsort [r smembers myset2]]
+        assert_equal {2} [lsort [r smembers myset3]]
+    }
 
-   # test "SMOVE wrong src key type" {
-   #     setup_move
-   #     r set x 10
-   #     assert_equal 0 [r smove x myset2 2]
-   # }
+    test "SMOVE wrong src key type" {
+        setup_move
+        r set x 10
+        assert_equal 0 [r smove x myset2 2]
+    }
 
-   # test "SMOVE wrong dst key type" {
-   #     setup_move
-   #     r set x 10
-   #     assert_equal 1 [r smove myset2 x 2]
-   # }
+    test "SMOVE wrong dst key type" {
+        setup_move
+        r set x 10
+        assert_equal 1 [r smove myset2 x 2]
+    }
 
-   # test "SMOVE with identical source and destination" {
-   #     r del set
-   #     r sadd set a b c
-   #     r smove set set b
-   #     lsort [r smembers set]
-   # } {a b c}
+    test "SMOVE with identical source and destination" {
+        r del set
+        r sadd set a b c
+        r smove set set b
+        lsort [r smembers set]
+    } {a b c}
 
-   # test "SMOVE a member exists in destination set" {
-   #     r del set1 set2
-   #     r sadd set1 a b c d
-   #       r sadd set2 a b c d e
-   #     r smove set1 set2 a
-   #     assert_equal {b c d} [lsort [r smembers set1]]
-   #     assert_equal {a b c d e} [lsort [r smembers set2]]
-   #       assert_equal 3 [r scard set1]
-   #       assert_equal 5 [r scard set2]
-   # }
+    test "SMOVE a member exists in destination set" {
+        r del set1 set2
+        r sadd set1 a b c d
+          r sadd set2 a b c d e
+        r smove set1 set2 a
+        assert_equal {b c d} [lsort [r smembers set1]]
+        assert_equal {a b c d e} [lsort [r smembers set2]]
+          assert_equal 3 [r scard set1]
+          assert_equal 5 [r scard set2]
+    }
 
     tags {slow} {
         test {hashtables implementation stress testing} {
