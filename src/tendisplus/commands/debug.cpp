@@ -1009,7 +1009,7 @@ class ConfigCommand : public Command {
     }
 
     ssize_t arity() const {
-        return 4;
+        return -4;
     }
 
     int32_t firstkey() const {
@@ -1026,6 +1026,23 @@ class ConfigCommand : public Command {
 
     Expected<std::string> run(Session *sess) final {
         // TODO(vinchen): support it later
+        auto& args = sess->getArgs();
+
+        if (args.size() != 4 && args.size() != 5) {
+            return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+        }
+        if (toLower(args[1]) == "set") {
+            if (toLower(args[2]) == "session") {
+                if (args.size() != 5) {
+                    return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+                }
+
+                if (toLower(args[3]) == "tendis_extended_protocol") {
+                    sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
+                }
+            }
+        }
+
         return Command::fmtOK();
     }
 } configCmd;

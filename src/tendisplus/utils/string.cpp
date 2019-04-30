@@ -187,4 +187,12 @@ Expected<std::string> unhexlify(const std::string& s) {
     return result;
 }
 
+bool isOptionOn(const std::string& s) {
+    auto x = toLower(s);
+    if (x == "on" || x == "1" || x == "true") {
+        return true;
+    }
+    return false;
+}
+
 }  // namespace tendisplus

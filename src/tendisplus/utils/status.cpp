@@ -85,6 +85,8 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "min or max is not a float";
     case ErrorCodes::ERR_ZSLPARSELEXRANGE:
         return "min or max not valid string range item";
+    case ErrorCodes::ERR_EXTENDED_PROTOCOL:
+        return "invalid extended protocol input";
  
     default:
         break;

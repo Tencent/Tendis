@@ -3,6 +3,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 std::atomic<uint64_t> Session::_idGen(0);
@@ -85,6 +86,42 @@ LocalSessionGuard::~LocalSessionGuard() {
 
 LocalSession* LocalSessionGuard::getSession() {
     return _sess.get();
+}
+
+Status Session::processExtendProtocol() {
+    if (!this->getCtx()->isEp()) {
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    // cmd key timestamp version tendisex
+    if (_args.size() < 4) {
+        return{ ErrorCodes::ERR_EXTENDED_PROTOCOL, "" };
+    }
+
+    uint32_t i = _args.size() - 1;
+    if (toLower(_args[i]) == "v1") {
+        auto v = tendisplus::stoull(_args[--i]);
+        if (!v.ok()) {
+            return v.status();
+        }
+        uint64_t version = v.value();
+        v = tendisplus::stoull(_args[--i]);
+        if (!v.ok()) {
+            return v.status();
+        }
+        uint64_t timestamp = v.value();
+
+        _ctx->setExtendProtocolValue(timestamp, version);
+
+        // remove the extra args
+        _args.pop_back();
+        _args.pop_back();
+        _args.pop_back();
+
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    return{ ErrorCodes::ERR_EXTENDED_PROTOCOL, "" };
 }
 
 }  // namespace tendisplus

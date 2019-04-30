@@ -311,6 +311,13 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
+    // NOTE(vinchen): process the ExtraProtocol of timestamp and version 
+    auto s = sess->processExtendProtocol();
+    if (!s.ok()) {
+        sess->setResponse(
+            redis_port::errorReply(s.toString()));
+        return true;
+    }
 
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
@@ -598,6 +605,14 @@ void ServerEntry::stop() {
 
 void ServerEntry::toggleFtmc(bool enable) {
     _ftmcEnabled.store(enable, std::memory_order_relaxed);
+}
+
+uint64_t ServerEntry::getTsEp() const {
+    return _tsFromExtendedProtocol.load(std::memory_order_relaxed);
+}
+
+void ServerEntry::setTsEp(uint64_t timestamp) {
+    _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
 }
 
 }  // namespace tendisplus
