@@ -24,7 +24,7 @@ endif()
 
 
 add_executable(server_params_test server_params_test.cpp)
-target_link_libraries(server_params_test server_params status glog ${SYS_LIBS})
+target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})
 
 add_executable(tendisplus main.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)

@@ -20,9 +20,9 @@ class KVTtlCompactionFilter : public CompactionFilter {
         TEST_SYNC_POINT_CALLBACK("InspectKvTtlFilterCount", &_filterCount);
 
         // do something statistics here
-        _store->compactStat.filterCount.fetch_add(_filterCount,
+        _store->stat.compactFilterCount.fetch_add(_filterCount,
                             std::memory_order_relaxed);
-        _store->compactStat.kvExpiredCount.fetch_add(_expiredCount,
+        _store->stat.compactKvExpiredCount.fetch_add(_expiredCount,
                             std::memory_order_relaxed);
     }
 
@@ -77,7 +77,7 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
     INVARIANT(_store != nullptr);
     // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
     // should get the binlog time in slave point.
-    currentTs = ((uint64_t)_store->getCurrentTime()) * 1000;
+    currentTs = _store->getCurrentTime();
 
     if (currentTs == 0) {
         LOG(WARNING) <<

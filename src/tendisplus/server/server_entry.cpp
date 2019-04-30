@@ -12,6 +12,7 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -75,6 +76,11 @@ void ServerEntry::logGeneral(Session *sess) {
     LOG(INFO) << ss.str();
 }
 
+uint32_t ServerEntry::getKVStoreCount() const {
+    INVARIANT(_kvstores.size() == _catalog->getKVStoreCount());
+    return _catalog->getKVStoreCount();
+}
+
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
@@ -84,33 +90,56 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
 
+    uint32_t kvStoreCount = cfg->kvStoreCount;
+    uint32_t chunkSize = cfg->chunkSize;
+
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore(CATALOG_NAME, cfg, nullptr))));
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr))),
+          kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
     // kvstore init
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
     std::vector<PStore> tmpStores;
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-        std::stringstream ss;
-        ss << i;
-        std::string dbId = ss.str();
+    tmpStores.reserve(kvStoreCount);
+    for (size_t i = 0; i < kvStoreCount; ++i) {
+        auto meta = _catalog->getStoreMainMeta(i);
+        KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE;
+
+        if (meta.ok()) {
+            mode = meta.value()->storeMode;
+        } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            auto pMeta = std::unique_ptr<StoreMainMeta>(
+                    new StoreMainMeta(i, KVStore::StoreMode::READ_WRITE));
+            Status s = _catalog->setStoreMainMeta(*pMeta);
+            if (!s.ok()) {
+                LOG(FATAL) << "catalog setStoreMainMeta error:"
+                    << s.toString();
+                return s;
+            }
+        } else {
+            LOG(FATAL) << "catalog getStoreMainMeta error:"
+                << meta.status().toString();
+            return meta.status();
+        }
+
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
+            new RocksKVStore(std::to_string(i), cfg, blockCache, mode)));
     }
     installStoresInLock(tmpStores);
+    INVARIANT(getKVStoreCount() == kvStoreCount);
 
     // segment mgr
     auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
-        new SegmentMgrFnvHash64(_kvstores));
+        new SegmentMgrFnvHash64(_kvstores, chunkSize));
     installSegMgrInLock(std::move(tmpSegMgr));
 
     // pessimisticMgr
     auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
-        KVStore::INSTANCE_NUM);
+        kvStoreCount);
     installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
     // request executePool
@@ -357,6 +386,99 @@ void ServerEntry::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w,
         w.Uint64(_poolMatrix->executeTime.get());
         w.EndObject();
     }
+}
+
+Status ServerEntry::destroyStore(Session *sess,
+            uint32_t storeId, bool isForce) {
+    auto expdb = getSegmentMgr()->getDb(sess, storeId,
+        mgl::LockMode::LOCK_X);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+
+    auto store = expdb.value().store;
+    if (!isForce) {
+        if (!store->isEmpty()) {
+            return{ ErrorCodes::ERR_INTERNAL,
+                "try to close an unempty store" };
+        }
+    }
+
+    if (!store->isPaused()) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "please pausestore first before destroystore" };
+    }
+
+    if (store->getMode() == KVStore::StoreMode::READ_WRITE) {
+        // TODO(vinchen)
+        // NOTE(vinchen): maybe it should create a binlog here to
+        // destroy the store of slaves.
+        // But it maybe hard to confirm whether all the slaves apply
+        // this binlog before the master destroy. (check MPOVStatus?)
+    }
+
+    auto meta = getCatalog()->getStoreMainMeta(storeId);
+    if (!meta.ok()) {
+        LOG(WARNING) << "get store main meta:" << storeId
+            << " failed:" << meta.status().toString();
+        return meta.status();
+    }
+    meta.value()->storeMode = KVStore::StoreMode::STORE_NONE;
+    Status status = getCatalog()->setStoreMainMeta(*meta.value());
+    if (!status.ok()) {
+        LOG(WARNING) << "set store main meta:" << storeId
+            << " failed:" << status.toString();
+        return status;
+    }
+
+    status = store->destroy();
+    if (!status.ok()) {
+        LOG(ERROR) << "destroy store :" << storeId
+            << " failed:" << status.toString();
+        return status;
+    }
+    INVARIANT(store->getMode() == KVStore::StoreMode::STORE_NONE);
+
+    status = _replMgr->stopStore(storeId);
+    if (!status.ok()) {
+        LOG(ERROR) << "replMgr stopStore :" << storeId
+            << " failed:" << status.toString();
+        return status;
+    }
+
+    status = _indexMgr->stopStore(storeId);
+    if (!status.ok()) {
+        LOG(ERROR) << "indexMgr stopStore :" << storeId
+            << " failed:" << status.toString();
+        return status;
+    }
+
+    return status;
+}
+
+Status ServerEntry::setStoreMode(PStore store,
+    KVStore::StoreMode mode) {
+
+    // assert held the X lock of store
+    if (store->getMode() == mode) {
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    auto catalog = getCatalog();
+    Status status = store->setMode(mode);
+    if (!status.ok()) {
+        LOG(FATAL) << "ServerEntry::setStoreMode error, "
+                << status.toString();
+        return status;
+    }
+    auto storeId = tendisplus::stoul(store->dbId());
+    if (!storeId.ok()) {
+        return storeId.status();
+    }
+    auto meta = catalog->getStoreMainMeta(storeId.value());
+    meta.value()->storeMode = mode;
+
+    return catalog->setStoreMainMeta(*meta.value());
 }
 
 // full-time matrix collect

@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/lock/lock.h"
@@ -27,7 +28,9 @@ class SegmentMgr {
     SegmentMgr(SegmentMgr&&) = delete;
     virtual Expected<DbWithLock> getDbWithKeyLock(Session* sess,
             const std::string& key, mgl::LockMode keyLockMode) = 0;
-    virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) = 0;
+    virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
+                                mgl::LockMode mode,
+                                bool canOpenStoreNoneDB = false) = 0;
 
  private:
     const std::string _name;
@@ -35,17 +38,19 @@ class SegmentMgr {
 
 class SegmentMgrFnvHash64: public SegmentMgr {
  public:
-    explicit SegmentMgrFnvHash64(const std::vector<PStore>& ins);
+    SegmentMgrFnvHash64(const std::vector<PStore>& ins, const size_t hashSpace);
     virtual ~SegmentMgrFnvHash64() = default;
     SegmentMgrFnvHash64(const SegmentMgrFnvHash64&) = delete;
     SegmentMgrFnvHash64(SegmentMgrFnvHash64&&) = delete;
     Expected<DbWithLock> getDbWithKeyLock(Session* sess,
             const std::string& key, mgl::LockMode keyLockMode) final;
-    Expected<DbWithLock> getDb(Session* sess, uint32_t insId, mgl::LockMode mode) final;
+    Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
+                                mgl::LockMode mode,
+                                bool canOpenStoreNoneDB = false) final;
 
  private:
     std::vector<PStore> _instances;
-    static constexpr size_t HASH_SPACE = 420000U;
+    size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
     static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;
 };

@@ -26,6 +26,9 @@ class ServerParams {
     bool versionIncrease;
     bool generalLog;
 
+    uint32_t chunkSize;
+    uint32_t kvStoreCount;
+
     uint32_t scanCntIndexMgr;
     uint32_t scanJobCntIndexMgr;
     uint32_t delCntIndexMgr;

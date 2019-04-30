@@ -478,6 +478,40 @@ bool RocksKVStore::isRunning() const {
     return _isRunning;
 }
 
+bool RocksKVStore::isPaused() const {
+    //std::lock_guard<std::mutex> lk(_mutex);
+    return _isPaused;
+}
+
+bool RocksKVStore::isEmpty() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    // TODO(vinchen)
+    return false;
+}
+
+Status RocksKVStore::pause() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_aliveTxns.size() != 0) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive" };
+    }
+
+    _isPaused = true;
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::resume() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_aliveTxns.size() != 0) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "it's upperlayer's duty to guarantee no pinning txns alive" };
+    }
+
+    _isPaused = false;
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 Status RocksKVStore::stop() {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_aliveTxns.size() != 0) {
@@ -490,6 +524,21 @@ Status RocksKVStore::stop() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksKVStore::destroy() {
+    Status status;
+    if (_isRunning) {
+        status = stop();
+        if (!status.ok()) {
+            return status;
+        }
+    }
+
+    _mode = KVStore::StoreMode::STORE_NONE;
+    status = clear();
+
+    return status;
+}
+
 Status RocksKVStore::setMode(StoreMode mode) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_aliveTxns.size() != 0) {
@@ -500,7 +549,8 @@ Status RocksKVStore::setMode(StoreMode mode) {
         return {ErrorCodes::ERR_OK, ""};
     }
     uint64_t oldSeq = _nextTxnSeq;
-    if (mode == KVStore::StoreMode::READ_WRITE) {
+    switch (mode) {
+    case KVStore::StoreMode::READ_WRITE:
         INVARIANT(_mode == KVStore::StoreMode::REPLICATE_ONLY);
         // in READ_WRITE mode, the binlog's key is identified by _nextTxnSeq,
         // in REPLICATE_ONLY mode, the binlog is same as the sync-source's
@@ -509,9 +559,16 @@ Status RocksKVStore::setMode(StoreMode mode) {
         if (_nextTxnSeq <= _highestVisible) {
             _nextTxnSeq = _highestVisible+1;
         }
-    } else if (mode == KVStore::StoreMode::REPLICATE_ONLY) {
+        break;
+
+    case KVStore::StoreMode::REPLICATE_ONLY:
+    case KVStore::StoreMode::STORE_NONE:
         INVARIANT(_mode == KVStore::StoreMode::READ_WRITE);
+        break;
+    default:
+        INVARIANT(0);
     }
+
     LOG(INFO) << "store:" << dbId()
               << ",mode:" << static_cast<uint32_t>(_mode)
               << ",changes to:" << static_cast<uint32_t>(mode)
@@ -676,6 +733,13 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
+
+    // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
+    // to open in rocksdb layer.
+    if (getMode() == KVStore::StoreMode::STORE_NONE) {
+        return {ErrorCodes::ERR_OK, "" };
+    }
+
     std::string dbname = dbPath() + "/" + dbId();
     if (restore) {
         try {
@@ -786,12 +850,14 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 RocksKVStore::RocksKVStore(const std::string& id,
             const std::shared_ptr<ServerParams>& cfg,
             std::shared_ptr<rocksdb::Cache> blockCache,
+            KVStore::StoreMode mode,
             TxnMode txnMode,
             uint64_t maxKeepLogs)
         :KVStore(id, cfg->dbPath),
          _isRunning(false),
+         _isPaused(false),
          _hasBackup(false),
-         _mode(KVStore::StoreMode::READ_WRITE),
+         _mode(mode),
          _txnMode(txnMode),
          _optdb(nullptr),
          _pesdb(nullptr),
@@ -1110,6 +1176,8 @@ void RocksKVStore::appendJSONStat(
     w.String(dbId().c_str());
     w.Key("is_running");
     w.Uint64(_isRunning);
+    w.Key("is_paused");
+    w.Uint64(_isPaused);
     w.Key("has_backup");
     w.Uint64(_hasBackup);
     w.Key("next_txn_seq");
@@ -1127,22 +1195,28 @@ void RocksKVStore::appendJSONStat(
     }
 
     w.Key("compact_filter_count");
-    w.Uint64(compactStat.filterCount.load(std::memory_order_relaxed));
+    w.Uint64(stat.compactFilterCount.load(std::memory_order_relaxed));
     w.Key("compact_kvexpired_count");
-    w.Uint64(compactStat.kvExpiredCount.load(std::memory_order_relaxed));
+    w.Uint64(stat.compactKvExpiredCount.load(std::memory_order_relaxed));
+    w.Key("paused_error_count");
+    w.Uint64(stat.pausedErrorCount.load(std::memory_order_relaxed));
+    w.Key("destroyed_error_count");
+    w.Uint64(stat.destroyedErrorCount.load(std::memory_order_relaxed));
 
     w.Key("rocksdb");
     w.StartObject();
-    for (const auto& kv : properties) {
-        uint64_t tmp;
-        bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
-        if (!ok) {
-            LOG(WARNING) << "db:" << dbId()
-                         << " getProperity:" << kv.first << " failed";
-            continue;
+    if (_isRunning) {
+        for (const auto& kv : properties) {
+            uint64_t tmp;
+            bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
+            if (!ok) {
+                LOG(WARNING) << "db:" << dbId()
+                    << " getProperity:" << kv.first << " failed";
+                continue;
+            }
+            w.Key(kv.second.c_str());
+            w.Uint64(tmp);
         }
-        w.Key(kv.second.c_str());
-        w.Uint64(tmp);
     }
     w.EndObject();
 }

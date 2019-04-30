@@ -10,6 +10,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/test_util.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/server/server_params.h"
@@ -17,26 +18,6 @@
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {
-
-static std::shared_ptr<ServerParams> genParams() {
-    const auto guard = MakeGuard([] {
-        remove("a.cfg");
-    });
-    std::ofstream myfile;
-    myfile.open("a.cfg");
-    myfile << "bind 127.0.0.1\n";
-    myfile << "port 8903\n";
-    myfile << "loglevel debug\n";
-    myfile << "logdir ./log\n";
-    myfile << "storage rocks\n";
-    myfile << "dir ./db\n";
-    myfile << "rocks.blockcachemb 4096\n";
-    myfile.close();
-    auto cfg = std::make_shared<ServerParams>();
-    auto s = cfg->parseFile("a.cfg");
-    EXPECT_EQ(s.ok(), true) << s.toString();
-    return cfg;
-}
 
 void testList(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
@@ -147,7 +128,7 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
 
-    // case from redis.io rpoplpush 
+    // case from redis.io rpoplpush
     sess.setArgs({"rpush", "rpoplpushkey", "one"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -463,7 +444,7 @@ void testZset4(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     sess.setArgs({"zadd", "tzk4.2",
-                "0", "foo", "0", "zap", "0", "zip", "0", "ALPHA", "0", "alpha"});
+      "0", "foo", "0", "zap", "0", "zip", "0", "ALPHA", "0", "alpha"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
@@ -624,7 +605,7 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, "b");
     Command::fmtBulk(ss, "c");
     EXPECT_EQ(expect.value(), ss.str());
-   
+
     ss.str("");
     sess.setArgs({"zrangebylex", "tzk3.3", "-", "(c"});
     expect = Command::runSessionCmd(&sess);
@@ -666,7 +647,7 @@ void testZset3(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, "six");
     Command::fmtBulk(ss, "seven");
     EXPECT_EQ(expect.value(), ss.str());
-    
+
     ss.str("");
     sess.setArgs({"zrangebyscore", "tzk3.4", "1", "2"});
     expect = Command::runSessionCmd(&sess);
@@ -704,11 +685,13 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({"spop", "settestkey1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(expect.value(), Command::fmtBulk("one")) << expect.status().toString();
+    EXPECT_EQ(expect.value(),
+        Command::fmtBulk("one")) << expect.status().toString();
     sess.setArgs({"scard", "settestkey1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(expect.value(), Command::fmtLongLong(2)) << expect.status().toString();
+    EXPECT_EQ(expect.value(),
+        Command::fmtLongLong(2)) << expect.status().toString();
 
     // srandmember
     sess.setArgs({"sadd", "settestkey2", "one", "two", "three"});
@@ -853,7 +836,7 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
         sess.setArgs({"zadd", "tzk1.1", std::to_string(9999), "subkey"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
- 
+
         sess.setArgs({"zscore", "tzk1.1", "notfoundsubkey"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
@@ -1124,7 +1107,7 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtBulk(setrangeRes));
- 
+
     // bitcount
     sess.setArgs({"bitcount", "bitcountkey"});
     expect = Command::runSessionCmd(&sess);
@@ -1484,72 +1467,31 @@ void testDel(std::shared_ptr<ServerEntry> svr) {
 }
 
 TEST(Command, del) {
-    auto cfg = genParams();
-    EXPECT_TRUE(filesystem::create_directory("db"));
-    // EXPECT_TRUE(filesystem::create_directory("db/0"));
-    EXPECT_TRUE(filesystem::create_directory("log"));
     const auto guard = MakeGuard([] {
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
+        destroyEnv();
     });
-    auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
 
-    auto server = std::make_shared<ServerEntry>();
-    std::vector<PStore> tmpStores;
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-        std::stringstream ss;
-        ss << i;
-        std::string dbId = ss.str();
-        tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
-    }
-    server->installStoresInLock(tmpStores);
-    auto segMgr = std::unique_ptr<SegmentMgr>(
-            new SegmentMgrFnvHash64(tmpStores));
-    server->installSegMgrInLock(std::move(segMgr));
-    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
-        KVStore::INSTANCE_NUM);
-    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
     testDel(server);
 }
 
-/*
 TEST(Command, expire) {
-    auto cfg = genParams();
-    EXPECT_TRUE(filesystem::create_directory("db"));
-    // EXPECT_TRUE(filesystem::create_directory("db/0"));
-    EXPECT_TRUE(filesystem::create_directory("log"));
     const auto guard = MakeGuard([] {
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
+        destroyEnv();
     });
-    auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
 
-    auto server = std::make_shared<ServerEntry>();
-    std::vector<PStore> tmpStores;
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-        std::stringstream ss;
-        ss << i;
-        std::string dbId = ss.str();
-        tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
-    }
-    server->installStoresInLock(tmpStores);
-    auto segMgr = std::unique_ptr<SegmentMgr>(
-            new SegmentMgrFnvHash64(tmpStores));
-    server->installSegMgrInLock(std::move(segMgr));
-    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
-        KVStore::INSTANCE_NUM);
-    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+    EXPECT_TRUE(setupEnv());
+
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
     testExpire(server);
     testExpire1(server);
     testExpire2(server);
 }
-*/
 
 void testScan(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
@@ -1566,7 +1508,9 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
-    std::string cursor = "000585A800000000733733363336313645373336353734006B0700";
+    // chunkSize should be 420000
+    std::string cursor =
+        "000585A800000000733733363336313645373336353734006B0700";
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, 10);
     for (int i = 0; i < 10; ++i) {
@@ -1593,33 +1537,13 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
 }
 
 TEST(Command, common) {
-    auto cfg = genParams();
-    EXPECT_TRUE(filesystem::create_directory("db"));
-    // EXPECT_TRUE(filesystem::create_directory("db/0"));
-    EXPECT_TRUE(filesystem::create_directory("log"));
     const auto guard = MakeGuard([] {
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
+        destroyEnv();
     });
-    auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
 
-    auto server = std::make_shared<ServerEntry>();
-    std::vector<PStore> tmpStores;
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-        std::stringstream ss;
-        ss << i;
-        std::string dbId = ss.str();
-        tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
-    }
-    server->installStoresInLock(tmpStores);
-    auto segMgr = std::unique_ptr<SegmentMgr>(
-            new SegmentMgrFnvHash64(tmpStores));
-    server->installSegMgrInLock(std::move(segMgr));
-    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
-        KVStore::INSTANCE_NUM);
-    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
     testList(server);
     testKV(server);
@@ -1638,38 +1562,31 @@ TEST(Command, common) {
     testZset3(server);
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
-    testScan(server);
+
 }
 
+TEST(Command, common_scan) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    // need 420000
+    cfg->chunkSize = 420000;
+    auto server = makeServerEntry(cfg);
+
+    testScan(server);
+}
 /*
 TEST(Command, keys) {
-    auto cfg = genParams();
-    EXPECT_TRUE(filesystem::create_directory("db"));
-    // EXPECT_TRUE(filesystem::create_directory("db/0"));
-    EXPECT_TRUE(filesystem::create_directory("log"));
     const auto guard = MakeGuard([] {
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
+       destroyEnv();
     });
-    auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
 
-    auto server = std::make_shared<ServerEntry>();
-    std::vector<PStore> tmpStores;
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-        std::stringstream ss;
-        ss << i;
-        std::string dbId = ss.str();
-        tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(dbId, cfg, blockCache)));
-    }
-    server->installStoresInLock(tmpStores);
-    auto segMgr = std::unique_ptr<SegmentMgr>(
-            new SegmentMgrFnvHash64(tmpStores));
-    server->installSegMgrInLock(std::move(segMgr));
-    auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
-        KVStore::INSTANCE_NUM);
-    server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
@@ -1705,4 +1622,5 @@ TEST(Command, keys) {
     EXPECT_EQ(expect.value(), ss.str());
 }
 */
+
 }  // namespace tendisplus

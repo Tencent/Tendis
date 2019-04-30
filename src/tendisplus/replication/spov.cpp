@@ -104,7 +104,11 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // 1) stop store and clean it's directory
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), metaSnapshot.id,
         mgl::LockMode::LOCK_X);
-    INVARIANT(expdb.ok());
+    if (!expdb.ok()) {
+        LOG(ERROR) << "get store:" << metaSnapshot.id
+            << " failed: " << expdb.status().toString();
+        return;
+    }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
@@ -356,7 +360,9 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
         std::lock_guard<std::mutex> lk(_mutex);
         INVARIANT(_syncStatus[storeId]->isRunning);
         _syncStatus[storeId]->isRunning = false;
-        _syncStatus[storeId]->nextSchedTime = nextSched;
+        if (nextSched > _syncStatus[storeId]->nextSchedTime) {
+            _syncStatus[storeId]->nextSchedTime = nextSched;
+        }
         _cv.notify_all();
     });
 
@@ -439,7 +445,9 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                                    const std::list<ReplLog>& ops) {
     auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
         mgl::LockMode::LOCK_NONE);
-    INVARIANT(expdb.ok());
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
     auto ptxn = store->createTransaction();
@@ -528,7 +536,9 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         auto& v = _logRecycStatus[storeId];
         v->fileSize += written;
         if (v->fileSize >= ReplManager::BINLOGSIZE
-            || v->fileCreateTime + std::chrono::seconds(ReplManager::BINLOGSYNCSECS) <= SCLOCK::now()) {
+         || v->fileCreateTime +
+             std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+                            <= SCLOCK::now()) {
             v->fs->close();
             v->fs.reset();
         }

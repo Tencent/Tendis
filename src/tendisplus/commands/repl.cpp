@@ -41,14 +41,19 @@ class BackupCommand: public Command {
         const std::string& dir = sess->getArgs()[1];
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+        for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
             // NOTE(deyukong): here we acquire IS lock
             auto expdb = svr->getSegmentMgr()->getDb(sess, i,
-                mgl::LockMode::LOCK_IS);
+                mgl::LockMode::LOCK_IS, true);
             if (!expdb.ok()) {
                 return expdb.status();
             }
+
             auto store = std::move(expdb.value().store);
+            // if store is not open, skip it
+            if (!store->isOpen()) {
+                continue;
+            }
             Expected<BackupInfo> bkInfo = store->backup(
                 dir, KVStore::BackupMode::BACKUP_COPY);
             if (!bkInfo.ok()) {
@@ -195,14 +200,17 @@ class PullBinlogsCommand: public Command {
             return exptBinlogId.status();
         }
         binlogPos = exptBinlogId.value();
-        if (exptStoreId.value() >= KVStore::INSTANCE_NUM) {
+
+        auto server = sess->getServerEntry();
+        if (exptStoreId.value() >= server->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
         }
         storeId = exptStoreId.value();
-        auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IS);
-        INVARIANT(expdb.ok());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
@@ -288,7 +296,8 @@ class RestoreBinlogCommand: public Command {
             return exptStoreId.status();
         }
         storeId = exptStoreId.value();
-        if (storeId >= KVStore::INSTANCE_NUM) {
+        auto server = sess->getServerEntry();
+        if (storeId >= server->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid storeid"};
         }
         std::vector<ReplLog> logs;
@@ -306,10 +315,11 @@ class RestoreBinlogCommand: public Command {
             }
         }
 
-        auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
-        INVARIANT(expdb.ok());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
@@ -319,9 +329,9 @@ class RestoreBinlogCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         for (const auto& kv : logs) {
-            // NOTE(vinchen): It don't need to get the timestamp of binlog 
-            // for restorebinlog, because it isn't under the mode of 
-            // REPLICATE_ONLY 
+            // NOTE(vinchen): It don't need to get the timestamp of binlog
+            // for restorebinlog, because it isn't under the mode of
+            // REPLICATE_ONLY
             uint32_t timestamp = 0;
 
             Expected<RecordKey> expRk =
@@ -401,7 +411,10 @@ class ApplyBinlogsCommand: public Command {
         if (!exptStoreId.ok()) {
             return exptStoreId.status();
         }
-        if (exptStoreId.value() >= KVStore::INSTANCE_NUM) {
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
             return {ErrorCodes::ERR_PARSEOPT, "invalid storeId"};
         }
         storeId = exptStoreId.value();
@@ -436,12 +449,14 @@ class ApplyBinlogsCommand: public Command {
             }
         }
 
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
-        INVARIANT(svr != nullptr);
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
-        StoreLock storeLock(storeId, mgl::LockMode::LOCK_IX, sess);
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         Status s = replMgr->applyBinlogs(storeId,
                                          sess->id(),
                                          binlogGroup);
@@ -474,8 +489,15 @@ class SlaveofCommand: public Command {
             return {ErrorCodes::ERR_PARSEPKT, ex.what()};
         }
         if (args.size() == 3) {
-            for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                StoreLock storeLock(i, mgl::LockMode::LOCK_X, sess);
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                auto expdb = svr->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_X, true);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                if (!expdb.value().store->isOpen()) {
+                    continue;
+                }
                 Status s = replMgr->changeReplSource(i, ip, port, i);
                 if (!s.ok()) {
                     return s;
@@ -491,12 +513,17 @@ class SlaveofCommand: public Command {
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEPKT, ex.what()};
             }
-            if (storeId >= KVStore::INSTANCE_NUM ||
-                    sourceStoreId >= KVStore::INSTANCE_NUM) {
+            if (storeId >= svr->getKVStoreCount() ||
+                    sourceStoreId >= svr->getKVStoreCount()) {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
+            auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+                mgl::LockMode::LOCK_X);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+
             Status s = replMgr->changeReplSource(
                     storeId, ip, port, sourceStoreId);
             if (s.ok()) {
@@ -522,19 +549,31 @@ class SlaveofCommand: public Command {
             } catch (std::exception& ex) {
                 return {ErrorCodes::ERR_PARSEPKT, ex.what()};
             }
-            if (storeId >= KVStore::INSTANCE_NUM) {
+            if (storeId >= svr->getKVStoreCount()) {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            StoreLock storeLock(storeId, mgl::LockMode::LOCK_X, sess);
+            auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+                mgl::LockMode::LOCK_X);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+
             Status s = replMgr->changeReplSource(storeId, "", 0, 0);
             if (s.ok()) {
                 return Command::fmtOK();
             }
             return s;
         } else {
-            for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
-                StoreLock storeLock(i, mgl::LockMode::LOCK_X, sess);
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                auto expdb = svr->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_X, true);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                if (!expdb.value().store->isOpen()) {
+                    continue;
+                }
                 Status s = replMgr->changeReplSource(i, "", 0, 0);
                 if (!s.ok()) {
                     return s;

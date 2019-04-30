@@ -129,6 +129,7 @@ class RocksKVStore: public KVStore {
     RocksKVStore(const std::string& id,
         const std::shared_ptr<ServerParams>& cfg,
         std::shared_ptr<rocksdb::Cache> blockCache,
+        KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
         TxnMode txnMode = TxnMode::TXN_PES,
         uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
     virtual ~RocksKVStore() = default;
@@ -155,6 +156,19 @@ class RocksKVStore: public KVStore {
 
     Status setMode(StoreMode mode) final;
     KVStore::StoreMode getMode() final { return _mode; }
+
+    bool isOpen() const final {
+        return _mode != KVStore::StoreMode::STORE_NONE;
+    }
+
+    // check whether there is any data in the store
+    bool isEmpty() const final;
+    // check whether the store get do get/set operations
+    bool isPaused() const final;
+    Status pause() final;
+    Status resume() final;
+    // stop() && clear()
+    Status destroy() final;
 
     TxnMode getTxnMode() const;
 
@@ -183,6 +197,10 @@ class RocksKVStore: public KVStore {
     mutable std::mutex _mutex;
 
     bool _isRunning;
+    // _isPaused = true, it means that the rocksdb can't do any 
+    // get/set operations. But the rocksdb is running. It can be
+    // reopen again.
+    bool _isPaused;
     bool _hasBackup;
 
     KVStore::StoreMode _mode;

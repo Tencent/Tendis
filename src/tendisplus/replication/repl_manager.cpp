@@ -24,7 +24,7 @@
 
 namespace tendisplus {
 
-ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr, 
+ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
                           const std::shared_ptr<ServerParams> cfg)
     :_isRunning(false),
      _svr(svr),
@@ -39,12 +39,28 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
      _logRecycleMatrix(std::make_shared<PoolMatrix>()) {
 }
 
+Status ReplManager::stopStore(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    INVARIANT(storeId < _svr->getKVStoreCount());
+
+    _syncStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
+
+    _logRecycStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
+
+    for (auto& mpov : _pushStatus[storeId]) {
+        mpov.second->nextSchedTime = SCLOCK::time_point::max();
+    }
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
 Status ReplManager::startup() {
     std::lock_guard<std::mutex> lk(_mutex);
     Catalog *catalog = _svr->getCatalog();
     INVARIANT(catalog != nullptr);
 
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+    for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
         Expected<std::unique_ptr<StoreMeta>> meta = catalog->getStoreMeta(i);
         if (meta.ok()) {
             _syncMeta.emplace_back(std::move(meta.value()));
@@ -62,7 +78,7 @@ Status ReplManager::startup() {
         }
     }
 
-    INVARIANT(_syncMeta.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_syncMeta.size() == _svr->getKVStoreCount());
 
     for (size_t i = 0; i < _syncMeta.size(); ++i) {
         if (i != _syncMeta[i]->id) {
@@ -70,17 +86,6 @@ Status ReplManager::startup() {
             ss << "meta:" << i << " has id:" << _syncMeta[i]->id;
             return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
-    }
-
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        _syncStatus.emplace_back(
-            std::unique_ptr<SPovStatus>(
-                new SPovStatus {
-                     false,
-                     std::numeric_limits<uint64_t>::max(),
-                     SCLOCK::now(),
-                     SCLOCK::now(),
-                }));
     }
 
     // TODO(deyukong): configure
@@ -124,67 +129,111 @@ Status ReplManager::startup() {
         return s;
     }
 
-    // init master's pov, incrpush status
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
-        _pushStatus.emplace_back(
-            std::map<uint64_t, std::unique_ptr<MPovStatus>>());
-    }
-
-    for (uint32_t i = 0; i < KVStore::INSTANCE_NUM; i++) {
+    for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
         // here we are starting up, dont acquire a storelock.
-        auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_NONE);
-        INVARIANT(expdb.ok());
+        auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
+                            mgl::LockMode::LOCK_NONE, true);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
-        if (_syncMeta[i]->syncFromHost == "") {
-            store->setMode(KVStore::StoreMode::READ_WRITE);
-        } else {
-            store->setMode(KVStore::StoreMode::REPLICATE_ONLY);
+        bool isOpen = store->isOpen();
+        SCLOCK::time_point tp = SCLOCK::now();
+        uint32_t fileSeq = std::numeric_limits<uint32_t>::max();
+
+        if (!isOpen) {
+            LOG(INFO) << "store:" << i
+                << " is not opened";
+
+            // NOTE(vinchen): Here the max timepiont value is tp used
+            // to control the _syncStatus/_logRecycStatus
+            // do nothing when the storeMode == STORE_NONE.
+            // And it would be easier to reopen the closed store in the
+            // future.
+            tp = SCLOCK::time_point::max();
         }
-        Expected<uint32_t> efileSeq = maxDumpFileSeq(i);
-        if (!efileSeq.ok()) {
-            return efileSeq.status();
+
+        _syncStatus.emplace_back(
+            std::unique_ptr<SPovStatus>(
+                new SPovStatus{
+                     false,
+                     std::numeric_limits<uint64_t>::max(),
+                     tp,
+                     tp,
+        }));
+
+        // NOTE(vinchen): if the mode == STORE_NONE, _pushStatus would do
+        // nothing, more detailed in ReplManager::registerIncrSync()
+        // init master's pov, incrpush status
+        _pushStatus.emplace_back(
+            std::map<uint64_t, std::unique_ptr<MPovStatus>>());
+
+        Status status;
+
+        if (isOpen) {
+            if (_syncMeta[i]->syncFromHost == "") {
+                status = _svr->setStoreMode(store,
+                    KVStore::StoreMode::READ_WRITE);
+            } else {
+                status = _svr->setStoreMode(store,
+                    KVStore::StoreMode::REPLICATE_ONLY);
+            }
+            if (!status.ok()) {
+                return status;
+            }
+
+            Expected<uint32_t> efileSeq = maxDumpFileSeq(i);
+            if (!efileSeq.ok()) {
+                return efileSeq.status();
+            }
+            fileSeq = efileSeq.value();
         }
 
         auto recBinlogStat = std::unique_ptr<RecycleBinlogStatus>(
             new RecycleBinlogStatus {
                 false,
-                SCLOCK::now(),
+                tp,
                 Transaction::TXNID_UNINITED,
-                efileSeq.value(),
-                SCLOCK::now(),
+                fileSeq,
+                tp,
                 0,
                 nullptr,
             });
 
-        auto ptxn = store->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        auto txn = std::move(ptxn.value());
-        std::unique_ptr<BinlogCursor> cursor =
-            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
-        Expected<ReplLog> explog = cursor->next();
-        if (explog.ok()) {
-            const auto& rlk = explog.value().getReplLogKey();
-            recBinlogStat->firstBinlogId = rlk.getTxnId();
-            _logRecycStatus.emplace_back(std::move(recBinlogStat));
-        } else {
-            if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-                // void compiler ud-link about static constexpr
-                uint64_t v = Transaction::TXNID_UNINITED;
-                recBinlogStat->firstBinlogId = v;
+        if (isOpen) {
+            auto ptxn = store->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            auto txn = std::move(ptxn.value());
+            std::unique_ptr<BinlogCursor> cursor =
+                txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
+            Expected<ReplLog> explog = cursor->next();
+            if (explog.ok()) {
+                const auto& rlk = explog.value().getReplLogKey();
+                recBinlogStat->firstBinlogId = rlk.getTxnId();
                 _logRecycStatus.emplace_back(std::move(recBinlogStat));
             } else {
-                return explog.status();
+                if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    // void compiler ud-link about static constexpr
+                    uint64_t v = Transaction::TXNID_UNINITED;
+                    recBinlogStat->firstBinlogId = v;
+                    _logRecycStatus.emplace_back(std::move(recBinlogStat));
+                } else {
+                    return explog.status();
+                }
             }
+            LOG(INFO) << "store:" << i
+                << ",_firstBinlogId:"
+                << _logRecycStatus.back()->firstBinlogId;
+        } else {
+            _logRecycStatus.emplace_back(std::move(recBinlogStat));
         }
-        LOG(INFO) << "store:" << i
-                  << ",_firstBinlogId:" << _logRecycStatus.back()->firstBinlogId;
     }
 
-    INVARIANT(_logRecycStatus.size() == KVStore::INSTANCE_NUM);
+    INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::make_unique<std::thread>(std::move([this]() {
@@ -248,9 +297,11 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
                     }
                 }
             }
-            Expected<uint64_t> fno = ::tendisplus::stoul(relative.substr(start, end-start));
+            Expected<uint64_t> fno = ::tendisplus::stoul(
+                                relative.substr(start, end-start));
             if (!fno.ok()) {
-                LOG(ERROR) << "parse fileno:" << relative << " failed:" << fno.status().toString();
+                LOG(ERROR) << "parse fileno:" << relative << " failed:"
+                           << fno.status().toString();
                 return fno.value();
             }
             if (fno.value() >= std::numeric_limits<uint32_t>::max()) {
@@ -373,8 +424,9 @@ void ReplManager::controlRoutine() {
             for (auto& mpov : _pushStatus[i]) {
                 endLogId = std::min(endLogId, mpov.second->binlogPos);
             }
-            _logRecycler->schedule([this, i, oldFirstBinlog, endLogId, saveLogs]() {
-                recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
+            _logRecycler->schedule(
+                     [this, i, oldFirstBinlog, endLogId, saveLogs]() {
+                         recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
             });
         }
         return doSth;
@@ -397,14 +449,18 @@ void ReplManager::controlRoutine() {
     LOG(INFO) << "repl controller exits";
 }
 
-void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start, uint64_t end, bool saveLogs) {
+void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
+                            uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, &start, storeId] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
         INVARIANT(v->isRunning);
         v->isRunning = false;
-        v->nextSchedTime = nextSched;
+        // v->nextSchedTime maybe time_point::max() 
+        if (v->nextSchedTime < nextSched) {
+            v->nextSchedTime = nextSched;
+        }
         v->firstBinlogId = start;
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();
@@ -418,12 +474,18 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start, uint64_t end, 
 
     auto segMgr = _svr->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
-    auto expdb = segMgr->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IX);
-    INVARIANT(expdb.ok());
+    auto expdb = segMgr->getDb(sg.getSession(), storeId,
+                        mgl::LockMode::LOCK_IX);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "recycleBinlog getDb failed:"
+                   << expdb.status().toString();
+        return;
+    }
     auto kvstore = std::move(expdb.value().store);
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
-        LOG(ERROR) << "recycleBinlog create txn failed:" << ptxn.status().toString();
+        LOG(ERROR) << "recycleBinlog create txn failed:"
+                   << ptxn.status().toString();
         return;
     }
     auto txn = std::move(ptxn.value());
@@ -487,7 +549,9 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
     auto segMgr = _svr->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
     auto expdb = segMgr->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
-    INVARIANT(expdb.ok());
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
     auto kvstore = std::move(expdb.value().store);
 
     auto newMeta = _syncMeta[storeId]->copy();
@@ -497,7 +561,8 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
                     "explicit set sync source empty before change it"};
         }
 
-        Status s = kvstore->setMode(KVStore::StoreMode::REPLICATE_ONLY);
+        Status s = _svr->setStoreMode(kvstore,
+                        KVStore::StoreMode::REPLICATE_ONLY);
         if (!s.ok()) {
             return s;
         }
@@ -528,7 +593,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         }
         _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
 
-        Status s = kvstore->setMode(KVStore::StoreMode::READ_WRITE);
+        Status s = _svr->setStoreMode(kvstore, KVStore::StoreMode::READ_WRITE);
         if (!s.ok()) {
             return s;
         }
@@ -547,9 +612,9 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
 void ReplManager::appendJSONStat(
         rapidjson::Writer<rapidjson::StringBuffer>& w) const {
     std::lock_guard<std::mutex> lk(_mutex);
-    INVARIANT(_pushStatus.size() == KVStore::INSTANCE_NUM);
-    INVARIANT(_syncStatus.size() == KVStore::INSTANCE_NUM);
-    for (size_t i = 0; i < KVStore::INSTANCE_NUM; ++i) {
+    INVARIANT(_pushStatus.size() == _svr->getKVStoreCount());
+    INVARIANT(_syncStatus.size() == _svr->getKVStoreCount());
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         std::stringstream ss;
         ss << i;
         w.Key(ss.str().c_str());

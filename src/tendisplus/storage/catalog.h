@@ -11,6 +11,7 @@ namespace tendisplus {
 enum class ReplState: std::uint8_t;
 
 // for MSVC, it must be class , but not struct
+// repl meta
 class StoreMeta {
  public:
     StoreMeta();
@@ -29,16 +30,58 @@ class StoreMeta {
     ReplState replState;
 };
 
+// store meta
+class StoreMainMeta {
+ public:
+    StoreMainMeta()
+         :StoreMainMeta(-1, KVStore::StoreMode::STORE_NONE) {}
+    StoreMainMeta(const StoreMainMeta&) = default;
+    StoreMainMeta(StoreMainMeta&&) = delete;
+    StoreMainMeta(uint32_t id_, KVStore::StoreMode mode_)
+        : id(id_), storeMode(mode_) {}
+    std::unique_ptr<StoreMainMeta> copy() const;
+
+    uint32_t id;
+    KVStore::StoreMode storeMode;
+};
+
+// store meta
+class MainMeta {
+ public:
+    MainMeta() : MainMeta(0, 0) {}
+    MainMeta(const MainMeta&) = default;
+    MainMeta(MainMeta&&) = delete;
+    MainMeta(uint32_t instCount, uint32_t hashSpace_)
+        : kvStoreCount(instCount), chunkSize(hashSpace_) {}
+    std::unique_ptr<MainMeta> copy() const;
+
+    uint32_t kvStoreCount;
+    uint32_t chunkSize;
+};
+
 class Catalog {
  public:
-    explicit Catalog(std::unique_ptr<KVStore> store);
+    Catalog(std::unique_ptr<KVStore> store,
+        uint32_t kvStoreCount, uint32_t chunkSize);
     virtual ~Catalog() = default;
+    // repl meta for each store
     Expected<std::unique_ptr<StoreMeta>> getStoreMeta(uint32_t idx);
     Status setStoreMeta(const StoreMeta& meta);
     Status stop();
+    // main meta for each store
+    Expected<std::unique_ptr<StoreMainMeta>> getStoreMainMeta(uint32_t idx);
+    Status setStoreMainMeta(const StoreMainMeta& meta);
+    // main meta
+    Expected<std::unique_ptr<MainMeta>> getMainMeta();
+
+    uint32_t getKVStoreCount() const { return _kvStoreCount; }
+    uint32_t getChunkSize() const { return _chunkSize; }
 
  private:
+    Status setMainMeta(const MainMeta& meta);
     std::unique_ptr<KVStore> _store;
+    uint32_t _kvStoreCount;
+    uint32_t _chunkSize;
 };
 
 }  // namespace tendisplus

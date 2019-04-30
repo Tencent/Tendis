@@ -105,14 +105,14 @@ void KVStore::setBinlogTime(uint32_t timestamp) {
     _binlogTimeSpov.store(timestamp, std::memory_order_relaxed);
 }
 
-uint32_t KVStore::getCurrentTime() {
-    uint32_t ts = 0;
+uint64_t KVStore::getCurrentTime() {
+    uint64_t ts = 0;
     if ( getMode() == KVStore::StoreMode::REPLICATE_ONLY ) {
         // NOTE(vinchen): Here it may return zero, because the
         // slave never apply one binlog yet.
-        ts = getBinlogTime();
+        ts = ((uint64_t)getBinlogTime()) * 1000;
     } else {
-        ts = sinceEpoch();
+        ts = msSinceEpoch();
     }
     return ts;
 }
