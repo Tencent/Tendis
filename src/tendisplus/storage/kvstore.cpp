@@ -106,7 +106,7 @@ void KVStore::setBinlogTime(uint32_t timestamp) {
 }
 
 uint64_t KVStore::getCurrentTime() {
-    uint32_t ts = 0;
+    uint64_t ts = 0;
     if ( getMode() == KVStore::StoreMode::REPLICATE_ONLY ) {
         // NOTE(vinchen): Here it may return zero, because the
         // slave never apply one binlog yet.
