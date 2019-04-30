@@ -102,30 +102,34 @@ RecordKey::RecordKey(RecordKey&& o)
          _type(o._type),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
+         _version(o._version),
          _fmtVsn(o._fmtVsn) {
     o._chunkId = 0;
     o._dbId = 0;
     o._type = RecordType::RT_INVALID;
+    o._version = 0;
     o._fmtVsn = 0;
 }
 
 RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-    const std::string& pk, const std::string& sk)
+    const std::string& pk, const std::string& sk, uint32_t version)
         :_chunkId(chunkId),
          _dbId(dbid),
          _type(type),
          _pk(pk),
          _sk(sk),
+         _version(version),
          _fmtVsn(0) {
 }
 
 RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid,
-    RecordType type, std::string&& pk, std::string&& sk)
+    RecordType type, std::string&& pk, std::string&& sk, uint32_t version)
     :_chunkId(chunkId),
      _dbId(dbid),
      _type(type),
      _pk(std::move(pk)),
      _sk(std::move(sk)),
+     _version(version),
      _fmtVsn(0) {
 }
 
@@ -152,6 +156,11 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     // a padding 0 avoids prefixes intersect with
     // each other in physical space
     arr->push_back(0);
+
+    // NOTE(vinchen): version of key, temporarily useless
+    INVARIANT(_version == 0);
+    auto v = varintEncode(_version);
+    arr->insert(arr->end(), v.begin(), v.end());
 }
 
 uint32_t RecordKey::getChunkId() const {
@@ -341,9 +350,8 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     if (key.size() < offset + rsvd + rvsOffset + 2*pkLen + 1) {
         return {ErrorCodes::ERR_DECODE, "invalid sk len"};
     }
-    skLen = key.size() - offset - rsvd - rvsOffset - 2*pkLen - 1;
 
-    // pk and sk
+    // pk and 0
     pk = std::string(key.c_str() + offset, 2*pkLen);
 
     Expected<std::string> unhexPk = unhexlify(pk);
@@ -351,11 +359,24 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
         return unhexPk.status();
     }
 
-    sk = std::string(key.c_str() + offset + 2*pkLen + 1, skLen);
+    // version
+    const char* ptr = key.c_str() + offset + 2 * pkLen + 1;
+    size_t left = key.size() - offset - rsvd - rvsOffset - 2 * pkLen - 1;
+    auto v = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), left);
+    if (!v.ok()) {
+        return {ErrorCodes::ERR_DECODE, "invalid version len"};
+    }
+    size_t versionLen = v.value().second;
+    auto version = v.value().first;
+    INVARIANT(version == 0);
+
+    // sk
+    skLen = left - versionLen;
+    sk = std::string(ptr + versionLen, skLen);
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(chunkid, dbid, type, unhexPk.value(), sk);
+    return RecordKey(chunkid, dbid, type, unhexPk.value(), sk, version);
 }
 
 RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
@@ -376,6 +397,7 @@ bool RecordKey::operator==(const RecordKey& other) const {
             _type == other._type &&
             _pk == other._pk &&
             _sk == other._sk &&
+            _version == other._version &&
             _fmtVsn == other._fmtVsn;
 }
 

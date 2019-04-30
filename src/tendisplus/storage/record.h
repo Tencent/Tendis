@@ -61,9 +61,9 @@ class RecordKey {
     // be in a dangling state
     RecordKey(RecordKey&&);
     RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-        const std::string& pk, const std::string& sk);
+        const std::string& pk, const std::string& sk, uint32_t version = 0);
     RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-        std::string&& pk, std::string&& sk);
+        std::string&& pk, std::string&& sk, uint32_t version = 0);
     const std::string& getPrimaryKey() const;
     const std::string& getSecondaryKey() const;
     uint32_t getChunkId() const;
@@ -94,6 +94,7 @@ class RecordKey {
     RecordType _type;
     std::string _pk;
     std::string _sk;
+    uint32_t _version;
     TRSV _fmtVsn;
 };
 
