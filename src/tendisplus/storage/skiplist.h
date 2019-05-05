@@ -62,7 +62,7 @@ class SkipList {
             uint32_t start, uint32_t end, Transaction* txn);
 
 
-    Status save(Transaction* txn);
+    Status save(Transaction* txn, const Expected<RecordValue>& oldValue);
     Status traverse(std::stringstream& ss, Transaction* txn);
     uint32_t getCount() const;
     uint64_t getAlloc() const;

@@ -64,7 +64,7 @@ Expected<std::string> genericSRem(Session *sess,
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-                           RecordValue(sm.encode(), RecordType::RT_SET_META, ttl),
+                           RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
                            txn.get());
     }
     if (!s.ok()) {
@@ -121,7 +121,7 @@ Expected<std::string> genericSAdd(Session *sess,
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl),
+                              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
                               txn.get());
     if (!s.ok()) {
         return s;

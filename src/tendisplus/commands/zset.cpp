@@ -78,7 +78,7 @@ Expected<std::string> genericZrem(Session *sess,
     }
     Status s;
     if (sl.getCount() > 1) {
-        s = sl.save(txn.get());
+        s = sl.save(txn.get(), eMeta);
     } else {
         INVARIANT(sl.getCount() == 1);
         s = kvstore->delKV(mk, txn.get());
@@ -258,7 +258,7 @@ Expected<std::string> genericZadd(Session *sess,
         }
     }
     // NOTE(vinchen): skiplist save one time
-    Status s = sl.save(txn.get());
+    Status s = sl.save(txn.get(), eMeta);
     if (!s.ok()) {
         return s;
     }
@@ -450,7 +450,7 @@ class ZRemByRangeGenericCommand: public Command {
 
         Status s;
         if (sl.getCount() > 1) {
-            s = sl.save(txn.get());
+            s = sl.save(txn.get(), eMeta);
         } else {
             INVARIANT(sl.getCount() == 1);
             s = kvstore->delKV(mk, txn.get());

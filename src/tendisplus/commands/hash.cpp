@@ -60,7 +60,7 @@ Expected<std::string> hincrfloatGeneric(const RecordKey& metaRk,
     nowVal += inc;
     RecordValue newVal(::tendisplus::ldtos(nowVal, true),
                         RecordType::RT_HASH_ELE);
-    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -126,7 +126,7 @@ Expected<std::string> hincrGeneric(const RecordKey& metaRk,
     }
     nowVal += inc;
     RecordValue newVal(std::to_string(nowVal), RecordType::RT_HASH_ELE);
-    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -970,7 +970,8 @@ Status hmcas(Session *sess, const std::string& key,
     }
     hashMeta.setCount(hashMeta.getCount() + uniqkeys.size() - existkvs.size());
     RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
-                            ttl, cas);
+                            ttl, eValue);
+    metaValue.setCas(cas);
     Status s = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!s.ok()) {
         return s;
@@ -1196,7 +1197,7 @@ class HMSetCommand: public Command {
             }
         }
         hashMeta.setCount(hashMeta.getCount() + inserted);
-        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1377,7 +1378,7 @@ class HSetGeneric: public Command {
             return Command::fmtZero();
         }
 
-        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1489,7 +1490,7 @@ class HDelCommand: public Command {
         } else {
             hashMeta.setCount(hashMeta.getCount() - realDel);
             RecordValue metaValue(hashMeta.encode(),
-                                    RecordType::RT_HASH_META, ttl);
+                                    RecordType::RT_HASH_META, ttl, eValue);
             s = kvstore->setKV(metaKey, metaValue, txn);
         }
         if (!s.ok()) {

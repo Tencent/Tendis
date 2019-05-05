@@ -83,7 +83,7 @@ Expected<bool> expireAfterNow(Session *sess,
 
                 // add new index entry
                 TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
-                s = txn->setKV(n_ictx.encode(), RecordValue().encode());
+                s = txn->setKV(n_ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
                 if (!s.ok()) {
                     return s;
                 }

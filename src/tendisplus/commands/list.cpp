@@ -75,7 +75,7 @@ Expected<std::string> genericPop(Session *sess,
         lm.setHead(head);
         lm.setTail(tail);
         s = kvstore->setKV(metaRk,
-                           RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl),
+                           RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
                            txn.get());
     }
     if (!s.ok()) {
@@ -139,7 +139,7 @@ Expected<std::string> genericPush(Session *sess,
     lm.setHead(head);
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl),
+                              RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
                               txn.get());
     if (!s.ok()) {
         return s;
@@ -578,7 +578,8 @@ class LtrimCommand: public Command {
     Status trimListPessimistic(Session *sess, PStore kvstore,
                             const RecordKey& mk,
                             const ListMetaValue& lm,
-                            int64_t start, int64_t end, uint64_t ttl) {
+                            int64_t start, int64_t end,
+                            const Expected<RecordValue>& rv) {
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
@@ -628,7 +629,7 @@ class LtrimCommand: public Command {
             }
         } else {
             ListMetaValue newLm(start+head, end+1+head);
-            auto metarcd = RecordValue(newLm.encode(), RecordType::RT_LIST_META, ttl);
+            RecordValue metarcd(newLm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv);
             st = kvstore->setKV(mk, metarcd, txn.get());
             if (!st.ok()) {
                 return st;
@@ -712,7 +713,7 @@ class LtrimCommand: public Command {
         if (end >= len) {
             end = len - 1;
         }
-        Status st = trimListPessimistic(sess, kvstore, metaRk, lm, start, end, rv.value().getTtl());
+        Status st = trimListPessimistic(sess, kvstore, metaRk, lm, start, end, rv);
         if (!st.ok()) {
             return st;
         }

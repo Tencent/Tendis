@@ -17,17 +17,17 @@ enum class RecordType {
     RT_META,                    /* For catalog */
     RT_KV,                      /* For realtype in RecordValue */
     RT_LIST_META,               /* For realtype in RecordValue */
-    RT_LIST_ELE,                /* For list subkey type in RecordKey */
+    RT_LIST_ELE,                /* For list subkey type in RecordKey and RecordValue */
     RT_HASH_META,               /* For realtype in RecordValue */
-    RT_HASH_ELE,                /* For hash subkey type in RecordKey */
+    RT_HASH_ELE,                /* For hash subkey type in RecordKey and RecordValue  */
     RT_SET_META,                /* For realtype in RecordValue */
-    RT_SET_ELE,                 /* For set subkey type in RecordKey */
+    RT_SET_ELE,                 /* For set subkey type in RecordKey and RecordValue  */
     RT_ZSET_META,               /* For realtype in RecordValue */
-    RT_ZSET_S_ELE,              /* For zset subkey type in RecordKey */
-    RT_ZSET_H_ELE,              /* For zset subkey type in RecordKey */
-    RT_BINLOG,                  /* For binlog in RecordKey */
-    RT_TTL_INDEX,               /* For ttl index  in RecordKey */
-    RT_DATA_META,               /* For key type in RecordKey */
+    RT_ZSET_S_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
+    RT_ZSET_H_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
+    RT_BINLOG,                  /* For binlog in RecordKey and RecordValue  */
+    RT_TTL_INDEX,               /* For ttl index  in RecordKey and RecordValue  */
+    RT_DATA_META,               /* For key type in RecordKey and RecordValue  */
 };
 
 uint8_t rt2Char(RecordType t);
@@ -110,7 +110,7 @@ class RecordKey {
 
 class RecordValue {
  public:
-    RecordValue();
+    RecordValue(RecordType type);
     RecordValue(const RecordValue&) = default;
 
     // for zset score
@@ -127,12 +127,25 @@ class RecordValue {
     explicit RecordValue(std::string&& val, RecordType type, uint64_t ttl = 0,
                         int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
                         uint64_t pieceSize = (uint64_t)-1);
+
+    RecordValue(const std::string& val, RecordType type, uint64_t ttl,
+                    const Expected<RecordValue>& oldRV);
+    RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
+                    const Expected<RecordValue>& oldRV);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);
     int64_t getCas() const;
     void setCas(int64_t);
-    RecordType getRecordType() const { return _typeForMeta; }
+    RecordType getRecordType() const { return _type; }
+    void setRecordType(RecordType type) { _type = type; }
+    uint64_t getVersion() const { return _version; }
+    void setVersion(uint64_t version) { _version = version; }
+    uint64_t getVersionEP() const { return _versionEP; }
+    void setVersionEP(uint64_t versionEP) { _versionEP = versionEP; }
+    uint64_t getPieceSize() const { return _pieceSize; }
+    void setPieceSize(uint64_t size) { _pieceSize = size; }
+    uint64_t getTotalSize() const { return _totalSize; }
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
@@ -141,7 +154,7 @@ class RecordValue {
  private:
     // if RecordKey._type = META, _typeForMeta means the real
     // meta type. For other RecordKey._type, it's useless. 
-    RecordType _typeForMeta;
+    RecordType _type;
     uint64_t _ttl;
     // version for subkey, maybe it useful for big key deletion, reversed
     uint64_t _version; 

@@ -16,6 +16,8 @@ uint8_t rt2Char(RecordType t) {
     switch (t) {
         case RecordType::RT_META:
             return 'M';
+        case RecordType::RT_DATA_META:
+            return 'D';
         case RecordType::RT_KV:
             return 'a';
         case RecordType::RT_LIST_META:
@@ -56,6 +58,8 @@ RecordType char2Rt(uint8_t t) {
     switch (t) {
         case 'M':
             return RecordType::RT_META;
+        case 'D':
+            return RecordType::RT_DATA_META;
         case 'a':
             return RecordType::RT_KV;
         case 'L':
@@ -394,8 +398,8 @@ bool RecordKey::operator==(const RecordKey& other) const {
             _fmtVsn == other._fmtVsn;
 }
 
-RecordValue::RecordValue()
-    : _typeForMeta(RecordType::RT_KV),
+RecordValue::RecordValue(RecordType type)
+    : _type(type),
     _ttl(0),
     _version(0),
     _versionEP(0),
@@ -406,7 +410,7 @@ RecordValue::RecordValue()
 }
 
 RecordValue::RecordValue(double v, RecordType type)
-    : _typeForMeta(type),
+    : _type(type),
     _ttl(0),
     _version(0),
     _versionEP(0),
@@ -421,7 +425,7 @@ RecordValue::RecordValue(double v, RecordType type)
 }
 
 RecordValue::RecordValue(RecordValue&& o)
-        : _typeForMeta(o._typeForMeta),
+        : _type(o._type),
     _ttl(o._ttl),
     _version(o._version),
     _versionEP(o._versionEP),
@@ -429,14 +433,18 @@ RecordValue::RecordValue(RecordValue&& o)
     _pieceSize(o._pieceSize),
     _totalSize(o._totalSize),
     _value(std::move(o._value)) {
+    o._type = RecordType::RT_INVALID;
     o._ttl = 0;
     o._cas = -1;
+    o._version = o._versionEP = 0;
+    o._pieceSize = -1;
+    o._totalSize = o._value.size();
 }
 
 RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
                         int64_t cas, uint64_t version, uint64_t versionEp,
                         uint64_t pieceSize)
-        : _typeForMeta(type),
+        : _type(type),
     _ttl(ttl),
     _version(version),
     _versionEP(versionEp),
@@ -449,7 +457,7 @@ RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
 RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
                         int64_t cas, uint64_t version, uint64_t versionEp,
                         uint64_t pieceSize)
-        : _typeForMeta(type),
+        : _type(type),
     _ttl(ttl),
     _version(0),
     _versionEP(0),
@@ -458,13 +466,35 @@ RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
     _totalSize(val.size()),
     _value(std::move(val)) {
 }
+// NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other 
+// information of the RecordValue(oldRV)
+RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
+                        const Expected<RecordValue>& oldRV) 
+    : RecordValue(val, type, ttl) {
+    if (oldRV.ok()) {
+        setCas(oldRV.value().getCas());
+        setVersion(oldRV.value().getVersion());
+        setVersionEP(oldRV.value().getVersionEP());
+        setPieceSize(oldRV.value().getPieceSize());
+    }
+}
+RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
+                        const Expected<RecordValue>& oldRV) 
+    : RecordValue(val, type, ttl) {
+    if (oldRV.ok()) {
+        setCas(oldRV.value().getCas());
+        setVersion(oldRV.value().getVersion());
+        setVersionEP(oldRV.value().getVersionEP());
+        setPieceSize(oldRV.value().getPieceSize());
+    }
+}
 
 std::string RecordValue::encode() const {
     std::vector<uint8_t> value;
     value.reserve(128);
 
     // _typeForMeta
-    value.emplace_back(rt2Char(_typeForMeta));
+    value.emplace_back(rt2Char(_type));
 
     // TTL
     auto varint = varintEncode(_ttl);
@@ -612,15 +642,15 @@ void RecordValue::setCas(int64_t cas) {
 }
 
 bool RecordValue::operator==(const RecordValue& other) const {
-    return _ttl == other._ttl && _value == other._value && _cas == other._cas &&
-        _version == other._version && _typeForMeta == other._typeForMeta &&
+    return _ttl == other._ttl && _cas == other._cas &&
+        _version == other._version && _type == other._type &&
         _versionEP == other._versionEP && _totalSize == other._totalSize &&
-        _pieceSize == other._pieceSize;
+        _pieceSize == other._pieceSize && _value == other._value;
 }
 
 Record::Record()
     :_key(RecordKey()),
-     _value(RecordValue()) {
+     _value(RecordValue(RecordType::RT_INVALID)) {
 }
 
 Record::Record(Record&& o)
