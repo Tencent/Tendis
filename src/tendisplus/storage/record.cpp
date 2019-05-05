@@ -459,10 +459,10 @@ RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
                         uint64_t pieceSize)
         : _type(type),
     _ttl(ttl),
-    _version(0),
-    _versionEP(0),
+    _version(version),
+    _versionEP(versionEp),
     _cas(cas),
-    _pieceSize(-1),
+    _pieceSize(pieceSize),
     _totalSize(val.size()),
     _value(std::move(val)) {
 }
@@ -524,7 +524,7 @@ std::string RecordValue::encode() const {
     varint = varintEncode(_totalSize);
     value.insert(value.end(), varint.begin(), varint.end());
 
-    INVARIANT(_pieceSize > _totalSize);
+    INVARIANT(_pieceSize >= _totalSize);
     INVARIANT(_totalSize == _value.size());
 
     // Value
@@ -582,7 +582,6 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t pieceSize = expt.value().first - 1;
-    INVARIANT(pieceSize == -1);
 
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
     if (!expt.ok()) {
@@ -590,7 +589,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t totalSize = expt.value().first;
-    INVARIANT(pieceSize > totalSize);
+    INVARIANT(pieceSize >= totalSize);
 
     if (offset > value.size()) {
         std::stringstream ss;

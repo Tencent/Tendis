@@ -99,9 +99,15 @@ TEST(Record, Common) {
         auto sk = randomStr(5, true);
         uint64_t ttl = genRand()*genRand();
         uint64_t cas = genRand()*genRand();
+        uint64_t version = genRand()*genRand();
+        uint64_t versionEP = genRand()*genRand();
         auto val = randomStr(5, true);
+        uint64_t pieceSize = (uint64_t)-1;
+        if (val.size() % 2 == 0) {
+            pieceSize = val.size() + 1;
+        }
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-        auto rv = RecordValue(val, type, ttl, cas);
+        auto rv = RecordValue(val, type, ttl, cas, version, versionEP, pieceSize);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);
@@ -109,6 +115,14 @@ TEST(Record, Common) {
             kv.first.size());
         auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
             kv.second.size());
+        
+        EXPECT_EQ(cas, rv.getCas());
+        EXPECT_EQ(version, rv.getVersion());
+        EXPECT_EQ(versionEP, rv.getVersionEP());
+        EXPECT_EQ(pieceSize, rv.getPieceSize());
+        EXPECT_EQ(type, rv.getRecordType());
+        EXPECT_EQ(ttl, rv.getTtl());
+
         EXPECT_EQ(type_, type);
         EXPECT_EQ(ttl_, ttl);
         EXPECT_TRUE(prcd1.ok());
@@ -145,6 +159,10 @@ TEST(ReplRecord, Prefix) {
     EXPECT_EQ(s[2], '\xff');
     EXPECT_EQ(s[3], '\xff');
     EXPECT_EQ(s[4], '\xff');
+    EXPECT_EQ(s[5], '\xff');
+    EXPECT_EQ(s[6], '\xff');
+    EXPECT_EQ(s[7], '\xff');
+    EXPECT_EQ(s[8], '\xff');
     const std::string& prefix = RecordKey::prefixReplLog();
     for (int i = 0; i < 100000; ++i) {
         EXPECT_TRUE(randomStr(5, false) <= prefix);

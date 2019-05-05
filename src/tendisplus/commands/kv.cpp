@@ -887,8 +887,7 @@ class CasCommand: public GetSetGeneral {
             return ecas.status();
         }
 
-        RecordValue ret(sess->getArgs()[3],
-                           oldValue.value().getRecordType());
+        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV);
         if (!oldValue.ok()) {
             ret.setCas(ecas.value());
             return ret;
@@ -947,12 +946,13 @@ class AppendCommand: public GetSetGeneral {
         }
 
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
         return std::move(
-                    RecordValue(std::move(cat),
-                            oldValue.value().getRecordType(), ttl));
+                    RecordValue(std::move(cat), type, ttl));
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1013,11 +1013,12 @@ class SetRangeCommand: public GetSetGeneral {
             cat[i] = val[i-offset];
         }
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(cat),
-                            oldValue.value().getRecordType(), ttl);
+        return RecordValue(std::move(cat), type, ttl);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1095,11 +1096,12 @@ class SetBitCommand: public GetSetGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(tomodify),
-                        oldValue.value().getRecordType(), ttl);
+        return RecordValue(std::move(tomodify), type, ttl);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1155,8 +1157,7 @@ class GetSetCommand: public GetSetGeneral {
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
         // getset overwrites ttl
-        return RecordValue(sess->getArgs()[2],
-                        oldValue.value().getRecordType(), 0);
+        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1277,11 +1278,13 @@ class IncrbyfloatCommand: public GetSetGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
         return RecordValue(::tendisplus::ldtos(newSum.value(), true),
-                        oldValue.value().getRecordType(), ttl);
+                        type, ttl);
     }
 } incrbyfloatCmd;
 
@@ -1321,11 +1324,13 @@ class IncrbyCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
         return RecordValue(std::to_string(newSum.value()),
-                        oldValue.value().getRecordType(), ttl);
+                        type, ttl);
     }
 } incrbyCmd;
 
@@ -1359,11 +1364,12 @@ class IncrCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()),
-                            oldValue.value().getRecordType(), ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } incrCmd;
 
@@ -1403,12 +1409,13 @@ class DecrbyCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
-        return RecordValue(std::to_string(newSum.value()),
-                            oldValue.value().getRecordType(), ttl);
+        // LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } decrbyCmd;
 
@@ -1443,11 +1450,12 @@ class DecrCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()),
-                            oldValue.value().getRecordType(), ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } decrCmd;
 
