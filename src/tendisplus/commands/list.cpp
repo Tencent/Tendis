@@ -75,7 +75,7 @@ Expected<std::string> genericPop(Session *sess,
         lm.setHead(head);
         lm.setTail(tail);
         s = kvstore->setKV(metaRk,
-                           RecordValue(lm.encode(), ttl),
+                           RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl),
                            txn.get());
     }
     if (!s.ok()) {
@@ -130,7 +130,7 @@ Expected<std::string> genericPush(Session *sess,
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx));
-        RecordValue subRv(args[i]);
+        RecordValue subRv(args[i], RecordType::RT_LIST_ELE);
         Status s = kvstore->setKV(subRk, subRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -139,7 +139,7 @@ Expected<std::string> genericPush(Session *sess,
     lm.setHead(head);
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(lm.encode(), ttl),
+                              RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl),
                               txn.get());
     if (!s.ok()) {
         return s;
@@ -628,7 +628,7 @@ class LtrimCommand: public Command {
             }
         } else {
             ListMetaValue newLm(start+head, end+1+head);
-            auto metarcd = RecordValue(newLm.encode(), ttl);
+            auto metarcd = RecordValue(newLm.encode(), RecordType::RT_LIST_META, ttl);
             st = kvstore->setKV(mk, metarcd, txn.get());
             if (!st.ok()) {
                 return st;
@@ -961,7 +961,6 @@ class LSetCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         // TODO(vinchen) lset
         return fmtOK();
-
     }
 } lsetCmd;
 

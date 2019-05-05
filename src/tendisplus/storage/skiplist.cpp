@@ -181,7 +181,7 @@ Status SkipList::saveNode(uint64_t pointer,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
                  std::to_string(pointer));
-    RecordValue rv(val.encode());
+    RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE);
 
     // NOTE(vinchen): after saveNode, reset the change flag in ZSLEleValue
     INVARIANT(cache.find(pointer) != cache.end());
@@ -204,7 +204,7 @@ Status SkipList::save(Transaction* txn) {
 
     RecordKey rk(_chunkId, _dbId, RecordType::RT_ZSET_META, _pk, "");
     ZSlMetaValue mv(_level, _count, _tail, _posAlloc);
-    RecordValue rv(mv.encode());
+    RecordValue rv(mv.encode(), RecordType::RT_ZSET_META);
     return _store->setKV(rk, rv, txn);
 }
 

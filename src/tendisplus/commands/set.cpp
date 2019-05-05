@@ -44,7 +44,6 @@ Expected<std::string> genericSRem(Session *sess,
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
-        RecordValue subRv("");
         Expected<RecordValue> rv = kvstore->getKV(subRk, txn.get());
         if (rv.ok()) {
             cnt += 1;
@@ -65,7 +64,7 @@ Expected<std::string> genericSRem(Session *sess,
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-                           RecordValue(sm.encode(), ttl),
+                           RecordValue(sm.encode(), RecordType::RT_SET_META, ttl),
                            txn.get());
     }
     if (!s.ok()) {
@@ -106,7 +105,6 @@ Expected<std::string> genericSAdd(Session *sess,
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
-        RecordValue subRv("");
         Expected<RecordValue> rv = kvstore->getKV(subRk, txn.get());
         if (rv.ok()) {
             continue;
@@ -115,6 +113,7 @@ Expected<std::string> genericSAdd(Session *sess,
         } else {
             return rv.status();
         }
+        RecordValue subRv("", RecordType::RT_SET_ELE);
         Status s = kvstore->setKV(subRk, subRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -122,7 +121,7 @@ Expected<std::string> genericSAdd(Session *sess,
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(sm.encode(), ttl),
+                              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl),
                               txn.get());
     if (!s.ok()) {
         return s;
