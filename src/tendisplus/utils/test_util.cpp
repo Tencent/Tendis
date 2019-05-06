@@ -140,10 +140,10 @@ KeysWritten WorkLoad::writeWork(RecordType type,
 
     for (uint32_t i = 0; i < count; ++i) {
         std::string key = randomKey(32) + "_" + std::to_string(i);
-        if (!sharename) {
+        //if (!sharename) {
             key.push_back('_');
             key.push_back(static_cast<char>(rt2Char(type)));
-        }
+        //}
 
         if (type == RecordType::RT_KV) {
             _session->setArgs({"set", key, std::to_string(i)});

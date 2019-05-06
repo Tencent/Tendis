@@ -1529,7 +1529,7 @@ const std::string TTLIndex::ttlIndex() const {
             static_cast<char>((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff));
     }
 
-    INVARIANT(_type != RecordType::RT_DATA_META);
+    INVARIANT(_type != getRealKeyType(_type));
     ttlIdx.push_back(rt2Char(_type));
     ttlIdx.append(_priKey);
 

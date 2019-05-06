@@ -446,7 +446,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
             return cnt.status();
         }
 
-        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(),
+        TTLIndex ictx(key, valueType, sess->getCtx()->getDbId(),
                         eValue.value().getTtl());
         if (cnt.value() >= 2048 ||
                 (valueType == RecordType::RT_ZSET_META
