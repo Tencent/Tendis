@@ -38,6 +38,7 @@ enum class ErrorCodes {
     ERR_ZSLPARSERANGE, /* "min or max is not a float" */
     ERR_ZSLPARSELEXRANGE, /* "min or max not valid string range item" */
     ERR_EXTENDED_PROTOCOL, 
+    ERR_WRONG_TYPE,       
 }; 
 
 class Status {

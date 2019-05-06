@@ -83,16 +83,18 @@ class Command {
 
  private:
     static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
-                            const RecordKey& rk, const TTLIndex *ictx = nullptr);
+                            const RecordKey& rk, RecordType valueType,
+                            const TTLIndex *ictx = nullptr);
 
     static Status delKeyOptimismInLock(Session *sess, uint32_t storeId,
-                            const RecordKey& rk, Transaction* txn,
-                            const TTLIndex *ictx = nullptr);
+                            const RecordKey& rk, RecordType valueType,
+                            Transaction* txn, const TTLIndex *ictx = nullptr);
 
     static Expected<uint32_t> partialDelSubKeys(Session *sess,
                                  uint32_t storeId,
                                  uint32_t subCount,
                                  const RecordKey& mk,
+                                 RecordType valueType,
                                  bool deleteMeta,
                                  Transaction *txn,
                                  const TTLIndex *ictx = nullptr);

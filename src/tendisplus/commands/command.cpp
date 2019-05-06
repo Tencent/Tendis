@@ -145,7 +145,8 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 
 // requirement: intentionlock held
 Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
-                          const RecordKey& mk, const TTLIndex *ictx) {
+                          const RecordKey& mk, RecordType valueType,
+                          const TTLIndex *ictx) {
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
 
@@ -168,7 +169,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<uint32_t> deleteCount =
-            partialDelSubKeys(sess, storeId, batchSize, mk, false, txn.get());
+            partialDelSubKeys(sess, storeId, batchSize, mk, valueType, false, txn.get());
         if (!deleteCount.ok()) {
             return deleteCount.status();
         }
@@ -247,12 +248,14 @@ Command::scan(const std::string& pk, const std::string& from,
 Status Command::delKeyOptimismInLock(Session *sess,
                                            uint32_t storeId,
                                            const RecordKey& rk,
+                                           RecordType valueType,
                                            Transaction* txn,
                                            const TTLIndex *ictx) {
     auto s = Command::partialDelSubKeys(sess,
                               storeId,
                               std::numeric_limits<uint32_t>::max(),
                               rk,
+                              valueType,
                               true,
                               txn,
                               ictx);
@@ -263,6 +266,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        uint32_t storeId,
                                        uint32_t subCount,
                                        const RecordKey& mk,
+                                       RecordType valueType,
                                        bool deleteMeta,
                                        Transaction* txn,
                                        const TTLIndex *ictx) {
@@ -277,7 +281,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    if (mk.getRecordType() == RecordType::RT_KV) {
+    INVARIANT(mk.getRecordType() == RecordType::RT_DATA_META);
+    if (valueType == RecordType::RT_KV) {
         Status s = kvstore->delKV(mk, txn);
         if (!s.ok()) {
             return s;
@@ -297,28 +302,28 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         return 1;
     }
     std::vector<std::string> prefixes;
-    if (mk.getRecordType() == RecordType::RT_HASH_META) {
+    if (valueType == RecordType::RT_HASH_META) {
         RecordKey fakeEle(mk.getChunkId(),
                           mk.getDbId(),
                           RecordType::RT_HASH_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
-    } else if (mk.getRecordType() == RecordType::RT_LIST_META) {
+    } else if (valueType == RecordType::RT_LIST_META) {
         RecordKey fakeEle(mk.getChunkId(),
                           mk.getDbId(),
                           RecordType::RT_LIST_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
-    } else if (mk.getRecordType() == RecordType::RT_SET_META) {
+    } else if (valueType == RecordType::RT_SET_META) {
         RecordKey fakeEle(mk.getChunkId(),
                           mk.getDbId(),
                           RecordType::RT_SET_ELE,
                           mk.getPrimaryKey(),
                           "");
         prefixes.push_back(fakeEle.prefixPk());
-    } else if (mk.getRecordType() == RecordType::RT_ZSET_META) {
+    } else if (valueType == RecordType::RT_ZSET_META) {
         RecordKey fakeEle(mk.getChunkId(),
                           mk.getDbId(),
                           RecordType::RT_ZSET_S_ELE,
@@ -435,6 +440,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         if (!eValue.ok()) {
             return eValue.status();
         }
+        RecordType valueType = eValue.value().getRecordType();
         auto cnt = rcd_util::getSubKeyCount(mk, eValue.value());
         if (!cnt.ok()) {
             return cnt.status();
@@ -443,17 +449,17 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         TTLIndex ictx(key, tp, sess->getCtx()->getDbId(),
                         eValue.value().getTtl());
         if (cnt.value() >= 2048 ||
-                (mk.getRecordType() == RecordType::RT_ZSET_META
+                (valueType == RecordType::RT_ZSET_META
                                     && cnt.value() >= 1024)) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
-                      << ",rcdType:" << rt2Char(mk.getRecordType())
+                      << ",rcdType:" << rt2Char(valueType)
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            return Command::delKeyPessimisticInLock(sess, storeId, mk,
+            return Command::delKeyPessimisticInLock(sess, storeId, mk, valueType,
                                    ictx.getTTL() > 0 ? &ictx : nullptr);
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, valueType,
                                 txn.get(), ictx.getTTL() > 0 ? &ictx : nullptr);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
@@ -500,7 +506,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         // TODO(vinchen) : Should it use store->getCurrentTime() instead?
         uint64_t currentTs = msSinceEpoch();
         uint64_t targetTtl = eValue.value().getTtl();
+        RecordType valueType = eValue.value().getRecordType();
         if (targetTtl == 0 || currentTs < targetTtl) {
+            if (valueType != tp && tp != RecordType::RT_DATA_META) {
+                return{ ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
             return eValue.value();
         } else if (txn->isReplOnly()) {
             // NOTE(vinchen): if replOnly, it can't delete record, but return
@@ -512,22 +522,22 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
             return cnt.status();
         }
 
-        TTLIndex ictx(key, tp, sess->getCtx()->getDbId(), targetTtl);
+        TTLIndex ictx(key, valueType, sess->getCtx()->getDbId(), targetTtl);
         if (cnt.value() >= 2048) {
             LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
-                      << ",rcdType:" << rt2Char(mk.getRecordType())
+                      << ",rcdType:" << rt2Char(valueType)
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
             Status s = Command::delKeyPessimisticInLock(sess, storeId,
-                                    mk, &ictx);
+                                    mk, valueType, &ictx);
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {
                 return s;
             }
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, valueType,
                                 txn.get(), &ictx);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {

@@ -87,6 +87,8 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "min or max not valid string range item";
     case ErrorCodes::ERR_EXTENDED_PROTOCOL:
         return "invalid extended protocol input";
+    case ErrorCodes::ERR_WRONG_TYPE:
+        return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
  
     default:
         break;

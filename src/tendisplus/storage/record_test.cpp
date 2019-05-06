@@ -19,7 +19,7 @@ static int genRand() {
 }
 
 RecordType randomType() {
-    switch ((genRand() % 4)) {
+    switch ((genRand() % 13)) {
         case 0:
             return RecordType::RT_META;
         case 1:
@@ -28,6 +28,24 @@ RecordType randomType() {
             return RecordType::RT_LIST_META;
         case 3:
             return RecordType::RT_LIST_ELE;
+        case 4:
+            return RecordType::RT_HASH_ELE;
+        case 5:
+            return RecordType::RT_HASH_META;
+        case 6:
+            return RecordType::RT_SET_ELE;
+        case 7:
+            return RecordType::RT_SET_META;
+        case 8:
+            return RecordType::RT_ZSET_H_ELE;
+        case 9:
+            return RecordType::RT_ZSET_S_ELE;
+        case 10:
+            return RecordType::RT_ZSET_META;
+        case 11:
+            return RecordType::RT_TTL_INDEX;
+        case 12:
+            return RecordType::RT_BINLOG;
         default:
             return RecordType::RT_INVALID;
     }
@@ -123,7 +141,8 @@ TEST(Record, Common) {
         EXPECT_EQ(type, rv.getRecordType());
         EXPECT_EQ(ttl, rv.getTtl());
 
-        EXPECT_EQ(type_, type);
+        EXPECT_EQ(getRealKeyType(type), rk.getRecordType());
+        EXPECT_EQ(type_, getRealKeyType(type));
         EXPECT_EQ(ttl_, ttl);
         EXPECT_TRUE(prcd1.ok());
         EXPECT_EQ(prcd1.value(), rcd);

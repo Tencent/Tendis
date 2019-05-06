@@ -12,6 +12,42 @@
 
 namespace tendisplus {
 
+RecordType getRealKeyType(RecordType t) {
+    switch (t) {
+        case RecordType::RT_HASH_META:
+        case RecordType::RT_LIST_META:
+        case RecordType::RT_ZSET_META:
+        case RecordType::RT_SET_META:
+        case RecordType::RT_KV:
+        case RecordType::RT_DATA_META:
+            return RecordType::RT_DATA_META;
+        default:
+            return t;
+    }
+}
+
+bool isRealEleType(RecordType keyType, RecordType valueType) {
+    switch (keyType) {
+        case RecordType::RT_HASH_ELE:
+        case RecordType::RT_SET_ELE:
+        case RecordType::RT_ZSET_H_ELE:
+        case RecordType::RT_LIST_ELE:
+            return true;
+        case RecordType::RT_DATA_META:
+            if (valueType == RecordType::RT_KV) {
+                return true;
+            }
+        case RecordType::RT_ZSET_S_ELE:
+        case RecordType::RT_BINLOG:
+        case RecordType::RT_TTL_INDEX:
+            return false;
+
+        default:
+            INVARIANT(0);
+            return false;
+    }
+}
+
 uint8_t rt2Char(RecordType t) {
     switch (t) {
         case RecordType::RT_META:
@@ -94,7 +130,7 @@ RecordType char2Rt(uint8_t t) {
 RecordKey::RecordKey()
     :_chunkId(0),
      _dbId(0),
-     _type(RecordType::RT_INVALID),
+     _type(getRealKeyType(RecordType::RT_INVALID)),
      _pk(""),
      _sk(""),
      _fmtVsn(0) {
@@ -110,7 +146,7 @@ RecordKey::RecordKey(RecordKey&& o)
          _fmtVsn(o._fmtVsn) {
     o._chunkId = 0;
     o._dbId = 0;
-    o._type = RecordType::RT_INVALID;
+    o._type = getRealKeyType(RecordType::RT_INVALID);
     o._version = 0;
     o._fmtVsn = 0;
 }
@@ -119,7 +155,7 @@ RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
     const std::string& pk, const std::string& sk, uint64_t version)
         :_chunkId(chunkId),
          _dbId(dbid),
-         _type(type),
+         _type(getRealKeyType(type)),
          _pk(pk),
          _sk(sk),
          _version(version),
@@ -130,7 +166,7 @@ RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid,
     RecordType type, std::string&& pk, std::string&& sk, uint64_t version)
     :_chunkId(chunkId),
      _dbId(dbid),
-     _type(type),
+     _type(getRealKeyType(type)),
      _pk(std::move(pk)),
      _sk(std::move(sk)),
      _version(version),
@@ -150,6 +186,8 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     }
 
     // Type
+    INVARIANT(_type == getRealKeyType(_type));
+    INVARIANT(_type != RecordType::RT_INVALID);
     arr->emplace_back(rt2Char(_type));
 
     // PK
@@ -246,6 +284,8 @@ const std::string& RecordKey::prefixTTLIndex() {
 }
 
 RecordType RecordKey::getRecordType() const {
+    // TODO(vinchen): remove it later
+    INVARIANT(_type == getRealKeyType(_type));
     return _type;
 }
 
@@ -311,6 +351,8 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
     // type
     typec = keyCstr[offset++];
     type = char2Rt(typec);
+    INVARIANT(type == getRealKeyType(type));
+    INVARIANT(type != RecordType::RT_INVALID);
 
     *chunkidOut = chunkid;
     *dbidOut = dbid;
@@ -618,6 +660,10 @@ uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
     uint64_t ttl = expt.value().first;;
 
     return ttl;
+}
+
+RecordType RecordValue::getRecordTypeRaw(const char* value, size_t size) {
+    return char2Rt(value[0]);
 }
 
 const std::string& RecordValue::getValue() const {
@@ -1483,6 +1529,7 @@ const std::string TTLIndex::ttlIndex() const {
             static_cast<char>((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff));
     }
 
+    INVARIANT(_type != RecordType::RT_DATA_META);
     ttlIdx.push_back(rt2Char(_type));
     ttlIdx.append(_priKey);
 
@@ -1545,13 +1592,16 @@ Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
     RecordType type = decodeType(index);
     std::string priKey = decodePriKey(index);
 
+    INVARIANT(type != RecordType::RT_DATA_META);
+
     return TTLIndex(priKey, type, dbId, ttl);
 }
 
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
-     switch (key.getRecordType()) {
+    INVARIANT(key.getRecordType() == RecordType::RT_DATA_META);
+     switch (val.getRecordType()) {
         case RecordType::RT_KV: {
             return 1;
         }

@@ -20,11 +20,7 @@ Expected<bool> delGeneric(Session *sess, const std::string& key) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     bool atLeastOne = false;
-    for (auto type : {RecordType::RT_KV,
-                      RecordType::RT_LIST_META,
-                      RecordType::RT_HASH_META,
-                      RecordType::RT_SET_META,
-                      RecordType::RT_ZSET_META}) {
+    for (auto type : {RecordType::RT_DATA_META}) {
         Expected<bool> done = Command::delKeyChkExpire(sess, key, type);
         if (!done.ok()) {
             return done.status();

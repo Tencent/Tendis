@@ -12,6 +12,16 @@
 
 namespace tendisplus {
 
+
+
+/* NOTE(vinchen): if you want to add new RecordType, make sure you handle
+   the below functions correctly.
+
+   uint8_t rt2Char(RecordType t);
+   RecordType char2Rt(uint8_t t);
+   RecordType getRealKeyType(RecordType t);
+   bool isRealEleType(RecordType keyType, RecordType valueType);
+*/
 enum class RecordType {
     RT_INVALID,
     RT_META,                    /* For catalog */
@@ -27,11 +37,13 @@ enum class RecordType {
     RT_ZSET_H_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
     RT_BINLOG,                  /* For binlog in RecordKey and RecordValue  */
     RT_TTL_INDEX,               /* For ttl index  in RecordKey and RecordValue  */
-    RT_DATA_META,               /* For key type in RecordKey and RecordValue  */
+    RT_DATA_META,               /* For key type in RecordKey */
 };
 
 uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
+RecordType getRealKeyType(RecordType t);
+bool isRealEleType(RecordType keyType, RecordType valueType);
 
 // ********************* key format ***********************************
 // ChunkId + DBID + Type + PK + 0 + VERSION + SK + len(PK) + 1B reserved
@@ -42,7 +54,7 @@ RecordType char2Rt(uint8_t t);
 // 'l' for RT_LIST_ELE an so on, see rt2Char
 // PK is primarykey, its length is described in len(PK)
 // 0
-// VERSION is varint, it means multi-version of record. For *_META, it 
+// VERSION is varint, it means multi-version of record. For *_META, it
 //   always 0. Maybe it would be useful for _ELE. It would be always 0 now.
 // SK is secondarykey, its length is not stored
 // len(PK) is varint32 stored in bigendian, so we can read from the end backwards.
@@ -55,7 +67,7 @@ RecordType char2Rt(uint8_t t);
 // VERSIONEP is a varint64, for extended protocol. Reversed, always 0
 // CAS is a varint64, for cas cmd
 // PIECESIZE is a varint64, for very big value. Reversed, always 0
-// TOTALSIZE is varint64. Now it is always == UserValue.size(). 
+// TOTALSIZE is varint64. Now it is always == UserValue.size().
 // UserValue is string.
 // ********************************************************************
 
@@ -149,26 +161,27 @@ class RecordValue {
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
+    static RecordType getRecordTypeRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
 
  private:
     // if RecordKey._type = META, _typeForMeta means the real
-    // meta type. For other RecordKey._type, it's useless. 
+    // meta type. For other RecordKey._type, it's useless.
     RecordType _type;
     uint64_t _ttl;
     // version for subkey, maybe it useful for big key deletion, reversed
-    uint64_t _version; 
-    // version for extended protocol, reversed 
+    uint64_t _version;
+    // version for extended protocol, reversed
     uint64_t _versionEP;
-   // cas
+    // cas
     int64_t _cas;
     // For very big values, it may split into multi pieces;  reversed
     uint64_t _pieceSize;
-    // if (_pieceSize > _totalSize) 
+    // if (_pieceSize > _totalSize)
     //      _valus.size() == _totalSize
     // else
     //      _totalSize > _values.size()
-    // TODO(vinchen), it would be useful for append and bitmap
+    // TODO(vinchen) it would be useful for append and bitmap
     // the whole value size, maybe > _value.size()
     uint64_t _totalSize;
     std::string _value;
