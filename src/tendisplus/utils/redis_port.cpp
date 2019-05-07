@@ -649,7 +649,7 @@ uint16_t crc16(const char *buf, int len) {
 * { and } is hashed. This may be useful in the future to force certain
 * keys to be in the same node (assuming no resharding is in progress). */
 unsigned int keyHashSlot(const char *key, size_t keylen) {
-    int s, e; /* start-end indexes of { and } */
+    size_t s, e; /* start-end indexes of { and } */
 
     for (s = 0; s < keylen; s++)
         if (key[s] == '{') break;
