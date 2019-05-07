@@ -332,7 +332,7 @@ class RestoreBinlogCommand: public Command {
             // NOTE(vinchen): It don't need to get the timestamp of binlog
             // for restorebinlog, because it isn't under the mode of
             // REPLICATE_ONLY
-            uint32_t timestamp = 0;
+            uint64_t timestamp = 0;
 
             Expected<RecordKey> expRk =
                 RecordKey::decode(kv.getReplLogValue().getOpKey());

@@ -764,7 +764,7 @@ ReplLogKey::ReplLogKey(ReplLogKey&& o)
 }
 
 ReplLogKey::ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
-        uint32_t timestamp, uint8_t reserved)
+        uint64_t timestamp, uint8_t reserved)
     :_txnId(txnid),
      _localId(localid),
      _flag(flag),
@@ -783,7 +783,7 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     uint64_t txnid = 0;
     uint16_t localid = 0;
     ReplFlag flag = ReplFlag::REPL_GROUP_MID;
-    uint32_t timestamp = 0;
+    uint64_t timestamp = 0;
     uint8_t reserved = 0;
     size_t offset = 0;
 
@@ -805,7 +805,8 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     for (size_t i = 0; i < sizeof(_timestamp); i++) {
         timestamp = (timestamp << 8)|keyCstr[offset+i];
     }
-    offset += sizeof(timestamp);
+    offset += sizeof(_timestamp);
+    INVARIANT(timestamp > std::numeric_limits<uint32_t>::max());
 
     // reserved
     reserved = keyCstr[key.size()-1];
@@ -849,6 +850,8 @@ std::string ReplLogKey::encode() const {
     for (size_t i = 0; i < sizeof(_timestamp); i++) {
         key.emplace_back((_timestamp>>((sizeof(_timestamp)-i-1)*8))&0xff);
     }
+    INVARIANT(_timestamp > std::numeric_limits<uint32_t>::max());
+
     key.emplace_back(_reserved);
     std::string partial(reinterpret_cast<const char *>(key.data()), key.size());
     RecordKey tmpRk(ReplLogKey::CHUNKID,

@@ -240,7 +240,7 @@ class ReplLogKey {
     ReplLogKey(const ReplLogKey&) = default;
     ReplLogKey(ReplLogKey&&);
     ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
-        uint32_t timestamp, uint8_t reserved = 0);
+        uint64_t timestamp, uint8_t reserved = 0);
     static Expected<ReplLogKey> decode(const RecordKey&);
     static Expected<ReplLogKey> decode(const std::string&);
     std::string encode() const;
@@ -248,7 +248,7 @@ class ReplLogKey {
     ReplLogKey& operator=(const ReplLogKey&);
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
-    uint32_t getTimestamp() const { return _timestamp; }
+    uint64_t getTimestamp() const { return _timestamp; }
     void setFlag(ReplFlag f) { _flag = f; }
     ReplFlag getFlag() const { return _flag; }
 
@@ -260,7 +260,7 @@ class ReplLogKey {
     uint64_t _txnId;
     uint16_t _localId;
     ReplFlag _flag;
-    uint32_t _timestamp;
+    uint64_t _timestamp;
     uint8_t _reserved;
 };
 

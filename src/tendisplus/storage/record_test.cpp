@@ -169,7 +169,8 @@ TEST(Record, Common) {
 }
 
 TEST(ReplRecord, Prefix) {
-    auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), genRand());
+    uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
+    auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), timestamp);
     RecordKey rk(ReplLogKey::CHUNKID, ReplLogKey::DBID,
                  RecordType::RT_BINLOG, rlk.encode(), "");
     const std::string s = rk.encode();
@@ -195,7 +196,7 @@ TEST(ReplRecord, Common) {
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint16_t localid = uint16_t(genRand());
         ReplFlag flag = randomReplFlag();
-        uint32_t timestamp = genRand();
+        uint64_t timestamp = (uint64_t)genRand()+std::numeric_limits<uint32_t>::max();
         auto rk = ReplLogKey(txnid, localid, flag, timestamp);
         auto rkStr = rk.encode();
         auto prk = ReplLogKey::decode(rkStr);

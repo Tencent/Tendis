@@ -92,13 +92,13 @@ class Transaction {
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val,
-                         const uint32_t ts = 0) = 0;
-    virtual Status delKV(const std::string& key, const uint32_t ts = 0) = 0;
+                         const uint64_t ts = 0) = 0;
+    virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
 
-    virtual uint32_t getBinlogTime() = 0;
-    virtual void setBinlogTime(uint32_t timestamp) = 0;
+    virtual uint64_t getBinlogTime() = 0;
+    virtual void setBinlogTime(uint64_t timestamp) = 0;
     virtual bool isReplOnly() const = 0;
 
     static constexpr uint64_t MAX_VALID_TXNID
@@ -203,8 +203,8 @@ class KVStore {
     virtual void appendJSONStat(
         rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
 
-    uint32_t getBinlogTime();
-    void setBinlogTime(uint32_t timestamp);
+    uint64_t getBinlogTime();
+    void setBinlogTime(uint64_t timestamp);
     uint64_t getCurrentTime();
 
     KVStoreStat stat;
@@ -216,7 +216,7 @@ class KVStore {
     const std::string _id;
     const std::string _dbPath;
     const std::string _backupDir;
-    std::atomic<uint32_t> _binlogTimeSpov;
+    std::atomic<uint64_t> _binlogTimeSpov;
 };
 
 }  // namespace tendisplus

@@ -487,7 +487,8 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         memset(fname, 0, 128);
         memset(tbuf, 0, 128);
 
-        time_t time = (time_t)logs.front().getReplLogKey().getTimestamp();
+        // ms to second
+        time_t time = (time_t)(uint32_t)(logs.front().getReplLogKey().getTimestamp()/1000);
         struct tm lt;
         (void) localtime_r(&time, &lt);
         strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
