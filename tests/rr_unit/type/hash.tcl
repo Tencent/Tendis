@@ -142,9 +142,8 @@ start_server {tags {"hash"}} {
 
     test {HMGET against wrong type} {
         r set wrongtype somevalue
-        #assert_error "*wrong*" {r hmget wrongtype field1 field2}
-        r hmget wrongtype field1 field2
-    } {{} {}}
+        assert_error "*wrong*" {r hmget wrongtype field1 field2}
+    }
 
     test {HMGET - small hash} {
         set keys {}
@@ -515,13 +514,13 @@ start_server {tags {"hash"}} {
    		r hmgetvsn hash 1 a
     } {200 2 b}
 
-    test "mix hmcas and hmset: hmset erase the version " {
-   		r del hash
-   		r hmcas hash 0 199 1 0 2 3 0 4 5 0 6
-   		r hmset hash 1 1 3 3 5 5
-   		assert_equal [r hvals hash] {1 3 5}
-   		r hmgetvsn hash 1 3 5
-    } {-1 1 3 5}
+    #test "mix hmcas and hmset: hmset erase the version " {
+   	#	r del hash
+   	#	r hmcas hash 0 199 1 0 2 3 0 4 5 0 6
+   	#	r hmset hash 1 1 3 3 5 5
+   	#	assert_equal [r hvals hash] {1 3 5}
+   	#	r hmgetvsn hash 1 3 5
+    #} {-1 1 3 5}
 
     test "mix hmset and hmcas: hmcas can force version a hash" {
    		r del hash

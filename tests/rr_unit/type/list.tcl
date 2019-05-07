@@ -679,8 +679,7 @@ start_server {
         r del mylist
 
         r set mylist foobar
-        #assert_error WRONGTYPE* {r llen mylist}
-        assert_equal 0 {r llen mylist}
+        assert_error WRONGTYPE* {r llen mylist}
     }
 
     test {LLEN against non existing key} {
@@ -688,8 +687,8 @@ start_server {
     }
 
     test {LINDEX against non-list value error} {
-        #assert_error WRONGTYPE* {r lindex mylist 0}
-        assert_error ERR* {r lindex mylist 0}
+        assert_error WRONGTYPE* {r lindex mylist 0}
+        #assert_error ERR* {r lindex mylist 0}
         #assert_equal {} {r lindex mylist 0}
     }
 
