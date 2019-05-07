@@ -1219,7 +1219,7 @@ class HMSetCommand: public Command {
             return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
         if (args.size() % 2 != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
+            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
         }
 
         Expected<RecordValue> rv =

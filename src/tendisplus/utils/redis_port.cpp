@@ -371,6 +371,11 @@ int string2ll(const char *s, size_t slen, long long *value) { // (NOLINT/int)
 }
 
 std::string errorReply(const std::string& s) {
+    if (s[0] == '-') {
+        INVARIANT(s[s.size() - 2] == '\r');
+        INVARIANT(s[s.size() - 1] == '\n');
+        return s;
+    }
     std::stringstream ss;
     ss << "-ERR " << s << "\r\n";
     return ss.str();

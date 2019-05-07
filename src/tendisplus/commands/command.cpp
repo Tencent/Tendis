@@ -85,7 +85,7 @@ Expected<std::string> Command::precheck(Session *sess) {
             || ssize_t(args.size()) < -arity) {
         std::stringstream ss;
         ss << "wrong number of arguments for '" << args[0] << "' command";
-        return {ErrorCodes::ERR_PARSEPKT, ss.str()};
+        return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ss.str()};
     }
 
     auto server = sess->getServerEntry();

@@ -74,21 +74,23 @@ shared.plus = createObject(OBJ_STRING,sdsnew("+"));
 std::string Status::getErrStr(ErrorCodes code) {
     switch (code) {
     case ErrorCodes::ERR_NAN:
-        return "resulting score is not a number (NaN)";
+        return "-ERR resulting score is not a number (NaN)\r\n";
     case ErrorCodes::ERR_FLOAT:
-        return "value is not a valid float";
+        return "-ERR value is not a valid float\r\n";
     case ErrorCodes::ERR_INTERGER:
-        return "value is not an integer or out of range";
+        return "-ERR value is not an integer or out of range\r\n";
     case ErrorCodes::ERR_PARSEOPT:
-        return "syntax error";
+        return "-ERR syntax error\r\n";
     case ErrorCodes::ERR_ZSLPARSERANGE:
-        return "min or max is not a float";
+        return "-ERR min or max is not a float\r\n";
     case ErrorCodes::ERR_ZSLPARSELEXRANGE:
-        return "min or max not valid string range item";
+        return "-ERR min or max not valid string range item\r\n";
     case ErrorCodes::ERR_EXTENDED_PROTOCOL:
-        return "invalid extended protocol input";
+        return "-ERR invalid extended protocol input\r\n";
     case ErrorCodes::ERR_WRONG_TYPE:
         return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+    case ErrorCodes::ERR_WRONG_ARGS_SIZE:
+        return "-ERR wrong number of arguments\r\n";
  
     default:
         break;
@@ -102,10 +104,18 @@ std::string Status::toString() const {
     if (_errmsg.size() == 0) {
         return Status::getErrStr(_code);
     } else {
-        ss << "ERR:"
-            << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
-            << ",msg:"
-            << _errmsg;
+        if (_code < ErrorCodes::ERR_AUTH) {
+            ss << "-ERR:"
+                << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
+                << ",msg:"
+                << _errmsg
+                << "\r\n";
+        } else {
+            // redis error
+            ss << "-ERR "
+                << _errmsg
+                << "\r\n";
+        }
     }
     return ss.str();
 }

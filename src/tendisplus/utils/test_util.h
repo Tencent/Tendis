@@ -25,6 +25,7 @@ using AllKeys = std::vector<KeysWritten>;
 
 bool setupEnv();
 void destroyEnv();
+std::string getBulkValue(const std::string& reply, uint32_t index);
 std::shared_ptr<ServerParams> makeServerParam();
 std::shared_ptr<ServerEntry> makeServerEntry(std::shared_ptr<ServerParams> cfg);
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,

@@ -25,21 +25,24 @@ enum class ErrorCodes {
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
     ERR_DECODE,
-    ERR_AUTH,
     ERR_BUSY,
     ERR_EXHAUST,  // for cursor
     ERR_EXPIRED,
     ERR_OVERFLOW,
     ERR_CAS,
     ERR_NOT_EXPIRED,
+    ERR_EXTENDED_PROTOCOL,
+    
+    // error from redis
+    ERR_AUTH,
     ERR_NAN,      /* "resulting score is not a number (NaN)"  */
     ERR_FLOAT,    /* "value is not a valid float" */
     ERR_INTERGER, /* "value is not an integer or out of range" */
     ERR_ZSLPARSERANGE, /* "min or max is not a float" */
     ERR_ZSLPARSELEXRANGE, /* "min or max not valid string range item" */
-    ERR_EXTENDED_PROTOCOL, 
-    ERR_WRONG_TYPE,       
-}; 
+    ERR_WRONG_TYPE,
+    ERR_WRONG_ARGS_SIZE, 
+};
 
 class Status {
  public:

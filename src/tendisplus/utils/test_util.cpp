@@ -56,6 +56,41 @@ void destroyEnv() {
     filesystem::remove_all("./db", ec);
 }
 
+std::string getBulkValue(const std::string& reply, uint32_t index) {
+    INVARIANT(index == 0);
+    auto ptr = reply.c_str();
+    std::string buf;
+    buf.reserve(128);
+
+    size_t i = 0;
+    size_t size = 0;
+
+    if (ptr[i] == '*') {
+        while (ptr[++i] != '\r');
+
+        i += 2; // skip the '\n'
+    }
+
+    switch (ptr[i]) {
+    case '$':
+        while (ptr[++i] != '\r') {
+            buf.append(1, ptr[i]);
+        }
+        size = std::stol(buf);
+        i += 2; // skip the '\n'
+        break;
+    default:
+        INVARIANT(0);
+        break;
+    }
+    buf.clear();
+    INVARIANT(reply.size() > i + size);
+    buf.insert(buf.end(), reply.begin() + i, reply.begin() + i + size);
+    INVARIANT(ptr[i + size] == '\r');
+
+    return buf;
+}
+
 std::shared_ptr<ServerEntry> makeServerEntry(
     std::shared_ptr<ServerParams> cfg) {
     auto block_cache =
