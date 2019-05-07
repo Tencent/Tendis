@@ -199,7 +199,7 @@ TEST(BlockingTcpClient, Common) {
 
     s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
-    EXPECT_EQ(s.toString(), "ERR:1,msg:already inited sock");
+    EXPECT_EQ(s.toString(), "-ERR:1,msg:already inited sock\r\n");
     s = cli1->writeLine("hello world\r\n hello world1\r\n trailing",
         std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
