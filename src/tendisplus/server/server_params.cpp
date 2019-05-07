@@ -188,12 +188,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                       "invalid pausetimeindexmgr config" };
                 }
                 pauseTimeIndexMgr = std::stoi(tokens[1]);
-            } else if (tokens[0] == "chunkSize") {
-                if (tokens.size() != 2) {
-                    return{ ErrorCodes::ERR_PARSEOPT,
-                        "invalid chunkSize config" };
-                }
-                chunkSize = std::stoi(tokens[1]);
+            //} else if (tokens[0] == "chunkSize") {
+            //    if (tokens.size() != 2) {
+            //        return{ ErrorCodes::ERR_PARSEOPT,
+            //            "invalid chunkSize config" };
+            //    }
+            //    chunkSize = std::stoi(tokens[1]);
             } else if (tokens[0] == "kvStoreCount") {
                 if (tokens.size() != 2) {
                     return{ ErrorCodes::ERR_PARSEOPT,
@@ -249,7 +249,7 @@ ServerParams::ServerParams()
     versionIncrease = true;
     generalLog = false;
     kvStoreCount = 10;
-    chunkSize = 4000;
+    chunkSize = 0x4000;  // same as rediscluster
 }
 
 

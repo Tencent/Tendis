@@ -19,12 +19,8 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                     const std::string& key, mgl::LockMode mode) {
-    uint32_t hash = static_cast<uint32_t>(FNV_64_INIT);
-    for (auto v : key) {
-        uint32_t val = static_cast<uint32_t>(v);
-        hash ^= val;
-        hash *= static_cast<uint32_t>(FNV_64_PRIME);
-    }
+    uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
+    INVARIANT(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
