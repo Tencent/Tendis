@@ -8,7 +8,7 @@ namespace tendisplus {
 TEST(Status, Common) {
     auto s = Expected<std::string>(ErrorCodes::ERR_INTERNAL, "test");
     EXPECT_EQ(s.ok(), false);
-    EXPECT_EQ(s.status().toString(), "ERR:3,msg:test");
+    EXPECT_EQ(s.status().toString(), "-ERR:3,msg:test\r\n");
     auto s1 = makeExpected<std::string>("test");
     EXPECT_EQ(s1.ok(), true);
     EXPECT_EQ(s1.value(), "test");

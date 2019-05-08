@@ -105,7 +105,7 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString());
+    RecordValue rv(sb.GetString(), RecordType::RT_META);
 
     auto exptxn = _store->createTransaction();
     if (!exptxn.ok()) {
@@ -205,7 +205,7 @@ Status Catalog::setStoreMainMeta(const StoreMainMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString());
+    RecordValue rv(sb.GetString(), RecordType::RT_META);
 
     auto exptxn = _store->createTransaction();
     if (!exptxn.ok()) {
@@ -286,7 +286,7 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString());
+    RecordValue rv(sb.GetString(), RecordType::RT_META);
 
     auto exptxn = _store->createTransaction();
     if (!exptxn.ok()) {

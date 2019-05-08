@@ -12,10 +12,48 @@
 
 namespace tendisplus {
 
+RecordType getRealKeyType(RecordType t) {
+    switch (t) {
+        case RecordType::RT_HASH_META:
+        case RecordType::RT_LIST_META:
+        case RecordType::RT_ZSET_META:
+        case RecordType::RT_SET_META:
+        case RecordType::RT_KV:
+        case RecordType::RT_DATA_META:
+            return RecordType::RT_DATA_META;
+        default:
+            return t;
+    }
+}
+
+bool isRealEleType(RecordType keyType, RecordType valueType) {
+    switch (keyType) {
+        case RecordType::RT_HASH_ELE:
+        case RecordType::RT_SET_ELE:
+        case RecordType::RT_ZSET_H_ELE:
+        case RecordType::RT_LIST_ELE:
+            return true;
+        case RecordType::RT_DATA_META:
+            if (valueType == RecordType::RT_KV) {
+                return true;
+            }
+        case RecordType::RT_ZSET_S_ELE:
+        case RecordType::RT_BINLOG:
+        case RecordType::RT_TTL_INDEX:
+            return false;
+
+        default:
+            INVARIANT(0);
+            return false;
+    }
+}
+
 uint8_t rt2Char(RecordType t) {
     switch (t) {
         case RecordType::RT_META:
             return 'M';
+        case RecordType::RT_DATA_META:
+            return 'D';
         case RecordType::RT_KV:
             return 'a';
         case RecordType::RT_LIST_META:
@@ -56,6 +94,8 @@ RecordType char2Rt(uint8_t t) {
     switch (t) {
         case 'M':
             return RecordType::RT_META;
+        case 'D':
+            return RecordType::RT_DATA_META;
         case 'a':
             return RecordType::RT_KV;
         case 'L':
@@ -90,7 +130,7 @@ RecordType char2Rt(uint8_t t) {
 RecordKey::RecordKey()
     :_chunkId(0),
      _dbId(0),
-     _type(RecordType::RT_INVALID),
+     _type(getRealKeyType(RecordType::RT_INVALID)),
      _pk(""),
      _sk(""),
      _fmtVsn(0) {
@@ -102,30 +142,34 @@ RecordKey::RecordKey(RecordKey&& o)
          _type(o._type),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
+         _version(o._version),
          _fmtVsn(o._fmtVsn) {
     o._chunkId = 0;
     o._dbId = 0;
-    o._type = RecordType::RT_INVALID;
+    o._type = getRealKeyType(RecordType::RT_INVALID);
+    o._version = 0;
     o._fmtVsn = 0;
 }
 
 RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-    const std::string& pk, const std::string& sk)
+    const std::string& pk, const std::string& sk, uint64_t version)
         :_chunkId(chunkId),
          _dbId(dbid),
-         _type(type),
+         _type(getRealKeyType(type)),
          _pk(pk),
          _sk(sk),
+         _version(version),
          _fmtVsn(0) {
 }
 
 RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid,
-    RecordType type, std::string&& pk, std::string&& sk)
+    RecordType type, std::string&& pk, std::string&& sk, uint64_t version)
     :_chunkId(chunkId),
      _dbId(dbid),
-     _type(type),
+     _type(getRealKeyType(type)),
      _pk(std::move(pk)),
      _sk(std::move(sk)),
+     _version(version),
      _fmtVsn(0) {
 }
 
@@ -142,16 +186,22 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     }
 
     // Type
+    INVARIANT(_type == getRealKeyType(_type));
+    INVARIANT(_type != RecordType::RT_INVALID);
     arr->emplace_back(rt2Char(_type));
 
     // PK
-    std::string hexPk = hexlify(_pk);
-    arr->insert(arr->end(), hexPk.begin(), hexPk.end());
+    arr->insert(arr->end(), _pk.begin(), _pk.end());
 
     // NOTE(deyukong): 0 never exists in hex string.
     // a padding 0 avoids prefixes intersect with
     // each other in physical space
     arr->push_back(0);
+
+    // NOTE(vinchen): version of key, temporarily useless
+    INVARIANT(_version == 0);
+    auto v = varintEncode(_version);
+    arr->insert(arr->end(), v.begin(), v.end());
 }
 
 uint32_t RecordKey::getChunkId() const {
@@ -234,6 +284,8 @@ const std::string& RecordKey::prefixTTLIndex() {
 }
 
 RecordType RecordKey::getRecordType() const {
+    // TODO(vinchen): remove it later
+    INVARIANT(_type == getRealKeyType(_type));
     return _type;
 }
 
@@ -299,6 +351,8 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
     // type
     typec = keyCstr[offset++];
     type = char2Rt(typec);
+    INVARIANT(type == getRealKeyType(type));
+    INVARIANT(type != RecordType::RT_INVALID);
 
     *chunkidOut = chunkid;
     *dbidOut = dbid;
@@ -311,8 +365,8 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
     size_t rvsOffset = 0;
-    uint64_t pkLen = 0;
-    uint64_t skLen = 0;
+    size_t pkLen = 0;
+    size_t skLen = 0;
     uint32_t chunkid = 0;
     uint32_t dbid = 0;
     RecordType type = RecordType::RT_INVALID;
@@ -336,26 +390,32 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     rvsOffset += expt.value().second;
     pkLen = expt.value().first;
 
-    // 2*pklen: pk is hexed
     // here -1 for the padding 0 after pk
-    if (key.size() < offset + rsvd + rvsOffset + 2*pkLen + 1) {
+    if (key.size() < offset + rsvd + rvsOffset + pkLen + 1) {
         return {ErrorCodes::ERR_DECODE, "invalid sk len"};
     }
-    skLen = key.size() - offset - rsvd - rvsOffset - 2*pkLen - 1;
 
-    // pk and sk
-    pk = std::string(key.c_str() + offset, 2*pkLen);
+    // pk and 0
+    pk = std::string(key.c_str() + offset, pkLen);
 
-    Expected<std::string> unhexPk = unhexlify(pk);
-    if (!unhexPk.ok()) {
-        return unhexPk.status();
+    // version
+    const char* ptr = key.c_str() + offset + pkLen + 1;
+    size_t left = key.size() - offset - rsvd - rvsOffset - pkLen - 1;
+    auto v = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), left);
+    if (!v.ok()) {
+        return {ErrorCodes::ERR_DECODE, "invalid version len"};
     }
+    size_t versionLen = v.value().second;
+    auto version = v.value().first;
+    INVARIANT(version == 0);
 
-    sk = std::string(key.c_str() + offset + 2*pkLen + 1, skLen);
+    // sk
+    skLen = left - versionLen;
+    sk = std::string(ptr + versionLen, skLen);
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(chunkid, dbid, type, unhexPk.value(), sk);
+    return RecordKey(chunkid, dbid, type, pk, sk, version);
 }
 
 RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
@@ -376,48 +436,119 @@ bool RecordKey::operator==(const RecordKey& other) const {
             _type == other._type &&
             _pk == other._pk &&
             _sk == other._sk &&
+            _version == other._version &&
             _fmtVsn == other._fmtVsn;
 }
 
-RecordValue::RecordValue()
-    :_cas(-1),
-     _ttl(0),
-     _value("") {
+RecordValue::RecordValue(RecordType type)
+    : _type(type),
+    _ttl(0),
+    _version(0),
+    _versionEP(0),
+    _cas(-1),
+    _pieceSize(-1),
+    _totalSize(0),
+    _value("") {
 }
 
-RecordValue::RecordValue(double v)
-    : _cas(-1),
-    _ttl(0) {
+RecordValue::RecordValue(double v, RecordType type)
+    : _type(type),
+    _ttl(0),
+    _version(0),
+    _versionEP(0),
+    _cas(-1),
+    _pieceSize(-1) {
     auto d = ::tendisplus::doubleEncode(v);
 
     std::string str;
     str.insert(str.end(), d.begin(), d.end());
     _value = std::move(str);
+    _totalSize = _value.size();
 }
 
 RecordValue::RecordValue(RecordValue&& o)
-        :_cas(o._cas),
-         _ttl(o._ttl),
-         _value(std::move(o._value)) {
+        : _type(o._type),
+    _ttl(o._ttl),
+    _version(o._version),
+    _versionEP(o._versionEP),
+    _cas(o._cas),
+    _pieceSize(o._pieceSize),
+    _totalSize(o._totalSize),
+    _value(std::move(o._value)) {
+    o._type = RecordType::RT_INVALID;
     o._ttl = 0;
-    o._cas = 0;
+    o._cas = -1;
+    o._version = o._versionEP = 0;
+    o._pieceSize = -1;
+    o._totalSize = o._value.size();
 }
 
-RecordValue::RecordValue(const std::string& val, uint64_t ttl, int64_t cas)
-        :_cas(cas),
-         _ttl(ttl),
-         _value(val) {
+RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
+                        int64_t cas, uint64_t version, uint64_t versionEp,
+                        uint64_t pieceSize)
+        : _type(type),
+    _ttl(ttl),
+    _version(version),
+    _versionEP(versionEp),
+    _cas(cas),
+    _pieceSize(pieceSize),
+    _totalSize(val.size()),
+    _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, uint64_t ttl, int64_t cas)
-        :_cas(cas),
-         _ttl(ttl),
-         _value(std::move(val)) {
+RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
+                        int64_t cas, uint64_t version, uint64_t versionEp,
+                        uint64_t pieceSize)
+        : _type(type),
+    _ttl(ttl),
+    _version(version),
+    _versionEP(versionEp),
+    _cas(cas),
+    _pieceSize(pieceSize),
+    _totalSize(val.size()),
+    _value(std::move(val)) {
+}
+// NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other 
+// information of the RecordValue(oldRV)
+RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
+                        const Expected<RecordValue>& oldRV) 
+    : RecordValue(val, type, ttl) {
+    if (oldRV.ok()) {
+        setCas(oldRV.value().getCas());
+        setVersion(oldRV.value().getVersion());
+        setVersionEP(oldRV.value().getVersionEP());
+        setPieceSize(oldRV.value().getPieceSize());
+    }
+}
+RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
+                        const Expected<RecordValue>& oldRV) 
+    : RecordValue(val, type, ttl) {
+    if (oldRV.ok()) {
+        setCas(oldRV.value().getCas());
+        setVersion(oldRV.value().getVersion());
+        setVersionEP(oldRV.value().getVersionEP());
+        setPieceSize(oldRV.value().getPieceSize());
+    }
 }
 
 std::string RecordValue::encode() const {
     std::vector<uint8_t> value;
     value.reserve(128);
+
+    // _typeForMeta
+    value.emplace_back(rt2Char(_type));
+
+    // TTL
+    auto varint = varintEncode(_ttl);
+    value.insert(value.end(), varint.begin(), varint.end());
+
+    // version
+    varint = varintEncode(_version);
+    value.insert(value.end(), varint.begin(), varint.end());
+
+    // versionEP
+    varint = varintEncode(_versionEP);
+    value.insert(value.end(), varint.begin(), varint.end());
 
     // CAS
     // NOTE(vinchen): cas should initialize -1, not zero.
@@ -426,9 +557,17 @@ std::string RecordValue::encode() const {
     auto casBytes = varintEncode(_cas + 1);
     value.insert(value.end(), casBytes.begin(), casBytes.end());
 
-    // TTL
-    auto ttlBytes = varintEncode(_ttl);
-    value.insert(value.end(), ttlBytes.begin(), ttlBytes.end());
+    // pieceSize
+    // why +1? same as CAS
+    varint = varintEncode(_pieceSize + 1);
+    value.insert(value.end(), varint.begin(), varint.end());
+
+    // totalSize
+    varint = varintEncode(_totalSize);
+    value.insert(value.end(), varint.begin(), varint.end());
+
+    INVARIANT(_pieceSize >= _totalSize);
+    INVARIANT(_totalSize == _value.size());
 
     // Value
     if (_value.size() > 0) {
@@ -440,8 +579,36 @@ std::string RecordValue::encode() const {
 
 Expected<RecordValue> RecordValue::decode(const std::string& value) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+
+    if (value.size() < 7) {
+        return {ErrorCodes::ERR_DECODE, "too small RecordValue"};
+    }
+
     size_t offset = 0;
-    auto expt = varintDecodeFwd(valueCstr, value.size());
+    auto typeForMeta = char2Rt(valueCstr[offset++]);
+
+    auto expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t ttl = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t version = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t versionEP = expt.value().first;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size());
     if (!expt.ok()) {
         return expt.status();
     }
@@ -456,7 +623,15 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         return expt.status();
     }
     offset += expt.value().second;
-    uint64_t ttl = expt.value().first;
+    uint64_t pieceSize = expt.value().first - 1;
+
+    expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t totalSize = expt.value().first;
+    INVARIANT(pieceSize >= totalSize);
 
     if (offset > value.size()) {
         std::stringstream ss;
@@ -468,19 +643,16 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         rawValue = std::string(value.c_str() + offset,
             value.size() - offset);
     }
-    return RecordValue(std::move(rawValue), ttl, cas);
+    INVARIANT(totalSize == rawValue.size());
+    return RecordValue(std::move(rawValue), typeForMeta, ttl, cas,
+                        version, versionEP, pieceSize);
 }
 
 uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value);
-    size_t offset = 0;
-    auto expt = varintDecodeFwd(valueCstr, size);
-    if (!expt.ok()) {
-        return 0;
-    }
-    offset += expt.value().second;
+    size_t offset = 1;
 
-    expt = varintDecodeFwd(valueCstr + offset, size - offset);
+    auto expt = varintDecodeFwd(valueCstr + offset, size - offset);
     if (!expt.ok()) {
         return 0;
     }
@@ -488,6 +660,10 @@ uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
     uint64_t ttl = expt.value().first;;
 
     return ttl;
+}
+
+RecordType RecordValue::getRecordTypeRaw(const char* value, size_t size) {
+    return char2Rt(value[0]);
 }
 
 const std::string& RecordValue::getValue() const {
@@ -511,12 +687,15 @@ void RecordValue::setCas(int64_t cas) {
 }
 
 bool RecordValue::operator==(const RecordValue& other) const {
-    return _ttl == other._ttl && _value == other._value && _cas == other._cas;
+    return _ttl == other._ttl && _cas == other._cas &&
+        _version == other._version && _type == other._type &&
+        _versionEP == other._versionEP && _totalSize == other._totalSize &&
+        _pieceSize == other._pieceSize && _value == other._value;
 }
 
 Record::Record()
     :_key(RecordKey()),
-     _value(RecordValue()) {
+     _value(RecordValue(RecordType::RT_INVALID)) {
 }
 
 Record::Record(Record&& o)
@@ -585,7 +764,7 @@ ReplLogKey::ReplLogKey(ReplLogKey&& o)
 }
 
 ReplLogKey::ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
-        uint32_t timestamp, uint8_t reserved)
+        uint64_t timestamp, uint8_t reserved)
     :_txnId(txnid),
      _localId(localid),
      _flag(flag),
@@ -604,7 +783,7 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     uint64_t txnid = 0;
     uint16_t localid = 0;
     ReplFlag flag = ReplFlag::REPL_GROUP_MID;
-    uint32_t timestamp = 0;
+    uint64_t timestamp = 0;
     uint8_t reserved = 0;
     size_t offset = 0;
 
@@ -626,7 +805,8 @@ Expected<ReplLogKey> ReplLogKey::decode(const RecordKey& rk) {
     for (size_t i = 0; i < sizeof(_timestamp); i++) {
         timestamp = (timestamp << 8)|keyCstr[offset+i];
     }
-    offset += sizeof(timestamp);
+    offset += sizeof(_timestamp);
+    INVARIANT(timestamp > std::numeric_limits<uint32_t>::max());
 
     // reserved
     reserved = keyCstr[key.size()-1];
@@ -654,7 +834,7 @@ std::string ReplLogKey::prefix(uint64_t commitId) {
     for (size_t i = 0; i < sizeof(commitId); i++) {
         p1.push_back((commitId>>((sizeof(commitId)-i-1)*8))&0xff);
     }
-    return p + hexlify(p1);
+    return p + p1;
 }
 
 std::string ReplLogKey::encode() const {
@@ -670,6 +850,8 @@ std::string ReplLogKey::encode() const {
     for (size_t i = 0; i < sizeof(_timestamp); i++) {
         key.emplace_back((_timestamp>>((sizeof(_timestamp)-i-1)*8))&0xff);
     }
+    INVARIANT(_timestamp > std::numeric_limits<uint32_t>::max());
+
     key.emplace_back(_reserved);
     std::string partial(reinterpret_cast<const char *>(key.data()), key.size());
     RecordKey tmpRk(ReplLogKey::CHUNKID,
@@ -786,7 +968,7 @@ std::string ReplLogValue::encode() const {
     val.insert(val.end(), valBytes.begin(), valBytes.end());
     val.insert(val.end(), _val.begin(), _val.end());
     std::string partial(reinterpret_cast<const char *>(val.data()), val.size());
-    RecordValue tmpRv(std::move(partial));
+    RecordValue tmpRv(std::move(partial), RecordType::RT_BINLOG);
     return tmpRv.encode();
 }
 
@@ -1350,6 +1532,7 @@ const std::string TTLIndex::ttlIndex() const {
             static_cast<char>((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff));
     }
 
+    INVARIANT(_type != getRealKeyType(_type));
     ttlIdx.push_back(rt2Char(_type));
     ttlIdx.append(_priKey);
 
@@ -1412,13 +1595,16 @@ Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
     RecordType type = decodeType(index);
     std::string priKey = decodePriKey(index);
 
+    INVARIANT(type != RecordType::RT_DATA_META);
+
     return TTLIndex(priKey, type, dbId, ttl);
 }
 
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
-     switch (key.getRecordType()) {
+    INVARIANT(key.getRecordType() == RecordType::RT_DATA_META);
+     switch (val.getRecordType()) {
         case RecordType::RT_KV: {
             return 1;
         }

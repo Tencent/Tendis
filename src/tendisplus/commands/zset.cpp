@@ -78,7 +78,7 @@ Expected<std::string> genericZrem(Session *sess,
     }
     Status s;
     if (sl.getCount() > 1) {
-        s = sl.save(txn.get());
+        s = sl.save(txn.get(), eMeta);
     } else {
         INVARIANT(sl.getCount() == 1);
         s = kvstore->delKV(mk, txn.get());
@@ -158,7 +158,7 @@ Expected<std::string> genericZadd(Session *sess,
         ZSlMetaValue tmp(1/*lvl*/,
                          1/*count*/,
                          0/*tail*/);
-        RecordValue rv(tmp.encode());
+        RecordValue rv(tmp.encode(), RecordType::RT_ZSET_META);
         Status s = kvstore->setKV(mk, rv, txn.get());
         if (!s.ok()) {
             return s;
@@ -169,7 +169,7 @@ Expected<std::string> genericZadd(Session *sess,
                        mk.getPrimaryKey(),
                        std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue subRv(headVal.encode());
+        RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
         s = kvstore->setKV(head, subRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -215,7 +215,7 @@ Expected<std::string> genericZadd(Session *sess,
             if (!s.ok()) {
                 return s;
             }
-            RecordValue hv(newScore);
+            RecordValue hv(newScore, RecordType::RT_ZSET_H_ELE);
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -250,7 +250,7 @@ Expected<std::string> genericZadd(Session *sess,
             if (!s.ok()) {
                 return s;
             }
-            RecordValue hv(newScore);
+            RecordValue hv(newScore, RecordType::RT_ZSET_H_ELE);
             s = kvstore->setKV(hk, hv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -258,7 +258,7 @@ Expected<std::string> genericZadd(Session *sess,
         }
     }
     // NOTE(vinchen): skiplist save one time
-    Status s = sl.save(txn.get());
+    Status s = sl.save(txn.get(), eMeta);
     if (!s.ok()) {
         return s;
     }
@@ -450,7 +450,7 @@ class ZRemByRangeGenericCommand: public Command {
 
         Status s;
         if (sl.getCount() > 1) {
-            s = sl.save(txn.get());
+            s = sl.save(txn.get(), eMeta);
         } else {
             INVARIANT(sl.getCount() == 1);
             s = kvstore->delKV(mk, txn.get());

@@ -33,7 +33,7 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit);
 #define ZADD_XX (1<<2)      /* Only touch elements already exisitng. */
 
 /* Output flags. */
-#define ZADD_NOP (1<<3)     /* Operation not performed because of conditionals.*/
+#define ZADD_NOP (1<<3)     /* Operation not performed because of conditionals.*/  // NOLINT
 #define ZADD_NAN (1<<4)     /* Only touch elements already exisitng. */
 #define ZADD_ADDED (1<<5)   /* The element was new and was added. */
 #define ZADD_UPDATED (1<<6) /* The element already existed, score updated. */
@@ -66,6 +66,8 @@ int zslParseRange(const char *min, const char *max, Zrangespec *spec);
 int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
 int stringmatchlen(const char *pattern, int patternLen,
     const char *string, int stringLen, int nocase);
+unsigned int keyHashSlot(const char *key, size_t keylen);
+unsigned int keyHashTwemproxy(std::string& key);
 
 }  // namespace redis_port
 }  // namespace tendisplus

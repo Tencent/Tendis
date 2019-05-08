@@ -58,8 +58,9 @@ Expected<std::string> hincrfloatGeneric(const RecordKey& metaRk,
     }
 
     nowVal += inc;
-    RecordValue newVal(::tendisplus::ldtos(nowVal, true));
-    RecordValue metaValue(hashMeta.encode(), ttl);
+    RecordValue newVal(::tendisplus::ldtos(nowVal, true),
+                        RecordType::RT_HASH_ELE);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -124,8 +125,8 @@ Expected<std::string> hincrGeneric(const RecordKey& metaRk,
                     "increment or decrement would overflow"};
     }
     nowVal += inc;
-    RecordValue newVal(std::to_string(nowVal));
-    RecordValue metaValue(hashMeta.encode(), ttl);
+    RecordValue newVal(std::to_string(nowVal), RecordType::RT_HASH_ELE);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -928,7 +929,8 @@ Status hmcas(Session *sess, const std::string& key,
         RecordKey subrk(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_HASH_ELE, key, keyPos.first);
         if (eop.value() == OPSET || !exists) {
-            RecordValue subrv(subargs[keyPos.second+2]);
+            RecordValue subrv(subargs[keyPos.second+2],
+                                RecordType::RT_HASH_ELE);
             Status s = kvstore->setKV(subrk, subrv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -943,7 +945,8 @@ Status hmcas(Session *sess, const std::string& key,
             if (!ev1.ok()) {
                 return ev1.status();
             }
-            RecordValue subrv(std::to_string(ev1.value() + ev.value()));
+            RecordValue subrv(std::to_string(ev1.value() + ev.value()),
+                                RecordType::RT_HASH_ELE);
             Status s = kvstore->setKV(subrk, subrv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -966,7 +969,9 @@ Status hmcas(Session *sess, const std::string& key,
         }
     }
     hashMeta.setCount(hashMeta.getCount() + uniqkeys.size() - existkvs.size());
-    RecordValue metaValue(hashMeta.encode(), ttl, cas);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
+                            ttl, eValue);
+    metaValue.setCas(cas);
     Status s = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!s.ok()) {
         return s;
@@ -1192,7 +1197,7 @@ class HMSetCommand: public Command {
             }
         }
         hashMeta.setCount(hashMeta.getCount() + inserted);
-        RecordValue metaValue(hashMeta.encode(), ttl);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1214,7 +1219,7 @@ class HMSetCommand: public Command {
             return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
         if (args.size() % 2 != 0) {
-            return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
+            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
         }
 
         Expected<RecordValue> rv =
@@ -1246,7 +1251,7 @@ class HMSetCommand: public Command {
         for (size_t i = 2; i < args.size(); i+=2) {
             RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_HASH_ELE, key, args[i]);
-            RecordValue subRv(args[i+1]);
+            RecordValue subRv(args[i+1], RecordType::RT_HASH_ELE);
             rcds.emplace_back(Record(std::move(subKey), std::move(subRv)));
         }
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
@@ -1312,7 +1317,7 @@ class HSetGeneric: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_HASH_ELE, key, subkey);
-        RecordValue subRv(val);
+        RecordValue subRv(val, RecordType::RT_HASH_ELE);
 
         // now, we have no need to deal with expire, though it may still
         // be expired in a very rare situation since expireHash is in
@@ -1373,7 +1378,7 @@ class HSetGeneric: public Command {
             return Command::fmtZero();
         }
 
-        RecordValue metaValue(hashMeta.encode(), ttl);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1484,7 +1489,8 @@ class HDelCommand: public Command {
             s = kvstore->delKV(metaKey, txn);
         } else {
             hashMeta.setCount(hashMeta.getCount() - realDel);
-            RecordValue metaValue(hashMeta.encode(), ttl);
+            RecordValue metaValue(hashMeta.encode(),
+                                    RecordType::RT_HASH_META, ttl, eValue);
             s = kvstore->setKV(metaKey, metaValue, txn);
         }
         if (!s.ok()) {

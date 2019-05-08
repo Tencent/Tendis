@@ -868,7 +868,7 @@ void testType(std::shared_ptr<ServerEntry> svr) {
 
     sess.setArgs({"hset", "test_type_key", "a", "b"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
+    EXPECT_TRUE(!expect.ok());
     sess.setArgs({"type", "test_type_key"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -1316,40 +1316,46 @@ void testExpire2(std::shared_ptr<ServerEntry> svr) {
     // bounder for optimistic del/pessimistic del
     for (auto v : {1000u, 10000u}) {
         for (uint32_t i = 0; i < v; i++) {
-            sess.setArgs({"lpush", "a", std::to_string(2*i)});
+            sess.setArgs({"lpush", "la", std::to_string(2*i)});
             auto expect = Command::runSessionCmd(&sess);
             EXPECT_TRUE(expect.ok());
             EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
         }
 
         for (uint32_t i = 0; i < v; i++) {
-            sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
+            sess.setArgs({"hset", "ha", std::to_string(i), std::to_string(i)});
             auto expect = Command::runSessionCmd(&sess);
             EXPECT_TRUE(expect.ok());
             EXPECT_EQ(expect.value(), Command::fmtOne());
         }
 
-        sess.setArgs({"llen", "a"});
+        sess.setArgs({"llen", "la"});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
 
-        sess.setArgs({"hlen", "a"});
+        sess.setArgs({"hlen", "ha"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
 
-        sess.setArgs({"expire", "a", std::to_string(-1)});
+        sess.setArgs({"expire", "la", std::to_string(-1)});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtOne());
 
-        sess.setArgs({"llen", "a"});
+        sess.setArgs({"expire", "ha", std::to_string(-1)});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+
+        sess.setArgs({"llen", "la"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtZero());
 
-        sess.setArgs({"hlen", "a"});
+        sess.setArgs({"hlen", "ha"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtZero());
@@ -1396,12 +1402,21 @@ void testDel(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtOK());
 
+        sess.setArgs({"del", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
         for (uint32_t i = 0; i < v; i++) {
             sess.setArgs({"lpush", "a", std::to_string(2*i)});
             auto expect = Command::runSessionCmd(&sess);
             EXPECT_TRUE(expect.ok());
             EXPECT_EQ(expect.value(), Command::fmtLongLong(i+1));
         }
+
+        sess.setArgs({"get", "a"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
 
         sess.setArgs({"expire", "a", std::to_string(1)});
         expect = Command::runSessionCmd(&sess);
@@ -1550,9 +1565,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 2);
-    // chunkSize should be 420000
-    std::string cursor =
-        "000585A800000000733733363336313645373336353734006B0700";
+    std::string cursor = getBulkValue(expect.value(), 0);
     Command::fmtBulk(ss, cursor);
     Command::fmtMultiBulkLen(ss, 10);
     for (int i = 0; i < 10; ++i) {
@@ -1613,8 +1626,6 @@ TEST(Command, common_scan) {
 
     EXPECT_TRUE(setupEnv());
     auto cfg = makeServerParam();
-    // need 420000
-    cfg->chunkSize = 420000;
     auto server = makeServerEntry(cfg);
 
     testScan(server);

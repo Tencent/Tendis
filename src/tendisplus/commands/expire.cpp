@@ -27,6 +27,7 @@ Expected<bool> expireAfterNow(Session *sess,
                         RecordType type,
                         const std::string& key,
                         uint64_t expireAt) {
+
     Expected<RecordValue> rv =
         Command::expireKeyIfNeeded(sess, key, type);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -37,6 +38,7 @@ Expected<bool> expireAfterNow(Session *sess,
         return rv.status();
     }
 
+    INVARIANT(type == RecordType::RT_DATA_META);
     // record exists and not expired
     auto server = sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
@@ -64,37 +66,32 @@ Expected<bool> expireAfterNow(Session *sess,
             return eValue.status();
         }
         auto rv = eValue.value();
+        auto vt = rv.getRecordType();
         Status s;
 
-        if (type == RecordType::RT_LIST_META ||
-            type == RecordType::RT_HASH_META ||
-            type == RecordType::RT_SET_META ||
-            type == RecordType::RT_ZSET_META ||
-            type == RecordType::RT_KV) {
-            if (type != RecordType::RT_KV) {
-                // delete old index entry
-                auto oldTTL = rv.getTtl();
-                TTLIndex o_ictx(key, type, pCtx->getDbId(), oldTTL);
+        if (vt != RecordType::RT_KV) {
+            // delete old index entry
+            auto oldTTL = rv.getTtl();
+            TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
 
-                s = txn->delKV(o_ictx.encode());
-                if (!s.ok()) {
-                    return s;
-                }
-
-                // add new index entry
-                TTLIndex n_ictx(key, type, pCtx->getDbId(), expireAt);
-                s = txn->setKV(n_ictx.encode(), RecordValue().encode());
-                if (!s.ok()) {
-                    return s;
-                }
-            }
-
-            // update
-            rv.setTtl(expireAt);
-            s = kvstore->setKV(rk, rv, txn.get());
+            s = txn->delKV(o_ictx.encode());
             if (!s.ok()) {
                 return s;
             }
+
+            // add new index entry
+            TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
+            s = txn->setKV(n_ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
+        // update
+        rv.setTtl(expireAt);
+        s = kvstore->setKV(rk, rv, txn.get());
+        if (!s.ok()) {
+            return s;
         }
 
         auto commitStatus = txn->commit();
@@ -121,11 +118,7 @@ Expected<std::string> expireGeneric(Session *sess,
                                     const std::string& key) {
     if (expireAt >= msSinceEpoch()) {
         bool atLeastOne = false;
-        for (auto type : {RecordType::RT_HASH_META,
-                          RecordType::RT_LIST_META,
-                          RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META,
-                          RecordType::RT_KV}) {
+        for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
             if (!done.ok()) {
                 return done.status();
@@ -135,11 +128,7 @@ Expected<std::string> expireGeneric(Session *sess,
         return atLeastOne ? Command::fmtOne() : Command::fmtZero();
     } else {
         bool atLeastOne = false;
-        for (auto type : {RecordType::RT_HASH_META,
-                          RecordType::RT_LIST_META,
-                          RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META,
-                          RecordType::RT_KV}) {
+        for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireBeforeNow(sess, type, key);
             LOG(WARNING) << " expire before " << key << " " << rt2Char(type);
             if (!done.ok()) {
@@ -235,11 +224,7 @@ class GenericTtlCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
 
-        for (auto type : {RecordType::RT_KV,
-                          RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META}) {
+        for (auto type : {RecordType::RT_DATA_META}) {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -339,11 +324,7 @@ class ExistsCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
 
-        for (auto type : {RecordType::RT_KV,
-                          RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META}) {
+        for (auto type : {RecordType::RT_DATA_META}) {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -391,9 +372,9 @@ class TypeCommand: public Command {
             {RecordType::RT_SET_META, "set"},
             {RecordType::RT_ZSET_META, "zset"},
         };
-        for (const auto& typestr : lookup) {
+        for (const auto& typestr : {RecordType::RT_DATA_META}) {
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, typestr.first);
+                Command::expireKeyIfNeeded(sess, key, typestr);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -401,7 +382,8 @@ class TypeCommand: public Command {
             } else if (!rv.ok()) {
                 return rv.status();
             }
-            return Command::fmtBulk(typestr.second);
+            auto vt = rv.value().getRecordType();
+            return Command::fmtBulk(lookup.at(vt));
         }
         return Command::fmtBulk("none");
     }

@@ -33,18 +33,22 @@ class KVTtlCompactionFilter : public CompactionFilter {
       std::string* /*new_value*/,
       bool* /*value_changed*/) const {
         RecordType type = RecordKey::getRecordTypeRaw(key.data(), key.size());
+        RecordType vt;
         uint64_t ttl;
         _filterCount++;
         switch (type) {
-        case RecordType::RT_KV:
-            ttl = RecordValue::getTtlRaw(existing_value.data(),
-                existing_value.size());
-            if (ttl > 0 && ttl < _currentTime) {
-                // Expired
-                _expiredCount++;
-                _expiredSize += key.size() + existing_value.size();
+        case RecordType::RT_DATA_META:
+            vt = RecordValue::getRecordTypeRaw(existing_value.data(), existing_value.size());
+            if (vt == RecordType::RT_KV) {
+                ttl = RecordValue::getTtlRaw(existing_value.data(),
+                    existing_value.size());
+                if (ttl > 0 && ttl < _currentTime) {
+                    // Expired
+                    _expiredCount++;
+                    _expiredSize += key.size() + existing_value.size();
 
-                return true;
+                    return true;
+                }
             }
             break;
         case RecordType::RT_INVALID:

@@ -39,14 +39,14 @@ class RocksTxn: public Transaction {
     Expected<std::string> getKV(const std::string&) final;
     Status setKV(const std::string& key,
                  const std::string& val,
-                 const uint32_t ts = 0) final;
-    Status delKV(const std::string& key, const uint32_t ts = 0) final;
+                 const uint64_t ts = 0) final;
+    Status delKV(const std::string& key, const uint64_t ts = 0) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const;
 
-    uint32_t getBinlogTime() { return _binlogTimeSpov; }
-    void setBinlogTime(uint32_t timestamp);
+    uint64_t getBinlogTime() { return _binlogTimeSpov; }
+    void setBinlogTime(uint64_t timestamp);
     bool isReplOnly() const { return _replOnly; }
 
  protected:
@@ -72,7 +72,7 @@ class RocksTxn: public Transaction {
 
  private:
     // 0 for master, otherwise it's the latest commit binlog timestamp
-    uint32_t _binlogTimeSpov = 0;
+    uint64_t _binlogTimeSpov = 0;
 };
 
 // TODO(deyukong): donot modify store's unCommittedTxn list if

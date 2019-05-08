@@ -12,42 +12,63 @@
 
 namespace tendisplus {
 
+
+
+/* NOTE(vinchen): if you want to add new RecordType, make sure you handle
+   the below functions correctly.
+
+   uint8_t rt2Char(RecordType t);
+   RecordType char2Rt(uint8_t t);
+   RecordType getRealKeyType(RecordType t);
+   bool isRealEleType(RecordType keyType, RecordType valueType);
+*/
 enum class RecordType {
     RT_INVALID,
-    RT_META,
-    RT_KV,
-    RT_LIST_META,
-    RT_LIST_ELE,
-    RT_HASH_META,
-    RT_HASH_ELE,
-    RT_SET_META,
-    RT_SET_ELE,
-    RT_ZSET_META,
-    RT_ZSET_S_ELE,
-    RT_ZSET_H_ELE,
-    RT_BINLOG,
-    RT_TTL_INDEX,
+    RT_META,                    /* For catalog */
+    RT_KV,                      /* For realtype in RecordValue */
+    RT_LIST_META,               /* For realtype in RecordValue */
+    RT_LIST_ELE,                /* For list subkey type in RecordKey and RecordValue */
+    RT_HASH_META,               /* For realtype in RecordValue */
+    RT_HASH_ELE,                /* For hash subkey type in RecordKey and RecordValue  */
+    RT_SET_META,                /* For realtype in RecordValue */
+    RT_SET_ELE,                 /* For set subkey type in RecordKey and RecordValue  */
+    RT_ZSET_META,               /* For realtype in RecordValue */
+    RT_ZSET_S_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
+    RT_ZSET_H_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
+    RT_BINLOG,                  /* For binlog in RecordKey and RecordValue  */
+    RT_TTL_INDEX,               /* For ttl index  in RecordKey and RecordValue  */
+    RT_DATA_META,               /* For key type in RecordKey */
 };
 
 uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
+RecordType getRealKeyType(RecordType t);
+bool isRealEleType(RecordType keyType, RecordType valueType);
 
 // ********************* key format ***********************************
-// ChunkId + DBID + Type + PK + 0 + SK + len(PK) + 1B reserved
+// ChunkId + DBID + Type + PK + 0 + VERSION + SK + len(PK) + 1B reserved
 // ChunkId is an uint32 in big-endian, it's mainly used for logic migra
 // -tion
 // DBID is an uint32 in big-endian
 // Type is a char, 'a' for RT_KV, 'm' for RT_META, 'L' for RT_LIST_META
 // 'l' for RT_LIST_ELE an so on, see rt2Char
 // PK is primarykey, its length is described in len(PK)
+// 0
+// VERSION is varint, it means multi-version of record. For *_META, it
+//   always 0. Maybe it would be useful for _ELE. It would be always 0 now.
 // SK is secondarykey, its length is not stored
-// len(PK) is varint32 stored in bigendian, so we can read
-// from the end backwards.
+// len(PK) is varint32 stored in bigendian, so we can read from the end backwards.
 // the last 1B are reserved.
 // ********************* value format *********************************
-// CAS + TTL + UserValue
-// CAS is a varint64
+// TYPE + TTL + VERSION + VERSIONEP + CAS + PIECESIZE + TOTALSIZE + UserValue
+// TYPE is one byte for real type of record
 // TTL is a varint64
+// VERSION is a varint64, for multi-version. Reversed, always 0
+// VERSIONEP is a varint64, for extended protocol. Reversed, always 0
+// CAS is a varint64, for cas cmd
+// PIECESIZE is a varint64, for very big value. Reversed, always 0
+// TOTALSIZE is varint64. Now it is always == UserValue.size().
+// UserValue is string.
 // ********************************************************************
 
 class RecordKey {
@@ -61,9 +82,9 @@ class RecordKey {
     // be in a dangling state
     RecordKey(RecordKey&&);
     RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-        const std::string& pk, const std::string& sk);
+        const std::string& pk, const std::string& sk, uint64_t version = 0);
     RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
-        std::string&& pk, std::string&& sk);
+        std::string&& pk, std::string&& sk, uint64_t version = 0);
     const std::string& getPrimaryKey() const;
     const std::string& getSecondaryKey() const;
     uint32_t getChunkId() const;
@@ -94,38 +115,75 @@ class RecordKey {
     RecordType _type;
     std::string _pk;
     std::string _sk;
+    // version for subkey, it would be always 0 for *_META.
+    uint64_t _version;
     TRSV _fmtVsn;
 };
 
 class RecordValue {
  public:
-    RecordValue();
+    RecordValue(RecordType type);
     RecordValue(const RecordValue&) = default;
 
     // for zset score
-    RecordValue(double v);
+    RecordValue(double v, RecordType type);
 
     // we should not rely on default move constructor.
     // refer to the manual, int types have no move constructor
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
-    explicit RecordValue(const std::string& val, uint64_t ttl = 0,
-                        int64_t cas = -1);
-    explicit RecordValue(std::string&& val, uint64_t ttl = 0, int64_t cas = -1);
+    explicit RecordValue(const std::string& val, RecordType type, uint64_t ttl = 0,
+                        int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
+                        uint64_t pieceSize = (uint64_t)-1);
+    explicit RecordValue(std::string&& val, RecordType type, uint64_t ttl = 0,
+                        int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
+                        uint64_t pieceSize = (uint64_t)-1);
+
+    RecordValue(const std::string& val, RecordType type, uint64_t ttl,
+                    const Expected<RecordValue>& oldRV);
+    RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
+                    const Expected<RecordValue>& oldRV);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);
     int64_t getCas() const;
     void setCas(int64_t);
+    RecordType getRecordType() const { return _type; }
+    void setRecordType(RecordType type) { _type = type; }
+    uint64_t getVersion() const { return _version; }
+    void setVersion(uint64_t version) { _version = version; }
+    uint64_t getVersionEP() const { return _versionEP; }
+    void setVersionEP(uint64_t versionEP) { _versionEP = versionEP; }
+    uint64_t getPieceSize() const { return _pieceSize; }
+    void setPieceSize(uint64_t size) { _pieceSize = size; }
+    uint64_t getTotalSize() const { return _totalSize; }
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
+    static RecordType getRecordTypeRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
 
  private:
-    int64_t _cas;
+    // if RecordKey._type = META, _typeForMeta means the real
+    // meta type. For other RecordKey._type, it's useless.
+    RecordType _type;
     uint64_t _ttl;
+    // version for subkey, maybe it useful for big key deletion, reversed
+    uint64_t _version;
+    // version for extended protocol, reversed
+    uint64_t _versionEP;
+    // cas
+    int64_t _cas;
+    // For very big values, it may split into multi pieces;  reversed
+    uint64_t _pieceSize;
+    // if (_pieceSize > _totalSize)
+    //      _valus.size() == _totalSize
+    // else
+    //      _totalSize > _values.size()
+    // TODO(vinchen) it would be useful for append and bitmap
+    // the whole value size, maybe > _value.size()
+    uint64_t _totalSize;
     std::string _value;
 };
 
@@ -182,7 +240,7 @@ class ReplLogKey {
     ReplLogKey(const ReplLogKey&) = default;
     ReplLogKey(ReplLogKey&&);
     ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
-        uint32_t timestamp, uint8_t reserved = 0);
+        uint64_t timestamp, uint8_t reserved = 0);
     static Expected<ReplLogKey> decode(const RecordKey&);
     static Expected<ReplLogKey> decode(const std::string&);
     std::string encode() const;
@@ -190,7 +248,7 @@ class ReplLogKey {
     ReplLogKey& operator=(const ReplLogKey&);
     uint64_t getTxnId() const { return _txnId; }
     uint16_t getLocalId() const { return _localId; }
-    uint32_t getTimestamp() const { return _timestamp; }
+    uint64_t getTimestamp() const { return _timestamp; }
     void setFlag(ReplFlag f) { _flag = f; }
     ReplFlag getFlag() const { return _flag; }
 
@@ -202,7 +260,7 @@ class ReplLogKey {
     uint64_t _txnId;
     uint16_t _localId;
     ReplFlag _flag;
-    uint32_t _timestamp;
+    uint64_t _timestamp;
     uint8_t _reserved;
 };
 

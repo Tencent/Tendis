@@ -180,7 +180,7 @@ class SetCommand: public Command {
         if (params.expire != 0) {
             ts = msSinceEpoch() + params.expire;
         }
-        RecordValue rv(params.value, ts);
+        RecordValue rv(params.value, RecordType::RT_KV, ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.flags,
@@ -238,7 +238,7 @@ class SetexGeneralCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_KV, key, "");
-        RecordValue rv(val, ttl);
+        RecordValue rv(val, RecordType::RT_KV, ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -345,7 +345,7 @@ class SetNxCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                      RecordType::RT_KV, key, "");
-        RecordValue rv(val);
+        RecordValue rv(val, RecordType::RT_KV);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -839,7 +839,8 @@ class GetSetGeneral: public Command {
                     return std::move(newValue.value());
                 } else {
                     return eValue.ok() ?
-                           std::move(eValue.value()) : RecordValue("");
+                            std::move(eValue.value()) :
+                            RecordValue("", RecordType::RT_KV);
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -886,7 +887,7 @@ class CasCommand: public GetSetGeneral {
             return ecas.status();
         }
 
-        RecordValue ret(sess->getArgs()[3]);
+        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV);
         if (!oldValue.ok()) {
             ret.setCas(ecas.value());
             return ret;
@@ -945,10 +946,13 @@ class AppendCommand: public GetSetGeneral {
         }
 
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return std::move(RecordValue(std::move(cat), ttl));
+        return std::move(
+                    RecordValue(std::move(cat), type, ttl));
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1009,10 +1013,12 @@ class SetRangeCommand: public GetSetGeneral {
             cat[i] = val[i-offset];
         }
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(cat), ttl);
+        return RecordValue(std::move(cat), type, ttl);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1090,10 +1096,12 @@ class SetBitCommand: public GetSetGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(tomodify), ttl);
+        return RecordValue(std::move(tomodify), type, ttl);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1148,9 +1156,8 @@ class GetSetCommand: public GetSetGeneral {
 
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
-        (void)oldValue;
         // getset overwrites ttl
-        return RecordValue(sess->getArgs()[2], 0);
+        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1271,10 +1278,13 @@ class IncrbyfloatCommand: public GetSetGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(::tendisplus::ldtos(newSum.value(), true), ttl);
+        return RecordValue(::tendisplus::ldtos(newSum.value(), true),
+                        type, ttl);
     }
 } incrbyfloatCmd;
 
@@ -1314,10 +1324,13 @@ class IncrbyCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), ttl);
+        return RecordValue(std::to_string(newSum.value()),
+                        type, ttl);
     }
 } incrbyCmd;
 
@@ -1351,10 +1364,12 @@ class IncrCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } incrCmd;
 
@@ -1394,11 +1409,13 @@ class DecrbyCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
-        return RecordValue(std::to_string(newSum.value()), ttl);
+        // LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } decrbyCmd;
 
@@ -1433,10 +1450,12 @@ class DecrCommand: public IncrDecrGeneral {
 
         // incrby wont clear ttl
         uint64_t ttl = 0;
+        RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             ttl = oldValue.value().getTtl();
+            type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl);
     }
 } decrCmd;
 
@@ -1588,7 +1607,7 @@ class BitopCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                             RecordType::RT_KV, targetKey, "");
-        RecordValue rv(result);
+        RecordValue rv(result, RecordType::RT_KV);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -1665,7 +1684,7 @@ class MSetCommand: public Command {
 
             RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                                 RecordType::RT_KV, key, "");
-            RecordValue rv(val);
+            RecordValue rv(val, RecordType::RT_KV);
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
                 auto ptxn = kvstore->createTransaction();
                 if (!ptxn.ok()) {

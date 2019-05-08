@@ -221,16 +221,15 @@ class IterAllCommand: public Command {
             if (!exptRcd.ok()) {
                 return exptRcd.status();
             }
-            auto type = exptRcd.value().getRecordKey().getRecordType();
-            if (type == RecordType::RT_BINLOG) {
+            auto keyType = exptRcd.value().getRecordKey().getRecordType();
+            // NOTE(vinchen):RecordType::RT_TTL_INDEX and RecordType::BINLOG is
+            // always at the last of rocksdb
+            if (keyType == RecordType::RT_TTL_INDEX) {
                 break;
             }
-            if (type == RecordType::RT_META ||
-                type == RecordType::RT_LIST_META ||
-                    type == RecordType::RT_HASH_META ||
-                    type == RecordType::RT_SET_META ||
-                    type == RecordType::RT_ZSET_META ||
-                    type == RecordType::RT_ZSET_S_ELE) {
+
+            auto valueType = exptRcd.value().getRecordValue().getRecordType();
+            if (!isRealEleType(keyType, valueType)) {
                 continue;
             }
             result.emplace_back(std::move(exptRcd.value()));
@@ -249,9 +248,11 @@ class IterAllCommand: public Command {
         for (const auto& o : result) {
             Command::fmtMultiBulkLen(ss, 4);
             const auto& t = o.getRecordKey().getRecordType();
-            Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(t)));
+            const auto& vt = o.getRecordValue().getRecordType();
+            Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(vt)));
             switch (t) {
-                case RecordType::RT_KV:
+                case RecordType::RT_DATA_META:
+                    INVARIANT(vt == RecordType::RT_KV);
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, "");
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
@@ -259,15 +260,18 @@ class IterAllCommand: public Command {
                 case RecordType::RT_HASH_ELE:
                 case RecordType::RT_LIST_ELE:
                 case RecordType::RT_SET_ELE:
+                    INVARIANT(vt == t);
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
                     break;
                 case RecordType::RT_ZSET_H_ELE:
                 {
+                    INVARIANT(vt == t);
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
-                    auto d = tendisplus::doubleDecode(o.getRecordValue().getValue());
+                    auto d = tendisplus::doubleDecode(
+                                        o.getRecordValue().getValue());
                     if (!d.ok()) {
                         return d.status();
                     }
@@ -858,7 +862,7 @@ class ClientCommand: public Command {
                 if (v < '!' || v > '~') {
                     LOG(INFO) << "word:" << args[2] << ' ' << v << " illegal";
                     return {ErrorCodes::ERR_PARSEOPT,
-                               "Client names cannot contain spaces, newlines or special characters."};
+                               "Client names cannot contain spaces, newlines or special characters."};   // NOLINT
                 }
             }
             sess->setName(args[2]);
@@ -867,7 +871,7 @@ class ClientCommand: public Command {
             return killClients(sess);
         } else {
             return {ErrorCodes::ERR_PARSEOPT,
-                "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};
+                "Syntax error, try CLIENT (LIST | KILL ip:port | GETNAME | SETNAME connection-name)"};  // NOLINT
         }
     }
 } clientCmd;
@@ -919,12 +923,12 @@ class InfoCommand: public Command {
 #endif
             ss << "# Server\r\n"
 #ifndef _WIN32
-                << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"
+                << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"        // NOLINT
 #endif
                 << "arch_bits:" << ((sizeof(size_t) == 8) ? 64 : 32) << "\r\n"
                 << "multiplexing_api:asio\r\n"
 #ifdef __GNUC__
-                << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"
+                << "gcc_version:" << __GNUC__ << ":" << __GNUC_MINOR__ << ":" << __GNUC_PATCHLEVEL__ << "\r\n"  // NOLINT
 #else
                 << "gcc_version:0.0.0\r\n"
 #endif
@@ -976,11 +980,7 @@ class ObjectCommand: public Command {
             {RecordType::RT_SET_META, "ziplist"},
             {RecordType::RT_ZSET_META, "skiplist"},
         };
-        for (auto type : {RecordType::RT_KV,
-                          RecordType::RT_LIST_META,
-                          RecordType::RT_HASH_META,
-                          RecordType::RT_SET_META,
-                          RecordType::RT_ZSET_META}) {
+        for (auto type : {RecordType::RT_DATA_META}) {
             Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key, type);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -990,10 +990,11 @@ class ObjectCommand: public Command {
             } else if (!rv.ok()) {
                 return rv.status();
             }
+            auto vt = rv.value().getRecordType();
             if (sess->getArgs()[2] == "recount") {
                 return Command::fmtOne();
             } else if (sess->getArgs()[2] == "encoding") {
-                return Command::fmtBulk(m.at(type));
+                return Command::fmtBulk(m.at(vt));
             } else if (sess->getArgs()[2] == "idletime") {
                 return Command::fmtLongLong(0);
             }

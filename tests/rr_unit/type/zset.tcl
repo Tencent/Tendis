@@ -77,14 +77,14 @@ start_server {tags {"zset"}} {
             assert_match {*ERR*wrong*number*arg*} $e
         }
 
-        test {ZADD/ZREM load/evict big zsets into/from memory} {
-            r config set zset-load-startup-threshhold 10
-            r zadd myzset 1 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1 10
-            assert_equal 1 [r zsetcount]
-            r zrem myzset 1 2 3 4 5
-            assert_equal 0 [r zsetcount]
-            r config set zset-load-startup-threshhold 1000000
-        }
+        #test {ZADD/ZREM load/evict big zsets into/from memory} {
+        #    r config set zset-load-startup-threshhold 10
+        #    r zadd myzset 1 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 1 9 1 10
+        #    assert_equal 1 [r zsetcount]
+        #    r zrem myzset 1 2 3 4 5
+        #    assert_equal 0 [r zsetcount]
+        #    r config set zset-load-startup-threshhold 1000000
+        #}
 
         test "ZCARD basics - $encoding" {
             assert_equal 3 [r zcard ztmp]
@@ -827,60 +827,63 @@ start_server {tags {"zset"}} {
 
     tags {"zremrange evict zset out of mem"} {
         test "zremrangebyscore" {
-            r flushalldisk
-            r config set zset-load-startup-threshhold 5
+            #r flushalldisk
+            r del myzset
+            #r config set zset-load-startup-threshhold 5
             r zadd myzset 1 a 2 b 3 c 4 d 5 e 6 f 7 g 8 h 9 i 10 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 6 [r zremrangebyscore myzset 1 6]
             assert_equal 4 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
             r del myzset
             r zadd myzset 1 a 1 b 1 c 1 d 1 e 1 f 1 g 1 h 1 i 1 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 10 [r zremrangebyscore myzset 1 6]
             assert_equal 0 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
-            r config set zset-load-startup-threshhold 100000
+            #r config set zset-load-startup-threshhold 100000
         }
 
         test "zremrangebylex" {
-            r flushalldisk
-            r config set zset-load-startup-threshhold 5
+            #r flushalldisk
+            r del myzset
+            #r config set zset-load-startup-threshhold 5
             r zadd myzset 1 a 2 b 3 c 4 d 5 e 6 f 7 g 8 h 9 i 10 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 6 [r zremrangebylex myzset "\[a" "\[f"]
             assert_equal 4 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
             r del myzset
             r zadd myzset 1 a 1 b 1 c 1 d 1 e 1 f 1 g 1 h 1 i 1 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 6 [r zremrangebylex myzset "\[a" "\[f"]
             assert_equal 4 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
-            r config set zset-load-startup-threshhold 100000
+            #r config set zset-load-startup-threshhold 100000
         }
 
         test "zremrangebyrank" {
-            r flushalldisk
-            r config set zset-load-startup-threshhold 5
+            #r flushalldisk
+            r del myzset
+            #r config set zset-load-startup-threshhold 5
             r zadd myzset 1 a 2 b 3 c 4 d 5 e 6 f 7 g 8 h 9 i 10 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 9 [r zremrangebyrank myzset 1 9]
             assert_equal 1 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
             r del myzset
             r zadd myzset 1 a 1 b 1 c 1 d 1 e 1 f 1 g 1 h 1 i 1 j
-            assert_equal 1 [r zsetcount]
+            #assert_equal 1 [r zsetcount]
             assert_equal 9 [r zremrangebyrank myzset 1 9]
             assert_equal 1 [r zcard myzset]
-            assert_equal 0 [r zsetcount]
+            #assert_equal 0 [r zsetcount]
 
-            r config set zset-load-startup-threshhold 100000
+            #r config set zset-load-startup-threshhold 100000
         }
     }
 }

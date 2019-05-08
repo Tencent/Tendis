@@ -220,7 +220,7 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
 
 Status RocksTxn::setKV(const std::string& key,
                        const std::string& val,
-                       const uint32_t ts) {
+                       const uint64_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -233,7 +233,7 @@ Status RocksTxn::setKV(const std::string& key,
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
     ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, ts ? ts : sinceEpoch());
+                ReplFlag::REPL_GROUP_MID, ts ? ts : msSinceEpoch());
     ReplLogValue logVal(ReplOp::REPL_OP_SET, key, val);
     if (_binlogs.size() == 0) {
         uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
@@ -246,7 +246,7 @@ Status RocksTxn::setKV(const std::string& key,
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksTxn::delKV(const std::string& key, const uint32_t ts) {
+Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -259,7 +259,7 @@ Status RocksTxn::delKV(const std::string& key, const uint32_t ts) {
         return {ErrorCodes::ERR_BUSY, "txn max ops reached"};
     }
     ReplLogKey logKey(_txnId, _binlogs.size(),
-                ReplFlag::REPL_GROUP_MID, ts ? ts : sinceEpoch());
+                ReplFlag::REPL_GROUP_MID, ts ? ts : msSinceEpoch());
     ReplLogValue logVal(ReplOp::REPL_OP_DEL, key, "");
     if (_binlogs.size() == 0) {
         uint16_t oriFlag = static_cast<uint16_t>(logKey.getFlag());
@@ -288,7 +288,7 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
     }
     for (const auto& log : ops) {
         const ReplLogValue& logVal = log.getReplLogValue();
-        uint32_t timestamp = log.getReplLogKey().getTimestamp();
+        uint64_t timestamp = log.getReplLogKey().getTimestamp();
         this->setBinlogTime(timestamp);
 
         Expected<RecordKey> expRk = RecordKey::decode(logVal.getOpKey());
@@ -331,7 +331,7 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void RocksTxn::setBinlogTime(uint32_t timestamp) {
+void RocksTxn::setBinlogTime(uint64_t timestamp) {
     INVARIANT(_store->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
 
     _binlogTimeSpov = timestamp > _binlogTimeSpov ?
