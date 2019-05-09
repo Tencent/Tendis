@@ -1,5 +1,6 @@
 #include <utility>
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/invariant.h"
 #include <sstream>
 
 namespace tendisplus {
@@ -91,6 +92,8 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
     case ErrorCodes::ERR_WRONG_ARGS_SIZE:
         return "-ERR wrong number of arguments\r\n";
+    case ErrorCodes::ERR_INVALID_HLL:
+        return "-INVALIDOBJ Corrupted HLL object detected\r\n";
  
     default:
         break;
@@ -100,10 +103,10 @@ std::string Status::getErrStr(ErrorCodes code) {
 }
 
 std::string Status::toString() const {
-    std::stringstream ss;
     if (_errmsg.size() == 0) {
         return Status::getErrStr(_code);
     } else {
+        std::stringstream ss;
         if (_code < ErrorCodes::ERR_AUTH) {
             ss << "-ERR:"
                 << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
@@ -112,12 +115,19 @@ std::string Status::toString() const {
                 << "\r\n";
         } else {
             // redis error
-            ss << "-ERR "
-                << _errmsg
-                << "\r\n";
+            if (_errmsg[0] == '-') {
+                INVARIANT(_errmsg[_errmsg.size() - 2] == '\r');
+                INVARIANT(_errmsg[_errmsg.size() - 1] == '\n');
+
+                return _errmsg;
+            } else {
+                ss << "-ERR "
+                    << _errmsg
+                    << "\r\n";
+            }
         }
+        return ss.str();
     }
-    return ss.str();
 }
 
 ErrorCodes Status::code() const {

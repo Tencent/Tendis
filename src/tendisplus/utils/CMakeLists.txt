@@ -1,6 +1,6 @@
 add_library(status STATIC status.cpp)
 
-add_library(redis_port STATIC redis_port.cpp)
+add_library(redis_port STATIC redis_port.cpp hyperloglog.cpp)
 target_link_libraries(redis_port glog)
 
 add_executable(status_test status_test.cpp)
@@ -23,7 +23,7 @@ else()
 	add_library(rt STATIC dummy.cpp)
 endif()
 
-add_library(utils_common STATIC status.cpp redis_port.cpp time.cpp string.cpp ${STD})
+add_library(utils_common STATIC status.cpp redis_port.cpp hyperloglog.cpp time.cpp string.cpp ${STD})
 target_link_libraries(utils_common glog)
 
 add_library(test_util STATIC test_util.cpp)
