@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 #include <cmath>
+#include <type_traits>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -16,6 +17,58 @@
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
+
+template <std::size_t N>
+struct MyAllocator {
+    char data[N];
+    void* p;
+    // left size
+    std::size_t leftSize;
+    std::size_t allocSize;
+    MyAllocator() : p(data), leftSize(N), allocSize(N) {
+        memset(data, 0, N);
+    }
+    template <typename T>
+    T* aligned_alloc(std::size_t a = alignof(T)) {
+        // p and leftSize is a reference
+        if (std::align(a, sizeof(T), p, leftSize)) {
+            T* result = reinterpret_cast<T*>(p);
+            p = reinterpret_cast<char*>(p) + sizeof(T);
+            leftSize -= sizeof(T);
+            return result;
+        }
+        INVARIANT(0);
+        return nullptr;
+    }
+
+    template <typename T>
+    T* aligned_alloc(const char* ptr, size_t size,
+        std::size_t a = alignof(T)) {
+        // check whether the left size is enough
+        if (leftSize < size) {
+            return nullptr;
+        }
+
+        T* val = aligned_alloc<T>(a);
+        if (!val) {
+            INVARIANT(0);
+            return val;
+        }
+
+        // check the left size after
+        size_t left = (size_t)(data + N - reinterpret_cast<char*>(val));
+        if (left < size) {
+            INVARIANT(0);
+            return nullptr;
+        }
+        memcpy(reinterpret_cast<char*>(val), ptr, size);
+        if (left - size < leftSize) {
+            leftSize = left - size;
+        }
+
+        return val;
+    }
+};
 
 class HPLLObject {
  public:
@@ -37,25 +90,20 @@ class HPLLObject {
     void hllInvalidateCache();
 
  private:
+    // NOTE(vinchen): _hdr is a hllhdr and followed an array, it's memory
+    // should be alloced by an aligned allocator.
+	// But in fact alignof(hllhdr) = 1, and aligned_alloc maybe more safe.
     redis_port::hllhdr* _hdr;
     size_t  _hdrSize;
-    std::string _buf;
+    // TODO(vinchen): it is always alloc HLL_MAX_SIZE for simple, but it
+    // is a waste. We should optimize it in the future
+    MyAllocator<HLL_MAX_SIZE> _buf;
 };
-
-//HPLLObject::HPLLObject() {
-//    // std::align
-//    _buf.resize(HLL_MAX_SIZE, 0);
-//    _hdr = redis_port::createHLLObject(_buf.c_str(), _buf.size(), &_hdrSize);
-//}
 
 HPLLObject::HPLLObject(const std::string& v) {
     INVARIANT(redis_port::isHLLObject(v));
-
-    _buf.reserve(HLL_MAX_SIZE);
-    _buf.insert(_buf.begin(), v.begin(), v.end());
-    INVARIANT(HLL_MAX_SIZE > v.size());
-    _buf.resize(HLL_MAX_SIZE, 0);
-    _hdr = (redis_port::hllhdr*)_buf.c_str();
+    INVARIANT(_buf.allocSize > v.size());
+    _hdr = _buf.aligned_alloc<redis_port::hllhdr>(v.c_str(), v.size());
     _hdrSize = v.size();
 }
 
@@ -63,21 +111,20 @@ HPLLObject::HPLLObject(int type) {
     int ret;
     switch (type) {
     case HLL_RAW:
-        _buf.resize(HLL_HDR_SIZE + HLL_REGISTERS, 0);
-        _hdr = (redis_port::hllhdr*)_buf.c_str();
+        _hdr = _buf.aligned_alloc<redis_port::hllhdr>();
         _hdr->encoding = HLL_RAW; /* Special internal-only encoding. */
-        _hdrSize = _buf.size();
+        _hdrSize = _buf.allocSize;
         break;
     case HLL_SPARSE:
-        _buf.resize(HLL_MAX_SIZE, 0);
-        _hdr = redis_port::createHLLObject(_buf.c_str(),
-                                _buf.size(), &_hdrSize);
+        _hdr = _buf.aligned_alloc<redis_port::hllhdr>();
+        _hdr = redis_port::createHLLObject(reinterpret_cast<const char*>(_hdr),
+                                _buf.allocSize, &_hdrSize);
         break;
     case HLL_DENSE:
-        _buf.resize(HLL_MAX_SIZE, 0);
-        _hdr = redis_port::createHLLObject(_buf.c_str(),
-                                    _buf.size(), &_hdrSize);
-        ret = redis_port::hllSparseToDense(_hdr, &_hdrSize, _buf.size());
+        _hdr = _buf.aligned_alloc<redis_port::hllhdr>();
+        _hdr = redis_port::createHLLObject(reinterpret_cast<const char*>(_hdr),
+                                _buf.allocSize, &_hdrSize);
+        ret = redis_port::hllSparseToDense(_hdr, &_hdrSize, _buf.allocSize);
         INVARIANT(ret == C_OK);
         break;
     default:
@@ -90,12 +137,12 @@ std::string HPLLObject::encode() const {
     return std::string(reinterpret_cast<char*>(_hdr), _hdrSize);
 }
 
-// return: 
+// return:
 // -1 : something wrong
 // 0 : nothing changed
 // 1 : success, and something changed
 int HPLLObject::add(const std::string& subkey) {
-    int ret = redis_port::hllAdd(_hdr, &_hdrSize, _buf.size(),
+    int ret = redis_port::hllAdd(_hdr, &_hdrSize, _buf.allocSize,
                (unsigned char*)subkey.c_str(), subkey.size());
     if (ret == 1) {
         hllInvalidateCache();
@@ -103,7 +150,7 @@ int HPLLObject::add(const std::string& subkey) {
     return ret;
 }
 
-// return: 
+// return:
 // -1 : something wrong
 // 1 : success
 int HPLLObject::merge(const HPLLObject* hpll) {
@@ -143,14 +190,14 @@ void HPLLObject::hllInvalidateCache() {
     HLL_INVALIDATE_CACHE(_hdr);
 }
 
-// return: 
+// return:
 // -1 : something wrong
 // 1 : success
 int HPLLObject::updateByRawHpll(const HPLLObject* rawHpll) {
     INVARIANT(rawHpll->getHdrEncoding() == HLL_RAW);
 
     int ret = redis_port::hllUpdateByRawHpll(_hdr, &_hdrSize,
-                        _buf.size(), rawHpll->_hdr);
+                        _buf.allocSize, rawHpll->_hdr);
     if (ret == C_ERR) {
         return -1;
     }

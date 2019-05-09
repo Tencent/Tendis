@@ -99,7 +99,10 @@ struct hllhdr {
 
 #define CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES 3000
 
-#define HLL_MAX_SIZE (HLL_DENSE_SIZE+1)
+// #define HLL_MAX_SIZE (HLL_DENSE_SIZE+1)
+// HLL_RAW size is the biggest(HLL_HDR_SIZE + HLL_REGISTERS),
+// and 1+HLL_HDR_SIZE is for align size buffer
+#define HLL_MAX_SIZE (HLL_HDR_SIZE + HLL_REGISTERS+1+HLL_HDR_SIZE)
 
 typedef char *sds;
 #define serverAssert INVARIANT

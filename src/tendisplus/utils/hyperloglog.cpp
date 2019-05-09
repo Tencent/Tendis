@@ -46,6 +46,22 @@ namespace redis_port {
 #include <stdint.h>
 #include <math.h>
 
+struct PEObject {
+    PEObject() {
+        /* We precompute 2^(-reg[j]) in a small table in order to
+        * speedup the computation of SUM(2^-register[0..i]). */
+
+        PE[0] = 1; /* 2^(-reg[j]) is 1 when m is 0. */
+        for (int j = 1; j < 64; j++) {
+            /* 2^(-reg[j]) is the same as 1/2^reg[j]. */
+            PE[j] = 1.0 / (1ULL << j);
+        }
+    }
+
+    double PE[64];
+};
+
+static struct PEObject peo;
 
 /* The Redis HyperLogLog implementation is based on the following ideas:
  *
@@ -988,29 +1004,30 @@ double hllRawSum(uint8_t *registers, double *PE, int *ezp) {
 uint64_t hllCount(struct hllhdr *hdr, size_t hdrSize, int *invalid) {
     double m = HLL_REGISTERS;
     double E, alpha = 0.7213/(1+1.079/m);
-    int j, ez; /* Number of registers equal to 0. */
+    int ez; /* Number of registers equal to 0. */
 
+    // NOTE(vinchen) : use static PEObject instead
     /* We precompute 2^(-reg[j]) in a small table in order to
      * speedup the computation of SUM(2^-register[0..i]). */
-    static int initialized = 0;
-    static double PE[64];
-    if (!initialized) {
-        PE[0] = 1; /* 2^(-reg[j]) is 1 when m is 0. */
-        for (j = 1; j < 64; j++) {
-            /* 2^(-reg[j]) is the same as 1/2^reg[j]. */
-            PE[j] = 1.0/(1ULL << j);
-        }
-        initialized = 1;
-    }
+    //static int initialized = 0;
+    //static double PE[64];
+    //if (!initialized) {
+    //    PE[0] = 1; /* 2^(-reg[j]) is 1 when m is 0. */
+    //    for (j = 1; j < 64; j++) {
+    //        /* 2^(-reg[j]) is the same as 1/2^reg[j]. */
+    //        PE[j] = 1.0/(1ULL << j);
+    //    }
+    //    initialized = 1;
+    //}
 
     /* Compute SUM(2^-register[0..i]). */
     if (hdr->encoding == HLL_DENSE) {
-        E = hllDenseSum(hdr->registers,PE,&ez);
+        E = hllDenseSum(hdr->registers,peo.PE,&ez);
     } else if (hdr->encoding == HLL_SPARSE) {
         E = hllSparseSum(hdr->registers,
-                         hdrSize-HLL_HDR_SIZE,PE,&ez,invalid);
+                         hdrSize-HLL_HDR_SIZE,peo.PE,&ez,invalid);
     } else if (hdr->encoding == HLL_RAW) {
-        E = hllRawSum(hdr->registers,PE,&ez);
+        E = hllRawSum(hdr->registers,peo.PE,&ez);
     } else {
         //serverPanic("Unknown HyperLogLog encoding in hllCount()");
         serverAssert(0);
@@ -1131,31 +1148,34 @@ hllhdr *createHLLObject(const char* buf, size_t bufSize, size_t* sizeOut) {
 }
 
 bool isHLLObject(const std::string & v) {
-    struct hllhdr *hdr;
-    if (v.size() < sizeof(*hdr)) {
+    if (v.size() < sizeof(struct hllhdr)) {
         return false;
     }
 
-    hdr = (struct hllhdr *)v.c_str();
+    // hdr = (struct hllhdr *)v.c_str();
+    const char* ptr = v.c_str();
 
-    if (hdr->magic[0] != 'H' || hdr->magic[1] != 'Y' ||
-        hdr->magic[2] != 'L' || hdr->magic[3] != 'L')
+    if (ptr[0] != 'H' || ptr[1] != 'Y' ||
+        ptr[2] != 'L' || ptr[3] != 'L')
         return false;
 
-    if (hdr->encoding > HLL_MAX_ENCODING)
+    static_assert(offsetof(struct hllhdr, encoding) == 4, "");
+    uint8_t encoding = ptr[offsetof(struct hllhdr, encoding)];
+    //uint8_t encoding = ptr[4];
+    if (encoding > HLL_MAX_ENCODING)
         return false;
 
     // TODO(vinchen): is that right?
     size_t minSparselen = HLL_HDR_SIZE +
         (((HLL_REGISTERS + (HLL_SPARSE_XZERO_MAX_LEN - 1)) /
             HLL_SPARSE_XZERO_MAX_LEN) * 2);
-    if (hdr->encoding == HLL_SPARSE &&
+    if (encoding == HLL_SPARSE &&
         v.size() < minSparselen) {
         return false;
     }
 
     /* Dense representation string length should match exactly. */
-    if (hdr->encoding == HLL_DENSE &&
+    if (encoding == HLL_DENSE &&
         v.size() != HLL_DENSE_SIZE)
         return false;
 
