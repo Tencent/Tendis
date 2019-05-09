@@ -196,7 +196,7 @@ namespace redis_port {
 
 
 
-static char *invalid_hll_err = "-INVALIDOBJ Corrupted HLL object detected\r\n";
+//static char *invalid_hll_err = "-INVALIDOBJ Corrupted HLL object detected\r\n";
 
 /* =========================== Low level bit macros ========================= */
 
@@ -763,68 +763,70 @@ int hllSparseSet(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize, long index, ui
      * with 'newlen' as length. Later the new sequence is inserted in place
      * of the old one, possibly moving what is on the right a few bytes
      * if the new sequence is longer than the older one. */
-    uint8_t seq[5], *n = seq;
-    int last = first+span-1; /* Last register covered by the sequence. */
-    int len;
+    {
+        uint8_t seq[5], *n = seq;
+        int last = first+span-1; /* Last register covered by the sequence. */
+        int len;
 
-    if (is_zero || is_xzero) {
-        /* Handle splitting of ZERO / XZERO. */
-        if (index != first) {
-            len = index-first;
-            if (len > HLL_SPARSE_ZERO_MAX_LEN) {
-                HLL_SPARSE_XZERO_SET(n,len);
-                n += 2;
-            } else {
-                HLL_SPARSE_ZERO_SET(n,len);
+        if (is_zero || is_xzero) {
+            /* Handle splitting of ZERO / XZERO. */
+            if (index != first) {
+                len = index-first;
+                if (len > HLL_SPARSE_ZERO_MAX_LEN) {
+                    HLL_SPARSE_XZERO_SET(n,len);
+                    n += 2;
+                } else {
+                    HLL_SPARSE_ZERO_SET(n,len);
+                    n++;
+                }
+            }
+            HLL_SPARSE_VAL_SET(n,count,1);
+            n++;
+            if (index != last) {
+                len = last-index;
+                if (len > HLL_SPARSE_ZERO_MAX_LEN) {
+                    HLL_SPARSE_XZERO_SET(n,len);
+                    n += 2;
+                } else {
+                    HLL_SPARSE_ZERO_SET(n,len);
+                    n++;
+                }
+            }
+        } else {
+            /* Handle splitting of VAL. */
+            int curval = HLL_SPARSE_VAL_VALUE(p);
+
+            if (index != first) {
+                len = index-first;
+                HLL_SPARSE_VAL_SET(n,curval,len);
+                n++;
+            }
+            HLL_SPARSE_VAL_SET(n,count,1);
+            n++;
+            if (index != last) {
+                len = last-index;
+                HLL_SPARSE_VAL_SET(n,curval,len);
                 n++;
             }
         }
-        HLL_SPARSE_VAL_SET(n,count,1);
-        n++;
-        if (index != last) {
-            len = last-index;
-            if (len > HLL_SPARSE_ZERO_MAX_LEN) {
-                HLL_SPARSE_XZERO_SET(n,len);
-                n += 2;
-            } else {
-                HLL_SPARSE_ZERO_SET(n,len);
-                n++;
-            }
-        }
-    } else {
-        /* Handle splitting of VAL. */
-        int curval = HLL_SPARSE_VAL_VALUE(p);
 
-        if (index != first) {
-            len = index-first;
-            HLL_SPARSE_VAL_SET(n,curval,len);
-            n++;
-        }
-        HLL_SPARSE_VAL_SET(n,count,1);
-        n++;
-        if (index != last) {
-            len = last-index;
-            HLL_SPARSE_VAL_SET(n,curval,len);
-            n++;
-        }
+        /* Step 3: substitute the new sequence with the old one.
+         *
+         * Note that we already allocated space on the sds string
+         * calling sdsMakeRoomFor(). */
+        int seqlen = n-seq;
+        int oldlen = is_xzero ? 2 : 1;
+        int deltalen = seqlen-oldlen;
+
+        if (deltalen > 0 &&
+                *hdrSize+deltalen > CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES) goto promote;
+        if (deltalen && next) memmove(next+deltalen,next,end-next);
+        //sdsIncrLen(o->ptr,deltalen);
+        *hdrSize += deltalen;
+        memcpy(p,seq,seqlen);
+        end += deltalen;
+        serverAssert(hdrMaxSize > *hdrSize);
     }
-
-    /* Step 3: substitute the new sequence with the old one.
-     *
-     * Note that we already allocated space on the sds string
-     * calling sdsMakeRoomFor(). */
-     int seqlen = n-seq;
-     int oldlen = is_xzero ? 2 : 1;
-     int deltalen = seqlen-oldlen;
-
-     if (deltalen > 0 &&
-         *hdrSize+deltalen > CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES) goto promote;
-     if (deltalen && next) memmove(next+deltalen,next,end-next);
-     //sdsIncrLen(o->ptr,deltalen);
-     *hdrSize += deltalen;
-     memcpy(p,seq,seqlen);
-     end += deltalen;
-     serverAssert(hdrMaxSize > *hdrSize);
 
 updated:
     /* Step 4: Merge adjacent values if possible.
@@ -832,37 +834,39 @@ updated:
      * The representation was updated, however the resulting representation
      * may not be optimal: adjacent VAL opcodes can sometimes be merged into
      * a single one. */
-    p = prev ? prev : sparse;
-    int scanlen = 5; /* Scan up to 5 upcodes starting from prev. */
-    while (p < end && scanlen--) {
-        if (HLL_SPARSE_IS_XZERO(p)) {
-            p += 2;
-            continue;
-        } else if (HLL_SPARSE_IS_ZERO(p)) {
-            p++;
-            continue;
-        }
-        /* We need two adjacent VAL opcodes to try a merge, having
-         * the same value, and a len that fits the VAL opcode max len. */
-        if (p+1 < end && HLL_SPARSE_IS_VAL(p+1)) {
-            int v1 = HLL_SPARSE_VAL_VALUE(p);
-            int v2 = HLL_SPARSE_VAL_VALUE(p+1);
-            if (v1 == v2) {
-                int len = HLL_SPARSE_VAL_LEN(p)+HLL_SPARSE_VAL_LEN(p+1);
-                if (len <= HLL_SPARSE_VAL_MAX_LEN) {
-                    HLL_SPARSE_VAL_SET(p+1,v1,len);
-                    memmove(p,p+1,end-p);
-                    //sdsIncrLen(o->ptr,-1);
-                    *hdrSize -= 1;
-                    end--;
-                    /* After a merge we reiterate without incrementing 'p'
-                     * in order to try to merge the just merged value with
-                     * a value on its right. */
-                    continue;
+    {
+        p = prev ? prev : sparse;
+        int scanlen = 5; /* Scan up to 5 upcodes starting from prev. */
+        while (p < end && scanlen--) {
+            if (HLL_SPARSE_IS_XZERO(p)) {
+                p += 2;
+                continue;
+            } else if (HLL_SPARSE_IS_ZERO(p)) {
+                p++;
+                continue;
+            }
+            /* We need two adjacent VAL opcodes to try a merge, having
+             * the same value, and a len that fits the VAL opcode max len. */
+            if (p+1 < end && HLL_SPARSE_IS_VAL(p+1)) {
+                int v1 = HLL_SPARSE_VAL_VALUE(p);
+                int v2 = HLL_SPARSE_VAL_VALUE(p+1);
+                if (v1 == v2) {
+                    int len = HLL_SPARSE_VAL_LEN(p)+HLL_SPARSE_VAL_LEN(p+1);
+                    if (len <= HLL_SPARSE_VAL_MAX_LEN) {
+                        HLL_SPARSE_VAL_SET(p+1,v1,len);
+                        memmove(p,p+1,end-p);
+                        //sdsIncrLen(o->ptr,-1);
+                        *hdrSize -= 1;
+                        end--;
+                        /* After a merge we reiterate without incrementing 'p'
+                         * in order to try to merge the just merged value with
+                         * a value on its right. */
+                        continue;
+                    }
                 }
             }
+            p++;
         }
-        p++;
     }
 
     /* Invalidate the cached cardinality. */
@@ -1118,7 +1122,7 @@ hllhdr *createHLLObject(const char* buf, size_t bufSize, size_t* sizeOut) {
         p += 2;
         aux -= xzero;
     }
-    serverAssert((p-(uint8_t*)s) == sparselen);
+    serverAssert((size_t)(p-(uint8_t*)s) == sparselen);
 
     memcpy(hdr->magic,"HYLL",4);
     hdr->encoding = HLL_SPARSE;

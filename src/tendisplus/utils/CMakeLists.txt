@@ -1,4 +1,5 @@
 add_library(status STATIC status.cpp)
+target_link_libraries(status glog)
 
 add_library(redis_port STATIC redis_port.cpp hyperloglog.cpp)
 target_link_libraries(redis_port glog)
