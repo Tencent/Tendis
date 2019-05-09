@@ -1550,6 +1550,24 @@ void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(ss1.str(), expect.value());
 }
 
+void testCheckKeyType(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "sadd", "ss", "a"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "set", "ss", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    sess.setArgs({ "set", "ss1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+}
+
 void testScan(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1644,6 +1662,20 @@ TEST(Command, tendisex) {
 
     testExtendedProtocol(server);
 }
+
+TEST(Command, checkKeyTypeForSetKV) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    cfg->checkKeyTypeForSet = true;
+    auto server = makeServerEntry(cfg);
+
+    testCheckKeyType(server);
+}
+
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {

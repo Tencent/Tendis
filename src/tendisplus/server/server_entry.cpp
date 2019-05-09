@@ -35,7 +35,9 @@ ServerEntry::ServerEntry()
          _ftmcThd(nullptr),
          _requirepass(nullptr),
          _masterauth(nullptr),
-         _versionIncrease(true) {
+         _versionIncrease(true),
+         _generalLog(false),
+         _checkKeyTypeForSet(false){
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -89,6 +91,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
+    _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
 
     uint32_t kvStoreCount = cfg->kvStoreCount;
     uint32_t chunkSize = cfg->chunkSize;

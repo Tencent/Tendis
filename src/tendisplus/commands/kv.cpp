@@ -41,6 +41,7 @@ struct SetParams {
 // TODO(deyukong): unittest of expire
 Expected<std::string> setGeneric(PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
+            bool checkType,
             const std::string& okReply, const std::string& abortReply) {
     if ((flags & REDIS_SET_NX) || (flags & REDIS_SET_XX)
             || (flags & REDIS_SET_NXEX)) {
@@ -55,6 +56,9 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         if (eValue.ok()) {
             currentTs = msSinceEpoch();
             targetTtl = eValue.value().getTtl();
+            if (eValue.value().getRecordType() != RecordType::RT_KV) {
+                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
         }
         bool needExpire = (targetTtl != 0
                            && currentTs >= eValue.value().getTtl());
@@ -76,6 +80,24 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
                 }
             }
             return abortReply == "" ? Command::fmtNull() : abortReply;
+        }
+    }
+
+    // NOTE(vinchen): 
+    // For performance, set() directly without get() is more fast.
+    // But because of RT_DATA_META, the string set is possible to
+    // override other meta type. It would lead to some garbage in rocksdb.
+    // In fact, because of the redis layer, the override problem would
+    // never happen. So keep the set() directly.
+    if (checkType) {
+        // if you want to open this options, checkkeytypeforset on
+
+        // only check the recordtype, not care about the ttl
+        Expected<RecordValue> eValue = store->getKV(key, txn);
+        if (eValue.ok()) {
+            if (eValue.value().getRecordType() != RecordType::RT_KV) {
+                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
         }
     }
 
@@ -184,7 +206,7 @@ class SetCommand: public Command {
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.flags,
-                                     rk, rv, "", "");
+                                     rk, rv, server->checkKeyTypeForSet(), "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
@@ -195,7 +217,7 @@ class SetCommand: public Command {
             txn = std::move(ptxn.value());
         }
         return setGeneric(kvstore, txn.get(), params.flags,
-            rk, rv, "", "");
+            rk, rv, server->checkKeyTypeForSet(), "", "");
     }
 } setCommand;
 
@@ -250,6 +272,7 @@ class SetexGeneralCommand: public Command {
                                      REDIS_SET_NO_FLAGS,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
                                      "",
                                      "");
             if (result.ok()) {
@@ -357,6 +380,7 @@ class SetNxCommand: public Command {
                                      REDIS_SET_NX,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
                                      Command::fmtOne(),
                                      Command::fmtZero());
             if (result.ok()) {
@@ -833,7 +857,9 @@ class GetSetGeneral: public Command {
             auto result = setGeneric(kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
-                                     rk, newValue.value(), "", "");
+                                     rk, newValue.value(),
+                                     server->checkKeyTypeForSet(),
+                                     "", "");
             if (result.ok()) {
                 if (replyNewValue()) {
                     return std::move(newValue.value());
@@ -1622,6 +1648,7 @@ class BitopCommand: public Command {
                                      REDIS_SET_NO_FLAGS,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
                                      "",
                                      "");
             if (setRes.ok()) {
@@ -1699,6 +1726,7 @@ class MSetCommand: public Command {
                                          REDIS_SET_NO_FLAGS,
                                          rk,
                                          rv,
+                                         server->checkKeyTypeForSet(),
                                          "",
                                          "");
                 if (result.ok()) {
