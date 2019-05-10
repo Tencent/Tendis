@@ -51,11 +51,14 @@ class StoreLock: public ILock {
 
 class KeyLock: public ILock {
  public:
+    static std::unique_ptr<KeyLock> AquireKeyLock(uint32_t storeId, const std::string& key,
+            mgl::LockMode mode, Session* sess);
     KeyLock(uint32_t storeId, const std::string& key,
             mgl::LockMode mode, Session* sess);
     uint32_t getStoreId() const final;
     std::string getKey() const final;
-    virtual ~KeyLock() = default;
+    // remove lock from session before that lock has really been unlocked in its parent's destructor.
+    virtual ~KeyLock();
 
  private:
     const std::string _key;

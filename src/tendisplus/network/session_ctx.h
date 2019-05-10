@@ -8,6 +8,7 @@
 #include <list>
 #include <vector>
 #include <tuple>
+#include <unordered_map>
 
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
@@ -48,6 +49,10 @@ class SessionCtx {
     uint64_t getEpVersion() const { return _version; }
     bool isEp() const { return _extendProtocol; }
 
+    void setKeylock(const std::string& key, mgl::LockMode mode);
+    void unsetKeylock(const std::string& key);
+
+    bool isLockedByMe(const std::string& key, mgl::LockMode mode);
  private:
     // not protected by mutex
     bool _authed;
@@ -59,6 +64,7 @@ class SessionCtx {
     uint64_t _timestamp;
     uint64_t _version;
     bool _extendProtocol;
+    std::unordered_map<std::string, mgl::LockMode> _keylockmap;
 
     mutable std::mutex _mutex;
 

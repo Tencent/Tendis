@@ -31,8 +31,23 @@ class SegmentMgr {
     virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
                                 mgl::LockMode mode,
                                 bool canOpenStoreNoneDB = false) = 0;
+    // Expected<DbWithLock> getDbWithKeyLock(Session* sess,
+    //         const std::string& key, mgl::LockMode mode);
 
- private:
+    Expected<std::vector<DbWithLock>> getDbWithKeyLock(Session* sess,
+            const std::vector<std::string>& args,
+            const std::vector<int>& index,
+            mgl::LockMode mode);
+    Expected<std::vector<DbWithLock>> getDbWithKeyLock(Session* sess,
+            std::vector<std::pair<std::string, mgl::LockMode>>& inputArgs);
+    Expected<std::vector<DbWithLock>> getDbWithKeyLock(Session* sess,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator start,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator end);
+
+private:
+    virtual Expected<std::vector<DbWithLock>> getDbWithKeyFineLocked(Session*,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator) = 0;
     const std::string _name;
 };
 
@@ -48,7 +63,10 @@ class SegmentMgrFnvHash64: public SegmentMgr {
                                 mgl::LockMode mode,
                                 bool canOpenStoreNoneDB = false) final;
 
- private:
+private:
+    Expected<std::vector<DbWithLock>> getDbWithKeyFineLocked(Session*,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator,
+            std::vector<std::pair<std::string, mgl::LockMode>>::const_iterator) final;
     std::vector<PStore> _instances;
     size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
