@@ -92,10 +92,10 @@ std::string getBulkValue(const std::string& reply, uint32_t index) {
 }
 
 std::shared_ptr<ServerEntry> makeServerEntry(
-    std::shared_ptr<ServerParams> cfg) {
+    const std::shared_ptr<ServerParams>& cfg) {
     auto block_cache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-    auto server = std::make_shared<ServerEntry>();
+    auto server = std::make_shared<ServerEntry>(cfg);
 
     uint32_t kvStoreCount = cfg->kvStoreCount;
     uint32_t chunkSize = cfg->chunkSize;

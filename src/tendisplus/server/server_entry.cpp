@@ -40,6 +40,15 @@ ServerEntry::ServerEntry()
          _checkKeyTypeForSet(false){
 }
 
+ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg) 
+    : ServerEntry() {
+    _requirepass = std::make_shared<std::string>(cfg->requirepass);
+    _masterauth = std::make_shared<std::string>(cfg->masterauth);
+    _versionIncrease = cfg->versionIncrease;
+    _generalLog = cfg->generalLog;
+    _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
+}
+
 void ServerEntry::installPessimisticMgrInLock(
         std::unique_ptr<PessimisticMgr> o) {
     _pessimisticMgr = std::move(o);
@@ -87,11 +96,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
     LOG(INFO) << "ServerEntry::startup,,,";
-    _requirepass = std::make_shared<std::string>(cfg->requirepass);
-    _masterauth = std::make_shared<std::string>(cfg->masterauth);
-    _versionIncrease = cfg->versionIncrease;
-    _generalLog = cfg->generalLog;
-    _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
 
     uint32_t kvStoreCount = cfg->kvStoreCount;
     uint32_t chunkSize = cfg->chunkSize;

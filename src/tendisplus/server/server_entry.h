@@ -34,7 +34,7 @@ std::shared_ptr<ServerEntry> getGlobalServer();
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
-    ServerEntry();
+    ServerEntry(const std::shared_ptr<ServerParams>& cfg);
     ServerEntry(const ServerEntry&) = delete;
     ServerEntry(ServerEntry&&) = delete;
     Catalog* getCatalog();
@@ -97,6 +97,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getTsEp() const;
 
  private:
+    ServerEntry();
     void ftmc();
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress

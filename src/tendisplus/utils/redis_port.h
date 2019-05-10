@@ -97,6 +97,10 @@ struct hllhdr {
 #define HLL_RAW 255 /* Only used internally, never exposed. */
 #define HLL_MAX_ENCODING 1
 
+#define HLL_ERROR -1
+#define HLL_ERROR_MEMORY -2
+#define HLL_ERROR_PROMOTE -3
+
 #define CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES 3000
 
 // #define HLL_MAX_SIZE (HLL_DENSE_SIZE+1)
@@ -116,7 +120,8 @@ int hllAdd(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize,
 uint64_t hllCount(struct hllhdr *hdr, size_t hdrSize, int *invalid);
 uint64_t hllCountFast(struct hllhdr *hdr, size_t hdrSize, int *invalid);
 int hllMerge(uint8_t *max, struct hllhdr* hdr, size_t hdrSize);
-int hllSparseToDense(struct hllhdr* hdr, size_t* hdrSize, size_t hdrMaxSize);
+int hllSparseToDense(struct hllhdr* oldhdr, size_t oldSize,
+    struct hllhdr* hdr, size_t* hdrSize, size_t hdrMaxSize);
 int hllUpdateByRawHpll(struct hllhdr* hdr, size_t * hdrSize, size_t hdrMaxSize,
     struct hllhdr* hdrRaw);
 

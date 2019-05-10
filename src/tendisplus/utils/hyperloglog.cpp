@@ -34,6 +34,7 @@
 #include <math.h>
 #include <sstream>
 #include <utility>
+#include <cstddef>
 
 #include "glog/logging.h"
 #include "tendisplus/utils/invariant.h"
@@ -411,11 +412,13 @@ uint64_t MurmurHash64A (const void * key, int len, unsigned int seed) {
 
 #if (BYTE_ORDER == LITTLE_ENDIAN)
 	#ifdef USE_ALIGNED_ACCESS
+    static_assert(0, "USE_ALIGNED_ACCESS");
 	memcpy(&k,data,sizeof(uint64_t));
 	#else
         k = *((uint64_t*)data);
 	#endif
 #else
+        static_assert(0, "not LITTLE_ENDIAN");
         k = (uint64_t) data[0];
         k |= (uint64_t) data[1] << 8;
         k |= (uint64_t) data[2] << 16;
@@ -587,21 +590,23 @@ double hllDenseSum(uint8_t *registers, double *PE, int *ezp) {
  *
  * The function returns C_OK if the sparse representation was valid,
  * otherwise C_ERR is returned if the representation was corrupted. */
-int hllSparseToDense(struct hllhdr* hdr, size_t* hdrSize, size_t hdrMaxSize) {
-    sds sparse = (sds)hdr;
+int hllSparseToDense(struct hllhdr* oldhdr, size_t oldSize,
+					struct hllhdr* hdr, size_t* hdrSize, size_t hdrMaxSize) {
+    sds sparse = (sds)oldhdr;
     //struct hllhdr *oldhdr = (struct hllhdr*)sparse;
     int idx = 0, runlen, regval;
-    uint8_t *p = (uint8_t*)sparse, *end = p + *hdrSize;
+    uint8_t *p = (uint8_t*)sparse, *end = p + oldSize;
 
     /* If the representation is already the right one return ASAP. */
-    if (hdr->encoding == HLL_DENSE) return C_OK;
+    // hdr = (struct hllhdr*) sparse;
+    // if (hdr->encoding == HLL_DENSE) return C_OK;
 
     /* Create a string of the right size filled with zero bytes.
      * Note that the cached cardinality is set to 0 as a side effect
      * that is exactly the cardinality of an empty HLL. */
     //dense = sdsnewlen(NULL,HLL_DENSE_SIZE);
     //hdr = (struct hllhdr*) dense;
-    //*hdr = *oldhdr; /* This will copy the magic and cached cardinality. */
+    *hdr = *oldhdr; /* This will copy the magic and cached cardinality. */
     if (hdrMaxSize < HLL_DENSE_SIZE) {
         return C_ERR;
     }
@@ -650,7 +655,9 @@ int hllSparseToDense(struct hllhdr* hdr, size_t* hdrSize, size_t hdrMaxSize) {
  *
  * On success, the function returns 1 if the cardinality changed, or 0
  * if the register for this element was not updated.
- * On error (if the representation is invalid) -1 is returned.
+ * On error (if the representation is invalid) HLL_ERROR is returned.
+ * HLL_ERROR_PROMOTE : need to premote to dense
+ * HLL_ERROR_MEMORY : need more memory
  *
  * As a side effect the function may promote the HLL representation from
  * sparse to dense: this happens when a register requires to be set to a value
@@ -660,6 +667,8 @@ int hllSparseSet(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize, long index, ui
     uint8_t oldcount, *sparse, *end, *p, *prev, *next;
     long first, span;
     long is_zero = 0, is_xzero = 0, is_val = 0, runlen = 0;
+    long org_index = index;
+    uint8_t org_count = count;
 
     /* If the count is too big to be representable by the sparse representation
      * switch to dense representation. */
@@ -671,6 +680,9 @@ int hllSparseSet(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize, long index, ui
      * so that the pointers we take during the execution of the function
      * will be valid all the time. */
     // o->ptr = sdsMakeRoomFor(o->ptr,3);
+	if (hdrMaxSize < *hdrSize + 3) {
+		return HLL_ERROR_MEMORY;
+	}
 
     /* Step 1: we need to locate the opcode we need to modify to check
      * if a value update is actually needed. */
@@ -705,7 +717,7 @@ int hllSparseSet(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize, long index, ui
         p += oplen;
         first += span;
     }
-    if (span == 0) return -1; /* Invalid format. */
+    if (span == 0) return HLL_ERROR; /* Invalid format. */
 
     next = HLL_SPARSE_IS_XZERO(p) ? p+2 : p+1;
     if (next >= end) next = NULL;
@@ -836,6 +848,9 @@ int hllSparseSet(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize, long index, ui
 
         if (deltalen > 0 &&
                 *hdrSize+deltalen > CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES) goto promote;
+        if (*hdrSize + deltalen > hdrMaxSize) {
+            return HLL_ERROR_MEMORY;
+        }
         if (deltalen && next) memmove(next+deltalen,next,end-next);
         //sdsIncrLen(o->ptr,deltalen);
         *hdrSize += deltalen;
@@ -891,18 +906,23 @@ updated:
     return 1;
 
 promote: /* Promote to dense representation. */
-    if (hllSparseToDense(hdr, hdrSize, hdrMaxSize) == C_ERR) return -1; /* Corrupted HLL. */
+    // NOTE(vinchen): hllSparseToDense() need to alloc memory, we should call it in the
+    // upper layer.
+    // Make sure count and index not changed
+    serverAssert(org_count == count && org_index == index);
+    return HLL_ERROR_PROMOTE;
+    //if (hllSparseToDense(hdr, hdrSize, hdrMaxSize) == C_ERR) return -1; /* Corrupted HLL. */
 
-    /* We need to call hllDenseAdd() to perform the operation after the
-     * conversion. However the result must be 1, since if we need to
-     * convert from sparse to dense a register requires to be updated.
-     *
-     * Note that this in turn means that PFADD will make sure the command
-     * is propagated to slaves / AOF, so if there is a sparse -> dense
-     * convertion, it will be performed in all the slaves as well. */
-    int dense_retval = hllDenseSet(hdr->registers,index,count);
-    serverAssert(dense_retval == 1);
-    return dense_retval;
+    ///* We need to call hllDenseAdd() to perform the operation after the
+    // * conversion. However the result must be 1, since if we need to
+    // * convert from sparse to dense a register requires to be updated.
+    // *
+    // * Note that this in turn means that PFADD will make sure the command
+    // * is propagated to slaves / AOF, so if there is a sparse -> dense
+    // * convertion, it will be performed in all the slaves as well. */
+    //int dense_retval = hllDenseSet(hdr->registers,index,count);
+    //serverAssert(dense_retval == 1);
+    //return dense_retval;
 }
 
 /* "Add" the element in the sparse hyperloglog data structure.
