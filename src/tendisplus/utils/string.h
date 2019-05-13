@@ -21,6 +21,7 @@ std::string ldtos(const long double d, bool humanfriendly);
 std::string hexlify(const std::string&);
 Expected<std::string> unhexlify(const std::string&);
 bool isOptionOn(const std::string& s);
+void sdstrim(std::string &s, const char *cset);
 
 }  // namespace tendisplus
 

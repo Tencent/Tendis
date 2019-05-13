@@ -46,7 +46,6 @@ struct MyAllocator {
                 INVARIANT(reinterpret_cast<char*>(p) == data);
                 firstAlignedPtr = reinterpret_cast<char*>(p);
             }
- 
             T* result = reinterpret_cast<T*>(p);
             p = reinterpret_cast<char*>(p) + sizeof(T);
             leftSize -= sizeof(T);
@@ -87,7 +86,7 @@ struct MyAllocator {
 
     template <typename T>
     T* getFirstAlignedAddr() {
-        INVARIANT(firstAlignedPtr!=NULL);
+        INVARIANT(firstAlignedPtr != NULL);
         return reinterpret_cast<T*>(firstAlignedPtr);
     }
 
@@ -122,6 +121,7 @@ class HPLLObject {
     HPLLObject(HPLLObject&&) = default;
 
     int add(const std::string& subkey);
+    int HPLLObject::add(const char* data, size_t size);
     uint64_t getHllCount() const;
     // Note(vinchen): it is not const;
     uint64_t getHllCountFast();
@@ -129,6 +129,9 @@ class HPLLObject {
     int merge(const HPLLObject* hpll);
     int getHdrEncoding() const { return _hdr->encoding; }
     int updateByRawHpll(const HPLLObject* rawHpll);
+    int hllSparseToDense();
+    const redis_port::hllhdr* getHdr() const { return _hdr; }
+    size_t getHdrSize() const { return _hdrSize; }
 
  private:
     void hllInvalidateCache();
@@ -145,9 +148,8 @@ class HPLLObject {
 HPLLObject::HPLLObject(const std::string& v) {
     INVARIANT(redis_port::isHLLObject(v));
 
-    // TODO
-    _buf = std::make_unique<MyAllocator>(v.size());
-    // INVARIANT(_buf->allocSize > v.size());
+    _buf = std::make_unique<MyAllocator>(v.size()+128);
+    INVARIANT(_buf->allocSize >= v.size());
     _hdr = _buf->aligned_alloc<redis_port::hllhdr>(v.c_str(), v.size());
     _hdrSize = v.size();
 }
@@ -214,17 +216,10 @@ int HPLLObject::add(const std::string& subkey) {
 
         case HLL_ERROR_PROMOTE:
         {
-            auto m = std::make_unique<MyAllocator>(
-                                    HLL_DENSE_SIZE + HLL_HDR_SIZE);
-            auto newhdr = m->aligned_alloc<redis_port::hllhdr>();
-            ret = redis_port::hllSparseToDense(_hdr, _hdrSize,
-                newhdr, &_hdrSize, m->allocSize);
-            if (ret != C_OK) {
-                return -1;
+            ret = hllSparseToDense();
+            if (ret == -1) {
+                return ret;
             }
-
-            _buf = std::move(m);
-            _hdr = newhdr;
             break;
         }
 
@@ -238,6 +233,28 @@ int HPLLObject::add(const std::string& subkey) {
             break;
         }
     }
+
+    return 0;
+}
+
+int HPLLObject::add(const char* data, size_t size) {
+    std::string s(data, size);
+
+    return add(s);
+}
+
+int HPLLObject::hllSparseToDense() {
+    auto m = std::make_unique<MyAllocator>(
+        HLL_DENSE_SIZE + HLL_HDR_SIZE);
+    auto newhdr = m->aligned_alloc<redis_port::hllhdr>();
+    int ret = redis_port::hllSparseToDense(_hdr, _hdrSize,
+        newhdr, &_hdrSize, m->allocSize);
+    if (ret != C_OK) {
+        return -1;
+    }
+
+    _buf = std::move(m);
+    _hdr = newhdr;
 
     return 0;
 }
@@ -598,4 +615,318 @@ class PfMergeCommand : public Command {
     }
 } pfmergeCmd;
 
+/* PFSELFTEST
+* This command performs a self-test of the HLL registers implementation.
+* Something that is not easy to test from within the outside. */
+#define HLL_TEST_CYCLES 1000
+class PfSelfTestCommand : public Command {
+ public:
+    PfSelfTestCommand()
+        :Command("pfselftest") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        unsigned int j, i;
+        // sds bitcounters = sdsnewlen(NULL, HLL_DENSE_SIZE);
+        auto keyHpll = std::make_unique<HPLLObject>(HLL_DENSE);
+        auto hdr = keyHpll->getHdr();
+        // robj *o = NULL;
+        uint8_t bytecounters[HLL_REGISTERS];
+
+        /* Test 1: access registers.
+         * The test is conceived to test that the different counters of our data
+         * structure are accessible and that setting their values both result in
+         * the correct value to be retained and not affect adjacent values. */
+        for (j = 0; j < HLL_TEST_CYCLES; j++) {
+            /* Set the HLL counters and an array of unsigned byes of the
+             * same size to the same set of random values. */
+            for (i = 0; i < HLL_REGISTERS; i++) {
+                uint32_t seed = nsSinceEpoch();
+                unsigned int r = rand_r(&seed) & HLL_REGISTER_MAX;
+
+                bytecounters[i] = r;
+                HLL_DENSE_SET_REGISTER(hdr->registers, i, r);
+            }
+            /* Check that we are able to retrieve the same values. */
+            for (i = 0; i < HLL_REGISTERS; i++) {
+                unsigned int val;
+
+                HLL_DENSE_GET_REGISTER(val, hdr->registers, i);
+                if (val != bytecounters[i]) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                        "TESTFAILED Register %d should be %d but is %d",
+                        i,
+                        static_cast<int>(bytecounters[i]),
+                        static_cast<int>(val));
+
+                    return { ErrorCodes::ERR_INVALID_HLL, buf };
+                }
+            }
+        }
+
+        /* Test 2: approximation error.
+         * The test adds unique elements and check that the estimated value
+         * is always reasonable bounds.
+         *
+         * We check that the error is smaller than a few times than the expected
+         * standard error, to make it very unlikely for the test to fail because
+         * of a "bad" run.
+         *
+         * The test is performed with both dense and sparse HLLs at the same
+         * time also verifying that the computed cardinality is the same. */
+        memset((void*)hdr->registers, 0, HLL_DENSE_SIZE - HLL_HDR_SIZE);        // NOLINT
+        // o = createHLLObject();
+        auto o = std::make_unique<HPLLObject>();
+        double relerr = 1.04 / sqrt(HLL_REGISTERS);
+        int64_t checkpoint = 1;
+        uint64_t seed = (uint64_t)rand() | (uint64_t)rand() << 32;
+        uint64_t ele;
+        for (j = 1; j <= 10000000; j++) {
+            ele = j ^ seed;
+            keyHpll->add(reinterpret_cast<char*>(&ele), sizeof(ele));
+            // hllDenseAdd(hdr->registers, (unsigned char*)&ele, sizeof(ele));
+            o->add(reinterpret_cast<char*>(&ele), sizeof(ele));
+            // hllAdd(o, (unsigned char*)&ele, sizeof(ele));
+
+            /* Make sure that for small cardinalities we use sparse
+             * encoding. */
+            if (j == checkpoint && j < CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES / 2) {   // NOLINT
+                if (o->getHdrEncoding() != HLL_SPARSE) {
+                    return{ ErrorCodes::ERR_INVALID_HLL,
+                        "TESTFAILED sparse encoding not used" };
+                }
+            }
+
+            /* Check that dense and sparse representations agree. */
+            if (j == checkpoint &&
+                keyHpll->getHllCount() != o->getHllCount()) {
+                return{ ErrorCodes::ERR_INVALID_HLL,
+                            "TESTFAILED dense/sparse disagree" };
+            }
+
+            /* Check error. */
+            if (j == checkpoint) {
+                int64_t abserr = checkpoint - (int64_t)keyHpll->getHllCount();
+                uint64_t maxerr = ceil(relerr * 6 * checkpoint);
+
+                /* Adjust the max error we expect for cardinality 10
+                 * since from time to time it is statistically likely to get
+                 * much higher error due to collision, resulting into a false
+                 * positive. */
+                if (j == 10) maxerr = 1;
+
+                if (abserr < 0) abserr = -abserr;
+                if (abserr > (int64_t)maxerr) {
+                    char buf[256];
+                    snprintf(buf, sizeof(buf),
+                        "TESTFAILED Too big error. card:%llu abserr:%llu",
+                        (uint64_t) checkpoint,
+                        (uint64_t) abserr);
+
+                    return{ ErrorCodes::ERR_INVALID_HLL, buf };
+                }
+                checkpoint *= 10;
+            }
+        }
+
+        /* Success! */
+        return Command::fmtOK();
+    }
+} pfselftestCmd;
+
+class PfDebugCommand : public Command {
+ public:
+    PfDebugCommand()
+        :Command("pfdebug") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 2;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    ///* PFDEBUG <subcommand> <key> ... args ..
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        auto& key = args[2];
+        uint64_t ttl = 0;
+        bool updated = false;
+        auto rv = Command::expireKeyIfNeeded(sess, key,
+            RecordType::RT_KV);
+        if (!rv.ok()) {
+            return rv.status();
+        }
+
+        if (!redis_port::isHLLObject(rv.value().getValue())) {
+            return{ ErrorCodes::ERR_INVALID_HLL, "" };
+        }
+        ttl = rv.value().getTtl();
+
+        SessionCtx *pCtx = sess->getCtx();
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            if (expdb.status().code() == ErrorCodes::ERR_NOTFOUND ||
+                expdb.status().code() == ErrorCodes::ERR_EXPIRED) {
+                return{ ErrorCodes::ERR_INVALID_HLL,
+                        "The specified key does not exist" };
+            }
+            return expdb.status();
+        }
+
+        auto keyHpll = std::make_unique<HPLLObject>(rv.value().getValue());  // NOLINT
+
+        std::stringstream ss;
+        auto cmd = toLower(args[1]);
+        if (cmd == "getreg") {
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
+            }
+
+            if (keyHpll->getHdrEncoding() == HLL_SPARSE) {
+                if (keyHpll->hllSparseToDense() == -1) {
+                    return{ ErrorCodes::ERR_INVALID_HLL, "" };
+                }
+                updated = true;
+            }
+
+            Command::fmtMultiBulkLen(ss, HLL_REGISTERS);
+            for (size_t j = 0; j < HLL_REGISTERS; j++) {
+                uint8_t val;
+
+                HLL_DENSE_GET_REGISTER(val, keyHpll->getHdr()->registers, j);
+                ss << Command::fmtLongLong(val);
+            }
+
+        } else if (cmd == "decode") {
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
+            }
+
+            if (keyHpll->getHdrEncoding() != HLL_SPARSE) {
+                return{ ErrorCodes::ERR_WRONG_TYPE,
+                        "HLL encoding is not sparse" };
+            }
+
+            auto p = reinterpret_cast<const unsigned char*>(keyHpll->getHdr());
+            auto end = p + keyHpll->getHdrSize();
+
+            p += HLL_HDR_SIZE;
+            std::stringstream decoded;
+            char buf[256];
+            while (p < end) {
+                int runlen, regval;
+
+                if (HLL_SPARSE_IS_ZERO(p)) {
+                    runlen = HLL_SPARSE_ZERO_LEN(p);
+                    p++;
+                    snprintf(buf, sizeof(buf), "z:%d ", runlen);
+                    decoded << buf;
+                } else if (HLL_SPARSE_IS_XZERO(p)) {
+                    runlen = HLL_SPARSE_XZERO_LEN(p);
+                    p += 2;
+                    snprintf(buf, sizeof(buf), "Z:%d ", runlen);
+                    decoded << buf;
+                } else {
+                    runlen = HLL_SPARSE_VAL_LEN(p);
+                    regval = HLL_SPARSE_VAL_VALUE(p);
+                    p++;
+                    snprintf(buf, sizeof(buf), "v:%d,%d ", regval, runlen);
+                    decoded << buf;
+                }
+            }
+            auto s = decoded.str();
+            sdstrim(s, " ");
+
+            ss << Command::fmtBulk(s);
+        } else if (cmd == "encoding") {
+            char *encodingstr[2] = { "dense", "sparse" };
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
+            }
+
+            ss << Command::fmtBulk(encodingstr[keyHpll->getHdrEncoding()]);
+        } else if (cmd == "todense") {
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
+            }
+
+            if (keyHpll->getHdrEncoding() == HLL_SPARSE) {
+                if (keyHpll->hllSparseToDense() == -1) {
+                    return{ ErrorCodes::ERR_INVALID_HLL, "" };
+                }
+
+                updated = true;
+            }
+
+            updated ? ss << Command::fmtOne() :
+                              ss << Command::fmtZero();
+        } else {
+            ss << "Unknown PFDEBUG subcommand '"
+                << cmd
+                << "'";
+
+            return{ ErrorCodes::ERR_PARSEOPT, ss.str() };
+        }
+
+        if (updated) {
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
+                RecordType::RT_KV, key, "");
+            RecordValue value(keyHpll->encode(), RecordType::RT_KV, ttl, rv);
+
+            Status s = kvstore->setKV(rk, value, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+
+            auto c = txn->commit();
+            if (!c.ok()) {
+                return c.status();
+            }
+        }
+
+        return ss.str();
+    }
+} pfdebugCmd;
+
 }  // namespace tendisplus
+

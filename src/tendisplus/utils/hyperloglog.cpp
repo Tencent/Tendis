@@ -344,56 +344,56 @@ static struct PEObject peo;
 
 /* Store the value of the register at position 'regnum' into variable 'target'.
  * 'p' is an array of unsigned bytes. */
-#define HLL_DENSE_GET_REGISTER(target,p,regnum) do { \
-    uint8_t *_p = (uint8_t*) p; \
-    unsigned long _byte = regnum*HLL_BITS/8; \
-    unsigned long _fb = regnum*HLL_BITS&7; \
-    unsigned long _fb8 = 8 - _fb; \
-    unsigned long b0 = _p[_byte]; \
-    unsigned long b1 = _p[_byte+1]; \
-    target = ((b0 >> _fb) | (b1 << _fb8)) & HLL_REGISTER_MAX; \
-} while(0)
-
-/* Set the value of the register at position 'regnum' to 'val'.
- * 'p' is an array of unsigned bytes. */
-#define HLL_DENSE_SET_REGISTER(p,regnum,val) do { \
-    uint8_t *_p = (uint8_t*) p; \
-    unsigned long _byte = regnum*HLL_BITS/8; \
-    unsigned long _fb = regnum*HLL_BITS&7; \
-    unsigned long _fb8 = 8 - _fb; \
-    unsigned long _v = val; \
-    _p[_byte] &= ~(HLL_REGISTER_MAX << _fb); \
-    _p[_byte] |= _v << _fb; \
-    _p[_byte+1] &= ~(HLL_REGISTER_MAX >> _fb8); \
-    _p[_byte+1] |= _v >> _fb8; \
-} while(0)
-
-/* Macros to access the sparse representation.
- * The macros parameter is expected to be an uint8_t pointer. */
-#define HLL_SPARSE_XZERO_BIT 0x40 /* 01xxxxxx */
-#define HLL_SPARSE_VAL_BIT 0x80 /* 1vvvvvxx */
-#define HLL_SPARSE_IS_ZERO(p) (((*(p)) & 0xc0) == 0) /* 00xxxxxx */
-#define HLL_SPARSE_IS_XZERO(p) (((*(p)) & 0xc0) == HLL_SPARSE_XZERO_BIT)
-#define HLL_SPARSE_IS_VAL(p) ((*(p)) & HLL_SPARSE_VAL_BIT)
-#define HLL_SPARSE_ZERO_LEN(p) (((*(p)) & 0x3f)+1)
-#define HLL_SPARSE_XZERO_LEN(p) (((((*(p)) & 0x3f) << 8) | (*((p)+1)))+1)
-#define HLL_SPARSE_VAL_VALUE(p) ((((*(p)) >> 2) & 0x1f)+1)
-#define HLL_SPARSE_VAL_LEN(p) (((*(p)) & 0x3)+1)
-#define HLL_SPARSE_VAL_MAX_VALUE 32
-#define HLL_SPARSE_VAL_MAX_LEN 4
-#define HLL_SPARSE_ZERO_MAX_LEN 64
-#define HLL_SPARSE_XZERO_MAX_LEN 16384
-#define HLL_SPARSE_VAL_SET(p,val,len) do { \
-    *(p) = (((val)-1)<<2|((len)-1))|HLL_SPARSE_VAL_BIT; \
-} while(0)
-#define HLL_SPARSE_ZERO_SET(p,len) do { \
-    *(p) = (len)-1; \
-} while(0)
-#define HLL_SPARSE_XZERO_SET(p,len) do { \
-    int _l = (len)-1; \
-    *(p) = (_l>>8) | HLL_SPARSE_XZERO_BIT; \
-    *((p)+1) = (_l&0xff); \
-} while(0)
+//#define HLL_DENSE_GET_REGISTER(target,p,regnum) do { \
+//    uint8_t *_p = (uint8_t*) p; \
+//    unsigned long _byte = regnum*HLL_BITS/8; \
+//    unsigned long _fb = regnum*HLL_BITS&7; \
+//    unsigned long _fb8 = 8 - _fb; \
+//    unsigned long b0 = _p[_byte]; \
+//    unsigned long b1 = _p[_byte+1]; \
+//    target = ((b0 >> _fb) | (b1 << _fb8)) & HLL_REGISTER_MAX; \
+//} while(0)
+//
+///* Set the value of the register at position 'regnum' to 'val'.
+// * 'p' is an array of unsigned bytes. */
+//#define HLL_DENSE_SET_REGISTER(p,regnum,val) do { \
+//    uint8_t *_p = (uint8_t*) p; \
+//    unsigned long _byte = regnum*HLL_BITS/8; \
+//    unsigned long _fb = regnum*HLL_BITS&7; \
+//    unsigned long _fb8 = 8 - _fb; \
+//    unsigned long _v = val; \
+//    _p[_byte] &= ~(HLL_REGISTER_MAX << _fb); \
+//    _p[_byte] |= _v << _fb; \
+//    _p[_byte+1] &= ~(HLL_REGISTER_MAX >> _fb8); \
+//    _p[_byte+1] |= _v >> _fb8; \
+//} while(0)
+//
+///* Macros to access the sparse representation.
+// * The macros parameter is expected to be an uint8_t pointer. */
+//#define HLL_SPARSE_XZERO_BIT 0x40 /* 01xxxxxx */
+//#define HLL_SPARSE_VAL_BIT 0x80 /* 1vvvvvxx */
+//#define HLL_SPARSE_IS_ZERO(p) (((*(p)) & 0xc0) == 0) /* 00xxxxxx */
+//#define HLL_SPARSE_IS_XZERO(p) (((*(p)) & 0xc0) == HLL_SPARSE_XZERO_BIT)
+//#define HLL_SPARSE_IS_VAL(p) ((*(p)) & HLL_SPARSE_VAL_BIT)
+//#define HLL_SPARSE_ZERO_LEN(p) (((*(p)) & 0x3f)+1)
+//#define HLL_SPARSE_XZERO_LEN(p) (((((*(p)) & 0x3f) << 8) | (*((p)+1)))+1)
+//#define HLL_SPARSE_VAL_VALUE(p) ((((*(p)) >> 2) & 0x1f)+1)
+//#define HLL_SPARSE_VAL_LEN(p) (((*(p)) & 0x3)+1)
+//#define HLL_SPARSE_VAL_MAX_VALUE 32
+//#define HLL_SPARSE_VAL_MAX_LEN 4
+//#define HLL_SPARSE_ZERO_MAX_LEN 64
+//#define HLL_SPARSE_XZERO_MAX_LEN 16384
+//#define HLL_SPARSE_VAL_SET(p,val,len) do { \
+//    *(p) = (((val)-1)<<2|((len)-1))|HLL_SPARSE_VAL_BIT; \
+//} while(0)
+//#define HLL_SPARSE_ZERO_SET(p,len) do { \
+//    *(p) = (len)-1; \
+//} while(0)
+//#define HLL_SPARSE_XZERO_SET(p,len) do { \
+//    int _l = (len)-1; \
+//    *(p) = (_l>>8) | HLL_SPARSE_XZERO_BIT; \
+//    *((p)+1) = (_l&0xff); \
+//} while(0)
 
 /* ========================= HyperLogLog algorithm  ========================= */
 
