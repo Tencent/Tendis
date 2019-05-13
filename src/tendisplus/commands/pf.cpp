@@ -94,6 +94,15 @@ struct MyAllocator {
     void resize(size_t n, std::size_t a = alignof(T)) {
         if (allocSize < n) {
             char* newdata = reinterpret_cast<char*>(calloc(n, sizeof(char)));
+
+            // s should be initialized to be n
+            size_t s = n;
+            void* tmpp = newdata;
+            if (std::align(a, sizeof(T), tmpp, s)) {
+                INVARIANT(reinterpret_cast<char*>(tmpp) == newdata);
+                firstAlignedPtr = reinterpret_cast<char*>(tmpp);
+            }
+
             memcpy(newdata, data, allocSize);
 
             free(data);
@@ -102,13 +111,6 @@ struct MyAllocator {
 
             leftSize += n - allocSize;
             allocSize = n;
-
-            size_t s;
-            void* tmpp = data;
-            if (std::align(a, sizeof(T), tmpp, s)) {
-                INVARIANT(reinterpret_cast<char*>(tmpp) == data);
-                firstAlignedPtr = reinterpret_cast<char*>(tmpp);
-            }
         }
     }
 };
@@ -121,7 +123,7 @@ class HPLLObject {
     HPLLObject(HPLLObject&&) = default;
 
     int add(const std::string& subkey);
-    int HPLLObject::add(const char* data, size_t size);
+    int add(const char* data, size_t size);
     uint64_t getHllCount() const;
     // Note(vinchen): it is not const;
     uint64_t getHllCountFast();
@@ -146,7 +148,7 @@ class HPLLObject {
 };
 
 HPLLObject::HPLLObject(const std::string& v) {
-    INVARIANT(redis_port::isHLLObject(v));
+    INVARIANT(redis_port::isHLLObject(v.c_str(), v.size()));
 
     _buf = std::make_unique<MyAllocator>(v.size()+128);
     INVARIANT(_buf->allocSize >= v.size());
@@ -164,6 +166,7 @@ HPLLObject::HPLLObject(int type) {
         _hdrSize = _buf->allocSize;
         break;
     case HLL_SPARSE:
+        // _buf = std::make_unique<MyAllocator>(HLL_MAX_SIZE);
         _buf = std::make_unique<MyAllocator>();
         _hdr = _buf->aligned_alloc<redis_port::hllhdr>();
         _hdr = redis_port::createHLLObject(reinterpret_cast<const char*>(_hdr),
@@ -226,6 +229,7 @@ int HPLLObject::add(const std::string& subkey) {
         case HLL_ERROR_MEMORY:
             _buf->resize<redis_port::hllhdr>(_buf->allocSize + 128);
             _hdr = _buf->getFirstAlignedAddr<redis_port::hllhdr>();
+            INVARIANT(redis_port::isHLLObject((const char*)_hdr, _hdrSize));
             break;
 
         default:
@@ -352,7 +356,7 @@ class PfAddCommand: public Command {
         }
 
         if (rv.ok()) {
-            if (!redis_port::isHLLObject(rv.value().getValue())) {
+            if (!redis_port::isHLLObject(rv.value().getValue().c_str(), rv.value().getValue().size())) {
                 return{ ErrorCodes::ERR_WRONG_TYPE,
                     "-WRONGTYPE Key is not a valid HyperLogLog string value.\r\n" };    // NOLINT
             }
@@ -367,6 +371,7 @@ class PfAddCommand: public Command {
             return expdb.status();
         }
 
+        size_t updated = 0;
         // TODO(comboqiu): the recordValue get from Command::expireKeyIfNeeded()
         // is not reliable for write operation. Because the lock released after
         // expireKeyIfNeeded().
@@ -376,9 +381,12 @@ class PfAddCommand: public Command {
         if (rv.ok()) {
             auto tmp = std::make_unique<HPLLObject>(rv.value().getValue());
             hpll = std::move(tmp);
+        } else {
+            // NOTE(vinchen): if hpll is not exists, it would always create a
+            // new one
+            updated++;
         }
 
-        size_t updated = 0;
         for (size_t j = 2; j < args.size(); j ++) {
             auto& subkey = args[j];
             int retval = hpll->add(subkey);
@@ -460,8 +468,8 @@ class PfCountCommand : public Command {
                 }
 
                 if (rv.ok()) {
-                    if (!redis_port::isHLLObject(rv.value().getValue())) {
-                        return{ ErrorCodes::ERR_INVALID_HLL, "" };
+                    if (!redis_port::isHLLObject(rv.value().getValue().c_str(), rv.value().getValue().size())) {
+                        return{ ErrorCodes::ERR_WRONG_TYPE, "" };
                     }
                 } else {
                     /* Assume empty HLL for non existing var.*/
@@ -491,8 +499,8 @@ class PfCountCommand : public Command {
         }
 
         if (rv.ok()) {
-            if (!redis_port::isHLLObject(rv.value().getValue())) {
-                return{ ErrorCodes::ERR_INVALID_HLL, "" };
+            if (!redis_port::isHLLObject(rv.value().getValue().c_str(), rv.value().getValue().size())) {
+                return{ ErrorCodes::ERR_WRONG_TYPE, "" };
             }
         } else {
             /* No key? Cardinality is zero since no element was added, otherwise
@@ -552,8 +560,8 @@ class PfMergeCommand : public Command {
             }
 
             if (rv.ok()) {
-                if (!redis_port::isHLLObject(rv.value().getValue())) {
-                    return{ ErrorCodes::ERR_INVALID_HLL, "" };
+                if (!redis_port::isHLLObject(rv.value().getValue().c_str(), rv.value().getValue().size())) {
+                    return{ ErrorCodes::ERR_WRONG_TYPE, "" };
                 }
                 if (j == 1) {
                     ttl = rv.value().getTtl();
@@ -642,8 +650,6 @@ class PfSelfTestCommand : public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::vector<std::string>& args = sess->getArgs();
-
         unsigned int j, i;
         // sds bitcounters = sdsnewlen(NULL, HLL_DENSE_SIZE);
         auto keyHpll = std::make_unique<HPLLObject>(HLL_DENSE);
@@ -711,8 +717,11 @@ class PfSelfTestCommand : public Command {
              * encoding. */
             if (j == checkpoint && j < CONFIG_DEFAULT_HLL_SPARSE_MAX_BYTES / 2) {   // NOLINT
                 if (o->getHdrEncoding() != HLL_SPARSE) {
-                    return{ ErrorCodes::ERR_INVALID_HLL,
-                        "TESTFAILED sparse encoding not used" };
+                    std::stringstream ss;
+                    ss << "TESTFAILED sparse encoding not used:"
+                        << "j=" << j << " encoding=" << o->getHdrEncoding();
+
+                    return{ ErrorCodes::ERR_INVALID_HLL, ss.str() };
                 }
             }
 
@@ -738,7 +747,7 @@ class PfSelfTestCommand : public Command {
                 if (abserr > (int64_t)maxerr) {
                     char buf[256];
                     snprintf(buf, sizeof(buf),
-                        "TESTFAILED Too big error. card:%llu abserr:%llu",
+                        "TESTFAILED Too big error. card:%lu abserr:%lu",
                         (uint64_t) checkpoint,
                         (uint64_t) abserr);
 
@@ -788,8 +797,8 @@ class PfDebugCommand : public Command {
             return rv.status();
         }
 
-        if (!redis_port::isHLLObject(rv.value().getValue())) {
-            return{ ErrorCodes::ERR_INVALID_HLL, "" };
+        if (!redis_port::isHLLObject(rv.value().getValue().c_str(), rv.value().getValue().size())) {
+            return{ ErrorCodes::ERR_WRONG_TYPE, "" };
         }
         ttl = rv.value().getTtl();
 
@@ -872,7 +881,7 @@ class PfDebugCommand : public Command {
 
             ss << Command::fmtBulk(s);
         } else if (cmd == "encoding") {
-            char *encodingstr[2] = { "dense", "sparse" };
+            const char *encodingstr[2] = { "dense", "sparse" };
             if (args.size() != 3) {
                 return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
             }

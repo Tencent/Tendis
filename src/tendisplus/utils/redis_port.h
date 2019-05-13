@@ -172,7 +172,7 @@ typedef char *sds;
 #define sdsfree(A) free(A)
 
 hllhdr *createHLLObject(const char* buf, size_t bufSize, size_t* sizeOut);
-bool isHLLObject(const std::string & v);
+bool isHLLObject(const char* ptr, size_t size);
 int hllAdd(hllhdr *hdr, size_t* hdrSize, size_t hdrMaxSize,
     unsigned char *ele, size_t elesize);
 uint64_t hllCount(struct hllhdr *hdr, size_t hdrSize, int *invalid);
