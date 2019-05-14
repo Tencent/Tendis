@@ -31,6 +31,7 @@ class SegmentMgr {
     virtual Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
                                 mgl::LockMode mode,
                                 bool canOpenStoreNoneDB = false) = 0;
+    virtual Expected<DbWithLock> getDbHasLocked(Session* sess, const std::string& key) = 0;
     virtual Expected<std::list<std::unique_ptr<KeyLock>>> getAllKeysLocked(Session* sess,
             const std::vector<std::string>& args,
             const std::vector<int>& index,
@@ -51,7 +52,7 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
             mgl::LockMode mode,
             bool canOpenStoreNoneDB = false) final;
-
+    Expected<DbWithLock> getDbHasLocked(Session* sess, const std::string& key) final;
     Expected<std::list<std::unique_ptr<KeyLock>>> getAllKeysLocked(Session* sess,
             const std::vector<std::string>& args,
             const std::vector<int>& index,

@@ -812,7 +812,10 @@ class SdiffgenericCommand: public Command {
                 return rv.status();
             }
 
-            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
             RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
             std::string metaKeyEnc = metaRk.encode();
             PStore kvstore = expdb.value().store;
@@ -871,7 +874,7 @@ class SdiffgenericCommand: public Command {
             newKeys.push_back(std::move(v));
         }
 
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1007,7 +1010,7 @@ public:
 
         for (size_t i = 0; i < setList.size(); i++) {
             const std::string& key = args[setList[i].first];
-            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
             if (!expdb.ok()) {
                 return expdb.status();
             }
@@ -1088,7 +1091,7 @@ public:
             return Command::fmtZero();
         }
 
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1205,11 +1208,11 @@ public:
             return Command::fmtZero();
         }
 
-        auto srcDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[1], mgl::LockMode::LOCK_X);
+        auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, args[1]);
         if (!srcDb.ok()) {
             return srcDb.status();
         }
-        auto destDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[2], mgl::LockMode::LOCK_X);
+        auto destDb = server->getSegmentMgr()->getDbHasLocked(sess, args[2]);
         if (!destDb.ok()) {
             return destDb.status();
         }
@@ -1301,7 +1304,7 @@ public:
                 return rv.status();
             }
 
-            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
             if (!expdb.ok()) {
                 return expdb.status();
             }
@@ -1355,7 +1358,7 @@ public:
             return Command::fmtZero();
         }
 
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);;
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);;
         if (!expdb.ok()) {
             return expdb.status();
         }
