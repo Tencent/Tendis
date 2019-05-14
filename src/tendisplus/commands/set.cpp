@@ -799,9 +799,9 @@ class SdiffgenericCommand: public Command {
         for (size_t i = 1; i < args.size(); ++i) {
             index.push_back(i);
         }
-        auto expDbs = server->getSegmentMgr()->getDbWithKeyLock(sess, args, index, mgl::LockMode::LOCK_X);
-        if (!expDbs.ok()) {
-            return expDbs.status();
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        if (!lock.ok()) {
+            return lock.status();
         }
 
         for (size_t i = startkey; i < args.size(); ++i) {
@@ -815,11 +815,10 @@ class SdiffgenericCommand: public Command {
                 return rv.status();
             }
 
-            auto& refdb = expDbs.value()[i-1];
-            // uint32_t storeId = expdb.value().dbId;
-            RecordKey metaRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
+            RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
             std::string metaKeyEnc = metaRk.encode();
-            PStore kvstore = refdb.store;
+            PStore kvstore = expdb.value().store;
 
             // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
             //      return {ErrorCodes::ERR_BUSY, "key locked"};
@@ -831,7 +830,7 @@ class SdiffgenericCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             auto cursor = txn->createCursor();
-            RecordKey fake = {refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], ""};
+            RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], ""};
             cursor->seek(fake.prefixPk());
             while (true) {
                 Expected<Record> exptRcd = cursor->next();
@@ -870,19 +869,17 @@ class SdiffgenericCommand: public Command {
             return deleted.status();
         }
 
-        if (result.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
-
         std::vector<std::string> newKeys(2);
         for (auto& v : result) {
             newKeys.push_back(std::move(v));
         }
 
-        //auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
-        auto& refdb = expDbs.value()[0];
-        PStore kvstore = refdb.store;
-        RecordKey storeRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -976,11 +973,10 @@ public:
         for (size_t i = 1; i < args.size(); ++i) {
             index.push_back(i);
         }
-        auto expDbs = server->getSegmentMgr()->getDbWithKeyLock(sess, args, index, mgl::LockMode::LOCK_X);
-        if (!expDbs.ok()) {
-            return expDbs.status();
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        if (!lock.ok()) {
+            return lock.status();
         }
-        auto dbs = std::move(expDbs.value());
 
         // stored all sets sorted by their length
         std::vector<std::pair<size_t, uint64_t>> setList;
@@ -1017,9 +1013,11 @@ public:
 
         for (size_t i = 0; i < setList.size(); i++) {
             const std::string& key = args[setList[i].first];
-            // auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
-            auto& refdb = dbs[setList[i].first - 1];
-            PStore kvstore = refdb.store;
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
                 return ptxn.status();
@@ -1027,7 +1025,7 @@ public:
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             if (i == 0) {
                 auto cursor = txn->createCursor();
-                RecordKey fakeRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, "");
+                RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, "");
                 cursor->seek(fakeRk.prefixPk());
                 while (true) {
                     Expected<Record> expRcd = cursor->next();
@@ -1058,7 +1056,7 @@ public:
             }
 
             for (auto iter = result.begin(); iter != result.end();) {
-                RecordKey subRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, *iter);
+                RecordKey subRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, *iter);
                 Expected<RecordValue> subValue = kvstore->getKV(subRk, txn.get());
                 // if key not found, erase it
                 if (!subValue.ok() || subValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -1088,10 +1086,6 @@ public:
             return deleted.status();
         }
 
-        if (result.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
-
         std::vector<std::string> newKeys(2);
         for (auto& v : result) {
             newKeys.push_back(std::move(v));
@@ -1100,10 +1094,12 @@ public:
             return Command::fmtZero();
         }
 
-        // auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
-        auto& refdb = dbs[0];
-        PStore kvstore = refdb.store;
-        RecordKey storeRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -1210,10 +1206,7 @@ public:
         for (size_t i = 1; i < args.size(); ++i) {
             index.push_back(i);
         }
-        auto expDbs = server->getSegmentMgr()->getDbWithKeyLock(sess, args, index, mgl::LockMode::LOCK_X);
-        if (!expDbs.ok()) {
-            return expDbs.status();
-        }
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
 
         Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, source, RecordType::RT_SET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -1221,14 +1214,20 @@ public:
             return Command::fmtZero();
         }
 
-        auto& srcDb = expDbs.value()[0];
-        auto& destDb = expDbs.value()[1];
+        auto srcDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[0], mgl::LockMode::LOCK_X);
+        if (!srcDb.ok()) {
+            return srcDb.status();
+        }
+        auto destDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[1], mgl::LockMode::LOCK_X);
+        if (!destDb.ok()) {
+            return destDb.status();
+        }
 
-        PStore srcStore = srcDb.store;
-        PStore destStore = destDb.store;
+        PStore srcStore = srcDb.value().store;
+        PStore destStore = destDb.value().store;
 
-        RecordKey remRk(srcDb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
-        RecordKey addRk(destDb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
+        RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
+        RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
         // directly remove member from source
         const std::string& formatRet = Command::fmtLongLong(1);
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -1298,9 +1297,9 @@ public:
         for (size_t i = 1; i < args.size(); ++i) {
             index.push_back(i);
         }
-        auto expDbs = server->getSegmentMgr()->getDbWithKeyLock(sess, args, index, mgl::LockMode::LOCK_X);
-        if (!expDbs.ok()) {
-            return expDbs.status();
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        if (!lock.ok()) {
+            return lock.status();
         }
 
         for (size_t i = startkey; i < args.size(); ++i) {
@@ -1314,9 +1313,11 @@ public:
                 return rv.status();
             }
 
-            // auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
-            auto& refdb = expDbs.value()[i-1];
-            PStore kvstore = refdb.store;
+            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[i], mgl::LockMode::LOCK_S);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
                 return ptxn.status();
@@ -1324,7 +1325,7 @@ public:
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             
             auto cursor = txn->createCursor();
-            RecordKey fakeRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], "");
+            RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], "");
             cursor->seek(fakeRk.prefixPk());
             while (true) {
                 Expected<Record> exptRcd = cursor->next();
@@ -1358,10 +1359,6 @@ public:
             return deleted.status();
         }
 
-        if (result.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
-
         std::vector<std::string> newKeys(2);
         for (const auto& v : result) {
             newKeys.push_back(std::move(v));
@@ -1370,10 +1367,12 @@ public:
             return Command::fmtZero();
         }
 
-        // auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);
-        auto& refdb = expDbs.value()[0];
-        PStore kvstore = refdb.store;
-        RecordKey storeRk(refdb.chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey, mgl::LockMode::LOCK_X);;
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
