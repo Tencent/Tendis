@@ -110,4 +110,17 @@ void SessionCtx::setExtendProtocolValue(uint64_t ts, uint64_t version) {
     _version = version;
 }
 
+void SessionCtx::setKeylock(const std::string& key, mgl::LockMode mode) {
+    _keylockmap[key] = mode;
+}
+
+void SessionCtx::unsetKeylock(const std::string& key) {
+    INVARIANT(_keylockmap.count(key) > 0);
+    _keylockmap.erase(key);
+}
+
+bool SessionCtx::isLockedByMe(const std::string &key, mgl::LockMode mode) {
+    return (_keylockmap.count(key) > 0 && mgl::enum2Int(mode) <= mgl::enum2Int(_keylockmap[key]));
+}
+
 }  // namespace tendisplus

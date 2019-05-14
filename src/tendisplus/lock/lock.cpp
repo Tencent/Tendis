@@ -88,6 +88,15 @@ uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
+std::unique_ptr<KeyLock> KeyLock::AquireKeyLock(uint32_t storeId, const std::string &key,
+        mgl::LockMode mode, Session *sess) {
+    if (sess->getCtx()->isLockedByMe(key, mode)) {
+        return std::unique_ptr<KeyLock>(nullptr);
+    } else {
+        return std::make_unique<KeyLock>(storeId, key, mode, sess);
+    }
+}
+
 KeyLock::KeyLock(uint32_t storeId, const std::string& key,
                 mgl::LockMode mode, Session *sess)
         :ILock(new StoreLock(storeId, getParentMode(mode), nullptr),
@@ -100,10 +109,15 @@ KeyLock::KeyLock(uint32_t storeId, const std::string& key,
     }
     auto lockResult = _mgl->lock(target, mode, timeoutMs);
     INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    _sess->getCtx()->setKeylock(key, mode);
     if (_sess) {
         _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
     }
+}
+
+KeyLock::~KeyLock() {
+    _sess->getCtx()->unsetKeylock(_key);
 }
 
 uint32_t KeyLock::getStoreId() const {

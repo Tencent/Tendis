@@ -27,6 +27,7 @@ class Command {
     virtual int32_t firstkey() const = 0;
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
+    virtual std::vector<int> getKeysFromCommand(const std::vector<std::string>& argv);
     const std::string& getName() const;
     void incrCallTimes();
     void incrNanos(uint64_t);
