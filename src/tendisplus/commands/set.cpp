@@ -795,10 +795,7 @@ class SdiffgenericCommand: public Command {
         auto server = sess->getServerEntry();
         SessionCtx *pCtx = sess->getCtx();
 
-        std::vector<int> index;
-        for (size_t i = 1; i < args.size(); ++i) {
-            index.push_back(i);
-        }
+        std::vector<int> index = getKeysFromCommand(args);
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
         if (!lock.ok()) {
             return lock.status();
@@ -969,10 +966,7 @@ public:
         auto server = sess->getServerEntry();
         SessionCtx *pCtx = sess->getCtx();
 
-        std::vector<int> index;
-        for (size_t i = 1; i < args.size(); ++i) {
-            index.push_back(i);
-        }
+        std::vector<int> index = getKeysFromCommand(args);
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
         if (!lock.ok()) {
             return lock.status();
@@ -1186,7 +1180,7 @@ public:
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 2;
     }
 
     int32_t keystep() const {
@@ -1202,10 +1196,7 @@ public:
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
 
-        std::vector<int> index;
-        for (size_t i = 1; i < args.size(); ++i) {
-            index.push_back(i);
-        }
+        std::vector<int> index = getKeysFromCommand(args);
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
 
         Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, source, RecordType::RT_SET_META);
@@ -1214,11 +1205,11 @@ public:
             return Command::fmtZero();
         }
 
-        auto srcDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[0], mgl::LockMode::LOCK_X);
+        auto srcDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[1], mgl::LockMode::LOCK_X);
         if (!srcDb.ok()) {
             return srcDb.status();
         }
-        auto destDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[1], mgl::LockMode::LOCK_X);
+        auto destDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[2], mgl::LockMode::LOCK_X);
         if (!destDb.ok()) {
             return destDb.status();
         }
@@ -1293,10 +1284,7 @@ public:
         auto server = sess->getServerEntry();
         SessionCtx *pCtx = sess->getCtx();
 
-        std::vector<int> index;
-        for (size_t i = 1; i < args.size(); ++i) {
-            index.push_back(i);
-        }
+        std::vector<int> index = getKeysFromCommand(args);
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
         if (!lock.ok()) {
             return lock.status();

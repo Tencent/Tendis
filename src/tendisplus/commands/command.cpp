@@ -621,4 +621,25 @@ std::string Command::fmtBulk(const std::string& s) {
     return ss.str();
 }
 
+std::vector<int> Command::getKeysFromCommand(const std::vector<std::string>& argv) {
+    int argc = argv.size();
+    std::vector<int> keyindex;
+
+    int32_t first = firstkey();
+    if (first == 0) {
+        return keyindex;
+    }
+    int32_t last = lastkey();
+    if (last < 0) {
+        last = argc + last;
+    }
+
+    for (int i = first; i <= last; i += keystep()) {
+        INVARIANT(i <= argc);
+        keyindex.push_back(i);
+    }
+
+    return keyindex;
+}
+
 }  // namespace tendisplus
