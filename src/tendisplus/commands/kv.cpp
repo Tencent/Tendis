@@ -1488,13 +1488,16 @@ class MGetCommand: public Command {
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, sess->getArgs().size()-1);
         for (size_t i = 1; i < sess->getArgs().size(); ++i) {
-            const std::string& key = sess->getArgs()[i];
+            const std::string &key = sess->getArgs()[i];
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+                    Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 Command::fmtNull(ss);
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                Command::fmtNull(ss);
+                continue;
+            } else if (rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
                 Command::fmtNull(ss);
                 continue;
             } else if (!rv.status().ok()) {
