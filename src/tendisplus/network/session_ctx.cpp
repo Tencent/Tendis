@@ -124,7 +124,7 @@ bool SessionCtx::isLockedByMe(const std::string &key, mgl::LockMode mode) {
         // TODO(comboqiu): Here, lock can't upgrade or downgrade.
         // If a key lock twice in one session , it can't lock a bigger lock.
         // assert temporary.
-        INVARIANT(mgl::enum2Int(mode) >= mgl::enum2Int(_keylockmap[key]));
+        INVARIANT(mgl::enum2Int(mode) <= mgl::enum2Int(_keylockmap[key]));
         return true;
     }
     return false;

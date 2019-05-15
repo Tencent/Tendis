@@ -480,7 +480,6 @@ class RPopLPushCommand: public Command {
         // uint32_t storeId1 = expdb1.value().dbId;
         std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
-        mgl::LockMode lockMode = mgl::LockMode::LOCK_X;
 
         auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
         if (!expdb2.ok()) {

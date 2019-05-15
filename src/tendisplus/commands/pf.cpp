@@ -447,7 +447,6 @@ class PfCountCommand : public Command {
         const std::vector<std::string>& args = sess->getArgs();
 
         auto server = sess->getServerEntry();
-        SessionCtx *pCtx = sess->getCtx();
         auto index = getKeysFromCommand(args);
 
         // TODO(vinchen): should be LOCK_S

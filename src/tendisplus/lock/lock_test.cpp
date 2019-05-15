@@ -179,7 +179,7 @@ TEST(Lock, KeyLock) {
     auto sess = std::make_shared<LocalSession>(nullptr);
     std::thread thd1([&runFlag1, &locked1, sess]() {
         KeyLock v(1, "a", mgl::LockMode::LOCK_IS, sess.get());
-        KeyLock v1(1, "a", mgl::LockMode::LOCK_IX, sess.get());
+        // KeyLock v1(1, "a", mgl::LockMode::LOCK_IX, sess.get());
         locked1 = true;
         while (runFlag1) {
             std::this_thread::sleep_for(std::chrono::seconds(1));

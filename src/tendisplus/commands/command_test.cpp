@@ -1184,7 +1184,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "mget", "ma", "mb", "mc", "md" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    ss.clear();
+    ss.str("");
     Command::fmtMultiBulkLen(ss, 4);
     Command::fmtBulk(ss, "0");
     Command::fmtBulk(ss, "1");
@@ -1200,7 +1200,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    ss.clear();
+    ss.str("");
     Command::fmtMultiBulkLen(ss, 4);
     Command::fmtNull(ss);
     Command::fmtBulk(ss, "0");
@@ -1216,7 +1216,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    ss.clear();
+    ss.str("");
     Command::fmtMultiBulkLen(ss, 4);
     Command::fmtNull(ss);
     Command::fmtBulk(ss, "100");
@@ -1237,7 +1237,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    ss.clear();
+    ss.str("");
     Command::fmtMultiBulkLen(ss, 4);
     Command::fmtNull(ss);
     Command::fmtBulk(ss, "100");
@@ -1253,7 +1253,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "mget", "n1", "n2"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    ss.clear();
+    ss.str("");
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, "1");
     Command::fmtBulk(ss, "2");
@@ -1944,7 +1944,7 @@ void testLockMulti(std::shared_ptr<ServerEntry> svr) {
 
         for (int j = 0; j < 100; j++) {
             vec.emplace_back(randomStr(20, true));
-            index.emplace_back(i);
+            index.emplace_back(j);
         }
 
         for (int j = 0; j < 100; j++) {
