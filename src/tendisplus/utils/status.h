@@ -42,6 +42,7 @@ enum class ErrorCodes {
     ERR_ZSLPARSELEXRANGE, /* "min or max not valid string range item" */
     ERR_WRONG_TYPE,
     ERR_WRONG_ARGS_SIZE, 
+    ERR_INVALID_HLL,   
 };
 
 class Status {

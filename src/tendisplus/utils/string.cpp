@@ -1,7 +1,10 @@
+#include <string.h>
 #include <algorithm>
 #include <string>
 #include <iostream>
 #include <cmath>
+#include <cctype>
+#include <locale>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -193,6 +196,27 @@ bool isOptionOn(const std::string& s) {
         return true;
     }
     return false;
+}
+
+
+// trim from start (in place)
+static inline void sdsltrim(std::string &s, const char *cset) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [cset](int ch) {
+        return !strchr(cset, ch);
+    }));
+}
+
+// trim from end (in place)
+static inline void sdsrtrim(std::string &s, const char *cset) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [cset](int ch) {
+        return !strchr(cset, ch);
+    }).base(), s.end());
+}
+
+// trim from both ends (in place)
+void sdstrim(std::string &s, const char *cset) {
+    sdsltrim(s, cset);
+    sdsrtrim(s, cset);
 }
 
 }  // namespace tendisplus

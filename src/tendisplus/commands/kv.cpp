@@ -41,6 +41,7 @@ struct SetParams {
 // TODO(deyukong): unittest of expire
 Expected<std::string> setGeneric(PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
+            bool checkType, bool endTxn,
             const std::string& okReply, const std::string& abortReply) {
     if ((flags & REDIS_SET_NX) || (flags & REDIS_SET_XX)
             || (flags & REDIS_SET_NXEX)) {
@@ -55,6 +56,9 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         if (eValue.ok()) {
             currentTs = msSinceEpoch();
             targetTtl = eValue.value().getTtl();
+            if (eValue.value().getRecordType() != RecordType::RT_KV) {
+                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
         }
         bool needExpire = (targetTtl != 0
                            && currentTs >= eValue.value().getTtl());
@@ -70,12 +74,32 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
                 if (!status.ok()) {
                     return status;
                 }
-                Expected<uint64_t> exptCommit = txn->commit();
-                if (!exptCommit.ok()) {
-                    return exptCommit.status();
+                if (endTxn) {
+                    Expected<uint64_t> exptCommit = txn->commit();
+                    if (!exptCommit.ok()) {
+                        return exptCommit.status();
+                    }
                 }
             }
             return abortReply == "" ? Command::fmtNull() : abortReply;
+        }
+    }
+
+    // NOTE(vinchen): 
+    // For performance, set() directly without get() is more fast.
+    // But because of RT_DATA_META, the string set is possible to
+    // override other meta type. It would lead to some garbage in rocksdb.
+    // In fact, because of the redis layer, the override problem would
+    // never happen. So keep the set() directly.
+    if (checkType) {
+        // if you want to open this options, checkkeytypeforset on
+
+        // only check the recordtype, not care about the ttl
+        Expected<RecordValue> eValue = store->getKV(key, txn);
+        if (eValue.ok()) {
+            if (eValue.value().getRecordType() != RecordType::RT_KV) {
+                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
         }
     }
 
@@ -85,9 +109,11 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
     if (!status.ok()) {
         return status;
     }
-    Expected<uint64_t> exptCommit = txn->commit();
-    if (!exptCommit.ok()) {
-        return exptCommit.status();
+    if (endTxn) {
+        Expected<uint64_t> exptCommit = txn->commit();
+        if (!exptCommit.ok()) {
+            return exptCommit.status();
+        }
     }
     return okReply == "" ? Command::fmtOK() : okReply;
 }
@@ -184,7 +210,7 @@ class SetCommand: public Command {
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.flags,
-                                     rk, rv, "", "");
+                                     rk, rv, server->checkKeyTypeForSet(), true, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
@@ -195,7 +221,7 @@ class SetCommand: public Command {
             txn = std::move(ptxn.value());
         }
         return setGeneric(kvstore, txn.get(), params.flags,
-            rk, rv, "", "");
+            rk, rv, server->checkKeyTypeForSet(), true, "", "");
     }
 } setCommand;
 
@@ -250,6 +276,8 @@ class SetexGeneralCommand: public Command {
                                      REDIS_SET_NO_FLAGS,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
+                                     true,
                                      "",
                                      "");
             if (result.ok()) {
@@ -357,6 +385,8 @@ class SetNxCommand: public Command {
                                      REDIS_SET_NX,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
+                                     true,
                                      Command::fmtOne(),
                                      Command::fmtZero());
             if (result.ok()) {
@@ -833,7 +863,10 @@ class GetSetGeneral: public Command {
             auto result = setGeneric(kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
-                                     rk, newValue.value(), "", "");
+                                     rk, newValue.value(),
+                                     server->checkKeyTypeForSet(),
+                                     true,
+                                     "", "");
             if (result.ok()) {
                 if (replyNewValue()) {
                     return std::move(newValue.value());
@@ -1622,6 +1655,8 @@ class BitopCommand: public Command {
                                      REDIS_SET_NO_FLAGS,
                                      rk,
                                      rv,
+                                     server->checkKeyTypeForSet(),
+                                     true,
                                      "",
                                      "");
             if (setRes.ok()) {
@@ -1641,16 +1676,11 @@ class BitopCommand: public Command {
     }
 } bitopCmd;
 
-// NOTE(deyukong): redis guarantees mset is atomic. not partially
-// visible to other clients, to implement this, we can take all
-// related stores' X lock to do this. we didnt do this for better
-// performance.
-// NOTE(deyukong): we commit kv one by one, so there is a chance
-// that this command partial successes.
-class MSetCommand: public Command {
+class MSetGenericCommand: public Command {
  public:
-    MSetCommand()
-        :Command("mset") {
+     MSetGenericCommand(const std::string& name, int flags)
+        :Command(name),
+        _flags(flags) {
     }
 
     ssize_t arity() const {
@@ -1670,16 +1700,29 @@ class MSetCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
+        auto& args = sess->getArgs();
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
+
+        auto server = sess->getServerEntry();
+        auto index = getKeysFromCommand(args);
+
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
+            args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
+        bool checkKeyTypeForSet = server->checkKeyTypeForSet();
+        // NOTE(vinchen): commit or rollback in one time
+        std::unordered_map<std::string, std::unique_ptr<Transaction>> txnMap;
+        bool failed = false;
 
         for (size_t i = 1; i < sess->getArgs().size(); i+= 2) {
             const std::string& key = sess->getArgs()[i];
             const std::string& val = sess->getArgs()[i+1];
-            auto server = sess->getServerEntry();
             INVARIANT(server != nullptr);
-            auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                    mgl::LockMode::LOCK_X);
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
             if (!expdb.ok()) {
                 return expdb.status();
             }
@@ -1689,34 +1732,85 @@ class MSetCommand: public Command {
                                 RecordType::RT_KV, key, "");
             RecordValue rv(val, RecordType::RT_KV);
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
-                auto ptxn = kvstore->createTransaction();
-                if (!ptxn.ok()) {
-                    return ptxn.status();
+                Transaction* txn = nullptr;
+                if (txnMap.count(kvstore->dbId()) > 0) {
+                    txn = txnMap[kvstore->dbId()].get();
+                } else {
+                    auto ptxn = kvstore->createTransaction();
+                    if (!ptxn.ok()) {
+                        return ptxn.status();
+                    }
+                    txnMap[kvstore->dbId()] = std::move(ptxn.value());
+                    txn = txnMap[kvstore->dbId()].get();
                 }
-                std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+                // NOTE(vinchen): commit one by one is not corect
                 auto result = setGeneric(kvstore,
-                                         txn.get(),
-                                         REDIS_SET_NO_FLAGS,
+                                         txn,
+                                         _flags,
                                          rk,
                                          rv,
-                                         "",
-                                         "");
+                                         checkKeyTypeForSet,
+                                         false,
+                                         "ok",
+                                         "abort");
                 if (result.ok()) {
-                    break;
-                }
-                if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                    return result.status();
-                }
-                if (i == RETRY_CNT - 1) {
-                    return result.status();
+                    if (result.value() == "ok") {
+                        break;
+                    } else {
+                        failed = true;
+                        goto END;
+                    }
+                } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    failed = true;
+                    goto END;
                 } else {
-                    continue;
+                    if (i == RETRY_CNT - 1) {
+                        failed = true;
+                        goto END;
+                    }
+                    else {
+                        continue;
+                    }
                 }
             }
         }
+
+        for (auto& txn : txnMap) {
+            Expected<uint64_t> exptCommit = txn.second->commit();
+            if (!exptCommit.ok()) {
+                LOG(ERROR) << "mset(nx) commit error at kvstore " << txn.first
+                    << ". It lead to partial success.";
+            }
+        }
+        END:
+        if (_flags == REDIS_SET_NO_FLAGS) {
+            // mset
+            return Command::fmtOK();
+        } else if (_flags == REDIS_SET_NX) {
+            // msetnx
+            return failed ? Command::fmtZero() : Command::fmtOne();
+        }
+        INVARIANT(0);
         return Command::fmtOK();
     }
+ private:
+    int _flags;
+};
+
+class MSetCommand : public MSetGenericCommand{
+ public:
+    MSetCommand() 
+        : MSetGenericCommand("mset", REDIS_SET_NO_FLAGS) {
+    }
 } msetCmd;
+
+class MSetNXCommand : public MSetGenericCommand {
+public:
+    MSetNXCommand()
+        : MSetGenericCommand("msetnx", REDIS_SET_NX) {
+    }
+} msetNxCmd;
 
 class MoveCommand: public Command {
  public:

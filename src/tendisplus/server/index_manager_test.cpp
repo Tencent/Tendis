@@ -189,7 +189,7 @@ TEST(IndexManager, scanJobRunning) {
     EXPECT_TRUE(setupEnv());
 
     auto cfg = makeServerParam();
-    auto server = std::make_shared<ServerEntry>();
+    auto server = std::make_shared<ServerEntry>(cfg);
 
     testScanJobRunning(server, cfg);
 
@@ -212,7 +212,7 @@ TEST(IndexManager, scanIndexAfterExpire) {
     });
 
     auto cfg = makeServerParam();
-    auto server = std::make_shared<ServerEntry>();
+    auto server = std::make_shared<ServerEntry>(cfg);
 
     testScanIndex(server, cfg, 2048*4, 10, true, &totalEnqueue, &totalDequeue);
 
@@ -242,7 +242,7 @@ TEST(IndexManager, scanIndexWhileExpire) {
     });
 
     auto cfg = makeServerParam();
-    auto server = std::make_shared<ServerEntry>();
+    auto server = std::make_shared<ServerEntry>(cfg);
 
     testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
 
@@ -291,7 +291,7 @@ TEST(IndexManager, singleJobRunning) {
     cfg->delJobCntIndexMgr = 8;
     cfg->pauseTimeIndexMgr = 1;
 
-    auto server = std::make_shared<ServerEntry>();
+    auto server = std::make_shared<ServerEntry>(cfg);
     testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
 
     server->stop();

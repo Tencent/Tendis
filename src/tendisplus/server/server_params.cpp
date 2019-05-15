@@ -205,8 +205,7 @@ Status ServerParams::parseFile(const std::string& filename) {
                     return{ ErrorCodes::ERR_PARSEOPT,
                       "invalid version-increase config" };
                 }
-                if (tokens[1] == "off" || tokens[1] == "false"
-                    || tokens[1] == "0") {
+                if (!isOptionOn(tokens[1])) {
                     versionIncrease = false;
                 }
             } else if (tokens[0] == "generallog") {
@@ -214,11 +213,19 @@ Status ServerParams::parseFile(const std::string& filename) {
                     return{ ErrorCodes::ERR_PARSEOPT,
                         "invalid version-increase config" };
                 }
-                if (tokens[1] == "on" || tokens[1] == "true"
-                    || tokens[1] == "1") {
+                if (isOptionOn(tokens[1])) {
                     generalLog = true;
                 }
+            } else if (tokens[0] == "checkkeytypeforsetcmd") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid samekeydifftype config" };
+                }
+                if (isOptionOn(tokens[1])) {
+                    checkKeyTypeForSet = true;
+                }
             }
+
         }
     } catch (const std::exception& ex) {
         std::stringstream ss;
@@ -250,6 +257,7 @@ ServerParams::ServerParams()
     generalLog = false;
     kvStoreCount = 10;
     chunkSize = 0x4000;  // same as rediscluster
+    checkKeyTypeForSet = false;
 }
 
 

@@ -4,6 +4,7 @@
 #include <vector>
 #include <limits>
 #include <algorithm>
+#include <random>
 #include "gtest/gtest.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -849,6 +850,291 @@ void testZset(std::shared_ptr<ServerEntry> svr) {
     }
 }
 
+void testPf(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    srand((unsigned int)time(NULL));
+
+    // pk not exists
+    {
+        // non-exist pf
+        sess.setArgs({ "pfcount", "nepf"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+
+        sess.setArgs({ "set", "nonpf", "1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({ "pfcount", "nonpf"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({ "pfadd", "pfempty"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+
+        sess.setArgs({ "pfadd", "pf1", "a", "b", "c" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "pfadd", "pf1", "a", "b", "c" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+
+        sess.setArgs({ "pfcount", "pf1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+        sess.setArgs({ "pfadd", "pf2", "", "e", "c" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "pfcount", "pf2"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+        sess.setArgs({ "pfcount", "pf1", "pf2" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
+
+        sess.setArgs({ "pfcount", "nepf", "nonpf", "pf1", "pf2" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({ "pfmerge", "nepf", "nonpf", "pf1", "pf2" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({ "pfmerge", "newpf", "pf1", "pf2" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
+
+        sess.setArgs({ "pfcount", "newpf"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
+
+        sess.setArgs({ "pfmerge", "pf1", "pf2" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
+
+        sess.setArgs({ "pfcount", "pf1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(5));
+
+        sess.setArgs({ "get", "pf1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        auto pf1 = expect.value();
+
+        sess.setArgs({ "get", "newpf"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        auto newpf = expect.value();
+
+        EXPECT_EQ(pf1, newpf);
+    }
+
+    // expire a pf
+    {
+        sess.setArgs({ "pfadd", "expf", "a" });
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "expire", "expf", "5" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({ "pfadd", "expf", "b" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        sess.setArgs({ "pfcount", "expf" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+    }
+
+    // pfdebug
+    {
+        sess.setArgs({ "pfadd", "pfxxx", "d", "b", "c" });
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "pfadd", "pfxxx2", "d", "b", "c" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "pfdebug", "encoding", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk("sparse"));
+
+        sess.setArgs({ "pfdebug", "decode", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk("Z:7292 v:1,1 Z:1143 v:1,1 Z:7343 v:1,1 Z:603"));    // NOLINT
+
+        sess.setArgs({ "pfdebug", "todense", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+
+        sess.setArgs({ "pfdebug", "encoding", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtBulk("dense"));
+
+        sess.setArgs({ "pfdebug", "todense", "pfxxx" });
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtZero());
+
+        sess.setArgs({ "pfdebug", "decode", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({ "pfdebug", "getreg", "pfxxx"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        auto getreg = expect.value();
+
+        sess.setArgs({ "pfdebug", "getreg", "pfxxx2"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        auto getreg1 = expect.value();
+
+        EXPECT_EQ(getreg, getreg1);
+    }
+
+    // pfselftest
+    for (uint32_t i = 0; i < 10; i++) {
+        sess.setArgs({ "pfselftest"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
+    }
+
+    ///////////////////////////////
+
+    // 1. init a two small dense pf
+    sess.setArgs({ "pfadd", "bigpf", "a", "b", "c" });
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "pfadd", "bigpf1", "a", "b", "c" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+
+    sess.setArgs({ "pfdebug", "todense", "bigpf" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "pfdebug", "todense", "bigpf1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    // 2. check whether they are the same
+    sess.setArgs({ "get", "bigpf" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    auto estr = expect.value();
+
+    sess.setArgs({ "get", "bigpf1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    auto estr1 = expect.value();
+
+    EXPECT_EQ(estr, estr1);
+
+
+
+    uint32_t count = 0;
+    std::vector<std::string> strvec;
+    for (uint32_t i = 0; i < 10000; i++) {
+        std::string rs = randomStr(genRand() % 20, true);
+        strvec.emplace_back(rs);
+        sess.setArgs({ "pfadd", "bigpf", rs });
+        // std::cout << "pfadd bigpf \"" << rs << "\"" << std::endl;
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (expect.value() == Command::fmtOne()) {
+            count++;
+        }
+    }
+
+    auto rng = std::default_random_engine{};
+    std::shuffle(strvec.begin(), strvec.end(), rng);
+
+    uint32_t count1 = 0;
+    for (auto rs : strvec) {
+        sess.setArgs({ "pfadd", "bigpf1", rs });
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        if (expect.value() == Command::fmtOne()) {
+            count1++;
+        }
+    }
+
+    // EXPECT_EQ(count, count1);
+
+    sess.setArgs({ "pfcount", "bigpf"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    auto ecnt = expect.value();
+
+    sess.setArgs({ "pfcount", "bigpf1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    auto ecnt1 = expect.value();
+
+    sess.setArgs({ "pfcount", "bigpf", "bigpf1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    auto ecnt2 = expect.value();
+
+    EXPECT_EQ(ecnt, ecnt1);
+    EXPECT_EQ(ecnt, ecnt2);
+
+    sess.setArgs({ "get", "bigpf"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    estr = expect.value();
+
+    sess.setArgs({ "get", "bigpf1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    estr1 = expect.value();
+
+    EXPECT_EQ(estr, estr1);
+}
+
 void testType(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
@@ -883,14 +1169,110 @@ void testType(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtBulk("hash"));
 }
 
+void testMset(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    std::stringstream ss;
+
+    sess.setArgs({ "mset", "ma", "0", "mb", "1", "mc", "2" });
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "ma", "mb", "mc", "md" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    Command::fmtNull(ss);
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "msetnx", "md", "-1", "ma", "1", "mb", "2", "mc", "3" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "mset", "ma", "10", "mb", "11", "mc", "20", "ma", "100" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "100");
+    Command::fmtBulk(ss, "11");
+    Command::fmtBulk(ss, "20");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "sadd", "sa", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // wrong type
+    sess.setArgs({ "mset", "sa", "100", "ma", "1000"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "100");
+    Command::fmtBulk(ss, "11");
+    Command::fmtBulk(ss, "20");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "msetnx", "n1", "1", "n2", "2" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "mget", "n1", "n2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    EXPECT_EQ(ss.str(), expect.value());
+
+}
+
 void testKV(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     // set
-    sess.setArgs({"set", "a", "1"});
+    sess.setArgs({ "del", "a"});
     auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"set", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
     sess.setArgs({"set", "a", "1"});
@@ -1550,6 +1932,64 @@ void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(ss1.str(), expect.value());
 }
 
+void testLockMulti(std::shared_ptr<ServerEntry> svr) {
+
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    for (int i = 0; i < 100; i++) {
+        std::vector<std::string> vec;
+        std::vector<int> index;
+
+        for (int j = 0; j < 100; j++) {
+            vec.emplace_back(randomStr(20, true));
+            index.emplace_back(j);
+        }
+
+        for (int j = 0; j < 100; j++) {
+            auto rng = std::default_random_engine{};
+            std::shuffle(vec.begin(), vec.end(), rng);
+
+            auto locklist = svr->getSegmentMgr()->getAllKeysLocked(&sess, vec, index, mgl::LockMode::LOCK_X);
+            EXPECT_TRUE(locklist.ok());
+
+            uint32_t id = 0;
+            std::string key = "";
+            auto list = std::move(locklist.value());
+            for (auto& l : list) {
+                if (l->getStoreId() == id) {
+                    EXPECT_TRUE(l->getKey() > key);
+                }
+
+                EXPECT_TRUE(l->getStoreId() >= id);
+
+                key = l->getKey();
+                id = l->getStoreId();
+            }
+        }
+    }
+
+}
+
+void testCheckKeyType(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "sadd", "ss", "a"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "set", "ss", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    sess.setArgs({ "set", "ss1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+}
+
 void testScan(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1600,6 +2040,7 @@ TEST(Command, common) {
     auto cfg = makeServerParam();
     auto server = makeServerEntry(cfg);
 
+    testPf(server);
     testList(server);
     testKV(server);
 
@@ -1639,11 +2080,39 @@ TEST(Command, tendisex) {
     EXPECT_TRUE(setupEnv());
     auto cfg = makeServerParam();
     // need 420000
-    cfg->chunkSize = 420000;
+    //cfg->chunkSize = 420000;
     auto server = makeServerEntry(cfg);
 
     testExtendedProtocol(server);
 }
+
+TEST(Command, checkKeyTypeForSetKV) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    cfg->checkKeyTypeForSet = true;
+    auto server = makeServerEntry(cfg);
+
+    testCheckKeyType(server);
+    testMset(server);
+}
+
+TEST(Command, lockMulti) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testLockMulti(server);
+
+}
+
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {

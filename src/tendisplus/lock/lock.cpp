@@ -109,10 +109,10 @@ KeyLock::KeyLock(uint32_t storeId, const std::string& key,
     }
     auto lockResult = _mgl->lock(target, mode, timeoutMs);
     INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
-    _sess->getCtx()->setKeylock(key, mode);
     if (_sess) {
         _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
+        _sess->getCtx()->setKeylock(key, mode);
     }
 }
 

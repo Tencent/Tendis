@@ -623,11 +623,6 @@ class SaddCommand: public Command {
         // }
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
                 genericSAdd(sess, kvstore, metaRk, args);
             if (s.ok()) {
@@ -756,11 +751,6 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
                 genericSRem(sess, kvstore, metaRk, valArgs);
             if (s.ok()) {
@@ -881,11 +871,6 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
             if (addStore.ok()) {
                 return addStore.value();
@@ -1098,11 +1083,6 @@ public:
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
             if (addStore.ok()) {
                 return addStore.value();
@@ -1225,11 +1205,6 @@ public:
         // directly remove member from source
         const std::string& formatRet = Command::fmtLongLong(1);
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = srcStore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> remRet = genericSRem(sess, srcStore, remRk, {member});
             if (remRet.ok()) {
                 if (remRet.value() == formatRet) {
@@ -1250,11 +1225,6 @@ public:
 
         // add member to dest
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = destStore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, {"","",member});
             if (addRet.ok()) {
                 return addRet.value();
@@ -1365,11 +1335,6 @@ public:
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
             if (addStore.ok()) {
                 return addStore.value();

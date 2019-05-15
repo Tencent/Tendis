@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
         google::FlushLogFiles(google::FATAL);
     });
 #endif
-    tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>();
+    tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>(params);
     s = tendisplus::gServer->startup(params);
     if (!s.ok()) {
         LOG(FATAL) << "server startup failed:" << s.toString();

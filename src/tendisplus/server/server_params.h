@@ -25,6 +25,10 @@ class ServerParams {
     std::string pidFile;
     bool versionIncrease;
     bool generalLog;
+    // false: For command "set a b", it don't check the type of 
+    // "a" and update it directly. It can make set() faster. 
+    // Default false. Redis layer can guarantee that it's safe
+    bool checkKeyTypeForSet;
 
     uint32_t chunkSize;
     uint32_t kvStoreCount;

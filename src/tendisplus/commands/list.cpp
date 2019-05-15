@@ -433,7 +433,7 @@ class RPopLPushCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 2;
     }
 
     int32_t keystep() const {
@@ -446,36 +446,33 @@ class RPopLPushCommand: public Command {
         const std::string& key2 = args[2];
 
         SessionCtx *pCtx = sess->getCtx();
+        auto server = sess->getServerEntry();
         INVARIANT(pCtx != nullptr);
 
-        // TODO(vinchen): key lock order should be same to avoid deadlock
-        bool sameKey = false;
-        if (key1 == key2) {
-            sameKey = true;
+        auto index = getKeysFromCommand(args);
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+            mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
         }
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key1, RecordType::RT_LIST_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
-                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtNull();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key1, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.ok()) {
+            return rv.status();
         }
-        if (!sameKey) {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
-            if (rv.status().code() != ErrorCodes::ERR_OK &&
-                    rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                    rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                return rv.status();
-            }
+        Expected<RecordValue> rv2 =
+            Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
+        if (rv2.status().code() != ErrorCodes::ERR_OK &&
+            rv2.status().code() != ErrorCodes::ERR_EXPIRED &&
+            rv2.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv2.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb1 = server->getSegmentMgr()->getDbWithKeyLock(sess, key1, mgl::LockMode::LOCK_X);
+        auto expdb1 = server->getSegmentMgr()->getDbHasLocked(sess, key1);
         if (!expdb1.ok()) {
             return expdb1.status();
         }
@@ -483,12 +480,8 @@ class RPopLPushCommand: public Command {
         // uint32_t storeId1 = expdb1.value().dbId;
         std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
-        mgl::LockMode lockMode = mgl::LockMode::LOCK_X;
-        if (sameKey) {
-            // if sameKey, the key has been locked
-            lockMode = mgl::LockMode::LOCK_NONE;
-        }
-        auto expdb2 = server->getSegmentMgr()->getDbWithKeyLock(sess, key2, lockMode);
+
+        auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
         if (!expdb2.ok()) {
             return expdb2.status();
         }
@@ -499,11 +492,6 @@ class RPopLPushCommand: public Command {
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore1->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
                 genericPop(sess, kvstore1, metaRk1, ListPos::LP_TAIL);
             if (s.ok()) {
@@ -524,12 +512,6 @@ class RPopLPushCommand: public Command {
             }
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore2->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
             auto s = genericPush(sess,
                                  kvstore2,
                                  metaRk2,

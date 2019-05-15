@@ -34,7 +34,7 @@ std::shared_ptr<ServerEntry> getGlobalServer();
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
-    ServerEntry();
+    ServerEntry(const std::shared_ptr<ServerParams>& cfg);
     ServerEntry(const ServerEntry&) = delete;
     ServerEntry(ServerEntry&&) = delete;
     Catalog* getCatalog();
@@ -81,6 +81,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> requirepass() const;
     const std::shared_ptr<std::string> masterauth() const;
     bool versionIncrease() const;
+    bool checkKeyTypeForSet() const { return _checkKeyTypeForSet; }
 
     std::vector<PStore> getStores() const;
 
@@ -96,6 +97,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getTsEp() const;
 
  private:
+    ServerEntry();
     void ftmc();
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
@@ -131,6 +133,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<std::string> _masterauth;
     bool _versionIncrease;
     bool _generalLog;
+    bool _checkKeyTypeForSet;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
 };
 }  // namespace tendisplus
