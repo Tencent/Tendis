@@ -33,7 +33,7 @@ Expected<bool> delGeneric(Session *sess, const std::string& key) {
 class DelCommand: public Command {
  public:
     DelCommand()
-        :Command("del") {
+        :Command("del", "w") {
     }
 
     ssize_t arity() const {

@@ -672,7 +672,7 @@ unsigned int keyHashSlot(const char *key, size_t keylen) {
 static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
 static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;
 
-unsigned int keyHashTwemproxy(std::string& key) {
+unsigned int keyHashTwemproxy(const std::string& key) {
     uint32_t hash = static_cast<uint32_t>(FNV_64_INIT);
     for (auto v : key) {
         uint32_t val = static_cast<uint32_t>(v);
@@ -682,6 +682,466 @@ unsigned int keyHashTwemproxy(std::string& key) {
 
     return hash;
 }
+
+int getCommandFlags(const char* sflags) {
+    int flags = 0;
+    const char *f = sflags;
+
+    while (*f != '\0') {
+        switch (*f) {
+        case 'w': flags |= CMD_WRITE; break;
+        case 'r': flags |= CMD_READONLY; break;
+        case 'm': flags |= CMD_DENYOOM; break;
+        case 'a': flags |= CMD_ADMIN; break;
+        case 'p': flags |= CMD_PUBSUB; break;
+        case 's': flags |= CMD_NOSCRIPT; break;
+        case 'R': flags |= CMD_RANDOM; break;
+        case 'S': flags |= CMD_SORT_FOR_SCRIPT; break;
+        case 'l': flags |= CMD_LOADING; break;
+        case 't': flags |= CMD_STALE; break;
+        case 'M': flags |= CMD_SKIP_MONITOR; break;
+        case 'k': flags |= CMD_ASKING; break;
+        case 'F': flags |= CMD_FAST; break;
+        default:
+            INVARIANT(0);
+            break;
+        }
+        f++;
+    }
+    return flags;
+}
+
+#define moduleCommand NULL
+#define getCommand NULL
+#define getvsnCommand NULL
+#define setCommand NULL
+#define casCommand NULL
+#define setnxCommand NULL
+#define setexCommand NULL
+#define psetexCommand NULL
+#define appendCommand NULL
+#define strlenCommand NULL
+#define delCommand NULL
+#define unlinkCommand NULL
+#define existsCommand NULL
+#define setbitCommand NULL
+#define getbitCommand NULL
+#define bitfieldCommand NULL
+#define setrangeCommand NULL
+#define getrangeCommand NULL
+#define getrangeCommand NULL
+#define incrCommand NULL
+#define decrCommand NULL
+#define increxCommand NULL
+#define mgetCommand NULL
+#define rpushCommand NULL
+#define lpushCommand NULL
+#define rpushxCommand NULL
+#define lpushxCommand NULL
+#define linsertCommand NULL
+#define rpopCommand NULL
+#define lpopCommand NULL
+#define brpopCommand NULL
+#define brpoplpushCommand NULL
+#define blpopCommand NULL
+#define llenCommand NULL
+#define lindexCommand NULL
+#define lsetCommand NULL
+#define lrangeCommand NULL
+#define ltrimCommand NULL
+#define lremCommand NULL
+#define rpoplpushCommand NULL
+#define saddCommand NULL
+#define sremCommand NULL
+#define smoveCommand NULL
+#define sismemberCommand NULL
+#define scardCommand NULL
+#define spopCommand NULL
+#define srandmemberCommand NULL
+#define sinterCommand NULL
+#define sinterstoreCommand NULL
+#define sunionCommand NULL
+#define sunionstoreCommand NULL
+#define sdiffCommand NULL
+#define sdiffstoreCommand NULL
+#define sinterCommand NULL
+#define sscanCommand NULL
+#define zaddCommand NULL
+#define zincrbyCommand NULL
+#define zremCommand NULL
+#define zremrangebyscoreCommand NULL
+#define zremrangebyrankCommand NULL
+#define zremrangebylexCommand NULL
+#define zunionstoreCommand NULL
+#define zinterstoreCommand NULL
+#define zrangeCommand NULL
+#define zrangebyscoreCommand NULL
+#define zrevrangebyscoreCommand NULL
+#define zrangebylexCommand NULL
+#define zrevrangebylexCommand NULL
+#define zcountCommand NULL
+#define zlexcountCommand NULL
+#define zrevrangeCommand NULL
+#define zcardCommand NULL
+#define zscoreCommand NULL
+#define zrankCommand NULL
+#define zrevrankCommand NULL
+#define zscanCommand NULL
+#define hsetCommand NULL
+#define hsetnxCommand NULL
+#define hgetCommand NULL
+#define hsetCommand NULL
+#define hmgetCommand NULL
+#define hincrbyCommand NULL
+#define hincrbyfloatCommand NULL
+#define hdelCommand NULL
+#define hlenCommand NULL
+#define hstrlenCommand NULL
+#define hkeysCommand NULL
+#define hvalsCommand NULL
+#define hgetallCommand NULL
+#define hmgetallCommand NULL
+#define hexistsCommand NULL
+#define hscanCommand NULL
+#define incrbyCommand NULL
+#define decrbyCommand NULL
+#define incrbyfloatCommand NULL
+#define getsetCommand NULL
+#define msetCommand NULL
+#define msetnxCommand NULL
+#define randomkeyCommand NULL
+#define selectCommand NULL
+#define swapdbCommand NULL
+#define moveCommand NULL
+#define renameCommand NULL
+#define renamenxCommand NULL
+#define expireCommand NULL
+#define expireatCommand NULL
+#define pexpireCommand NULL
+#define pexpireatCommand NULL
+#define keysCommand NULL
+#define scanCommand NULL
+#define dbsizeCommand NULL
+#define authCommand NULL
+#define pingCommand NULL
+#define echoCommand NULL
+#define saveCommand NULL
+#define bgsaveCommand NULL
+#define bgrewriteaofCommand NULL
+#define rotateAOFIncrLogCommand NULL
+#define shutdownCommand NULL
+#define lastsaveCommand NULL
+#define typeCommand NULL
+#define multiCommand NULL
+#define execCommand NULL
+#define discardCommand NULL
+#define syncCommand NULL
+#define syncCommand NULL
+#define replconfCommand NULL
+#define flushdbCommand NULL
+#define flushallCommand NULL
+#define sortCommand NULL
+#define infoCommand NULL
+#define monitorCommand NULL
+#define ttlCommand NULL
+#define touchCommand NULL
+#define pttlCommand NULL
+#define persistCommand NULL
+#define slaveofCommand NULL
+#define roleCommand NULL
+#define debugCommand NULL
+#define configCommand NULL
+#define subscribeCommand NULL
+#define unsubscribeCommand NULL
+#define psubscribeCommand NULL
+#define punsubscribeCommand NULL
+#define publishCommand NULL
+#define pubsubCommand NULL
+#define watchCommand NULL
+#define unwatchCommand NULL
+#define clusterCommand NULL
+#define restoreCommand NULL
+#define restoreCommand NULL
+#define migrateCommand NULL
+#define askingCommand NULL
+#define readonlyCommand NULL
+#define readwriteCommand NULL
+#define dumpCommand NULL
+#define objectCommand NULL
+#define memoryCommand NULL
+#define clientCommand NULL
+#define evalCommand NULL
+#define evalShaCommand NULL
+#define slowlogCommand NULL
+#define scriptCommand NULL
+#define timeCommand NULL
+#define bitopCommand NULL
+#define bitcountCommand NULL
+#define bitposCommand NULL
+#define waitCommand NULL
+#define commandCommand NULL
+#define geoaddCommand NULL
+#define georadiusCommand NULL
+#define georadiusroCommand NULL
+#define georadiusbymemberCommand NULL
+#define georadiusbymemberroCommand NULL
+#define geohashCommand NULL
+#define geoposCommand NULL
+#define geodistCommand NULL
+#define pfselftestCommand NULL
+#define pfaddCommand NULL
+#define pfcountCommand NULL
+#define pfmergeCommand NULL
+#define pfdebugCommand NULL
+#define securityWarningCommand NULL
+#define securityWarningCommand NULL
+#define latencyCommand NULL
+
+// take care of it!
+#define zunionInterGetKeys NULL
+#define zunionInterGetKeys NULL
+#define sortGetKeys NULL
+#define migrateGetKeys NULL
+#define evalGetKeys NULL
+#define evalGetKeys NULL
+#define georadiusGetKeys NULL
+#define georadiusGetKeys NULL
+#define georadiusGetKeys NULL
+#define georadiusGetKeys NULL
+
+struct redisCommand redisCommandTable[] = {
+    { "module",moduleCommand,-2,"as",0,NULL,0,0,0,0,0 },
+    { "get",getCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "getvsn",getvsnCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "set",setCommand,-3,"wm",0,NULL,1,1,1,0,0 },
+    { "cas",casCommand,-4,"wm",0,NULL,2,2,1,0,0 },
+    { "setnx",setnxCommand,3,"wmF",0,NULL,1,1,1,0,0 },
+    { "setex",setexCommand,4,"wm",0,NULL,1,1,1,0,0 },
+    { "psetex",psetexCommand,4,"wm",0,NULL,1,1,1,0,0 },
+    { "append",appendCommand,3,"wm",0,NULL,1,1,1,0,0 },
+    { "strlen",strlenCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "del",delCommand,-2,"w",0,NULL,1,-1,1,0,0 },
+    { "unlink",unlinkCommand,-2,"wF",0,NULL,1,-1,1,0,0 },
+    { "exists",existsCommand,-2,"rF",0,NULL,1,-1,1,0,0 },
+    { "setbit",setbitCommand,4,"wm",0,NULL,1,1,1,0,0 },
+    { "getbit",getbitCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "bitfield",bitfieldCommand,-2,"wm",0,NULL,1,1,1,0,0 },
+    { "setrange",setrangeCommand,4,"wm",0,NULL,1,1,1,0,0 },
+    { "getrange",getrangeCommand,4,"r",0,NULL,1,1,1,0,0 },
+    { "substr",getrangeCommand,4,"r",0,NULL,1,1,1,0,0 },
+    { "incr",incrCommand,2,"wmF",0,NULL,1,1,1,0,0 },
+    { "decr",decrCommand,2,"wmF",0,NULL,1,1,1,0,0 },
+    { "increx",increxCommand,3,"wmF",0,NULL,1,1,1,0,0 },
+    { "mget",mgetCommand,-2,"rF",0,NULL,1,-1,1,0,0 },
+    { "rpush",rpushCommand,-3,"wmF",0,NULL,1,1,1,0,0 },
+    { "lpush",lpushCommand,-3,"wmF",0,NULL,1,1,1,0,0 },
+    { "rpushx",rpushxCommand,-3,"wmF",0,NULL,1,1,1,0,0 },
+    { "lpushx",lpushxCommand,-3,"wmF",0,NULL,1,1,1,0,0 },
+    { "linsert",linsertCommand,5,"wm",0,NULL,1,1,1,0,0 },
+    { "rpop",rpopCommand,2,"wF",0,NULL,1,1,1,0,0 },
+    { "lpop",lpopCommand,2,"wF",0,NULL,1,1,1,0,0 },
+    { "brpop",brpopCommand,-3,"ws",0,NULL,1,-2,1,0,0 },
+    { "brpoplpush",brpoplpushCommand,4,"wms",0,NULL,1,2,1,0,0 },
+    { "blpop",blpopCommand,-3,"ws",0,NULL,1,-2,1,0,0 },
+    { "llen",llenCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "lindex",lindexCommand,3,"r",0,NULL,1,1,1,0,0 },
+    { "lset",lsetCommand,4,"wm",0,NULL,1,1,1,0,0 },
+    { "lrange",lrangeCommand,4,"r",0,NULL,1,1,1,0,0 },
+    { "ltrim",ltrimCommand,4,"w",0,NULL,1,1,1,0,0 },
+    { "lrem",lremCommand,4,"w",0,NULL,1,1,1,0,0 },
+    { "rpoplpush",rpoplpushCommand,3,"wm",0,NULL,1,2,1,0,0 },
+    { "sadd",saddCommand,-3,"wmF",0,NULL,1,1,1,0,0 },
+    { "srem",sremCommand,-3,"wF",0,NULL,1,1,1,0,0 },
+    { "smove",smoveCommand,4,"wF",0,NULL,1,2,1,0,0 },
+    { "sismember",sismemberCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "scard",scardCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "spop",spopCommand,-2,"wRF",0,NULL,1,1,1,0,0 },
+    { "srandmember",srandmemberCommand,-2,"rR",0,NULL,1,1,1,0,0 },
+    { "sinter",sinterCommand,-2,"rS",0,NULL,1,-1,1,0,0 },
+    { "sinterstore",sinterstoreCommand,-3,"wm",0,NULL,1,-1,1,0,0 },
+    { "sunion",sunionCommand,-2,"rS",0,NULL,1,-1,1,0,0 },
+    { "sunionstore",sunionstoreCommand,-3,"wm",0,NULL,1,-1,1,0,0 },
+    { "sdiff",sdiffCommand,-2,"rS",0,NULL,1,-1,1,0,0 },
+    { "sdiffstore",sdiffstoreCommand,-3,"wm",0,NULL,1,-1,1,0,0 },
+    { "smembers",sinterCommand,2,"rS",0,NULL,1,1,1,0,0 },
+    { "sscan",sscanCommand,-3,"rR",0,NULL,1,1,1,0,0 },
+    { "zadd",zaddCommand,-4,"wmF",0,NULL,1,1,1,0,0 },
+    { "zincrby",zincrbyCommand,4,"wmF",0,NULL,1,1,1,0,0 },
+    { "zrem",zremCommand,-3,"wF",0,NULL,1,1,1,0,0 },
+    { "zremrangebyscore",zremrangebyscoreCommand,4,"w",0,NULL,1,1,1,0,0 },
+    { "zremrangebyrank",zremrangebyrankCommand,4,"w",0,NULL,1,1,1,0,0 },
+    { "zremrangebylex",zremrangebylexCommand,4,"w",0,NULL,1,1,1,0,0 },
+    { "zunionstore",zunionstoreCommand,-4,"wm",0,zunionInterGetKeys,0,0,0,0,0 },
+    { "zinterstore",zinterstoreCommand,-4,"wm",0,zunionInterGetKeys,0,0,0,0,0 },
+    { "zrange",zrangeCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zrangebyscore",zrangebyscoreCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zrevrangebyscore",zrevrangebyscoreCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zrangebylex",zrangebylexCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zrevrangebylex",zrevrangebylexCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zcount",zcountCommand,4,"rF",0,NULL,1,1,1,0,0 },
+    { "zlexcount",zlexcountCommand,4,"rF",0,NULL,1,1,1,0,0 },
+    { "zrevrange",zrevrangeCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "zcard",zcardCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "zscore",zscoreCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "zrank",zrankCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "zrevrank",zrevrankCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "zscan",zscanCommand,-3,"rR",0,NULL,1,1,1,0,0 },
+    { "hset",hsetCommand,-4,"wmF",0,NULL,1,1,1,0,0 },
+    { "hsetnx",hsetnxCommand,4,"wmF",0,NULL,1,1,1,0,0 },
+    { "hget",hgetCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "hmset",hsetCommand,-4,"wmF",0,NULL,1,1,1,0,0 },
+    { "hmget",hmgetCommand,-3,"rF",0,NULL,1,1,1,0,0 },
+    { "hincrby",hincrbyCommand,4,"wmF",0,NULL,1,1,1,0,0 },
+    { "hincrbyfloat",hincrbyfloatCommand,4,"wmF",0,NULL,1,1,1,0,0 },
+    { "hdel",hdelCommand,-3,"wF",0,NULL,1,1,1,0,0 },
+    { "hlen",hlenCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "hstrlen",hstrlenCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "hkeys",hkeysCommand,2,"rS",0,NULL,1,1,1,0,0 },
+    { "hvals",hvalsCommand,2,"rS",0,NULL,1,1,1,0,0 },
+    { "hgetall",hgetallCommand,2,"r",0,NULL,1,1,1,0,0 },
+    { "hmgetall",hmgetallCommand,-2,"r",0,NULL,1,-1,1,0,0 },
+    { "hexists",hexistsCommand,3,"rF",0,NULL,1,1,1,0,0 },
+    { "hscan",hscanCommand,-3,"rR",0,NULL,1,1,1,0,0 },
+    { "incrby",incrbyCommand,3,"wmF",0,NULL,1,1,1,0,0 },
+    { "decrby",decrbyCommand,3,"wmF",0,NULL,1,1,1,0,0 },
+    { "incrbyfloat",incrbyfloatCommand,3,"wmF",0,NULL,1,1,1,0,0 },
+    { "getset",getsetCommand,3,"wm",0,NULL,1,1,1,0,0 },
+    { "mset",msetCommand,-3,"wm",0,NULL,1,-1,2,0,0 },
+    { "msetnx",msetnxCommand,-3,"wm",0,NULL,1,-1,2,0,0 },
+    { "randomkey",randomkeyCommand,1,"rR",0,NULL,0,0,0,0,0 },
+    { "select",selectCommand,2,"lF",0,NULL,0,0,0,0,0 },
+    { "swapdb",swapdbCommand,3,"wF",0,NULL,0,0,0,0,0 },
+    { "move",moveCommand,3,"wF",0,NULL,1,1,1,0,0 },
+    { "rename",renameCommand,3,"w",0,NULL,1,2,1,0,0 },
+    { "renamenx",renamenxCommand,3,"wF",0,NULL,1,2,1,0,0 },
+    { "expire",expireCommand,3,"wF",0,NULL,1,1,1,0,0 },
+    { "expireat",expireatCommand,3,"wF",0,NULL,1,1,1,0,0 },
+    { "pexpire",pexpireCommand,3,"wF",0,NULL,1,1,1,0,0 },
+    { "pexpireat",pexpireatCommand,3,"wF",0,NULL,1,1,1,0,0 },
+    { "keys",keysCommand,2,"rS",0,NULL,0,0,0,0,0 },
+    { "scan",scanCommand,-2,"rR",0,NULL,0,0,0,0,0 },
+    { "dbsize",dbsizeCommand,1,"rF",0,NULL,0,0,0,0,0 },
+    { "auth",authCommand,2,"sltF",0,NULL,0,0,0,0,0 },
+    { "ping",pingCommand,-1,"tF",0,NULL,0,0,0,0,0 },
+    { "echo",echoCommand,2,"F",0,NULL,0,0,0,0,0 },
+    { "save",saveCommand,1,"as",0,NULL,0,0,0,0,0 },
+    { "bgsave",bgsaveCommand,-1,"a",0,NULL,0,0,0,0,0 },
+    { "bgrewriteaof",bgrewriteaofCommand,1,"a",0,NULL,0,0,0,0,0 },
+    { "rotateaoflog",rotateAOFIncrLogCommand,1,"a",0,NULL,0,0,0,0,0 },
+    { "shutdown",shutdownCommand,-1,"alt",0,NULL,0,0,0,0,0 },
+    { "lastsave",lastsaveCommand,1,"RF",0,NULL,0,0,0,0,0 },
+    { "type",typeCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "multi",multiCommand,1,"sF",0,NULL,0,0,0,0,0 },
+    { "exec",execCommand,1,"sM",0,NULL,0,0,0,0,0 },
+    { "discard",discardCommand,1,"sF",0,NULL,0,0,0,0,0 },
+    { "sync",syncCommand,1,"ars",0,NULL,0,0,0,0,0 },
+    { "psync",syncCommand,3,"ars",0,NULL,0,0,0,0,0 },
+    { "replconf",replconfCommand,-1,"aslt",0,NULL,0,0,0,0,0 },
+    { "flushdb",flushdbCommand,-1,"w",0,NULL,0,0,0,0,0 },
+    { "flushall",flushallCommand,-1,"w",0,NULL,0,0,0,0,0 },
+    { "sort",sortCommand,-2,"wm",0,sortGetKeys,1,1,1,0,0 },
+    { "info",infoCommand,-1,"lt",0,NULL,0,0,0,0,0 },
+    { "monitor",monitorCommand,1,"as",0,NULL,0,0,0,0,0 },
+    { "ttl",ttlCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "touch",touchCommand,-2,"rF",0,NULL,1,1,1,0,0 },
+    { "pttl",pttlCommand,2,"rF",0,NULL,1,1,1,0,0 },
+    { "persist",persistCommand,2,"wF",0,NULL,1,1,1,0,0 },
+    { "slaveof",slaveofCommand,3,"ast",0,NULL,0,0,0,0,0 },
+    { "role",roleCommand,1,"lst",0,NULL,0,0,0,0,0 },
+    { "debug",debugCommand,-1,"as",0,NULL,0,0,0,0,0 },
+    { "config",configCommand,-2,"lat",0,NULL,0,0,0,0,0 },
+    { "subscribe",subscribeCommand,-2,"pslt",0,NULL,0,0,0,0,0 },
+    { "unsubscribe",unsubscribeCommand,-1,"pslt",0,NULL,0,0,0,0,0 },
+    { "psubscribe",psubscribeCommand,-2,"pslt",0,NULL,0,0,0,0,0 },
+    { "punsubscribe",punsubscribeCommand,-1,"pslt",0,NULL,0,0,0,0,0 },
+    { "publish",publishCommand,3,"pltF",0,NULL,0,0,0,0,0 },
+    { "pubsub",pubsubCommand,-2,"pltR",0,NULL,0,0,0,0,0 },
+    { "watch",watchCommand,-2,"sF",0,NULL,1,-1,1,0,0 },
+    { "unwatch",unwatchCommand,1,"sF",0,NULL,0,0,0,0,0 },
+    { "cluster",clusterCommand,-2,"a",0,NULL,0,0,0,0,0 },
+    { "restore",restoreCommand,-4,"wm",0,NULL,1,1,1,0,0 },
+    { "restore-asking",restoreCommand,-4,"wmk",0,NULL,1,1,1,0,0 },
+    { "migrate",migrateCommand,-6,"w",0,migrateGetKeys,0,0,0,0,0 },
+    { "asking",askingCommand,1,"F",0,NULL,0,0,0,0,0 },
+    { "readonly",readonlyCommand,1,"F",0,NULL,0,0,0,0,0 },
+    { "readwrite",readwriteCommand,1,"F",0,NULL,0,0,0,0,0 },
+    { "dump",dumpCommand,2,"r",0,NULL,1,1,1,0,0 },
+    { "object",objectCommand,-2,"r",0,NULL,2,2,2,0,0 },
+    { "memory",memoryCommand,-2,"r",0,NULL,0,0,0,0,0 },
+    { "client",clientCommand,-2,"as",0,NULL,0,0,0,0,0 },
+    { "eval",evalCommand,-3,"s",0,evalGetKeys,0,0,0,0,0 },
+    { "evalsha",evalShaCommand,-3,"s",0,evalGetKeys,0,0,0,0,0 },
+    { "slowlog",slowlogCommand,-2,"a",0,NULL,0,0,0,0,0 },
+    { "script",scriptCommand,-2,"s",0,NULL,0,0,0,0,0 },
+    { "time",timeCommand,1,"RF",0,NULL,0,0,0,0,0 },
+    { "bitop",bitopCommand,-4,"wm",0,NULL,2,-1,1,0,0 },
+    { "bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0 },
+    { "bitpos",bitposCommand,-3,"r",0,NULL,1,1,1,0,0 },
+    { "wait",waitCommand,3,"s",0,NULL,0,0,0,0,0 },
+    { "command",commandCommand,0,"lt",0,NULL,0,0,0,0,0 },
+    { "geoadd",geoaddCommand,-5,"wm",0,NULL,1,1,1,0,0 },
+    { "georadius",georadiusCommand,-6,"w",0,georadiusGetKeys,1,1,1,0,0 },
+    { "georadius_ro",georadiusroCommand,-6,"r",0,georadiusGetKeys,1,1,1,0,0 },
+    { "georadiusbymember",georadiusbymemberCommand,-5,"w",0,georadiusGetKeys,1,1,1,0,0 },               // NOLINT
+    { "georadiusbymember_ro",georadiusbymemberroCommand,-5,"r",0,georadiusGetKeys,1,1,1,0,0 },          // NOLINT
+    { "geohash",geohashCommand,-2,"r",0,NULL,1,1,1,0,0 },
+    { "geopos",geoposCommand,-2,"r",0,NULL,1,1,1,0,0 },
+    { "geodist",geodistCommand,-4,"r",0,NULL,1,1,1,0,0 },
+    { "pfselftest",pfselftestCommand,1,"a",0,NULL,0,0,0,0,0 },
+    { "pfadd",pfaddCommand,-2,"wmF",0,NULL,1,1,1,0,0 },
+    { "pfcount",pfcountCommand,-2,"r",0,NULL,1,-1,1,0,0 },
+    { "pfmerge",pfmergeCommand,-2,"wm",0,NULL,1,-1,1,0,0 },
+    { "pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0 },
+    { "post",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0 },
+    { "host:",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0 },
+    { "latency",latencyCommand,-2,"aslt",0,NULL,0,0,0,0,0 }
+};
+
+/* Populates the Redis Command Table starting from the hard coded list
+* we have on top of redis.c file. */
+void populateCommandTable(void) {
+    int j;
+    int numcommands = sizeof(redisCommandTable) / sizeof(struct redisCommand);
+
+    for (j = 0; j < numcommands; j++) {
+        struct redisCommand *c = redisCommandTable + j;
+        char *f = c->sflags;
+
+        c->flags = getCommandFlags(c->sflags);
+    }
+}
+
+struct redisCommand* getCommandFromTable(const char* cmd) {
+    int j;
+    int numcommands = sizeof(redisCommandTable) / sizeof(struct redisCommand);
+
+    for (j = 0; j < numcommands; j++) {
+        struct redisCommand *c = redisCommandTable + j;
+
+        if (!strcmp(c->name, cmd)) {
+            return c;
+        }
+    }
+
+    return NULL;
+}
+
+struct redisCommand* getCommandFromTable(size_t index) {
+    return redisCommandTable + index;
+    
+}
+size_t getCommandCount() {
+    return sizeof(redisCommandTable) / sizeof(struct redisCommand);
+}
+
+class dummyClass {
+ public:
+    dummyClass() {
+        populateCommandTable();
+    }
+};
+
+static dummyClass dummy;
 
 }  // namespace redis_port
 }  // namespace tendisplus

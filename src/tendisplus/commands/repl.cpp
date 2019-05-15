@@ -18,7 +18,7 @@ namespace tendisplus {
 class BackupCommand: public Command {
  public:
     BackupCommand()
-        :Command("backup") {
+        :Command("backup", "a") {
     }
 
     ssize_t arity() const {
@@ -67,7 +67,7 @@ class BackupCommand: public Command {
 class FullSyncCommand: public Command {
  public:
     FullSyncCommand()
-        :Command("fullsync") {
+        :Command("fullsync", "a") {
     }
 
     ssize_t arity() const {
@@ -96,7 +96,7 @@ class FullSyncCommand: public Command {
 class ToggleIncrSyncCommand: public Command {
  public:
     ToggleIncrSyncCommand()
-        :Command("toggleincrsync") {
+        :Command("toggleincrsync", "a") {
     }
 
     ssize_t arity() const {
@@ -133,7 +133,7 @@ class ToggleIncrSyncCommand: public Command {
 class IncrSyncCommand: public Command {
  public:
     IncrSyncCommand()
-        :Command("incrsync") {
+        :Command("incrsync", "a") {
     }
 
     ssize_t arity() const {
@@ -167,7 +167,7 @@ class IncrSyncCommand: public Command {
 class PullBinlogsCommand: public Command {
  public:
     PullBinlogsCommand()
-        :Command("pullbinlogs") {
+        :Command("pullbinlogs", "a") {
     }
 
     ssize_t arity() const {
@@ -265,7 +265,7 @@ class PullBinlogsCommand: public Command {
 class RestoreBinlogCommand: public Command {
  public:
     RestoreBinlogCommand()
-        :Command("restorebinlog") {
+        :Command("restorebinlog", "a") {
     }
 
     ssize_t arity() const {
@@ -379,7 +379,7 @@ class RestoreBinlogCommand: public Command {
 class ApplyBinlogsCommand: public Command {
  public:
     ApplyBinlogsCommand()
-        :Command("applybinlogs") {
+        :Command("applybinlogs", "a") {
     }
 
     ssize_t arity() const {
@@ -471,7 +471,7 @@ class ApplyBinlogsCommand: public Command {
 class SlaveofCommand: public Command {
  public:
     SlaveofCommand()
-        :Command("slaveof") {
+        :Command("slaveof", "ast") {
     }
 
     Expected<std::string> runSlaveofSomeOne(Session* sess) {

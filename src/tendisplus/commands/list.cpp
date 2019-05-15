@@ -151,7 +151,7 @@ Expected<std::string> genericPush(Session *sess,
 class LLenCommand: public Command {
  public:
     LLenCommand()
-        :Command("llen") {
+        :Command("llen", "rF") {
     }
 
     ssize_t arity() const {
@@ -200,8 +200,8 @@ class LLenCommand: public Command {
 
 class ListPopWrapper: public Command {
  public:
-    explicit ListPopWrapper(ListPos pos)
-        :Command(pos == ListPos::LP_HEAD ? "lpop" : "rpop"),
+    explicit ListPopWrapper(ListPos pos, const char* sflags)
+        :Command(pos == ListPos::LP_HEAD ? "lpop" : "rpop", sflags),
          _pos(pos) {
     }
 
@@ -288,21 +288,22 @@ class ListPopWrapper: public Command {
 class LPopCommand: public ListPopWrapper {
  public:
     LPopCommand()
-        :ListPopWrapper(ListPos::LP_HEAD) {
+        :ListPopWrapper(ListPos::LP_HEAD, "wF") {
     }
 } LPopCommand;
 
 class RPopCommand: public ListPopWrapper {
  public:
     RPopCommand()
-        :ListPopWrapper(ListPos::LP_TAIL) {
+        :ListPopWrapper(ListPos::LP_TAIL, "wF") {
     }
 } rpopCommand;
 
 class ListPushWrapper: public Command {
  public:
-    explicit ListPushWrapper(const std::string& name, ListPos pos, bool needExist)
-        :Command(name),
+    explicit ListPushWrapper(const std::string& name, const char* sflags,
+                            ListPos pos, bool needExist)
+        :Command(name, sflags),
          _pos(pos),
          _needExist(needExist) {
     }
@@ -392,28 +393,28 @@ class ListPushWrapper: public Command {
 class LPushCommand: public ListPushWrapper {
  public:
     LPushCommand()
-        :ListPushWrapper("lpush", ListPos::LP_HEAD, false) {
+        :ListPushWrapper("lpush", "wmF", ListPos::LP_HEAD, false) {
     }
 } lpushCommand;
 
 class RPushCommand: public ListPushWrapper {
  public:
     RPushCommand()
-        :ListPushWrapper("rpush", ListPos::LP_TAIL, false) {
+        :ListPushWrapper("rpush", "wmF", ListPos::LP_TAIL, false) {
     }
 } rpushCommand;
 
 class LPushXCommand: public ListPushWrapper {
  public:
     LPushXCommand()
-        :ListPushWrapper("lpushx", ListPos::LP_HEAD, true) {
+        :ListPushWrapper("lpushx", "wmF", ListPos::LP_HEAD, true) {
     }
 } lpushxCommand;
 
 class RPushXCommand: public ListPushWrapper {
  public:
     RPushXCommand()
-        :ListPushWrapper("rpushx", ListPos::LP_TAIL, true) {
+        :ListPushWrapper("rpushx", "wmF", ListPos::LP_TAIL, true) {
     }
 } rpushxCommand;
 
@@ -421,7 +422,7 @@ class RPushXCommand: public ListPushWrapper {
 class RPopLPushCommand: public Command {
  public:
     RPopLPushCommand()
-        :Command("rpoplpush") {
+        :Command("rpoplpush", "wm") {
     }
 
     ssize_t arity() const {
@@ -538,7 +539,7 @@ class RPopLPushCommand: public Command {
 class LtrimCommand: public Command {
  public:
     LtrimCommand()
-        :Command("ltrim") {
+        :Command("ltrim", "w") {
     }
 
     ssize_t arity() const {
@@ -706,7 +707,7 @@ class LtrimCommand: public Command {
 class LRangeCommand: public Command {
  public:
     LRangeCommand()
-        :Command("lrange") {
+        :Command("lrange", "r") {
     }
 
     ssize_t arity() const {
@@ -829,7 +830,7 @@ class LRangeCommand: public Command {
 class LIndexCommand: public Command {
  public:
     LIndexCommand()
-        :Command("lindex") {
+        :Command("lindex", "r") {
     }
 
     ssize_t arity() const {
@@ -922,7 +923,7 @@ class LIndexCommand: public Command {
 class LSetCommand: public Command {
  public:
     LSetCommand()
-        :Command("lset") {
+        :Command("lset", "wm") {
     }
 
     ssize_t arity() const {

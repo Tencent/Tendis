@@ -5,6 +5,8 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <list>
+#include <utility>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/network/session_ctx.h"
@@ -17,7 +19,7 @@ namespace tendisplus {
 class Command {
  public:
     using CmdMap = std::map<std::string, Command*>;
-    explicit Command(const std::string& name);
+    explicit Command(const std::string& name, const char* sflags);
     virtual ~Command() = default;
     virtual Expected<std::string> run(Session *sess) = 0;
 
@@ -27,12 +29,19 @@ class Command {
     virtual int32_t firstkey() const = 0;
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
-    virtual std::vector<int> getKeysFromCommand(const std::vector<std::string>& argv);
+    virtual bool sameWithRedis() const { return true; }
+    virtual std::vector<int> getKeysFromCommand(
+                    const std::vector<std::string>& argv);
     const std::string& getName() const;
     void incrCallTimes();
     void incrNanos(uint64_t);
     uint64_t getCallTimes() const;
     uint64_t getNanos() const;
+    bool isReadOnly() const;
+    bool isMultiKey() const;
+    bool isWriteable() const;
+    bool isAdmin() const;
+    int getFlags() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name
     static Expected<std::string> precheck(Session *sess);
@@ -45,7 +54,8 @@ class Command {
     // return ERR_OK if not expired
     // return ERR_EXPIRED if expired
     // return errors on other unexpected conditions
-    static Expected<RecordValue> expireKeyIfNeeded(Session *sess, const std::string& key, RecordType tp);
+    static Expected<RecordValue> expireKeyIfNeeded(Session *sess,
+                            const std::string& key, RecordType tp);
 
     static Expected<std::pair<std::string, std::list<Record>>>
     scan(const std::string& pk,
@@ -58,7 +68,8 @@ class Command {
     // return true if exists and delete succ
     // return false if not exists
     // return error if has error
-    static Expected<bool> delKeyChkExpire(Session *sess, const std::string& key, RecordType tp);
+    static Expected<bool> delKeyChkExpire(Session *sess,
+                            const std::string& key, RecordType tp);
 
     static std::string fmtErr(const std::string& s);
     static std::string fmtNull();
@@ -101,6 +112,10 @@ class Command {
                                  const TTLIndex *ictx = nullptr);
 
     const std::string _name;
+    /* Flags as string representation, one char per flag. */
+    const std::string _sflags;
+    /* The actual flags, obtained from the 'sflags' field. */
+    int _flags;
     // NOTE(deyukong): all commands have been loaded at startup time
     // so there is no need to acquire a lock here.
 

@@ -65,8 +65,8 @@ Expected<std::string> genericSRem(Session *sess,
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-                           RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-                           txn.get());
+              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+              txn.get());
     }
     if (!s.ok()) {
         return s;
@@ -122,8 +122,8 @@ Expected<std::string> genericSAdd(Session *sess,
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-                              txn.get());
+                    RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+                    txn.get());
     if (!s.ok()) {
         return s;
     }
@@ -134,7 +134,7 @@ Expected<std::string> genericSAdd(Session *sess,
 class SMembersCommand: public Command {
  public:
     SMembersCommand()
-        :Command("smembers") {
+        :Command("smembers", "rS") {
     }
 
     ssize_t arity() const {
@@ -235,7 +235,7 @@ class SMembersCommand: public Command {
 class SIsMemberCommand: public Command {
  public:
     SIsMemberCommand()
-        :Command("sismember") {
+        :Command("sismember", "rF") {
     }
 
     ssize_t arity() const {
@@ -312,7 +312,7 @@ class SIsMemberCommand: public Command {
 class SrandMemberCommand: public Command {
  public:
     SrandMemberCommand()
-        :Command("srandmember") {
+        :Command("srandmember", "rR") {
     }
 
     ssize_t arity() const {
@@ -483,7 +483,7 @@ class SrandMemberCommand: public Command {
 class SpopCommand: public Command {
  public:
     SpopCommand()
-        :Command("spop") {
+        :Command("spop", "wRF") {
     }
 
     ssize_t arity() const {
@@ -570,7 +570,7 @@ class SpopCommand: public Command {
 class SaddCommand: public Command {
  public:
     SaddCommand()
-        :Command("sadd") {
+        :Command("sadd", "wmF") {
     }
 
     ssize_t arity() const {
@@ -646,7 +646,7 @@ class SaddCommand: public Command {
 class ScardCommand: public Command {
  public:
     ScardCommand()
-        :Command("scard") {
+        :Command("scard", "rF") {
     }
 
     ssize_t arity() const {
@@ -694,7 +694,7 @@ class ScardCommand: public Command {
 class SRemCommand: public Command {
  public:
     SRemCommand()
-        :Command("srem") {
+        :Command("srem", "wF") {
     }
 
     ssize_t arity() const {
@@ -773,8 +773,8 @@ class SRemCommand: public Command {
 
 class SdiffgenericCommand: public Command {
  public:
-    SdiffgenericCommand(const std::string& name, bool store)
-        :Command(name),
+    SdiffgenericCommand(const std::string& name, const char* sflags, bool store)
+        :Command(name, sflags),
          _store(store) {
     }
 
@@ -894,7 +894,7 @@ class SdiffgenericCommand: public Command {
 class SdiffCommand: public SdiffgenericCommand {
  public:
     SdiffCommand()
-        :SdiffgenericCommand("sdiff", false) {
+        :SdiffgenericCommand("sdiff", "rS", false) {
     }
 
     ssize_t arity() const {
@@ -915,9 +915,9 @@ class SdiffCommand: public SdiffgenericCommand {
 } sdiffcmd;
 
 class SdiffStoreCommand: public SdiffgenericCommand {
-public:
+ public:
     SdiffStoreCommand()
-        :SdiffgenericCommand("sdiffstore", true) {
+        :SdiffgenericCommand("sdiffstore", "wm", true) {
     }
 
     ssize_t arity() const {
@@ -941,9 +941,9 @@ public:
 // which n is the cardinality of the smallest set
 // m is the num of sets input
 class SintergenericCommand: public Command {
-public:
-    SintergenericCommand(const std::string& name, bool store)
-            :Command(name),
+ public:
+    SintergenericCommand(const std::string& name, const char* sflags, bool store)
+            :Command(name, sflags),
              _store(store) {
     }
 
@@ -1098,14 +1098,15 @@ public:
         }
         return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
     }
-private:
+
+ private:
     bool _store;
 };
 
 class SinterCommand: public SintergenericCommand {
-public:
+ public:
     SinterCommand()
-        :SintergenericCommand("sinter", false) {
+        :SintergenericCommand("sinter", "rS", false) {
     }
 
     ssize_t arity() const {
@@ -1126,9 +1127,9 @@ public:
 } sinterCommand;
 
 class SinterStoreCommand: public SintergenericCommand {
-public:
+ public:
     SinterStoreCommand()
-        :SintergenericCommand("sinterstore", true) {
+        :SintergenericCommand("sinterstore", "wm", true) {
     }
 
     ssize_t arity() const {
@@ -1149,9 +1150,9 @@ public:
 } sinterstoreCommand;
 
 class SmoveCommand: public Command {
-public:
+ public:
     SmoveCommand()
-        :Command("smove") {
+        :Command("smove", "wF") {
     }
 
     ssize_t arity() const {
@@ -1225,7 +1226,7 @@ public:
 
         // add member to dest
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, {"","",member});
+            Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, {"", "" , member});
             if (addRet.ok()) {
                 return addRet.value();
             }
@@ -1244,12 +1245,12 @@ public:
 } smoveCommand;
 
 class SuniongenericCommand: public Command {
-public:
-    SuniongenericCommand(const std::string& name, bool store)
-        :Command(name),
+ public:
+    SuniongenericCommand(const std::string& name, const char* sflags, bool store)
+        :Command(name, sflags),
         _store(store) {
         }
-    
+
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         size_t startkey = _store ? 2 : 1;
@@ -1266,7 +1267,6 @@ public:
         for (size_t i = startkey; i < args.size(); ++i) {
             Expected<RecordValue> rv =
                     Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
-            
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 continue;
@@ -1284,7 +1284,6 @@ public:
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            
             auto cursor = txn->createCursor();
             RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], "");
             cursor->seek(fakeRk.prefixPk());
@@ -1308,7 +1307,7 @@ public:
         if (!_store) {
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, result.size());
-            for (const auto& v: result) {
+            for (const auto& v : result) {
                 Command::fmtBulk(ss, v);
             }
             return ss.str();
@@ -1351,14 +1350,14 @@ public:
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 
-private:
+ private:
     bool _store;
 };
 
 class SunionCommand: public SuniongenericCommand {
-public:
+ public:
     SunionCommand()
-        :SuniongenericCommand("sunion", false) {
+        :SuniongenericCommand("sunion", "rS", false) {
         }
 
     ssize_t arity() const {
@@ -1379,9 +1378,9 @@ public:
 } sunionCommand;
 
 class SunionStoreCommand: public SuniongenericCommand {
-public:
+ public:
     SunionStoreCommand()
-        :SuniongenericCommand("sunionstore", true) {
+        :SuniongenericCommand("sunionstore", "wm", true) {
     }
 
     ssize_t arity() const {

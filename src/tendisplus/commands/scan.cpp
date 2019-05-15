@@ -16,8 +16,8 @@
 namespace tendisplus {
 class ScanGenericCommand: public Command {
  public:
-    ScanGenericCommand(const std::string& name)
-        :Command(name) {
+    ScanGenericCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     virtual RecordType getRcdType() const = 0;
@@ -137,7 +137,7 @@ class ScanGenericCommand: public Command {
 class ZScanCommand: public ScanGenericCommand {
  public:
     ZScanCommand()
-        :ScanGenericCommand("zscan") {
+        :ScanGenericCommand("zscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -171,7 +171,7 @@ class ZScanCommand: public ScanGenericCommand {
 class SScanCommand: public ScanGenericCommand {
  public:
     SScanCommand()
-        :ScanGenericCommand("sscan") {
+        :ScanGenericCommand("sscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -199,7 +199,7 @@ class SScanCommand: public ScanGenericCommand {
 class HScanCommand: public ScanGenericCommand {
  public:
     HScanCommand()
-        :ScanGenericCommand("hscan") {
+        :ScanGenericCommand("hscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -228,7 +228,7 @@ class HScanCommand: public ScanGenericCommand {
 class ScanCommand: public Command {
  public:
     ScanCommand()
-        :Command("scan") {
+        :Command("scan", "rR") {
     }
 
     ssize_t arity() const {

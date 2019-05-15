@@ -144,8 +144,8 @@ Expected<std::string> expireGeneric(Session *sess,
 
 class GeneralExpireCommand: public Command {
  public:
-    GeneralExpireCommand(const std::string& name)
-        :Command(name) {
+    GeneralExpireCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     ssize_t arity() const {
@@ -190,35 +190,35 @@ class GeneralExpireCommand: public Command {
 class ExpireCommand: public GeneralExpireCommand {
  public:
     ExpireCommand()
-        :GeneralExpireCommand("expire") {
+        :GeneralExpireCommand("expire", "wF") {
     }
 } expireCmd;
 
 class PExpireCommand: public GeneralExpireCommand {
  public:
     PExpireCommand()
-        :GeneralExpireCommand("pexpire") {
+        :GeneralExpireCommand("pexpire", "wF") {
     }
 } pexpireCmd;
 
 class ExpireAtCommand: public GeneralExpireCommand {
  public:
     ExpireAtCommand()
-        :GeneralExpireCommand("expireat") {
+        :GeneralExpireCommand("expireat", "wF") {
     }
 } expireatCmd;
 
 class PExpireAtCommand: public GeneralExpireCommand {
  public:
     PExpireAtCommand()
-        :GeneralExpireCommand("pexpireat") {
+        :GeneralExpireCommand("pexpireat", "wF") {
     }
 } pexpireatCmd;
 
 class GenericTtlCommand: public Command {
  public:
-    GenericTtlCommand(const std::string& name)
-        :Command(name) {
+    GenericTtlCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -256,7 +256,7 @@ class GenericTtlCommand: public Command {
 class TtlCommand: public GenericTtlCommand {
  public:
     TtlCommand()
-        :GenericTtlCommand("ttl") {
+        :GenericTtlCommand("ttl", "rF") {
     }
 
     ssize_t arity() const {
@@ -279,7 +279,7 @@ class TtlCommand: public GenericTtlCommand {
 class PTtlCommand: public GenericTtlCommand {
  public:
     PTtlCommand()
-        :GenericTtlCommand("pttl") {
+        :GenericTtlCommand("pttl", "rF") {
     }
 
     ssize_t arity() const {
@@ -302,7 +302,7 @@ class PTtlCommand: public GenericTtlCommand {
 class ExistsCommand: public Command {
  public:
     ExistsCommand()
-        :Command("exists") {
+        :Command("exists", "rF") {
     }
 
     ssize_t arity() const {
@@ -343,7 +343,7 @@ class ExistsCommand: public Command {
 class TypeCommand: public Command {
  public:
     TypeCommand()
-        :Command("type") {
+        :Command("type", "rF") {
     }
 
     ssize_t arity() const {

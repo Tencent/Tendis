@@ -26,6 +26,50 @@ size_t popCount(const void *s, long count); // (NOLINT)
 
 int64_t bitPos(const void *s, size_t count, uint32_t bit);
 
+/* Command flags. Please check the command table defined in the redis.c file
+* for more information about the meaning of every flag. */
+#define CMD_WRITE (1<<0)            /* "w" flag */
+#define CMD_READONLY (1<<1)         /* "r" flag */
+#define CMD_DENYOOM (1<<2)          /* "m" flag */
+#define CMD_MODULE (1<<3)           /* Command exported by module. */
+#define CMD_ADMIN (1<<4)            /* "a" flag */
+#define CMD_PUBSUB (1<<5)           /* "p" flag */
+#define CMD_NOSCRIPT (1<<6)         /* "s" flag */
+#define CMD_RANDOM (1<<7)           /* "R" flag */
+#define CMD_SORT_FOR_SCRIPT (1<<8)  /* "S" flag */
+#define CMD_LOADING (1<<9)          /* "l" flag */
+#define CMD_STALE (1<<10)           /* "t" flag */
+#define CMD_SKIP_MONITOR (1<<11)    /* "M" flag */
+#define CMD_ASKING (1<<12)          /* "k" flag */
+#define CMD_FAST (1<<13)            /* "F" flag */
+#define CMD_MODULE_GETKEYS (1<<14)  /* Use the modules getkeys interface. */
+#define CMD_MODULE_NO_CLUSTER (1<<15) /* Deny on Redis Cluster. */
+
+#define CMD_MASK 0xFFFF
+
+int getCommandFlags(const char* sflags);
+struct redisCommand* getCommandFromTable(const char* cmd);
+struct redisCommand* getCommandFromTable(size_t index);
+size_t getCommandCount();
+
+typedef void redisCommandProc(void *c);
+typedef int *redisGetKeysProc(struct redisCommand *cmd, void **argv, int argc, int *numkeys);
+struct redisCommand {
+    char *name;
+    redisCommandProc *proc;
+    int arity;
+    char *sflags; /* Flags as string representation, one char per flag. */
+    int flags;    /* The actual flags, obtained from the 'sflags' field. */
+                  /* Use a function to determine keys arguments in a command line.
+                  * Used for Redis Cluster redirect. */
+    redisGetKeysProc *getkeys_proc;
+    /* What keys should be loaded in background when calling this command? */
+    int firstkey; /* The first argument that's a key (0 = no keys) */
+    int lastkey;  /* The last argument that's a key */
+    int keystep;  /* The step between first and last key */
+    long long microseconds, calls;
+};
+
 /* Input flags. */
 #define ZADD_NONE 0
 #define ZADD_INCR (1<<0)    /* Increment the score instead of setting it. */
@@ -67,7 +111,7 @@ int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
 int stringmatchlen(const char *pattern, int patternLen,
     const char *string, int stringLen, int nocase);
 unsigned int keyHashSlot(const char *key, size_t keylen);
-unsigned int keyHashTwemproxy(std::string& key);
+unsigned int keyHashTwemproxy(const std::string& key);
 
 /* Error codes */
 #define C_OK                    0

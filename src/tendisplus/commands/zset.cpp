@@ -338,8 +338,8 @@ class ZRemByRangeGenericCommand: public Command {
         LEX,
     };
 
-    ZRemByRangeGenericCommand(const std::string& name)
-        :Command(name) {
+    ZRemByRangeGenericCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
         if (name == "zremrangebyscore") {
             _type = Type::SCORE;
         } else if (name == "zremrangebylex") {
@@ -558,28 +558,28 @@ class ZRemByRangeGenericCommand: public Command {
 class ZRemRangeByRankCommand: public ZRemByRangeGenericCommand {
  public:
     ZRemRangeByRankCommand()
-        :ZRemByRangeGenericCommand("zremrangebyrank") {
+        :ZRemByRangeGenericCommand("zremrangebyrank", "w") {
     }
 } zremrangebyrankCmd;
 
 class ZRemRangeByScoreCommand: public ZRemByRangeGenericCommand {
  public:
     ZRemRangeByScoreCommand()
-        :ZRemByRangeGenericCommand("zremrangebyscore") {
+        :ZRemByRangeGenericCommand("zremrangebyscore", "w") {
     }
 } zremrangebyscoreCmd;
 
 class ZRemRangeByLexCommand: public ZRemByRangeGenericCommand {
  public:
     ZRemRangeByLexCommand()
-        :ZRemByRangeGenericCommand("zremrangebylex") {
+        :ZRemByRangeGenericCommand("zremrangebylex", "w") {
     }
 } zremrangebylexCmd;
 
 class ZRemCommand: public Command {
  public:
     ZRemCommand()
-        :Command("zrem") {
+        :Command("zrem", "wF") {
     }
 
     ssize_t arity() const {
@@ -658,7 +658,7 @@ class ZRemCommand: public Command {
 class ZCardCommand: public Command {
  public:
     ZCardCommand()
-        :Command("zcard") {
+        :Command("zcard", "rF") {
     }
 
     ssize_t arity() const {
@@ -702,7 +702,7 @@ class ZCardCommand: public Command {
 class ZRankCommand: public Command {
  public:
     ZRankCommand()
-        :Command("zrank") {
+        :Command("zrank", "rF") {
     }
 
     ssize_t arity() const {
@@ -760,7 +760,7 @@ class ZRankCommand: public Command {
 class ZRevRankCommand : public Command {
  public:
     ZRevRankCommand()
-        :Command("zrevrank") {
+        :Command("zrevrank", "rF") {
     }
 
     ssize_t arity() const {
@@ -817,7 +817,7 @@ class ZRevRankCommand : public Command {
 class ZIncrCommand: public Command {
  public:
     ZIncrCommand()
-        :Command("zincrby") {
+        :Command("zincrby", "wmF") {
     }
 
     ssize_t arity() const {
@@ -894,7 +894,7 @@ class ZIncrCommand: public Command {
 class ZCountCommand: public Command {
  public:
     ZCountCommand()
-        :Command("zcount") {
+        :Command("zcount", "rF") {
     }
 
     ssize_t arity() const {
@@ -1001,7 +1001,7 @@ class ZCountCommand: public Command {
 class ZlexCountCommand: public Command {
  public:
     ZlexCountCommand()
-        :Command("zlexcount") {
+        :Command("zlexcount", "rF") {
     }
 
     ssize_t arity() const {
@@ -1108,8 +1108,8 @@ class ZlexCountCommand: public Command {
 
 class ZRangeByScoreGenericCommand: public Command {
  public:
-    ZRangeByScoreGenericCommand(const std::string& name)
-            :Command(name) {
+    ZRangeByScoreGenericCommand(const std::string& name, const char* sflags)
+            :Command(name, sflags) {
         if (name == "zrangebyscore") {
             _rev = false;
         } else {
@@ -1247,21 +1247,21 @@ class ZRangeByScoreGenericCommand: public Command {
 class ZRangeByScoreCommand: public ZRangeByScoreGenericCommand {
  public:
     ZRangeByScoreCommand()
-        :ZRangeByScoreGenericCommand("zrangebyscore") {
+        :ZRangeByScoreGenericCommand("zrangebyscore", "r") {
     }
 } zrangebyscoreCmd;
 
 class ZRevRangeByScoreCommand: public ZRangeByScoreGenericCommand {
  public:
     ZRevRangeByScoreCommand()
-        :ZRangeByScoreGenericCommand("zrevrangebyscore") {
+        :ZRangeByScoreGenericCommand("zrevrangebyscore", "r") {
     }
 } zrevrangebyscoreCmd;
 
 class ZRangeByLexGenericCommand: public Command {
  public:
-    ZRangeByLexGenericCommand(const std::string& name)
-            :Command(name) {
+    ZRangeByLexGenericCommand(const std::string& name, const char* sflags)
+            :Command(name, sflags) {
         if (name == "zrangebylex") {
             _rev = false;
         } else {
@@ -1388,21 +1388,21 @@ class ZRangeByLexGenericCommand: public Command {
 class ZRangeByLexCommand: public ZRangeByLexGenericCommand {
  public:
     ZRangeByLexCommand()
-        :ZRangeByLexGenericCommand("zrangebylex") {
+        :ZRangeByLexGenericCommand("zrangebylex", "r") {
     }
 } zrangebylexCmd;
 
 class ZRevRangeByLexCommand: public ZRangeByLexGenericCommand {
  public:
     ZRevRangeByLexCommand()
-        :ZRangeByLexGenericCommand("zrevrangebylex") {
+        :ZRangeByLexGenericCommand("zrevrangebylex", "r") {
     }
 } zrevrangebylexCmd;
 
 class ZRangeGenericCommand: public Command {
  public:
-    ZRangeGenericCommand(const std::string& name)
-            :Command(name) {
+    ZRangeGenericCommand(const std::string& name, const char* sflags)
+            :Command(name, sflags) {
         if (name == "zrange") {
             _rev = false;
         } else {
@@ -1529,21 +1529,21 @@ class ZRangeGenericCommand: public Command {
 class ZRangeCommand: public ZRangeGenericCommand {
  public:
     ZRangeCommand()
-        :ZRangeGenericCommand("zrange") {
+        :ZRangeGenericCommand("zrange", "r") {
     }
 } zrangeCmd;
 
 class ZRevRangeCommand: public ZRangeGenericCommand {
  public:
     ZRevRangeCommand()
-        :ZRangeGenericCommand("zrevrange") {
+        :ZRangeGenericCommand("zrevrange", "r") {
     }
 } zrevrangeCmd;
 
 class ZScoreCommand: public Command {
  public:
     ZScoreCommand()
-        :Command("zscore") {
+        :Command("zscore", "rF") {
     }
 
     ssize_t arity() const {
@@ -1619,7 +1619,7 @@ class ZScoreCommand: public Command {
 class ZAddCommand: public Command {
  public:
     ZAddCommand()
-        :Command("zadd") {
+        :Command("zadd", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1760,7 +1760,7 @@ class ZAddCommand: public Command {
 class ZSetCountCommand : public Command {
  public:
     ZSetCountCommand()
-        :Command("zsetcount") {
+        :Command("zsetcount", "r") {
     }
 
     ssize_t arity() const {

@@ -60,7 +60,8 @@ Expected<std::string> hincrfloatGeneric(const RecordKey& metaRk,
     nowVal += inc;
     RecordValue newVal(::tendisplus::ldtos(nowVal, true),
                         RecordType::RT_HASH_ELE);
-    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
+                            ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -126,7 +127,8 @@ Expected<std::string> hincrGeneric(const RecordKey& metaRk,
     }
     nowVal += inc;
     RecordValue newVal(std::to_string(nowVal), RecordType::RT_HASH_ELE);
-    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
+    RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
+                            ttl, eValue);
     Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
     if (!setStatus.ok()) {
         return setStatus;
@@ -146,7 +148,7 @@ Expected<std::string> hincrGeneric(const RecordKey& metaRk,
 class HLenCommand: public Command {
  public:
     HLenCommand()
-        :Command("hlen") {
+        :Command("hlen", "rF") {
     }
 
     ssize_t arity() const {
@@ -193,7 +195,7 @@ class HLenCommand: public Command {
 class HExistsCommand: public Command {
  public:
     HExistsCommand()
-        :Command("hexists") {
+        :Command("hexists", "rF") {
     }
 
     ssize_t arity() const {
@@ -266,8 +268,8 @@ class HExistsCommand: public Command {
 
 class HAllCommand: public Command {
  public:
-    explicit HAllCommand(const std::string& name)
-        :Command(name) {
+    explicit HAllCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     ssize_t arity() const {
@@ -356,7 +358,7 @@ class HAllCommand: public Command {
 class HGetAllCommand: public HAllCommand {
  public:
     HGetAllCommand()
-        :HAllCommand("hgetall") {
+        :HAllCommand("hgetall", "r") {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -377,7 +379,7 @@ class HGetAllCommand: public HAllCommand {
 class HKeysCommand: public HAllCommand {
  public:
     HKeysCommand()
-        :HAllCommand("hkeys") {
+        :HAllCommand("hkeys", "rS") {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -397,7 +399,7 @@ class HKeysCommand: public HAllCommand {
 class HValsCommand: public HAllCommand {
  public:
     HValsCommand()
-        :HAllCommand("hvals") {
+        :HAllCommand("hvals", "rS") {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -416,8 +418,9 @@ class HValsCommand: public HAllCommand {
 
 class HGetRecordCommand: public Command {
  public:
-    explicit HGetRecordCommand(const std::string& name)
-        :Command(name) {
+    explicit HGetRecordCommand(const std::string& name,
+                                const char* sflags)
+        :Command(name, sflags) {
     }
 
     ssize_t arity() const {
@@ -489,7 +492,7 @@ class HGetRecordCommand: public Command {
 class HGetCommand: public HGetRecordCommand {
  public:
     HGetCommand()
-        :HGetRecordCommand("hget") {
+        :HGetRecordCommand("hget", "rF") {
     }
 
     ssize_t arity() const {
@@ -524,7 +527,7 @@ class HGetCommand: public HGetRecordCommand {
 class HStrlenCommand: public HGetRecordCommand {
  public:
     HStrlenCommand()
-        :HGetRecordCommand("hstrlen") {
+        :HGetRecordCommand("hstrlen", "rF") {
     }
 
     ssize_t arity() const {
@@ -560,7 +563,7 @@ class HStrlenCommand: public HGetRecordCommand {
 class HIncrByFloatCommand: public Command {
  public:
     HIncrByFloatCommand()
-        :Command("hincrbyfloat") {
+        :Command("hincrbyfloat", "wmF") {
     }
 
     ssize_t arity() const {
@@ -636,7 +639,7 @@ class HIncrByFloatCommand: public Command {
 class HIncrByCommand: public Command {
  public:
     HIncrByCommand()
-        :Command("hincrby") {
+        :Command("hincrby", "wmF") {
     }
 
     ssize_t arity() const {
@@ -710,8 +713,8 @@ class HIncrByCommand: public Command {
 
 class HMGetGeneric: public Command {
  public:
-    HMGetGeneric(const std::string& name)
-            :Command(name) {
+    HMGetGeneric(const std::string& name, const char* sflags)
+            :Command(name, sflags) {
         if (name == "hmget") {
             _returnVsn = false;
         } else {
@@ -824,14 +827,14 @@ class HMGetGeneric: public Command {
 class HMGetCommand: public HMGetGeneric {
  public:
     HMGetCommand()
-        :HMGetGeneric("hmget") {
+        :HMGetGeneric("hmget", "rF") {
     }
 } hmgetCmd;
 
 class HMGetVsnCommand: public HMGetGeneric {
  public:
     HMGetVsnCommand()
-        :HMGetGeneric("hmgetvsn") {
+        :HMGetGeneric("hmgetvsn", "r") {
     }
 } hmgetvsnCmd;
 
@@ -983,7 +986,7 @@ Status hmcas(Session *sess, const std::string& key,
 class HMCasV2Command: public Command {
  public:
     HMCasV2Command()
-        :Command("hmcasv2") {
+        :Command("hmcasv2", "w") {
     }
 
     ssize_t arity() const {
@@ -1065,7 +1068,7 @@ class HMCasV2Command: public Command {
 class HMCasCommand: public Command {
  public:
     HMCasCommand()
-        :Command("hmcas") {
+        :Command("hmcas", "w") {
     }
 
     ssize_t arity() const {
@@ -1136,7 +1139,7 @@ class HMCasCommand: public Command {
 class HMSetCommand: public Command {
  public:
     HMSetCommand()
-        :Command("hmset") {
+        :Command("hmset", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1197,7 +1200,8 @@ class HMSetCommand: public Command {
             }
         }
         hashMeta.setCount(hashMeta.getCount() + inserted);
-        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
+                                ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1266,13 +1270,9 @@ class HMSetCommand: public Command {
 
 class HSetGeneric: public Command {
  public:
-    HSetGeneric(const std::string& name, bool setNx)
-            :Command(name) {
+    HSetGeneric(const std::string& name, const char* sflags, bool setNx)
+            :Command(name, sflags) {
         _setNx = setNx;
-    }
-
-    ssize_t arity() const {
-        return 4;
     }
 
     int32_t firstkey() const {
@@ -1378,7 +1378,8 @@ class HSetGeneric: public Command {
             return Command::fmtZero();
         }
 
-        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META, ttl, eValue);
+        RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
+                            ttl, eValue);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
@@ -1402,21 +1403,27 @@ class HSetGeneric: public Command {
 class HSetCommand: public HSetGeneric {
  public:
     HSetCommand()
-        :HSetGeneric("hset", false) {
+        :HSetGeneric("hset", "wmF", false) {
+    }
+    ssize_t arity() const {
+        return 4;
     }
 } hsetCommand;
 
 class HSetNxCommand: public HSetGeneric {
  public:
     HSetNxCommand()
-        :HSetGeneric("hsetnx", true) {
+        :HSetGeneric("hsetnx", "wmF", true) {
+    }
+    ssize_t arity() const {
+        return 4;
     }
 } hsetNxCommand;
 
 class HDelCommand: public Command {
  public:
     HDelCommand()
-        :Command("hdel") {
+        :Command("hdel", "wF") {
     }
 
     ssize_t arity() const {
