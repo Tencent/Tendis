@@ -89,7 +89,11 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     std::list<std::unique_ptr<KeyLock>> locklist;
 
     if (mode == mgl::LockMode::LOCK_NONE) {
+#ifdef _WIN32
+        return std::move(locklist);
+#else
         return locklist;
+#endif
     }
     std::map<uint32_t, std::vector<std::string>> segList;
     for (auto iter = index.begin(); iter != index.end(); iter++) {
@@ -112,7 +116,11 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
         }
     }
 
+#ifdef _WIN32
+    return std::move(locklist);
+#else
     return locklist;
+#endif
 }
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,

@@ -271,4 +271,26 @@ void WorkLoad::delKeys(const KeysWritten& keys) {
         EXPECT_TRUE(expect.ok());
     }
 }
+
+int genRand() {
+    static int grand = 0;
+    uint32_t ms = nsSinceEpoch();
+    grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
+    return grand;
+}
+
+std::string randomStr(size_t s, bool maybeEmpty) {
+    if (s == 0) {
+        s = genRand() % 256;
+    }
+    if (!maybeEmpty) {
+        s++;
+    }
+    std::vector<uint8_t> v;
+    for (size_t i = 0; i < s; i++) {
+        v.emplace_back(genRand() % 256);
+    }
+    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+}
+
 }  // namespace tendisplus

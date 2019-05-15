@@ -31,6 +31,9 @@ std::shared_ptr<ServerEntry> makeServerEntry(const std::shared_ptr<ServerParams>
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);
 
+int genRand();
+std::string randomStr(size_t s, bool maybeEmpty);
+
 class WorkLoad {
  public:
     WorkLoad(TestServer server, TestSession session) :

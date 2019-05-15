@@ -348,6 +348,15 @@ class PfAddCommand: public Command {
         const std::string& key = args[1];
         uint64_t ttl = 0;
 
+        // NOTE(vinchen): LOCK before expired
+        SessionCtx *pCtx = sess->getCtx();
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         auto rv = Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
         if (rv.status().code() != ErrorCodes::ERR_OK &&
             rv.status().code() != ErrorCodes::ERR_EXPIRED &&
@@ -363,20 +372,7 @@ class PfAddCommand: public Command {
             ttl = rv.value().getTtl();
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-            mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-
         size_t updated = 0;
-        // TODO(comboqiu): the recordValue get from Command::expireKeyIfNeeded()
-        // is not reliable for write operation. Because the lock released after
-        // expireKeyIfNeeded().
-        // Maybe we should LOCK_X before expireKeyIfNeeded()
-        // For LOCK_S, we should discuss later
         auto hpll = std::make_unique<HPLLObject>();
         if (rv.ok()) {
             auto tmp = std::make_unique<HPLLObject>(rv.value().getValue());
@@ -440,7 +436,7 @@ class PfCountCommand : public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -450,6 +446,16 @@ class PfCountCommand : public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
 
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+        auto index = getKeysFromCommand(args);
+
+        // TODO(vinchen): should be LOCK_S
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
+                                args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
         /* Case 1: multi-key keys, cardinality of the union.
         *
         * When multiple keys are specified, PFCOUNT actually computes
@@ -536,7 +542,7 @@ class PfMergeCommand : public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -545,6 +551,17 @@ class PfMergeCommand : public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
+
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+        auto index = getKeysFromCommand(args);
+
+        // TODO(vinchen): should be LOCK_X and LOCK_S
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
+            args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
 
         bool useDense = false;
         auto hpll = std::make_unique<HPLLObject>(HLL_RAW);
@@ -589,11 +606,7 @@ class PfMergeCommand : public Command {
             return{ ErrorCodes::ERR_INVALID_HLL, "" };
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        auto server = sess->getServerEntry();
-        // TODO(comboqiu): should lock first
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-            mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -638,15 +651,15 @@ class PfSelfTestCommand : public Command {
     }
 
     int32_t firstkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t keystep() const {
-        return 1;
+        return 0;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -777,11 +790,11 @@ class PfDebugCommand : public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t keystep() const {
-        return 1;
+        return 0;
     }
 
     ///* PFDEBUG <subcommand> <key> ... args ..
@@ -789,11 +802,25 @@ class PfDebugCommand : public Command {
         const std::vector<std::string>& args = sess->getArgs();
 
         auto& key = args[2];
+        SessionCtx *pCtx = sess->getCtx();
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+           return expdb.status();
+        }
+
         uint64_t ttl = 0;
         bool updated = false;
         auto rv = Command::expireKeyIfNeeded(sess, key,
             RecordType::RT_KV);
         if (!rv.ok()) {
+            if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+                rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+                return{ ErrorCodes::ERR_INVALID_HLL,
+                    "The specified key does not exist" };
+            }
+ 
             return rv.status();
         }
 
@@ -801,19 +828,6 @@ class PfDebugCommand : public Command {
             return{ ErrorCodes::ERR_WRONG_TYPE, "" };
         }
         ttl = rv.value().getTtl();
-
-        SessionCtx *pCtx = sess->getCtx();
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-            mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            if (expdb.status().code() == ErrorCodes::ERR_NOTFOUND ||
-                expdb.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return{ ErrorCodes::ERR_INVALID_HLL,
-                        "The specified key does not exist" };
-            }
-            return expdb.status();
-        }
 
         auto keyHpll = std::make_unique<HPLLObject>(rv.value().getValue());  // NOLINT
 

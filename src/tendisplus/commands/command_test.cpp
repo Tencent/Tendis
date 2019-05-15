@@ -20,27 +20,6 @@
 
 namespace tendisplus {
 
-static int genRand() {
-    static int grand = 0;
-    uint32_t ms = nsSinceEpoch();
-    grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
-    return grand;
-}
-
-std::string randomStr(size_t s, bool maybeEmpty) {
-    if (s == 0) {
-        s = genRand() % 256;
-    }
-    if (!maybeEmpty) {
-        s++;
-    }
-    std::vector<uint8_t> v;
-    for (size_t i = 0; i < s; i++) {
-        v.emplace_back(genRand() % 256);
-    }
-    return std::string(reinterpret_cast<const char*>(v.data()), v.size());
-}
-
 void testList(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1190,14 +1169,110 @@ void testType(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtBulk("hash"));
 }
 
+void testMset(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    std::stringstream ss;
+
+    sess.setArgs({ "mset", "ma", "0", "mb", "1", "mc", "2" });
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "ma", "mb", "mc", "md" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.clear();
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    Command::fmtNull(ss);
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "msetnx", "md", "-1", "ma", "1", "mb", "2", "mc", "3" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.clear();
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "0");
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "mset", "ma", "10", "mb", "11", "mc", "20", "ma", "100" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.clear();
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "100");
+    Command::fmtBulk(ss, "11");
+    Command::fmtBulk(ss, "20");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "sadd", "sa", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // wrong type
+    sess.setArgs({ "mset", "sa", "100", "ma", "1000"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "mget", "md", "ma", "mb", "mc"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.clear();
+    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtNull(ss);
+    Command::fmtBulk(ss, "100");
+    Command::fmtBulk(ss, "11");
+    Command::fmtBulk(ss, "20");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "msetnx", "n1", "1", "n2", "2" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "mget", "n1", "n2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    ss.clear();
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "1");
+    Command::fmtBulk(ss, "2");
+    EXPECT_EQ(ss.str(), expect.value());
+
+}
+
 void testKV(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     // set
-    sess.setArgs({"set", "a", "1"});
+    sess.setArgs({ "del", "a"});
     auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"set", "a", "1"});
+    expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOK());
     sess.setArgs({"set", "a", "1"});
@@ -1857,6 +1932,46 @@ void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(ss1.str(), expect.value());
 }
 
+void testLockMulti(std::shared_ptr<ServerEntry> svr) {
+
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    for (int i = 0; i < 100; i++) {
+        std::vector<std::string> vec;
+        std::vector<int> index;
+
+        for (int j = 0; j < 100; j++) {
+            vec.emplace_back(randomStr(20, true));
+            index.emplace_back(i);
+        }
+
+        for (int j = 0; j < 100; j++) {
+            auto rng = std::default_random_engine{};
+            std::shuffle(vec.begin(), vec.end(), rng);
+
+            auto locklist = svr->getSegmentMgr()->getAllKeysLocked(&sess, vec, index, mgl::LockMode::LOCK_X);
+            EXPECT_TRUE(locklist.ok());
+
+            uint32_t id = 0;
+            std::string key = "";
+            auto list = std::move(locklist.value());
+            for (auto& l : list) {
+                if (l->getStoreId() == id) {
+                    EXPECT_TRUE(l->getKey() > key);
+                }
+
+                EXPECT_TRUE(l->getStoreId() >= id);
+
+                key = l->getKey();
+                id = l->getStoreId();
+            }
+        }
+    }
+
+}
+
 void testCheckKeyType(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1965,7 +2080,7 @@ TEST(Command, tendisex) {
     EXPECT_TRUE(setupEnv());
     auto cfg = makeServerParam();
     // need 420000
-    cfg->chunkSize = 420000;
+    //cfg->chunkSize = 420000;
     auto server = makeServerEntry(cfg);
 
     testExtendedProtocol(server);
@@ -1982,6 +2097,20 @@ TEST(Command, checkKeyTypeForSetKV) {
     auto server = makeServerEntry(cfg);
 
     testCheckKeyType(server);
+    testMset(server);
+}
+
+TEST(Command, lockMulti) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testLockMulti(server);
+
 }
 
 /*
