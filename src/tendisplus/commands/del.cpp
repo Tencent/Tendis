@@ -20,13 +20,11 @@ Expected<bool> delGeneric(Session *sess, const std::string& key) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     bool atLeastOne = false;
-    for (auto type : {RecordType::RT_DATA_META}) {
-        Expected<bool> done = Command::delKeyChkExpire(sess, key, type);
-        if (!done.ok()) {
-            return done.status();
-        }
-        atLeastOne |= done.value();
+    Expected<bool> done = Command::delKeyChkExpire(sess, key, RecordType::RT_DATA_META);
+    if (!done.ok()) {
+        return done.status();
     }
+    atLeastOne |= done.value();
     return atLeastOne;
 }
 
@@ -54,6 +52,14 @@ class DelCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
+
+        auto index = getKeysFromCommand(args);
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+            sess, args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         uint64_t total = 0;
         for (size_t i = 1; i < args.size(); ++i) {
             Expected<bool> done = delGeneric(sess, args[i]);

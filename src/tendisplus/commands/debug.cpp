@@ -486,6 +486,30 @@ class CommandListCommand: public Command {
             } else {
                 return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
             }
+        } else if (args.size() == 3) {
+            auto type = toLower(args[1]);
+            auto sflag = toLower(args[2]);
+            if (type == "incompatible") {
+                checkCompatible = true;
+            } else if (type == "notsupport") {
+                checkSupport = true;
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
+            }
+
+            if (sflag == "readonly") {
+                flag |= CMD_READONLY;
+            } else if (sflag == "write") {
+                flag |= CMD_WRITE;
+            } else if (sflag == "readwrite") {
+                flag |= CMD_READONLY | CMD_WRITE;
+            } else if (sflag == "admin") {
+                flag |= CMD_ADMIN;
+            } else if (sflag == "all") {
+                flag = CMD_MASK;
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
+            }
         } else {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "use commandlist [type]" };
         }

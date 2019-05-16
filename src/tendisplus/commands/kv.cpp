@@ -1592,6 +1592,20 @@ class BitopCommand: public Command {
         if (op == Op::BITOP_NOT && args.size() != 4) {
             return {ErrorCodes::ERR_PARSEPKT, "BITOP NOT must be called with a single source key."};  // NOLINT(whitespace/line_length)
         }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+
+        auto index = getKeysFromCommand(args);
+        // TODO(vinchen): should be LOCK_X and LOCK_S
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+            mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         size_t numKeys = args.size() - 3;
         size_t maxLen = 0;
         std::vector<std::string> vals;
@@ -1632,12 +1646,8 @@ class BitopCommand: public Command {
             result[i] = output;
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, targetKey,
-                                    mgl::LockMode::LOCK_X);
+
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1836,6 +1846,10 @@ class MoveCommand: public Command {
         return 1;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
         return {ErrorCodes::ERR_INTERNAL, "not support"};
     }
@@ -1863,7 +1877,20 @@ class RenameCommand: public Command {
         return 1;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        auto index = getKeysFromCommand(args);
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+            sess, args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         return {ErrorCodes::ERR_INTERNAL, "not support"};
     }
 } renameCmd;
@@ -1890,7 +1917,20 @@ class RenamenxCommand: public Command {
         return 1;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        auto index = getKeysFromCommand(args);
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+            sess, args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         return {ErrorCodes::ERR_INTERNAL, "not support"};
     }
 } renamenxCmd;

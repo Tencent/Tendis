@@ -26,6 +26,7 @@ enum class ListPos {
 Expected<std::string> genericPop(Session *sess,
                                  PStore kvstore,
                                  const RecordKey& metaRk,
+                                 const Expected<RecordValue>& rv,
                                  ListPos pos) {
     auto ptxn = kvstore->createTransaction();
     if (!ptxn.ok()) {
@@ -34,8 +35,6 @@ Expected<std::string> genericPop(Session *sess,
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     ListMetaValue lm(INITSEQ, INITSEQ);
-    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
-
     if (!rv.ok()) {
         return rv.status();
     }
@@ -91,6 +90,7 @@ Expected<std::string> genericPop(Session *sess,
 Expected<std::string> genericPush(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& metaRk,
+                                  const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args,
                                   ListPos pos,
                                   bool needExist) {
@@ -101,7 +101,6 @@ Expected<std::string> genericPush(Session *sess,
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     ListMetaValue lm(INITSEQ, INITSEQ);
-    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
     uint64_t ttl = 0;
 
     if (rv.ok()) {
@@ -110,7 +109,8 @@ Expected<std::string> genericPush(Session *sess,
             ListMetaValue::decode(rv.value().getValue());
         INVARIANT(exptLm.ok());
         lm = std::move(exptLm.value());
-    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND && 
+                rv.status().code() != ErrorCodes::ERR_EXPIRED) {
         return rv.status();
     } else if (needExist) {
         return Command::fmtZero();
@@ -228,22 +228,22 @@ class ListPopWrapper: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                        mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtNull();
-        }
-        if (!rv.ok()) {
+        } else if (!rv.ok()) {
             return rv.status();
         }
 
         // record exists
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
@@ -260,7 +260,7 @@ class ListPopWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPop(sess, kvstore, metaRk, _pos);
+                genericPop(sess, kvstore, metaRk, rv, _pos);
             if (s.ok()) {
                 return Command::fmtBulk(s.value());
             }
@@ -331,19 +331,24 @@ class ListPushWrapper: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
-        if (rv.status().code() != ErrorCodes::ERR_OK &&
-                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return rv.status();
-        }
-
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (_needExist) {
+                return Command::fmtZero();
+            }
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+        INVARIANT(rv.ok() || !_needExist);
+
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
         // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
@@ -363,7 +368,7 @@ class ListPushWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPush(sess, kvstore, metaRk, valargs, _pos, _needExist);
+                genericPush(sess, kvstore, metaRk, rv, valargs, _pos, _needExist);
             if (s.ok()) {
                 return s.value();
             }
@@ -474,8 +479,6 @@ class RPopLPushCommand: public Command {
             return expdb1.status();
         }
         RecordKey metaRk1(expdb1.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key1, "");
-        // uint32_t storeId1 = expdb1.value().dbId;
-        std::string metaKeyEnc1 = metaRk1.encode();
         PStore kvstore1 = expdb1.value().store;
 
         auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
@@ -483,14 +486,12 @@ class RPopLPushCommand: public Command {
             return expdb2.status();
         }
         RecordKey metaRk2(expdb2.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key2, "");
-        // uint32_t storeId2 = expdb2.value().dbId;
-        std::string metaKeyEnc2 = metaRk2.encode();
         PStore kvstore2 = expdb2.value().store;
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             Expected<std::string> s =
-                genericPop(sess, kvstore1, metaRk1, ListPos::LP_TAIL);
+                genericPop(sess, kvstore1, metaRk1, rv, ListPos::LP_TAIL);
             if (s.ok()) {
                 val = std::move(s.value());
                 break;
@@ -512,6 +513,7 @@ class RPopLPushCommand: public Command {
             auto s = genericPush(sess,
                                  kvstore2,
                                  metaRk2,
+                                 rv2,
                                  {val},
                                  ListPos::LP_HEAD,
                                  false /*need_exist*/);

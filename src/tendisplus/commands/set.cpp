@@ -776,6 +776,7 @@ class SdiffgenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
+        // TODO(vinchen): should be LOCK_S if _stroe = false
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
         if (!lock.ok()) {
             return lock.status();
