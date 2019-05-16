@@ -1105,8 +1105,6 @@ void populateCommandTable(void) {
 
     for (j = 0; j < numcommands; j++) {
         struct redisCommand *c = redisCommandTable + j;
-        char *f = c->sflags;
-
         c->flags = getCommandFlags(c->sflags);
     }
 }

@@ -512,7 +512,7 @@ class CommandListCommand: public Command {
                         snprintf(buf, sizeof(buf), "%s flags(%d,%d), arity(%d,%d), firstkey(%d,%d), lastkey(%d,%d), keystep(%d,%d) sameWithRedis(%s)",    // NOLINT
                             cmd.first.c_str(),
                             rcmd->flags, tcmd->getFlags(),
-                            rcmd->arity, tcmd->arity(),
+                            rcmd->arity, (int)tcmd->arity(),
                             rcmd->firstkey, tcmd->firstkey(),
                             rcmd->lastkey, tcmd->lastkey(),
                             rcmd->keystep, tcmd->keystep(),

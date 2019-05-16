@@ -55,10 +55,10 @@ size_t getCommandCount();
 typedef void redisCommandProc(void *c);
 typedef int *redisGetKeysProc(struct redisCommand *cmd, void **argv, int argc, int *numkeys);
 struct redisCommand {
-    char *name;
+    const char *name;
     redisCommandProc *proc;
     int arity;
-    char *sflags; /* Flags as string representation, one char per flag. */
+    const char *sflags; /* Flags as string representation, one char per flag. */
     int flags;    /* The actual flags, obtained from the 'sflags' field. */
                   /* Use a function to determine keys arguments in a command line.
                   * Used for Redis Cluster redirect. */

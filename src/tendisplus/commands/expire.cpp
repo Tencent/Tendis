@@ -325,7 +325,7 @@ class ExistsCommand: public Command {
         auto& args = sess->getArgs();
         size_t count = 0;
 
-        for (int j = 1; j < args.size(); j++) {
+        for (size_t j = 1; j < args.size(); j++) {
             const std::string& key = args[j];
 
             Expected<RecordValue> rv =
