@@ -1055,51 +1055,77 @@ class ObjectCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 3;
+        return -2;
     }
 
     int32_t firstkey() const {
-        return 0;
+        return 2;
     }
 
     int32_t lastkey() const {
-        return 0;
+        return 2;
     }
 
     int32_t keystep() const {
-        return 0;
+        return 2;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::string& key = sess->getArgs()[1];
+        auto& args = sess->getArgs();
+        const std::string& key = sess->getArgs()[2];
 
-        const std::map<RecordType, std::string> m = {
-            {RecordType::RT_KV, "raw"},
-            {RecordType::RT_LIST_META, "linkedlist"},
-            {RecordType::RT_HASH_META, "hashtable"},
-            {RecordType::RT_SET_META, "ziplist"},
-            {RecordType::RT_ZSET_META, "skiplist"},
-        };
-        for (auto type : {RecordType::RT_DATA_META}) {
+        if (args.size() == 2) {
+            std::stringstream ss;
+
+            Command::fmtLongLong(ss, 5);
+            Command::fmtBulk(ss,
+                "OBJECT <subcommand> key. Subcommands:");
+            Command::fmtBulk(ss,
+                "refcount -- Return the number of references of the value associated with the specified key. Always 1.");           // NOLINT
+            Command::fmtBulk(ss,
+                "encoding -- Return the kind of internal representation used in order to store the value associated with a key.");  // NOLINT
+            Command::fmtBulk(ss,
+                "idletime -- Return the idle time of the key, that is the approximated number of seconds elapsed since the last access to the key. Always 0");  // NOLINT
+            Command::fmtBulk(ss,
+                "freq -- Return the access frequency index of the key. The returned integer is proportional to the logarithm of the recent access frequency of the key. Always 0");  // NOLINT 
+            return ss.str();
+        } else if (args.size() == 3) {
+            const std::map<RecordType, std::string> m = {
+                {RecordType::RT_KV, "raw"},
+                {RecordType::RT_LIST_META, "linkedlist"},
+                {RecordType::RT_HASH_META, "hashtable"},
+                {RecordType::RT_SET_META, "ziplist"},
+                {RecordType::RT_ZSET_META, "skiplist"},
+            };
+
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, type);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                continue;
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtNull();
             } else if (!rv.ok()) {
                 return rv.status();
             }
             auto vt = rv.value().getRecordType();
-            if (sess->getArgs()[2] == "recount") {
+            if (args[1] == "refcount") {
                 return Command::fmtOne();
-            } else if (sess->getArgs()[2] == "encoding") {
+            }
+            else if (args[1] == "encoding") {
                 return Command::fmtBulk(m.at(vt));
-            } else if (sess->getArgs()[2] == "idletime") {
+            }
+            else if (args[1] == "idletime") {
+                return Command::fmtLongLong(0);
+            } else if (args[1] == "freq") {
                 return Command::fmtLongLong(0);
             }
-        }
-        return Command::fmtNull();
+        } 
+        return{ ErrorCodes::ERR_PARSEOPT,
+            "Unknown subcommand or wrong number of arguments. \
+                        Try OBJECT help" };
     }
 } objectCmd;
 

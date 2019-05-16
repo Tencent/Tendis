@@ -160,25 +160,24 @@ class SMembersCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return Command::fmtZeroBulkLen();
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
-        }
-
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        // TODO(vinchen): should be LOCK_S
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZeroBulkLen();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        // uint32_t storeId = expdb.value().dbId;
         std::string metaKeyEnc = metaRk.encode();
 
         // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
@@ -192,19 +191,11 @@ class SMembersCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
-
         ssize_t ssize = 0, cnt = 0;
-        if (rv.ok()) {
-            Expected<SetMetaValue> exptSm =
-                SetMetaValue::decode(rv.value().getValue());
-            INVARIANT(exptSm.ok());
-            ssize = exptSm.value().getCount();
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtZeroBulkLen();
-        } else {
-            return rv.status();
-        }
+        Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+        INVARIANT(exptSm.ok());
+        ssize = exptSm.value().getCount();
 
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, ssize);
@@ -227,6 +218,7 @@ class SMembersCommand: public Command {
             cnt += 1;
             Command::fmtBulk(ss, rcdkey.getSecondaryKey());
         }
+        // TODO(vinchen)
         INVARIANT(cnt == ssize);
         return ss.str();
     }
@@ -329,6 +321,10 @@ class SrandMemberCommand: public Command {
 
     int32_t keystep() const {
         return 1;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -509,19 +505,21 @@ class SpopCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-        if (rv.status().code() != ErrorCodes::ERR_OK &&
-                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return rv.status();
-        }
-
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
         std::string metaKeyEnc = metaRk.encode();
@@ -592,10 +590,6 @@ class SaddCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-
-        if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
@@ -716,10 +710,6 @@ class SRemCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
-
-        if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);

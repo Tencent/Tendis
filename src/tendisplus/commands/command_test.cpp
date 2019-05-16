@@ -358,11 +358,29 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
                       std::to_string(i+1)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
         sess.setArgs({"hlen", "hmsetkey"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
     }
+
+    for (uint32_t i = 0; i < 1000; i++) {
+        sess.setArgs({"hset",
+                      "hsetkey1",
+                      std::to_string(i),
+                      std::to_string(i),
+                      std::to_string(i+1),
+                      std::to_string(i+1)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+        sess.setArgs({"hlen", "hsetkey1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
+    }
+
 }
 
 void testZset2(std::shared_ptr<ServerEntry> svr) {
@@ -1337,6 +1355,10 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtNull());
 
     // exists
+    sess.setArgs({"set", "expire_test_key0", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
     sess.setArgs({"set", "expire_test_key", "a"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -1345,6 +1367,12 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({"exists", "expire_test_key", "expire_test_key0", "expire_test_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+	
     sess.setArgs({"expire", "expire_test_key", "1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -1354,6 +1382,21 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
+	
+	// object
+	sess.setArgs({"object", "help"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+	
+	sess.setArgs({"object", "encoding", "expire_test_key0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("raw"));
+	
+	sess.setArgs({"object", "encoding", "expire_test_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
 
     // incrdecr
     sess.setArgs({"incr", "incrdecrkey"});

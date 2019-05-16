@@ -1779,6 +1779,10 @@ class ZSetCountCommand : public Command {
         return 0;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
         // const std::vector<std::string>& args = sess->getArgs();
 

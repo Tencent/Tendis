@@ -1513,7 +1513,7 @@ class MGetCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -1530,13 +1530,9 @@ class MGetCommand: public Command {
             const std::string &key = sess->getArgs()[i];
             Expected<RecordValue> rv =
                     Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                Command::fmtNull(ss);
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                Command::fmtNull(ss);
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+                rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
                 Command::fmtNull(ss);
                 continue;
             } else if (!rv.status().ok()) {

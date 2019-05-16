@@ -328,10 +328,6 @@ class ListPushWrapper: public Command {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
-        if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed batch lim"};
-        }
-
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
@@ -940,6 +936,10 @@ class LSetCommand: public Command {
 
     int32_t keystep() const {
         return 1;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {

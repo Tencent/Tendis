@@ -236,15 +236,19 @@ class ScanCommand: public Command {
     }
 
     int32_t firstkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t keystep() const {
-        return 1;
+        return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     // NOTE(deyukong): tendis did not impl this api
