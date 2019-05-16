@@ -609,6 +609,10 @@ std::string Command::fmtLongLong(int64_t v) {
     return ss.str();
 }
 
+std::string Command::fmtBusyKey() {
+    return "-BUSYKEY Target key name already exists.\r\n";
+}
+
 std::string Command::fmtZeroBulkLen() {
     return "*0\r\n";
 }

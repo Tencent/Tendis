@@ -2032,6 +2032,9 @@ class GetBitCommand: public GetGenericCmd {
 
         byte = pos >> 3;
         bit = 7 - (pos & 0x7);
+        if (byte > bitValue.size()) {
+            return Command::fmtZero();
+        }
         bitval = static_cast<uint8_t>(bitValue[byte]) & (1 << bit);
         return bitval ? Command::fmtOne() : Command::fmtZero();
     }
