@@ -365,20 +365,29 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
     }
 
+    sess.setArgs({"hset", "hsetkey1",
+            std::to_string(-1),
+            std::to_string(-1),
+            std::to_string(0),
+            std::to_string(0)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+
     for (uint32_t i = 0; i < 1000; i++) {
         sess.setArgs({"hset",
                       "hsetkey1",
                       std::to_string(i),
-                      std::to_string(i),
+                      std::to_string(i*i),
                       std::to_string(i+1),
                       std::to_string(i+1)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
         sess.setArgs({"hlen", "hsetkey1"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+3));
     }
 
 }

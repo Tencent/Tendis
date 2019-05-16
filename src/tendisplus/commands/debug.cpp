@@ -1103,7 +1103,7 @@ class ObjectCommand: public Command {
             };
 
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtNull();

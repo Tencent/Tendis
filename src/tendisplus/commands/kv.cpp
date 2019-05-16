@@ -904,15 +904,15 @@ class CasCommand: public GetSetGeneral {
     }
 
     ssize_t arity() const {
-        return -4;
+        return 4;
     }
 
     int32_t firstkey() const {
-        return 2;
+        return 1;
     }
 
     int32_t lastkey() const {
-        return 2;
+        return 1;
     }
 
     int32_t keystep() const {

@@ -914,7 +914,7 @@ struct redisCommand redisCommandTable[] = {
     { "get",getCommand,2,"rF",0,NULL,1,1,1,0,0 },
     { "getvsn",getvsnCommand,2,"rF",0,NULL,1,1,1,0,0 },
     { "set",setCommand,-3,"wm",0,NULL,1,1,1,0,0 },
-    { "cas",casCommand,-4,"wm",0,NULL,2,2,1,0,0 },
+    { "cas",casCommand,4,"wm",0,NULL,1,1,1,0,0 },
     { "setnx",setnxCommand,3,"wmF",0,NULL,1,1,1,0,0 },
     { "setex",setexCommand,4,"wm",0,NULL,1,1,1,0,0 },
     { "psetex",psetexCommand,4,"wm",0,NULL,1,1,1,0,0 },
