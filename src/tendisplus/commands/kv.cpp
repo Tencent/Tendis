@@ -830,6 +830,14 @@ class GetSetGeneral: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         // expire if possible
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
@@ -839,13 +847,6 @@ class GetSetGeneral: public Command {
             return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                            mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         PStore kvstore = expdb.value().store;
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                      RecordType::RT_KV, key, "");
@@ -856,13 +857,8 @@ class GetSetGeneral: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
-            if (!eValue.ok()
-                    && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                return eValue.status();
-            }
             const Expected<RecordValue>& newValue =
-                                newValueFromOld(sess, eValue);
+                                newValueFromOld(sess, rv);
             if (!newValue.ok()) {
                 return newValue.status();
             }
@@ -877,8 +873,8 @@ class GetSetGeneral: public Command {
                 if (replyNewValue()) {
                     return std::move(newValue.value());
                 } else {
-                    return eValue.ok() ?
-                            std::move(eValue.value()) :
+                    return rv.ok() ?
+                            std::move(rv.value()) :
                             RecordValue("", RecordType::RT_KV);
                 }
             }
@@ -991,7 +987,7 @@ class AppendCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return std::move(
-                    RecordValue(std::move(cat), type, ttl));
+                    RecordValue(std::move(cat), type, ttl, oldValue));
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1057,7 +1053,7 @@ class SetRangeCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(cat), type, ttl);
+        return RecordValue(std::move(cat), type, ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1140,7 +1136,7 @@ class SetBitCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(tomodify), type, ttl);
+        return RecordValue(std::move(tomodify), type, ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1323,7 +1319,7 @@ class IncrbyfloatCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(::tendisplus::ldtos(newSum.value(), true),
-                        type, ttl);
+                        type, ttl, oldValue);
     }
 } incrbyfloatCmd;
 
@@ -1600,8 +1596,8 @@ class BitopCommand: public Command {
 
         auto index = getKeysFromCommand(args);
         // TODO(vinchen): should be LOCK_X and LOCK_S
-        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
-            mgl::LockMode::LOCK_X);
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args,
+            index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {
             return locklist.status();
         }
@@ -1885,7 +1881,7 @@ class RenameCommand: public Command {
         const auto& args = sess->getArgs();
 
         auto index = getKeysFromCommand(args);
-        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(  // NOLINT
             sess, args, index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {
             return locklist.status();
@@ -1925,7 +1921,7 @@ class RenamenxCommand: public Command {
         const auto& args = sess->getArgs();
 
         auto index = getKeysFromCommand(args);
-        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(      // NOLINT
             sess, args, index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {
             return locklist.status();

@@ -273,7 +273,7 @@ void WorkLoad::delKeys(const KeysWritten& keys) {
 }
 
 int genRand() {
-    static int grand = 0;
+    int grand = 0;
     uint32_t ms = nsSinceEpoch();
     grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
     return grand;

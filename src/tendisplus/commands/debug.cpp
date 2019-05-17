@@ -1100,7 +1100,6 @@ class ObjectCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         auto& args = sess->getArgs();
-        const std::string& key = sess->getArgs()[2];
 
         if (args.size() == 2) {
             std::stringstream ss;
@@ -1118,6 +1117,7 @@ class ObjectCommand: public Command {
                 "freq -- Return the access frequency index of the key. The returned integer is proportional to the logarithm of the recent access frequency of the key. Always 0");  // NOLINT 
             return ss.str();
         } else if (args.size() == 3) {
+            const std::string& key = sess->getArgs()[2];
             const std::map<RecordType, std::string> m = {
                 {RecordType::RT_KV, "raw"},
                 {RecordType::RT_LIST_META, "linkedlist"},

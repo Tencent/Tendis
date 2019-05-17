@@ -1111,6 +1111,19 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
     return RecordValue::decode(s.value());
 }
 
+Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
+    Transaction *txn, RecordType valueType) {
+    auto& eValue = getKV(key, txn);
+
+    if (eValue.ok()) {
+        if (eValue.value().getRecordType() != valueType) {
+            return{ ErrorCodes::ERR_WRONG_TYPE, "" };
+        }
+    }
+
+    return eValue;
+}
+
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction *txn) {

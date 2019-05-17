@@ -109,7 +109,7 @@ Expected<std::string> genericPush(Session *sess,
             ListMetaValue::decode(rv.value().getValue());
         INVARIANT(exptLm.ok());
         lm = std::move(exptLm.value());
-    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND && 
+    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED) {
         return rv.status();
     } else if (needExist) {
@@ -245,13 +245,7 @@ class ListPopWrapper: public Command {
 
         // record exists
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        // uint32_t storeId = expdb.value().dbId;
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -350,12 +344,7 @@ class ListPushWrapper: public Command {
         INVARIANT(rv.ok() || !_needExist);
 
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        // uint32_t storeId = expdb.value().dbId;
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         std::vector<std::string> valargs;
         for (size_t i = 2; i < args.size(); ++i) {
@@ -634,41 +623,27 @@ class LtrimCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return Command::fmtOK();
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtOK();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
-        }
-
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
-        if (!rv.ok()) {
-            if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            }
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtOK();
+        } else if (!rv.ok()) {
             return rv.status();
         }
 
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
+        PStore kvstore = expdb.value().store;
+
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptLm.ok());
+        if (!exptLm.ok()) {
+            return exptLm.status();
+        }
 
         const ListMetaValue& lm = exptLm.value();
         uint64_t head = lm.getHead();
@@ -755,20 +730,14 @@ class LRangeCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_LIST_META);
         if (!rv.ok()) {
             if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtZeroBulkLen();
@@ -857,6 +826,14 @@ class LIndexCommand: public Command {
             return {ErrorCodes::ERR_PARSEOPT, ex.what()};
         }
 
+        SessionCtx *pCtx = sess->getCtx();
+        auto server = sess->getServerEntry();
+        // TODO(vinchen): should be LOCK_S
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -867,20 +844,9 @@ class LIndexCommand: public Command {
             return rv.status();
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         PStore kvstore = expdb.value().store;
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //    return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {

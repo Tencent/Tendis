@@ -96,13 +96,7 @@ class ScanGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
                             getRcdType(), key, "");
-        // uint32_t storeId = expdb.value().dbId;
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
