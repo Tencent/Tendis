@@ -1159,11 +1159,11 @@ class SmoveCommand: public Command {
             return rv.status();
         }
 
-        auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, args[1]);
+        auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, source);
         if (!srcDb.ok()) {
             return srcDb.status();
         }
-        auto destDb = server->getSegmentMgr()->getDbHasLocked(sess, args[2]);
+        auto destDb = server->getSegmentMgr()->getDbHasLocked(sess, dest);
         if (!destDb.ok()) {
             return destDb.status();
         }
@@ -1193,6 +1193,8 @@ class SmoveCommand: public Command {
             }
         }
 
+        // NOTE(vinchen): source maybe equal to dest, so destRv should get after
+        // genericSRem()
         Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
         if (!destRv.ok() &&
             destRv.status().code() != ErrorCodes::ERR_EXPIRED &&

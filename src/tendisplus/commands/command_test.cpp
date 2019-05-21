@@ -162,6 +162,26 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     Command::fmtMultiBulkLen(ss, 1);
     Command::fmtBulk(ss, "three");
     EXPECT_EQ(expect.value(), ss.str());
+
+    sess.setArgs({"rpush", "mylist", "a", "hello", "c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    ss.str("");
+    sess.setArgs({"rpoplpush", "mylist", "mylist"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("c"));
+    ss.str("");
+    sess.setArgs({"lrange", "mylist", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "c");
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "hello");
+    EXPECT_EQ(expect.value(), ss.str());
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
@@ -794,6 +814,81 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     Command::fmtMultiBulkLen(ss1, 2);
     Command::fmtBulk(ss1, "b");
     Command::fmtBulk(ss1, "d");
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    // smove
+    sess.setArgs({ "sadd", "myset", "a", "b", "c" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    sess.setArgs({ "sadd", "myset1", "d", "e", "f"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    sess.setArgs({ "smove", "myset", "myset1", "c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 4);
+    Command::fmtBulk(ss1, "c");
+    Command::fmtBulk(ss1, "d");
+    Command::fmtBulk(ss1, "e");
+    Command::fmtBulk(ss1, "f");
+    sess.setArgs({"smembers", "myset1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    sess.setArgs({ "smove", "myset", "myset1", "x"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 4);
+    Command::fmtBulk(ss1, "c");
+    Command::fmtBulk(ss1, "d");
+    Command::fmtBulk(ss1, "e");
+    Command::fmtBulk(ss1, "f");
+    sess.setArgs({"smembers", "myset1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    sess.setArgs({ "smove", "myset", "myset", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), ss1.str());
 }
 

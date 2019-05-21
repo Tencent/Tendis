@@ -455,13 +455,6 @@ class RPopLPushCommand: public Command {
         } else if (!rv.ok()) {
             return rv.status();
         }
-        Expected<RecordValue> rv2 =
-            Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
-        if (rv2.status().code() != ErrorCodes::ERR_OK &&
-            rv2.status().code() != ErrorCodes::ERR_EXPIRED &&
-            rv2.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return rv2.status();
-        }
 
         auto expdb1 = server->getSegmentMgr()->getDbHasLocked(sess, key1);
         if (!expdb1.ok()) {
@@ -479,6 +472,8 @@ class RPopLPushCommand: public Command {
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            // TODO(vinchen): this operation is not atomic, it should create
+            // transaction one time.
             Expected<std::string> s =
                 genericPop(sess, kvstore1, metaRk1, rv, ListPos::LP_TAIL);
             if (s.ok()) {
@@ -497,6 +492,16 @@ class RPopLPushCommand: public Command {
             } else {
                 continue;
             }
+        }
+
+        // NOTE(vinchen): key1 maybe equal to keys, so rv2 should get after
+        // genericPop()
+        Expected<RecordValue> rv2 =
+            Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
+        if (rv2.status().code() != ErrorCodes::ERR_OK &&
+            rv2.status().code() != ErrorCodes::ERR_EXPIRED &&
+            rv2.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return rv2.status();
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto s = genericPush(sess,
