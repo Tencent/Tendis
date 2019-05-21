@@ -25,15 +25,10 @@ enum class ListPos {
 
 Expected<std::string> genericPop(Session *sess,
                                  PStore kvstore,
+                                 Transaction* txn,
                                  const RecordKey& metaRk,
                                  const Expected<RecordValue>& rv,
                                  ListPos pos) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
     ListMetaValue lm(INITSEQ, INITSEQ);
     if (!rv.ok()) {
         return rv.status();
@@ -60,46 +55,37 @@ Expected<std::string> genericPop(Session *sess,
                     RecordType::RT_LIST_ELE,
                     metaRk.getPrimaryKey(),
                     std::to_string(idx));
-    Expected<RecordValue> subRv = kvstore->getKV(subRk, txn.get());
+    Expected<RecordValue> subRv = kvstore->getKV(subRk, txn);
     if (!subRv.ok()) {
         return subRv.status();
     }
-    Status s = kvstore->delKV(subRk, txn.get());
+    Status s = kvstore->delKV(subRk, txn);
     if (!s.ok()) {
         return s;
     }
     if (head == tail) {
-        s = kvstore->delKV(metaRk, txn.get());
+        s = kvstore->delKV(metaRk, txn);
     } else {
         lm.setHead(head);
         lm.setTail(tail);
         s = kvstore->setKV(metaRk,
                            RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
-                           txn.get());
+                           txn);
     }
     if (!s.ok()) {
         return s;
-    }
-    auto commitStatus = txn->commit();
-    if (!commitStatus.ok()) {
-        return commitStatus.status();
     }
     return subRv.value().getValue();
 }
 
 Expected<std::string> genericPush(Session *sess,
                                   PStore kvstore,
+                                  Transaction* txn,
                                   const RecordKey& metaRk,
                                   const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args,
                                   ListPos pos,
                                   bool needExist) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
     ListMetaValue lm(INITSEQ, INITSEQ);
     uint64_t ttl = 0;
 
@@ -131,7 +117,7 @@ Expected<std::string> genericPush(Session *sess,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx));
         RecordValue subRv(args[i], RecordType::RT_LIST_ELE);
-        Status s = kvstore->setKV(subRk, subRv, txn.get());
+        Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
         }
@@ -140,11 +126,10 @@ Expected<std::string> genericPush(Session *sess,
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
                               RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
-                              txn.get());
+                              txn);
     if (!s.ok()) {
         return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
     return Command::fmtLongLong(lm.getTail() - lm.getHead());
 }
 
@@ -254,8 +239,12 @@ class ListPopWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPop(sess, kvstore, metaRk, rv, _pos);
+                genericPop(sess, kvstore, txn.get(), metaRk, rv, _pos);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return Command::fmtBulk(s.value());
             }
             if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -357,8 +346,12 @@ class ListPushWrapper: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericPush(sess, kvstore, metaRk, rv, valargs, _pos, _needExist);
+                genericPush(sess, kvstore, txn.get(), metaRk, rv, valargs, _pos, _needExist);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return s.value();
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -462,6 +455,10 @@ class RPopLPushCommand: public Command {
         }
         RecordKey metaRk1(expdb1.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key1, "");
         PStore kvstore1 = expdb1.value().store;
+        auto etxn = pCtx->createTransaction(kvstore1);
+        if (!etxn.ok()) {
+            return etxn.status();
+        }
 
         auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
         if (!expdb2.ok()) {
@@ -472,10 +469,8 @@ class RPopLPushCommand: public Command {
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            // TODO(vinchen): this operation is not atomic, it should create
-            // transaction one time.
             Expected<std::string> s =
-                genericPop(sess, kvstore1, metaRk1, rv, ListPos::LP_TAIL);
+                genericPop(sess, kvstore1, etxn.value(), metaRk1, rv, ListPos::LP_TAIL);
             if (s.ok()) {
                 val = std::move(s.value());
                 break;
@@ -494,6 +489,11 @@ class RPopLPushCommand: public Command {
             }
         }
 
+        auto etxn2 = pCtx->createTransaction(kvstore2);
+        if (!etxn2.ok()) {
+            return etxn2.status();
+        }
+
         // NOTE(vinchen): key1 maybe equal to keys, so rv2 should get after
         // genericPop()
         Expected<RecordValue> rv2 =
@@ -506,12 +506,14 @@ class RPopLPushCommand: public Command {
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto s = genericPush(sess,
                                  kvstore2,
+                                 etxn2.value(),
                                  metaRk2,
                                  rv2,
                                  {val},
                                  ListPos::LP_HEAD,
                                  false /*need_exist*/);
             if (s.ok()) {
+                pCtx->commitAll("rpoplpush");
                 return Command::fmtBulk(val);
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

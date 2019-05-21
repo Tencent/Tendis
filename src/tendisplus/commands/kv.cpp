@@ -1723,7 +1723,6 @@ class MSetGenericCommand: public Command {
 
         bool checkKeyTypeForSet = server->checkKeyTypeForSet();
         // NOTE(vinchen): commit or rollback in one time
-        std::unordered_map<std::string, std::unique_ptr<Transaction>> txnMap;
         bool failed = false;
 
         for (size_t i = 1; i < sess->getArgs().size(); i+= 2) {
@@ -1740,21 +1739,14 @@ class MSetGenericCommand: public Command {
                                 RecordType::RT_KV, key, "");
             RecordValue rv(val, RecordType::RT_KV);
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
-                Transaction* txn = nullptr;
-                if (txnMap.count(kvstore->dbId()) > 0) {
-                    txn = txnMap[kvstore->dbId()].get();
-                } else {
-                    auto ptxn = kvstore->createTransaction();
-                    if (!ptxn.ok()) {
-                        return ptxn.status();
-                    }
-                    txnMap[kvstore->dbId()] = std::move(ptxn.value());
-                    txn = txnMap[kvstore->dbId()].get();
+                auto etxn = pCtx->createTransaction(kvstore);
+                if (!etxn.ok()) {
+                    return etxn.status();
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
                 auto result = setGeneric(kvstore,
-                                         txn,
+                                         etxn.value(),
                                          _flags,
                                          rk,
                                          rv,
@@ -1782,12 +1774,10 @@ class MSetGenericCommand: public Command {
                 }
             }
         }
-
-        for (auto& txn : txnMap) {
-            Expected<uint64_t> exptCommit = txn.second->commit();
-            if (!exptCommit.ok()) {
-                LOG(ERROR) << "mset(nx) commit error at kvstore " << txn.first
-                    << ". It lead to partial success.";
+        {
+            auto s = pCtx->commitAll("mset(nx)");
+            if (!s.ok()) {
+                failed = true;
             }
         }
         END:

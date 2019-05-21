@@ -17,14 +17,10 @@ Expected<bool> delGeneric(Session *sess, const std::string& key);
 
 Expected<std::string> genericSRem(Session *sess,
                                   PStore kvstore,
+                                  Transaction* txn,
                                   const RecordKey& metaRk,
                                   const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     SetMetaValue sm;
     uint64_t ttl = 0;
 
@@ -46,7 +42,7 @@ Expected<std::string> genericSRem(Session *sess,
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
-        Expected<RecordValue> rv = kvstore->getKV(subRk, txn.get());
+        Expected<RecordValue> rv = kvstore->getKV(subRk, txn);
         if (rv.ok()) {
             cnt += 1;
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -54,7 +50,7 @@ Expected<std::string> genericSRem(Session *sess,
         } else {
             return rv.status();
         }
-        Status s = kvstore->delKV(subRk, txn.get());
+        Status s = kvstore->delKV(subRk, txn);
         if (!s.ok()) {
             return s;
         }
@@ -62,31 +58,25 @@ Expected<std::string> genericSRem(Session *sess,
     INVARIANT(sm.getCount() >= cnt);
     Status s;
     if (sm.getCount() == cnt) {
-        s = kvstore->delKV(metaRk, txn.get());
+        s = kvstore->delKV(metaRk, txn);
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
               RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-              txn.get());
+              txn);
     }
     if (!s.ok()) {
         return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
     return Command::fmtLongLong(cnt);
 }
 
 Expected<std::string> genericSAdd(Session *sess,
                                   PStore kvstore,
+                                  Transaction* txn,
                                   const RecordKey& metaRk,
                                   const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
     SetMetaValue sm;
     uint64_t ttl = 0;
 
@@ -109,7 +99,7 @@ Expected<std::string> genericSAdd(Session *sess,
                         metaRk.getPrimaryKey(),
                         args[i]);
         if (rv.ok()) {
-            Expected<RecordValue> subrv = kvstore->getKV(subRk, txn.get());
+            Expected<RecordValue> subrv = kvstore->getKV(subRk, txn);
             if (subrv.ok()) {
                 continue;
             } else if (subrv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -121,7 +111,7 @@ Expected<std::string> genericSAdd(Session *sess,
             cnt += 1;
         }
         RecordValue subRv("", RecordType::RT_SET_ELE);
-        Status s = kvstore->setKV(subRk, subRv, txn.get());
+        Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
         }
@@ -129,11 +119,10 @@ Expected<std::string> genericSAdd(Session *sess,
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
                     RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-                    txn.get());
+                    txn);
     if (!s.ok()) {
         return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
     return Command::fmtLongLong(cnt);
 }
 
@@ -533,8 +522,12 @@ class SpopCommand: public Command {
             }
             const std::string& v = (*rcds.begin()).getRecordKey().getSecondaryKey();
             Expected<std::string> s =
-                genericSRem(sess, kvstore, metaRk, rv, {v});
+                genericSRem(sess, kvstore, txn.get(), metaRk, rv, {v});
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return Command::fmtBulk(v);
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -600,9 +593,19 @@ class SaddCommand: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
             Expected<std::string> s =
-                genericSAdd(sess, kvstore, metaRk, rv, args);
+                genericSAdd(sess, kvstore, txn.get(), metaRk, rv, args);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return s.value();
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -720,9 +723,18 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericSRem(sess, kvstore, metaRk, rv, valArgs);
+                genericSRem(sess, kvstore, txn.get(), metaRk, rv, valArgs);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return s.value();
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -836,10 +848,20 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk,
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
                  {ErrorCodes::ERR_NOTFOUND, ""},  /* storeKey has been deleted */
                  newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1050,9 +1072,18 @@ class SintergenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk,
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
                                     {ErrorCodes::ERR_NOTFOUND, ""}, newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1171,11 +1202,16 @@ class SmoveCommand: public Command {
         PStore srcStore = srcDb.value().store;
         PStore destStore = destDb.value().store;
 
+        auto etxn = pCtx->createTransaction(srcStore);
+        if (!etxn.ok()) {
+            return etxn.status();
+        }
+
         RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
         // directly remove member from source
         const std::string& formatRet = Command::fmtLongLong(1);
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> remRet = genericSRem(sess, srcStore, remRk, rv, {member});
+            Expected<std::string> remRet = genericSRem(sess, srcStore, etxn.value(), remRk, rv, {member});
             if (remRet.ok()) {
                 if (remRet.value() == formatRet) {
                     break;
@@ -1202,11 +1238,17 @@ class SmoveCommand: public Command {
             return destRv.status();
         }
 
+        auto etxn2 = pCtx->createTransaction(destStore);
+        if (!etxn2.ok()) {
+            return etxn2.status();
+        }
+
         RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
         // add member to dest
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, destRv, {"", "" , member});
+            Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, {"", "" , member});
             if (addRet.ok()) {
+                pCtx->commitAll("smove");
                 return addRet.value();
             }
             if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1313,9 +1355,18 @@ class SuniongenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk,
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
                                             {ErrorCodes::ERR_NOTFOUND, ""}, newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

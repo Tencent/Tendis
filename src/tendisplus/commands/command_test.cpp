@@ -182,6 +182,24 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, "a");
     Command::fmtBulk(ss, "hello");
     EXPECT_EQ(expect.value(), ss.str());
+
+    // wrong type
+    sess.setArgs({ "set", "mylist3", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "rpoplpush", "mylist", "mylist3" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+    ss.str("");
+    sess.setArgs({ "lrange", "mylist", "0", "-1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "c");
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "hello");
+    EXPECT_EQ(expect.value(), ss.str());
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
@@ -887,6 +905,24 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss1, "a");
     Command::fmtBulk(ss1, "b");
     sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+    
+    // wrong type
+    sess.setArgs({ "set", "myset3", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "smove", "myset", "myset3", "a" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({ "smembers", "myset" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), ss1.str());
