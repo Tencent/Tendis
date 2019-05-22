@@ -36,6 +36,7 @@ class SegmentMgr {
             const std::vector<std::string>& args,
             const std::vector<int>& index,
             mgl::LockMode mode) = 0;
+    virtual size_t getChunkSize() const = 0;
 
 private:
     const std::string _name;
@@ -57,6 +58,7 @@ class SegmentMgrFnvHash64: public SegmentMgr {
             const std::vector<std::string>& args,
             const std::vector<int>& index,
             mgl::LockMode mode) final;
+    size_t getChunkSize() const final { return _chunkSize; }
 private:
     std::vector<PStore> _instances;
     size_t _chunkSize;

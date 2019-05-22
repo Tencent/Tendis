@@ -25,6 +25,131 @@
 
 namespace tendisplus {
 
+class KeysCommand: public Command {
+ public:
+    KeysCommand()
+        :Command("keys", "rs") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        auto pattern = args[1];
+        bool allkeys = false;
+
+        if (pattern == "*") {
+            allkeys = true;
+        }
+
+        int32_t limit = 10000;
+        if (args.size() > 3) {
+            return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
+        }
+
+        if (args.size() == 3) {
+            auto l = tendisplus::stol(args[2]);
+            if (!l.ok()) {
+                return l.status();
+            }
+            limit = l.value();
+        }
+
+        // TODO(vinchen): too big
+        if (limit < 0 || limit > 10000) {
+            return{ ErrorCodes::ERR_PARSEOPT, "keys size limit to be 10000" };
+        }
+
+        auto ts = msSinceEpoch();
+
+        // TODO(vinchen): should use a faster way
+        auto server = sess->getServerEntry();
+        std::list<std::string> result;
+        for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+            auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                            mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+                    continue;
+                }
+                return expdb.status();
+            }
+
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto cursor = txn->createCursor();
+            cursor->seek("");
+
+            while (true) {
+                Expected<Record> exptRcd = cursor->next();
+                if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                if (!exptRcd.ok()) {
+                    return exptRcd.status();
+                }
+                auto keyType = exptRcd.value().getRecordKey().getRecordType();
+                // NOTE(vinchen):
+                // RecordType::RT_TTL_INDEX and RecordType::BINLOG
+                // is always at the last of rocksdb, and the chunkid is very big
+                auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+                if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
+                    break;
+                }
+                auto key = exptRcd.value().getRecordKey().getPrimaryKey();
+
+                if (!allkeys &&
+                    redis_port::stringmatchlen(pattern.c_str(), pattern.size(),
+                        key.c_str(), key.size(), 0)) {
+                    continue;
+                }
+
+                auto ttl = exptRcd.value().getRecordValue().getTtl();
+                if (keyType != RecordType::RT_DATA_META ||
+                    ttl !=0 && ttl < ts) {      // skip the expired key
+                    continue;
+                }
+                result.emplace_back(std::move(key));
+                if (result.size() >= limit) {
+                    break;
+                }
+            }
+            if (result.size() >= limit) {
+                break;
+            }
+        }
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, result.size());
+        for (const auto& v : result) {
+            Command::fmtBulk(ss, v);
+        }
+        return ss.str();
+    }
+} keysCmd;
+
 class DbsizeCommand: public Command {
  public:
     DbsizeCommand()
@@ -52,7 +177,64 @@ class DbsizeCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        return Command::fmtLongLong(0);
+        const std::vector<std::string>& args = sess->getArgs();
+
+        int64_t size = 0;
+        auto currentDbid = sess->getCtx()->getDbId();
+        auto ts = msSinceEpoch();
+
+        // TODO(vinchen): should use a faster way
+        auto server = sess->getServerEntry();
+        std::list<std::string> result;
+        for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+            auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+                    continue;
+                }
+                return expdb.status();
+            }
+
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto cursor = txn->createCursor();
+            cursor->seek("");
+
+            while (true) {
+                Expected<Record> exptRcd = cursor->next();
+                if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                if (!exptRcd.ok()) {
+                    return exptRcd.status();
+                }
+                auto keyType = exptRcd.value().getRecordKey().getRecordType();
+                // NOTE(vinchen):
+                // RecordType::RT_TTL_INDEX and RecordType::BINLOG
+                // is always at the last of rocksdb, and the chunkid is very big
+                auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+                if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
+                    break;
+                }
+                auto dbid = exptRcd.value().getRecordKey().getDbId();
+                if (dbid != currentDbid) {
+                    continue;
+                }
+                auto ttl = exptRcd.value().getRecordValue().getTtl();
+                if (keyType != RecordType::RT_DATA_META ||
+                    ttl != 0 && ttl < ts) {      // skip the expired key
+                    continue;
+                }
+
+                size++;
+            }
+        }
+        return Command::fmtLongLong(size);
     }
 } dbsizeCmd;
 
@@ -226,9 +408,11 @@ class IterAllCommand: public Command {
                 return exptRcd.status();
             }
             auto keyType = exptRcd.value().getRecordKey().getRecordType();
+            auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+
             // NOTE(vinchen):RecordType::RT_TTL_INDEX and RecordType::BINLOG is
-            // always at the last of rocksdb
-            if (keyType == RecordType::RT_TTL_INDEX) {
+            // always at the last of rocksdb, and the chunkid is very big
+            if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
                 break;
             }
 
@@ -536,7 +720,7 @@ class CommandListCommand: public Command {
                         snprintf(buf, sizeof(buf), "%s flags(%d,%d), arity(%d,%d), firstkey(%d,%d), lastkey(%d,%d), keystep(%d,%d) sameWithRedis(%s)",    // NOLINT
                             cmd.first.c_str(),
                             rcmd->flags, tcmd->getFlags(),
-                            rcmd->arity, (int)tcmd->arity(),
+                            rcmd->arity, static_cast<int>(tcmd->arity()),
                             rcmd->firstkey, tcmd->firstkey(),
                             rcmd->lastkey, tcmd->lastkey(),
                             rcmd->keystep, tcmd->keystep(),
@@ -1137,19 +1321,16 @@ class ObjectCommand: public Command {
             auto vt = rv.value().getRecordType();
             if (args[1] == "refcount") {
                 return Command::fmtOne();
-            }
-            else if (args[1] == "encoding") {
+            } else if (args[1] == "encoding") {
                 return Command::fmtBulk(m.at(vt));
-            }
-            else if (args[1] == "idletime") {
+            } else if (args[1] == "idletime") {
                 return Command::fmtLongLong(0);
             } else if (args[1] == "freq") {
                 return Command::fmtLongLong(0);
             }
-        } 
+        }
         return{ ErrorCodes::ERR_PARSEOPT,
-            "Unknown subcommand or wrong number of arguments. \
-                        Try OBJECT help" };
+            "Unknown subcommand or wrong number of arguments. Try OBJECT help" };       // NOLINT
     }
 } objectCmd;
 
@@ -1202,10 +1383,68 @@ class ConfigCommand : public Command {
     }
 } configCmd;
 
-class FulshAllDiskCommand : public Command {
+#define EMPTYDB_NO_FLAGS 0      /* No flags. */
+#define EMPTYDB_ASYNC (1<<0)    /* Reclaim memory in another thread. */
+
+class FlushGeneric : public Command {
  public:
-    FulshAllDiskCommand()
-        :Command("flushalldisk", "a") {
+    FlushGeneric(const std::string& name, const char* sflags)
+        : Command(name, sflags) {}
+
+    Expected<int> getFlushCommandFlags(Session* sess) {
+        auto args = sess->getArgs();
+        if (args.size() > 1) {
+            if (args.size() > 2 || toLower(args[1]) != "async") {
+                return {ErrorCodes::ERR_PARSEOPT, "" };
+            }
+            return EMPTYDB_ASYNC;
+        } else {
+            return EMPTYDB_NO_FLAGS;
+        }
+    }
+
+    Status runGeneric(Session* sess, int flags) {
+        auto server = sess->getServerEntry();
+        for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+            auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                                mgl::LockMode::LOCK_X);
+            if (!expdb.ok()) {
+                if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+                    continue;
+                }
+                return expdb.status();
+            }
+
+            // TODO(vinchen): how to translate it to slave
+            auto store = expdb.value().store;
+
+            // TODO(vinchen): handle STORE_NONE database in the future
+            INVARIANT(!store->isPaused() && store->isOpen());
+            INVARIANT(store->isRunning());
+
+            auto s = store->stop();
+            if (!s.ok()) {
+                return s;
+            }
+
+            s = store->clear();
+            if (!s.ok()) {
+                return s;
+            }
+
+            auto ret = store->restart(false);
+            if (!ret.ok()) {
+                return ret.status();
+            }
+        }
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+};
+
+class FlushAllCommand : public FlushGeneric {
+ public:
+    FlushAllCommand()
+        :FlushGeneric("flushall", "w") {
     }
 
     ssize_t arity() const {
@@ -1225,7 +1464,101 @@ class FulshAllDiskCommand : public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        // TODO(vinchen): support it later
+        auto args = sess->getArgs();
+
+        auto flags = getFlushCommandFlags(sess);
+        if (!flags.ok()) {
+            return flags.status();
+        }
+
+        auto s = runGeneric(sess, flags.value());
+        if (!s.ok()) {
+            return s;
+        }
+
+        return Command::fmtOK();
+    }
+} flushallCmd;
+
+class FlushdbCommand : public FlushGeneric {
+ public:
+    FlushdbCommand()
+        :FlushGeneric("flushdb", "w") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto args = sess->getArgs();
+
+        auto flags = getFlushCommandFlags(sess);
+        if (!flags.ok()) {
+            return flags.status();
+        }
+
+        auto s = runGeneric(sess, flags.value());
+        if (!s.ok()) {
+            return s;
+        }
+
+        return Command::fmtOK();
+    }
+} flushdbCmd;
+
+class FlushAllDiskCommand : public FlushGeneric {
+ public:
+    FlushAllDiskCommand()
+        :FlushGeneric("flushalldisk", "w") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto args = sess->getArgs();
+
+        auto flags = getFlushCommandFlags(sess);
+        if (!flags.ok()) {
+            return flags.status();
+        }
+
+        // TODO(vinchen): only support db 0
+        if (sess->getCtx()->getDbId() != 0) {
+            return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
+        }
+
+        auto s = runGeneric(sess, flags.value());
+        if (!s.ok()) {
+            return s;
+        }
+
         return Command::fmtOK();
     }
 } flushalldiskCmd;

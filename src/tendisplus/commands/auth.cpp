@@ -40,6 +40,7 @@ class SelectCommand: public Command {
             return dbId.status();
         }
 
+        // TODO(vinchen): disable select db expect 0 ?
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         pCtx->setDbId(dbId.value());

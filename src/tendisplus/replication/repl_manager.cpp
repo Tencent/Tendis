@@ -425,8 +425,8 @@ void ReplManager::controlRoutine() {
                 endLogId = std::min(endLogId, mpov.second->binlogPos);
             }
             _logRecycler->schedule(
-                     [this, i, oldFirstBinlog, endLogId, saveLogs]() {
-                         recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
+                [this, i, oldFirstBinlog, endLogId, saveLogs]() {
+                    recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
             });
         }
         return doSth;
@@ -452,16 +452,24 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    auto guard = MakeGuard([this, &nextSched, &start, storeId] {
+    bool hasError = false;
+    auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
         INVARIANT(v->isRunning);
         v->isRunning = false;
-        // v->nextSchedTime maybe time_point::max() 
+        // v->nextSchedTime maybe time_point::max()
         if (v->nextSchedTime < nextSched) {
             v->nextSchedTime = nextSched;
         }
-        v->firstBinlogId = start;
+        // NOTE(vinchen): like flushdb, the binlog is deleted, is should
+        // reset the firstBinlogId
+        if (hasError) {
+            v->firstBinlogId = Transaction::TXNID_UNINITED;
+        } else {
+            v->firstBinlogId = start;
+        }
+
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();
     });
@@ -479,6 +487,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     if (!expdb.ok()) {
         LOG(ERROR) << "recycleBinlog getDb failed:"
                    << expdb.status().toString();
+        hasError = true;
         return;
     }
     auto kvstore = std::move(expdb.value().store);
@@ -486,6 +495,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     if (!ptxn.ok()) {
         LOG(ERROR) << "recycleBinlog create txn failed:"
                    << ptxn.status().toString();
+        hasError = true;
         return;
     }
     auto txn = std::move(ptxn.value());
@@ -496,6 +506,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                     << "start:" << start
                     << ",end:" << end
                     << ",failed:" << toDel.status().toString();
+        hasError = true;
         return;
     }
     if (start == toDel.value().first) {
@@ -509,6 +520,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         if (!s.ok()) {
             LOG(ERROR) << "save binlog store:" << storeId
                         << "failed:" << s.toString();
+            hasError = true;
             return;
         }
     }
@@ -516,12 +528,14 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     if (!s.ok()) {
         LOG(ERROR) << "truncate binlog store:" << storeId
                     << "failed:" << s.toString();
+        hasError = true;
         return;
     }
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {
         LOG(ERROR) << "truncate binlog store:" << storeId
                     << "commit failed:" << commitStat.status().toString();
+        hasError = true;
         return;
     }
     LOG(INFO) << "truncate binlog from:" << start

@@ -30,9 +30,10 @@ enum class ErrorCodes {
     ERR_CAS,
     ERR_NOT_EXPIRED,
     ERR_EXTENDED_PROTOCOL,
+    ERR_STORE_NOT_OPEN,
     
     // error from redis
-    ERR_AUTH,
+    ERR_AUTH = 100,
     ERR_PARSEOPT,  /* addReply(c,shared.syntaxerr); */
     ERR_PARSEPKT,
     ERR_NAN,      /* "resulting score is not a number (NaN)"  */
