@@ -499,10 +499,17 @@ class BitPosCommand: public Command {
         }
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return Command::fmtLongLong(-1);
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtLongLong(-1);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            /* If the key does not exist, from our point of view it is an
+             * infinite array of 0 bits. If the user is looking for the fist
+             * clear bit return 0, If the user is looking for the first set bit,
+             * return -1. */
+            if (bit) {
+                return Command::fmtLongLong(-1);
+            } else {
+                return Command::fmtLongLong(0);
+            }
         } else if (!rv.status().ok()) {
             return rv.status();
         }
