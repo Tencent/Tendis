@@ -1494,6 +1494,43 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtNull());
 
+    sess.setArgs({ "setex", "a", "-1", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+ 
+    sess.setArgs({ "psetex", "a", "-1", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    sess.setArgs({ "set", "a", "b", "ex", "0" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+ 
+    sess.setArgs({ "set", "a", "b", "px", "0" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+   
+    // persist
+    sess.setArgs({ "setex", "a", "10", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "persist", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "persist", "a_nonexist"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    sess.setArgs({ "pttl", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+
     // exists
     sess.setArgs({"set", "expire_test_key0", "a"});
     expect = Command::runSessionCmd(&sess);

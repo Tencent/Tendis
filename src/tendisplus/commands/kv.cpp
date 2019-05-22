@@ -35,7 +35,7 @@ struct SetParams {
     std::string key;
     std::string value;
     int32_t flags;
-    uint64_t expire;
+    int64_t expire;
 };
 
 // TODO(deyukong): unittest of expire
@@ -143,17 +143,20 @@ class SetCommand: public Command {
                 } else if (s == "xx") {
                     result.flags |= REDIS_SET_XX;
                 } else if (s == "ex" && i+1 < args.size()) {
-                    result.expire = std::stoul(args[i+1])*1000ULL;
+                    result.expire = std::stoll(args[i+1])*1000ULL;
                     i++;
                 } else if (s == "px" && i+1 < args.size()) {
-                    result.expire = std::stoul(args[i+1]);
+                    result.expire = std::stoll(args[i+1]);
                     i++;
                 } else {
                     return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
                 }
+
+                if (result.expire <= 0) {
+                    return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+                }
             }
         } catch (std::exception& ex) {
-            LOG(WARNING) << "parse setParams failed:" << ex.what();
             return {ErrorCodes::ERR_PARSEPKT,
                     "value is not an integer or out of range"};
         }
@@ -311,9 +314,12 @@ class SetExCommand: public SetexGeneralCommand {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         const std::string& val = sess->getArgs()[3];
-        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        Expected<int64_t> eexpire = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!eexpire.ok()) {
             return eexpire.status();
+        }
+        if (eexpire.value() <= 0) {
+            return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
         }
         return runGeneral(sess, key, val,
                           msSinceEpoch() + eexpire.value()*1000);
@@ -329,9 +335,12 @@ class PSetExCommand: public SetexGeneralCommand {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         const std::string& val = sess->getArgs()[3];
-        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        Expected<int64_t> eexpire = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!eexpire.ok()) {
             return eexpire.status();
+        }
+        if (eexpire.value() <= 0) {
+            return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
         }
         return runGeneral(sess, key, val,
                           msSinceEpoch() + eexpire.value());

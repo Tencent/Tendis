@@ -20,8 +20,6 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_TIMEOUT,
     ERR_INTERNAL,
-    ERR_PARSEOPT,               /* addReply(c,shared.syntaxerr); */
-    ERR_PARSEPKT,
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
     ERR_DECODE,
@@ -35,6 +33,8 @@ enum class ErrorCodes {
     
     // error from redis
     ERR_AUTH,
+    ERR_PARSEOPT,  /* addReply(c,shared.syntaxerr); */
+    ERR_PARSEPKT,
     ERR_NAN,      /* "resulting score is not a number (NaN)"  */
     ERR_FLOAT,    /* "value is not a valid float" */
     ERR_INTERGER, /* "value is not an integer or out of range" */
