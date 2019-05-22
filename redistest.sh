@@ -7,3 +7,4 @@ tclsh tests/test_helper.tcl  --single  rr_unit/type/list
 tclsh tests/test_helper.tcl  --single  rr_unit/type/set
 tclsh tests/test_helper.tcl  --single  rr_unit/type/zset
 tclsh tests/test_helper.tcl  --single  rr_unit/hyperloglog
+tclsh tests/test_helper.tcl  --single rr_unit/expire

@@ -116,7 +116,7 @@ Expected<bool> expireAfterNow(Session *sess,
 Expected<std::string> expireGeneric(Session *sess,
                                     int64_t expireAt,
                                     const std::string& key) {
-    if (expireAt >= msSinceEpoch()) {
+    if (expireAt >= (int64_t)msSinceEpoch()) {
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
@@ -377,7 +377,7 @@ class TypeCommand: public Command {
         };
         for (const auto& typestr : {RecordType::RT_DATA_META}) {
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+                Command::expireKeyIfNeeded(sess, key, typestr);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
