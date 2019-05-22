@@ -4,6 +4,5 @@ sh ./unittest.sh >&unittest.log &
 
 sh ./redistest.sh >&redistest.log 
 
-grep "\[err" redistest.log 
-
+grep -En "\[err|\[exception" redistest.log
 

@@ -20,7 +20,7 @@ std::shared_ptr<ServerParams> makeServerParam() {
     std::ofstream myfile;
     myfile.open("test.cfg");
     myfile << "bind 127.0.0.1\n";
-    myfile << "port 8888\n";
+    myfile << "port 8811\n";
     myfile << "loglevel debug\n";
     myfile << "logdir ./log\n";
     myfile << "storage rocks\n";

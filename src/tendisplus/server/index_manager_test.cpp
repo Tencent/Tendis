@@ -100,7 +100,8 @@ void testScanJobRunning(std::shared_ptr<ServerEntry> server,
     EXPECT_TRUE(filesystem::is_empty("./db"));
     EXPECT_TRUE(filesystem::is_empty("./log"));
 
-    server->startup(cfg);
+    auto s = server->startup(cfg);
+    ASSERT_TRUE(s.ok());
 
     TEST_SYNC_POINT("ScanThreadRunning");
     ASSERT_TRUE(status.load());
@@ -129,7 +130,8 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
         });
     SyncPoint::GetInstance()->EnableProcessing();
 
-    server->startup(cfg);
+    auto s = server->startup(cfg);
+    ASSERT_TRUE(s.ok());
 
     auto ctx = std::make_shared<asio::io_context>();
     auto session = makeSession(server, ctx);

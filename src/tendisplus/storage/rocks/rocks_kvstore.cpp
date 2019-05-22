@@ -1113,7 +1113,7 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
     Transaction *txn, RecordType valueType) {
-    auto& eValue = getKV(key, txn);
+    auto eValue = getKV(key, txn);
 
     if (eValue.ok()) {
         if (eValue.value().getRecordType() != valueType) {
