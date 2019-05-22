@@ -323,7 +323,7 @@ int HPLLObject::updateByRawHpll(const HPLLObject* rawHpll) {
 class PfAddCommand: public Command {
  public:
     PfAddCommand()
-        :Command("pfadd") {
+        :Command("pfadd", "wmF") {
     }
 
     ssize_t arity() const {
@@ -424,7 +424,7 @@ class PfAddCommand: public Command {
 class PfCountCommand : public Command {
  public:
     PfCountCommand()
-        :Command("pfcount") {
+        :Command("pfcount", "r") {
     }
 
     ssize_t arity() const {
@@ -529,7 +529,7 @@ class PfCountCommand : public Command {
 class PfMergeCommand : public Command {
  public:
     PfMergeCommand()
-        :Command("pfmerge") {
+        :Command("pfmerge", "wm") {
     }
 
     ssize_t arity() const {
@@ -565,7 +565,6 @@ class PfMergeCommand : public Command {
         bool useDense = false;
         auto hpll = std::make_unique<HPLLObject>(HLL_RAW);
         uint64_t ttl = 0;
-        // TODO(comboqiu): In fact, it should lock first.
         for (size_t j = 1; j < args.size(); j++) {
             auto& okey = args[j];
             auto rv = Command::expireKeyIfNeeded(sess, okey, RecordType::RT_KV);
@@ -642,7 +641,7 @@ class PfMergeCommand : public Command {
 class PfSelfTestCommand : public Command {
  public:
     PfSelfTestCommand()
-        :Command("pfselftest") {
+        :Command("pfselftest", "a") {
     }
 
     ssize_t arity() const {
@@ -777,7 +776,7 @@ class PfSelfTestCommand : public Command {
 class PfDebugCommand : public Command {
  public:
     PfDebugCommand()
-        :Command("pfdebug") {
+        :Command("pfdebug", "w") {
     }
 
     ssize_t arity() const {
@@ -789,11 +788,11 @@ class PfDebugCommand : public Command {
     }
 
     int32_t lastkey() const {
-        return 0;
+        return 2;
     }
 
     int32_t keystep() const {
-        return 0;
+        return 1;
     }
 
     ///* PFDEBUG <subcommand> <key> ... args ..

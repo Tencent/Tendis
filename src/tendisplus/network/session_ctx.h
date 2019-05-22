@@ -12,6 +12,7 @@
 
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
+#include "tendisplus/storage/kvstore.h"
 
 namespace tendisplus {
 
@@ -43,6 +44,8 @@ class SessionCtx {
     std::vector<std::string> getArgsBrief() const;
     void setArgsBrief(const std::vector<std::string>& v);
     void clearRequestCtx();
+    Status commitAll(const std::string& cmd);
+    Expected<Transaction*> createTransaction(const PStore& kvstore);
     void setExtendProtocol(bool v);
     void setExtendProtocolValue(uint64_t ts, uint64_t version);
     uint64_t getEpTs() const { return _timestamp; }
@@ -70,6 +73,8 @@ class SessionCtx {
 
     // protected by mutex
     std::vector<ILock*> _locks;
+    // multi key
+    std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
     std::vector<std::string> _argsBrief;
     std::list<std::string> _delBigKeys;
 };

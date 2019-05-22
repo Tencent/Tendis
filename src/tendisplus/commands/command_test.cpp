@@ -162,6 +162,44 @@ void testList(std::shared_ptr<ServerEntry> svr) {
     Command::fmtMultiBulkLen(ss, 1);
     Command::fmtBulk(ss, "three");
     EXPECT_EQ(expect.value(), ss.str());
+
+    sess.setArgs({"rpush", "mylist", "a", "hello", "c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    ss.str("");
+    sess.setArgs({"rpoplpush", "mylist", "mylist"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("c"));
+    ss.str("");
+    sess.setArgs({"lrange", "mylist", "0", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "c");
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "hello");
+    EXPECT_EQ(expect.value(), ss.str());
+
+    // wrong type
+    sess.setArgs({ "set", "mylist3", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "rpoplpush", "mylist", "mylist3" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+    ss.str("");
+    sess.setArgs({ "lrange", "mylist", "0", "-1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "c");
+    Command::fmtBulk(ss, "a");
+    Command::fmtBulk(ss, "hello");
+    EXPECT_EQ(expect.value(), ss.str());
 }
 
 void testHash2(std::shared_ptr<ServerEntry> svr) {
@@ -358,11 +396,38 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
                       std::to_string(i+1)});
         auto expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOK());
         sess.setArgs({"hlen", "hmsetkey"});
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
         EXPECT_EQ(expect.value(), Command::fmtLongLong(i+2));
     }
+
+    sess.setArgs({"hset", "hsetkey1",
+            std::to_string(-1),
+            std::to_string(-1),
+            std::to_string(0),
+            std::to_string(0)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+
+    for (uint32_t i = 0; i < 1000; i++) {
+        sess.setArgs({"hset",
+                      "hsetkey1",
+                      std::to_string(i),
+                      std::to_string(i*i),
+                      std::to_string(i+1),
+                      std::to_string(i+1)});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+        sess.setArgs({"hlen", "hsetkey1"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(i+3));
+    }
+
 }
 
 void testZset2(std::shared_ptr<ServerEntry> svr) {
@@ -767,6 +832,99 @@ void testSet(std::shared_ptr<ServerEntry> svr) {
     Command::fmtMultiBulkLen(ss1, 2);
     Command::fmtBulk(ss1, "b");
     Command::fmtBulk(ss1, "d");
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    // smove
+    sess.setArgs({ "sadd", "myset", "a", "b", "c" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    sess.setArgs({ "sadd", "myset1", "d", "e", "f"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(3));
+
+    sess.setArgs({ "smove", "myset", "myset1", "c"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 4);
+    Command::fmtBulk(ss1, "c");
+    Command::fmtBulk(ss1, "d");
+    Command::fmtBulk(ss1, "e");
+    Command::fmtBulk(ss1, "f");
+    sess.setArgs({"smembers", "myset1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    sess.setArgs({ "smove", "myset", "myset1", "x"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 4);
+    Command::fmtBulk(ss1, "c");
+    Command::fmtBulk(ss1, "d");
+    Command::fmtBulk(ss1, "e");
+    Command::fmtBulk(ss1, "f");
+    sess.setArgs({"smembers", "myset1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+
+    sess.setArgs({ "smove", "myset", "myset", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(1));
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({"smembers", "myset"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), ss1.str());
+    
+    // wrong type
+    sess.setArgs({ "set", "myset3", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "smove", "myset", "myset3", "a" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    ss1.str("");
+    Command::fmtMultiBulkLen(ss1, 2);
+    Command::fmtBulk(ss1, "a");
+    Command::fmtBulk(ss1, "b");
+    sess.setArgs({ "smembers", "myset" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), ss1.str());
 }
 
@@ -1337,6 +1495,10 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(expect.value(), Command::fmtNull());
 
     // exists
+    sess.setArgs({"set", "expire_test_key0", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
     sess.setArgs({"set", "expire_test_key", "a"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -1345,6 +1507,12 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({"exists", "expire_test_key", "expire_test_key0", "expire_test_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(2));
+	
     sess.setArgs({"expire", "expire_test_key", "1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -1354,6 +1522,21 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
+	
+	// object
+	sess.setArgs({"object", "help"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+	
+	sess.setArgs({"object", "encoding", "expire_test_key0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("raw"));
+	
+	sess.setArgs({"object", "encoding", "expire_test_key1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
 
     // incrdecr
     sess.setArgs({"incr", "incrdecrkey"});

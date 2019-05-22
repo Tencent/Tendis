@@ -144,8 +144,8 @@ Expected<std::string> expireGeneric(Session *sess,
 
 class GeneralExpireCommand: public Command {
  public:
-    GeneralExpireCommand(const std::string& name)
-        :Command(name) {
+    GeneralExpireCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     ssize_t arity() const {
@@ -190,35 +190,35 @@ class GeneralExpireCommand: public Command {
 class ExpireCommand: public GeneralExpireCommand {
  public:
     ExpireCommand()
-        :GeneralExpireCommand("expire") {
+        :GeneralExpireCommand("expire", "wF") {
     }
 } expireCmd;
 
 class PExpireCommand: public GeneralExpireCommand {
  public:
     PExpireCommand()
-        :GeneralExpireCommand("pexpire") {
+        :GeneralExpireCommand("pexpire", "wF") {
     }
 } pexpireCmd;
 
 class ExpireAtCommand: public GeneralExpireCommand {
  public:
     ExpireAtCommand()
-        :GeneralExpireCommand("expireat") {
+        :GeneralExpireCommand("expireat", "wF") {
     }
 } expireatCmd;
 
 class PExpireAtCommand: public GeneralExpireCommand {
  public:
     PExpireAtCommand()
-        :GeneralExpireCommand("pexpireat") {
+        :GeneralExpireCommand("pexpireat", "wF") {
     }
 } pexpireatCmd;
 
 class GenericTtlCommand: public Command {
  public:
-    GenericTtlCommand(const std::string& name)
-        :Command(name) {
+    GenericTtlCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -256,7 +256,7 @@ class GenericTtlCommand: public Command {
 class TtlCommand: public GenericTtlCommand {
  public:
     TtlCommand()
-        :GenericTtlCommand("ttl") {
+        :GenericTtlCommand("ttl", "rF") {
     }
 
     ssize_t arity() const {
@@ -279,7 +279,7 @@ class TtlCommand: public GenericTtlCommand {
 class PTtlCommand: public GenericTtlCommand {
  public:
     PTtlCommand()
-        :GenericTtlCommand("pttl") {
+        :GenericTtlCommand("pttl", "rF") {
     }
 
     ssize_t arity() const {
@@ -302,11 +302,11 @@ class PTtlCommand: public GenericTtlCommand {
 class ExistsCommand: public Command {
  public:
     ExistsCommand()
-        :Command("exists") {
+        :Command("exists", "rF") {
     }
 
     ssize_t arity() const {
-        return 2;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -314,7 +314,7 @@ class ExistsCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -322,11 +322,14 @@ class ExistsCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::string& key = sess->getArgs()[1];
+        auto& args = sess->getArgs();
+        size_t count = 0;
 
-        for (auto type : {RecordType::RT_DATA_META}) {
+        for (size_t j = 1; j < args.size(); j++) {
+            const std::string& key = args[j];
+
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, type);
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
                 continue;
             } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -334,16 +337,16 @@ class ExistsCommand: public Command {
             } else if (!rv.ok()) {
                 return rv.status();
             }
-            return Command::fmtOne();
+            count++;
         }
-        return Command::fmtZero();
+        return Command::fmtLongLong(count);
     }
 } existsCmd;
 
 class TypeCommand: public Command {
  public:
     TypeCommand()
-        :Command("type") {
+        :Command("type", "rF") {
     }
 
     ssize_t arity() const {

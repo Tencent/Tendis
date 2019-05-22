@@ -27,6 +27,7 @@ class ReplLog;
 class TTLIndex;
 class RecordKey;
 class RecordValue;
+enum class RecordType;
 
 using PStore = std::shared_ptr<KVStore>;
 
@@ -154,6 +155,8 @@ class KVStore {
     virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
                                         Transaction* txn) = 0;
+    virtual Expected<RecordValue> getKV(const RecordKey& key,
+                          Transaction* txn, RecordType valueType) = 0;
     virtual Status setKV(const RecordKey&,
                          const RecordValue&, Transaction*) = 0;
     virtual Status setKV(const Record& kv, Transaction* txn) = 0;
@@ -208,9 +211,6 @@ class KVStore {
     uint64_t getCurrentTime();
 
     KVStoreStat stat;
-
-    // NOTE(deyukong): INSTANCE_NUM can not be dynamicly changed.
-    //static constexpr size_t INSTANCE_NUM = size_t(10);
 
  private:
     const std::string _id;

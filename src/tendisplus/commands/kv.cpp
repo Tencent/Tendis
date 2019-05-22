@@ -56,6 +56,8 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         if (eValue.ok()) {
             currentTs = msSinceEpoch();
             targetTtl = eValue.value().getTtl();
+            // TODO(vinchen): should del the key first(setxx),
+            // if not msetnx/setnx/setnxex
             if (eValue.value().getRecordType() != RecordType::RT_KV) {
                 return { ErrorCodes::ERR_WRONG_TYPE, "" };
             }
@@ -85,7 +87,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         }
     }
 
-    // NOTE(vinchen): 
+    // NOTE(vinchen):
     // For performance, set() directly without get() is more fast.
     // But because of RT_DATA_META, the string set is possible to
     // override other meta type. It would lead to some garbage in rocksdb.
@@ -97,6 +99,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         // only check the recordtype, not care about the ttl
         Expected<RecordValue> eValue = store->getKV(key, txn);
         if (eValue.ok()) {
+            // TODO(vinchen): should del the key first
             if (eValue.value().getRecordType() != RecordType::RT_KV) {
                 return { ErrorCodes::ERR_WRONG_TYPE, "" };
             }
@@ -121,7 +124,7 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
 class SetCommand: public Command {
  public:
     SetCommand()
-        :Command("set") {
+        :Command("set", "wm") {
     }
 
     Expected<SetParams> parse(Session *sess) const {
@@ -210,7 +213,7 @@ class SetCommand: public Command {
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.flags,
-                                     rk, rv, server->checkKeyTypeForSet(), true, "", "");
+                      rk, rv, server->checkKeyTypeForSet(), true, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
@@ -227,8 +230,9 @@ class SetCommand: public Command {
 
 class SetexGeneralCommand: public Command {
  public:
-    explicit SetexGeneralCommand(const std::string& name)
-        :Command(name) {
+    explicit SetexGeneralCommand(const std::string& name,
+                                const char* flags)
+        :Command(name, flags) {
     }
 
     ssize_t arity() const {
@@ -301,7 +305,7 @@ class SetexGeneralCommand: public Command {
 class SetExCommand: public SetexGeneralCommand {
  public:
     SetExCommand()
-        :SetexGeneralCommand("setex") {
+        :SetexGeneralCommand("setex", "wm") {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -319,7 +323,7 @@ class SetExCommand: public SetexGeneralCommand {
 class PSetExCommand: public SetexGeneralCommand {
  public:
     PSetExCommand()
-        :SetexGeneralCommand("psetex") {
+        :SetexGeneralCommand("psetex", "wm") {
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -337,7 +341,7 @@ class PSetExCommand: public SetexGeneralCommand {
 class SetNxCommand: public Command {
  public:
     SetNxCommand()
-        :Command("setnx") {
+        :Command("setnx", "wmF") {
     }
 
     ssize_t arity() const {
@@ -410,7 +414,7 @@ class SetNxCommand: public Command {
 class StrlenCommand: public Command {
  public:
     StrlenCommand()
-        :Command("strlen") {
+        :Command("strlen", "rF") {
     }
 
     ssize_t arity() const {
@@ -450,7 +454,7 @@ class StrlenCommand: public Command {
 class BitPosCommand: public Command {
  public:
     BitPosCommand()
-        :Command("bitpos") {
+        :Command("bitpos", "r") {
     }
 
     ssize_t arity() const {
@@ -550,7 +554,7 @@ class BitPosCommand: public Command {
 class BitCountCommand: public Command {
  public:
     BitCountCommand()
-        :Command("bitcount") {
+        :Command("bitcount", "r") {
     }
 
     ssize_t arity() const {
@@ -624,8 +628,9 @@ class BitCountCommand: public Command {
 
 class GetGenericCmd: public Command {
  public:
-    GetGenericCmd(const std::string& name)
-        :Command(name) {
+    GetGenericCmd(const std::string& name,
+                    const char* sflags)
+        :Command(name, sflags) {
     }
 
     virtual Expected<std::string> run(Session *sess) {
@@ -648,7 +653,7 @@ class GetGenericCmd: public Command {
 class GetVsnCommand: public Command {
  public:
     GetVsnCommand()
-        :Command("getvsn") {
+        :Command("getvsn", "rF") {
     }
 
     ssize_t arity() const {
@@ -694,7 +699,7 @@ class GetVsnCommand: public Command {
 class GetCommand: public GetGenericCmd {
  public:
     GetCommand()
-        :GetGenericCmd("get") {
+        :GetGenericCmd("get", "rF") {
     }
 
     ssize_t arity() const {
@@ -729,8 +734,8 @@ class GetCommand: public GetGenericCmd {
 // TODO(deyukong): unittest
 class GetRangeGenericCommand: public GetGenericCmd {
  public:
-    GetRangeGenericCommand(const std::string& name)
-        :GetGenericCmd(name) {
+    GetRangeGenericCommand(const std::string& name, const char* sflags)
+        :GetGenericCmd(name, sflags) {
     }
 
     ssize_t arity() const {
@@ -795,21 +800,22 @@ class GetRangeGenericCommand: public GetGenericCmd {
 class GetRangeCommand: public GetRangeGenericCommand {
  public:
     GetRangeCommand()
-        :GetRangeGenericCommand("getrange") {
+        :GetRangeGenericCommand("getrange", "r") {
     }
 } getrangeCmd;
 
 class Substrcommand: public GetRangeGenericCommand {
  public:
     Substrcommand()
-        :GetRangeGenericCommand("substr") {
+        :GetRangeGenericCommand("substr", "r") {
     }
 } substrCmd;
 
 class GetSetGeneral: public Command {
  public:
-    explicit GetSetGeneral(const std::string& name)
-        :Command(name) {
+    explicit GetSetGeneral(const std::string& name,
+                        const char* sflags)
+        :Command(name, sflags) {
     }
 
     virtual bool replyNewValue() const {
@@ -824,6 +830,14 @@ class GetSetGeneral: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         // expire if possible
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
@@ -833,13 +847,6 @@ class GetSetGeneral: public Command {
             return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                            mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         PStore kvstore = expdb.value().store;
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                      RecordType::RT_KV, key, "");
@@ -850,13 +857,8 @@ class GetSetGeneral: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
-            if (!eValue.ok()
-                    && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                return eValue.status();
-            }
             const Expected<RecordValue>& newValue =
-                                newValueFromOld(sess, eValue);
+                                newValueFromOld(sess, rv);
             if (!newValue.ok()) {
                 return newValue.status();
             }
@@ -871,8 +873,8 @@ class GetSetGeneral: public Command {
                 if (replyNewValue()) {
                     return std::move(newValue.value());
                 } else {
-                    return eValue.ok() ?
-                            std::move(eValue.value()) :
+                    return rv.ok() ?
+                            std::move(rv.value()) :
                             RecordValue("", RecordType::RT_KV);
                 }
             }
@@ -894,7 +896,7 @@ class GetSetGeneral: public Command {
 class CasCommand: public GetSetGeneral {
  public:
     CasCommand()
-        :GetSetGeneral("cas") {
+        :GetSetGeneral("cas", "wm") {
     }
 
     ssize_t arity() const {
@@ -948,7 +950,7 @@ class CasCommand: public GetSetGeneral {
 class AppendCommand: public GetSetGeneral {
  public:
     AppendCommand()
-        :GetSetGeneral("append") {
+        :GetSetGeneral("append", "wm") {
     }
 
     ssize_t arity() const {
@@ -985,7 +987,7 @@ class AppendCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return std::move(
-                    RecordValue(std::move(cat), type, ttl));
+                    RecordValue(std::move(cat), type, ttl, oldValue));
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1001,7 +1003,7 @@ class AppendCommand: public GetSetGeneral {
 class SetRangeCommand: public GetSetGeneral {
  public:
     SetRangeCommand()
-        :GetSetGeneral("setrange") {
+        :GetSetGeneral("setrange", "wm") {
     }
 
     ssize_t arity() const {
@@ -1051,7 +1053,7 @@ class SetRangeCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(cat), type, ttl);
+        return RecordValue(std::move(cat), type, ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1066,7 +1068,7 @@ class SetRangeCommand: public GetSetGeneral {
 class SetBitCommand: public GetSetGeneral {
  public:
     SetBitCommand()
-        :GetSetGeneral("setbit") {
+        :GetSetGeneral("setbit", "wm") {
     }
 
     bool replyNewValue() const final {
@@ -1134,7 +1136,7 @@ class SetBitCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(tomodify), type, ttl);
+        return RecordValue(std::move(tomodify), type, ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1164,7 +1166,7 @@ class SetBitCommand: public GetSetGeneral {
 class GetSetCommand: public GetSetGeneral {
  public:
     GetSetCommand()
-        :GetSetGeneral("getset") {
+        :GetSetGeneral("getset", "wm") {
     }
 
     bool replyNewValue() const final {
@@ -1208,8 +1210,8 @@ class GetSetCommand: public GetSetGeneral {
 
 class IncrDecrGeneral: public GetSetGeneral {
  public:
-    explicit IncrDecrGeneral(const std::string& name)
-        :GetSetGeneral(name) {
+    explicit IncrDecrGeneral(const std::string& name, const char* sflags)
+        :GetSetGeneral(name, sflags) {
     }
 
     Expected<int64_t> sumIncr(const Expected<RecordValue>& esum,
@@ -1250,7 +1252,7 @@ class IncrDecrGeneral: public GetSetGeneral {
 class IncrbyfloatCommand: public GetSetGeneral {
  public:
     IncrbyfloatCommand()
-        :GetSetGeneral("incrbyfloat") {
+        :GetSetGeneral("incrbyfloat", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1317,14 +1319,14 @@ class IncrbyfloatCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(::tendisplus::ldtos(newSum.value(), true),
-                        type, ttl);
+                        type, ttl, oldValue);
     }
 } incrbyfloatCmd;
 
 class IncrbyCommand: public IncrDecrGeneral {
  public:
     IncrbyCommand()
-        :IncrDecrGeneral("incrby") {
+        :IncrDecrGeneral("incrby", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1370,7 +1372,7 @@ class IncrbyCommand: public IncrDecrGeneral {
 class IncrCommand: public IncrDecrGeneral {
  public:
     IncrCommand()
-        :IncrDecrGeneral("incr") {
+        :IncrDecrGeneral("incr", "wmF") {
     }
     ssize_t arity() const {
         return 2;
@@ -1409,7 +1411,7 @@ class IncrCommand: public IncrDecrGeneral {
 class DecrbyCommand: public IncrDecrGeneral {
  public:
     DecrbyCommand()
-        :IncrDecrGeneral("decrby") {
+        :IncrDecrGeneral("decrby", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1455,7 +1457,7 @@ class DecrbyCommand: public IncrDecrGeneral {
 class DecrCommand: public IncrDecrGeneral {
  public:
     DecrCommand()
-        :IncrDecrGeneral("decr") {
+        :IncrDecrGeneral("decr", "wmF") {
     }
 
     ssize_t arity() const {
@@ -1495,7 +1497,7 @@ class DecrCommand: public IncrDecrGeneral {
 class MGetCommand: public Command {
  public:
     MGetCommand()
-        :Command("mget") {
+        :Command("mget", "rF") {
     }
 
     ssize_t arity() const {
@@ -1507,7 +1509,7 @@ class MGetCommand: public Command {
     }
 
     int32_t lastkey() const {
-        return 1;
+        return -1;
     }
 
     int32_t keystep() const {
@@ -1524,13 +1526,9 @@ class MGetCommand: public Command {
             const std::string &key = sess->getArgs()[i];
             Expected<RecordValue> rv =
                     Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                Command::fmtNull(ss);
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                Command::fmtNull(ss);
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+                rv.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
                 Command::fmtNull(ss);
                 continue;
             } else if (!rv.status().ok()) {
@@ -1545,7 +1543,7 @@ class MGetCommand: public Command {
 class BitopCommand: public Command {
  public:
     BitopCommand()
-        :Command("bitop") {
+        :Command("bitop", "wm") {
     }
 
     enum class Op {
@@ -1590,6 +1588,20 @@ class BitopCommand: public Command {
         if (op == Op::BITOP_NOT && args.size() != 4) {
             return {ErrorCodes::ERR_PARSEPKT, "BITOP NOT must be called with a single source key."};  // NOLINT(whitespace/line_length)
         }
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+
+        auto index = getKeysFromCommand(args);
+        // TODO(vinchen): should be LOCK_X and LOCK_S
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args,
+            index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         size_t numKeys = args.size() - 3;
         size_t maxLen = 0;
         std::vector<std::string> vals;
@@ -1630,12 +1642,8 @@ class BitopCommand: public Command {
             result[i] = output;
         }
 
-        SessionCtx *pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        INVARIANT(server != nullptr);
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, targetKey,
-                                    mgl::LockMode::LOCK_X);
+
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1678,8 +1686,8 @@ class BitopCommand: public Command {
 
 class MSetGenericCommand: public Command {
  public:
-     MSetGenericCommand(const std::string& name, int flags)
-        :Command(name),
+     MSetGenericCommand(const std::string& name, const char* sflags, int flags)
+        :Command(name, sflags),
         _flags(flags) {
     }
 
@@ -1715,7 +1723,6 @@ class MSetGenericCommand: public Command {
 
         bool checkKeyTypeForSet = server->checkKeyTypeForSet();
         // NOTE(vinchen): commit or rollback in one time
-        std::unordered_map<std::string, std::unique_ptr<Transaction>> txnMap;
         bool failed = false;
 
         for (size_t i = 1; i < sess->getArgs().size(); i+= 2) {
@@ -1732,21 +1739,14 @@ class MSetGenericCommand: public Command {
                                 RecordType::RT_KV, key, "");
             RecordValue rv(val, RecordType::RT_KV);
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
-                Transaction* txn = nullptr;
-                if (txnMap.count(kvstore->dbId()) > 0) {
-                    txn = txnMap[kvstore->dbId()].get();
-                } else {
-                    auto ptxn = kvstore->createTransaction();
-                    if (!ptxn.ok()) {
-                        return ptxn.status();
-                    }
-                    txnMap[kvstore->dbId()] = std::move(ptxn.value());
-                    txn = txnMap[kvstore->dbId()].get();
+                auto etxn = pCtx->createTransaction(kvstore);
+                if (!etxn.ok()) {
+                    return etxn.status();
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
                 auto result = setGeneric(kvstore,
-                                         txn,
+                                         etxn.value(),
                                          _flags,
                                          rk,
                                          rv,
@@ -1761,26 +1761,23 @@ class MSetGenericCommand: public Command {
                         failed = true;
                         goto END;
                     }
-                } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {   // NOLINT
                     failed = true;
                     goto END;
                 } else {
                     if (i == RETRY_CNT - 1) {
                         failed = true;
                         goto END;
-                    }
-                    else {
+                    } else {
                         continue;
                     }
                 }
             }
         }
-
-        for (auto& txn : txnMap) {
-            Expected<uint64_t> exptCommit = txn.second->commit();
-            if (!exptCommit.ok()) {
-                LOG(ERROR) << "mset(nx) commit error at kvstore " << txn.first
-                    << ". It lead to partial success.";
+        {
+            auto s = pCtx->commitAll("mset(nx)");
+            if (!s.ok()) {
+                failed = true;
             }
         }
         END:
@@ -1794,28 +1791,29 @@ class MSetGenericCommand: public Command {
         INVARIANT(0);
         return Command::fmtOK();
     }
+
  private:
     int _flags;
 };
 
-class MSetCommand : public MSetGenericCommand{
+class MSetCommand : public MSetGenericCommand {
  public:
-    MSetCommand() 
-        : MSetGenericCommand("mset", REDIS_SET_NO_FLAGS) {
+    MSetCommand()
+        : MSetGenericCommand("mset", "wm", REDIS_SET_NO_FLAGS) {
     }
 } msetCmd;
 
 class MSetNXCommand : public MSetGenericCommand {
-public:
+ public:
     MSetNXCommand()
-        : MSetGenericCommand("msetnx", REDIS_SET_NX) {
+        : MSetGenericCommand("msetnx", "wm", REDIS_SET_NX) {
     }
 } msetNxCmd;
 
 class MoveCommand: public Command {
  public:
     MoveCommand()
-        :Command("move") {
+        :Command("move", "wF") {
     }
 
     ssize_t arity() const {
@@ -1832,6 +1830,10 @@ class MoveCommand: public Command {
 
     int32_t keystep() const {
         return 1;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1842,7 +1844,7 @@ class MoveCommand: public Command {
 class RenameCommand: public Command {
  public:
     RenameCommand()
-        :Command("rename") {
+        :Command("rename", "w") {
     }
 
     ssize_t arity() const {
@@ -1861,7 +1863,20 @@ class RenameCommand: public Command {
         return 1;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        auto index = getKeysFromCommand(args);
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(  // NOLINT
+            sess, args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         return {ErrorCodes::ERR_INTERNAL, "not support"};
     }
 } renameCmd;
@@ -1869,7 +1884,7 @@ class RenameCommand: public Command {
 class RenamenxCommand: public Command {
  public:
     RenamenxCommand()
-        :Command("renamenx") {
+        :Command("renamenx", "wF") {
     }
 
     ssize_t arity() const {
@@ -1888,15 +1903,28 @@ class RenamenxCommand: public Command {
         return 1;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        auto index = getKeysFromCommand(args);
+        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(      // NOLINT
+            sess, args, index, mgl::LockMode::LOCK_X);
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+
         return {ErrorCodes::ERR_INTERNAL, "not support"};
     }
 } renamenxCmd;
 
 class GetBitCommand: public GetGenericCmd {
-public:
+ public:
     GetBitCommand()
-        :GetGenericCmd("getbit"){
+        :GetGenericCmd("getbit", "rF") {
     }
 
     ssize_t arity() const {

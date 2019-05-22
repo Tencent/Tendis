@@ -15,7 +15,7 @@ namespace tendisplus {
 class SelectCommand: public Command {
  public:
     SelectCommand()
-        :Command("select") {
+        :Command("select", "lF") {
     }
 
     ssize_t arity() const {
@@ -51,7 +51,7 @@ class SelectCommand: public Command {
 class AuthCommand: public Command {
  public:
     AuthCommand()
-        :Command("auth") {
+        :Command("auth", "sltF") {
     }
 
     Expected<std::string> parse(Session *sess) const {

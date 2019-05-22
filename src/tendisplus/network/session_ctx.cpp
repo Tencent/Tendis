@@ -76,9 +76,42 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 
 void SessionCtx::clearRequestCtx() {
     std::lock_guard<std::mutex> lk(_mutex);
+    _txnMap.clear();
     _argsBrief.clear();
     _timestamp = -1;
     _version = -1;
+}
+
+Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
+    Transaction* txn = nullptr;
+    if (_txnMap.count(kvstore->dbId()) > 0) {
+        txn = _txnMap[kvstore->dbId()].get();
+    }
+    else {
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        _txnMap[kvstore->dbId()] = std::move(ptxn.value());
+        txn = _txnMap[kvstore->dbId()].get();
+    }
+
+    return txn;
+}
+
+Status SessionCtx::commitAll(const std::string& cmd) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    Status s;
+    for (auto& txn : _txnMap) {
+        Expected<uint64_t> exptCommit = txn.second->commit();
+        if (!exptCommit.ok()) {
+            LOG(ERROR) << cmd << " commit error at kvstore " << txn.first
+                << ". It lead to partial success.";
+            s = exptCommit.status();
+        }
+    }
+    _txnMap.clear();
+    return s;
 }
 
 void SessionCtx::setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode) {

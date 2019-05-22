@@ -28,7 +28,7 @@ namespace tendisplus {
 class DbsizeCommand: public Command {
  public:
     DbsizeCommand()
-        :Command("dbsize") {
+        :Command("dbsize", "rF") {
     }
 
     ssize_t arity() const {
@@ -47,6 +47,10 @@ class DbsizeCommand: public Command {
         return 0;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
         return Command::fmtLongLong(0);
     }
@@ -55,7 +59,7 @@ class DbsizeCommand: public Command {
 class PingCommand: public Command {
  public:
     PingCommand()
-        :Command("ping") {
+        :Command("ping", "tF") {
     }
 
     ssize_t arity() const {
@@ -88,7 +92,7 @@ class PingCommand: public Command {
 class EchoCommand: public Command {
  public:
     EchoCommand()
-        :Command("echo") {
+        :Command("echo", "F") {
     }
 
     ssize_t arity() const {
@@ -115,7 +119,7 @@ class EchoCommand: public Command {
 class TimeCommand: public Command {
  public:
     TimeCommand()
-        :Command("time") {
+        :Command("time", "RF") {
     }
 
     ssize_t arity() const {
@@ -148,7 +152,7 @@ class TimeCommand: public Command {
 class IterAllCommand: public Command {
  public:
     IterAllCommand()
-        :Command("iterall") {
+        :Command("iterall", "r") {
     }
 
     ssize_t arity() const {
@@ -289,7 +293,7 @@ class IterAllCommand: public Command {
 class ShowCommand: public Command {
  public:
     ShowCommand()
-        :Command("show") {
+        :Command("show", "a") {
     }
 
     ssize_t arity() const {
@@ -392,7 +396,7 @@ class ShowCommand: public Command {
 class ToggleFtmcCommand: public Command {
  public:
     ToggleFtmcCommand()
-        :Command("toggleftmc") {
+        :Command("toggleftmc", "a") {
     }
 
     ssize_t arity() const {
@@ -431,11 +435,11 @@ class ToggleFtmcCommand: public Command {
 class CommandListCommand: public Command {
  public:
     CommandListCommand()
-         :Command("commandlist") {
+         :Command("commandlist", "a") {
     }
 
     ssize_t arity() const {
-        return 1;
+        return -1;
     }
 
     int32_t firstkey() const {
@@ -451,20 +455,136 @@ class CommandListCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const auto& cmds = listCommands();
-        std::stringstream ss;
-        Command::fmtMultiBulkLen(ss, cmds.size());
-        for (const auto& cmd : cmds) {
-            Command::fmtBulk(ss, cmd);
+        auto& args = sess->getArgs();
+
+        int flag = 0;
+        bool checkCompatible = false;
+        bool checkSupport = false;
+        bool multi = false;
+
+        if (args.size() == 1) {
+            // all cmd
+            flag = CMD_MASK;
+        } else if (args.size() == 2) {
+            auto type = toLower(args[1]);
+            if (type == "readonly") {
+                flag |= CMD_READONLY;
+            } else if (type == "write") {
+                flag |= CMD_WRITE;
+            } else if (type == "readwrite") {
+                flag |= CMD_READONLY | CMD_WRITE;
+            } else if (type == "admin") {
+                flag |= CMD_ADMIN;
+            } else if (type == "multikey") {
+                multi = true;
+            } else if (type == "incompatible") {
+                flag |= CMD_READONLY | CMD_WRITE;
+                checkCompatible = true;
+            } else if (type == "notsupport") {
+                flag |= CMD_READONLY | CMD_WRITE;
+                checkSupport = true;
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
+            }
+        } else if (args.size() == 3) {
+            auto type = toLower(args[1]);
+            auto sflag = toLower(args[2]);
+            if (type == "incompatible") {
+                checkCompatible = true;
+            } else if (type == "notsupport") {
+                checkSupport = true;
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
+            }
+
+            if (sflag == "readonly") {
+                flag |= CMD_READONLY;
+            } else if (sflag == "write") {
+                flag |= CMD_WRITE;
+            } else if (sflag == "readwrite") {
+                flag |= CMD_READONLY | CMD_WRITE;
+            } else if (sflag == "admin") {
+                flag |= CMD_ADMIN;
+            } else if (sflag == "all") {
+                flag = CMD_MASK;
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid type" };
+            }
+        } else {
+            return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "use commandlist [type]" };
         }
-        return ss.str();
+        auto& cmdmap = commandMap();
+        size_t count = 0;
+
+        std::stringstream ss;
+        if (checkCompatible) {
+            for (const auto& cmd : cmdmap) {
+                if (cmd.second->getFlags() & flag) {
+                    auto rcmd = redis_port::getCommandFromTable(cmd.first.c_str());  // NOLINT
+                    if (!rcmd) {
+                        continue;
+                    }
+
+                    auto tcmd = cmd.second;
+                    if (rcmd->flags != tcmd->getFlags() ||
+                        rcmd->arity != tcmd->arity() ||
+                        rcmd->firstkey != tcmd->firstkey() ||
+                        rcmd->lastkey != tcmd->lastkey() ||
+                        rcmd->keystep != tcmd->keystep() ||
+                        !tcmd->sameWithRedis()) {
+                        char buf[1024];
+                        snprintf(buf, sizeof(buf), "%s flags(%d,%d), arity(%d,%d), firstkey(%d,%d), lastkey(%d,%d), keystep(%d,%d) sameWithRedis(%s)",    // NOLINT
+                            cmd.first.c_str(),
+                            rcmd->flags, tcmd->getFlags(),
+                            rcmd->arity, (int)tcmd->arity(),
+                            rcmd->firstkey, tcmd->firstkey(),
+                            rcmd->lastkey, tcmd->lastkey(),
+                            rcmd->keystep, tcmd->keystep(),
+                            tcmd->sameWithRedis() ? "true" : "false");
+                        Command::fmtBulk(ss, buf);
+                        count++;
+                    }
+                }
+            }
+        } else if (checkSupport) {
+            int j;
+            int numcommands = redis_port::getCommandCount();
+
+            for (j = 0; j < numcommands; j++) {
+                struct redis_port::redisCommand *c = redis_port::getCommandFromTable(j);  // NOLINT
+
+                if (c->flags & flag) {
+                    if (!cmdmap.count(c->name)) {
+                        Command::fmtBulk(ss, c->name);
+                        count++;
+                    }
+                }
+            }
+
+        } else {
+            for (const auto& cmd : cmdmap) {
+                if (cmd.second->getFlags() & flag) {
+                    Command::fmtBulk(ss, cmd.first);
+                    count++;
+                } else if (multi && cmd.second->isMultiKey()) {
+                    Command::fmtBulk(ss, cmd.first);
+                    count++;
+                }
+            }
+        }
+
+        std::stringstream ret;
+        Command::fmtMultiBulkLen(ret, count);
+        ret << ss.str();
+
+        return ret.str();
     }
 } cmdList;
 
 class BinlogTimeCommand: public Command {
  public:
     BinlogTimeCommand()
-        :Command("binlogtime") {
+        :Command("binlogtime", "a") {
     }
 
     ssize_t arity() const {
@@ -525,7 +645,7 @@ class BinlogTimeCommand: public Command {
 class BinlogPosCommand: public Command {
  public:
     BinlogPosCommand()
-        :Command("binlogpos") {
+        :Command("binlogpos", "a") {
     }
 
     ssize_t arity() const {
@@ -581,7 +701,7 @@ class BinlogPosCommand: public Command {
 class DebugCommand: public Command {
  public:
     DebugCommand()
-        :Command("debug") {
+        :Command("debug", "a") {
     }
 
     ssize_t arity() const {
@@ -696,7 +816,7 @@ class DebugCommand: public Command {
 class ShutdownCommand: public Command {
  public:
     ShutdownCommand()
-        :Command("shutdown") {
+        :Command("shutdown", "a") {
     }
 
     ssize_t arity() const {
@@ -732,7 +852,7 @@ class ShutdownCommand: public Command {
 class ClientCommand: public Command {
  public:
     ClientCommand()
-        :Command("client") {
+        :Command("client", "as") {
     }
 
     ssize_t arity() const {
@@ -879,7 +999,7 @@ class ClientCommand: public Command {
 class InfoCommand: public Command {
  public:
     InfoCommand()
-        :Command("info") {
+        :Command("info", "lt") {
     }
 
     ssize_t arity() const {
@@ -896,6 +1016,10 @@ class InfoCommand: public Command {
 
     int32_t keystep() const {
         return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -951,62 +1075,88 @@ class InfoCommand: public Command {
 class ObjectCommand: public Command {
  public:
     ObjectCommand()
-        :Command("object") {
+        :Command("object", "r") {
     }
 
     ssize_t arity() const {
-        return 3;
+        return -2;
     }
 
     int32_t firstkey() const {
-        return 0;
+        return 2;
     }
 
     int32_t lastkey() const {
-        return 0;
+        return 2;
     }
 
     int32_t keystep() const {
-        return 0;
+        return 2;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::string& key = sess->getArgs()[1];
+        auto& args = sess->getArgs();
 
-        const std::map<RecordType, std::string> m = {
-            {RecordType::RT_KV, "raw"},
-            {RecordType::RT_LIST_META, "linkedlist"},
-            {RecordType::RT_HASH_META, "hashtable"},
-            {RecordType::RT_SET_META, "ziplist"},
-            {RecordType::RT_ZSET_META, "skiplist"},
-        };
-        for (auto type : {RecordType::RT_DATA_META}) {
+        if (args.size() == 2) {
+            std::stringstream ss;
+
+            Command::fmtLongLong(ss, 5);
+            Command::fmtBulk(ss,
+                "OBJECT <subcommand> key. Subcommands:");
+            Command::fmtBulk(ss,
+                "refcount -- Return the number of references of the value associated with the specified key. Always 1.");           // NOLINT
+            Command::fmtBulk(ss,
+                "encoding -- Return the kind of internal representation used in order to store the value associated with a key.");  // NOLINT
+            Command::fmtBulk(ss,
+                "idletime -- Return the idle time of the key, that is the approximated number of seconds elapsed since the last access to the key. Always 0");  // NOLINT
+            Command::fmtBulk(ss,
+                "freq -- Return the access frequency index of the key. The returned integer is proportional to the logarithm of the recent access frequency of the key. Always 0");  // NOLINT 
+            return ss.str();
+        } else if (args.size() == 3) {
+            const std::string& key = sess->getArgs()[2];
+            const std::map<RecordType, std::string> m = {
+                {RecordType::RT_KV, "raw"},
+                {RecordType::RT_LIST_META, "linkedlist"},
+                {RecordType::RT_HASH_META, "hashtable"},
+                {RecordType::RT_SET_META, "ziplist"},
+                {RecordType::RT_ZSET_META, "skiplist"},
+            };
+
             Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, type);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                continue;
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                continue;
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return Command::fmtNull();
             } else if (!rv.ok()) {
                 return rv.status();
             }
             auto vt = rv.value().getRecordType();
-            if (sess->getArgs()[2] == "recount") {
+            if (args[1] == "refcount") {
                 return Command::fmtOne();
-            } else if (sess->getArgs()[2] == "encoding") {
+            }
+            else if (args[1] == "encoding") {
                 return Command::fmtBulk(m.at(vt));
-            } else if (sess->getArgs()[2] == "idletime") {
+            }
+            else if (args[1] == "idletime") {
+                return Command::fmtLongLong(0);
+            } else if (args[1] == "freq") {
                 return Command::fmtLongLong(0);
             }
-        }
-        return Command::fmtNull();
+        } 
+        return{ ErrorCodes::ERR_PARSEOPT,
+            "Unknown subcommand or wrong number of arguments. \
+                        Try OBJECT help" };
     }
 } objectCmd;
 
 class ConfigCommand : public Command {
  public:
     ConfigCommand()
-        :Command("config") {
+        :Command("config", "lat") {
     }
 
     ssize_t arity() const {
@@ -1023,6 +1173,10 @@ class ConfigCommand : public Command {
 
     int32_t keystep() const {
         return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1051,7 +1205,7 @@ class ConfigCommand : public Command {
 class FulshAllDiskCommand : public Command {
  public:
     FulshAllDiskCommand()
-        :Command("flushalldisk") {
+        :Command("flushalldisk", "a") {
     }
 
     ssize_t arity() const {
@@ -1079,7 +1233,7 @@ class FulshAllDiskCommand : public Command {
 class MonitorCommand : public Command {
  public:
     MonitorCommand()
-        :Command("monitor") {
+        :Command("monitor", "as") {
     }
 
     ssize_t arity() const {
@@ -1098,6 +1252,10 @@ class MonitorCommand : public Command {
         return 0;
     }
 
+    bool sameWithRedis() const {
+        return false;
+    }
+
     Expected<std::string> run(Session *sess) final {
         auto vv = dynamic_cast<NetSession*>(sess);
         INVARIANT(vv != nullptr);
@@ -1113,7 +1271,7 @@ class MonitorCommand : public Command {
 class DestroyStoreCommand : public Command {
  public:
     DestroyStoreCommand()
-        :Command("destroystore") {
+        :Command("destroystore", "a") {
     }
 
     ssize_t arity() const {
@@ -1169,7 +1327,7 @@ class DestroyStoreCommand : public Command {
 class PauseStoreCommand : public Command {
  public:
     PauseStoreCommand()
-        :Command("pausestore") {
+        :Command("pausestore", "a") {
     }
 
     ssize_t arity() const {
@@ -1223,7 +1381,7 @@ class PauseStoreCommand : public Command {
 class ResumeStoreCommand : public Command {
  public:
     ResumeStoreCommand()
-        :Command("resumestore") {
+        :Command("resumestore", "a") {
     }
 
     ssize_t arity() const {

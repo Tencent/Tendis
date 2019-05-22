@@ -17,15 +17,11 @@ Expected<bool> delGeneric(Session *sess, const std::string& key);
 
 Expected<std::string> genericSRem(Session *sess,
                                   PStore kvstore,
+                                  Transaction* txn,
                                   const RecordKey& metaRk,
+                                  const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     SetMetaValue sm;
-    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
     uint64_t ttl = 0;
 
     if (rv.ok()) {
@@ -34,7 +30,8 @@ Expected<std::string> genericSRem(Session *sess,
             SetMetaValue::decode(rv.value().getValue());
         INVARIANT(exptSm.ok());
         sm = std::move(exptSm.value());
-    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
+               rv.status().code() != ErrorCodes::ERR_EXPIRED) {
         return rv.status();
     }
 
@@ -45,7 +42,7 @@ Expected<std::string> genericSRem(Session *sess,
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
-        Expected<RecordValue> rv = kvstore->getKV(subRk, txn.get());
+        Expected<RecordValue> rv = kvstore->getKV(subRk, txn);
         if (rv.ok()) {
             cnt += 1;
         } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -53,7 +50,7 @@ Expected<std::string> genericSRem(Session *sess,
         } else {
             return rv.status();
         }
-        Status s = kvstore->delKV(subRk, txn.get());
+        Status s = kvstore->delKV(subRk, txn);
         if (!s.ok()) {
             return s;
         }
@@ -61,32 +58,26 @@ Expected<std::string> genericSRem(Session *sess,
     INVARIANT(sm.getCount() >= cnt);
     Status s;
     if (sm.getCount() == cnt) {
-        s = kvstore->delKV(metaRk, txn.get());
+        s = kvstore->delKV(metaRk, txn);
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-                           RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-                           txn.get());
+              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+              txn);
     }
     if (!s.ok()) {
         return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
     return Command::fmtLongLong(cnt);
 }
 
 Expected<std::string> genericSAdd(Session *sess,
                                   PStore kvstore,
+                                  Transaction* txn,
                                   const RecordKey& metaRk,
+                                  const Expected<RecordValue>& rv,
                                   const std::vector<std::string>& args) {
-    auto ptxn = kvstore->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
     SetMetaValue sm;
-    Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
     uint64_t ttl = 0;
 
     if (rv.ok()) {
@@ -95,7 +86,8 @@ Expected<std::string> genericSAdd(Session *sess,
             SetMetaValue::decode(rv.value().getValue());
         INVARIANT(exptSm.ok());
         sm = std::move(exptSm.value());
-    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+    } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
+                rv.status().code() != ErrorCodes::ERR_EXPIRED) {
         return rv.status();
     }
 
@@ -106,35 +98,38 @@ Expected<std::string> genericSAdd(Session *sess,
                         RecordType::RT_SET_ELE,
                         metaRk.getPrimaryKey(),
                         args[i]);
-        Expected<RecordValue> rv = kvstore->getKV(subRk, txn.get());
         if (rv.ok()) {
-            continue;
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            cnt += 1;
+            Expected<RecordValue> subrv = kvstore->getKV(subRk, txn);
+            if (subrv.ok()) {
+                continue;
+            } else if (subrv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                cnt += 1;
+            } else {
+                return subrv.status();
+            }
         } else {
-            return rv.status();
+            cnt += 1;
         }
         RecordValue subRv("", RecordType::RT_SET_ELE);
-        Status s = kvstore->setKV(subRk, subRv, txn.get());
+        Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
         }
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
-                              txn.get());
+                    RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+                    txn);
     if (!s.ok()) {
         return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
     return Command::fmtLongLong(cnt);
 }
 
 class SMembersCommand: public Command {
  public:
     SMembersCommand()
-        :Command("smembers") {
+        :Command("smembers", "rS") {
     }
 
     ssize_t arity() const {
@@ -160,30 +155,24 @@ class SMembersCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return Command::fmtZeroBulkLen();
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
-        }
-
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        // TODO(vinchen): should be LOCK_S
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        // uint32_t storeId = expdb.value().dbId;
-        std::string metaKeyEnc = metaRk.encode();
 
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtZeroBulkLen();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
@@ -192,19 +181,11 @@ class SMembersCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
-
         ssize_t ssize = 0, cnt = 0;
-        if (rv.ok()) {
-            Expected<SetMetaValue> exptSm =
-                SetMetaValue::decode(rv.value().getValue());
-            INVARIANT(exptSm.ok());
-            ssize = exptSm.value().getCount();
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtZeroBulkLen();
-        } else {
-            return rv.status();
-        }
+        Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+        INVARIANT(exptSm.ok());
+        ssize = exptSm.value().getCount();
 
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, ssize);
@@ -227,6 +208,7 @@ class SMembersCommand: public Command {
             cnt += 1;
             Command::fmtBulk(ss, rcdkey.getSecondaryKey());
         }
+        // TODO(vinchen)
         INVARIANT(cnt == ssize);
         return ss.str();
     }
@@ -235,7 +217,7 @@ class SMembersCommand: public Command {
 class SIsMemberCommand: public Command {
  public:
     SIsMemberCommand()
-        :Command("sismember") {
+        :Command("sismember", "rF") {
     }
 
     ssize_t arity() const {
@@ -262,6 +244,13 @@ class SIsMemberCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
+        auto server = sess->getServerEntry();
+        // TODO(vinchen) : should be LOCK_S
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -272,18 +261,7 @@ class SIsMemberCommand: public Command {
             return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
@@ -312,7 +290,7 @@ class SIsMemberCommand: public Command {
 class SrandMemberCommand: public Command {
  public:
     SrandMemberCommand()
-        :Command("srandmember") {
+        :Command("srandmember", "rR") {
     }
 
     ssize_t arity() const {
@@ -329,6 +307,10 @@ class SrandMemberCommand: public Command {
 
     int32_t keystep() const {
         return 1;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -376,13 +358,8 @@ class SrandMemberCommand: public Command {
         if (!expdb.ok()) {
             return expdb.status();
         }
-        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
 
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
@@ -390,7 +367,7 @@ class SrandMemberCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get());
+        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_SET_META);
 
         ssize_t ssize = 0;
         if (rv.ok()) {
@@ -483,7 +460,7 @@ class SrandMemberCommand: public Command {
 class SpopCommand: public Command {
  public:
     SpopCommand()
-        :Command("spop") {
+        :Command("spop", "wRF") {
     }
 
     ssize_t arity() const {
@@ -509,27 +486,24 @@ class SpopCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        Expected<RecordValue> rv =
-            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-        if (rv.status().code() != ErrorCodes::ERR_OK &&
-                rv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                rv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return rv.status();
-        }
-
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        // uint32_t storeId = expdb.value().dbId;
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED &&
+                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtNull();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
@@ -548,8 +522,12 @@ class SpopCommand: public Command {
             }
             const std::string& v = (*rcds.begin()).getRecordKey().getSecondaryKey();
             Expected<std::string> s =
-                genericSRem(sess, kvstore, metaRk, {v});
+                genericSRem(sess, kvstore, txn.get(), metaRk, rv, {v});
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return Command::fmtBulk(v);
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -570,7 +548,7 @@ class SpopCommand: public Command {
 class SaddCommand: public Command {
  public:
     SaddCommand()
-        :Command("sadd") {
+        :Command("sadd", "wmF") {
     }
 
     ssize_t arity() const {
@@ -593,12 +571,14 @@ class SaddCommand: public Command {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
-        if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
-
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
 
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
@@ -608,24 +588,24 @@ class SaddCommand: public Command {
             return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
 
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
-
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
             Expected<std::string> s =
-                genericSAdd(sess, kvstore, metaRk, args);
+                genericSAdd(sess, kvstore, txn.get(), metaRk, rv, args);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return s.value();
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -646,7 +626,7 @@ class SaddCommand: public Command {
 class ScardCommand: public Command {
  public:
     ScardCommand()
-        :Command("scard") {
+        :Command("scard", "rF") {
     }
 
     ssize_t arity() const {
@@ -694,7 +674,7 @@ class ScardCommand: public Command {
 class SRemCommand: public Command {
  public:
     SRemCommand()
-        :Command("srem") {
+        :Command("srem", "wF") {
     }
 
     ssize_t arity() const {
@@ -717,12 +697,14 @@ class SRemCommand: public Command {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
 
-        if (args.size() >= 30000) {
-            return {ErrorCodes::ERR_PARSEOPT, "exceed sadd batch lim"};
-        }
-
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
 
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
@@ -732,17 +714,7 @@ class SRemCommand: public Command {
             return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-        std::string metaKeyEnc = metaRk.encode();
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         PStore kvstore = expdb.value().store;
 
@@ -751,9 +723,18 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             Expected<std::string> s =
-                genericSRem(sess, kvstore, metaRk, valArgs);
+                genericSRem(sess, kvstore, txn.get(), metaRk, rv, valArgs);
             if (s.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return s.value();
             }
             if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -773,8 +754,8 @@ class SRemCommand: public Command {
 
 class SdiffgenericCommand: public Command {
  public:
-    SdiffgenericCommand(const std::string& name, bool store)
-        :Command(name),
+    SdiffgenericCommand(const std::string& name, const char* sflags, bool store)
+        :Command(name, sflags),
          _store(store) {
     }
 
@@ -786,6 +767,7 @@ class SdiffgenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
+        // TODO(vinchen): should be LOCK_S if _stroe = false
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
         if (!lock.ok()) {
             return lock.status();
@@ -807,12 +789,7 @@ class SdiffgenericCommand: public Command {
                 return expdb.status();
             }
             RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
-            std::string metaKeyEnc = metaRk.encode();
             PStore kvstore = expdb.value().store;
-
-            // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-            //      return {ErrorCodes::ERR_BUSY, "key locked"};
-            // }
 
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -871,8 +848,20 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
+                 {ErrorCodes::ERR_NOTFOUND, ""},  /* storeKey has been deleted */
+                 newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -894,7 +883,7 @@ class SdiffgenericCommand: public Command {
 class SdiffCommand: public SdiffgenericCommand {
  public:
     SdiffCommand()
-        :SdiffgenericCommand("sdiff", false) {
+        :SdiffgenericCommand("sdiff", "rS", false) {
     }
 
     ssize_t arity() const {
@@ -915,9 +904,9 @@ class SdiffCommand: public SdiffgenericCommand {
 } sdiffcmd;
 
 class SdiffStoreCommand: public SdiffgenericCommand {
-public:
+ public:
     SdiffStoreCommand()
-        :SdiffgenericCommand("sdiffstore", true) {
+        :SdiffgenericCommand("sdiffstore", "wm", true) {
     }
 
     ssize_t arity() const {
@@ -941,9 +930,9 @@ public:
 // which n is the cardinality of the smallest set
 // m is the num of sets input
 class SintergenericCommand: public Command {
-public:
-    SintergenericCommand(const std::string& name, bool store)
-            :Command(name),
+ public:
+    SintergenericCommand(const std::string& name, const char* sflags, bool store)
+            :Command(name, sflags),
              _store(store) {
     }
 
@@ -1083,8 +1072,18 @@ public:
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
+                                    {ErrorCodes::ERR_NOTFOUND, ""}, newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1098,14 +1097,15 @@ public:
         }
         return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
     }
-private:
+
+ private:
     bool _store;
 };
 
 class SinterCommand: public SintergenericCommand {
-public:
+ public:
     SinterCommand()
-        :SintergenericCommand("sinter", false) {
+        :SintergenericCommand("sinter", "rS", false) {
     }
 
     ssize_t arity() const {
@@ -1126,9 +1126,9 @@ public:
 } sinterCommand;
 
 class SinterStoreCommand: public SintergenericCommand {
-public:
+ public:
     SinterStoreCommand()
-        :SintergenericCommand("sinterstore", true) {
+        :SintergenericCommand("sinterstore", "wm", true) {
     }
 
     ssize_t arity() const {
@@ -1149,9 +1149,9 @@ public:
 } sinterstoreCommand;
 
 class SmoveCommand: public Command {
-public:
+ public:
     SmoveCommand()
-        :Command("smove") {
+        :Command("smove", "wF") {
     }
 
     ssize_t arity() const {
@@ -1186,13 +1186,22 @@ public:
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
             rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
         }
 
-        auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, args[1]);
+        Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
+        if (!destRv.ok() &&
+            destRv.status().code() != ErrorCodes::ERR_EXPIRED &&
+            destRv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return destRv.status();
+        }
+
+        auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, source);
         if (!srcDb.ok()) {
             return srcDb.status();
         }
-        auto destDb = server->getSegmentMgr()->getDbHasLocked(sess, args[2]);
+        auto destDb = server->getSegmentMgr()->getDbHasLocked(sess, dest);
         if (!destDb.ok()) {
             return destDb.status();
         }
@@ -1200,12 +1209,16 @@ public:
         PStore srcStore = srcDb.value().store;
         PStore destStore = destDb.value().store;
 
+        auto etxn = pCtx->createTransaction(srcStore);
+        if (!etxn.ok()) {
+            return etxn.status();
+        }
+
         RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
-        RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
         // directly remove member from source
         const std::string& formatRet = Command::fmtLongLong(1);
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> remRet = genericSRem(sess, srcStore, remRk, {member});
+            Expected<std::string> remRet = genericSRem(sess, srcStore, etxn.value(), remRk, rv, {member});
             if (remRet.ok()) {
                 if (remRet.value() == formatRet) {
                     break;
@@ -1223,19 +1236,31 @@ public:
             }
         }
 
-        // add member to dest
-        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addRet = genericSAdd(sess, destStore, addRk, {"","",member});
-            if (addRet.ok()) {
-                return addRet.value();
+        if (source == dest) {
+            // NOTE(vinchen): if source == dest, do nothing and return 1.
+            return Command::fmtOne();
+        } else {
+            auto etxn2 = pCtx->createTransaction(destStore);
+            if (!etxn2.ok()) {
+                return etxn2.status();
             }
-            if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return addRet.status();
-            }
-            if (i == RETRY_CNT - 1) {
-                return addRet.status();
-            } else {
-                continue;
+
+            RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
+            // add member to dest
+            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+                Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, { "", "" , member });
+                if (addRet.ok()) {
+                    pCtx->commitAll("smove");
+                    return addRet.value();
+                }
+                if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return addRet.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return addRet.status();
+                } else {
+                    continue;
+                }
             }
         }
 
@@ -1244,12 +1269,12 @@ public:
 } smoveCommand;
 
 class SuniongenericCommand: public Command {
-public:
-    SuniongenericCommand(const std::string& name, bool store)
-        :Command(name),
+ public:
+    SuniongenericCommand(const std::string& name, const char* sflags, bool store)
+        :Command(name, sflags),
         _store(store) {
         }
-    
+
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         size_t startkey = _store ? 2 : 1;
@@ -1266,7 +1291,6 @@ public:
         for (size_t i = startkey; i < args.size(); ++i) {
             Expected<RecordValue> rv =
                     Command::expireKeyIfNeeded(sess, args[i], RecordType::RT_SET_META);
-            
             if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
                 rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 continue;
@@ -1284,7 +1308,6 @@ public:
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            
             auto cursor = txn->createCursor();
             RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], "");
             cursor->seek(fakeRk.prefixPk());
@@ -1308,7 +1331,7 @@ public:
         if (!_store) {
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, result.size());
-            for (const auto& v: result) {
+            for (const auto& v : result) {
                 Command::fmtBulk(ss, v);
             }
             return ss.str();
@@ -1335,8 +1358,18 @@ public:
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addStore = genericSAdd(sess, kvstore, storeRk, newKeys);
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Expected<std::string> addStore = genericSAdd(sess, kvstore, txn.get(), storeRk,
+                                            {ErrorCodes::ERR_NOTFOUND, ""}, newKeys);
             if (addStore.ok()) {
+                auto s1 = txn->commit();
+                if (!s1.ok()) {
+                    return s1.status();
+                }
                 return addStore.value();
             }
             if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1351,14 +1384,14 @@ public:
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 
-private:
+ private:
     bool _store;
 };
 
 class SunionCommand: public SuniongenericCommand {
-public:
+ public:
     SunionCommand()
-        :SuniongenericCommand("sunion", false) {
+        :SuniongenericCommand("sunion", "rS", false) {
         }
 
     ssize_t arity() const {
@@ -1379,9 +1412,9 @@ public:
 } sunionCommand;
 
 class SunionStoreCommand: public SuniongenericCommand {
-public:
+ public:
     SunionStoreCommand()
-        :SuniongenericCommand("sunionstore", true) {
+        :SuniongenericCommand("sunionstore", "wm", true) {
     }
 
     ssize_t arity() const {

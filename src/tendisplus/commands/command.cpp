@@ -26,8 +26,10 @@ std::map<std::string, Command*>& commandMap() {
     return map;
 }
 
-Command::Command(const std::string& name)
-        :_name(name) {
+Command::Command(const std::string& name, const char* sflags)
+        :_name(name),
+         _sflags(sflags),
+         _flags(redis_port::getCommandFlags(sflags)) {
     commandMap()[name] = this;
 }
 
@@ -49,6 +51,26 @@ uint64_t Command::getCallTimes() const {
 
 uint64_t Command::getNanos() const {
     return _totalNanoSecs.load(std::memory_order_relaxed);
+}
+
+bool Command::isReadOnly() const {
+    return (_flags & CMD_READONLY) != 0;
+}
+
+bool Command::isWriteable() const {
+    return (_flags & CMD_WRITE) != 0;
+}
+
+bool Command::isAdmin() const {
+    return (_flags & CMD_ADMIN) != 0;
+}
+
+bool Command::isMultiKey() const {
+    return lastkey() != firstkey() && firstkey() != 0;
+}
+
+int Command::getFlags() const {
+    return _flags;
 }
 
 std::vector<std::string> Command::listCommands() {
@@ -169,7 +191,8 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<uint32_t> deleteCount =
-            partialDelSubKeys(sess, storeId, batchSize, mk, valueType, false, txn.get());
+            partialDelSubKeys(sess, storeId, batchSize, mk,
+                                valueType, false, txn.get());
         if (!deleteCount.ok()) {
             return deleteCount.status();
         }
@@ -456,11 +479,11 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
                       << ",size:" << cnt.value();
             // reset txn, it is no longer used
             txn.reset();
-            return Command::delKeyPessimisticInLock(sess, storeId, mk, valueType,
-                                   ictx.getTTL() > 0 ? &ictx : nullptr);
+            return Command::delKeyPessimisticInLock(sess, storeId, mk,
+                    valueType, ictx.getTTL() > 0 ? &ictx : nullptr);
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, valueType,
-                                txn.get(), ictx.getTTL() > 0 ? &ictx : nullptr);
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+                   valueType, txn.get(), ictx.getTTL() > 0 ? &ictx : nullptr);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
@@ -537,8 +560,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                 return s;
             }
         } else {
-            Status s = Command::delKeyOptimismInLock(sess, storeId, mk, valueType,
-                                txn.get(), &ictx);
+            Status s = Command::delKeyOptimismInLock(sess, storeId, mk,
+                valueType, txn.get(), &ictx);
             if (s.code() == ErrorCodes::ERR_COMMIT_RETRY
                     && i != RETRY_CNT - 1) {
                 continue;
@@ -621,7 +644,8 @@ std::string Command::fmtBulk(const std::string& s) {
     return ss.str();
 }
 
-std::vector<int> Command::getKeysFromCommand(const std::vector<std::string>& argv) {
+std::vector<int> Command::getKeysFromCommand(
+                    const std::vector<std::string>& argv) {
     int argc = argv.size();
     std::vector<int> keyindex;
 

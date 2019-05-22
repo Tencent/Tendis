@@ -467,13 +467,13 @@ start_server {
     test "SMOVE wrong src key type" {
         setup_move
         r set x 10
-        assert_equal 0 [r smove x myset2 2]
+        assert_error "WRONGTYPE*" {r smove x myset2 foo}
     }
 
     test "SMOVE wrong dst key type" {
         setup_move
         r set x 10
-        assert_equal 1 [r smove myset2 x 2]
+        assert_error "WRONGTYPE*" {r smove myset2 x 2}
     }
 
     test "SMOVE with identical source and destination" {

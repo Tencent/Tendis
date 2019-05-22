@@ -16,8 +16,8 @@
 namespace tendisplus {
 class ScanGenericCommand: public Command {
  public:
-    ScanGenericCommand(const std::string& name)
-        :Command(name) {
+    ScanGenericCommand(const std::string& name, const char* sflags)
+        :Command(name, sflags) {
     }
 
     virtual RecordType getRcdType() const = 0;
@@ -96,13 +96,7 @@ class ScanGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
                             getRcdType(), key, "");
-        // uint32_t storeId = expdb.value().dbId;
-        std::string metaKeyEnc = metaRk.encode();
         PStore kvstore = expdb.value().store;
-
-        // if (Command::isKeyLocked(sess, storeId, metaKeyEnc)) {
-        //     return {ErrorCodes::ERR_BUSY, "key locked"};
-        // }
 
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
@@ -137,7 +131,7 @@ class ScanGenericCommand: public Command {
 class ZScanCommand: public ScanGenericCommand {
  public:
     ZScanCommand()
-        :ScanGenericCommand("zscan") {
+        :ScanGenericCommand("zscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -171,7 +165,7 @@ class ZScanCommand: public ScanGenericCommand {
 class SScanCommand: public ScanGenericCommand {
  public:
     SScanCommand()
-        :ScanGenericCommand("sscan") {
+        :ScanGenericCommand("sscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -199,7 +193,7 @@ class SScanCommand: public ScanGenericCommand {
 class HScanCommand: public ScanGenericCommand {
  public:
     HScanCommand()
-        :ScanGenericCommand("hscan") {
+        :ScanGenericCommand("hscan", "rR") {
     }
 
     RecordType getRcdType() const final {
@@ -228,7 +222,7 @@ class HScanCommand: public ScanGenericCommand {
 class ScanCommand: public Command {
  public:
     ScanCommand()
-        :Command("scan") {
+        :Command("scan", "rR") {
     }
 
     ssize_t arity() const {
@@ -236,15 +230,19 @@ class ScanCommand: public Command {
     }
 
     int32_t firstkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t lastkey() const {
-        return 1;
+        return 0;
     }
 
     int32_t keystep() const {
-        return 1;
+        return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     // NOTE(deyukong): tendis did not impl this api

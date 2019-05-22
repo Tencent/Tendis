@@ -131,6 +131,7 @@ RecordKey::RecordKey()
     :_chunkId(0),
      _dbId(0),
      _type(getRealKeyType(RecordType::RT_INVALID)),
+     _valueType(RecordType::RT_INVALID),
      _pk(""),
      _sk(""),
      _fmtVsn(0) {
@@ -140,6 +141,7 @@ RecordKey::RecordKey(RecordKey&& o)
         :_chunkId(o._chunkId),
          _dbId(o._dbId),
          _type(o._type),
+         _valueType(o._valueType),
          _pk(std::move(o._pk)),
          _sk(std::move(o._sk)),
          _version(o._version),
@@ -147,6 +149,7 @@ RecordKey::RecordKey(RecordKey&& o)
     o._chunkId = 0;
     o._dbId = 0;
     o._type = getRealKeyType(RecordType::RT_INVALID);
+    o._valueType = RecordType::RT_INVALID;
     o._version = 0;
     o._fmtVsn = 0;
 }
@@ -156,6 +159,7 @@ RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid, RecordType type,
         :_chunkId(chunkId),
          _dbId(dbid),
          _type(getRealKeyType(type)),
+         _valueType(type),
          _pk(pk),
          _sk(sk),
          _version(version),
@@ -167,6 +171,7 @@ RecordKey::RecordKey(uint32_t chunkId, uint32_t dbid,
     :_chunkId(chunkId),
      _dbId(dbid),
      _type(getRealKeyType(type)),
+     _valueType(type),
      _pk(std::move(pk)),
      _sk(std::move(sk)),
      _version(version),
@@ -287,6 +292,13 @@ RecordType RecordKey::getRecordType() const {
     // TODO(vinchen): remove it later
     INVARIANT(_type == getRealKeyType(_type));
     return _type;
+}
+
+RecordType RecordKey::getRecordValueType() const {
+    // TODO(vinchen): remove it later
+    INVARIANT(_type == getRealKeyType(_valueType));
+    INVARIANT(_valueType != RecordType::RT_DATA_META);
+    return _valueType;
 }
 
 std::string RecordKey::encode() const {

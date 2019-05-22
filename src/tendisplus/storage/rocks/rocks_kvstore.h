@@ -135,6 +135,7 @@ class RocksKVStore: public KVStore {
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
+    Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn, RecordType valueType) final;
     Status setKV(const Record& kv, Transaction* txn) final;
     Status setKV(const RecordKey& key, const RecordValue& val,
                  Transaction* txn) final;

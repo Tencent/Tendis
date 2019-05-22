@@ -103,6 +103,7 @@ class RecordKey {
     static const std::string& prefixTTLIndex();
 
     RecordType getRecordType() const;
+    RecordType getRecordValueType() const;
     std::string encode() const;
     static Expected<RecordKey> decode(const std::string& key);
     static RecordType getRecordTypeRaw(const char* key, size_t size);
@@ -113,6 +114,7 @@ class RecordKey {
     uint32_t _chunkId;
     uint32_t _dbId;
     RecordType _type;
+    RecordType _valueType;
     std::string _pk;
     std::string _sk;
     // version for subkey, it would be always 0 for *_META.

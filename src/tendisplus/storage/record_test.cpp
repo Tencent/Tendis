@@ -8,13 +8,15 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/time.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
 
 static int genRand() {
-    static int grand = 0;
-    grand = rand_r(reinterpret_cast<unsigned int *>(&grand));
+    int grand = 0;
+    uint32_t ms = nsSinceEpoch();
+    grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
     return grand;
 }
 
@@ -140,6 +142,10 @@ TEST(Record, Common) {
         EXPECT_EQ(pieceSize, rv.getPieceSize());
         EXPECT_EQ(type, rv.getRecordType());
         EXPECT_EQ(ttl, rv.getTtl());
+        EXPECT_EQ(rk.getRecordValueType(), type);
+        EXPECT_EQ(rk.getRecordValueType(), rv.getRecordType());
+        EXPECT_EQ(getRealKeyType(rk.getRecordValueType()),
+                    rk.getRecordType());
 
         EXPECT_EQ(getRealKeyType(type), rk.getRecordType());
         EXPECT_EQ(type_, getRealKeyType(type));
@@ -196,7 +202,7 @@ TEST(ReplRecord, Common) {
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint16_t localid = uint16_t(genRand());
         ReplFlag flag = randomReplFlag();
-        uint64_t timestamp = (uint64_t)genRand()+std::numeric_limits<uint32_t>::max();
+        uint64_t timestamp = (uint64_t)genRand()+std::numeric_limits<uint32_t>::max() + 1;
         auto rk = ReplLogKey(txnid, localid, flag, timestamp);
         auto rkStr = rk.encode();
         auto prk = ReplLogKey::decode(rkStr);
