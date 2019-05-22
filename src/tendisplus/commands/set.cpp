@@ -1229,35 +1229,64 @@ class SmoveCommand: public Command {
             }
         }
 
-        // NOTE(vinchen): source maybe equal to dest, so destRv should get after
-        // genericSRem()
-        Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
-        if (!destRv.ok() &&
-            destRv.status().code() != ErrorCodes::ERR_EXPIRED &&
-            destRv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return destRv.status();
-        }
+        if (source == dest) {
+            RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
 
-        auto etxn2 = pCtx->createTransaction(destStore);
-        if (!etxn2.ok()) {
-            return etxn2.status();
-        }
-
-        RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
-        // add member to dest
-        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, {"", "" , member});
-            if (addRet.ok()) {
-                pCtx->commitAll("smove");
-                return addRet.value();
+            // NOTE(vinchen): if source == dest, it should getkv of destRv using etxn,
+            // because key1 has be rem() by etxn.
+            // Otherwise if destRv = Command::expireKeyIfNeeded(), it would get the old value.
+            auto destRv = destStore->getKV(addRk, etxn.value());
+            if (!destRv.ok()) {
+                INVARIANT(0);
+                return Command::fmtZero();;
             }
-            if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return addRet.status();
-           }
-            if (i == RETRY_CNT - 1) {
-                return addRet.status();
-            } else {
-                continue;
+
+            // add member to dest
+            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+                Expected<std::string> addRet = genericSAdd(sess, destStore, etxn.value(), addRk, destRv, { "", "" , member });
+                if (addRet.ok()) {
+                    pCtx->commitAll("smove");
+                    return addRet.value();
+                }
+                if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return addRet.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return addRet.status();
+                } else {
+                    continue;
+                }
+            }
+
+        } else {
+            Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
+            if (!destRv.ok() &&
+                destRv.status().code() != ErrorCodes::ERR_EXPIRED &&
+                destRv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return destRv.status();
+            }
+
+            auto etxn2 = pCtx->createTransaction(destStore);
+            if (!etxn2.ok()) {
+                return etxn2.status();
+            }
+
+            RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
+            // add member to dest
+            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+                Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, { "", "" , member });
+                if (addRet.ok()) {
+                    pCtx->commitAll("smove");
+                    return addRet.value();
+                }
+                if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return addRet.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return addRet.status();
+                } else {
+                    continue;
+                }
             }
         }
 

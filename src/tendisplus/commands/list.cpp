@@ -460,13 +460,6 @@ class RPopLPushCommand: public Command {
             return etxn.status();
         }
 
-        auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
-        if (!expdb2.ok()) {
-            return expdb2.status();
-        }
-        RecordKey metaRk2(expdb2.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key2, "");
-        PStore kvstore2 = expdb2.value().store;
-
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             Expected<std::string> s =
@@ -489,40 +482,80 @@ class RPopLPushCommand: public Command {
             }
         }
 
-        auto etxn2 = pCtx->createTransaction(kvstore2);
-        if (!etxn2.ok()) {
-            return etxn2.status();
-        }
+        if (key1 == key2) {
+            // NOTE(vinchen): if key1 == key2, it should getkv of rv2 using etxn,
+            // because key1 has be pop() by etxn.
+            // Otherwise if rv2 = Command::expireKeyIfNeeded(), it would get the old value.
+            auto rv2 = kvstore1->getKV(metaRk1, etxn.value());
+            if (!rv2.ok()) {
+                INVARIANT(0);
+                return Command::fmtNull();
+            }
 
-        // NOTE(vinchen): key1 maybe equal to keys, so rv2 should get after
-        // genericPop()
-        Expected<RecordValue> rv2 =
-            Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
-        if (rv2.status().code() != ErrorCodes::ERR_OK &&
-            rv2.status().code() != ErrorCodes::ERR_EXPIRED &&
-            rv2.status().code() != ErrorCodes::ERR_NOTFOUND) {
-            return rv2.status();
-        }
-        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto s = genericPush(sess,
-                                 kvstore2,
-                                 etxn2.value(),
-                                 metaRk2,
-                                 rv2,
-                                 {val},
-                                 ListPos::LP_HEAD,
-                                 false /*need_exist*/);
-            if (s.ok()) {
-                pCtx->commitAll("rpoplpush");
-                return Command::fmtBulk(val);
+            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+                auto s = genericPush(sess,
+                    kvstore1,
+                    etxn.value(),
+                    metaRk1,
+                    rv2,
+                    { val },
+                    ListPos::LP_HEAD,
+                    false /*need_exist*/);
+                if (s.ok()) {
+                    pCtx->commitAll("rpoplpush");
+                    return Command::fmtBulk(val);
+                }
+                if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return s.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return s.status();
+                } else {
+                    continue;
+                }
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return s.status();
+        } else {
+            auto expdb2 = server->getSegmentMgr()->getDbHasLocked(sess, key2);
+            if (!expdb2.ok()) {
+                return expdb2.status();
             }
-            if (i == RETRY_CNT - 1) {
-                return s.status();
-            } else {
-                continue;
+            RecordKey metaRk2(expdb2.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key2, "");
+            PStore kvstore2 = expdb2.value().store;
+
+            auto etxn2 = pCtx->createTransaction(kvstore2);
+            if (!etxn2.ok()) {
+                return etxn2.status();
+            }
+
+            Expected<RecordValue> rv2 =
+                Command::expireKeyIfNeeded(sess, key2, RecordType::RT_LIST_META);
+            if (rv2.status().code() != ErrorCodes::ERR_OK &&
+                rv2.status().code() != ErrorCodes::ERR_EXPIRED &&
+                rv2.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                return rv2.status();
+            }
+
+            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+                auto s = genericPush(sess,
+                    kvstore2,
+                    etxn2.value(),
+                    metaRk2,
+                    rv2,
+                    { val },
+                    ListPos::LP_HEAD,
+                    false /*need_exist*/);
+                if (s.ok()) {
+                    pCtx->commitAll("rpoplpush");
+                    return Command::fmtBulk(val);
+                }
+                if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                    return s.status();
+                }
+                if (i == RETRY_CNT - 1) {
+                    return s.status();
+                } else {
+                    continue;
+                }
             }
         }
         INVARIANT(0);
