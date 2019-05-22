@@ -1190,6 +1190,13 @@ class SmoveCommand: public Command {
             return rv.status();
         }
 
+        Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
+        if (!destRv.ok() &&
+            destRv.status().code() != ErrorCodes::ERR_EXPIRED &&
+            destRv.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return destRv.status();
+        }
+
         auto srcDb = server->getSegmentMgr()->getDbHasLocked(sess, source);
         if (!srcDb.ok()) {
             return srcDb.status();
@@ -1230,42 +1237,9 @@ class SmoveCommand: public Command {
         }
 
         if (source == dest) {
-            RecordKey addRk(destDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, dest, "");
-
-            // NOTE(vinchen): if source == dest, it should getkv of destRv using etxn,
-            // because key1 has be rem() by etxn.
-            // Otherwise if destRv = Command::expireKeyIfNeeded(), it would get the old value.
-            auto destRv = destStore->getKV(addRk, etxn.value());
-            if (!destRv.ok()) {
-                INVARIANT(0);
-                return Command::fmtZero();;
-            }
-
-            // add member to dest
-            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-                Expected<std::string> addRet = genericSAdd(sess, destStore, etxn.value(), addRk, destRv, { "", "" , member });
-                if (addRet.ok()) {
-                    pCtx->commitAll("smove");
-                    return addRet.value();
-                }
-                if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                    return addRet.status();
-                }
-                if (i == RETRY_CNT - 1) {
-                    return addRet.status();
-                } else {
-                    continue;
-                }
-            }
-
+            // NOTE(vinchen): if source == dest, do nothing and return 1.
+            return Command::fmtOne();
         } else {
-            Expected<RecordValue> destRv = Command::expireKeyIfNeeded(sess, dest, RecordType::RT_SET_META);
-            if (!destRv.ok() &&
-                destRv.status().code() != ErrorCodes::ERR_EXPIRED &&
-                destRv.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                return destRv.status();
-            }
-
             auto etxn2 = pCtx->createTransaction(destStore);
             if (!etxn2.ok()) {
                 return etxn2.status();
