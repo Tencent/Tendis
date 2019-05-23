@@ -75,6 +75,10 @@ struct redisCommand {
     long long microseconds, calls;
 };
 
+uint64_t htonll(uint64_t v);
+uint64_t ntohll(uint64_t v);
+uint64_t crc64(uint64_t crc, const unsigned char *s, uint64_t l);
+
 /* Input flags. */
 #define ZADD_NONE 0
 #define ZADD_INCR (1<<0)    /* Increment the score instead of setting it. */

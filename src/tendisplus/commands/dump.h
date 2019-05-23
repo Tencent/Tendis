@@ -3,6 +3,8 @@
 
 #include <string>
 #include <vector>
+#include <map>
+#include <memory>
 #include <cstddef>
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/status.h"
@@ -18,8 +20,8 @@ static const uint16_t RDB_VERSION = 9;    // for test only
 
 static const uint8_t RDB_6BITLEN = 0;
 static const uint8_t RDB_14BITLEN = 1;
-static const uint8_t RDB_32BITLEN = 0x80; // 10000000
-static const uint8_t RDB_64BITLEN = 0x81; // 10000001
+static const uint8_t RDB_32BITLEN = 0x80;  // 10000000
+static const uint8_t RDB_64BITLEN = 0x81;  // 10000001
 
 enum class DumpType: uint8_t {
     RDB_TYPE_STRING = 0,
@@ -54,13 +56,12 @@ Expected<std::string> genericZadd(Session *sess,
                                   int flags);
 
 template <typename T>
-size_t easyCopy(std::vector<byte> &buf, size_t &pos, T element);
+size_t easyCopy(std::vector<byte> *buf, size_t *pos, T element);
 template <typename T>
-size_t easyCopy(std::vector<byte> &buf, size_t &pos, const T *array, size_t len);
+size_t easyCopy(std::vector<byte> *buf, size_t *pos,
+                const T *array, size_t len);
 template <typename T>
-size_t easyCopy(T *dest, std::vector<byte> &buf, size_t &pos);
-
-uint64_t htonll(uint64_t v);
+size_t easyCopy(T *dest, const std::string &buf, size_t *pos);
 
 class Serializer {
 public:
@@ -71,9 +72,12 @@ public:
     virtual Expected<size_t> dumpObject(std::vector<byte>& buf) = 0;
     // virtual Expected<std::vector<byte>> restore() = 0;
 
-    static Expected<size_t> saveObjectType(std::vector<byte>& payload, size_t& pos, DumpType type);
-    static Expected<size_t> saveLen(std::vector<byte>& payload, size_t& pos, size_t len);
-    static size_t saveString(std::vector<byte> &payload, size_t &pos, const std::string &str);
+    static Expected<size_t> saveObjectType(
+            std::vector<byte> *payload, size_t *pos, DumpType type);
+    static Expected<size_t> saveLen(
+            std::vector<byte> *payload, size_t *pos, size_t len);
+    static size_t saveString(
+            std::vector<byte> *payload, size_t *pos, const std::string &str);
 
     size_t _begin, _end;
 
@@ -83,28 +87,37 @@ protected:
     DumpType _type;
     size_t _pos;
 };
-Expected<std::unique_ptr<Serializer>> getSerializer(Session *sess, const std::string& key);
+Expected<std::unique_ptr<Serializer>>
+getSerializer(Session *sess, const std::string& key);
 
 class Deserializer {
-public:
-    explicit Deserializer(Session *sess, const std::string &payload, const std::string &key, const uint64_t ttl);
+ public:
+    explicit Deserializer(
+            Session *sess,
+            const std::string &payload,
+            const std::string &key,
+            const uint64_t ttl);
     virtual ~Deserializer() = default;
     virtual Status restore() = 0;
-    static Status preCheck(std::string &payload);
-    static Expected<DumpType> loadObjectType(const std::string &payload, size_t &&pos);
-    static Expected<size_t> loadLen(const std::string &payload, size_t &pos);
-    static std::string loadString(const std::string &payload, size_t &pos);
+    static Status preCheck(const std::string &payload);
+    static Expected<DumpType> loadObjectType(
+            const std::string &payload, size_t &&pos);
+    static Expected<size_t> loadLen(const std::string &payload, size_t *pos);
+    static std::string loadString(const std::string &payload, size_t *pos);
 
-protected:
+ protected:
     Session *_sess;
     std::string _payload;
     std::string _key;
     uint64_t _ttl;
     size_t _pos;
 };
-Expected<std::unique_ptr<Deserializer>> getDeserializer(Session *sess, const std::string &payload,
-        const std::string &key, const uint64_t ttl);
+Expected<std::unique_ptr<Deserializer>> getDeserializer(
+        Session *sess,
+        const std::string &payload,
+        const std::string &key,
+        const uint64_t ttl);
 
-} //namespace tendisplus
+}  // namespace tendisplus
 
-#endif //SRC_TENDISPLUS_COMMANDS_DUMP_H
+#endif  // SRC_TENDISPLUS_COMMANDS_DUMP_H
