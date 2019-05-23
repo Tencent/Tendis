@@ -121,22 +121,22 @@ class KeysCommand: public Command {
                 auto key = exptRcd.value().getRecordKey().getPrimaryKey();
 
                 if (!allkeys &&
-                    redis_port::stringmatchlen(pattern.c_str(), pattern.size(),
+                    !redis_port::stringmatchlen(pattern.c_str(), pattern.size(),
                         key.c_str(), key.size(), 0)) {
                     continue;
                 }
 
                 auto ttl = exptRcd.value().getRecordValue().getTtl();
                 if (keyType != RecordType::RT_DATA_META ||
-                    ttl !=0 && ttl < ts) {      // skip the expired key
+                    (ttl !=0 && ttl < ts)) {      // skip the expired key
                     continue;
                 }
                 result.emplace_back(std::move(key));
-                if (result.size() >= limit) {
+                if (result.size() >= (size_t)limit) {
                     break;
                 }
             }
-            if (result.size() >= limit) {
+            if (result.size() >= (size_t)limit) {
                 break;
             }
         }
@@ -177,8 +177,6 @@ class DbsizeCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::vector<std::string>& args = sess->getArgs();
-
         int64_t size = 0;
         auto currentDbid = sess->getCtx()->getDbId();
         auto ts = msSinceEpoch();
@@ -227,7 +225,7 @@ class DbsizeCommand: public Command {
                 }
                 auto ttl = exptRcd.value().getRecordValue().getTtl();
                 if (keyType != RecordType::RT_DATA_META ||
-                    ttl != 0 && ttl < ts) {      // skip the expired key
+                    (ttl != 0 && ttl < ts)) {      // skip the expired key
                     continue;
                 }
 
@@ -1510,6 +1508,11 @@ class FlushdbCommand : public FlushGeneric {
             return flags.status();
         }
 
+        // TODO(vinchen): only support db 0
+        if (sess->getCtx()->getDbId() != 0) {
+            return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
+        }
+
         auto s = runGeneric(sess, flags.value());
         if (!s.ok()) {
             return s;
@@ -1547,11 +1550,6 @@ class FlushAllDiskCommand : public FlushGeneric {
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();
-        }
-
-        // TODO(vinchen): only support db 0
-        if (sess->getCtx()->getDbId() != 0) {
-            return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
         }
 
         auto s = runGeneric(sess, flags.value());

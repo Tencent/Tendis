@@ -144,18 +144,21 @@ class SetCommand: public Command {
                     result.flags |= REDIS_SET_XX;
                 } else if (s == "ex" && i+1 < args.size()) {
                     result.expire = std::stoll(args[i+1])*1000ULL;
+                    if (result.expire <= 0) {
+                        return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+                    }
                     i++;
                 } else if (s == "px" && i+1 < args.size()) {
                     result.expire = std::stoll(args[i+1]);
+                    if (result.expire <= 0) {
+                        return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+                    }
                     i++;
                 } else {
                     return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
                 }
 
-                if (result.expire <= 0) {
-                    return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
-                }
-            }
+                            }
         } catch (std::exception& ex) {
             return {ErrorCodes::ERR_PARSEPKT,
                     "value is not an integer or out of range"};
