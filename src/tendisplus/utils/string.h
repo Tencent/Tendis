@@ -23,6 +23,10 @@ Expected<std::string> unhexlify(const std::string&);
 bool isOptionOn(const std::string& s);
 void sdstrim(std::string &s, const char *cset);
 
+std::string& replaceAll(std::string& str,
+    const std::string& old_value,
+    const std::string& new_value);
+
 }  // namespace tendisplus
 
-#endif  // SRC_TENDISPLUS_UTILS_STRING_H_
+#endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 

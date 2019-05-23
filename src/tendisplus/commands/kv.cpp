@@ -882,7 +882,7 @@ class GetSetGeneral: public Command {
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk, newValue.value(),
-                                     server->checkKeyTypeForSet(),
+                                     false, /* check_type has be done by Command::expireKeyIfNeeded() */
                                      true,
                                      "", "");
             if (result.ok()) {
@@ -938,7 +938,8 @@ class CasCommand: public GetSetGeneral {
             return ecas.status();
         }
 
-        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV);
+        auto ttl = oldValue.value().getTtl();
+        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV, ttl, oldValue);
         if (!oldValue.ok()) {
             ret.setCas(ecas.value());
             return ret;
@@ -950,7 +951,6 @@ class CasCommand: public GetSetGeneral {
         }
 
         ret.setCas(ecas.value() + 1);
-        ret.setTtl(oldValue.value().getTtl());
         return std::move(ret);
     }
 
@@ -1208,7 +1208,7 @@ class GetSetCommand: public GetSetGeneral {
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
         // getset overwrites ttl
-        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0);
+        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1381,9 +1381,54 @@ class IncrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(std::to_string(newSum.value()),
-                        type, ttl);
+                        type, ttl, oldValue);
     }
 } incrbyCmd;
+
+class IncrexCommand : public IncrDecrGeneral {
+public:
+    IncrexCommand()
+        :IncrDecrGeneral("increx", "wmF") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(
+        Session* sess, const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[2];
+        Expected<int64_t> ettl = ::tendisplus::stoll(val);
+        if (!ettl.ok()) {
+            return ettl.status();
+        }
+        Expected<int64_t> newSum = sumIncr(oldValue, 1);
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        uint64_t ttl = ettl.value() * 1000 + msSinceEpoch();
+        RecordType type = RecordType::RT_KV;
+        if (oldValue.ok()) {
+            type = oldValue.value().getRecordType();
+        }
+        return RecordValue(std::to_string(newSum.value()),
+            type, ttl, oldValue);
+    }
+} increxCmd;
+
 
 class IncrCommand: public IncrDecrGeneral {
  public:
@@ -1420,7 +1465,7 @@ class IncrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } incrCmd;
 
@@ -1466,7 +1511,7 @@ class DecrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         // LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } decrbyCmd;
 
@@ -1506,7 +1551,7 @@ class DecrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } decrCmd;
 

@@ -257,7 +257,10 @@ void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
 }
 
 Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
-    std::string subpath = _dumpPath + "/" + std::to_string(storeId);
+    std::string subpath = _dumpPath + "/" + std::to_string(storeId) + "/";
+#ifdef _WIN32
+    subpath = replaceAll(subpath, "/", "\\");
+#endif
     try {
         if (!filesystem::exists(_dumpPath)) {
             filesystem::create_directory(_dumpPath);
