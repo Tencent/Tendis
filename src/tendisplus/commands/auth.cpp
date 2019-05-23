@@ -37,13 +37,18 @@ class SelectCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         Expected<uint64_t> dbId = ::tendisplus::stoul(sess->getArgs()[1]);
         if (!dbId.ok()) {
-            return dbId.status();
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid DB index" };
+        }
+
+        auto id = dbId.value();
+        if (id < 0 || id >= sess->getServerEntry()->dbNum()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "DB index is out of range" };
         }
 
         // TODO(vinchen): disable select db expect 0 ?
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        pCtx->setDbId(dbId.value());
+        pCtx->setDbId(id);
 
         return Command::fmtOK();
     }

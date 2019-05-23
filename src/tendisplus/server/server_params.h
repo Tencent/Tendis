@@ -40,6 +40,7 @@ class ServerParams {
     uint32_t pauseTimeIndexMgr;
 
     uint32_t protoMaxBulkLen;
+    uint32_t dbNum;
 };
 }  // namespace tendisplus
 

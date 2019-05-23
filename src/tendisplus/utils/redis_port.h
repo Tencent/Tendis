@@ -49,6 +49,7 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit);
 #define CMD_MASK 0xFFFF
 
 
+#define CONFIG_DEFAULT_DBNUM     16
 #define CONFIG_DEFAULT_PROTO_MAX_BULK_LEN (512ll*1024*1024) /* Bulk request max size */
 
 int getCommandFlags(const char* sflags);
