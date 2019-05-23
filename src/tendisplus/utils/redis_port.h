@@ -17,7 +17,8 @@ int string2ll(const char *s, size_t slen, long long *value); // (NOLINT/int)
 std::string errorReply(const std::string& s);
 
 // port from redis source code, sds.c::sdssplitargs
-std::vector<std::string> splitargs(const std::string& lineStr);
+std::vector<std::string>* splitargs(std::vector<std::string>& result,
+    const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
 int ld2string(char *buf, size_t len, long double value, int humanfriendly);
@@ -46,6 +47,9 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit);
 #define CMD_MODULE_NO_CLUSTER (1<<15) /* Deny on Redis Cluster. */
 
 #define CMD_MASK 0xFFFF
+
+
+#define CONFIG_DEFAULT_PROTO_MAX_BULK_LEN (512ll*1024*1024) /* Bulk request max size */
 
 int getCommandFlags(const char* sflags);
 struct redisCommand* getCommandFromTable(const char* cmd);

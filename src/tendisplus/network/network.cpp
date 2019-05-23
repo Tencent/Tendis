@@ -312,6 +312,7 @@ void NetSession::setCloseAfterRsp() {
 void NetSession::setRspAndClose(const std::string& s) {
     _closeAfterRsp = true;
     setResponse(redis_port::errorReply(s));
+    resetMultiBulkCtx();
 }
 
 void NetSession::processInlineBuffer() {
@@ -319,6 +320,7 @@ void NetSession::processInlineBuffer() {
     std::vector<std::string> argv;
     std::string aux;
     size_t querylen;
+    size_t linefeed_chars = 1;
 
     /* Search for end of line */
     newline = strchr(_queryBuf.data(), '\n');
@@ -338,19 +340,20 @@ void NetSession::processInlineBuffer() {
     /* Handle the \r\n case. */
     if (newline && newline != _queryBuf.data() && *(newline-1) == '\r') {
         newline--;
+        linefeed_chars++;
     }
 
     /* Split the input buffer up to the \r\n */
     querylen = newline-(_queryBuf.data());
     aux = std::string(_queryBuf.data(), querylen);
-    argv = redis_port::splitargs(aux);
-    if (argv.size() == 0) {
+    auto ret = redis_port::splitargs(argv, aux);
+    if (ret == NULL) {
         setRspAndClose("Protocol error: unbalanced quotes in request");
         return;
     }
 
     /* Leave data after the first line of the query in the buffer */
-    shiftQueryBuf(querylen+2, -1);
+    shiftQueryBuf(querylen+linefeed_chars, -1);
 
     if (_args.size() != 0) {
         LOG(FATAL) << "BUG: _args.size:" << _args.size() << " not empty";
@@ -388,14 +391,20 @@ void NetSession::processMultibulkBuffer() {
             schedule();
             return;
         }
+        /* Buffer should also contain \n */
         if (newLine - _queryBuf.data() > _queryBufPos - 2) {
             // not complete line
             setState(State::DrainReqNet);
             schedule();
             return;
         }
+
+        /* We know for sure there is a whole line since newline != NULL,
+        * so go ahead and find out the multi bulk length. */
         if (_queryBuf[0] != '*') {
-            LOG(FATAL) << "multiBulk first char not *";
+            LOG(ERROR) << "multiBulk first char not *";
+            ++_netMatrix->invalidPackets;
+            setRspAndClose("Protocol error: multiBulk first char not *");
             return;
         }
         char *newStart = _queryBuf.data() + 1;
@@ -408,11 +417,9 @@ void NetSession::processMultibulkBuffer() {
         pos = newLine-_queryBuf.data()+2;
         if (ll <= 0) {
             shiftQueryBuf(pos, -1);
-            if (_queryBufPos == 0) {
-                setState(State::DrainReqNet);
-            } else {
-                setState(State::DrainReqBuf);
-            }
+
+            INVARIANT(_args.size() == 0);
+            setState(State::Process);
             schedule();
             return;
         }
@@ -432,6 +439,8 @@ void NetSession::processMultibulkBuffer() {
                 }
                 break;
             }
+
+            /* Buffer should also contain \n */
             if (newLine - _queryBuf.data() > _queryBufPos - 2) {
                 break;
             }
@@ -445,7 +454,12 @@ void NetSession::processMultibulkBuffer() {
             }
             char *newStart = _queryBuf.data()+pos+1;
             ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
-            if (!ok || ll < 0 || ll > 512*1024*1024) {
+
+            uint32_t maxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
+            if (getServerEntry().get()) {
+                maxBulkLen = getServerEntry()->protoMaxBulkLen();
+            }
+            if (!ok || ll < 0 || ll > maxBulkLen) {
                 ++_netMatrix->invalidPackets;
                 setRspAndClose("Protocol error: invalid bulk length");
                 return;
@@ -582,12 +596,14 @@ void NetSession::drainReqNet() {
 }
 
 void NetSession::processReq() {
-    _ctx->setProcessPacketStart(nsSinceEpoch());
-    bool continueSched = _server->processRequest(id());
-    _reqMatrix->processed += 1;
-    _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
-    _ctx->setProcessPacketStart(0);
-
+    bool continueSched = true;
+    if (_args.size()) {
+        _ctx->setProcessPacketStart(nsSinceEpoch());
+        continueSched = _server->processRequest(id());
+        _reqMatrix->processed += 1;
+        _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
+        _ctx->setProcessPacketStart(0);
+    }
     if (!continueSched) {
         endSession();
     } else if (!_closeAfterRsp) {

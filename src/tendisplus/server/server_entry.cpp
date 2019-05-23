@@ -47,6 +47,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
+    _protoMaxBulkLen = cfg->protoMaxBulkLen;
 }
 
 void ServerEntry::installPessimisticMgrInLock(

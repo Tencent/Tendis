@@ -485,10 +485,10 @@ int zslParseRange(const char *min, const char *max, Zrangespec *spec) {
     return 0;
 }
 
-std::vector<std::string> splitargs(const std::string& lineStr) {
+std::vector<std::string>* splitargs(std::vector<std::string>& result,
+                                const std::string& lineStr) {
     const char *line = lineStr.c_str();
     const char *p = line;
-    std::vector<std::string> result;
 
     while (1) {
         /* skip blanks */
@@ -576,12 +576,13 @@ std::vector<std::string> splitargs(const std::string& lineStr) {
             /* add the token to the vector */
             result.emplace_back(std::move(current));
         } else {
-            return result;
+            /* Even on empty input string return something not NULL. */
+            return &result;
         }
     }
 
 err:
-    return std::vector<std::string>();
+    return NULL;
 }
 
 /* CRC16 implementation according to CCITT standards.
