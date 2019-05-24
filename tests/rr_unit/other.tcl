@@ -16,7 +16,7 @@ start_server {tags {"other"}} {
         r zadd mytestzset 10 a
         r zadd mytestzset 20 b
         r zadd mytestzset 30 c
-        r debug reload
+        #r debug reload
     } {OK}
 
     #tags {slow} {
@@ -45,7 +45,7 @@ start_server {tags {"other"}} {
         r set x 10
         #r bgsave
         #waitForBgsave r
-        r debug reload
+        #r debug reload
         r get x
     } {10}
 

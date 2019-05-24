@@ -35,7 +35,7 @@ class SelectCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        Expected<uint64_t> dbId = ::tendisplus::stoul(sess->getArgs()[1]);
+        auto dbId = ::tendisplus::stoll(sess->getArgs()[1]);
         if (!dbId.ok()) {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid DB index" };
         }

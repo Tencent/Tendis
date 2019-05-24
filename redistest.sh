@@ -11,3 +11,5 @@ tclsh tests/test_helper.tcl  --single rr_unit/expire
 tclsh tests/test_helper.tcl --single rr_unit/bitops
 tclsh tests/test_helper.tcl --single rr_unit/auth
 tclsh tests/test_helper.tcl --single rr_unit/basic
+tclsh tests/test_helper.tcl --single rr_unit/protocol  
+tclsh tests/test_helper.tcl --single rr_unit/other

@@ -166,37 +166,38 @@ start_server {tags {"expire"}} {
 
     # this test would fail because dbsize is not implemented
     # using rrDbsize would pass this test
-    #test {Redis should actively expire keys incrementally} {
-    #    r psetex key1 500 a
-    #    r psetex key2 500 a
-    #    r psetex key3 500 a
-    #    set size1 [r rrdbsize]
-    #    # Redis expires random keys ten times every second so we are
-    #    # fairly sure that all the three keys should be evicted after
-    #    # one second.
-    #    after 10000
-    #    set size2 [r rrdbsize]
-    #    list $size1 $size2
-    #} {3 0}
+    test {Redis should actively expire keys incrementally} {
+        r psetex key1 500 a
+        r psetex key2 500 a
+        r psetex key3 500 a
+        set size1 [r dbsize]
+        # Redis expires random keys ten times every second so we are
+        # fairly sure that all the three keys should be evicted after
+        # one second.
+        after 10000
+        set size2 [r dbsize]
+        list $size1 $size2
+    } {3 0}
 
     # this test would fail because dbsize is not implemented
     # using rrdbsize would pass this test
-    #test {Redis should lazy expire keys} {
-    #    r debug set-active-expire 0
-    #    r psetex key1 500 a
-    #    r psetex key2 500 a
-    #    r psetex key3 500 a
-    #    set size1 [r rrdbsize]
-    #    # Redis expires random keys ten times every second so we are
-    #    # fairly sure that all the three keys should be evicted after
-    #    # one second.
-    #    after 1000
-    #    set size2 [r rrdbsize]
-    #    r mget key1 key2 key3
-    #    set size3 [r rrdbsize]
-    #    r debug set-active-expire 1
-    #    list $size1 $size2 $size3
-    #} {3 3 0}
+    test {Redis should lazy expire keys} {
+        #r debug set-active-expire 0
+        r psetex key1 500 a
+        r psetex key2 500 a
+        r psetex key3 500 a
+        set size1 [r dbsize]
+        # Redis expires random keys ten times every second so we are
+        # fairly sure that all the three keys should be evicted after
+        # one second.
+        # in tendis, there is no set-active-expire
+        after 1000
+        set size2 [r dbsize]
+        r mget key1 key2 key3
+        set size3 [r dbsize]
+        #r debug set-active-expire 1
+        list $size1 $size2 $size3
+    } {3 0 0}
 
     # TRedis v-1.1 does not support active-expire
     test {EXPIRE should not resurrect keys (issue #1026)} {
@@ -212,13 +213,13 @@ start_server {tags {"expire"}} {
     # if we put 'r flushdb' after every set command
     # this test would fail because keys command is
     # not correctly implemented now
-    #test {5 keys in, 5 keys out} {
-    #    r set a c
-    #    r expire a 5
-    #    r set t c
-    #    r set e c
-    #    r set s c
-    #    r set foo b
-    #    lsort [r keys *]
-    #} {a e foo s t}
+    test {5 keys in, 5 keys out} {
+        r set a c
+        r expire a 5
+        r set t c
+        r set e c
+        r set s c
+        r set foo b
+        lsort [r keys *]
+    } {a e foo s t}
 }

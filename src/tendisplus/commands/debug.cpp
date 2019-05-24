@@ -263,7 +263,7 @@ class PingCommand: public Command {
             return std::string("+PONG\r\n");
         }
         if (sess->getArgs().size() != 2) {
-            return {ErrorCodes::ERR_PARSEOPT, "wrong number of arguments"};
+            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, "wrong number of arguments for 'ping' command"};
         }
         return Command::fmtBulk(sess->getArgs()[1]);
     }

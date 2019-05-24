@@ -49,7 +49,7 @@ start_server {tags {"basic"}} {
     test {DBSIZE} {
         r config set zset-load-startup-threshhold 0
         r debug reload
-        r rrdbsize
+        r dbsize
     } {6}
 
     test {Very big payload in GET/SET} {
@@ -305,55 +305,55 @@ start_server {tags {"basic"}} {
         assert_equal 20 [r get x]
     }
 
-    test "SETNXEX target key missing" {
-        r del novar
-        assert_equal 1 [r setnxex novar 100 foobared]
-        assert_equal "foobared" [r get novar]
-    }
+    #test "SETNXEX target key missing" {
+    #    r del novar
+    #    assert_equal 1 [r setnxex novar 100 foobared]
+    #    assert_equal "foobared" [r get novar]
+    #}
 
-    test "SETNXEX target key exists" {
-        r set novar foobared
-        assert_equal 0 [r setnxex novar 1000 blabla]
-        assert_equal "foobared" [r get novar]
-    }
+    #test "SETNXEX target key exists" {
+    #    r set novar foobared
+    #    assert_equal 0 [r setnxex novar 1000 blabla]
+    #    assert_equal "foobared" [r get novar]
+    #}
 
-    test "SETNXEX target key ttl" {
-        r del novar
-        assert_equal 1 [r setnxex novar 3 foobared]
-        after 5000
-        set ttl [r ttl novar]
-        r get novar
-    } {}
+    #test "SETNXEX target key ttl" {
+    #    r del novar
+    #    assert_equal 1 [r setnxex novar 3 foobared]
+    #    after 5000
+    #    set ttl [r ttl novar]
+    #    r get novar
+    #} {}
 
-    test "SETNXEX against not-expired volatile key" {
-        r set x 10
-        r expire x 10000
-        assert_equal 0 [r setnxex x 1000 20]
-        assert_equal 10 [r get x]
-    }
+    #test "SETNXEX against not-expired volatile key" {
+    #    r set x 10
+    #    r expire x 10000
+    #    assert_equal 0 [r setnxex x 1000 20]
+    #    assert_equal 10 [r get x]
+    #}
 
-    test "SETNXEX against expired volatile key" {
-        # Make it very unlikely for the key this test uses to be expired by the
-        # active expiry cycle. This is tightly coupled to the implementation of
-        # active expiry and dbAdd() but currently the only way to test that
-        # SETNX expires a key when it should have been.
-        for {set x 0} {$x < 9999} {incr x} {
-            r setex key-$x 3600 value
-        }
+    #test "SETNXEX against expired volatile key" {
+    #    # Make it very unlikely for the key this test uses to be expired by the
+    #    # active expiry cycle. This is tightly coupled to the implementation of
+    #    # active expiry and dbAdd() but currently the only way to test that
+    #    # SETNX expires a key when it should have been.
+    #    for {set x 0} {$x < 9999} {incr x} {
+    #        r setex key-$x 3600 value
+    #    }
 
-        # This will be one of 10000 expiring keys. A cycle is executed every
-        # 100ms, sampling 10 keys for being expired or not.  This key will be
-        # expired for at most 1s when we wait 2s, resulting in a total sample
-        # of 100 keys. The probability of the success of this test being a
-        # false positive is therefore approx. 1%.
-        r set x 10
-        r expire x 1
-        # Wait for the key to expire
-        after 2000
+    #    # This will be one of 10000 expiring keys. A cycle is executed every
+    #    # 100ms, sampling 10 keys for being expired or not.  This key will be
+    #    # expired for at most 1s when we wait 2s, resulting in a total sample
+    #    # of 100 keys. The probability of the success of this test being a
+    #    # false positive is therefore approx. 1%.
+    #    r set x 10
+    #    r expire x 1
+    #    # Wait for the key to expire
+    #    after 2000
 
-        assert_equal 1 [r setnxex x 1000 20]
-        assert_equal 20 [r get x]
-    }
+    #    assert_equal 1 [r setnxex x 1000 20]
+    #    assert_equal 20 [r get x]
+    #}
 
     test "DEL against expired key" {
         r debug set-active-expire 0
@@ -429,38 +429,38 @@ start_server {tags {"basic"}} {
         r mget foo baazz bar myset
     } {BAR {} FOO {}}
 
-    test {RANDOMKEY} {
-        r flushalldisk
-        r set foo x
-        r set bar y
-        set foo_seen 0
-        set bar_seen 0
-        r debug reload
-        for {set i 0} {$i < 100} {incr i} {
-            set rkey [r randomkey]
-            if {$rkey eq {foo}} {
-                set foo_seen 1
-            }
-            if {$rkey eq {bar}} {
-                set bar_seen 1
-            }
-        }
-        list $foo_seen $bar_seen
-    } {1 1}
+    #test {RANDOMKEY} {
+    #    r flushalldisk
+    #    r set foo x
+    #    r set bar y
+    #    set foo_seen 0
+    #    set bar_seen 0
+    #    r debug reload
+    #    for {set i 0} {$i < 100} {incr i} {
+    #        set rkey [r randomkey]
+    #        if {$rkey eq {foo}} {
+    #            set foo_seen 1
+    #        }
+    #        if {$rkey eq {bar}} {
+    #            set bar_seen 1
+    #        }
+    #    }
+    #    list $foo_seen $bar_seen
+    #} {1 1}
 
-    test {RANDOMKEY against empty DB} {
-        r flushalldisk
-        r debug reload
-        r randomkey
-    } {}
+    #test {RANDOMKEY against empty DB} {
+    #    r flushalldisk
+    #    r debug reload
+    #    r randomkey
+    #} {}
 
-    test {RANDOMKEY regression 1} {
-        r flushalldisk
-        r set x 10
-        r del x
-        r debug reload
-        r randomkey
-    } {}
+    #test {RANDOMKEY regression 1} {
+    #    r flushalldisk
+    #    r set x 10
+    #    r del x
+    #    r debug reload
+    #    r randomkey
+    #} {}
 
     # This test will not pass. We set foo to x before
     # flushing db. foo : x resides on disk when this test
