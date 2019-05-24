@@ -33,12 +33,10 @@ size_t easyCopy(std::vector<byte> *buf, size_t *pos,
 template <typename T>
 size_t easyCopy(T *dest, const std::string &buf, size_t *pos) {
     if (buf.size() < *pos) {
-        LOG(INFO) << buf.size() << " < " << *pos;
         return 0;
     }
     byte *ptr = reinterpret_cast<byte*>(dest);
     size_t end = *pos + sizeof(T);
-    LOG(INFO) << "start = " << *pos << " end = " << end;
     std::copy(&buf[*pos], &buf[end], ptr);
     *pos += sizeof(T);
     return sizeof(T);
@@ -115,7 +113,6 @@ Expected<std::vector<byte>> Serializer::dump() {
     version[1] = (RDB_VERSION >> 8) & 0xff;
     easyCopy(&payload, &_pos, version, 2);
 
-    // TODO: add crc64, also want little endian.
     uint64_t crc = redis_port::crc64(0, &payload[_begin], _pos - _begin);
     easyCopy(&payload, &_pos, crc);
     _end = _pos;
@@ -126,7 +123,7 @@ Expected<std::vector<byte>> Serializer::dump() {
 class DumpCommand: public Command {
  public:
     DumpCommand()
-        :Command("dump") {
+        :Command("dump", "r") {
     }
 
     ssize_t arity() const {
@@ -187,7 +184,6 @@ class KvSerializer: public Serializer {
         Serializer::saveString(&payload, &_pos, _rv.getValue());
         _begin = 0;
         return _pos - _begin;
-        // return { ErrorCodes::ERR_INTERNAL, "Not implemented" };
     }
 
  private:
@@ -579,7 +575,7 @@ std::string Deserializer::loadString(const std::string &payload, size_t *pos) {
 class RestoreCommand: public Command {
  public:
     RestoreCommand()
-        :Command("restore") {
+        :Command("restore", "wm") {
     }
 
     ssize_t arity() const {
@@ -653,6 +649,8 @@ class RestoreCommand: public Command {
         if (expttl.value() < 0) {
             return Command::fmtErr("Invalid TTL value, must be >= 0");
         }
+        uint64_t ts = 0;
+        ts = msSinceEpoch() + expttl.value();
 
         Status chk = RestoreCommand::verifyDumpPayload(payload);
         if (!chk.ok()) {
@@ -661,7 +659,7 @@ class RestoreCommand: public Command {
         }
 
         // do restore
-        auto expds = getDeserializer(sess, payload, key, expttl.value());
+        auto expds = getDeserializer(sess, payload, key, ts);
         if (!expds.ok()) {
             return expds.status();
         }
@@ -705,11 +703,7 @@ class KvDeserializer: public Deserializer {
         RecordKey rk(expdb.value().chunkId,
                 pCtx->getDbId(),
                 RecordType::RT_KV, _key, "");
-        uint64_t ts = 0;
-        if (_ttl > 0) {
-            ts = msSinceEpoch() + _ttl;
-        }
-        RecordValue rv(ret, RecordType::RT_KV, ts);
+        RecordValue rv(ret, RecordType::RT_KV, _ttl);
         for (int32_t i = 0; i < Command::RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), 0, rk, rv, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -747,41 +741,49 @@ class SetDeserializer: public Deserializer {
         }
 
         size_t len = expLen.value();
-        std::vector<std::string> set(2);
+        // std::vector<std::string> set(2);
 
-        while (len--) {
-            std::string ele = loadString(_payload, &_pos);
-            set.push_back(std::move(ele));
-        }
         auto server = _sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
         if (!expdb.ok()) {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        RecordKey setRk(expdb.value().chunkId,
-                _sess->getCtx()->getDbId(),
-                RecordType::RT_SET_META, _key, "");
-        for (uint32_t i = 0; i < tendisplus::Command::RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> add = genericSAdd(_sess, kvstore, setRk, set);
-            if (add.ok()) {
-                return { ErrorCodes::ERR_OK, "OK" };
-            }
-            if (add.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return add.status();
-            }
-            if (i == Command::RETRY_CNT - 1) {
-                return add.status();
-            } else {
-                continue;
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        RecordKey metaRk(expdb.value().chunkId,
+                         _sess->getCtx()->getDbId(),
+                         RecordType::RT_SET_META, _key, "");
+        SetMetaValue sm;
+
+        for (size_t i = 0; i < len; i++) {
+            std::string ele = loadString(_payload, &_pos);
+            RecordKey rk(metaRk.getChunkId(),
+                    metaRk.getDbId(),
+                    RecordType::RT_SET_ELE,
+                    metaRk.getPrimaryKey(), std::move(ele));
+            RecordValue rv("", RecordType::RT_SET_ELE);
+            Status s = kvstore->setKV(rk, rv, txn.get());
+            if (!s.ok()) {
+                return s;
             }
         }
-        return { ErrorCodes::ERR_INTERNAL, "not reachable" };
+        sm.setCount(len);
+        Status s = kvstore->setKV(metaRk,
+                RecordValue(sm.encode(), RecordType::RT_SET_META, _ttl),
+                txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> expCmt = txn->commit();
+        if (!expCmt.ok()) {
+            return expCmt.status();
+        }
+        return { ErrorCodes::ERR_OK, "OK" };
     }
 };
 
@@ -819,10 +821,45 @@ class ZsetDeserializer: public Deserializer {
                 _sess->getCtx()->getDbId(),
                 RecordType::RT_ZSET_META, _key, "");
         PStore kvstore = expdb.value().store;
+        // set ttl first
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        Expected<RecordValue> eMeta =
+                kvstore->getKV(rk, txn.get());
+        if (!eMeta.ok() && eMeta.status().code() != ErrorCodes::ERR_NOTFOUND) {
+            return eMeta.status();
+        }
+        INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
+        ZSlMetaValue meta(1, 1, 0);
+        RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, _ttl);
+        Status s = kvstore->setKV(rk, rv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        RecordKey headRk(rk.getChunkId(),
+                rk.getDbId(),
+                RecordType::RT_ZSET_S_ELE,
+                rk.getPrimaryKey(),
+                std::to_string(ZSlMetaValue::HEAD_ID));
+        ZSlEleValue headVal;
+        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+        s = kvstore->setKV(headRk, headRv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> expCmt = txn->commit();
+        if (!expCmt.ok()) {
+            return expCmt.status();
+        }
+
         for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
             // maybe very slow
             Expected<std::string> res =
-                    genericZadd(_sess, kvstore, rk, scoreMap, ZADD_NONE);
+                    genericZadd(_sess, kvstore, rk, scoreMap, ZADD_NX);
             if (res.ok()) {
                 return { ErrorCodes::ERR_OK, "OK" };
             }
@@ -835,6 +872,7 @@ class ZsetDeserializer: public Deserializer {
                 continue;
             }
         }
+
         return { ErrorCodes::ERR_INTERNAL, "not reachable" };
     }
 };
@@ -907,7 +945,6 @@ class ListDeserializer: public Deserializer {
         INVARIANT(easyCopy(&zlbytes, payload, pos) == 4 &&
             easyCopy(&zltail, payload, pos) == 4 &&
             easyCopy(&zllen, payload, pos) == 2);
-        LOG(INFO) << "_pos = " << *pos;
 
         zl.reserve(zllen);
         uint32_t prevlen(0);
@@ -918,7 +955,6 @@ class ListDeserializer: public Deserializer {
                 *pos += 1;
             }
             std::string val = loadString(payload, pos);
-            LOG(INFO) << "_pos = " << pos << " val = " << val;
             prevlen = val.size();
             zl.push_back(std::move(val));
         }
@@ -942,7 +978,6 @@ class ListDeserializer: public Deserializer {
         if (!qlExpLen.ok()) {
             return qlExpLen.status();
         }
-        LOG(INFO) << qlExpLen.value();
 
         size_t qlLen = qlExpLen.value();
         auto server = _sess->getServerEntry();
@@ -967,7 +1002,6 @@ class ListDeserializer: public Deserializer {
             if (!expLen.ok()) {
                 return expLen.status();
             }
-            LOG(INFO) << "_pos = " << _pos << " len = " << expLen.value();
 
             std::vector<std::string> zl = deserializeZiplist(_payload, &_pos);
             uint64_t idx;

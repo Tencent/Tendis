@@ -45,10 +45,6 @@ Expected<std::string> setGeneric(PStore store,
                                  const RecordValue& val,
                                  const std::string& okReply,
                                  const std::string& abortReply);
-Expected<std::string> genericSAdd(Session *sess,
-                                  PStore kvstore,
-                                  const RecordKey& metaRk,
-                                  const std::vector<std::string>& args);
 Expected<std::string> genericZadd(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
