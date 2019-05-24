@@ -90,7 +90,6 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
         }
     } catch (std::exception& e) {
         return {ErrorCodes::ERR_NETWORK, e.what()};
-
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -310,6 +309,7 @@ void NetSession::setCloseAfterRsp() {
 }
 
 void NetSession::setRspAndClose(const std::string& s) {
+    TEST_SYNC_POINT_CALLBACK("NetSession::setRspAndClose", (void*)&s);
     _closeAfterRsp = true;
     setResponse(redis_port::errorReply(s));
     resetMultiBulkCtx();
@@ -601,7 +601,8 @@ void NetSession::processReq() {
         _ctx->setProcessPacketStart(nsSinceEpoch());
         continueSched = _server->processRequest(id());
         _reqMatrix->processed += 1;
-        _reqMatrix->processCost += nsSinceEpoch() - _ctx->getProcessPacketStart();
+        _reqMatrix->processCost +=
+                nsSinceEpoch() - _ctx->getProcessPacketStart();
         _ctx->setProcessPacketStart(0);
     }
     if (!continueSched) {
@@ -622,18 +623,17 @@ void NetSession::processReq() {
 }
 
 void NetSession::drainRsp(std::shared_ptr<SendBuffer> buf) {
-    TEST_SYNC_POINT_CALLBACK("NetSession::drainRsp", buf.get());
     auto self(shared_from_this());
     uint64_t now = nsSinceEpoch();
-    asio::async_write(_sock, asio::buffer(buf->buffer.data(), buf->buffer.size()),
+    asio::async_write(_sock, asio::buffer(buf->buffer.data(), buf->buffer.size()),      // NOLINT
         [this, self, buf, now](const std::error_code& ec, size_t actualLen) {
             _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
             drainRspCallback(ec, actualLen, buf);
     });
-   
 }
 
-void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen, std::shared_ptr<SendBuffer> buf) {
+void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen,
+                    std::shared_ptr<SendBuffer> buf) {
     if (ec) {
         LOG(WARNING) << "drainRspCallback:" << ec.message();
         endSession();
@@ -659,7 +659,6 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen, s
     } else {
         _isSendRunning = false;
     }
-
 }
 
 void NetSession::endSession() {
