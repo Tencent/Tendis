@@ -27,7 +27,6 @@ Expected<bool> expireAfterNow(Session *sess,
                         RecordType type,
                         const std::string& key,
                         uint64_t expireAt) {
-
     Expected<RecordValue> rv =
         Command::expireKeyIfNeeded(sess, key, type);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
@@ -81,7 +80,8 @@ Expected<bool> expireAfterNow(Session *sess,
 
             // add new index entry
             TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
-            s = txn->setKV(n_ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
+            s = txn->setKV(n_ictx.encode(),
+                RecordValue(RecordType::RT_TTL_INDEX).encode());
             if (!s.ok()) {
                 return s;
             }
@@ -114,9 +114,9 @@ Expected<bool> expireAfterNow(Session *sess,
 }
 
 Expected<std::string> expireGeneric(Session *sess,
-                                    uint64_t expireAt,
+                                    int64_t expireAt,
                                     const std::string& key) {
-    if (expireAt >= msSinceEpoch()) {
+    if (expireAt >= (int64_t)msSinceEpoch()) {
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireAfterNow(sess, type, key, expireAt);
@@ -171,7 +171,7 @@ class GeneralExpireCommand: public Command {
             return expt.status();
         }
 
-        uint64_t millsecs = 0;
+        int64_t millsecs = 0;
         if (Command::getName() == "expire") {
             millsecs = msSinceEpoch() + expt.value()*1000;
         } else if (Command::getName() == "pexpire") {
@@ -391,4 +391,76 @@ class TypeCommand: public Command {
         return Command::fmtBulk("none");
     }
 } typeCmd;
+
+class PersistCommand : public Command {
+ public:
+     PersistCommand()
+        :Command("persist", "wF") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                        mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        // change the ttl of rv
+        rv.value().setTtl(0);
+        auto vt = rv.value().getRecordType();
+        RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(),
+                    vt, key, "");
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        auto s = kvstore->setKV(mk, rv.value(), txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+
+        auto s1 = txn->commit();
+        if (!s1.ok()) {
+            return s1.status();
+        }
+
+        return Command::fmtOne();
+    }
+} persistCmd;
+
 }  // namespace tendisplus

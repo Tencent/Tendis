@@ -82,6 +82,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::shared_ptr<std::string> masterauth() const;
     bool versionIncrease() const;
     bool checkKeyTypeForSet() const { return _checkKeyTypeForSet; }
+    uint32_t protoMaxBulkLen() const { return _protoMaxBulkLen; }
+    uint32_t dbNum() const { return _dbNum; }
 
     std::vector<PStore> getStores() const;
 
@@ -134,6 +136,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool _versionIncrease;
     bool _generalLog;
     bool _checkKeyTypeForSet;
+    uint32_t _protoMaxBulkLen;
+    uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
 };
 }  // namespace tendisplus

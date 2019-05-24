@@ -298,6 +298,13 @@ void testHash1(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    {
+        sess.setArgs({"del", "a"});
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok()) << expect.status().toString();
+    }
+
     for (uint32_t i = 0; i < 10000; i++) {
         sess.setArgs({"hset", "a", std::to_string(i), std::to_string(i)});
         auto expect = Command::runSessionCmd(&sess);
@@ -1494,6 +1501,43 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtNull());
 
+    sess.setArgs({ "setex", "a", "-1", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+ 
+    sess.setArgs({ "psetex", "a", "-1", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    sess.setArgs({ "set", "a", "b", "ex", "0" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+ 
+    sess.setArgs({ "set", "a", "b", "px", "0" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+   
+    // persist
+    sess.setArgs({ "setex", "a", "10", "b" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+
+    sess.setArgs({ "persist", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "persist", "a_nonexist"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+
+    sess.setArgs({ "pttl", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+
     // exists
     sess.setArgs({"set", "expire_test_key0", "a"});
     expect = Command::runSessionCmd(&sess);
@@ -1709,7 +1753,7 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({"bitpos", "bitposkey", "0"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(expect.value(), Command::fmtLongLong(-1));
+    EXPECT_EQ(expect.value(), Command::fmtLongLong(0));
     sess.setArgs({"bitpos", "bitposkey", "1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());

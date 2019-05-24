@@ -9,6 +9,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -224,8 +225,19 @@ Status ServerParams::parseFile(const std::string& filename) {
                 if (isOptionOn(tokens[1])) {
                     checkKeyTypeForSet = true;
                 }
+            } else if (tokens[0] == "proto-max-bulk-len") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid proto-max-bulk-len config" };
+                }
+                protoMaxBulkLen = std::stoi(tokens[1]);
+            } else if (tokens[0] == "databases") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "Invalid number of databases" };
+                }
+                dbNum = std::stoi(tokens[1]);
             }
-
         }
     } catch (const std::exception& ex) {
         std::stringstream ss;
@@ -258,6 +270,8 @@ ServerParams::ServerParams()
     kvStoreCount = 10;
     chunkSize = 0x4000;  // same as rediscluster
     checkKeyTypeForSet = false;
+    protoMaxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
+    dbNum = CONFIG_DEFAULT_DBNUM;
 }
 
 

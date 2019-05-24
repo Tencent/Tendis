@@ -35,7 +35,7 @@ struct SetParams {
     std::string key;
     std::string value;
     int32_t flags;
-    uint64_t expire;
+    int64_t expire;
 };
 
 // TODO(deyukong): unittest of expire
@@ -143,17 +143,23 @@ class SetCommand: public Command {
                 } else if (s == "xx") {
                     result.flags |= REDIS_SET_XX;
                 } else if (s == "ex" && i+1 < args.size()) {
-                    result.expire = std::stoul(args[i+1])*1000ULL;
+                    result.expire = std::stoll(args[i+1])*1000ULL;
+                    if (result.expire <= 0) {
+                        return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+                    }
                     i++;
                 } else if (s == "px" && i+1 < args.size()) {
-                    result.expire = std::stoul(args[i+1]);
+                    result.expire = std::stoll(args[i+1]);
+                    if (result.expire <= 0) {
+                        return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+                    }
                     i++;
                 } else {
                     return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
                 }
-            }
+
+                            }
         } catch (std::exception& ex) {
-            LOG(WARNING) << "parse setParams failed:" << ex.what();
             return {ErrorCodes::ERR_PARSEPKT,
                     "value is not an integer or out of range"};
         }
@@ -311,9 +317,12 @@ class SetExCommand: public SetexGeneralCommand {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         const std::string& val = sess->getArgs()[3];
-        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        Expected<int64_t> eexpire = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!eexpire.ok()) {
             return eexpire.status();
+        }
+        if (eexpire.value() <= 0) {
+            return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
         }
         return runGeneral(sess, key, val,
                           msSinceEpoch() + eexpire.value()*1000);
@@ -329,9 +338,12 @@ class PSetExCommand: public SetexGeneralCommand {
     Expected<std::string> run(Session *sess) final {
         const std::string& key = sess->getArgs()[1];
         const std::string& val = sess->getArgs()[3];
-        Expected<uint64_t> eexpire = ::tendisplus::stoul(sess->getArgs()[2]);
+        Expected<int64_t> eexpire = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!eexpire.ok()) {
             return eexpire.status();
+        }
+        if (eexpire.value() <= 0) {
+            return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
         }
         return runGeneral(sess, key, val,
                           msSinceEpoch() + eexpire.value());
@@ -490,10 +502,17 @@ class BitPosCommand: public Command {
         }
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return Command::fmtLongLong(-1);
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtLongLong(-1);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            /* If the key does not exist, from our point of view it is an
+             * infinite array of 0 bits. If the user is looking for the fist
+             * clear bit return 0, If the user is looking for the first set bit,
+             * return -1. */
+            if (bit) {
+                return Command::fmtLongLong(-1);
+            } else {
+                return Command::fmtLongLong(0);
+            }
         } else if (!rv.status().ok()) {
             return rv.status();
         }
@@ -866,7 +885,7 @@ class GetSetGeneral: public Command {
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk, newValue.value(),
-                                     server->checkKeyTypeForSet(),
+                                     false, /* check_type has be done by Command::expireKeyIfNeeded() */
                                      true,
                                      "", "");
             if (result.ok()) {
@@ -922,7 +941,8 @@ class CasCommand: public GetSetGeneral {
             return ecas.status();
         }
 
-        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV);
+        auto ttl = oldValue.value().getTtl();
+        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV, ttl, oldValue);
         if (!oldValue.ok()) {
             ret.setCas(ecas.value());
             return ret;
@@ -934,7 +954,6 @@ class CasCommand: public GetSetGeneral {
         }
 
         ret.setCas(ecas.value() + 1);
-        ret.setTtl(oldValue.value().getTtl());
         return std::move(ret);
     }
 
@@ -1192,7 +1211,7 @@ class GetSetCommand: public GetSetGeneral {
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
         // getset overwrites ttl
-        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0);
+        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1365,9 +1384,54 @@ class IncrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(std::to_string(newSum.value()),
-                        type, ttl);
+                        type, ttl, oldValue);
     }
 } incrbyCmd;
+
+class IncrexCommand : public IncrDecrGeneral {
+public:
+    IncrexCommand()
+        :IncrDecrGeneral("increx", "wmF") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<RecordValue> newValueFromOld(
+        Session* sess, const Expected<RecordValue>& oldValue) const {
+        const std::string& val = sess->getArgs()[2];
+        Expected<int64_t> ettl = ::tendisplus::stoll(val);
+        if (!ettl.ok()) {
+            return ettl.status();
+        }
+        Expected<int64_t> newSum = sumIncr(oldValue, 1);
+        if (!newSum.ok()) {
+            return newSum.status();
+        }
+
+        uint64_t ttl = ettl.value() * 1000 + msSinceEpoch();
+        RecordType type = RecordType::RT_KV;
+        if (oldValue.ok()) {
+            type = oldValue.value().getRecordType();
+        }
+        return RecordValue(std::to_string(newSum.value()),
+            type, ttl, oldValue);
+    }
+} increxCmd;
+
 
 class IncrCommand: public IncrDecrGeneral {
  public:
@@ -1404,7 +1468,7 @@ class IncrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } incrCmd;
 
@@ -1450,7 +1514,7 @@ class DecrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         // LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } decrbyCmd;
 
@@ -1490,7 +1554,7 @@ class DecrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl);
+        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
     }
 } decrCmd;
 

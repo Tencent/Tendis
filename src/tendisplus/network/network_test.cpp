@@ -41,22 +41,48 @@ TEST(NetSession, drainReqInvalid) {
     });  
     SyncPoint::GetInstance()->EnableProcessing(); 
     bool hasCalled = false;
-    SyncPoint::GetInstance()->SetCallBack( 
-        "NetSession::drainRsp", [&](void* arg) { 
-            hasCalled = true;
-            SendBuffer* v = static_cast<SendBuffer*>(arg);
-            EXPECT_EQ(std::string(v->buffer.data(), v->buffer.size()),
-                "-ERR Protocol error: unbalanced quotes in request\r\n");
-        });
-    sess->setState(NetSession::State::DrainReqNet);
-    const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
-    std::copy(s.begin(), s.end(), std::back_inserter(sess->_queryBuf));
+    SyncPoint::GetInstance()->SetCallBack(
+        "NetSession::setRspAndClose", [&](void* arg) {
+        hasCalled = true;
+        std::string* v = static_cast<std::string*>(arg);
+        EXPECT_TRUE(v->find("Protocol error") != std::string::npos);
+    });
+    // const std::string s = "\r\n :1\r\n :2\r\n :3\r\n";
+    //std::vector<uint32_t> lens = { 2, 4, 4, 4 };
+    std::vector<std::pair<std::string, NetSession::State>> arr =
+    {
+     {"\r", NetSession::State::DrainReqNet },
+     {"\r\n", NetSession::State::Process},
+     {":1\r\n", NetSession::State::Process},
+     {"ping\r\n", NetSession::State::Process},
+     {"\"\r\n", NetSession::State::Created}, // error
+     {"*10\r", NetSession::State::DrainReqNet},
+     {"*2\r\n$1\r\n", NetSession::State::DrainReqNet},
+     {"*2\r\n$a\r\n", NetSession::State::Created}, // error
+     {"*100000000\r\n", NetSession::State::Created}, // error
+     {"*-10\r\n", NetSession::State::Process},
+     {"*2\r\n:\r\n", NetSession::State::Created}, // error, should be $
+    };
+    sess->_queryBuf.reserve(128);
+    int i = 0;
+    for (auto s : arr) {
+        hasCalled = false;
+        sess->_queryBuf.clear();
+        sess->_queryBufPos = 0;
+        sess->resetMultiBulkCtx();
+        std::copy(s.first.begin(), s.first.end(), std::back_inserter(sess->_queryBuf));
 #ifdef _WIN32
-    sess->_queryBuf.resize(s.size() + 1);
+        sess->_queryBuf.resize(s.first.size() + 1);
 #endif
-    sess->drainReqCallback(std::error_code(), s.size());
-    EXPECT_EQ(sess->_closeAfterRsp, true);
-    EXPECT_TRUE(hasCalled);
+        sess->setState(NetSession::State::DrainReqNet);
+        sess->drainReqCallback(std::error_code(), s.first.size());
+        if (s.second == NetSession::State::Created) {
+            EXPECT_TRUE(sess->_closeAfterRsp && hasCalled);
+        } else {
+            EXPECT_EQ(sess->_state, s.second);
+        }
+        i++;
+    }
 }
 
 TEST(NetSession, Completed) {

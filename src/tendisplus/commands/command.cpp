@@ -123,7 +123,7 @@ Expected<std::string> Command::precheck(Session *sess) {
     bool authed = pCtx->authed();
     if (!authed && *server->requirepass() != ""
             && it->second->getName() != "auth") {
-        return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required."};
+        return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
     }
 
     return it->second->getName();

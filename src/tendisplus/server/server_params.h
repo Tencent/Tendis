@@ -38,6 +38,9 @@ class ServerParams {
     uint32_t delCntIndexMgr;
     uint32_t delJobCntIndexMgr;
     uint32_t pauseTimeIndexMgr;
+
+    uint32_t protoMaxBulkLen;
+    uint32_t dbNum;
 };
 }  // namespace tendisplus
 

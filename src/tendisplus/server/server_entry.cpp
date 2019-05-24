@@ -37,7 +37,9 @@ ServerEntry::ServerEntry()
          _masterauth(nullptr),
          _versionIncrease(true),
          _generalLog(false),
-         _checkKeyTypeForSet(false){
+         _checkKeyTypeForSet(false),
+         _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
+         _dbNum(CONFIG_DEFAULT_DBNUM) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg) 
@@ -47,6 +49,8 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
+    _protoMaxBulkLen = cfg->protoMaxBulkLen;
+    _dbNum = cfg->dbNum;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
