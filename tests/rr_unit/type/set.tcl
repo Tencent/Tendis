@@ -31,7 +31,12 @@ start_server {
         assert_equal {16 17} [lsort [r smembers myset]]
     }
 
-    test "SADD a non-integer against an hashtable" {
+    test {SADD against non set} {
+        r lpush mylist foo
+        assert_error WRONGTYPE* {r sadd mylist bar}
+    }
+
+    test "SADD a non-integer against an intset" {
         create_set myset {1 2 3}
         assert_equal 1 [r sadd myset a]
         assert_equal {1 2 3 a} [lsort [r smembers myset]]
@@ -240,16 +245,15 @@ start_server {
         }
     }
 
-    # now we can have multi keys that share the same name
-    #test "SINTER against non-set should throw error" {
-    #    r set key1 x
-    #    assert_error "WRONGTYPE*" {r sinter key1 noset}
-    #}
-    #
-    #test "SUNION against non-set should throw error" {
-    #    r set key1 x
-    #    assert_error "WRONGTYPE*" {r sunion key1 noset}
-    #}
+    test "SINTER against non-set should throw error" {
+        r set key1 x
+        assert_error "WRONGTYPE*" {r sinter key1 noset}
+    }
+
+    test "SUNION against non-set should throw error" {
+        r set key1 x
+        assert_error "WRONGTYPE*" {r sunion key1 noset}
+    }
 
     test "SINTER should handle non existing key as empty" {
         r del set1 set2 set3
@@ -473,7 +477,7 @@ start_server {
     test "SMOVE wrong dst key type" {
         setup_move
         r set x 10
-        assert_error "WRONGTYPE*" {r smove myset2 x 2}
+        assert_error "WRONGTYPE*" {r smove myset2 x foo}
     }
 
     test "SMOVE with identical source and destination" {

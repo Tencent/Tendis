@@ -576,7 +576,30 @@ start_server {
 
             assert_equal "a $large c d" [r lrange xlist 0 -1]
         }
+
+        test "LINSERT - $type" {
+            create_$type xlist "a $large c d"
+            assert_equal 5 [r linsert xlist before c zz]
+            assert_equal "a $large zz c d" [r lrange xlist 0 10]
+            assert_equal 6 [r linsert xlist after c yy]
+            assert_equal "a $large zz c yy d" [r lrange xlist 0 10]
+            assert_equal 7 [r linsert xlist after d dd]
+            assert_equal -1 [r linsert xlist after bad ddd]
+            assert_equal "a $large zz c yy d dd" [r lrange xlist 0 10]
+            assert_equal 8 [r linsert xlist before a aa]
+            assert_equal -1 [r linsert xlist before bad aaa]
+            assert_equal "aa a $large zz c yy d dd" [r lrange xlist 0 10]
+
+            # check inserting integer encoded value
+            assert_equal 9 [r linsert xlist before aa 42]
+            assert_equal 42 [r lrange xlist 0 0]
+        }
     }
+
+    test {LINSERT raise error on bad syntax} {
+        catch {[r linsert xlist aft3r aa 42]} e
+        set e
+    } {*ERR*syntax*error*}
 
     test {LPUSHX, RPUSHX convert from ziplist to list} {
         set large $largevalue(linkedlist)
@@ -606,33 +629,33 @@ start_server {
         #assert_encoding linkedlist xlist
     }
 
-    #test {LINSERT convert from ziplist to list} {
-    #    set large $largevalue(linkedlist)
+    test {LINSERT convert from ziplist to list} {
+        set large $largevalue(linkedlist)
 
-    #    # convert when a large value is inserted
-    #    create_ziplist xlist a
-    #    assert_equal 2 [r linsert xlist before a $large]
-    #    assert_encoding linkedlist xlist
-    #    create_ziplist xlist a
-    #    assert_equal 2 [r linsert xlist after a $large]
-    #    assert_encoding linkedlist xlist
+        # convert when a large value is inserted
+        create_ziplist xlist a
+        assert_equal 2 [r linsert xlist before a $large]
+        assert_encoding linkedlist xlist
+        create_ziplist xlist a
+        assert_equal 2 [r linsert xlist after a $large]
+        assert_encoding linkedlist xlist
 
-    #    # convert when the length threshold is exceeded
-    #    create_ziplist xlist [lrepeat 256 a]
-    #    assert_equal 257 [r linsert xlist before a a]
-    #    assert_encoding linkedlist xlist
-    #    create_ziplist xlist [lrepeat 256 a]
-    #    assert_equal 257 [r linsert xlist after a a]
-    #    assert_encoding linkedlist xlist
+        # convert when the length threshold is exceeded
+        create_ziplist xlist [lrepeat 256 a]
+        assert_equal 257 [r linsert xlist before a a]
+        assert_encoding linkedlist xlist
+        create_ziplist xlist [lrepeat 256 a]
+        assert_equal 257 [r linsert xlist after a a]
+        assert_encoding linkedlist xlist
 
-    #    # don't convert when the value could not be inserted
-    #    create_ziplist xlist [lrepeat 256 a]
-    #    assert_equal -1 [r linsert xlist before foo a]
-    #    assert_encoding ziplist xlist
-    #    create_ziplist xlist [lrepeat 256 a]
-    #    assert_equal -1 [r linsert xlist after foo a]
-    #    assert_encoding ziplist xlist
-    #}
+        # don't convert when the value could not be inserted
+        create_ziplist xlist [lrepeat 256 a]
+        assert_equal -1 [r linsert xlist before foo a]
+        assert_encoding ziplist xlist
+        create_ziplist xlist [lrepeat 256 a]
+        assert_equal -1 [r linsert xlist after foo a]
+        assert_encoding ziplist xlist
+    }
 
     foreach {type num} {ziplist 250 linkedlist 500} {
         proc check_numbered_list_consistency {key} {
@@ -692,10 +715,9 @@ start_server {
         #assert_equal {} {r lindex mylist 0}
     }
 
-    #test {LINDEX against non existing key} {
-    #    #assert_equal "" [r lindex not-a-key 10]
-    #    assert_equal ERR  [r lindex not-a-key 10]
-    #}
+    test {LINDEX against non existing key} {
+        assert_equal "" [r lindex not-a-key 10]
+    }
 
     test {LPUSH against non-list value error} {
         assert_error WRONGTYPE* {r lpush mylist 0}
@@ -802,32 +824,25 @@ start_server {
 
     test {LPOP/RPOP against non list value} {
         r set notalist foo
-        #assert_error WRONGTYPE* {r lpop notalist}
-        #
-        #assert_error WRONGTYPE* {r rpop notalist}
-        #
+        assert_error WRONGTYPE* {r lpop notalist}
+        assert_error WRONGTYPE* {r rpop notalist}
     }
 
     foreach {type num} {ziplist 250 linkedlist 500} {
         test "Mass RPOP/LPOP - $type" {
-            #r del mylist
-            #
-            #set sum1 0
-            #for {set i 0} {$i < $num} {incr i} {
-            #    r lpush mylist $i
-            #
-            #    incr sum1 $i
-            #
-            #}
-            ##assert_encoding $type mylist
-            #set sum2 0
-            #for {set i 0} {$i < [expr $num/2]} {incr i} {
-            #    incr sum2 [r lpop mylist]
-            #
-            #    incr sum2 [r rpop mylist]
-            #
-            #}
-            #assert_equal $sum1 $sum2
+            r del mylist
+            set sum1 0
+            for {set i 0} {$i < $num} {incr i} {
+                r lpush mylist $i
+                incr sum1 $i
+            }
+            assert_encoding $type mylist
+            set sum2 0
+            for {set i 0} {$i < [expr $num/2]} {incr i} {
+                incr sum2 [r lpop mylist]
+                incr sum2 [r rpop mylist]
+            }
+            assert_equal $sum1 $sum2
         }
     }
 
@@ -919,49 +934,40 @@ start_server {
         assert_error WRONGTYPE* {r lset nolist 0 foo}
     }
 
-    #foreach {type e} [array get largevalue] {
-    #    test "LREM remove all the occurrences - $type" {
-    #        create_$type mylist "$e foo bar foobar foobared zap bar test foo"
-    #
-    #        assert_equal 2 [r lrem mylist 0 bar]
-    #
-    #        assert_equal "$e foo foobar foobared zap test foo" [r lrange mylist 0 -1]
-    #    }
+    foreach {type e} [array get largevalue] {
+        test "LREM remove all the occurrences - $type" {
+            create_$type mylist "$e foo bar foobar foobared zap bar test foo"
+            assert_equal 2 [r lrem mylist 0 bar]
+            assert_equal "$e foo foobar foobared zap test foo" [r lrange mylist 0 -1]
+        }
 
-    #    test "LREM remove the first occurrence - $type" {
-    #        assert_equal 1 [r lrem mylist 1 foo]
-    #
-    #        assert_equal "$e foobar foobared zap test foo" [r lrange mylist 0 -1]
-    #    }
+        test "LREM remove the first occurrence - $type" {
+            assert_equal 1 [r lrem mylist 1 foo]
+            assert_equal "$e foobar foobared zap test foo" [r lrange mylist 0 -1]
+        }
 
-    #    test "LREM remove non existing element - $type" {
-    #        assert_equal 0 [r lrem mylist 1 nosuchelement]
-    #
-    #        assert_equal "$e foobar foobared zap test foo" [r lrange mylist 0 -1]
-    #    }
+        test "LREM remove non existing element - $type" {
+            assert_equal 0 [r lrem mylist 1 nosuchelement]
+            assert_equal "$e foobar foobared zap test foo" [r lrange mylist 0 -1]
+        }
 
-    #    test "LREM starting from tail with negative count - $type" {
-    #        create_$type mylist "$e foo bar foobar foobared zap bar test foo foo"
-    #
-    #        assert_equal 1 [r lrem mylist -1 bar]
-    #
-    #        assert_equal "$e foo bar foobar foobared zap test foo foo" [r lrange mylist 0 -1]
-    #    }
+        test "LREM starting from tail with negative count - $type" {
+            create_$type mylist "$e foo bar foobar foobared zap bar test foo foo"
+            assert_equal 1 [r lrem mylist -1 bar]
+            assert_equal "$e foo bar foobar foobared zap test foo foo" [r lrange mylist 0 -1]
+        }
 
-    #    test "LREM starting from tail with negative count (2) - $type" {
-    #        assert_equal 2 [r lrem mylist -2 foo]
-    #
-    #        assert_equal "$e foo bar foobar foobared zap test" [r lrange mylist 0 -1]
-    #    }
+        test "LREM starting from tail with negative count (2) - $type" {
+            assert_equal 2 [r lrem mylist -2 foo]
+            assert_equal "$e foo bar foobar foobared zap test" [r lrange mylist 0 -1]
+        }
 
-    #    test "LREM deleting objects that may be int encoded - $type" {
-    #        create_$type myotherlist "$e 1 2 3"
-    #
-    #        assert_equal 1 [r lrem myotherlist 1 2]
-    #
-    #        assert_equal 3 [r llen myotherlist]
-    #    }
-    #}
+        test "LREM deleting objects that may be int encoded - $type" {
+            create_$type myotherlist "$e 1 2 3"
+            assert_equal 1 [r lrem myotherlist 1 2]
+            assert_equal 3 [r llen myotherlist]
+        }
+    }
 
     test "Regression for bug 593 - chaining BRPOPLPUSH with other blocking cmds" {
         set rd1 [redis_deferring_client]

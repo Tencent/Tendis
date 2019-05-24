@@ -52,6 +52,11 @@ start_server {tags {"basic"}} {
         r dbsize
     } {6}
 
+    test {DEL all keys} {
+        foreach key [r keys *] {r del $key}
+        r dbsize
+    } {0}
+
     test {Very big payload in GET/SET} {
         set buf [string repeat "abcd" 1000000]
         r set foo $buf
@@ -95,6 +100,10 @@ start_server {tags {"basic"}} {
             }
             set _ $err
         } {}
+
+        test {DBSIZE should be 10101 now} {
+            r dbsize
+        } {10101}
     }
 
     test {INCR against non existing key} {
@@ -394,6 +403,116 @@ start_server {tags {"basic"}} {
         catch {r foobaredcommand} err
         string match ERR* $err
     } {1}
+    
+    test {RENAME basic usage} {
+        r set mykey hello
+        r rename mykey mykey1
+        r rename mykey1 mykey2
+        r get mykey2
+    } {hello}
+
+    test {RENAME source key should no longer exist} {
+        r exists mykey
+    } {0}
+
+    test {RENAME against already existing key} {
+        r set mykey a
+        r set mykey2 b
+        r rename mykey2 mykey
+        set res [r get mykey]
+        append res [r exists mykey2]
+    } {b0}
+
+    test {RENAMENX basic usage} {
+        r del mykey
+        r del mykey2
+        r set mykey foobar
+        r renamenx mykey mykey2
+        set res [r get mykey2]
+        append res [r exists mykey]
+    } {foobar0}
+
+    test {RENAMENX against already existing key} {
+        r set mykey foo
+        r set mykey2 bar
+        r renamenx mykey mykey2
+    } {0}
+
+    test {RENAMENX against already existing key (2)} {
+        set res [r get mykey]
+        append res [r get mykey2]
+    } {foobar}
+
+    test {RENAME against non existing source key} {
+        catch {r rename nokey foobar} err
+        format $err
+    } {ERR*}
+
+    test {RENAME where source and dest key is the same} {
+        catch {r rename mykey mykey} err
+        format $err
+    } {ERR*}
+
+    test {RENAME with volatile key, should move the TTL as well} {
+        r del mykey mykey2
+        r set mykey foo
+        r expire mykey 100
+        assert {[r ttl mykey] > 95 && [r ttl mykey] <= 100}
+        r rename mykey mykey2
+        assert {[r ttl mykey2] > 95 && [r ttl mykey2] <= 100}
+    }
+
+    test {RENAME with volatile key, should not inherit TTL of target key} {
+        r del mykey mykey2
+        r set mykey foo
+        r set mykey2 bar
+        r expire mykey2 100
+        assert {[r ttl mykey] == -1 && [r ttl mykey2] > 0}
+        r rename mykey mykey2
+        r ttl mykey2
+    } {-1}
+
+    test {DEL all keys again (DB 0)} {
+        foreach key [r keys *] {
+            r del $key
+        }
+        r dbsize
+    } {0}
+
+    test {DEL all keys again (DB 1)} {
+        r select 10
+        foreach key [r keys *] {
+            r del $key
+        }
+        set res [r dbsize]
+        r select 9
+        format $res
+    } {0}
+
+    # we don't handle move command for now
+    test {MOVE basic usage} {
+        r set mykey foobar
+        r move mykey 10
+        set res {}
+        lappend res [r exists mykey]
+        lappend res [r dbsize]
+        r select 10
+        lappend res [r get mykey]
+        lappend res [r dbsize]
+        r select 9
+        format $res
+    } [list 0 0 foobar 1]
+
+    test {MOVE against key existing in the target DB} {
+        r set mykey hello
+        r move mykey 10
+    } {0}
+
+    test {MOVE against non-integer DB (#1428)} {
+        r set mykey hello
+        catch {r move mykey notanumber} e
+        set e
+    } {*ERR*index out of range}
 
     test {SET/GET keys in different DBs} {
         r set a hello
