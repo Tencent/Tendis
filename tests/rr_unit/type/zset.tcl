@@ -456,10 +456,170 @@ start_server {tags {"zset"}} {
             assert_equal 5 [remrangebyrank 0 4]
             assert_equal 0 [r exists zset]
         }
+
+        test "ZUNIONSTORE against non-existing key doesn't set destination - $encoding" {
+            r del zseta
+            assert_equal 0 [r zunionstore dst_key 1 zseta]
+            assert_equal 0 [r exists dst_key]
+        }
+
+        test "ZUNIONSTORE with empty set - $encoding" {
+            r del zseta zsetb
+            r zadd zseta 1 a
+            r zadd zseta 2 b
+            r zunionstore zsetc 2 zseta zsetb
+            r zrange zsetc 0 -1 withscores
+        } {a 1 b 2}
+
+        test "ZUNIONSTORE basics - $encoding" {
+            r del zseta zsetb zsetc
+            r zadd zseta 1 a
+            r zadd zseta 2 b
+            r zadd zseta 3 c
+            r zadd zsetb 1 b
+            r zadd zsetb 2 c
+            r zadd zsetb 3 d
+
+            assert_equal 4 [r zunionstore zsetc 2 zseta zsetb]
+            assert_equal {a 1 b 3 d 3 c 5} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZUNIONSTORE with weights - $encoding" {
+            assert_equal 4 [r zunionstore zsetc 2 zseta zsetb weights 2 3]
+            assert_equal {a 2 b 7 d 9 c 12} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZUNIONSTORE with a regular set and weights - $encoding" {
+            r del seta
+            r sadd seta a
+            r sadd seta b
+            r sadd seta c
+
+            assert_equal 4 [r zunionstore zsetc 2 seta zsetb weights 2 3]
+            assert_equal {a 2 b 5 c 8 d 9} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZUNIONSTORE with AGGREGATE MIN - $encoding" {
+            assert_equal 4 [r zunionstore zsetc 2 zseta zsetb aggregate min]
+            assert_equal {a 1 b 1 c 2 d 3} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZUNIONSTORE with AGGREGATE MAX - $encoding" {
+            assert_equal 4 [r zunionstore zsetc 2 zseta zsetb aggregate max]
+            assert_equal {a 1 b 2 c 3 d 3} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZINTERSTORE basics - $encoding" {
+            assert_equal 2 [r zinterstore zsetc 2 zseta zsetb]
+            assert_equal {b 3 c 5} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZINTERSTORE with weights - $encoding" {
+            assert_equal 2 [r zinterstore zsetc 2 zseta zsetb weights 2 3]
+            assert_equal {b 7 c 12} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZINTERSTORE with a regular set and weights - $encoding" {
+            r del seta
+            r sadd seta a
+            r sadd seta b
+            r sadd seta c
+            assert_equal 2 [r zinterstore zsetc 2 seta zsetb weights 2 3]
+            assert_equal {b 5 c 8} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZINTERSTORE with AGGREGATE MIN - $encoding" {
+            assert_equal 2 [r zinterstore zsetc 2 zseta zsetb aggregate min]
+            assert_equal {b 1 c 2} [r zrange zsetc 0 -1 withscores]
+        }
+
+        test "ZINTERSTORE with AGGREGATE MAX - $encoding" {
+            assert_equal 2 [r zinterstore zsetc 2 zseta zsetb aggregate max]
+            assert_equal {b 2 c 3} [r zrange zsetc 0 -1 withscores]
+        }
+
+        foreach cmd {ZUNIONSTORE ZINTERSTORE} {
+            test "$cmd with +inf/-inf scores - $encoding" {
+                r del zsetinf1 zsetinf2
+
+                r zadd zsetinf1 +inf key
+                r zadd zsetinf2 +inf key
+                r $cmd zsetinf3 2 zsetinf1 zsetinf2
+                assert_equal inf [r zscore zsetinf3 key]
+
+                r zadd zsetinf1 -inf key
+                r zadd zsetinf2 +inf key
+                r $cmd zsetinf3 2 zsetinf1 zsetinf2
+                assert_equal 0 [r zscore zsetinf3 key]
+
+                r zadd zsetinf1 +inf key
+                r zadd zsetinf2 -inf key
+                r $cmd zsetinf3 2 zsetinf1 zsetinf2
+                assert_equal 0 [r zscore zsetinf3 key]
+
+                r zadd zsetinf1 -inf key
+                r zadd zsetinf2 -inf key
+                r $cmd zsetinf3 2 zsetinf1 zsetinf2
+                assert_equal -inf [r zscore zsetinf3 key]
+            }
+
+            test "$cmd with NaN weights $encoding" {
+                r del zsetinf1 zsetinf2
+
+                r zadd zsetinf1 1.0 key
+                r zadd zsetinf2 1.0 key
+                assert_error "*weight*not*float*" {
+                    r $cmd zsetinf3 2 zsetinf1 zsetinf2 weights nan nan
+                }
+            }
+        }
     }
 
     basics ziplistv2
     basics skiplistv2
+
+    test {ZINTERSTORE regression with two sets, intset+hashtable} {
+        r del seta setb setc
+        r sadd set1 a
+        r sadd set2 10
+        r zinterstore set3 2 set1 set2
+    } {0}
+
+    test {ZUNIONSTORE regression, should not create NaN in scores} {
+        r zadd z -inf neginf
+        r zunionstore out 1 z weights 0
+        r zrange out 0 -1 withscores
+    } {neginf 0}
+
+    test {ZINTERSTORE #516 regression, mixed sets and ziplist zsets} {
+        r sadd one 100 101 102 103
+        r sadd two 100 200 201 202
+        r zadd three 1 500 1 501 1 502 1 503 1 100
+        r zinterstore to_here 3 one two three WEIGHTS 0 0 1
+        r zrange to_here 0 -1
+    } {100}
+
+    test {ZUNIONSTORE result is sorted} {
+        # Create two sets with common and not common elements, perform
+        # the UNION, check that elements are still sorted.
+        r del one two dest
+        set cmd1 [list r zadd one]
+        set cmd2 [list r zadd two]
+        for {set j 0} {$j < 1000} {incr j} {
+            lappend cmd1 [expr rand()] [randomInt 1000]
+            lappend cmd2 [expr rand()] [randomInt 1000]
+        }
+        {*}$cmd1
+        {*}$cmd2
+        assert {[r zcard one] > 100}
+        assert {[r zcard two] > 100}
+        r zunionstore dest 2 one two
+        set oldscore 0
+        foreach {ele score} [r zrange dest 0 -1 withscores] {
+            assert {$score >= $oldscore}
+            set oldscore $score
+        }
+    }
 
     proc stressers {encoding} {
         if {$encoding == "ziplistv2"} {
