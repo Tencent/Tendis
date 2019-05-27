@@ -650,7 +650,8 @@ class RestoreCommand: public Command {
             return Command::fmtErr("Invalid TTL value, must be >= 0");
         }
         uint64_t ts = 0;
-        ts = msSinceEpoch() + expttl.value();
+        if (expttl.value() != 0)
+            ts = msSinceEpoch() + expttl.value();
 
         Status chk = RestoreCommand::verifyDumpPayload(payload);
         if (!chk.ok()) {
@@ -705,9 +706,13 @@ class KvDeserializer: public Deserializer {
                 RecordType::RT_KV, _key, "");
         RecordValue rv(ret, RecordType::RT_KV, _ttl);
         for (int32_t i = 0; i < Command::RETRY_CNT - 1; ++i) {
-            auto result = setGeneric(kvstore, txn.get(), 0, rk, rv, "", "");
-            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return result.status();
+            Status s = kvstore->setKV(rk, rv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+            Expected<uint64_t> expCmt = txn->commit();
+            if (!expCmt.ok()) {
+                return expCmt.status();
             }
             ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -715,11 +720,7 @@ class KvDeserializer: public Deserializer {
             }
             txn = std::move(ptxn.value());
         }
-        auto result = setGeneric(kvstore, txn.get(), 0,
-                          rk, rv, "", "");
-        if (!result.ok()) {
-            return result.status();
-        }
+
         return { ErrorCodes::ERR_OK, "OK"};
     }
 };
@@ -859,7 +860,7 @@ class ZsetDeserializer: public Deserializer {
         for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
             // maybe very slow
             Expected<std::string> res =
-                    genericZadd(_sess, kvstore, rk, scoreMap, ZADD_NX);
+                    genericZadd(_sess, kvstore, rk, rv, scoreMap, ZADD_NX);
             if (res.ok()) {
                 return { ErrorCodes::ERR_OK, "OK" };
             }

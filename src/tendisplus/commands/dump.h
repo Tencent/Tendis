@@ -38,16 +38,10 @@ constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ/2ULL;
 
 Expected<bool> delGeneric(Session *sess, const std::string& key);
-Expected<std::string> setGeneric(PStore store,
-                                 Transaction *txn,
-                                 int32_t flags,
-                                 const RecordKey& key,
-                                 const RecordValue& val,
-                                 const std::string& okReply,
-                                 const std::string& abortReply);
 Expected<std::string> genericZadd(Session *sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
+                                  const Expected<RecordValue>& eMeta,
                                   const std::map<std::string, double>& subKeys,
                                   int flags);
 
