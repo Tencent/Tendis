@@ -1905,83 +1905,245 @@ class MoveCommand: public Command {
     }
 } moveCmd;
 
-class RenameCommand: public Command {
+class RenameGenericCommand: public Command {
+public:
+    RenameGenericCommand(const std::string &name, const char *sflags, bool nx)
+            : Command(name, sflags), _flagnx(nx) {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 2;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto args = sess->getArgs();
+        const std::string &src = args[1];
+        const std::string &dst = args[2];
+        bool samekey(false);
+        if (src == dst) {
+            samekey = true;
+        }
+
+        auto server = sess->getServerEntry();
+        auto pCtx = sess->getCtx();
+        auto srcdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
+                                                               src, mgl::LockMode::LOCK_X);
+        auto dstdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
+                                                               dst, mgl::LockMode::LOCK_X);
+        Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, src, RecordType::RT_DATA_META);
+        if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+            rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return Command::fmtErr("no such key");
+        }
+
+        if (samekey) {
+            return _flagnx ? Command::fmtZero() : Command::fmtOK();
+        }
+
+        Expected<RecordValue> dstrv =
+                Command::expireKeyIfNeeded(sess, dst, RecordType::RT_DATA_META);
+        if (dstrv.status().code() != ErrorCodes::ERR_NOTFOUND &&
+            dstrv.status().code() != ErrorCodes::ERR_EXPIRED) {
+            if (!dstrv.ok()) {
+                return dstrv.status();
+            }
+            if (_flagnx) {
+                return Command::fmtZero();
+            }
+
+            Status deleted =
+                    Command::delKey(sess, dst, RecordType::RT_DATA_META);
+            if (!deleted.ok()) {
+                return deleted.toString();
+            }
+        }
+
+        RecordKey rk(srcdb.value().chunkId,
+                     pCtx->getDbId(),
+                     RecordType::RT_DATA_META,
+                     src, "");
+        RecordKey dstRk(dstdb.value().chunkId,
+                        pCtx->getDbId(),
+                        RecordType::RT_DATA_META,
+                        dst, "");
+        {
+            // del old meta k/v
+            PStore kvstore = srcdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Status s = kvstore->delKV(rk, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+
+            auto expCmt = txn->commit();
+            if (!expCmt.ok()) {
+                return expCmt.status();
+            }
+        }
+
+        {
+            // set new meta k/v
+            PStore dststore = dstdb.value().store;
+            auto dstpTxn = dststore->createTransaction();
+            if (!dstpTxn.ok()) {
+                return dstpTxn.status();
+            }
+            std::unique_ptr<Transaction> dstTxn = std::move(dstpTxn.value());
+            Status s = dststore->setKV(dstRk, rv.value(), dstTxn.get());
+            if (!s.ok()) {
+                return s;
+            }
+
+            auto dstCmt = dstTxn->commit();
+            if (!dstCmt.ok()) {
+                return dstCmt.status();
+            }
+        }
+
+        if (rv.value().getRecordType() == RecordType::RT_KV)
+            return _flagnx ? Command::fmtOne() : Command::fmtOK();
+
+        {
+            auto cnt = rcd_util::getSubKeyCount(rk, rv.value());
+            if (!cnt.ok()) {
+                return cnt.status();
+            }
+
+            PStore srcStore = srcdb.value().store;
+            auto srcpTxn = srcStore->createTransaction();
+            if (!srcpTxn.ok()) {
+                return srcpTxn.status();
+            }
+            std::unique_ptr<Transaction> srcTxn = std::move(srcpTxn.value());
+
+            PStore dstStore = dstdb.value().store;
+            auto dstpTxn = dstStore->createTransaction();
+            if (!dstpTxn.ok()) {
+                return dstpTxn.status();
+            }
+            std::unique_ptr<Transaction> dstTxn = std::move(dstpTxn.value());
+
+            std::vector<std::string> prefixes = getEleType(rk, rv.value().getRecordType());
+            std::vector<Record> pending;
+            pending.reserve(cnt.value());
+            for (const auto &prefix : prefixes) {
+                auto cursor = srcTxn->createCursor();
+                cursor->seek(prefix);
+
+                while (true) {
+                    Expected<Record> expRcd = cursor->next();
+                    if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                        break;
+                    }
+                    if (!expRcd.ok()) {
+                        return expRcd.status();
+                    }
+                    pending.emplace_back(std::move(expRcd.value()));
+                }
+            }
+            // add new
+            for (auto &ele : pending) {
+                const RecordKey &srcRk = ele.getRecordKey();
+                RecordKey rk(dstRk.getChunkId(),
+                        dstRk.getDbId(),
+                        srcRk.getRecordType(),
+                        dst,
+                        srcRk.getSecondaryKey());
+                const RecordValue &rv = ele.getRecordValue();
+                Status s = dstStore->setKV(rk, rv, dstTxn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+            }
+
+            auto dstCmt = dstTxn->commit();
+            if (!dstCmt.ok()) {
+                return dstCmt.status();
+            }
+
+            // delete
+            for (auto &ele : pending) {
+                Status s = srcStore->delKV(ele.getRecordKey(), srcTxn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+            }
+            auto srcCmt = srcTxn->commit();
+            if (!srcCmt.ok()) {
+                return srcCmt.status();
+            }
+        }
+
+        return _flagnx ? Command::fmtOne() : Command::fmtOK();
+    }
+
+private:
+    bool _flagnx;
+    std::vector<std::string> getEleType(const RecordKey &rk, const RecordType &type) {
+        std::vector<std::string> ret;
+        if (type == RecordType::RT_HASH_META) {
+            RecordKey fakeRk(rk.getChunkId(),
+                    rk.getDbId(),
+                    RecordType::RT_HASH_ELE,
+                    rk.getPrimaryKey(), "");
+            ret.push_back(fakeRk.prefixPk());
+        } else if (type == RecordType::RT_LIST_META) {
+            RecordKey fakeRk(rk.getChunkId(),
+                    rk.getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    rk.getPrimaryKey(), "");
+            ret.push_back(fakeRk.prefixPk());
+        } else if (type == RecordType::RT_SET_META) {
+            RecordKey fakeRk(rk.getChunkId(),
+                    rk.getDbId(),
+                    RecordType::RT_SET_ELE,
+                    rk.getPrimaryKey(), "");
+            ret.push_back(fakeRk.prefixPk());
+        } else if (type == RecordType::RT_ZSET_META) {
+            RecordKey fakeRk(rk.getChunkId(),
+                    rk.getDbId(),
+                    RecordType::RT_ZSET_S_ELE,
+                    rk.getPrimaryKey(), "");
+            ret.push_back(fakeRk.prefixPk());
+            RecordKey fakeRk2(rk.getChunkId(),
+                    rk.getDbId(),
+                    RecordType::RT_ZSET_S_ELE,
+                    rk.getPrimaryKey(), "");
+            ret.push_back(fakeRk2.prefixPk());
+        }
+        return ret;
+    }
+};
+
+class RenameCommand: public RenameGenericCommand {
  public:
     RenameCommand()
-        :Command("rename", "w") {
+        :RenameGenericCommand("rename", "w", false) {
     }
 
-    ssize_t arity() const {
-        return 3;
-    }
-
-    int32_t firstkey() const {
-        return 1;
-    }
-
-    int32_t lastkey() const {
-        return 2;
-    }
-
-    int32_t keystep() const {
-        return 1;
-    }
-
-    bool sameWithRedis() const {
-        return false;
-    }
-
-    Expected<std::string> run(Session *sess) final {
-        const auto& args = sess->getArgs();
-
-        auto index = getKeysFromCommand(args);
-        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(  // NOLINT
-            sess, args, index, mgl::LockMode::LOCK_X);
-        if (!locklist.ok()) {
-            return locklist.status();
-        }
-
-        return {ErrorCodes::ERR_INTERNAL, "not support"};
-    }
 } renameCmd;
 
-class RenamenxCommand: public Command {
+class RenamenxCommand: public RenameGenericCommand {
  public:
     RenamenxCommand()
-        :Command("renamenx", "wF") {
-    }
-
-    ssize_t arity() const {
-        return 3;
-    }
-
-    int32_t firstkey() const {
-        return 1;
-    }
-
-    int32_t lastkey() const {
-        return 2;
-    }
-
-    int32_t keystep() const {
-        return 1;
-    }
-
-    bool sameWithRedis() const {
-        return false;
-    }
-
-    Expected<std::string> run(Session *sess) final {
-        const auto& args = sess->getArgs();
-
-        auto index = getKeysFromCommand(args);
-        auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(      // NOLINT
-            sess, args, index, mgl::LockMode::LOCK_X);
-        if (!locklist.ok()) {
-            return locklist.status();
-        }
-
-        return {ErrorCodes::ERR_INTERNAL, "not support"};
+        :RenameGenericCommand("renamenx", "wF", true) {
     }
 } renamenxCmd;
 
