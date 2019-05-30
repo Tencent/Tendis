@@ -495,6 +495,30 @@ RecordValue::RecordValue(RecordValue&& o)
     o._totalSize = o._value.size();
 }
 
+RecordValue& RecordValue::operator=(RecordValue&& rhs) noexcept {
+    if (&rhs == this) {
+        return *this;
+    }
+
+    _type = rhs._type;
+    _ttl = rhs._ttl;
+    _version = rhs._version;
+    _versionEP = rhs._versionEP;
+    _cas = rhs._cas;
+    _pieceSize = rhs._pieceSize;
+    _totalSize = rhs._totalSize;
+    _value = std::move(rhs._value);
+
+    rhs._type = RecordType::RT_INVALID;
+    rhs._ttl = 0;
+    rhs._cas = -1;
+    rhs._version = rhs._versionEP = 0;
+    rhs._pieceSize = -1;
+    rhs._totalSize = rhs._value.size();
+
+    return *this;
+}
+
 RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
                         int64_t cas, uint64_t version, uint64_t versionEp,
                         uint64_t pieceSize)

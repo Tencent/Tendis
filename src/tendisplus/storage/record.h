@@ -135,6 +135,7 @@ class RecordValue {
     // so copy constructor is applied, the move-from object will
     // be in a dangling state
     RecordValue(RecordValue&&);
+    RecordValue& operator=(RecordValue&&) noexcept;
     explicit RecordValue(const std::string& val, RecordType type, uint64_t ttl = 0,
                         int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
                         uint64_t pieceSize = (uint64_t)-1);
