@@ -5,6 +5,7 @@
 #include <cctype>
 #include <clocale>
 #include <vector>
+#include <queue>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -2040,7 +2041,8 @@ public:
             }
             std::unique_ptr<Transaction> dstTxn = std::move(dstpTxn.value());
 
-            std::vector<std::string> prefixes = getEleType(rk, rv.value().getRecordType());
+            std::vector<std::string> prefixes =
+                    getEleType(rk, rv.value().getRecordType());
             std::vector<Record> pending;
             pending.reserve(cnt.value());
             for (const auto &prefix : prefixes) {
@@ -2094,9 +2096,11 @@ public:
         return _flagnx ? Command::fmtOne() : Command::fmtOK();
     }
 
-private:
+ private:
     bool _flagnx;
-    std::vector<std::string> getEleType(const RecordKey &rk, const RecordType &type) {
+    std::vector<std::string> getEleType(
+            const RecordKey &rk,
+            const RecordType &type) {
         std::vector<std::string> ret;
         if (type == RecordType::RT_HASH_META) {
             RecordKey fakeRk(rk.getChunkId(),
@@ -2201,5 +2205,402 @@ class GetBitCommand: public GetGenericCmd {
         return bitval ? Command::fmtOne() : Command::fmtZero();
     }
 } getbitCommand;
+
+class BitFieldCommand: public Command {
+ public:
+    BitFieldCommand()
+        : Command("bitfield", "wm") {
+    }
+
+    enum class FieldOpType {
+        BITFIELDOP_GET,
+        BITFIELDOP_SET,
+        BITFIELDOP_INCRBY,
+    };
+
+    enum class BFOverFlowType {
+        BFOVERFLOW_WRAP,
+        BFOVERFLOW_SAT,
+        BFOVERFLOW_FAIL,
+    };
+
+    struct BitfieldOp {
+        uint64_t offset;
+        int64_t i64;
+        FieldOpType opcode;
+        BFOverFlowType owtype;
+        int32_t bits;
+        int sign;
+    };
+
+    uint64_t getUnsignedBitfield(const std::string &value, uint64_t offset, uint64_t bits) {
+        uint64_t oldVal(0);
+        for (size_t i = 0; i < bits; i++) {
+            uint64_t byte = offset >> 3;
+            uint64_t bit = 7 - (offset & 0x7);
+            uint64_t byteval = static_cast<uint8_t>(value[byte]);
+            uint64_t bitval = (byteval >> bit) & 1;
+            oldVal = (oldVal << 1) | bitval;
+            offset++;
+        }
+        return oldVal;
+    }
+
+    int64_t getSignedBitfield(const std::string &value, uint64_t offset, uint64_t bits) {
+        int64_t ret;
+        union {uint64_t u; int64_t i;} conv;
+
+        conv.u = getUnsignedBitfield(value, offset, bits);
+        ret = conv.i;
+
+        if (ret & ((uint64_t)1 << (bits - 1)))
+            ret |= ((uint64_t) - 1) << bits;
+
+        return ret;
+    }
+
+    int checkUnsignedBitfieldOverflow(uint64_t value,
+                                      int64_t incr,
+                                      uint64_t bits,
+                                      BFOverFlowType owtype,
+                                      uint64_t *newVal) {
+        uint64_t max = (bits == 64) ? UINT64_MAX : (((uint64_t)1 << bits)-1);
+        int64_t maxincr = max - value;
+        int64_t minincr = -value;
+        auto handleWrap = [&](){
+            uint64_t mask = ((uint64_t)-1) << bits;
+            uint64_t res = value + incr;
+            res &= ~mask;
+            *newVal = res;
+            return 1;
+        };
+
+        if (value > max || (incr > 0 && incr > maxincr)) {
+            if (owtype == BFOverFlowType::BFOVERFLOW_WRAP) {
+                return handleWrap();
+            } else if (owtype == BFOverFlowType::BFOVERFLOW_SAT) {
+                *newVal = max;
+            }
+            return 1;
+        } else if (incr < 0 && incr < minincr) {
+            if (owtype == BFOverFlowType::BFOVERFLOW_WRAP) {
+                return handleWrap();
+            } else if (owtype == BFOverFlowType::BFOVERFLOW_SAT) {
+                *newVal = 0;
+            }
+            return -1;
+        }
+
+        return 0;
+    }
+
+    int checkSignedBitfieldOverflow(int64_t value,
+                                    int64_t incr,
+                                    uint64_t bits,
+                                    BFOverFlowType owtype,
+                                    int64_t *newVal) {
+        int64_t max = (bits == 64) ? INT64_MAX : (((int64_t)1 << (bits-1))-1);
+        int64_t min = (-max)-1;
+
+        int64_t maxincr = max - value;
+        int64_t minincr = min - value;
+
+        auto handleWrap = [&](){
+            uint64_t mask = ((uint64_t)-1) << bits;
+            uint64_t msb = (uint64_t)1 << (bits-1);
+            uint64_t a = value, b = incr, c;
+            c = a + b;
+
+            if (c & msb) {
+                c |= mask;
+            } else {
+                c &= ~mask;
+            }
+            *newVal = c;
+            return 1;
+        };
+
+        if (value > max ||
+            (bits != 64 && incr > maxincr) ||
+            (value >= 0 && incr > 0 && incr > maxincr)) {
+            if (owtype == BFOverFlowType::BFOVERFLOW_WRAP) {
+                return handleWrap();
+            } else if (owtype == BFOverFlowType::BFOVERFLOW_SAT) {
+                *newVal = max;
+            }
+            return 1;
+        } else if (value < min ||
+                   (bits != 64 && incr < minincr) ||
+                   (value < 0 && incr < 0 && incr < minincr)) {
+            if (owtype == BFOverFlowType::BFOVERFLOW_WRAP) {
+                return handleWrap();
+            } else if (owtype == BFOverFlowType::BFOVERFLOW_SAT) {
+                *newVal = min;
+            }
+            return -1;
+        }
+        return 0;
+    }
+
+    void setUnsignedBitfield(std::string *buf, uint64_t offset, uint64_t bits, uint64_t value) {
+        for (size_t i = 0; i < bits; i++) {
+            uint64_t bitval = (value & ((uint64_t)1<<(bits - 1 - i))) != 0;
+            uint64_t byte = offset >> 3;
+            uint64_t bit = 7 - (offset & 0x7);
+            uint8_t byteval = static_cast<uint8_t>((*buf)[byte]);
+            byteval &= ~(1 << bit);
+            byteval |= bitval << bit;
+            (*buf)[byte] = byteval & 0xff;
+            offset++;
+        }
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto args = sess->getArgs();
+        std::queue<BitfieldOp> ops;
+
+        bool readonly(1);
+        size_t highestOffset(0);
+        BFOverFlowType owtype(BFOverFlowType::BFOVERFLOW_WRAP);
+        for (size_t i = 2; i < args.size(); i++) {
+            int remaining = args.size() - i - 1;
+            FieldOpType opcode;
+            int64_t i64(0);
+            int sign;
+
+            if (!::strcasecmp(args[i].c_str(), "get") && remaining >= 2)
+                opcode = FieldOpType::BITFIELDOP_GET;
+            else if (!::strcasecmp(args[i].c_str(), "set") && remaining >= 3)
+                opcode = FieldOpType::BITFIELDOP_SET;
+            else if (!::strcasecmp(args[i].c_str(), "incrby") && remaining >= 3)
+                opcode = FieldOpType::BITFIELDOP_INCRBY;
+            else if (!::strcasecmp(args[i].c_str(), "overflow") &&
+                     remaining >= 1) {
+                ++i;
+                if (!::strcasecmp(args[i].c_str(), "wrap")) {
+                    owtype = BFOverFlowType::BFOVERFLOW_WRAP;
+                } else if (!::strcasecmp(args[i].c_str(), "sat")) {
+                    owtype = BFOverFlowType::BFOVERFLOW_SAT;
+                } else if (!::strcasecmp(args[i].c_str(), "fail")) {
+                    owtype = BFOverFlowType::BFOVERFLOW_FAIL;
+                }
+                continue;
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "syntax error" };
+            }
+
+            ++i;
+            if (args[i].c_str()[0] == 'i') {
+                sign = 1;
+            } else if (args[i].c_str()[0] == 'u') {
+                sign = 0;
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "syntax error" };
+            }
+
+            const std::string bitvals(args[i].c_str() + 1);
+            Expected<int32_t> eBits = tendisplus::stol(bitvals);
+            if (!eBits.ok() ||
+                eBits.value() < 1 ||
+                (sign == 1 && eBits.value() > 64) ||
+                (sign == 0 && eBits.value() > 63)) {
+                return { ErrorCodes::ERR_PARSEOPT,
+                         "Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported buf i64 is." };
+            }
+            int32_t bits = eBits.value();
+
+            ++i;
+            int usehash(0);
+            if (args[i].c_str()[0] == '#')
+                usehash = 1;
+            const std::string offsetval(args[i].c_str() + usehash);
+            Expected<int64_t> eOffset = tendisplus::stoll(offsetval);
+            if (!eOffset.ok()) {
+                return { ErrorCodes::ERR_PARSEOPT,
+                         "bit offset is not an integer or out of range"};
+            }
+            int64_t offset = usehash ? eOffset.value() * bits : eOffset.value();
+            if (offset < 0 ||
+                (offset >> 3) >= (512*1024*1024)) {
+                return { ErrorCodes::ERR_PARSEOPT,
+                         "bit offset is not an integer or out of range"};
+            }
+
+            ++i;
+            if (opcode != FieldOpType::BITFIELDOP_GET) {
+                readonly = 0;
+                if (highestOffset < static_cast<size_t>(offset) + bits - 1)
+                    highestOffset = offset + bits - 1;
+                Expected<int64_t> eI64 = tendisplus::stoll(args[i]);
+                if (!eI64.ok()) {
+                    return eI64.status();
+                }
+                i64 = eI64.value();
+            }
+
+            ops.emplace(BitfieldOp{
+                static_cast<size_t>(offset),
+                i64,
+                opcode,
+                owtype,
+                bits,
+                sign
+            });
+        }
+
+        std::string value;
+        RecordValue rv(RecordType::RT_KV);
+        const std::string &key = args[1];
+        auto server = sess->getServerEntry();
+        auto pCtx = sess->getCtx();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        Expected<RecordValue> eRv =
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
+        if (eRv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            eRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (readonly)
+                return Command::fmtZero();
+        } else if (!eRv.ok()) {
+            return eRv.status();
+        } else {
+            rv = std::move(eRv.value());
+            value = rv.getValue();
+        }
+
+        if (!readonly) {
+            uint64_t maxbyte = highestOffset >> 3;
+            if (value.size() < maxbyte + 1)
+                value.resize(maxbyte + 1);
+        }
+        bool changes(false);
+
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, ops.size());
+        size_t size = ops.size();
+        for (size_t i = 0; i < size; i++) {
+            BitfieldOp op = ops.front();
+            ops.pop();
+            if (op.opcode == FieldOpType::BITFIELDOP_SET ||
+                op.opcode == FieldOpType::BITFIELDOP_INCRBY) {
+                if (op.sign) {
+                    int64_t oldval, newval, retval, wrapped(0);
+                    int overflow(0);
+                    oldval = getSignedBitfield(value, op.offset, op.bits);
+
+                    if (op.opcode == FieldOpType::BITFIELDOP_INCRBY) {
+                        newval = oldval + op.i64;
+                        overflow = checkSignedBitfieldOverflow(oldval,
+                                op.i64, op.bits, op.owtype, &wrapped);
+                        if (overflow)
+                            newval = wrapped;
+                        retval = newval;
+                    } else {
+                        newval = op.i64;
+                        overflow = checkSignedBitfieldOverflow(op.i64,
+                                0, op.bits, op.owtype, &wrapped);
+                        if (overflow)
+                            newval = wrapped;
+                        retval = oldval;
+                    }
+
+                    if (!(overflow && op.owtype == BFOverFlowType::BFOVERFLOW_FAIL)) {
+                        Command::fmtLongLong(ss, retval);
+                        uint64_t uv = newval;
+                        setUnsignedBitfield(&value, op.offset, op.bits, uv);
+                    } else {
+                        Command::fmtNull(ss);
+                    }
+                } else {
+                    uint64_t oldval, newval, retval, wrapped(0);
+                    int overflow(0);
+                    oldval = getUnsignedBitfield(value, op.offset, op.bits);
+
+                    if (op.opcode == FieldOpType::BITFIELDOP_INCRBY) {
+                        newval = oldval + op.i64;
+                        overflow = checkUnsignedBitfieldOverflow(oldval,
+                                op.i64, op.bits, op.owtype, &wrapped);
+                        if (overflow)
+                            newval = wrapped;
+                        retval = newval;
+                    } else {
+                        newval = op.i64;
+                        overflow = checkUnsignedBitfieldOverflow(op.i64,
+                                0, op.bits, op.owtype, &wrapped);
+                        if (overflow)
+                            newval = wrapped;
+                        retval = oldval;
+                    }
+                    if (!(overflow && op.owtype == BFOverFlowType::BFOVERFLOW_FAIL)) {
+                        Command::fmtLongLong(ss, retval);
+                        setUnsignedBitfield(&value, op.offset, op.bits, newval);
+                    } else {
+                        Command::fmtNull(ss);
+                    }
+                } // end of usnigned SET/INCR
+                changes = true;
+            } /*end of SET/INCR*/ else {
+                std::vector<unsigned char> buf(9, 0);
+                size_t byte = op.offset >> 3;
+                for (int i = 0; i < 9; i++) {
+                    if (i+byte >= value.size())
+                        break;
+                    buf[i] = value[i+byte];
+                }
+
+                if (op.sign) {
+                    int64_t val = getSignedBitfield(std::string(buf.begin(), buf.end()),
+                            op.offset, op.bits);
+                    Command::fmtLongLong(ss, val);
+                } else {
+                    uint64_t val = getUnsignedBitfield(std::string(buf.begin(), buf.end()),
+                            op.offset, op.bits);
+                    Command::fmtLongLong(ss, val);
+                }
+            }
+        } // end of ops' loop
+        if (changes) {
+            RecordKey rk(expdb.value().chunkId,
+                    pCtx->getDbId(),
+                    RecordType::RT_KV,
+                    key, "");
+            RecordValue newrv(value,
+                    RecordType::RT_KV,
+                    rv.getTtl(),
+                    rv);
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            Status s = kvstore->setKV(rk, newrv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+            auto eCmt = txn->commit();
+            if (!eCmt.ok()) {
+                return eCmt.status();
+            }
+        }
+
+        return ss.str();
+    }
+} bitfieldCommand;
 
 }  // namespace tendisplus
