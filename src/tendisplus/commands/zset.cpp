@@ -1840,8 +1840,7 @@ class ZUnionInterGenericCommand : public Command {
                     "at least 1 input key is needed for ZUNIONSTORE/ZINTERSTORE");
         }
         if (len > static_cast<int32_t>(sess->getArgs().size()) - 3) {
-            return Command::fmtErr(
-                    "syntax error");
+            return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
 
         auto server = sess->getServerEntry();
@@ -1879,11 +1878,11 @@ class ZUnionInterGenericCommand : public Command {
                     } else if (aggtype == "max") {
                         aggr = Aggregate::REDIS_AGGR_MAX;
                     } else {
-                        return Command::fmtErr("syntax error");
+                        return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
                     }
                     j++; remaining--;
                 } else {
-                    return Command::fmtErr("syntax error");
+                    return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
                 }
             }
         }
