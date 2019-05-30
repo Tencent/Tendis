@@ -464,7 +464,7 @@ class SpopCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 2;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -482,6 +482,17 @@ class SpopCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];
+        uint32_t count(1);
+        if (args.size() > 3) {
+            return { ErrorCodes::ERR_PARSEOPT, "syntax error" };
+        }
+        if (args.size() == 3) {
+            auto eCnt = tendisplus::stoul(args[2]);
+            if (!eCnt.ok()) {
+                return eCnt.status();
+            }
+            count = eCnt.value();
+        }
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
@@ -494,47 +505,93 @@ class SpopCommand: public Command {
 
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-        if (rv.status().code() == ErrorCodes::ERR_EXPIRED &&
-                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtNull();
         } else if (!rv.ok()) {
             return rv.status();
         }
 
+        Expected<SetMetaValue> expSm =
+                SetMetaValue::decode(rv.value().getValue());
+        if (!expSm.ok()) {
+            return expSm.status();
+        }
+        SetMetaValue sm = std::move(expSm.value());
+
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
         PStore kvstore = expdb.value().store;
 
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
+        auto batch = Command::scan(fake.prefixPk(), "0", count, txn.get());
+        if (!batch.ok()) {
+            return batch.status();
+        }
+        const auto& rcds = batch.value().second;
+        if (rcds.size() == 0) {
+            return Command::fmtNull();
+        }
+
+        bool deleteMeta(false);
+        if (rcds.size() == sm.getCount()) {
+            deleteMeta = true;
+        }
+        INVARIANT(rcds.size() == count || rcds.size() == sm.getCount());
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            std::stringstream ss;
+            if (rcds.size() > 1) {
+                Command::fmtMultiBulkLen(ss, rcds.size());
+            }
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-            auto batch = Command::scan(fake.prefixPk(), "0", 1, txn.get());
-            if (!batch.ok()) {
-                return batch.status();
-            }
-            const auto& rcds = batch.value().second;
-            if (rcds.size() == 0) {
-                return Command::fmtNull();
-            }
-            const std::string& v = (*rcds.begin()).getRecordKey().getSecondaryKey();
-            Expected<std::string> s =
-                genericSRem(sess, kvstore, txn.get(), metaRk, rv, {v});
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
+
+            // avoid string copy, directly delete elements according to rcds.
+            Status s;
+            for (auto iter = rcds.begin(); iter != rcds.end(); iter++) {
+                const RecordKey &subRk = iter->getRecordKey();
+                s = kvstore->delKV(subRk, txn.get());
+                if (!s.ok()) {
+                    return s;
                 }
-                return Command::fmtBulk(v);
+                Command::fmtBulk(ss, subRk.getSecondaryKey());
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-                return s.status();
+
+            if (deleteMeta) {
+                s = kvstore->delKV(metaRk, txn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+            } else {
+                sm.setCount(sm.getCount() - rcds.size());
+                s = kvstore->setKV(metaRk,
+                        RecordValue(sm.encode(),
+                                RecordType::RT_SET_META,
+                                rv.value().getTtl(),
+                                rv),
+                                txn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+            }
+
+            auto expCmt = txn->commit();
+            if (expCmt.ok()) {
+                return ss.str();
+            }
+            if (expCmt.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return expCmt.status();
             }
             if (i == RETRY_CNT - 1) {
-                return s.status();
+                return expCmt.status();
             } else {
                 continue;
             }
