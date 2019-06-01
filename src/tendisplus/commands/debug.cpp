@@ -92,7 +92,6 @@ class KeysCommand: public Command {
                 }
                 return expdb.status();
             }
-
             PStore kvstore = expdb.value().store;
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -100,6 +99,7 @@ class KeysCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             auto cursor = txn->createCursor();
+
             cursor->seek("");
 
             while (true) {
@@ -109,6 +109,10 @@ class KeysCommand: public Command {
                 }
                 if (!exptRcd.ok()) {
                     return exptRcd.status();
+                }
+                if (exptRcd.value().getRecordKey().getDbId() !=
+                    sess->getCtx()->getDbId()) {
+                    continue;
                 }
                 auto keyType = exptRcd.value().getRecordKey().getRecordType();
                 // NOTE(vinchen):
