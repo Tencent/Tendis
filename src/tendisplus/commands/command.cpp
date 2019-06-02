@@ -88,6 +88,9 @@ Expected<std::string> Command::precheck(Session *sess) {
         LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
     }
     std::string commandName = toLower(args[0]);
+    if (commandName == "quit") {
+        return commandName;
+    }
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
         {
