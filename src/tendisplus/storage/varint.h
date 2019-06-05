@@ -11,6 +11,7 @@ namespace tendisplus {
 
 using VarintDecodeResult = std::pair<uint64_t, size_t>;
 
+size_t varintMaxSize(size_t size);
 std::vector<uint8_t> varintEncode(uint64_t val);
 
 Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,

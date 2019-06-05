@@ -373,6 +373,18 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
     return offset;
 }
 
+uint32_t RecordKey::decodeChunkId(const std::string& key) {
+    uint32_t chunkid = 0;
+    INVARIANT(key.size() > sizeof(chunkid));
+    auto keyCstr = key.c_str();
+
+    for (size_t i = 0; i < sizeof(chunkid); i++) {
+        chunkid = (chunkid << 8) | keyCstr[i];
+    }
+
+    return chunkid;
+}
+
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
@@ -408,7 +420,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     }
 
     // pk and 0
-    pk = std::string(key.c_str() + offset, pkLen);
+    pk = std::move(std::string(key.c_str() + offset, pkLen));
 
     // version
     const char* ptr = key.c_str() + offset + pkLen + 1;
@@ -423,11 +435,13 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
 
     // sk
     skLen = left - versionLen;
-    sk = std::string(ptr + versionLen, skLen);
+    if (skLen) {
+        sk = std::move(std::string(ptr + versionLen, skLen));
+    }
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(chunkid, dbid, type, pk, sk, version);
+    return RecordKey(chunkid, dbid, type, std::move(pk), std::move(sk), version);
 }
 
 RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
@@ -611,6 +625,8 @@ std::string RecordValue::encode() const {
         value.data()), value.size());
 }
 
+// NOTE(vinchen): if you want to change the record format, please remember to
+// change decodeHdrSize() also.
 Expected<RecordValue> RecordValue::decode(const std::string& value) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
 
@@ -618,9 +634,11 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         return {ErrorCodes::ERR_DECODE, "too small RecordValue"};
     }
 
+    // type
     size_t offset = 0;
     auto typeForMeta = char2Rt(valueCstr[offset++]);
 
+    // ttl
     auto expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
     if (!expt.ok()) {
         return expt.status();
@@ -628,6 +646,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     offset += expt.value().second;
     uint64_t ttl = expt.value().first;
 
+    // version
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
     if (!expt.ok()) {
         return expt.status();
@@ -635,6 +654,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     offset += expt.value().second;
     uint64_t version = expt.value().first;
 
+    // versionEP
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
     if (!expt.ok()) {
         return expt.status();
@@ -642,7 +662,8 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     offset += expt.value().second;
     uint64_t versionEP = expt.value().first - 1;
 
-    expt = varintDecodeFwd(valueCstr+offset, value.size());
+    // CAS
+    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
     if (!expt.ok()) {
         return expt.status();
     }
@@ -652,6 +673,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     // to improve storage efficiency
     int64_t cas = expt.value().first - 1;
 
+    // pieceSize
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
     if (!expt.ok()) {
         return expt.status();
@@ -659,6 +681,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     offset += expt.value().second;
     uint64_t pieceSize = expt.value().first - 1;
 
+    // totalSize
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
     if (!expt.ok()) {
         return expt.status();
@@ -680,6 +703,61 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     INVARIANT(totalSize == rawValue.size());
     return RecordValue(std::move(rawValue), typeForMeta, versionEP, ttl, cas,
                         version, pieceSize);
+}
+
+Expected<size_t> RecordValue::decodeHdrSize(const std::string& value) {
+    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+
+    if (value.size() < 7) {
+        return{ ErrorCodes::ERR_DECODE, "too small RecordValue" };
+    }
+
+    // type
+    size_t offset = 1;
+
+    // ttl
+    auto expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // version
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // versionEP
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // CAS
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // pieceSize
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // totalSize
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    return offset;
 }
 
 uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
@@ -769,7 +847,7 @@ Expected<Record> Record::decode(const std::string& key,
     if (!e1.ok()) {
         return e1.status();
     }
-    return Record(e.value(), e1.value());
+    return Record(std::move(e.value()), std::move(e1.value()));
 }
 
 bool Record::operator==(const Record& other) const {

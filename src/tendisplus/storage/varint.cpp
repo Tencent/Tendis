@@ -4,6 +4,21 @@
 
 namespace tendisplus {
 
+size_t varintMaxSize(size_t size) {
+    switch (size) {
+    case sizeof(uint64_t) :
+        return 10;
+        break;
+    case sizeof(uint32_t) :
+        return 5;
+    default:
+        INVARIANT(0);
+        break;
+    }
+
+    return 0;
+}
+
 std::vector<uint8_t> varintEncode(uint64_t val) {
     std::vector<uint8_t> result;
     while (val >= 0x80) {

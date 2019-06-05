@@ -7,7 +7,7 @@ target_link_libraries(pessimistic glog)
 add_library(varint STATIC varint.cpp)
 target_link_libraries(varint glog)
 
-add_library(record STATIC record.cpp)
+add_library(record STATIC record.cpp repllog.cpp)
 target_link_libraries(record varint status glog utils_common)
 
 add_library(skiplist STATIC skiplist.cpp)

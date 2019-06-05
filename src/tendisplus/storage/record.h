@@ -105,6 +105,7 @@ class RecordKey {
     RecordType getRecordType() const;
     RecordType getRecordValueType() const;
     std::string encode() const;
+    static uint32_t decodeChunkId(const std::string& key);
     static Expected<RecordKey> decode(const std::string& key);
     static RecordType getRecordTypeRaw(const char* key, size_t size);
     bool operator==(const RecordKey& other) const;
@@ -163,6 +164,7 @@ class RecordValue {
     uint64_t getTotalSize() const { return _totalSize; }
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
+    static Expected<size_t> decodeHdrSize(const std::string& value);
     static uint64_t getTtlRaw(const char* value, size_t size);
     static RecordType getRecordTypeRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
@@ -285,6 +287,83 @@ class ReplLogValue {
     ReplOp _op;
     std::string _key;
     std::string _val;
+};
+
+class ReplLogKeyV2 {
+ public:
+    ReplLogKeyV2();
+    ReplLogKeyV2(const ReplLogKeyV2&) = delete;
+    ReplLogKeyV2(ReplLogKeyV2&&);
+    ReplLogKeyV2(uint64_t binlogid);
+    static Expected<ReplLogKeyV2> decode(const RecordKey&);
+    static Expected<ReplLogKeyV2> decode(const std::string&);
+    std::string encode() const;
+    bool operator==(const ReplLogKeyV2&) const;
+    ReplLogKeyV2& operator=(const ReplLogKeyV2&);
+    uint64_t getBinlogId() const { return _binlogId; }
+
+    static constexpr uint32_t DBID = 0XFFFFFFFFU;
+    static constexpr uint32_t CHUNKID = 0XFFFFFFFFU;
+
+ private:
+    uint64_t _binlogId;
+    std::string _version;
+};
+
+class ReplLogValueEntryV2 {
+ public:
+    ReplLogValueEntryV2();
+    ReplLogValueEntryV2(const ReplLogValueEntryV2&) = default;
+    ReplLogValueEntryV2(ReplLogValueEntryV2&&);
+    ReplLogValueEntryV2(ReplOp op, uint64_t ts, const std::string&, const std::string&);
+    ReplLogValueEntryV2(ReplOp op, uint64_t ts, std::string&& key, std::string&& val);
+    const std::string& getOpKey() const { return _key; }
+    const std::string& getOpValue() const { return _val; }
+    uint64_t getTimestamp() const { return _timestamp; }
+    ReplOp getOp() const { return _op; }
+
+    static Expected<ReplLogValueEntryV2> decode(const char* rawVal, size_t maxSize,
+        size_t& decodeSize);
+    std::string encode() const;
+    size_t encode(uint8_t* dest, size_t destSize) const;
+    size_t maxSize() const;
+    ReplLogValueEntryV2& operator=(ReplLogValueEntryV2&&);
+    bool operator==(const ReplLogValueEntryV2&) const;
+
+ private:
+    ReplOp _op;
+    uint64_t _timestamp;
+    std::string _key;
+    std::string _val;
+};
+
+class ReplLogValueV2 {
+ public:
+    ReplLogValueV2();
+    ReplLogValueV2(const ReplLogValueV2&) = delete;
+    ReplLogValueV2(ReplLogValueV2&&);
+    ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint32_t entryCount,
+                const uint8_t* data, size_t dataSize);
+    static Expected<ReplLogValueV2> decode(const std::string& rvStr);
+    static Expected<ReplLogValueV2> decode(const char* str, size_t size);
+    static size_t fixedHeaderSize();
+    std::string encodeHdr() const;
+    std::string encode(const std::vector<ReplLogValueEntryV2>& vec) const;
+    bool isEqualHdr(const ReplLogValueV2&) const;
+    const uint8_t* getData() const { return _data; }
+    size_t getDataSize() const { return _dataSize; }
+    uint32_t getEntryCount() const { return _entryCount; }
+
+ private:
+    uint32_t _chunkId;
+    ReplFlag _flag;
+    uint64_t _txnId;
+    uint32_t _entryCount;
+    // NOTE(vinchen) : take care about "_data", the caller should guarantee the 
+    // memory is ok;
+    // printer to the RecordValue.getValue().c_str()
+    const uint8_t* _data;
+    size_t _dataSize;
 };
 
 class ReplLog {

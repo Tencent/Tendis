@@ -101,11 +101,19 @@ class Transaction {
     virtual uint64_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint64_t timestamp) = 0;
     virtual bool isReplOnly() const = 0;
+    virtual uint64_t getTxnId() const = 0;
+    virtual uint64_t getBinlogId() const = 0;
+    virtual void setBinlogId(uint64_t binlogId) = 0;
+    virtual uint32_t getChunkId() const = 0;
+    virtual void setChunkId(uint32_t chunkId) = 0;
 
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
     static constexpr uint64_t MIN_VALID_TXNID = 1;
     static constexpr uint64_t TXNID_UNINITED = 0;
+
+    static constexpr uint32_t CHUNKID_UNINITED = 0xFFFFFFFF;
+    static constexpr uint32_t CHUNKID_MULTI = 0xFFFFFFFE;
 };
 
 class BackupInfo {
@@ -174,6 +182,7 @@ class KVStore {
             uint64_t start, uint64_t end, Transaction* txn) = 0;
 
     virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
+    virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
 
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(const std::string* begin,

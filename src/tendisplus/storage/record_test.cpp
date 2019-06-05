@@ -8,6 +8,7 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/test_util.h"
 #include "tendisplus/utils/time.h"
 #include "gtest/gtest.h"
 
@@ -54,13 +55,15 @@ RecordType randomType() {
 }
 
 ReplFlag randomReplFlag() {
-    switch ((genRand() % 3)) {
+    switch ((genRand() % 4)) {
         case 0:
             return ReplFlag::REPL_GROUP_MID;
         case 1:
             return ReplFlag::REPL_GROUP_START;
         case 2:
             return ReplFlag::REPL_GROUP_END;
+        case 3:
+            return static_cast<ReplFlag>((uint16_t)ReplFlag::REPL_GROUP_START | (uint16_t)ReplFlag::REPL_GROUP_END);
         default:
             INVARIANT(0);
             // void compiler complain
@@ -224,6 +227,71 @@ TEST(ReplRecord, Common) {
     std::string s = rlv.encode();
     Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
     EXPECT_TRUE(erlv.ok());
+}
+
+TEST(ReplRecordV2, Common) {
+    srand(time(NULL));
+    for (size_t i = 0; i < 1000; i++) {
+        uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
+        uint64_t binlogid = uint64_t(genRand())*uint64_t(genRand());
+        uint32_t chunkid = genRand() % 16384;
+
+        ReplFlag flag = randomReplFlag();
+        uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+
+        auto rk = ReplLogKeyV2(binlogid);
+        auto rkStr = rk.encode();
+        auto prk = ReplLogKeyV2::decode(rkStr);
+        EXPECT_TRUE(prk.ok());
+        EXPECT_EQ(prk.value(), rk); 
+
+        size_t count = 1000;
+        
+        std::vector<ReplLogValueEntryV2> vec;
+        vec.reserve(count);
+        for (size_t j = 0; j < count; j++) {
+            uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+
+            size_t keyLen = genRand() % 128;
+            size_t valLen = genRand() % 1024;
+
+            ReplLogValueEntryV2 entry;
+            if (genRand() % 2 == 0) {
+                entry = ReplLogValueEntryV2(ReplOp::REPL_OP_SET, timestamp, randomStr(keyLen, false), randomStr(valLen, true));
+            } else {
+                entry = ReplLogValueEntryV2(ReplOp::REPL_OP_DEL, timestamp, randomStr(keyLen, false), "");
+            }
+
+            size_t size = 0;
+            auto entryStr = entry.encode();
+            auto pentry = ReplLogValueEntryV2::decode(entryStr.c_str(), entryStr.size(), size);
+            EXPECT_TRUE(pentry.ok());
+            EXPECT_EQ(pentry.value(), entry);
+            EXPECT_EQ(size, entryStr.size());
+
+            vec.emplace_back(entry);
+        }
+
+        auto rv = ReplLogValueV2(chunkid, flag, txnid, count, nullptr, 0);
+        auto rvStr = rv.encode(vec);
+        auto prv = ReplLogValueV2::decode(rvStr);
+        EXPECT_TRUE(prv.ok());
+        EXPECT_TRUE(rv.isEqualHdr(prv.value()));
+        EXPECT_EQ(prv.value().getEntryCount(), count);
+        
+        size_t offset = ReplLogValueV2::fixedHeaderSize();
+        auto desc = prv.value().getData();
+        size_t datasize = prv.value().getDataSize();
+
+        for (size_t j = 0; j < prv.value().getEntryCount(); j++) {
+            const ReplLogValueEntryV2& entry = vec[j];
+            size_t size = 0;
+            auto v = ReplLogValueEntryV2::decode((const char*)desc + offset, datasize - offset, size);
+            EXPECT_TRUE(v.ok());
+            offset += size;
+            EXPECT_EQ(entry, v.value());
+        }
+    }
 }
 
 TEST(ZSl, Common) {

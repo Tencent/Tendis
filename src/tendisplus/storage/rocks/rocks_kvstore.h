@@ -24,7 +24,8 @@ class RocksKVStore;
 class RocksTxn: public Transaction {
  public:
     RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
-        std::shared_ptr<BinlogObserver> logob);
+        std::shared_ptr<BinlogObserver> logob, uint64_t binlogId = Transaction::TXNID_UNINITED,
+        uint32_t chunkId = Transaction::CHUNKID_UNINITED);
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
@@ -43,7 +44,11 @@ class RocksTxn: public Transaction {
     Status delKV(const std::string& key, const uint64_t ts = 0) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
-    uint64_t getTxnId() const;
+    uint64_t getTxnId() const final;
+    uint64_t getBinlogId() const final;
+    void setBinlogId(uint64_t binlogId) final;
+    uint32_t getChunkId() const final { return _chunkId; }
+    void setChunkId(uint32_t chunkId) final;
 
     uint64_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint64_t timestamp);
@@ -53,6 +58,8 @@ class RocksTxn: public Transaction {
     virtual void ensureTxn() {}
 
     uint64_t _txnId;
+    uint64_t _binlogId;
+    uint32_t _chunkId;
 
     // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
     std::unique_ptr<rocksdb::Transaction> _txn;
@@ -62,6 +69,7 @@ class RocksTxn: public Transaction {
 
     // TODO(deyukong): it's double buffered in rocks, optimize
     std::vector<ReplLog> _binlogs;
+    std::vector<ReplLogValueEntryV2> _replLogValues;
 
     // if rollback/commit has been explicitly called
     bool _done;
@@ -150,7 +158,8 @@ class RocksKVStore: public KVStore {
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
     Status compactRange(const std::string* begin, const std::string* end) final;
     Status fullCompact() final;
-
+    Status assignBinlogIdIfNeeded(Transaction* txn) final;
+       
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
@@ -181,6 +190,7 @@ class RocksKVStore: public KVStore {
     void appendJSONStat(
             rapidjson::Writer<rapidjson::StringBuffer>&) const final;
 
+    // if binlogTxnId == Transaction::TXNID_UNINITED, it mean rollback
     void markCommitted(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::OptimisticTransactionDB* getUnderlayerOptDB();
     rocksdb::TransactionDB* getUnderlayerPesDB();
@@ -216,7 +226,8 @@ class RocksKVStore: public KVStore {
     std::shared_ptr<rocksdb::Cache> _blockCache;
 
     uint64_t _nextTxnSeq;
-
+    uint64_t _nextBinlogSeq;
+#ifdef BINLOG_V1
     // NOTE(deyukong): sorted data-structure is required here.
     // we rely on the data order to maintain active txns' watermark.
     // txnid -> committed|uncommited
@@ -229,6 +240,17 @@ class RocksKVStore: public KVStore {
     // remove all the continous committed txnIds follows it, and
     // push _highestVisible forward.
     std::map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
+#else
+    // <txnId, <commit_or_not, binlogId>>
+    std::unordered_map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
+
+    // As things run parallel, there will be false-holes in _aliveBinlogs.
+    // Fortunely, when _aliveBinlogs.begin() changes from uncommitted to
+    // committed, we have a chance to remove all the continuous committed
+    // binlogIds follows it, and push _highestVisible forward.
+    // <binlogId, <commit_or_not, txnId>>
+    std::map<uint64_t, std::pair<bool, uint64_t>> _aliveBinlogs;
+#endif
 
     // NOTE(deyukong): _highestVisible is the largest committed binlog
     // before _aliveTxns.begin()
