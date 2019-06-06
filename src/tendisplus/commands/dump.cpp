@@ -647,7 +647,8 @@ class RestoreCommand: public Command {
             return expttl.status();
         }
         if (expttl.value() < 0) {
-            return Command::fmtErr("Invalid TTL value, must be >= 0");
+            return {ErrorCodes::ERR_PARSEPKT,
+                    "Invalid TTL value, must be >= 0"};
         }
         uint64_t ts = 0;
         if (expttl.value() != 0)
@@ -655,8 +656,8 @@ class RestoreCommand: public Command {
 
         Status chk = RestoreCommand::verifyDumpPayload(payload);
         if (!chk.ok()) {
-            return Command::fmtErr(
-                    "DUMP payload version or checksum are wrong");
+            return {ErrorCodes::ERR_PARSEPKT,
+                    "DUMP payload version or checksum are wrong"};
         }
 
         // do restore
@@ -669,7 +670,7 @@ class RestoreCommand: public Command {
         if (res.ok()) {
             return Command::fmtOK();
         }
-        return Command::fmtErr(res.toString());
+        return res;
     }
 } restoreCommand;
 

@@ -94,7 +94,10 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "-ERR wrong number of arguments\r\n";
     case ErrorCodes::ERR_INVALID_HLL:
         return "-INVALIDOBJ Corrupted HLL object detected\r\n";
- 
+    case ErrorCodes::ERR_NO_KEY:
+        return "-ERR no such key\r\n";
+    case ErrorCodes::ERR_OUT_OF_RANGE:
+        return "-ERR index out of range\r\n";
     default:
         break;
     }

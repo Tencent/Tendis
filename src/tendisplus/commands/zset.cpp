@@ -1836,11 +1836,11 @@ class ZUnionInterGenericCommand : public Command {
         }
         int32_t len = expLen.value();
         if (len < 1) {
-            return Command::fmtErr(
-                    "at least 1 input key is needed for ZUNIONSTORE/ZINTERSTORE");
+            return {ErrorCodes::ERR_PARSEPKT,
+                    "at least 1 input key is needed for ZUNIONSTORE/ZINTERSTORE"};
         }
         if (len > static_cast<int32_t>(sess->getArgs().size()) - 3) {
-            return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+            return {ErrorCodes::ERR_PARSEOPT, ""};
         }
 
         auto server = sess->getServerEntry();
@@ -1860,8 +1860,8 @@ class ZUnionInterGenericCommand : public Command {
                     for (int i = 0; i < len; i++, j++, remaining--) {
                         Expected<double> expScore = tendisplus::stod(args[j]);
                         if (expScore.status().code() == ErrorCodes::ERR_FLOAT) {
-                            return Command::fmtErr(
-                                    "weight value is not a float");
+                            return {ErrorCodes::ERR_PARSEPKT,
+                                    "weight value is not a float"};
                         }
                         weights[i] = expScore.value();
                     }
@@ -1878,11 +1878,11 @@ class ZUnionInterGenericCommand : public Command {
                     } else if (aggtype == "max") {
                         aggr = Aggregate::REDIS_AGGR_MAX;
                     } else {
-                        return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+                        return {ErrorCodes::ERR_PARSEOPT, ""};
                     }
                     j++; remaining--;
                 } else {
-                    return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
+                    return {ErrorCodes::ERR_PARSEOPT, ""};
                 }
             }
         }
@@ -2085,7 +2085,7 @@ class ZUnionInterGenericCommand : public Command {
             }
         }
 
-        return {ErrorCodes::ERR_INTERNAL, "Not implemented"};
+        return {ErrorCodes::ERR_INTERNAL, "Not reachable"};
     }
 
  private:

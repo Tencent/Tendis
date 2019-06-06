@@ -1939,15 +1939,16 @@ public:
 
         auto server = sess->getServerEntry();
         auto pCtx = sess->getCtx();
-        auto srcdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
-                                                               src, mgl::LockMode::LOCK_X);
-        auto dstdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
-                                                               dst, mgl::LockMode::LOCK_X);
+        std::vector<int32_t> keyidx = {1, 2};
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
+                args, keyidx, mgl::LockMode::LOCK_X);
+        auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
+        auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
         Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, src, RecordType::RT_DATA_META);
         if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
             rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-            return Command::fmtErr("no such key");
+            return {ErrorCodes::ERR_NO_KEY, ""};
         }
 
         if (samekey) {
@@ -1980,118 +1981,83 @@ public:
                         pCtx->getDbId(),
                         RecordType::RT_DATA_META,
                         dst, "");
-        {
-            // del old meta k/v
-            PStore kvstore = srcdb.value().store;
-            auto ptxn = kvstore->createTransaction();
-            if (!ptxn.ok()) {
-                return ptxn.status();
-            }
-            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Status s = kvstore->delKV(rk, txn.get());
-            if (!s.ok()) {
-                return s;
-            }
-
-            auto expCmt = txn->commit();
-            if (!expCmt.ok()) {
-                return expCmt.status();
-            }
+        PStore srcstore = srcdb.value().store;
+        auto sptxn = pCtx->createTransaction(srcstore);
+        if (!sptxn.ok()) {
+            return sptxn.status();
         }
 
-        {
-            // set new meta k/v
-            PStore dststore = dstdb.value().store;
-            auto dstpTxn = dststore->createTransaction();
-            if (!dstpTxn.ok()) {
-                return dstpTxn.status();
-            }
-            std::unique_ptr<Transaction> dstTxn = std::move(dstpTxn.value());
-            Status s = dststore->setKV(dstRk, rv.value(), dstTxn.get());
-            if (!s.ok()) {
-                return s;
-            }
-
-            auto dstCmt = dstTxn->commit();
-            if (!dstCmt.ok()) {
-                return dstCmt.status();
-            }
+        // del old meta k/v
+        Status s = srcstore->delKV(rk, sptxn.value());
+        if (!s.ok()) {
+            return s;
         }
 
-        if (rv.value().getRecordType() == RecordType::RT_KV)
+        PStore dststore = dstdb.value().store;
+        auto dptxn = pCtx->createTransaction(dststore);
+        if (!dptxn.ok()) {
+            return dptxn.status();
+        }
+
+        // set new meta k/v
+        s = dststore->setKV(dstRk, rv.value(), dptxn.value());
+        if (!s.ok()) {
+            return s;
+        }
+
+        if (rv.value().getRecordType() == RecordType::RT_KV) {
+            pCtx->commitAll("rename");
             return _flagnx ? Command::fmtOne() : Command::fmtOK();
+        }
 
-        {
-            auto cnt = rcd_util::getSubKeyCount(rk, rv.value());
-            if (!cnt.ok()) {
-                return cnt.status();
-            }
+        auto cnt = rcd_util::getSubKeyCount(rk, rv.value());
+        if (!cnt.ok()) {
+            return cnt.status();
+        }
 
-            PStore srcStore = srcdb.value().store;
-            auto srcpTxn = srcStore->createTransaction();
-            if (!srcpTxn.ok()) {
-                return srcpTxn.status();
-            }
-            std::unique_ptr<Transaction> srcTxn = std::move(srcpTxn.value());
+        std::vector<std::string> prefixes =
+                getEleType(rk, rv.value().getRecordType());
+        std::vector<Record> pending;
+        pending.reserve(cnt.value());
+        for (const auto &prefix : prefixes) {
+            auto cursor = sptxn.value()->createCursor();
+            cursor->seek(prefix);
 
-            PStore dstStore = dstdb.value().store;
-            auto dstpTxn = dstStore->createTransaction();
-            if (!dstpTxn.ok()) {
-                return dstpTxn.status();
-            }
-            std::unique_ptr<Transaction> dstTxn = std::move(dstpTxn.value());
-
-            std::vector<std::string> prefixes =
-                    getEleType(rk, rv.value().getRecordType());
-            std::vector<Record> pending;
-            pending.reserve(cnt.value());
-            for (const auto &prefix : prefixes) {
-                auto cursor = srcTxn->createCursor();
-                cursor->seek(prefix);
-
-                while (true) {
-                    Expected<Record> expRcd = cursor->next();
-                    if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-                        break;
-                    }
-                    if (!expRcd.ok()) {
-                        return expRcd.status();
-                    }
-                    pending.emplace_back(std::move(expRcd.value()));
+            while (true) {
+                Expected<Record> expRcd = cursor->next();
+                if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
                 }
-            }
-            // add new
-            for (auto &ele : pending) {
-                const RecordKey &srcRk = ele.getRecordKey();
-                RecordKey rk(dstRk.getChunkId(),
-                        dstRk.getDbId(),
-                        srcRk.getRecordType(),
-                        dst,
-                        srcRk.getSecondaryKey());
-                const RecordValue &rv = ele.getRecordValue();
-                Status s = dstStore->setKV(rk, rv, dstTxn.get());
-                if (!s.ok()) {
-                    return s;
+                if (!expRcd.ok()) {
+                    return expRcd.status();
                 }
-            }
-
-            auto dstCmt = dstTxn->commit();
-            if (!dstCmt.ok()) {
-                return dstCmt.status();
-            }
-
-            // delete
-            for (auto &ele : pending) {
-                Status s = srcStore->delKV(ele.getRecordKey(), srcTxn.get());
-                if (!s.ok()) {
-                    return s;
-                }
-            }
-            auto srcCmt = srcTxn->commit();
-            if (!srcCmt.ok()) {
-                return srcCmt.status();
+                pending.emplace_back(std::move(expRcd.value()));
             }
         }
+        // add new
+        for (auto &ele : pending) {
+            const RecordKey &srcRk = ele.getRecordKey();
+            RecordKey rk(dstRk.getChunkId(),
+                    dstRk.getDbId(),
+                    srcRk.getRecordType(),
+                    dst,
+                    srcRk.getSecondaryKey());
+            const RecordValue &rv = ele.getRecordValue();
+            Status s = dststore->setKV(rk, rv, dptxn.value());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
+        // delete
+        for (auto &ele : pending) {
+            Status s = srcstore->delKV(ele.getRecordKey(), sptxn.value());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
+        pCtx->commitAll("rename");
 
         return _flagnx ? Command::fmtOne() : Command::fmtOK();
     }
@@ -2432,13 +2398,13 @@ class BitFieldCommand: public Command {
             const std::string offsetval(args[i].c_str() + usehash);
             Expected<int64_t> eOffset = tendisplus::stoll(offsetval);
             if (!eOffset.ok()) {
-                return { ErrorCodes::ERR_PARSEOPT,
+                return { ErrorCodes::ERR_PARSEPKT,
                          "bit offset is not an integer or out of range"};
             }
             int64_t offset = usehash ? eOffset.value() * bits : eOffset.value();
             if (offset < 0 ||
                 (offset >> 3) >= (512*1024*1024)) {
-                return { ErrorCodes::ERR_PARSEOPT,
+                return { ErrorCodes::ERR_PARSEPKT,
                          "bit offset is not an integer or out of range"};
             }
 

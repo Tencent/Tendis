@@ -972,7 +972,7 @@ class LSetCommand: public Command {
                 Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
             rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return Command::fmtErr("no such key");
+            return {ErrorCodes::ERR_NO_KEY, ""};
         } else if (!rv.ok()) {
             return rv.status();
         }
@@ -989,7 +989,7 @@ class LSetCommand: public Command {
             realIndex = head + index;
         }
         if (realIndex < head || realIndex >= tail) {
-            return Command::fmtErr("index out of range");
+            return {ErrorCodes::ERR_OUT_OF_RANGE, ""};
         }
 
         PStore kvstore = expdb.value().store;
@@ -1247,8 +1247,6 @@ class LRemCommand: public Command {
             return s;
         }
 
-        // TODO: add commit retry
-        // commit once
         Expected<uint64_t> expCmt = txn->commit();
         if (!expCmt.ok()) {
             return expCmt.status();
