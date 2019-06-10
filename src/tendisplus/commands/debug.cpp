@@ -60,7 +60,8 @@ class KeysCommand: public Command {
             allkeys = true;
         }
 
-        int32_t limit = 10000;
+        // TODO(comboqiu): 30000
+        int32_t limit = 30000;
         if (args.size() > 3) {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
         }
@@ -74,7 +75,7 @@ class KeysCommand: public Command {
         }
 
         // TODO(vinchen): too big
-        if (limit < 0 || limit > 10000) {
+        if (limit < 0 || limit > 30000) {
             return{ ErrorCodes::ERR_PARSEOPT, "keys size limit to be 10000" };
         }
 

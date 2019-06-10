@@ -6,6 +6,7 @@
 #include <clocale>
 #include <vector>
 #include <queue>
+#include <cmath>
 #include "glog/logging.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
@@ -879,6 +880,9 @@ class GetSetGeneral: public Command {
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             const Expected<RecordValue>& newValue =
                                 newValueFromOld(sess, rv);
+            if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                return RecordValue("", RecordType::RT_KV);
+            }
             if (!newValue.ok()) {
                 return newValue.status();
             }
@@ -1045,6 +1049,12 @@ class SetRangeCommand: public GetSetGeneral {
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
         const std::string& val = sess->getArgs()[3];
+        if (oldValue.status().code() == ErrorCodes::ERR_NOTFOUND||
+            oldValue.status().code() == ErrorCodes::ERR_EXPIRED) {
+            if (val.size() == 0) {
+                return {ErrorCodes::ERR_NOTFOUND, ""};
+            }
+        }
         Expected<int64_t> eoffset = ::tendisplus::stoll(sess->getArgs()[2]);
         if (!eoffset.ok()) {
             return eoffset.status();
@@ -1298,7 +1308,7 @@ class IncrbyfloatCommand: public GetSetGeneral {
             Expected<long double> val =
                 ::tendisplus::stold(esum.value().getValue());
             if (!val.ok()) {
-                return {ErrorCodes::ERR_DECODE, "value is not double"};
+                return {ErrorCodes::ERR_DECODE, "value is not a valid float"};
             }
             sum = val.value();
         }
@@ -1325,6 +1335,9 @@ class IncrbyfloatCommand: public GetSetGeneral {
         Expected<long double> eInc = ::tendisplus::stold(val);
         if (!eInc.ok()) {
             return eInc.status();
+        }
+        if (std::isnan(eInc.value()) || std::isinf(eInc.value())) {
+            return {ErrorCodes::ERR_NAN, "increment would produce NaN or Infinity"};
         }
         Expected<long double> newSum = sumIncr(oldValue, eInc.value());
         if (!newSum.ok()) {
@@ -1409,6 +1422,10 @@ public:
 
     int32_t keystep() const {
         return 1;
+    }
+
+    bool sameWithRedis() const {
+        return false;
     }
 
     Expected<RecordValue> newValueFromOld(
@@ -1776,6 +1793,10 @@ class MSetGenericCommand: public Command {
         auto& args = sess->getArgs();
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
+
+        if (args.size() % 2 == 0) {
+            return {ErrorCodes::ERR_PARSEPKT, "wrong number of arguments for MSET"};
+        }
 
         auto server = sess->getServerEntry();
         auto index = getKeysFromCommand(args);
