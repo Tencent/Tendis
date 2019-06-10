@@ -73,7 +73,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     std::map<std::string, uint64_t> result;
 #ifdef _WIN32
 #undef GetObject
-#endif // 
+#endif
     for (auto& o : doc.GetObject()) {
         if (!o.value.IsUint64()) {
             return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};
@@ -440,6 +440,47 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
+    const std::string& logKey, const std::string& logValue) {
+    // NOTE(deyukong): donot lock store in IX mode again
+    // the caller has duty to do this thing.
+    [this, storeId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        _cv.wait(lk,
+            [this, storeId]
+        {return !_syncStatus[storeId]->isRunning; });
+        _syncStatus[storeId]->isRunning = true;
+    }();
+
+    bool idMatch = [this, storeId, sessionId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        return (sessionId == _syncStatus[storeId]->sessionId);
+    }();
+    auto guard = MakeGuard([this, storeId, &idMatch] {
+        std::unique_lock<std::mutex> lk(_mutex);
+        INVARIANT(_syncStatus[storeId]->isRunning);
+        _syncStatus[storeId]->isRunning = false;
+        if (idMatch) {
+            _syncStatus[storeId]->lastSyncTime = SCLOCK::now();
+        }
+    });
+
+    if (!idMatch) {
+        return{ ErrorCodes::ERR_NOTFOUND, "sessionId not match" };
+    }
+
+    auto binlog = applySingleTxnV2(storeId, logKey, logValue);
+    if (!binlog.ok()) {
+        return binlog.status();
+    } else {
+        std::lock_guard<std::mutex> lk(_mutex);
+        // NOTE(vinchen): store the binlogId without changeReplState()
+        // If it's shutdown, we can get the largest binlogId from rocksdb.
+        _syncMeta[storeId]->binlogId = binlog.value();
+    }
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 // NOTE(deyukong): should be called with lock held
 Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
                                    const std::list<ReplLog>& ops) {
@@ -470,6 +511,74 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
+    const std::string& logKey, const std::string& logValue) {
+    // TODO(vinchen): should be called with lock held
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
+        mgl::LockMode::LOCK_NONE);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto store = std::move(expdb.value().store);
+    INVARIANT(store != nullptr);
+    auto ptxn = store->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    auto key = ReplLogKeyV2::decode(logKey);
+    if (!key.ok()) {
+        return key.status();
+    }
+    auto binlogId = key.value().getBinlogId();
+
+    auto value = ReplLogValueV2::decode(logValue);
+    if (!value.ok()) {
+        return value.status();
+    }
+
+    uint64_t timestamp = 0;
+    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    auto data = value.value().getData();
+    size_t dataSize = value.value().getDataSize();
+    auto count = value.value().getEntryCount();
+    for (size_t i = 0; i < count; i++) {
+        size_t size = 0;
+        auto entry = ReplLogValueEntryV2::decode((const char*)data,
+                        dataSize - offset, size);
+        if (!entry.ok()) {
+            return entry.status();
+        }
+        offset += size;
+
+        timestamp = entry.value().getTimestamp();
+
+        auto s = txn->applyBinlog(entry.value());
+        if (!s.ok()) {
+            return s;
+        }
+    }
+
+    // store the binlog directly, same as master
+    auto s = txn->setBinlogKV(binlogId, logKey, logValue);
+    if (!s.ok()) {
+        return s;
+    }
+
+    Expected<uint64_t> expCmit = txn->commit();
+    if (!expCmit.ok()) {
+        return expCmit.status();
+    }
+
+    // NOTE(vinchen): store the binlog time spov when txn commited.
+    // only need to set the last timestamp
+    store->setBinlogTime(timestamp);
+
+    return binlogId;
+}
+
 Status ReplManager::saveBinlogs(uint32_t storeId,
     const std::list<ReplLog>& logs) {
     if (logs.size() == 0) {
@@ -488,7 +597,7 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         memset(tbuf, 0, 128);
 
         // ms to second
-        time_t time = (time_t)(uint32_t)(logs.front().getReplLogKey().getTimestamp()/1000);
+        time_t time = (time_t)(uint32_t)(logs.front().getReplLogKey().getTimestamp()/1000);     // NOLINT
         struct tm lt;
         (void) localtime_r(&time, &lt);
         strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);

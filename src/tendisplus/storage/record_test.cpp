@@ -133,12 +133,25 @@ TEST(Record, Common) {
         auto rv = RecordValue(val, type, versionEP, ttl, cas, version, pieceSize);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
+
+        auto validateK = RecordKey::validate(kv.first);
+        EXPECT_TRUE(validateK.ok());
+        EXPECT_TRUE(validateK.value());
+ 
+        auto validateV = RecordValue::validate(kv.second);
+        EXPECT_TRUE(validateV.ok());
+        EXPECT_TRUE(validateV.value());
+
+        auto hdrSize = RecordValue::decodeHdrSize(kv.second);
+        EXPECT_TRUE(hdrSize.ok());
+        EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
+
         auto prcd1 = Record::decode(kv.first, kv.second);
         auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(), 
             kv.first.size());
         auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
             kv.second.size());
-        
+                
         EXPECT_EQ(cas, rv.getCas());
         EXPECT_EQ(version, rv.getVersion());
         EXPECT_EQ(versionEP, rv.getVersionEP());

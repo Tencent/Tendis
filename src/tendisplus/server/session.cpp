@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <thread>
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/network/session_ctx.h"
@@ -9,16 +10,32 @@ namespace tendisplus {
 std::atomic<uint64_t> Session::_idGen(0);
 std::atomic<uint64_t> Session::_aliveCnt(0);
 
+thread_local Session* curSession = nullptr;
+
 Session::Session(std::shared_ptr<ServerEntry> svr)
         :_args(std::vector<std::string>()),
          _server(svr),
          _ctx(std::make_unique<SessionCtx>()),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
+    curSession = this;
 }
 
 Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
+}
+
+Session* Session::getCurSess() {
+    return curSession;
+}
+
+std::string Session::getCmdStr() const {
+    std::stringstream ss;
+    for (auto arg : _args) {
+        ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+    }
+
+    return ss.str();
 }
 
 std::string Session::getName() const {

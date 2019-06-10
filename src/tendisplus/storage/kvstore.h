@@ -28,6 +28,7 @@ class TTLIndex;
 class RecordKey;
 class RecordValue;
 enum class RecordType;
+class ReplLogValueEntryV2;
 
 using PStore = std::shared_ptr<KVStore>;
 
@@ -97,6 +98,11 @@ class Transaction {
     virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
+
+    virtual Status applyBinlog(const ReplLogValueEntryV2& logEntry) = 0;
+    virtual Status setBinlogKV(uint64_t binlogId,
+                    const std::string& logKey,
+                    const std::string& logValue) = 0;
 
     virtual uint64_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint64_t timestamp) = 0;
@@ -183,6 +189,7 @@ class KVStore {
 
     virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
     virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
+    virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
 
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(const std::string* begin,

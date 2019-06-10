@@ -43,6 +43,10 @@ class RocksTxn: public Transaction {
                  const uint64_t ts = 0) final;
     Status delKV(const std::string& key, const uint64_t ts = 0) final;
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
+    Status applyBinlog(const ReplLogValueEntryV2& logEntry) final;
+    Status setBinlogKV(uint64_t binlogId,
+                const std::string& logKey,
+                const std::string& logValue) final;
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
     uint64_t getTxnId() const final;
     uint64_t getBinlogId() const final;
@@ -159,6 +163,7 @@ class RocksKVStore: public KVStore {
     Status compactRange(const std::string* begin, const std::string* end) final;
     Status fullCompact() final;
     Status assignBinlogIdIfNeeded(Transaction* txn) final;
+    void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
        
     Status clear() final;
     bool isRunning() const final;

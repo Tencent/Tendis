@@ -98,6 +98,8 @@ class ReplManager {
             const std::string& binlogPosArg);
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
+    Status applyBinlogV2(uint32_t storeId, uint64_t sessionId,
+            const std::string& logKey, const std::string& logValue);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
     static constexpr size_t INCR_POOL_SIZE = 12;
     static constexpr size_t MAX_FULL_PARAL = 4;
@@ -108,6 +110,8 @@ class ReplManager {
             uint32_t storeId);
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
+    Expected<uint64_t> applySingleTxnV2(uint32_t storeId,
+        const std::string& logKey, const std::string& logValue);
     bool isFullSupplierFull() const;
 
     std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&);

@@ -145,6 +145,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
     if (mode != mgl::LockMode::LOCK_NONE) {
         lk = std::make_unique<StoreLock>(insId, mode, sess);
     }
+
+    if (sess && sess->getCtx() &&
+        _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+        sess->getCtx()->setReplOnly(true);
+    }
     return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
 }
 

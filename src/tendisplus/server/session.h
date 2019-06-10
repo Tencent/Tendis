@@ -25,6 +25,7 @@ class Session: public std::enable_shared_from_this<Session> {
     Status processExtendProtocol();
     SessionCtx *getCtx() const;
     std::shared_ptr<ServerEntry> getServerEntry() const;
+    std::string getCmdStr() const;
 
     virtual void start() = 0;
     virtual Status cancel() = 0;
@@ -32,6 +33,7 @@ class Session: public std::enable_shared_from_this<Session> {
     virtual std::string getRemote() const = 0;
     std::string getName() const;
     void setName(const std::string&);
+    static Session* getCurSess();
 
  protected:
     std::vector<std::string> _args;

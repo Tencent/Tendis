@@ -12,6 +12,7 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -379,7 +380,7 @@ class RestoreBinlogCommand: public Command {
 class ApplyBinlogsCommand: public Command {
  public:
     ApplyBinlogsCommand()
-        :Command("applybinlogs", "a") {
+        :Command("applybinlogsv1", "a") {
     }
 
     ssize_t arity() const {
@@ -467,6 +468,78 @@ class ApplyBinlogsCommand: public Command {
         }
     }
 } applyBinlogsCommand;
+
+class ApplyBinlogsCommandV2 : public Command {
+public:
+    ApplyBinlogsCommandV2()
+        :Command("applybinlogs", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // applybinlogs storeId [k0 v0] ...
+    // why is there no storeId ? storeId is contained in this
+    // session in fact.
+    // please refer to comments of ReplManager::registerIncrSync
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint64_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        storeId = exptStoreId.value();
+
+        //auto key = ReplLogKeyV2::decode(args[2]);
+        //if (!key.ok()) {
+        //    return key.status();
+        //}
+        //auto binlogId = key.value().getBinlogId();
+
+        //auto value = ReplLogValueV2::decode(args[3]);
+        //if (!value.ok()) {
+        //    return value.status();
+        //}
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IX first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Status s = replMgr->applyBinlogV2(storeId, sess->id(),
+                    args[2], args[3]);
+        if (s.ok()) {
+            return s;
+        }
+        return Command::fmtOK();
+    }
+} applyBinlogsV2Command;
 
 class SlaveofCommand: public Command {
  public:

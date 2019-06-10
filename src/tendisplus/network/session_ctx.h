@@ -51,6 +51,8 @@ class SessionCtx {
     uint64_t getTsEP() const { return _timestamp; }
     uint64_t getVersionEP() const { return _version; }
     bool isEp() const { return _extendProtocol; }
+    bool isReplOnly() const{ return _replOnly; }
+    void setReplOnly(bool v) { _replOnly = v; }
 
     void setKeylock(const std::string& key, mgl::LockMode mode);
     void unsetKeylock(const std::string& key);
@@ -67,6 +69,7 @@ class SessionCtx {
     uint64_t _timestamp;
     uint64_t _version;
     bool _extendProtocol;
+    bool _replOnly;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
 
     mutable std::mutex _mutex;

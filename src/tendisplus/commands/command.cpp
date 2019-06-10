@@ -168,7 +168,18 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
-        sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
+        if (sess->getCtx()->isEp()) {
+            sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
+        }
+    } else {
+        if (sess->getCtx()->isReplOnly()) {
+            // NOTE(vinchen): If it's a slave, the connection should be closed
+            // when there is an error. And the error should be log
+            ServerEntry::logError(v.status().toString());
+
+            auto vv = dynamic_cast<NetSession*>(sess);
+            vv->setCloseAfterRsp();
+        }
     }
     return v;
 }

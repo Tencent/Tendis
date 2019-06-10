@@ -97,6 +97,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getKVStoreCount() const;
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
+    static void logWarning(const std::string& str);
+    static void logError(const std::string& str);
 
  private:
     ServerEntry();

@@ -80,15 +80,32 @@ void ServerEntry::logGeneral(Session *sess) {
     if (!_generalLog) {
         return;
     }
-    const std::vector<std::string>& args = sess->getArgs();
 
+    LOG(INFO) << sess->getCmdStr();
+}
+
+void ServerEntry::logWarning(const std::string& str) {
+    Session * sess = Session::getCurSess();
     std::stringstream ss;
-    ss << "Command: ";
-    for (auto arg : args) {
-        ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+    if (sess) {
+        ss << sess->id() << "cmd:" << sess->getCmdStr();
     }
 
-    LOG(INFO) << ss.str();
+    ss << ", warning:" << str;
+
+    LOG(WARNING) << ss.str();
+}
+
+void ServerEntry::logError(const std::string& str) {
+    Session * sess = Session::getCurSess();
+    std::stringstream ss;
+    if (sess) {
+        ss << sess->id() << "cmd:" << sess->getCmdStr();
+    }
+
+    ss << ", error:" << str;
+
+    LOG(ERROR) << ss.str();
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {

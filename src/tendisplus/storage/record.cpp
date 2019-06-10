@@ -444,6 +444,59 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     return RecordKey(chunkid, dbid, type, std::move(pk), std::move(sk), version);
 }
 
+Expected<bool> RecordKey::validate(const std::string& key,
+    RecordType type) {
+    constexpr size_t rsvd = sizeof(TRSV);
+    size_t offset = 0;
+    size_t rvsOffset = 0;
+    size_t pkLen = 0;
+    size_t skLen = 0;
+    uint32_t chunkid = 0;
+    uint32_t dbid = 0;
+    RecordType thisType = RecordType::RT_INVALID;
+
+    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
+    offset = recordKeyDecodeFixPrefix(keyCstr, key.size(),
+        &chunkid, &dbid, &thisType);
+    if (offset == INVALID_RK_OFFSET) {
+        return{ ErrorCodes::ERR_DECODE, "invalid recordkey" };
+    }
+
+    if (type != RecordType::RT_INVALID && type != thisType) {
+        return{ ErrorCodes::ERR_DECODE, "mismatch key type" };
+    }
+
+    // pklen is stored in the reverse order
+    // pklen
+    const uint8_t *p = keyCstr + key.size() - rsvd - 1;
+    auto expt = varintDecodeRvs(p, key.size() - rsvd - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    rvsOffset += expt.value().second;
+    pkLen = expt.value().first;
+
+    // here -1 for the padding 0 after pk
+    if (key.size() < offset + rsvd + rvsOffset + pkLen + 1) {
+        return{ ErrorCodes::ERR_DECODE, "invalid sk len" };
+    }
+
+    // version
+    const char* ptr = key.c_str() + offset + pkLen + 1;
+    size_t left = key.size() - offset - rsvd - rvsOffset - pkLen - 1;
+    auto v = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), left);
+    if (!v.ok()) {
+        return{ ErrorCodes::ERR_DECODE, "invalid version len" };
+    }
+    size_t versionLen = v.value().second;
+    auto version = v.value().first;
+    if (version != 0) {
+        return{ ErrorCodes::ERR_DECODE, "invalid version in record key" };
+    }
+
+    return true;
+}
+
 RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
     size_t offset = 0;
     uint32_t chunkid = 0;
@@ -703,6 +756,75 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     INVARIANT(totalSize == rawValue.size());
     return RecordValue(std::move(rawValue), typeForMeta, versionEP, ttl, cas,
                         version, pieceSize);
+}
+
+Expected<bool> RecordValue::validate(const std::string& value,
+        RecordType type) {
+    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+
+    if (value.size() < 7) {
+        return{ ErrorCodes::ERR_DECODE, "too small RecordValue" };
+    }
+
+    // type
+    size_t offset = 0;
+    auto typeForMeta = char2Rt(valueCstr[offset++]);
+    if (type != RecordType::RT_INVALID && type != typeForMeta) {
+        return{ ErrorCodes::ERR_DECODE, "record type mismatch" };
+    }
+
+    // ttl
+    auto expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // version
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // versionEP
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // CAS
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    // pieceSize
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t pieceSize = expt.value().first - 1;
+
+    // totalSize
+    expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+    uint64_t totalSize = expt.value().first;
+    if (pieceSize < totalSize) {
+        return{ ErrorCodes::ERR_DECODE, "invalid pieceSize" };
+    }
+
+    if (totalSize != value.size() - offset ) {
+        return{ ErrorCodes::ERR_DECODE, "invalid totalSize" };
+    }
+
+    return true;
 }
 
 Expected<size_t> RecordValue::decodeHdrSize(const std::string& value) {

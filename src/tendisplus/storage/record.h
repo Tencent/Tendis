@@ -108,6 +108,10 @@ class RecordKey {
     static uint32_t decodeChunkId(const std::string& key);
     static Expected<RecordKey> decode(const std::string& key);
     static RecordType getRecordTypeRaw(const char* key, size_t size);
+    static Expected<bool> validate(const std::string& key,
+        RecordType type = RecordType::RT_INVALID);
+    static size_t getHdrSize() 
+        { return sizeof(_chunkId) + sizeof(_dbId) + sizeof(uint8_t); }
     bool operator==(const RecordKey& other) const;
 
  private:
@@ -165,6 +169,8 @@ class RecordValue {
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static Expected<size_t> decodeHdrSize(const std::string& value);
+    static Expected<bool> validate(const std::string& value,
+        RecordType type = RecordType::RT_INVALID);
     static uint64_t getTtlRaw(const char* value, size_t size);
     static RecordType getRecordTypeRaw(const char* value, size_t size);
     bool operator==(const RecordValue& other) const;
@@ -297,6 +303,7 @@ class ReplLogKeyV2 {
     ReplLogKeyV2(uint64_t binlogid);
     static Expected<ReplLogKeyV2> decode(const RecordKey&);
     static Expected<ReplLogKeyV2> decode(const std::string&);
+    static std::string& updateBinlogId(std::string& encodeStr, uint64_t newBinlogId);
     std::string encode() const;
     bool operator==(const ReplLogKeyV2&) const;
     ReplLogKeyV2& operator=(const ReplLogKeyV2&);
@@ -346,6 +353,7 @@ class ReplLogValueV2 {
                 const uint8_t* data, size_t dataSize);
     static Expected<ReplLogValueV2> decode(const std::string& rvStr);
     static Expected<ReplLogValueV2> decode(const char* str, size_t size);
+    static std::string& updateTxnId(std::string& encodeStr, uint64_t newTxnId);
     static size_t fixedHeaderSize();
     std::string encodeHdr() const;
     std::string encode(const std::vector<ReplLogValueEntryV2>& vec) const;
