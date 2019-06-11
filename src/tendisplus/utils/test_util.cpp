@@ -39,10 +39,12 @@ bool setupEnv() {
     std::error_code ec;
 
     filesystem::remove_all("./log", ec);
-    EXPECT_EQ(ec.value(), 0);
+    // EXPECT_EQ(ec.value(), 0);
+    EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
     filesystem::remove_all("./db", ec);
-    EXPECT_EQ(ec.value(), 0);
+    // EXPECT_EQ(ec.value(), 0);
+    EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
 
     EXPECT_TRUE(filesystem::create_directory("./db"));
     EXPECT_TRUE(filesystem::create_directory("./log"));
