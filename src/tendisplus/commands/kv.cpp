@@ -618,6 +618,9 @@ class BitCountCommand: public Command {
             }
             start = estart.value();
             end = eend.value();
+            if (start < 0 && end < 0 && start > end) {
+                return Command::fmtZero();
+            }
             ssize_t len = rv.value().getValue().size();
             if (start < 0) {
                 start = len + start;
