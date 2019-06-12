@@ -88,6 +88,9 @@ Expected<std::string> Command::precheck(Session *sess) {
         LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
     }
     std::string commandName = toLower(args[0]);
+    if (commandName == "quit") {
+        return commandName;
+    }
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
         {
@@ -607,6 +610,10 @@ std::string Command::fmtLongLong(int64_t v) {
     std::stringstream ss;
     ss << ":" << v << "\r\n";
     return ss.str();
+}
+
+std::string Command::fmtBusyKey() {
+    return "-BUSYKEY Target key name already exists.\r\n";
 }
 
 std::string Command::fmtZeroBulkLen() {

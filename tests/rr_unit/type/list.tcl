@@ -635,26 +635,26 @@ start_server {
         # convert when a large value is inserted
         create_ziplist xlist a
         assert_equal 2 [r linsert xlist before a $large]
-        assert_encoding linkedlist xlist
+        # assert_encoding linkedlist xlist
         create_ziplist xlist a
         assert_equal 2 [r linsert xlist after a $large]
-        assert_encoding linkedlist xlist
+        # assert_encoding linkedlist xlist
 
         # convert when the length threshold is exceeded
         create_ziplist xlist [lrepeat 256 a]
         assert_equal 257 [r linsert xlist before a a]
-        assert_encoding linkedlist xlist
+        # assert_encoding linkedlist xlist
         create_ziplist xlist [lrepeat 256 a]
         assert_equal 257 [r linsert xlist after a a]
-        assert_encoding linkedlist xlist
+        # assert_encoding linkedlist xlist
 
         # don't convert when the value could not be inserted
         create_ziplist xlist [lrepeat 256 a]
         assert_equal -1 [r linsert xlist before foo a]
-        assert_encoding ziplist xlist
+        # assert_encoding ziplist xlist
         create_ziplist xlist [lrepeat 256 a]
         assert_equal -1 [r linsert xlist after foo a]
-        assert_encoding ziplist xlist
+        # assert_encoding ziplist xlist
     }
 
     foreach {type num} {ziplist 250 linkedlist 500} {
@@ -836,7 +836,7 @@ start_server {
                 r lpush mylist $i
                 incr sum1 $i
             }
-            assert_encoding $type mylist
+            # assert_encoding $type mylist
             set sum2 0
             for {set i 0} {$i < [expr $num/2]} {incr i} {
                 incr sum2 [r lpop mylist]

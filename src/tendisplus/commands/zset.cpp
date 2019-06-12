@@ -17,7 +17,7 @@
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
-
+Expected<bool> delGeneric(Session *sess, const std::string& key);
 Expected<std::string> genericZrem(Session *sess,
                             PStore kvstore,
                             const RecordKey& mk,
@@ -1773,5 +1773,354 @@ class ZSetCountCommand : public Command {
         return Command::fmtOK();
     }
 } zsetcountCmd;
+
+class ZUnionInterGenericCommand : public Command {
+ public:
+    enum class ZsetOp {
+        SET_OP_UNION,
+        SET_OP_INTER,
+    };
+    enum class Aggregate {
+        REDIS_AGGR_SUM,
+        REDIS_AGGR_MIN,
+        REDIS_AGGR_MAX,
+    };
+    explicit ZUnionInterGenericCommand(const std::string& name)
+        :Command(name, "wm") {
+        if (name == "zunionstore") {
+            _op = ZsetOp::SET_OP_UNION;
+        } else {
+            _op = ZsetOp::SET_OP_INTER;
+        }
+    }
+
+    ssize_t arity() const {
+        return -4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+    int32_t lastkey() const {
+        return 0;
+    }
+    int32_t keystep() const {
+        return 0;
+    }
+
+    std::vector<int> getKeysFromCommand(
+            const std::vector<std::string>& argv) final {
+        Expected<int32_t> expLen = tendisplus::stol(argv[2]);
+        if (!expLen.ok()) {
+            return std::vector<int>();
+        }
+        int32_t len = expLen.value();
+        if (len > static_cast<int32_t>(argv.size()) - 3) {
+            return std::vector<int>();
+        }
+
+        std::vector<int> keyindex;
+        keyindex.reserve(len + 1);
+        for (int i = 0; i < len; i++) {
+            keyindex.push_back(3+i);
+        }
+        keyindex.push_back(1);
+        return keyindex;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string> &args = sess->getArgs();
+        Expected<int32_t> expLen = tendisplus::stol(args[2]);
+        if (!expLen.ok()) {
+            return expLen.status();
+        }
+        int32_t len = expLen.value();
+        if (len < 1) {
+            return {ErrorCodes::ERR_PARSEPKT,
+                    "at least 1 input key is needed for ZUNIONSTORE/ZINTERSTORE"};
+        }
+        if (len > static_cast<int32_t>(sess->getArgs().size()) - 3) {
+            return {ErrorCodes::ERR_PARSEOPT, ""};
+        }
+
+        auto server = sess->getServerEntry();
+        SessionCtx *pCtx = sess->getCtx();
+        std::vector<int> keyindex = getKeysFromCommand(args);
+
+        // Parse optional extra arguments
+        std::vector<double> weights(len, 1);
+        Aggregate aggr = Aggregate::REDIS_AGGR_SUM;
+        for (size_t j = 3 + len; j < args.size(); j++) {
+            int remaining = args.size() - j;
+
+            while (remaining) {
+                if (remaining >= len + 1 &&
+                    !::strcasecmp(args[j].c_str(), "weights")) {
+                    j++; remaining--;
+                    for (int i = 0; i < len; i++, j++, remaining--) {
+                        Expected<double> expScore = tendisplus::stod(args[j]);
+                        if (expScore.status().code() == ErrorCodes::ERR_FLOAT) {
+                            return {ErrorCodes::ERR_PARSEPKT,
+                                    "weight value is not a float"};
+                        }
+                        weights[i] = expScore.value();
+                    }
+                } else if (remaining >= 2 &&
+                           !::strcasecmp(args[j].c_str(), "aggregate")) {
+                    j++; remaining--;
+                    std::string aggtype(args[j]);
+                    std::transform(aggtype.begin(), aggtype.end(),
+                            aggtype.begin(), ::tolower);
+                    if (aggtype == "sum") {
+                        aggr = Aggregate::REDIS_AGGR_SUM;
+                    } else if (aggtype == "min") {
+                        aggr = Aggregate::REDIS_AGGR_MIN;
+                    } else if (aggtype == "max") {
+                        aggr = Aggregate::REDIS_AGGR_MAX;
+                    } else {
+                        return {ErrorCodes::ERR_PARSEOPT, ""};
+                    }
+                    j++; remaining--;
+                } else {
+                    return {ErrorCodes::ERR_PARSEOPT, ""};
+                }
+            }
+        }
+
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(
+                sess, sess->getArgs(), keyindex, mgl::LockMode::LOCK_X);
+        if (!lock.ok()) {
+            return lock.status();
+        }
+
+        std::vector<std::pair<size_t, uint32_t>> sortList;
+        std::vector<std::pair<uint32_t, RecordValue>> zsetList;
+        zsetList.reserve(keyindex.size() - 1);
+        for (size_t i = 0; i < keyindex.size() - 1; i++) {
+            Expected<RecordValue> exprv = Command::expireKeyIfNeeded(sess,
+                    args[keyindex[i]],
+                    RecordType::RT_DATA_META);
+            if (exprv.status().code() == ErrorCodes::ERR_EXPIRED ||
+                exprv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                if (_op == ZsetOp::SET_OP_INTER)
+                    Command::fmtZero();
+                continue;
+            } else if (!exprv.ok()) {
+                return exprv.status();
+            }
+            if (exprv.value().getRecordType() == RecordType::RT_ZSET_META) {
+                Expected<ZSlMetaValue> zslMeta =
+                        ZSlMetaValue::decode(exprv.value().getValue());
+                uint32_t len = zslMeta.value().getCount();
+                sortList.push_back(std::make_pair(i, len));
+                zsetList.emplace_back(
+                        std::make_pair(i, std::move(exprv.value())));
+            } else if (exprv.value().getRecordType() == RecordType::RT_SET_META) {
+                Expected<SetMetaValue> eSetMeta =
+                        SetMetaValue::decode(exprv.value().getValue());
+                uint32_t len = eSetMeta.value().getCount();
+                sortList.push_back(std::make_pair(i, len));
+                zsetList.emplace_back(
+                        std::make_pair(i, std::move(exprv.value())));
+            }
+        }
+
+        // sort set according to its op type.
+        bool (*comp)(size_t, size_t);
+        if (_op == ZsetOp::SET_OP_INTER) {
+            comp = [](size_t a, size_t b) { return a < b; };
+        } else {
+            comp = [](size_t a, size_t b) { return a > b; };
+        }
+        std::sort(sortList.begin(), sortList.end(),
+                [comp](auto& left, auto& right) {
+            return comp(left.second, right.second);
+        });
+
+        std::map<std::string, double> scoreMap;
+
+        for (size_t fakei = 0; fakei < sortList.size(); fakei++) {
+            size_t i = sortList[fakei].first;
+            double w = weights[i];
+            const std::string &key = args[keyindex[i]];
+            auto expdb = server->getSegmentMgr()->
+                    getDbHasLocked(sess, key);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            RecordType keyType = zsetList[i].second.getRecordType();
+            if (fakei == 0 || _op == ZsetOp::SET_OP_UNION) {
+                if (keyType == RecordType::RT_ZSET_META) {
+                    Expected<ZSlMetaValue> zslMeta =
+                            ZSlMetaValue::decode(zsetList[i].second.getValue());
+                    SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                                key, zslMeta.value(), kvstore);
+                    auto arr = sl.scanByRank(
+                            0, sl.getCount() - 1, false, txn.get());
+                    if (!arr.ok()) {
+                        return arr.status();
+                    }
+                    for (const auto& v : arr.value()) {
+                        double value = v.first * w;
+                        if (std::isnan(value))
+                            value = 0.0;
+                        if (!scoreMap.count(v.second)) {
+                            scoreMap[v.second] = value;
+                            continue;
+                        }
+                        zunionInterAggregate(&scoreMap[v.second],
+                                value, aggr);
+                    }
+                } else if (keyType == RecordType::RT_SET_META) {
+                    auto cursor = txn->createCursor();
+                    RecordKey rk(expdb.value().chunkId,
+                            pCtx->getDbId(),
+                            RecordType::RT_SET_ELE,
+                            key, "");
+                    cursor->seek(rk.prefixPk());
+                    while (true) {
+                        Expected<Record> expRcd = cursor->next();
+                        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                            break;
+                        }
+                        if (!expRcd.ok()) {
+                            return expRcd.status();
+                        }
+                        Record &rcd = expRcd.value();
+                        const RecordKey &rcdKey = rcd.getRecordKey();
+                        if (rcdKey.prefixPk() != rk.prefixPk()) {
+                            break;
+                        }
+                        const std::string &subkey = rcdKey.getSecondaryKey();
+                        if (!scoreMap.count(subkey)) {
+                            scoreMap[subkey] = 1 * w;
+                            continue;
+                        }
+                        zunionInterAggregate(&scoreMap[subkey], 1 * w, aggr);
+                    }
+                }
+                continue;
+            } else if (_op == ZsetOp::SET_OP_INTER) {
+                RecordType eleType = keyType == RecordType::RT_ZSET_META ?
+                        RecordType::RT_ZSET_H_ELE : RecordType::RT_SET_ELE;
+                for (auto iter = scoreMap.begin();
+                iter != scoreMap.end();) {
+                    const std::string &subkey = iter->first;
+                    RecordKey rk(expdb.value().chunkId,
+                            pCtx->getDbId(),
+                            eleType,
+                            key, subkey);
+                    auto eVal = kvstore->getKV(rk, txn.get());
+
+                    if (!eVal.ok() ||
+                        eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                        iter = scoreMap.erase(iter);
+                        continue;
+                    }
+                    double value = 1;
+                    if (keyType == RecordType::RT_ZSET_META) {
+                        Expected<double> eScore =
+                                tendisplus::doubleDecode(eVal.value().getValue());
+                        if (!eScore.ok()) {
+                            return eScore.status();
+                        }
+                        value = eScore.value();
+                    }
+                    value = value * w;
+                    if (std::isnan(value))
+                        value = 0;
+                    zunionInterAggregate(&(iter->second),
+                            value, aggr);
+                    iter++;
+                }
+            }
+        }
+
+        // delete before store
+        const std::string &storeKey = args[1];
+        Expected<bool> eRes = delGeneric(sess, storeKey);
+        if (!eRes.ok()) {
+            return eRes.status();
+        }
+        if (scoreMap.size() == 0) {
+            return Command::fmtZero();
+        }
+
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(),
+                RecordType::RT_ZSET_META, storeKey, "");
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            Expected<std::string> s = genericZadd(sess,
+                    kvstore,
+                    storeRk,
+                    {ErrorCodes::ERR_NOTFOUND, ""},
+                    scoreMap,
+                    ZADD_NONE);
+            if (s.ok()) {
+                return s.value();
+            }
+            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return s.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return s.status();
+            } else {
+                continue;
+            }
+        }
+
+        return {ErrorCodes::ERR_INTERNAL, "Not reachable"};
+    }
+
+ private:
+    void zunionInterAggregate(double *oldScore, double value, const Aggregate &aggr) {
+        switch (aggr) {
+            case Aggregate::REDIS_AGGR_SUM:
+                *oldScore = *oldScore + value;
+                if (std::isnan(*oldScore))
+                    *oldScore = 0.0;
+                break;
+            case Aggregate::REDIS_AGGR_MIN:
+                *oldScore = value < *oldScore ? value : *oldScore;
+                break;
+            case Aggregate::REDIS_AGGR_MAX:
+                *oldScore = value > *oldScore ? value : *oldScore;
+                break;
+            default:
+                INVARIANT(0);
+        }
+    }
+    ZsetOp _op;
+};
+
+class ZUnionStoreCommand: public ZUnionInterGenericCommand {
+ public:
+    ZUnionStoreCommand()
+        :ZUnionInterGenericCommand("zunionstore") {
+    }
+} zunionstoreCommand;
+
+class ZInterStoreCommand: public ZUnionInterGenericCommand {
+ public:
+    ZInterStoreCommand()
+        :ZUnionInterGenericCommand("zinterstore") {
+    }
+} zinterstoreCommand;
 
 }  // namespace tendisplus

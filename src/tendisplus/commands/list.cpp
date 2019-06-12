@@ -951,9 +951,478 @@ class LSetCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        // TODO(vinchen) lset
-        return fmtOK();
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        Expected<int64_t> expIndex = tendisplus::stoll(args[2]);
+        if (!expIndex.ok()) {
+            return expIndex.status();
+        }
+        int64_t index = expIndex.value();
+        const std::string& value = args[3];
+
+        auto server = sess->getServerEntry();
+        auto pCtx = sess->getCtx();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
+                key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return {ErrorCodes::ERR_NO_KEY, ""};
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        Expected<ListMetaValue> expLm =
+                ListMetaValue::decode(rv.value().getValue());
+        ListMetaValue lm = std::move(expLm.value());
+        uint64_t head = lm.getHead();
+        uint64_t tail = lm.getTail();
+        uint64_t realIndex(0);
+        if (index < 0) {
+            realIndex = tail + index;
+        } else {
+            realIndex = head + index;
+        }
+        if (realIndex < head || realIndex >= tail) {
+            return {ErrorCodes::ERR_OUT_OF_RANGE, ""};
+        }
+
+        PStore kvstore = expdb.value().store;
+        for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction();
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+            RecordKey subRk(expdb.value().chunkId,
+                            pCtx->getDbId(),
+                            RecordType::RT_LIST_ELE,
+                            key,
+                            std::to_string(realIndex));
+            RecordValue subRv(value, RecordType::RT_LIST_ELE);
+            Status s = kvstore->setKV(subRk, subRv, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+            Expected<uint64_t> expCmt = txn->commit();
+            if (expCmt.ok()) {
+                return Command::fmtOK();
+            }
+            if (expCmt.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return expCmt.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return expCmt.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } lsetCmd;
+
+class LRemCommand: public Command {
+ public:
+    LRemCommand()
+        :Command("lrem", "w") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) {
+        const std::string& key = sess->getArgs()[1];
+        Expected<int32_t> expCnt = tendisplus::stol(sess->getArgs()[2]);
+        if (!expCnt.ok()) {
+            return expCnt.status();
+        }
+        int32_t count = expCnt.value();
+        const std::string& value = sess->getArgs()[3];
+
+        auto server = sess->getServerEntry();
+        auto pCtx = sess->getCtx();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        ListPos pos(ListPos::LP_HEAD);
+        if (count < 0) {
+            pos = ListPos::LP_TAIL;
+            count = -count;
+        }
+
+        Expected<ListMetaValue> expLm =
+                ListMetaValue::decode(rv.value().getValue());
+        INVARIANT(expLm.ok());
+        ListMetaValue lm = std::move(expLm.value());
+        uint64_t head = lm.getHead();
+        uint64_t tail = lm.getTail();
+
+        size_t len = tail - head;
+        uint64_t index = pos == ListPos::LP_HEAD ? head : tail - 1;
+        std::vector<uint64_t> hole;
+        hole.push_back(head - 1);
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        for (size_t i = 0; i < len; i++) {
+            RecordKey subRk(expdb.value().chunkId,
+                    pCtx->getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    key,
+                    std::to_string(index));
+            Expected<RecordValue> expRv = kvstore->getKV(subRk, txn.get());
+            if (!expRv.ok()) {
+                return expRv.status();
+            }
+            if (expRv.value().getValue() == value) {
+                hole.push_back(index);
+                Status s = kvstore->delKV(subRk, txn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+                if (count >= 0 && hole.size() - 1 == static_cast<uint32_t>(count)) {
+                    break;
+                }
+            }
+            if (pos == ListPos::LP_HEAD)
+                index++;
+            else
+                index--;
+        }
+        hole.push_back(tail);
+        if (hole.size() == 2) {
+            return Command::fmtZero();
+        }
+
+        size_t lasthole(0);
+        uint64_t largest(0);
+        std::pair<uint64_t, uint64_t> seg;
+        if (pos == ListPos::LP_TAIL) {
+            std::sort(hole.begin(), hole.end());
+        }
+        for (size_t i = 1; i < hole.size(); i++) {
+            if (hole[i] - hole[lasthole] > largest) {
+                largest = hole[i] - hole[lasthole];
+                seg = std::make_pair(lasthole, i);
+            }
+            lasthole = i;
+        }
+
+        uint64_t oldHead(head), oldTail(tail);
+        uint64_t lBorder, rBorder;
+        lBorder = seg.first; rBorder = seg.second;
+        INVARIANT(hole[rBorder] > hole[lBorder]);
+
+        uint64_t destPos(hole[lBorder]);
+        for (ssize_t i = lBorder - 1; i >= 0; i--) {
+            uint64_t pos = hole[i+1] - 1;
+            uint64_t nextHole = hole[i];
+            for (; pos > nextHole; pos--) {
+                RecordKey subRk(expdb.value().chunkId,
+                        pCtx->getDbId(),
+                        RecordType::RT_LIST_ELE,
+                        key,
+                        std::to_string(pos));
+                Expected<RecordValue> eSubVal = kvstore->getKV(subRk, txn.get());
+                if (!eSubVal.ok()) {
+                    return eSubVal.status();
+                }
+                RecordKey newRk(expdb.value().chunkId,
+                        pCtx->getDbId(),
+                        RecordType::RT_LIST_ELE,
+                        key,
+                        std::to_string(destPos));
+                Status s = kvstore->setKV(newRk, eSubVal.value(), txn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+                destPos--;
+            }
+        }
+        head = destPos + 1;
+
+        destPos = hole[rBorder];
+        for (size_t i = rBorder + 1; i < hole.size(); i++) {
+            uint64_t pos = hole[i - 1] + 1;
+            uint64_t nextHole = hole[i];
+            for (; pos < nextHole; pos++) {
+                RecordKey subRk(expdb.value().chunkId,
+                                pCtx->getDbId(),
+                                RecordType::RT_LIST_ELE,
+                                key,
+                                std::to_string(pos));
+                Expected<RecordValue> eSubVal = kvstore->getKV(subRk, txn.get());
+                if (!eSubVal.ok()) {
+                    return eSubVal.status();
+                }
+                RecordKey newRk(expdb.value().chunkId,
+                                pCtx->getDbId(),
+                                RecordType::RT_LIST_ELE,
+                                key,
+                                std::to_string(destPos));
+                Status s = kvstore->setKV(newRk, eSubVal.value(), txn.get());
+                if (!s.ok()) {
+                    return s;
+                }
+                destPos++;
+            }
+        }
+        tail = destPos;
+
+        //explicit delete useless records between old end and new end.
+        while (true) {
+            uint64_t delPos;
+            if (oldHead != head) {
+                delPos = oldHead++;
+            } else if (oldTail != tail) {
+                delPos = --oldTail;
+            } else {
+                break;
+            }
+
+            RecordKey subRk(expdb.value().chunkId,
+                    pCtx->getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    key,
+                    std::to_string(delPos));
+            Status s = kvstore->delKV(subRk, txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+        }
+
+        lm.setHead(head);
+        lm.setTail(tail);
+        RecordKey metaRk(expdb.value().chunkId,
+                         pCtx->getDbId(),
+                         RecordType::RT_LIST_META,
+                         key,
+                         "");
+        Status s;
+        if (head == tail) {
+            s = kvstore->delKV(metaRk, txn.get());
+        } else {
+            s = kvstore->setKV(metaRk,
+                               RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
+                               txn.get());
+        }
+        if (!s.ok()) {
+            return s;
+        }
+
+        Expected<uint64_t> expCmt = txn->commit();
+        if (!expCmt.ok()) {
+            return expCmt.status();
+        }
+
+        return Command::fmtLongLong(static_cast<int64_t>(hole.size() - 2));
+    }
+} lremCmd;
+
+class LInsertCommand: public Command {
+ public:
+    LInsertCommand()
+        :Command("linsert", "wm") {
+    }
+
+    ssize_t arity() const {
+        return 5;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        const std::string& key = args[1];
+        int32_t step;
+        const std::string& pivot = args[3];
+        const std::string& value = args[4];
+        if (!::strcasecmp(args[2].c_str(), "before")) {
+            step = 1;
+        } else if (!::strcasecmp(args[2].c_str(), "after")) {
+            step = -1;
+        } else {
+            return { ErrorCodes::ERR_PARSEOPT, "syntax error" };
+        }
+        auto server = sess->getServerEntry();
+        auto pCtx = sess->getCtx();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
+                key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<RecordValue> rv =
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return Command::fmtZero();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        Expected<ListMetaValue> expLm =
+                ListMetaValue::decode(rv.value().getValue());
+        INVARIANT(expLm.ok());
+
+        ListMetaValue lm = std::move(expLm.value());
+        uint64_t head = lm.getHead();
+        uint64_t tail = lm.getTail();
+        uint64_t len = tail - head;
+        uint64_t index = step < 0 ? tail - 1 : head;
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction();
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        while (len > 0) {
+            RecordKey subRk(expdb.value().chunkId,
+                    pCtx->getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    key,
+                    std::to_string(index));
+            Expected<RecordValue> eSubRv = kvstore->getKV(subRk, txn.get());
+            if (!eSubRv.ok()) {
+                return eSubRv.status();
+            }
+            RecordValue& subRv = eSubRv.value();
+            if (subRv.getValue() == pivot) {
+                break;
+            }
+            len--;
+            index += step;
+        }
+        if (len <= 0) {
+            return Command::fmtLongLong(-1);
+        }
+        // we traverse the list in reverse order,
+        // so here need to subtract the step.
+        int32_t leftEle = index - head;
+        int32_t rightEle = tail - index - 1;
+
+        int32_t moveLen(0);
+        if (step < 0) {
+           leftEle += 1;
+        } else if (step > 0) {
+            rightEle += 1;
+        }
+
+        if (leftEle < rightEle) {
+            step = 1;
+            head = head - 1;
+            index = head;
+            moveLen = leftEle;
+        } else {
+            step = -1;
+            tail = tail + 1;
+            index = tail - 1;
+            moveLen = rightEle;
+        }
+
+        while (moveLen > 0) {
+            RecordKey subRk(expdb.value().chunkId,
+                    pCtx->getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    key,
+                    std::to_string(index + step));
+            Expected<RecordValue> eSubVal = kvstore->getKV(subRk, txn.get());
+            if (!eSubVal.ok()) {
+                return eSubVal.status();
+            }
+
+            RecordKey newRk(subRk.getChunkId(),
+                    subRk.getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    key,
+                    std::to_string(index));
+            Status s = kvstore->setKV(newRk, eSubVal.value(), txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+            index += step;
+            moveLen--;
+        }
+        RecordKey targRk(expdb.value().chunkId,
+                pCtx->getDbId(),
+                RecordType::RT_LIST_ELE,
+                key,
+                std::to_string(index));
+        RecordValue targRv(value, RecordType::RT_LIST_ELE);
+        Status s = kvstore->setKV(targRk, targRv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+
+        lm.setHead(head);
+        lm.setTail(tail);
+        RecordKey metaRk(expdb.value().chunkId,
+                pCtx->getDbId(),
+                RecordType::RT_LIST_META,
+                key,
+                "");
+        s = kvstore->setKV(metaRk,
+                RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
+                txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+
+        Expected<uint64_t> expCmt = txn->commit();
+        if (!expCmt.ok()) {
+            return expCmt.status();
+        }
+
+        return Command::fmtLongLong(lm.getTail() - lm.getHead());
+    }
+} linsertCmd;
 
 }  // namespace tendisplus

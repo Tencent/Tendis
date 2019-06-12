@@ -354,6 +354,13 @@ bool ServerEntry::processRequest(uint64_t connId) {
         INVARIANT(args.size() == 4);
         _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3]);
         return false;
+    } else if (expCmdName.value() == "quit") {
+        LOG(INFO) << "quit command";
+        NetSession *ns = dynamic_cast<NetSession*>(sess);
+        INVARIANT(ns != nullptr);
+        ns->setCloseAfterRsp();
+        ns->setResponse(Command::fmtOK());
+        return true;
     }
 
     auto expect = Command::runSessionCmd(sess);

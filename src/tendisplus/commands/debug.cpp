@@ -60,7 +60,8 @@ class KeysCommand: public Command {
             allkeys = true;
         }
 
-        int32_t limit = 10000;
+        // TODO(comboqiu): 30000
+        int32_t limit = 30000;
         if (args.size() > 3) {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
         }
@@ -74,7 +75,7 @@ class KeysCommand: public Command {
         }
 
         // TODO(vinchen): too big
-        if (limit < 0 || limit > 10000) {
+        if (limit < 0 || limit > 30000) {
             return{ ErrorCodes::ERR_PARSEOPT, "keys size limit to be 10000" };
         }
 
@@ -92,7 +93,6 @@ class KeysCommand: public Command {
                 }
                 return expdb.status();
             }
-
             PStore kvstore = expdb.value().store;
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -100,6 +100,7 @@ class KeysCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             auto cursor = txn->createCursor();
+
             cursor->seek("");
 
             while (true) {
@@ -109,6 +110,10 @@ class KeysCommand: public Command {
                 }
                 if (!exptRcd.ok()) {
                     return exptRcd.status();
+                }
+                if (exptRcd.value().getRecordKey().getDbId() !=
+                    sess->getCtx()->getDbId()) {
+                    continue;
                 }
                 auto keyType = exptRcd.value().getRecordKey().getRecordType();
                 // NOTE(vinchen):

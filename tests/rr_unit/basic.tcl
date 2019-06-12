@@ -1,5 +1,6 @@
 start_server {tags {"basic"}} {
     test {DEL all keys to start with a clean DB} {
+        r select 0
         foreach key [r keys *] {r del $key}
         r debug reload
         # dbsize only get numbers of keys in RAM
@@ -126,34 +127,34 @@ start_server {tags {"basic"}} {
         r incr novar
     } {17179869185}
 
-    test {INCREX against non existing key} {
-        r del novar
-        set res {}
-        append res [r increx novar 5]
-        append res [r get novar]
-        append res [r ttl novar]
-    } {115}
+    #test {INCREX against non existing key} {
+    #    r del novar
+    #    set res {}
+    #    append res [r increx novar 5]
+    #    append res [r get novar]
+    #    append res [r ttl novar]
+    #} {115}
 
-    test {INCREX against key created with ttl by increx itself} {
-        set res {}
-        append res [r increx novar 100]
-        append res [r ttl novar]
-    } {25}
+    #test {INCREX against key created with ttl by increx itself} {
+    #    set res {}
+    #    append res [r increx novar 100]
+    #    append res [r ttl novar]
+    #} {25}
 
-    test {INCREX against key originally set with SET} {
-        set res {}
-        r set novar 100
-        append res [r increx novar 200]
-        append res [r ttl novar]
-    } {101200}
+    #test {INCREX against key originally set with SET} {
+    #    set res {}
+    #    r set novar 100
+    #    append res [r increx novar 200]
+    #    append res [r ttl novar]
+    #} {101200}
 
-    test {INCREX over a key with a ttl} {
-        r setex novar 200 17179869184
-        r increx novar 300
-        set ttl [r ttl novar]
-        assert { $ttl <= 200 }
-        r get novar
-    } {17179869185}
+    #test {INCREX over a key with a ttl} {
+    #    r setex novar 200 17179869184
+    #    r increx novar 300
+    #    set ttl [r ttl novar]
+    #    assert { $ttl <= 200 }
+    #    r get novar
+    #} {17179869185}
 
     test {INCRBY over 32bit value with over 32bit increment} {
         r set novar 17179869184
@@ -423,35 +424,36 @@ start_server {tags {"basic"}} {
         append res [r exists mykey2]
     } {b0}
 
-    test {RENAMENX basic usage} {
-        r del mykey
-        r del mykey2
-        r set mykey foobar
-        r renamenx mykey mykey2
-        set res [r get mykey2]
-        append res [r exists mykey]
-    } {foobar0}
+    #test {RENAMENX basic usage} {
+    #    r del mykey
+    #    r del mykey2
+    #    r set mykey foobar
+    #    r renamenx mykey mykey2
+    #    set res [r get mykey2]
+    #    append res [r exists mykey]
+    #} {foobar0}
 
-    test {RENAMENX against already existing key} {
-        r set mykey foo
-        r set mykey2 bar
-        r renamenx mykey mykey2
-    } {0}
+    #test {RENAMENX against already existing key} {
+    #    r set mykey foo
+    #    r set mykey2 bar
+    #    r renamenx mykey mykey2
+    #} {0}
 
-    test {RENAMENX against already existing key (2)} {
-        set res [r get mykey]
-        append res [r get mykey2]
-    } {foobar}
+    #test {RENAMENX against already existing key (2)} {
+    #    set res [r get mykey]
+    #    append res [r get mykey2]
+    #} {foobar}
 
     test {RENAME against non existing source key} {
         catch {r rename nokey foobar} err
         format $err
     } {ERR*}
 
+    # change result check to OK
     test {RENAME where source and dest key is the same} {
         catch {r rename mykey mykey} err
         format $err
-    } {ERR*}
+    } {OK}
 
     test {RENAME with volatile key, should move the TTL as well} {
         r del mykey mykey2
@@ -490,29 +492,29 @@ start_server {tags {"basic"}} {
     } {0}
 
     # we don't handle move command for now
-    test {MOVE basic usage} {
-        r set mykey foobar
-        r move mykey 10
-        set res {}
-        lappend res [r exists mykey]
-        lappend res [r dbsize]
-        r select 10
-        lappend res [r get mykey]
-        lappend res [r dbsize]
-        r select 9
-        format $res
-    } [list 0 0 foobar 1]
+    #test {MOVE basic usage} {
+    #    r set mykey foobar
+    #    r move mykey 10
+    #    set res {}
+    #    lappend res [r exists mykey]
+    #    lappend res [r dbsize]
+    #    r select 10
+    #    lappend res [r get mykey]
+    #    lappend res [r dbsize]
+    #    r select 9
+    #    format $res
+    #} [list 0 0 foobar 1]
 
-    test {MOVE against key existing in the target DB} {
-        r set mykey hello
-        r move mykey 10
-    } {0}
+    #test {MOVE against key existing in the target DB} {
+    #    r set mykey hello
+    #    r move mykey 10
+    #} {0}
 
-    test {MOVE against non-integer DB (#1428)} {
-        r set mykey hello
-        catch {r move mykey notanumber} e
-        set e
-    } {*ERR*index out of range}
+    #test {MOVE against non-integer DB (#1428)} {
+    #    r set mykey hello
+    #    catch {r move mykey notanumber} e
+    #    set e
+    #} {*ERR*index out of range}
 
     test {SET/GET keys in different DBs} {
         r set a hello
@@ -586,6 +588,7 @@ start_server {tags {"basic"}} {
     # gets run, and the result would be x xyx instead of
     # {} xyz
     test {GETSET (set new value)} {
+        r del foo
         list [r getset foo xyz] [r get foo]
     } {{} xyz}
 
