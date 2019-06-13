@@ -7,6 +7,7 @@
 #include <set>
 #include <mutex>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <utility>
 #include <list>
@@ -24,15 +25,22 @@ class RocksKVStore;
 class RocksTxn: public Transaction {
  public:
     RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
-        std::shared_ptr<BinlogObserver> logob, uint64_t binlogId = Transaction::TXNID_UNINITED,
+        std::shared_ptr<BinlogObserver> logob,
+        uint64_t binlogId = Transaction::TXNID_UNINITED,
         uint32_t chunkId = Transaction::CHUNKID_UNINITED);
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
     std::unique_ptr<Cursor> createCursor() final;
+#ifdef BINLOG_V1
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
                                     bool ignoreReadBarrier) final;
+#else
+    std::unique_ptr<BinlogCursorV2> createBinlogCursorV2(
+                                    uint64_t begin,
+                                    bool ignoreReadBarrier) final;
+#endif
     std::unique_ptr<TTLIndexCursor> createTTLIndexCursor(
                                       uint64_t until) final;
     Expected<uint64_t> commit() final;
@@ -42,18 +50,21 @@ class RocksTxn: public Transaction {
                  const std::string& val,
                  const uint64_t ts = 0) final;
     Status delKV(const std::string& key, const uint64_t ts = 0) final;
+#ifdef BINLOG_V1
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
+    Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
+#else
     Status applyBinlog(const ReplLogValueEntryV2& logEntry) final;
     Status setBinlogKV(uint64_t binlogId,
                 const std::string& logKey,
                 const std::string& logValue) final;
-    Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
-    uint64_t getTxnId() const final;
+    Status delBinlog(const ReplLogRawV2& log) final;
     uint64_t getBinlogId() const final;
     void setBinlogId(uint64_t binlogId) final;
     uint32_t getChunkId() const final { return _chunkId; }
     void setChunkId(uint32_t chunkId) final;
-
+#endif
+    uint64_t getTxnId() const final;
     uint64_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint64_t timestamp);
     bool isReplOnly() const { return _replOnly; }
@@ -71,9 +82,12 @@ class RocksTxn: public Transaction {
     // NOTE(deyukong): not owned by me
     RocksKVStore *_store;
 
+#ifdef BINLOG_V1
     // TODO(deyukong): it's double buffered in rocks, optimize
     std::vector<ReplLog> _binlogs;
+#else
     std::vector<ReplLogValueEntryV2> _replLogValues;
+#endif
 
     // if rollback/commit has been explicitly called
     bool _done;
@@ -147,24 +161,31 @@ class RocksKVStore: public KVStore {
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction() final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
-    Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn, RecordType valueType) final;
+    Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn,
+                        RecordType valueType) final;
     Status setKV(const Record& kv, Transaction* txn) final;
     Status setKV(const RecordKey& key, const RecordValue& val,
                  Transaction* txn) final;
     Status setKV(const std::string& key, const std::string& val,
                  Transaction *txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
+#ifdef BINLOG_V1
     Status applyBinlog(const std::list<ReplLog>& txnLog,
                        Transaction *txn) final;
     Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
         uint64_t start, uint64_t end, Transaction *txn) final;
     Status truncateBinlog(const std::list<ReplLog>&, Transaction *txn) final;
+#else
+    Status assignBinlogIdIfNeeded(Transaction* txn) final;
+    void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
+    uint64_t getNextBinlogSeq() const final;
+    Expected<uint64_t> truncateBinlogV2(uint64_t start, uint64_t end,
+        Transaction *txn, std::ofstream *fs, uint64_t& ts, uint64_t& written);
+    uint64_t saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
+#endif
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
     Status compactRange(const std::string* begin, const std::string* end) final;
     Status fullCompact() final;
-    Status assignBinlogIdIfNeeded(Transaction* txn) final;
-    void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
-       
     Status clear() final;
     bool isRunning() const final;
     Status stop() final;
@@ -200,7 +221,7 @@ class RocksKVStore: public KVStore {
     rocksdb::OptimisticTransactionDB* getUnderlayerOptDB();
     rocksdb::TransactionDB* getUnderlayerPesDB();
 
-    uint64_t getHighestBinlogId() const;
+    uint64_t getHighestBinlogId() const final;
 
     // NOTE(deyukong): this api is only for debug
     std::set<uint64_t> getUncommittedTxns() const;
@@ -213,7 +234,7 @@ class RocksKVStore: public KVStore {
     mutable std::mutex _mutex;
 
     bool _isRunning;
-    // _isPaused = true, it means that the rocksdb can't do any 
+    // _isPaused = true, it means that the rocksdb can't do any
     // get/set operations. But the rocksdb is running. It can be
     // reopen again.
     bool _isPaused;
@@ -231,7 +252,6 @@ class RocksKVStore: public KVStore {
     std::shared_ptr<rocksdb::Cache> _blockCache;
 
     uint64_t _nextTxnSeq;
-    uint64_t _nextBinlogSeq;
 #ifdef BINLOG_V1
     // NOTE(deyukong): sorted data-structure is required here.
     // we rely on the data order to maintain active txns' watermark.
@@ -246,6 +266,7 @@ class RocksKVStore: public KVStore {
     // push _highestVisible forward.
     std::map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
 #else
+    uint64_t _nextBinlogSeq;
     // <txnId, <commit_or_not, binlogId>>
     std::unordered_map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
 

@@ -26,6 +26,8 @@ class StoreMeta {
     std::string syncFromHost;
     uint16_t syncFromPort;
     uint32_t syncFromId;  // the storeid of master
+    // the binlog has been applied, but it's unreliable in the
+    // catalog. KVStore->getHighestBinlogId() should been more reliable.
     uint64_t binlogId;
     ReplState replState;
 };

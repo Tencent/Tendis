@@ -244,44 +244,67 @@ std::string RecordKey::prefixDbidType() const {
 }
 */
 
+#ifdef BINLOG_V1
 const std::string& RecordKey::prefixReplLog() {
     static std::string s = []() {
         std::string result;
-        static_assert(ReplLogKey::DBID == 0XFFFFFFFFU,
+        static_assert(ReplLogKey::DBID == 0XFFFFFF00U,
                         "invalid ReplLogKey::DBID");
-        static_assert(ReplLogKey::CHUNKID == 0XFFFFFFFFU,
+        static_assert(ReplLogKey::CHUNKID == 0XFFFFFF00U,
                         "invalid ReplLogKey::CHUNKID");
         result.push_back(0xFF);
         result.push_back(0xFF);
         result.push_back(0xFF);
-        result.push_back(0xFF);
+        result.push_back(0x00);
         result.push_back(rt2Char(RecordType::RT_BINLOG));
         result.push_back(0xFF);
         result.push_back(0xFF);
         result.push_back(0xFF);
-        result.push_back(0xFF);
+        result.push_back(0x00);
         return result;
     }();
     return s;
 }
+#else
+const std::string& RecordKey::prefixReplLogV2() {
+    static std::string s = []() {
+        std::string result;
+        static_assert(ReplLogKeyV2::DBID == 0XFFFFFF01U,
+            "invalid ReplLogKeyV2::DBID");
+        static_assert(ReplLogKeyV2::CHUNKID == 0XFFFFFF01U,
+            "invalid ReplLogKeyV2::CHUNKID");
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0x01);
+        result.push_back(rt2Char(RecordType::RT_BINLOG));
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0x01);
+        return result;
+    }();
+    return s;
+}
+#endif
 
 const std::string& RecordKey::prefixTTLIndex() {
     static std::string s = []() {
       std::string result;
 
-      static_assert(TTLIndex::DBID == 0XFFFFFFFFU,
+      static_assert(TTLIndex::DBID == 0XFFFF0000U,
                     "invalid TTLIndex::DBID");
-      static_assert(TTLIndex::CHUNKID == 0XFFFFFFFEU,
+      static_assert(TTLIndex::CHUNKID == 0XFFFF0000U,
                     "invalid TTLIndex::CHUNKID");
       result.push_back(0xFF);
       result.push_back(0xFF);
-      result.push_back(0xFF);
-      result.push_back(0xFE);
+      result.push_back(0x00);
+      result.push_back(0x00);
       result.push_back(rt2Char(RecordType::RT_TTL_INDEX));
       result.push_back(0xFF);
       result.push_back(0xFF);
-      result.push_back(0xFF);
-      result.push_back(0xFF);
+      result.push_back(0x00);
+      result.push_back(0x00);
       return result;
     }();
 
@@ -441,7 +464,8 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
 
     // dont bother about copies. move-constructor or at least RVO
     // will handle everything.
-    return RecordKey(chunkid, dbid, type, std::move(pk), std::move(sk), version);
+    return RecordKey(chunkid, dbid, type,
+                std::move(pk), std::move(sk), version);
 }
 
 Expected<bool> RecordKey::validate(const std::string& key,
@@ -611,10 +635,10 @@ RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t versionEp,
     _totalSize(val.size()),
     _value(std::move(val)) {
 }
-// NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other 
+// NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other
 // information of the RecordValue(oldRV)
 RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t versionEp,
-        uint64_t ttl,const Expected<RecordValue>& oldRV)
+        uint64_t ttl, const Expected<RecordValue>& oldRV)
     : RecordValue(val, type, versionEp, ttl) {
     if (oldRV.ok()) {
         setCas(oldRV.value().getCas());
@@ -622,6 +646,7 @@ RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t versi
         setPieceSize(oldRV.value().getPieceSize());
     }
 }
+
 RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t versionEp,
         uint64_t ttl, const Expected<RecordValue>& oldRV)
     : RecordValue(val, type, versionEp, ttl) {
@@ -820,7 +845,7 @@ Expected<bool> RecordValue::validate(const std::string& value,
         return{ ErrorCodes::ERR_DECODE, "invalid pieceSize" };
     }
 
-    if (totalSize != value.size() - offset ) {
+    if (totalSize != value.size() - offset) {
         return{ ErrorCodes::ERR_DECODE, "invalid totalSize" };
     }
 
@@ -976,6 +1001,7 @@ bool Record::operator==(const Record& other) const {
     return _key == other._key && _value == other._value;
 }
 
+#ifdef BINLOG_V1
 ReplLogKey::ReplLogKey()
         :_txnId(0),
          _localId(0),
@@ -1264,6 +1290,7 @@ ReplLog::KV ReplLog::encode() const {
 bool ReplLog::operator==(const ReplLog& o) const {
     return _key == o._key && _val == o._val;
 }
+#endif
 
 HashMetaValue::HashMetaValue()
     :HashMetaValue(0) {

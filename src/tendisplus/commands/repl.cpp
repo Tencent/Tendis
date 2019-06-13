@@ -163,6 +163,7 @@ class IncrSyncCommand: public Command {
     }
 } incrSyncCommand;
 
+#ifdef BINLOG_V1
 // @input pullbinlogs storeId startBinlogId
 // @output nextBinlogId [[k,v], [k,v]...]
 class PullBinlogsCommand: public Command {
@@ -380,7 +381,7 @@ class RestoreBinlogCommand: public Command {
 class ApplyBinlogsCommand: public Command {
  public:
     ApplyBinlogsCommand()
-        :Command("applybinlogsv1", "a") {
+        :Command("applybinlogs", "a") {
     }
 
     ssize_t arity() const {
@@ -468,15 +469,15 @@ class ApplyBinlogsCommand: public Command {
         }
     }
 } applyBinlogsCommand;
-
+#else
 class ApplyBinlogsCommandV2 : public Command {
-public:
+ public:
     ApplyBinlogsCommandV2()
-        :Command("applybinlogs", "aw") {
+        :Command("applybinlogsv2", "aw") {
     }
 
     ssize_t arity() const {
-        return 4;
+        return -4;
     }
 
     int32_t firstkey() const {
@@ -511,17 +512,6 @@ public:
         }
         storeId = exptStoreId.value();
 
-        //auto key = ReplLogKeyV2::decode(args[2]);
-        //if (!key.ok()) {
-        //    return key.status();
-        //}
-        //auto binlogId = key.value().getBinlogId();
-
-        //auto value = ReplLogValueV2::decode(args[3]);
-        //if (!value.ok()) {
-        //    return value.status();
-        //}
-
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
@@ -532,14 +522,17 @@ public:
             return expdb.status();
         }
 
-        Status s = replMgr->applyBinlogV2(storeId, sess->id(),
-                    args[2], args[3]);
-        if (s.ok()) {
-            return s;
+        for (size_t i = 2; i < args.size(); i += 2) {
+            Status s = replMgr->applyBinlogV2(storeId, sess->id(),
+                args[i], args[i+1]);
+            if (s.ok()) {
+                return s;
+            }
         }
         return Command::fmtOK();
     }
 } applyBinlogsV2Command;
+#endif
 
 class SlaveofCommand: public Command {
  public:

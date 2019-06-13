@@ -98,8 +98,11 @@ class RecordKey {
     // an encoded prefix with db & type, with no padding zero.
     std::string prefixDbidType() const;
     */
-
+#ifdef BINLOG_V1
     static const std::string& prefixReplLog();
+#else
+    static const std::string& prefixReplLogV2();
+#endif
     static const std::string& prefixTTLIndex();
 
     RecordType getRecordType() const;
@@ -110,7 +113,7 @@ class RecordKey {
     static RecordType getRecordTypeRaw(const char* key, size_t size);
     static Expected<bool> validate(const std::string& key,
         RecordType type = RecordType::RT_INVALID);
-    static size_t getHdrSize() 
+    static size_t getHdrSize()
         { return sizeof(_chunkId) + sizeof(_dbId) + sizeof(uint8_t); }
     bool operator==(const RecordKey& other) const;
 
@@ -230,6 +233,7 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_DEL = 2,
 };
 
+#ifdef BINLOG_V1
 // ********************* repl key format ******************************
 // txnId + localId + flag + timestamp + reserved
 // txnId is a uint64_t in big endian. big endian ensures the scan order
@@ -264,8 +268,8 @@ class ReplLogKey {
     ReplFlag getFlag() const { return _flag; }
 
     static std::string prefix(uint64_t commitId);
-    static constexpr uint32_t DBID = 0XFFFFFFFFU;
-    static constexpr uint32_t CHUNKID = 0XFFFFFFFFU;
+    static constexpr uint32_t DBID = 0XFFFFFF00U;
+    static constexpr uint32_t CHUNKID = 0XFFFFFF00U;
 
  private:
     uint64_t _txnId;
@@ -295,6 +299,27 @@ class ReplLogValue {
     std::string _val;
 };
 
+class ReplLog {
+ public:
+    using KV = std::pair<std::string, std::string>;
+    ReplLog();
+    ReplLog(const ReplLog&) = default;
+    ReplLog(ReplLog&&);
+    ReplLog(const ReplLogKey& key, const ReplLogValue& value);
+    ReplLog(ReplLogKey&& key, ReplLogValue&& value);
+    const ReplLogKey& getReplLogKey() const;
+    ReplLogKey& getReplLogKey();
+    const ReplLogValue& getReplLogValue() const;
+    static Expected<ReplLog> decode(const std::string& key,
+            const std::string& value);
+    KV encode() const;
+    bool operator==(const ReplLog&) const;
+
+ private:
+    ReplLogKey _key;
+    ReplLogValue _val;
+};
+#else
 class ReplLogKeyV2 {
  public:
     ReplLogKeyV2();
@@ -303,14 +328,14 @@ class ReplLogKeyV2 {
     ReplLogKeyV2(uint64_t binlogid);
     static Expected<ReplLogKeyV2> decode(const RecordKey&);
     static Expected<ReplLogKeyV2> decode(const std::string&);
-    static std::string& updateBinlogId(std::string& encodeStr, uint64_t newBinlogId);
+    // static std::string& updateBinlogId(std::string& encodeStr, uint64_t newBinlogId);
     std::string encode() const;
     bool operator==(const ReplLogKeyV2&) const;
     ReplLogKeyV2& operator=(const ReplLogKeyV2&);
     uint64_t getBinlogId() const { return _binlogId; }
 
-    static constexpr uint32_t DBID = 0XFFFFFFFFU;
-    static constexpr uint32_t CHUNKID = 0XFFFFFFFFU;
+    static constexpr uint32_t DBID = 0XFFFFFF01U;
+    static constexpr uint32_t CHUNKID = 0XFFFFFF01U;
 
  private:
     uint64_t _binlogId;
@@ -353,7 +378,7 @@ class ReplLogValueV2 {
                 const uint8_t* data, size_t dataSize);
     static Expected<ReplLogValueV2> decode(const std::string& rvStr);
     static Expected<ReplLogValueV2> decode(const char* str, size_t size);
-    static std::string& updateTxnId(std::string& encodeStr, uint64_t newTxnId);
+    // static std::string& updateTxnId(std::string& encodeStr, uint64_t newTxnId);
     static size_t fixedHeaderSize();
     std::string encodeHdr() const;
     std::string encode(const std::vector<ReplLogValueEntryV2>& vec) const;
@@ -361,39 +386,70 @@ class ReplLogValueV2 {
     const uint8_t* getData() const { return _data; }
     size_t getDataSize() const { return _dataSize; }
     uint32_t getEntryCount() const { return _entryCount; }
+    ReplFlag getReplFlag() const { return _flag; }
+    uint64_t getTxnId() const { return _txnId; }
+    uint32_t getChunkId() const { return _chunkId; }
 
  private:
     uint32_t _chunkId;
     ReplFlag _flag;
     uint64_t _txnId;
     uint32_t _entryCount;
-    // NOTE(vinchen) : take care about "_data", the caller should guarantee the 
+    // NOTE(vinchen) : take care about "_data", the caller should guarantee the
     // memory is ok;
     // printer to the RecordValue.getValue().c_str()
     const uint8_t* _data;
     size_t _dataSize;
 };
 
-class ReplLog {
+class ReplLogRawV2 {
  public:
     using KV = std::pair<std::string, std::string>;
-    ReplLog();
-    ReplLog(const ReplLog&) = default;
-    ReplLog(ReplLog&&);
-    ReplLog(const ReplLogKey& key, const ReplLogValue& value);
-    ReplLog(ReplLogKey&& key, ReplLogValue&& value);
-    const ReplLogKey& getReplLogKey() const;
-    ReplLogKey& getReplLogKey();
-    const ReplLogValue& getReplLogValue() const;
-    static Expected<ReplLog> decode(const std::string& key,
-            const std::string& value);
-    KV encode() const;
-    bool operator==(const ReplLog&) const;
+    ReplLogRawV2() = delete;
+    ReplLogRawV2(const ReplLogRawV2&) = delete;
+    ReplLogRawV2(ReplLogRawV2&&);
+    ReplLogRawV2(const std::string& key, const std::string& value);
+    ReplLogRawV2(const Record& record);
+    ReplLogRawV2(std::string&& key, std::string&& value);
+    uint64_t getBinlogId();
+    uint64_t getTimestamp();
+    const std::string& getReplLogKey() const { return _key; }
+    const std::string& getReplLogValue() const { return _val; }
 
  private:
-    ReplLogKey _key;
-    ReplLogValue _val;
+    std::string _key;
+    std::string _val;
+    uint64_t _binlogId;
 };
+
+class ReplLogV2 {
+ public:
+    using KV = std::pair<std::string, std::string>;
+    ReplLogV2() = delete;
+    ReplLogV2(const ReplLogV2&) = default;
+    ReplLogV2(ReplLogV2&&);
+    ReplLogV2(ReplLogKeyV2&& key, ReplLogValueV2&& value,
+                std::vector<ReplLogValueEntryV2>&& entry);
+    // ReplLogV2(const ReplLogRawV2& log);
+    // ReplLogV2(const std::string& key, const std::string& value);
+    const ReplLogKeyV2& getReplLogKey() const { return _key; }
+    const ReplLogValueV2& getReplLogValue() const { return _val; }
+    uint64_t getTimestamp() const;
+    const std::vector<ReplLogValueEntryV2>& getReplLogValueEntrys() const
+                    { return _entrys; }
+    static Expected<ReplLogV2> decode(const std::string& key,
+        const std::string& value);
+    // encode() see: ReplManager::applySingleTxnV2()
+    // KV encode() const;
+
+    // bool operator==(const ReplLog&) const;
+
+ private:
+    ReplLogKeyV2 _key;
+    ReplLogValueV2 _val;
+    std::vector<ReplLogValueEntryV2> _entrys;
+};
+#endif
 
 class ListMetaValue {
  public:
@@ -568,8 +624,8 @@ class TTLIndex {
     uint64_t _ttl;
 
  public:
-    static constexpr uint32_t CHUNKID = 0XFFFFFFFEU;
-    static constexpr uint32_t DBID = 0XFFFFFFFFU;
+    static constexpr uint32_t CHUNKID = 0XFFFF0000U;
+    static constexpr uint32_t DBID = 0XFFFF0000U;
 };
 
 namespace rcd_util {

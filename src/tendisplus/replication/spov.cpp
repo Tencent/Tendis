@@ -393,6 +393,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
     }
 }
 
+#ifdef BINLOG_V1
 Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
     // NOTE(deyukong): donot lock store in IX mode again
@@ -440,6 +441,36 @@ Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
     return {ErrorCodes::ERR_OK, ""};
 }
 
+// NOTE(deyukong): should be called with lock held
+Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
+                                   const std::list<ReplLog>& ops) {
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
+        mgl::LockMode::LOCK_NONE);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto store = std::move(expdb.value().store);
+    INVARIANT(store != nullptr);
+    auto ptxn = store->createTransaction();
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    Status s = store->applyBinlog(ops, txn.get());
+    if (!s.ok()) {
+        return s;
+    }
+    Expected<uint64_t> expCmit = txn->commit();
+    if (!expCmit.ok()) {
+        return expCmit.status();
+    }
+
+    // NOTE(vinchen): store the binlog time spov when txn commited.
+    store->setBinlogTime(txn->getBinlogTime());
+    return {ErrorCodes::ERR_OK, ""};
+}
+#else
 Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
     const std::string& logKey, const std::string& logValue) {
     // NOTE(deyukong): donot lock store in IX mode again
@@ -481,35 +512,6 @@ Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-// NOTE(deyukong): should be called with lock held
-Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
-                                   const std::list<ReplLog>& ops) {
-    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
-        mgl::LockMode::LOCK_NONE);
-    if (!expdb.ok()) {
-        return expdb.status();
-    }
-    auto store = std::move(expdb.value().store);
-    INVARIANT(store != nullptr);
-    auto ptxn = store->createTransaction();
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Status s = store->applyBinlog(ops, txn.get());
-    if (!s.ok()) {
-        return s;
-    }
-    Expected<uint64_t> expCmit = txn->commit();
-    if (!expCmit.ok()) {
-        return expCmit.status();
-    }
-
-    // NOTE(vinchen): store the binlog time spov when txn commited.
-    store->setBinlogTime(txn->getBinlogTime());
-    return {ErrorCodes::ERR_OK, ""};
-}
 
 Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
     const std::string& logKey, const std::string& logValue) {
@@ -546,7 +548,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
     auto count = value.value().getEntryCount();
     for (size_t i = 0; i < count; i++) {
         size_t size = 0;
-        auto entry = ReplLogValueEntryV2::decode((const char*)data,
+        auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
                         dataSize - offset, size);
         if (!entry.ok()) {
             return entry.status();
@@ -578,7 +580,9 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
 
     return binlogId;
 }
+#endif
 
+#ifdef BINLOG_V1
 Status ReplManager::saveBinlogs(uint32_t storeId,
     const std::list<ReplLog>& logs) {
     if (logs.size() == 0) {
@@ -655,5 +659,67 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
     }
     return {ErrorCodes::ERR_OK, ""};
 }
+#else
+std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
+    std::ofstream *fs = nullptr;
+    uint32_t currentId = 0;
+    uint64_t ts = 0;
+    {
+        std::unique_lock<std::mutex> lk(_mutex);
+        fs = _logRecycStatus[storeId]->fs.get();
+        currentId = _logRecycStatus[storeId]->fileSeq;
+        ts = _logRecycStatus[storeId]->timestamp;
+    }
+    if (fs == nullptr) {
+        char fname[256], tbuf[256];
+        memset(fname, 0, 128);
+        memset(tbuf, 0, 128);
+
+        // ms to second
+        time_t time = (time_t)(uint32_t)(ts / 1000);
+        struct tm lt;
+        (void)localtime_r(&time, &lt);
+        strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
+
+        snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
+            _dumpPath.c_str(), storeId, storeId, currentId + 1, tbuf);
+        fs = new std::ofstream(fname,
+            std::ios::out | std::ios::app | std::ios::binary);
+        if (!fs->is_open()) {
+            std::stringstream ss;
+            ss << "open:" << fname << " failed";
+            return nullptr;
+        }
+
+        // the header
+        fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+
+        std::unique_lock<std::mutex> lk(_mutex);
+        auto& v = _logRecycStatus[storeId];
+        v->fs.reset(fs);
+        v->fileSeq = currentId + 1;
+        v->fileCreateTime = SCLOCK::now();
+        v->fileSize = strlen(BINLOG_HEADER_V2);
+    }
+    
+    return fs;
+}
+
+void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t ts) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    auto& v = _logRecycStatus[storeId];
+    v->fileSize += written;
+    if (v->fileSize >= ReplManager::BINLOGSIZE
+        || v->fileCreateTime +
+        std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+        <= SCLOCK::now()) {
+        if (v->fs) {
+            v->fs->close();
+            v->fs.reset();
+        }
+        v->timestamp = ts;
+    }
+}
+#endif
 
 }  // namespace tendisplus

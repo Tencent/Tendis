@@ -189,7 +189,7 @@ TEST(Record, Common) {
     //        !(prcd1.value().getRecordKey() == rk));
     //}
 }
-
+#ifdef BINLOG_V1
 TEST(ReplRecord, Prefix) {
     uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
     auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), timestamp);
@@ -199,11 +199,11 @@ TEST(ReplRecord, Prefix) {
     EXPECT_EQ(s[0], '\xff');
     EXPECT_EQ(s[1], '\xff');
     EXPECT_EQ(s[2], '\xff');
-    EXPECT_EQ(s[3], '\xff');
+    EXPECT_EQ(s[3], '\x00');
     EXPECT_EQ(s[4], '\xff');
     EXPECT_EQ(s[5], '\xff');
     EXPECT_EQ(s[6], '\xff');
-    EXPECT_EQ(s[7], '\xff');
+    EXPECT_EQ(s[7], '\x00');
     EXPECT_EQ(s[8], '\xff');
     const std::string& prefix = RecordKey::prefixReplLog();
     for (int i = 0; i < 100000; ++i) {
@@ -240,6 +240,33 @@ TEST(ReplRecord, Common) {
     std::string s = rlv.encode();
     Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
     EXPECT_TRUE(erlv.ok());
+}
+#else
+TEST(ReplRecordV2, Prefix) {
+    uint64_t binlogid = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
+    auto rlk = ReplLogKeyV2(binlogid);
+    RecordKey rk(ReplLogKeyV2::CHUNKID, ReplLogKeyV2::DBID,
+        RecordType::RT_BINLOG, rlk.encode(), "");
+    const std::string s = rk.encode();
+    EXPECT_EQ(s[0], '\xff');
+    EXPECT_EQ(s[1], '\xff');
+    EXPECT_EQ(s[2], '\xff');
+    EXPECT_EQ(s[3], '\x01');
+    EXPECT_EQ(s[4], '\xff');
+    EXPECT_EQ(s[5], '\xff');
+    EXPECT_EQ(s[6], '\xff');
+    EXPECT_EQ(s[7], '\x01');
+    EXPECT_EQ(s[8], '\xff');
+    const std::string& prefix = RecordKey::prefixReplLogV2();
+    EXPECT_EQ(prefix[0], '\xff');
+    EXPECT_EQ(prefix[1], '\xff');
+    EXPECT_EQ(prefix[2], '\xff');
+    EXPECT_EQ(prefix[3], '\x01');
+    EXPECT_EQ(prefix[4], '\xff');
+    EXPECT_EQ(prefix[5], '\xff');
+    EXPECT_EQ(prefix[6], '\xff');
+    EXPECT_EQ(prefix[7], '\x01');
+    EXPECT_EQ(prefix[8], '\xff');
 }
 
 TEST(ReplRecordV2, Common) {
@@ -306,6 +333,7 @@ TEST(ReplRecordV2, Common) {
         }
     }
 }
+#endif
 
 TEST(ZSl, Common) {
     srand(time(NULL));

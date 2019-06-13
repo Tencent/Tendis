@@ -23,12 +23,19 @@ namespace tendisplus {
 
 class KVStore;
 class Record;
+#ifdef BINLOG_V1
 class ReplLog;
+#else
+class ReplLogValueEntryV2;
+class ReplLogRawV2;
+class ReplLogV2;
+class Transaction;
+#endif
 class TTLIndex;
 class RecordKey;
 class RecordValue;
 enum class RecordType;
-class ReplLogValueEntryV2;
+
 
 using PStore = std::shared_ptr<KVStore>;
 
@@ -43,7 +50,7 @@ class Cursor {
     virtual Status prev() = 0;
     virtual Expected<std::string> key() = 0;
 };
-
+#ifdef BINLOG_V1
 class BinlogCursor {
  public:
     BinlogCursor() = delete;
@@ -60,6 +67,30 @@ class BinlogCursor {
     const std::string _beginPrefix;
     const uint64_t _end;
 };
+#else
+class BinlogCursorV2 {
+ public:
+    BinlogCursorV2() = delete;
+    // NOTE(vinchen): in range of [begin, end], be careful both close interval
+    BinlogCursorV2(Transaction* txn, uint64_t begin, uint64_t end);
+    ~BinlogCursorV2() = default;
+    Expected<ReplLogRawV2> next();
+    Expected<ReplLogV2> nextV2();
+    Status seekToLast();
+    static Expected<uint64_t> getMinBinlogId(Transaction* txn);
+    static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
+    static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
+
+ protected:
+    Transaction* _txn;
+    std::unique_ptr<Cursor> _baseCursor;
+
+ private:
+    uint64_t _start;
+    uint64_t _cur;
+    const uint64_t _end;
+};
+#endif
 
 class TTLIndexCursor {
  public:
@@ -87,8 +118,25 @@ class Transaction {
     virtual Expected<uint64_t> commit() = 0;
     virtual Status rollback() = 0;
     virtual std::unique_ptr<Cursor> createCursor() = 0;
+#ifdef BINLOG_V1
     virtual std::unique_ptr<BinlogCursor>
         createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
+    virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
+    virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
+#else
+    virtual std::unique_ptr<BinlogCursorV2>
+        createBinlogCursorV2(uint64_t begin,
+                             bool ignoreReadBarrier = false) = 0;
+    virtual Status applyBinlog(const ReplLogValueEntryV2& logEntry) = 0;
+    virtual Status setBinlogKV(uint64_t binlogId,
+                    const std::string& logKey,
+                    const std::string& logValue) = 0;
+    virtual Status delBinlog(const ReplLogRawV2& log) = 0;
+    virtual uint64_t getBinlogId() const = 0;
+    virtual void setBinlogId(uint64_t binlogId) = 0;
+    virtual uint32_t getChunkId() const = 0;
+    virtual void setChunkId(uint32_t chunkId) = 0;
+#endif
     virtual std::unique_ptr<TTLIndexCursor>
         createTTLIndexCursor(std::uint64_t until) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
@@ -96,23 +144,11 @@ class Transaction {
                          const std::string& val,
                          const uint64_t ts = 0) = 0;
     virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
-    virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
-    virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
-
-    virtual Status applyBinlog(const ReplLogValueEntryV2& logEntry) = 0;
-    virtual Status setBinlogKV(uint64_t binlogId,
-                    const std::string& logKey,
-                    const std::string& logValue) = 0;
 
     virtual uint64_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint64_t timestamp) = 0;
     virtual bool isReplOnly() const = 0;
     virtual uint64_t getTxnId() const = 0;
-    virtual uint64_t getBinlogId() const = 0;
-    virtual void setBinlogId(uint64_t binlogId) = 0;
-    virtual uint32_t getChunkId() const = 0;
-    virtual void setChunkId(uint32_t chunkId) = 0;
-
     static constexpr uint64_t MAX_VALID_TXNID
         = std::numeric_limits<uint64_t>::max()/2;
     static constexpr uint64_t MIN_VALID_TXNID = 1;
@@ -136,7 +172,9 @@ class BackupInfo {
 
 class BinlogObserver {
  public:
+#ifdef BINLOG_V1
     virtual void onCommit(const std::vector<ReplLog>& binlogs) = 0;
+#endif
     virtual ~BinlogObserver() = default;
 };
 
@@ -178,6 +216,7 @@ class KVStore {
     virtual Status setKV(const std::string& key, const std::string& val,
                          Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+#ifdef BINLOG_V1
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
                                Transaction* txn) = 0;
 
@@ -188,9 +227,14 @@ class KVStore {
             uint64_t start, uint64_t end, Transaction* txn) = 0;
 
     virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
+#else
+
     virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
     virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
-
+    virtual uint64_t getNextBinlogSeq() const = 0;
+    virtual Expected<uint64_t> truncateBinlogV2(uint64_t start, uint64_t end,
+        Transaction *txn, std::ofstream *fs, uint64_t& ts, uint64_t& written) = 0;
+#endif
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(const std::string* begin,
                                 const std::string* end) = 0;
@@ -210,6 +254,7 @@ class KVStore {
 
     virtual Status setMode(StoreMode mode) = 0;
     virtual KVStore::StoreMode getMode() = 0;
+    virtual uint64_t getHighestBinlogId() const = 0;
 
     // return the greatest commitId
     virtual Expected<uint64_t> restart(bool restore = false) = 0;
