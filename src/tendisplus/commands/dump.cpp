@@ -621,14 +621,18 @@ class RestoreCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::string &key = sess->getArgs()[1];
-        const std::string &sttl = sess->getArgs()[2];
-        const std::string &payload = sess->getArgs()[3];
+        const auto& args = sess->getArgs();
+        const std::string &key = args[1];
+        const std::string &sttl = args[2];
+        const std::string &payload = args[3];
 
         // TODO: parse additional args
-        // maybe we don't need to do this.
         {
-
+            for (size_t i = 4; i < args.size(); i++) {
+                if (::strcasecmp(args[i].c_str(), "replace")) {
+                    return {ErrorCodes::ERR_PARSEOPT, ""};
+                }
+            }
         }
 
         // check if key exists

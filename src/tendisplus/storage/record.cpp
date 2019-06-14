@@ -185,15 +185,15 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
         arr->emplace_back((_chunkId>>((sizeof(_chunkId)-i-1)*8))&0xff);
     }
 
-    // DBID
-    for (size_t i = 0; i < sizeof(_dbId); ++i) {
-        arr->emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
-    }
-
     // Type
     INVARIANT(_type == getRealKeyType(_type));
     INVARIANT(_type != RecordType::RT_INVALID);
     arr->emplace_back(rt2Char(_type));
+
+    // DBID
+    for (size_t i = 0; i < sizeof(_dbId); ++i) {
+        arr->emplace_back((_dbId>>((sizeof(_dbId)-i-1)*8))&0xff);
+    }
 
     // PK
     arr->insert(arr->end(), _pk.begin(), _pk.end());
@@ -255,11 +255,11 @@ const std::string& RecordKey::prefixReplLog() {
         result.push_back(0xFF);
         result.push_back(0xFF);
         result.push_back(0xFF);
-        result.push_back(0xFF);
-        result.push_back(0xFF);
-        result.push_back(0xFF);
-        result.push_back(0xFF);
         result.push_back(rt2Char(RecordType::RT_BINLOG));
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
+        result.push_back(0xFF);
         return result;
     }();
     return s;
@@ -277,11 +277,11 @@ const std::string& RecordKey::prefixTTLIndex() {
       result.push_back(0xFF);
       result.push_back(0xFF);
       result.push_back(0xFE);
-      result.push_back(0xFF);
-      result.push_back(0xFF);
-      result.push_back(0xFF);
-      result.push_back(0xFF);
       result.push_back(rt2Char(RecordType::RT_TTL_INDEX));
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
+      result.push_back(0xFF);
       return result;
     }();
 
@@ -354,17 +354,17 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
     }
     offset += sizeof(chunkid);
 
-    // dbid
-    for (size_t i = 0; i < sizeof(dbid); i++) {
-        dbid = (dbid << 8) | keyCstr[i + offset];
-    }
-    offset += sizeof(dbid);
-
     // type
     typec = keyCstr[offset++];
     type = char2Rt(typec);
     INVARIANT(type == getRealKeyType(type));
     INVARIANT(type != RecordType::RT_INVALID);
+
+    // dbid
+    for (size_t i = 0; i < sizeof(dbid); i++) {
+        dbid = (dbid << 8) | keyCstr[i + offset];
+    }
+    offset += sizeof(dbid);
 
     *chunkidOut = chunkid;
     *dbidOut = dbid;
