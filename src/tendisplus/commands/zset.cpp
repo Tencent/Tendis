@@ -79,7 +79,7 @@ Expected<std::string> genericZrem(Session *sess,
     }
     Status s;
     if (sl.getCount() > 1) {
-        s = sl.save(txn.get(), eMeta);
+        s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
     } else {
         INVARIANT(sl.getCount() == 1);
         s = kvstore->delKV(mk, txn.get());
@@ -156,7 +156,7 @@ Expected<std::string> genericZadd(Session *sess,
         ZSlMetaValue tmp(1/*lvl*/,
                          1/*count*/,
                          0/*tail*/);
-        RecordValue rv(tmp.encode(), RecordType::RT_ZSET_META);
+        RecordValue rv(tmp.encode(), RecordType::RT_ZSET_META, pCtx->getVersionEP());
         Status s = kvstore->setKV(mk, rv, txn.get());
         if (!s.ok()) {
             return s;
@@ -167,7 +167,7 @@ Expected<std::string> genericZadd(Session *sess,
                        mk.getPrimaryKey(),
                        std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+        RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, 0);
         s = kvstore->setKV(head, subRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -256,7 +256,7 @@ Expected<std::string> genericZadd(Session *sess,
         }
     }
     // NOTE(vinchen): skiplist save one time
-    Status s = sl.save(txn.get(), eMeta);
+    Status s = sl.save(txn.get(), eMeta, sess->getCtx()->getVersionEP());
     if (!s.ok()) {
         return s;
     }
@@ -449,7 +449,7 @@ class ZRemByRangeGenericCommand: public Command {
 
         Status s;
         if (sl.getCount() > 1) {
-            s = sl.save(txn.get(), eMeta);
+            s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
         } else {
             INVARIANT(sl.getCount() == 1);
             s = kvstore->delKV(mk, txn.get());

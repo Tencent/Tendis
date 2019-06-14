@@ -151,7 +151,7 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
-        sess->getServerEntry()->setTsEp(sess->getCtx()->getEpTs());
+        sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
     }
     return v;
 }
@@ -500,7 +500,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
 }
 
 Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
-                        const std::string& key, RecordType tp) {
+        const std::string& key, RecordType tp, bool hasVersion) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
@@ -536,6 +536,12 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         if (targetTtl == 0 || currentTs < targetTtl) {
             if (valueType != tp && tp != RecordType::RT_DATA_META) {
                 return{ ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
+            if (hasVersion) {
+                auto pCtx = sess->getCtx();
+                if (pCtx->getVersionEP() < eValue.value().getVersionEP()) {
+                    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                }
             }
             return eValue.value();
         } else if (txn->isReplOnly()) {

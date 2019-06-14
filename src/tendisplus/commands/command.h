@@ -55,7 +55,7 @@ class Command {
     // return ERR_EXPIRED if expired
     // return errors on other unexpected conditions
     static Expected<RecordValue> expireKeyIfNeeded(Session *sess,
-                            const std::string& key, RecordType tp);
+            const std::string& key, RecordType tp, bool hasVersion = true);
 
     static Expected<std::pair<std::string, std::list<Record>>>
     scan(const std::string& pk,

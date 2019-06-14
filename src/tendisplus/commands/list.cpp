@@ -69,7 +69,8 @@ Expected<std::string> genericPop(Session *sess,
         lm.setHead(head);
         lm.setTail(tail);
         s = kvstore->setKV(metaRk,
-                           RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
+                           RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                                   sess->getCtx()->getVersionEP(), ttl, rv),
                            txn);
     }
     if (!s.ok()) {
@@ -116,7 +117,7 @@ Expected<std::string> genericPush(Session *sess,
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx));
-        RecordValue subRv(args[i], RecordType::RT_LIST_ELE);
+        RecordValue subRv(args[i], RecordType::RT_LIST_ELE, 0);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -125,7 +126,8 @@ Expected<std::string> genericPush(Session *sess,
     lm.setHead(head);
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
+                              RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                                      sess->getCtx()->getVersionEP(), ttl, rv),
                               txn);
     if (!s.ok()) {
         return s;
@@ -639,7 +641,8 @@ class LtrimCommand: public Command {
             }
         } else {
             ListMetaValue newLm(start+head, end+1+head);
-            RecordValue metarcd(newLm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv);
+            RecordValue metarcd(newLm.encode(), RecordType::RT_LIST_META,
+                    sess->getCtx()->getVersionEP(), rv.value().getTtl(), rv);
             st = kvstore->setKV(mk, metarcd, txn.get());
             if (!st.ok()) {
                 return st;
@@ -1005,7 +1008,7 @@ class LSetCommand: public Command {
                             RecordType::RT_LIST_ELE,
                             key,
                             std::to_string(realIndex));
-            RecordValue subRv(value, RecordType::RT_LIST_ELE);
+            RecordValue subRv(value, RecordType::RT_LIST_ELE, 0);
             Status s = kvstore->setKV(subRk, subRv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -1240,8 +1243,9 @@ class LRemCommand: public Command {
             s = kvstore->delKV(metaRk, txn.get());
         } else {
             s = kvstore->setKV(metaRk,
-                               RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
-                               txn.get());
+                    RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                            sess->getCtx()->getVersionEP(), rv.value().getTtl(), rv),
+                    txn.get());
         }
         if (!s.ok()) {
             return s;
@@ -1396,7 +1400,7 @@ class LInsertCommand: public Command {
                 RecordType::RT_LIST_ELE,
                 key,
                 std::to_string(index));
-        RecordValue targRv(value, RecordType::RT_LIST_ELE);
+        RecordValue targRv(value, RecordType::RT_LIST_ELE, 0);
         Status s = kvstore->setKV(targRk, targRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -1410,7 +1414,8 @@ class LInsertCommand: public Command {
                 key,
                 "");
         s = kvstore->setKV(metaRk,
-                RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
+                RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                        pCtx->getVersionEP(), rv.value().getTtl(), rv),
                 txn.get());
         if (!s.ok()) {
             return s;

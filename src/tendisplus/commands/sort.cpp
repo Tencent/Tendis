@@ -237,7 +237,7 @@ class SortCommand: public Command {
 
         if (!exist) {
             ListMetaValue lm(INITSEQ, INITSEQ);
-            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META);
+            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META, 0);
         } else {
             rv = std::make_unique<RecordValue>(expRv.value());
         }
@@ -579,7 +579,7 @@ class SortCommand: public Command {
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx++));
-                RecordValue subRv(x, RecordType::RT_LIST_ELE);
+                RecordValue subRv(x, RecordType::RT_LIST_ELE, 0);
                 Status s = addStore->setKV(subRk, subRv, addTxn.get());
                 if (!s.ok()) {
                     return s;
@@ -587,7 +587,7 @@ class SortCommand: public Command {
             }
             lm.setTail(idx);
             Status s = addStore->setKV(metaRk,
-                    RecordValue(lm.encode(), RecordType::RT_LIST_META),
+                    RecordValue(lm.encode(), RecordType::RT_LIST_META, pCtx->getVersionEP()),
                     addTxn.get());
             if (!s.ok()) {
                 return s;

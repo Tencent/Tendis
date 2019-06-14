@@ -405,7 +405,8 @@ class PfAddCommand: public Command {
 
             RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                     RecordType::RT_KV, key, "");
-            RecordValue value(hpll->encode(), RecordType::RT_KV, ttl, rv);
+            RecordValue value(hpll->encode(), RecordType::RT_KV,
+                    pCtx->getVersionEP(), ttl, rv);
 
             Status s = kvstore->setKV(rk, value, txn.get());
             if (!s.ok()) {
@@ -618,7 +619,8 @@ class PfMergeCommand : public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
             RecordType::RT_KV, key, "");
-        RecordValue value(result->encode(), RecordType::RT_KV, ttl);
+        RecordValue value(result->encode(), RecordType::RT_KV,
+                pCtx->getVersionEP(), ttl);
 
         Status s = kvstore->setKV(rk, value, txn.get());
         if (!s.ok()) {
@@ -932,7 +934,8 @@ class PfDebugCommand : public Command {
 
             RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                 RecordType::RT_KV, key, "");
-            RecordValue value(keyHpll->encode(), RecordType::RT_KV, ttl, rv);
+            RecordValue value(keyHpll->encode(), RecordType::RT_KV,
+                    pCtx->getVersionEP(), ttl, rv);
 
             Status s = kvstore->setKV(rk, value, txn.get());
             if (!s.ok()) {

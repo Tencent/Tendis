@@ -136,17 +136,17 @@ class RecordValue {
     // be in a dangling state
     RecordValue(RecordValue&&);
     RecordValue& operator=(RecordValue&&) noexcept;
-    explicit RecordValue(const std::string& val, RecordType type, uint64_t ttl = 0,
-                        int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
+    explicit RecordValue(const std::string& val, RecordType type, uint64_t versionEp,
+                        uint64_t ttl = 0, int64_t cas = -1, uint64_t version = 0,
                         uint64_t pieceSize = (uint64_t)-1);
-    explicit RecordValue(std::string&& val, RecordType type, uint64_t ttl = 0,
-                        int64_t cas = -1, uint64_t version = 0, uint64_t versionEp = 0,
+    explicit RecordValue(std::string&& val, RecordType type, uint64_t versionEp,
+                        uint64_t ttl = 0, int64_t cas = -1, uint64_t version = 0,
                         uint64_t pieceSize = (uint64_t)-1);
 
-    RecordValue(const std::string& val, RecordType type, uint64_t ttl,
-                    const Expected<RecordValue>& oldRV);
-    RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
-                    const Expected<RecordValue>& oldRV);
+    RecordValue(const std::string& val, RecordType type, uint64_t versionEp,
+            uint64_t ttl, const Expected<RecordValue>& oldRV);
+    RecordValue(const std::string&& val, RecordType type, uint64_t versionEp,
+            uint64_t ttl, const Expected<RecordValue>& oldRV);
     const std::string& getValue() const;
     uint64_t getTtl() const;
     void setTtl(uint64_t);

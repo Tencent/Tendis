@@ -62,7 +62,8 @@ Expected<std::string> genericSRem(Session *sess,
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+              RecordValue(sm.encode(), RecordType::RT_SET_META,
+                      sess->getCtx()->getVersionEP(), ttl, rv),
               txn);
     }
     if (!s.ok()) {
@@ -110,7 +111,7 @@ Expected<std::string> genericSAdd(Session *sess,
         } else {
             cnt += 1;
         }
-        RecordValue subRv("", RecordType::RT_SET_ELE);
+        RecordValue subRv("", RecordType::RT_SET_ELE, 0);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -118,7 +119,8 @@ Expected<std::string> genericSAdd(Session *sess,
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                    RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+                    RecordValue(sm.encode(), RecordType::RT_SET_META,
+                            sess->getCtx()->getVersionEP(), ttl, rv),
                     txn);
     if (!s.ok()) {
         return s;
@@ -575,6 +577,7 @@ class SpopCommand: public Command {
                 s = kvstore->setKV(metaRk,
                         RecordValue(sm.encode(),
                                 RecordType::RT_SET_META,
+                                pCtx->getVersionEP(),
                                 rv.value().getTtl(),
                                 rv),
                                 txn.get());

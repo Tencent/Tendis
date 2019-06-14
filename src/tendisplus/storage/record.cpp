@@ -519,8 +519,8 @@ RecordValue& RecordValue::operator=(RecordValue&& rhs) noexcept {
     return *this;
 }
 
-RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
-                        int64_t cas, uint64_t version, uint64_t versionEp,
+RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t versionEp,
+                        uint64_t ttl, int64_t cas, uint64_t version,
                         uint64_t pieceSize)
         : _type(type),
     _ttl(ttl),
@@ -532,8 +532,8 @@ RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
     _value(val) {
 }
 
-RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
-                        int64_t cas, uint64_t version, uint64_t versionEp,
+RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t versionEp,
+                        uint64_t ttl, int64_t cas, uint64_t version,
                         uint64_t pieceSize)
         : _type(type),
     _ttl(ttl),
@@ -546,23 +546,21 @@ RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t ttl,
 }
 // NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other 
 // information of the RecordValue(oldRV)
-RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t ttl,
-                        const Expected<RecordValue>& oldRV) 
-    : RecordValue(val, type, ttl) {
+RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t versionEp,
+        uint64_t ttl,const Expected<RecordValue>& oldRV)
+    : RecordValue(val, type, versionEp, ttl) {
     if (oldRV.ok()) {
         setCas(oldRV.value().getCas());
         setVersion(oldRV.value().getVersion());
-        setVersionEP(oldRV.value().getVersionEP());
         setPieceSize(oldRV.value().getPieceSize());
     }
 }
-RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t ttl,
-                        const Expected<RecordValue>& oldRV) 
-    : RecordValue(val, type, ttl) {
+RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t versionEp,
+        uint64_t ttl, const Expected<RecordValue>& oldRV)
+    : RecordValue(val, type, versionEp, ttl) {
     if (oldRV.ok()) {
         setCas(oldRV.value().getCas());
         setVersion(oldRV.value().getVersion());
-        setVersionEP(oldRV.value().getVersionEP());
         setPieceSize(oldRV.value().getPieceSize());
     }
 }
@@ -680,8 +678,8 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
             value.size() - offset);
     }
     INVARIANT(totalSize == rawValue.size());
-    return RecordValue(std::move(rawValue), typeForMeta, ttl, cas,
-                        version, versionEP, pieceSize);
+    return RecordValue(std::move(rawValue), typeForMeta, versionEP, ttl, cas,
+                        version, pieceSize);
 }
 
 uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
@@ -1004,7 +1002,7 @@ std::string ReplLogValue::encode() const {
     val.insert(val.end(), valBytes.begin(), valBytes.end());
     val.insert(val.end(), _val.begin(), _val.end());
     std::string partial(reinterpret_cast<const char *>(val.data()), val.size());
-    RecordValue tmpRv(std::move(partial), RecordType::RT_BINLOG);
+    RecordValue tmpRv(std::move(partial), RecordType::RT_BINLOG, 0);
     return tmpRv.encode();
 }
 

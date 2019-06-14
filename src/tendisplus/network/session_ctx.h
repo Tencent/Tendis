@@ -48,8 +48,8 @@ class SessionCtx {
     Expected<Transaction*> createTransaction(const PStore& kvstore);
     void setExtendProtocol(bool v);
     void setExtendProtocolValue(uint64_t ts, uint64_t version);
-    uint64_t getEpTs() const { return _timestamp; }
-    uint64_t getEpVersion() const { return _version; }
+    uint64_t getTsEP() const { return _timestamp; }
+    uint64_t getVersionEP() const { return _version; }
     bool isEp() const { return _extendProtocol; }
 
     void setKeylock(const std::string& key, mgl::LockMode mode);

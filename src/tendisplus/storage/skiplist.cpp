@@ -4,6 +4,7 @@
 #include <utility>
 #include "tendisplus/storage/skiplist.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/server/session.h"
 
 namespace tendisplus {
 
@@ -181,7 +182,7 @@ Status SkipList::saveNode(uint64_t pointer,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
                  std::to_string(pointer));
-    RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE);
+    RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE, 0);
 
     // NOTE(vinchen): after saveNode, reset the change flag in ZSLEleValue
     INVARIANT(cache.find(pointer) != cache.end());
@@ -192,7 +193,8 @@ Status SkipList::saveNode(uint64_t pointer,
 }
 
 Status SkipList::save(Transaction* txn,
-                      const Expected<RecordValue>& oldValue) {
+                      const Expected<RecordValue>& oldValue,
+                      uint64_t versionEP) {
     // saveNode one time
     for (auto& v : cache) {
         if (v.second->isChanged()) {
@@ -206,7 +208,7 @@ Status SkipList::save(Transaction* txn,
     RecordKey rk(_chunkId, _dbId, RecordType::RT_ZSET_META, _pk, "");
     ZSlMetaValue mv(_level, _count, _tail, _posAlloc);
     uint64_t ttl = oldValue.ok() ? oldValue.value().getTtl() : 0;
-    RecordValue rv(mv.encode(), RecordType::RT_ZSET_META, ttl, oldValue);
+    RecordValue rv(mv.encode(), RecordType::RT_ZSET_META, versionEP, ttl, oldValue);
     return _store->setKV(rk, rv, txn);
 }
 
