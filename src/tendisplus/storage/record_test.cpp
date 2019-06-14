@@ -184,8 +184,8 @@ TEST(ReplRecord, Prefix) {
     EXPECT_EQ(s[4], '\xff');
     EXPECT_EQ(s[5], '\xff');
     EXPECT_EQ(s[6], '\xff');
-    EXPECT_EQ(s[7], '\x00');
-    EXPECT_EQ(s[8], '\xff');
+    EXPECT_EQ(s[7], '\xff');
+    EXPECT_EQ(s[8], '\x00');
     const std::string& prefix = RecordKey::prefixReplLog();
     for (int i = 0; i < 100000; ++i) {
         EXPECT_TRUE(randomStr(5, false) <= prefix);
@@ -236,8 +236,8 @@ TEST(ReplRecordV2, Prefix) {
     EXPECT_EQ(s[4], '\xff');
     EXPECT_EQ(s[5], '\xff');
     EXPECT_EQ(s[6], '\xff');
-    EXPECT_EQ(s[7], '\x01');
-    EXPECT_EQ(s[8], '\xff');
+    EXPECT_EQ(s[7], '\xff');
+    EXPECT_EQ(s[8], '\x01');
     const std::string& prefix = RecordKey::prefixReplLogV2();
     EXPECT_EQ(prefix[0], '\xff');
     EXPECT_EQ(prefix[1], '\xff');
@@ -246,8 +246,8 @@ TEST(ReplRecordV2, Prefix) {
     EXPECT_EQ(prefix[4], '\xff');
     EXPECT_EQ(prefix[5], '\xff');
     EXPECT_EQ(prefix[6], '\xff');
-    EXPECT_EQ(prefix[7], '\x01');
-    EXPECT_EQ(prefix[8], '\xff');
+    EXPECT_EQ(prefix[7], '\xff');
+    EXPECT_EQ(prefix[8], '\x01');
 }
 
 TEST(ReplRecordV2, Common) {
@@ -334,6 +334,33 @@ TEST(ReplRecordV2, Common) {
     }
 }
 #endif
+
+TEST(TTLIndex, Prefix) {
+    uint64_t binlogid = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
+    auto rlk = TTLIndex();
+    RecordKey rk(TTLIndex::CHUNKID, TTLIndex::DBID,
+        RecordType::RT_TTL_INDEX, rlk.encode(), "");
+    const std::string s = rk.encode();
+    EXPECT_EQ(s[0], '\xff');
+    EXPECT_EQ(s[1], '\xff');
+    EXPECT_EQ(s[2], '\x00');
+    EXPECT_EQ(s[3], '\x00');
+    EXPECT_EQ(s[4], rt2Char(RecordType::RT_TTL_INDEX));
+    EXPECT_EQ(s[5], '\xff');
+    EXPECT_EQ(s[6], '\xff');
+    EXPECT_EQ(s[7], '\x00');
+    EXPECT_EQ(s[8], '\x00');
+    const std::string& prefix = RecordKey::prefixReplLogV2();
+    EXPECT_EQ(prefix[0], '\xff');
+    EXPECT_EQ(prefix[1], '\xff');
+    EXPECT_EQ(prefix[2], '\x00');
+    EXPECT_EQ(prefix[3], '\x00');
+    EXPECT_EQ(prefix[4], rt2Char(RecordType::RT_TTL_INDEX));
+    EXPECT_EQ(prefix[5], '\xff');
+    EXPECT_EQ(prefix[6], '\xff');
+    EXPECT_EQ(prefix[7], '\x00');
+    EXPECT_EQ(prefix[8], '\x00');
+}
 
 TEST(ZSl, Common) {
     srand(time(NULL));

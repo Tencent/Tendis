@@ -29,4 +29,9 @@ std::string& replaceAll(std::string& str,
 
 }  // namespace tendisplus
 
+#ifdef _MSC_VER
+#define strcasecmp stricmp
+#define strncasecmp  strnicmp 
+#endif
+
 #endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 

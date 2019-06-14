@@ -1,8 +1,10 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#ifndef _WIN32
 #include <experimental/string_view>
 #include <experimental/optional>
+#endif
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
@@ -12,7 +14,11 @@
 namespace tendisplus {
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ/2ULL;
+#ifndef _WIN32
 using std::experimental::string_view;
+#else
+#define string_view std::string
+#endif
 class SortCommand: public Command {
  private:
     struct SortOp {
