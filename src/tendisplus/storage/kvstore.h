@@ -187,6 +187,19 @@ struct KVStoreStat {
     std::atomic<uint64_t> destroyedErrorCount;
 };
 
+#define BINLOG_HEADER_V2 "BINLOG_V2\r\n"
+
+struct TruncateBinlogResult {
+    TruncateBinlogResult()
+        : newStart(0), timestamp(0),
+        written(0), deleten(0) {}
+
+    uint64_t newStart;
+    uint64_t timestamp;
+    uint64_t written;
+    uint64_t deleten;
+};
+
 class KVStore {
  public:
     enum class StoreMode {
@@ -232,8 +245,9 @@ class KVStore {
     virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
     virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
     virtual uint64_t getNextBinlogSeq() const = 0;
-    virtual Expected<uint64_t> truncateBinlogV2(uint64_t start, uint64_t end,
-        Transaction *txn, std::ofstream *fs, uint64_t& ts, uint64_t& written) = 0;
+    static std::ofstream* createBinlogFile(const std::string& name);
+    virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
+        Transaction *txn, std::ofstream *fs) = 0;
 #endif
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(const std::string* begin,

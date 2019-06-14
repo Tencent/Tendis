@@ -1,3 +1,4 @@
+#include <fstream>
 #include "glog/logging.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/portable.h"
@@ -158,10 +159,7 @@ Expected<uint64_t> BinlogCursorV2::getMaxBinlogId(Transaction* txn) {
         } else {
             return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
         }
-    } else {
-        LOG(ERROR) << "ReplLogKeyV2::getMaxBinlogId() failed, reason:"
-            << key.status().toString();
-    }
+    } 
 
     return key.status();
 }
@@ -220,6 +218,7 @@ Expected<ReplLogV2> BinlogCursorV2::nextV2() {
         if (!v.ok()) {
             return v.status();
         }
+        _cur++;
 
         return std::move(v.value());
     }
@@ -299,6 +298,21 @@ uint64_t KVStore::getCurrentTime() {
         ts = msSinceEpoch();
     }
     return ts;
+}
+
+std::ofstream* KVStore::createBinlogFile(const std::string& name) {
+    std::ofstream* fs = new std::ofstream(name.c_str(),
+        std::ios::out | std::ios::app | std::ios::binary);
+    if (!fs->is_open()) {
+        std::stringstream ss;
+        ss << "open:" << name << " failed";
+        return nullptr;
+    }
+
+    // the header
+    fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+
+    return fs;
 }
 
 BackupInfo::BackupInfo()

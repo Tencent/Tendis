@@ -142,6 +142,7 @@ std::shared_ptr<ServerParams> genParams() {
 }
 
 void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
+#ifndef BINLOG_V1
     auto eTxn1 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
@@ -150,12 +151,21 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
     EXPECT_TRUE(expMax.ok());
 
     EXPECT_EQ(expMax.value() + 1, kvstore->getNextBinlogSeq());
+#endif
 }
 
 TEST(RocksKVStore, BinlogRightMost) {
     auto cfg = genParams();
+
+    filesystem::remove_all("./log");
+    filesystem::remove_all("./db");
+
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto kvstore = std::make_unique<RocksKVStore>(
@@ -163,17 +173,11 @@ TEST(RocksKVStore, BinlogRightMost) {
         cfg,
         blockCache);
 
-    const auto guard = MakeGuard([&] {
-        testMaxBinlogId(kvstore);
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
-    });
-
-
     auto eTxn1 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
+#ifndef BINLOG_V1
     {
         auto expMin = BinlogCursorV2::getMinBinlogId(txn1.get());
         EXPECT_TRUE(!expMin.ok());
@@ -187,6 +191,7 @@ TEST(RocksKVStore, BinlogRightMost) {
         EXPECT_TRUE(!expMinB.ok());
         EXPECT_TRUE(expMinB.status().code() == ErrorCodes::ERR_EXHAUST);
     }
+#endif
 
     RecordKey rk(0, 1, RecordType::RT_KV, "a", "");
     RecordValue rv("txn1", RecordType::RT_KV, -1);
@@ -230,7 +235,11 @@ TEST(RocksKVStore, BinlogRightMost) {
         EXPECT_EQ(log.getReplLogValueEntrys()[0].getOpKey(), rk.encode());
         EXPECT_EQ(log.getReplLogValueEntrys()[0].getOpValue(), rv.encode());
     }
+
+    Expected<uint64_t> exptCommitId2 = txn2->commit();
+    EXPECT_EQ(exptCommitId2.ok(), true);
 #endif
+    testMaxBinlogId(kvstore);
 }
 
 #ifdef BINLOG_V1
@@ -342,6 +351,11 @@ TEST(RocksKVStore, BinlogCursorV2) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
+	
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto kvstore = std::make_unique<RocksKVStore>(
@@ -349,11 +363,7 @@ TEST(RocksKVStore, BinlogCursorV2) {
         cfg,
         blockCache);
 
-    const auto guard = MakeGuard([&] {
-        testMaxBinlogId(kvstore);
-        filesystem::remove_all("./log");
-        filesystem::remove_all("./db");
-    });
+
 
     auto eTxn1 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
@@ -445,6 +455,7 @@ TEST(RocksKVStore, BinlogCursorV2) {
         cnt += 1;
     }
     EXPECT_EQ(cnt, 1);
+    testMaxBinlogId(kvstore);
 }
 #endif
 
@@ -614,6 +625,7 @@ TEST(RocksKVStore, Backup) {
         RecordKey(0, 0, RecordType::RT_KV, "a", ""),
         txn1.get());
     EXPECT_EQ(e.ok(), true);
+    testMaxBinlogId(kvstore);
 }
 
 TEST(RocksKVStore, Stop) {
@@ -868,15 +880,20 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 #else
         uint64_t ts = 0;
         uint64_t written = 0;
+        uint64_t deleten = 0;
         auto s = kvstore->truncateBinlogV2(firstBinlog,
             std::numeric_limits<uint64_t>::max(), txn1.get(),
-            nullptr, ts, written);
+            nullptr);
         EXPECT_TRUE(s.ok());
+        ts = s.value().timestamp;
+        written = s.value().written;
+        deleten = s.value().deleten;
         EXPECT_GT(ts, std::numeric_limits<uint32_t>::max());
         EXPECT_GT(written, 0);
-        EXPECT_GT(s.value(), firstBinlog);
-        EXPECT_EQ(s.value(), 2U);
-        firstBinlog = s.value();
+        EXPECT_GT(s.value().newStart, firstBinlog);
+        EXPECT_EQ(s.value().newStart, 2U);
+        EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
+        firstBinlog = s.value().newStart;
 #endif
         uint64_t currentCnt = getBinlogCount(txn1.get());
         EXPECT_EQ(currentCnt, 1U);
@@ -957,22 +974,28 @@ TEST(RocksKVStore, PesTruncateBinlog) {
 
         uint64_t ts = 0;
         uint64_t written = 0;
+        uint64_t deleten = 0;
         uint64_t keepn = 2;
         // TODO(vinchen): save binlog
         auto s = kvstore->truncateBinlogV2(firstBinlog,
             firstBinlog + currentCnt - keepn,
-            txn2.get(), nullptr, ts, written);
+            txn2.get(), nullptr);
         EXPECT_TRUE(s.ok());
+        ts = s.value().timestamp;
+        written = s.value().written;
+        deleten = s.value().deleten;
         EXPECT_GT(ts, std::numeric_limits<uint32_t>::max());
         EXPECT_GT(written, 0);
-        EXPECT_GT(s.value(), firstBinlog);
-        EXPECT_EQ(s.value(), firstBinlog + currentCnt - keepn + 1);
-        firstBinlog = s.value();
+        EXPECT_GT(s.value().newStart, firstBinlog);
+        EXPECT_EQ(s.value().newStart, firstBinlog + currentCnt - keepn + 1);
+        EXPECT_EQ(deleten, s.value().newStart - firstBinlog);
+        firstBinlog = s.value().newStart;
 
         Expected<uint64_t> exptCommitId2 = txn2->commit();
         EXPECT_EQ(exptCommitId2.ok(), true);
     }
 #endif
+    testMaxBinlogId(kvstore);
 }
 
 TEST(RocksKVStore, Compaction) {
@@ -1038,6 +1061,8 @@ TEST(RocksKVStore, Compaction) {
     // because there are repl_log for each set(), it should * 2 here
     EXPECT_EQ(totalFilter, 3000*2 - kvCount);
     EXPECT_EQ(totalExpired, kvCount2);
+
+    testMaxBinlogId(kvstore);
 }
 
 }  // namespace tendisplus

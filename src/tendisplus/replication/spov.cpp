@@ -683,16 +683,12 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
 
         snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
             _dumpPath.c_str(), storeId, storeId, currentId + 1, tbuf);
-        fs = new std::ofstream(fname,
-            std::ios::out | std::ios::app | std::ios::binary);
-        if (!fs->is_open()) {
-            std::stringstream ss;
-            ss << "open:" << fname << " failed";
-            return nullptr;
-        }
 
-        // the header
-        fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+        
+        fs = KVStore::createBinlogFile(fname);
+        if (!fs) {
+            return fs;
+        }
 
         std::unique_lock<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];

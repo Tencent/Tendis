@@ -565,17 +565,16 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         }
     }
 
-    uint64_t ts = 0;
-    uint64_t written = 0;
-    auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs, ts, written);
+    auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
     if (!s.ok()) {
         LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
             << "failed:" << s.status().toString();
         hasError = true;
         return;
     }
-    updateCurBinlogFs(storeId, written, ts);
-    uint64_t newStart = s.value();
+    updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
+    // TODO(vinchen): stat for binlog deleted
+    uint64_t newStart = s.value().newStart;
 #endif
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {

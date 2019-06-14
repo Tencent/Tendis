@@ -82,7 +82,6 @@ enum class ReplState: std::uint8_t {
 class ServerEntry;
 class StoreMeta;
 
-#define BINLOG_HEADER_V2 "BINLOG_V2\r\n"
 
 class ReplManager {
  public:

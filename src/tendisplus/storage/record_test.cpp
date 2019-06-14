@@ -285,7 +285,7 @@ TEST(ReplRecordV2, Common) {
         EXPECT_TRUE(prk.ok());
         EXPECT_EQ(prk.value(), rk); 
 
-        size_t count = 1000;
+        size_t count = genRand() % 12345;
         
         std::vector<ReplLogValueEntryV2> vec;
         vec.reserve(count);
@@ -330,6 +330,16 @@ TEST(ReplRecordV2, Common) {
             EXPECT_TRUE(v.ok());
             offset += size;
             EXPECT_EQ(entry, v.value());
+        }
+
+        auto expRepllog = ReplLogV2::decode(rkStr, rvStr);
+        EXPECT_TRUE(expRepllog.ok());
+        EXPECT_EQ(expRepllog.value().getReplLogValueEntrys().size(), prv.value().getEntryCount());
+        for (size_t j = 0; j < prv.value().getEntryCount(); j++) {
+            const ReplLogValueEntryV2& entry = vec[j];
+            const ReplLogValueEntryV2& entry2 = expRepllog.value().getReplLogValueEntrys()[j];
+            size_t size = 0;
+            EXPECT_EQ(entry, entry2);
         }
     }
 }

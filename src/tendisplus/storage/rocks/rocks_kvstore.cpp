@@ -118,10 +118,10 @@ std::unique_ptr<BinlogCursorV2> RocksTxn::createBinlogCursorV2(
     if (!ignoreReadBarrier) {
         hv = _store->getHighestBinlogId();
     } else {
-        hv = _store->getNextBinlogSeq();
+        hv = _store->getNextBinlogSeq() - 1;
     }
 
-    if (begin == Transaction::MIN_VALID_TXNID) {
+    if (begin <= Transaction::MIN_VALID_TXNID) {
         auto k = BinlogCursorV2::getMinBinlogId(this);
         if (!k.ok()) {
             LOG(ERROR) << "BinlogCursorV2::getMinBinlogId() ERROR: "
@@ -857,11 +857,16 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     return written;
 }
 
-Expected<uint64_t> RocksKVStore::truncateBinlogV2(uint64_t start, uint64_t end,
-    Transaction *txn, std::ofstream *fs, uint64_t& ts, uint64_t& written) {
+Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start, uint64_t end,
+    Transaction *txn, std::ofstream *fs) {
     uint64_t gap = getHighestBinlogId() - start;
+    TruncateBinlogResult result;
+    uint64_t ts = 0;
+    uint64_t written = 0;
+    uint64_t deleten = 0;
     if (gap < _maxKeepLogs) {
-        return start;
+        result.newStart = start;
+        return result;
     }
 
     INVARIANT_D(BinlogCursorV2::getMinBinlogId(txn).value() == start);
@@ -901,9 +906,15 @@ Expected<uint64_t> RocksKVStore::truncateBinlogV2(uint64_t start, uint64_t end,
             LOG(ERROR) << "delbinlog error:" << s.toString();
             return s;
         }
+        deleten++;
     }
 
-    return nextStart;
+    result.deleten = deleten;
+    result.written = written;
+    result.timestamp = ts;
+    result.newStart = nextStart;
+
+    return result;
 }
 #endif
 

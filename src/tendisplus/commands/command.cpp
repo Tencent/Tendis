@@ -179,6 +179,8 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 
             auto vv = dynamic_cast<NetSession*>(sess);
             vv->setCloseAfterRsp();
+        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL) {
+            ServerEntry::logError(v.status().toString());
         }
     }
     return v;
