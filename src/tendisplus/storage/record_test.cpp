@@ -137,7 +137,7 @@ TEST(Record, Common) {
         auto validateK = RecordKey::validate(kv.first);
         EXPECT_TRUE(validateK.ok());
         EXPECT_TRUE(validateK.value());
- 
+
         auto validateV = RecordValue::validate(kv.second);
         EXPECT_TRUE(validateV.ok());
         EXPECT_TRUE(validateV.value());
@@ -147,11 +147,11 @@ TEST(Record, Common) {
         EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
 
         auto prcd1 = Record::decode(kv.first, kv.second);
-        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(), 
+        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(),
             kv.first.size());
-        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
+        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(),
             kv.second.size());
-                
+
         EXPECT_EQ(cas, rv.getCas());
         EXPECT_EQ(version, rv.getVersion());
         EXPECT_EQ(versionEP, rv.getVersionEP());
@@ -169,25 +169,6 @@ TEST(Record, Common) {
         EXPECT_TRUE(prcd1.ok());
         EXPECT_EQ(prcd1.value(), rcd);
     }
-
-    //for (size_t i = 0; i < 1000000; i++) {
-    //    uint32_t dbid = genRand();
-    //    uint32_t chunkid = genRand();
-    //    auto type = randomType();
-    //    auto pk = randomStr(5, false);
-    //    auto sk = randomStr(5, true);
-    //    uint64_t ttl = genRand()*genRand();
-    //    uint64_t cas = genRand()*genRand();
-    //    auto val = randomStr(5, true);
-    //    auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-    //    auto rv = RecordValue(val, ttl, cas);
-    //    auto rcd = Record(rk, rv);
-    //    auto kv = rcd.encode();
-    //    auto prcd1 = Record::decode(overflip(kv.first), kv.second);
-    //    EXPECT_TRUE(
-    //        prcd1.status().code() == ErrorCodes::ERR_DECODE ||
-    //        !(prcd1.value().getRecordKey() == rk));
-    //}
 }
 #ifdef BINLOG_V1
 TEST(ReplRecord, Prefix) {
@@ -274,6 +255,7 @@ TEST(ReplRecordV2, Common) {
     for (size_t i = 0; i < 1000; i++) {
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint64_t binlogid = uint64_t(genRand())*uint64_t(genRand());
+        uint64_t versionEp = uint64_t(genRand())*uint64_t(genRand());
         uint32_t chunkid = genRand() % 16384;
 
         ReplFlag flag = randomReplFlag();
@@ -283,10 +265,10 @@ TEST(ReplRecordV2, Common) {
         auto rkStr = rk.encode();
         auto prk = ReplLogKeyV2::decode(rkStr);
         EXPECT_TRUE(prk.ok());
-        EXPECT_EQ(prk.value(), rk); 
+        EXPECT_EQ(prk.value(), rk);
 
         size_t count = genRand() % 12345;
-        
+
         std::vector<ReplLogValueEntryV2> vec;
         vec.reserve(count);
         for (size_t j = 0; j < count; j++) {
@@ -302,6 +284,7 @@ TEST(ReplRecordV2, Common) {
                 entry = ReplLogValueEntryV2(ReplOp::REPL_OP_DEL, timestamp, randomStr(keyLen, false), "");
             }
 
+            timestamp += 1;
             size_t size = 0;
             auto entryStr = entry.encode();
             auto pentry = ReplLogValueEntryV2::decode(entryStr.c_str(), entryStr.size(), size);
@@ -312,30 +295,37 @@ TEST(ReplRecordV2, Common) {
             vec.emplace_back(entry);
         }
 
-        auto rv = ReplLogValueV2(chunkid, flag, txnid, count, nullptr, 0);
+        auto rv = ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, nullptr, 0);
         auto rvStr = rv.encode(vec);
         auto prv = ReplLogValueV2::decode(rvStr);
         EXPECT_TRUE(prv.ok());
         EXPECT_TRUE(rv.isEqualHdr(prv.value()));
-        EXPECT_EQ(prv.value().getEntryCount(), count);
-        
+        EXPECT_EQ(prv.value().getChunkId(), chunkid);
+        EXPECT_EQ(prv.value().getReplFlag(), flag);
+        EXPECT_EQ(prv.value().getTxnId(), txnid);
+        EXPECT_EQ(prv.value().getTimestamp(), timestamp);
+        EXPECT_EQ(prv.value().getVersionEp(), versionEp);
+
         size_t offset = ReplLogValueV2::fixedHeaderSize();
         auto desc = prv.value().getData();
         size_t datasize = prv.value().getDataSize();
 
-        for (size_t j = 0; j < prv.value().getEntryCount(); j++) {
-            const ReplLogValueEntryV2& entry = vec[j];
+        size_t j = 0;
+        while (offset < datasize) {
+            const ReplLogValueEntryV2& entry = vec[j++];
             size_t size = 0;
             auto v = ReplLogValueEntryV2::decode((const char*)desc + offset, datasize - offset, size);
             EXPECT_TRUE(v.ok());
             offset += size;
             EXPECT_EQ(entry, v.value());
         }
+        EXPECT_EQ(offset, datasize);
 
         auto expRepllog = ReplLogV2::decode(rkStr, rvStr);
         EXPECT_TRUE(expRepllog.ok());
-        EXPECT_EQ(expRepllog.value().getReplLogValueEntrys().size(), prv.value().getEntryCount());
-        for (size_t j = 0; j < prv.value().getEntryCount(); j++) {
+        EXPECT_TRUE(expRepllog.value().getReplLogValue().isEqualHdr(rv));
+        EXPECT_EQ(expRepllog.value().getReplLogValueEntrys().size(), vec.size());
+        for (j = 0; j < vec.size(); j++) {
             const ReplLogValueEntryV2& entry = vec[j];
             const ReplLogValueEntryV2& entry2 = expRepllog.value().getReplLogValueEntrys()[j];
             size_t size = 0;

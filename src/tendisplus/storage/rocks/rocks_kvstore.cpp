@@ -210,8 +210,11 @@ Expected<uint64_t> RocksTxn::commit() {
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
         ReplLogKeyV2 key(_binlogId);
+        // TODO(vinchen): versionEp should get from session
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,
-            _replLogValues.size(), nullptr, 0);
+            _replLogValues.back().getTimestamp(),
+            0,  // versionEp
+            nullptr, 0);
 
         binlogTxnId = _txnId;
         auto s = _txn->Put(key.encode(), val.encode(_replLogValues));
@@ -857,9 +860,10 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     return written;
 }
 
-Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start, uint64_t end,
-    Transaction *txn, std::ofstream *fs) {
-    uint64_t gap = getHighestBinlogId() - start;
+Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
+    uint64_t end, Transaction *txn, std::ofstream *fs) {
+    // not precise, but fast (gap >= getBinlogCnt())
+    uint64_t gap = getHighestBinlogId() - start + 1;
     TruncateBinlogResult result;
     uint64_t ts = 0;
     uint64_t written = 0;
@@ -916,6 +920,38 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start, ui
 
     return result;
 }
+
+Expected<uint64_t> RocksKVStore::getBinlogCnt(Transaction* txn) const {
+    auto bcursor = txn->createBinlogCursorV2(Transaction::MIN_VALID_TXNID,
+        true);
+    uint64_t cnt = 0;
+    while (true) {
+        auto v = bcursor->next();
+        if (!v.ok()) {
+            if (v.status().code() == ErrorCodes::ERR_EXHAUST)
+                break;
+
+            return v.status();
+        }
+        cnt += 1;
+    }
+    return cnt;
+}
+Expected<bool> RocksKVStore::validateAllBinlog(Transaction* txn) const {
+    auto bcursor = txn->createBinlogCursorV2(Transaction::MIN_VALID_TXNID,
+        true);
+    while (true) {
+        auto v = bcursor->nextV2();
+        if (!v.ok()) {
+            if (v.status().code() == ErrorCodes::ERR_EXHAUST)
+                break;
+
+            return v.status();
+        }
+    }
+    return true;
+}
+
 #endif
 
 Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
@@ -1462,7 +1498,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
                 }
 
                 if (i->second.second != Transaction::TXNID_UNINITED) {
-                    _highestVisible = i->second.second;
+                    _highestVisible = i->first;
+                    INVARIANT_D(_highestVisible <= _nextBinlogSeq);
                 }
                 i = _aliveBinlogs.erase(i);
             }

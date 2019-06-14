@@ -545,8 +545,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
     size_t offset = ReplLogValueV2::fixedHeaderSize();
     auto data = value.value().getData();
     size_t dataSize = value.value().getDataSize();
-    auto count = value.value().getEntryCount();
-    for (size_t i = 0; i < count; i++) {
+    while (offset < dataSize) {
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
                         dataSize - offset, size);
@@ -561,6 +560,10 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
         if (!s.ok()) {
             return s;
         }
+    }
+
+    if (offset != dataSize) {
+        return { ErrorCodes::ERR_INTERNAL, "bad binlog" };
     }
 
     // store the binlog directly, same as master
@@ -684,7 +687,6 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
         snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
             _dumpPath.c_str(), storeId, storeId, currentId + 1, tbuf);
 
-        
         fs = KVStore::createBinlogFile(fname);
         if (!fs) {
             return fs;
@@ -697,11 +699,11 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
         v->fileCreateTime = SCLOCK::now();
         v->fileSize = strlen(BINLOG_HEADER_V2);
     }
-    
     return fs;
 }
 
-void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t ts) {
+void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
+                uint64_t ts) {
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->fileSize += written;
@@ -713,7 +715,9 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t
             v->fs->close();
             v->fs.reset();
         }
-        v->timestamp = ts;
+        if (ts) {
+            v->timestamp = ts;
+        }
     }
 }
 #endif

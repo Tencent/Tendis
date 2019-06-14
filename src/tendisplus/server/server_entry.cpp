@@ -42,7 +42,7 @@ ServerEntry::ServerEntry()
          _dbNum(CONFIG_DEFAULT_DBNUM) {
 }
 
-ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg) 
+ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     : ServerEntry() {
     _requirepass = std::make_shared<std::string>(cfg->requirepass);
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
@@ -344,7 +344,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
-    // NOTE(vinchen): process the ExtraProtocol of timestamp and version 
+    // NOTE(vinchen): process the ExtraProtocol of timestamp and version
     auto s = sess->processExtendProtocol();
     if (!s.ok()) {
         sess->setResponse(
@@ -608,7 +608,7 @@ void ServerEntry::stop() {
     _sessions.clear();
 
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
-        // NOTE(vinchen): if it's not the shutdown command, it should reset the 
+        // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
         _network.reset();
         _executor.reset();

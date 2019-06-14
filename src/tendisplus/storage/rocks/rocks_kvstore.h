@@ -182,6 +182,8 @@ class RocksKVStore: public KVStore {
     Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
         Transaction *txn, std::ofstream *fs) final;
     uint64_t saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
+    Expected<uint64_t> getBinlogCnt(Transaction* txn) const final;
+    Expected<bool> validateAllBinlog(Transaction* txn) const final;
 #endif
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
     Status compactRange(const std::string* begin, const std::string* end) final;

@@ -248,6 +248,8 @@ class KVStore {
     static std::ofstream* createBinlogFile(const std::string& name);
     virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
         Transaction *txn, std::ofstream *fs) = 0;
+    virtual Expected<uint64_t> getBinlogCnt(Transaction* txn) const = 0;
+    virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
 #endif
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(const std::string* begin,

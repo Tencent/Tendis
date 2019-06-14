@@ -374,7 +374,7 @@ class ReplLogValueV2 {
     ReplLogValueV2();
     ReplLogValueV2(const ReplLogValueV2&) = delete;
     ReplLogValueV2(ReplLogValueV2&&);
-    ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint32_t entryCount,
+    ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint64_t timestamp, uint64_t versionEp,
                 const uint8_t* data, size_t dataSize);
     static Expected<ReplLogValueV2> decode(const std::string& rvStr);
     static Expected<ReplLogValueV2> decode(const char* str, size_t size);
@@ -385,16 +385,18 @@ class ReplLogValueV2 {
     bool isEqualHdr(const ReplLogValueV2&) const;
     const uint8_t* getData() const { return _data; }
     size_t getDataSize() const { return _dataSize; }
-    uint32_t getEntryCount() const { return _entryCount; }
     ReplFlag getReplFlag() const { return _flag; }
     uint64_t getTxnId() const { return _txnId; }
     uint32_t getChunkId() const { return _chunkId; }
+    uint64_t getTimestamp() const { return _timestamp; }
+    uint64_t getVersionEp() const { return _versionEp; }
 
  private:
     uint32_t _chunkId;
     ReplFlag _flag;
     uint64_t _txnId;
-    uint32_t _entryCount;
+    uint64_t _timestamp;
+    uint64_t _versionEp;
     // NOTE(vinchen) : take care about "_data", the caller should guarantee the
     // memory is ok;
     // printer to the RecordValue.getValue().c_str()
@@ -420,6 +422,7 @@ class ReplLogRawV2 {
     std::string _key;
     std::string _val;
     uint64_t _binlogId;
+    uint64_t _timestamp;
 };
 
 class ReplLogV2 {
