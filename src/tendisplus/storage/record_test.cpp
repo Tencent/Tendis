@@ -14,7 +14,7 @@
 
 namespace tendisplus {
 
-static int genRand() {
+int genRand() {
     int grand = 0;
     uint32_t ms = nsSinceEpoch();
     grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
@@ -328,7 +328,6 @@ TEST(ReplRecordV2, Common) {
         for (j = 0; j < vec.size(); j++) {
             const ReplLogValueEntryV2& entry = vec[j];
             const ReplLogValueEntryV2& entry2 = expRepllog.value().getReplLogValueEntrys()[j];
-            size_t size = 0;
             EXPECT_EQ(entry, entry2);
         }
     }
@@ -336,26 +335,26 @@ TEST(ReplRecordV2, Common) {
 #endif
 
 TEST(TTLIndex, Prefix) {
-    uint64_t binlogid = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
-    auto rlk = TTLIndex();
+    auto rlk = TTLIndex("abc", RecordType::RT_KV, 0, 10);
     RecordKey rk(TTLIndex::CHUNKID, TTLIndex::DBID,
         RecordType::RT_TTL_INDEX, rlk.encode(), "");
     const std::string s = rk.encode();
+    char rt = rt2Char(RecordType::RT_TTL_INDEX);
     EXPECT_EQ(s[0], '\xff');
     EXPECT_EQ(s[1], '\xff');
     EXPECT_EQ(s[2], '\x00');
     EXPECT_EQ(s[3], '\x00');
-    EXPECT_EQ(s[4], rt2Char(RecordType::RT_TTL_INDEX));
+    EXPECT_EQ(s[4], rt);
     EXPECT_EQ(s[5], '\xff');
     EXPECT_EQ(s[6], '\xff');
     EXPECT_EQ(s[7], '\x00');
     EXPECT_EQ(s[8], '\x00');
-    const std::string& prefix = RecordKey::prefixReplLogV2();
+    const std::string& prefix = RecordKey::prefixTTLIndex();
     EXPECT_EQ(prefix[0], '\xff');
     EXPECT_EQ(prefix[1], '\xff');
     EXPECT_EQ(prefix[2], '\x00');
     EXPECT_EQ(prefix[3], '\x00');
-    EXPECT_EQ(prefix[4], rt2Char(RecordType::RT_TTL_INDEX));
+    EXPECT_EQ(prefix[4], rt);
     EXPECT_EQ(prefix[5], '\xff');
     EXPECT_EQ(prefix[6], '\xff');
     EXPECT_EQ(prefix[7], '\x00');

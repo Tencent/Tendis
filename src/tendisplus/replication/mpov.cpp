@@ -245,7 +245,6 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         txn->createBinlogCursorV2(binlogPos + 1);
 
     uint32_t cnt = 0;
-    uint64_t nowId = 0;
     size_t estimateSize = 0;
     uint64_t binlogId = binlogPos;
 

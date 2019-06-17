@@ -474,7 +474,6 @@ Expected<bool> RecordKey::validate(const std::string& key,
     size_t offset = 0;
     size_t rvsOffset = 0;
     size_t pkLen = 0;
-    size_t skLen = 0;
     uint32_t chunkid = 0;
     uint32_t dbid = 0;
     RecordType thisType = RecordType::RT_INVALID;
@@ -512,7 +511,6 @@ Expected<bool> RecordKey::validate(const std::string& key,
     if (!v.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid version len" };
     }
-    size_t versionLen = v.value().second;
     auto version = v.value().first;
     if (version != 0) {
         return{ ErrorCodes::ERR_DECODE, "invalid version in record key" };

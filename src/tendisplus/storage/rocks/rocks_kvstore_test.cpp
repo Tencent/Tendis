@@ -449,7 +449,8 @@ TEST(RocksKVStore, BinlogCursorV2) {
             EXPECT_EQ((uint16_t)log.getReplLogValue().getReplFlag(),
                 (uint16_t)ReplFlag::REPL_GROUP_START | (uint16_t)ReplFlag::REPL_GROUP_END);     // NOLINT
             EXPECT_EQ(log.getReplLogValue().getTxnId(), 3);
-            EXPECT_NE(log.getReplLogValue().getChunkId(), Transaction::CHUNKID_MULTI);      // NOLINT
+            uint64_t multi = Transaction::CHUNKID_MULTI;
+            EXPECT_NE(log.getReplLogValue().getChunkId(), multi);      // NOLINT
         }
 
         cnt += 1;
@@ -962,7 +963,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
                 std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
                 size_t cnt = genRand() % 123 + 1;
-                for (int j = 0; j < cnt; j++) {
+                for (size_t j = 0; j < cnt; j++) {
                     RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(j*range), "");
                     RecordValue rv("txn1", RecordType::RT_KV);
                     Status s;
