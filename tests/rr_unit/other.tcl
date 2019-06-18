@@ -6,18 +6,18 @@ start_server {tags {"other"}} {
         } {ok}
     }
 
-    test {SAVE - make sure there are all the types as values} {
+    #test {SAVE - make sure there are all the types as values} {
         # Wait for a background saving in progress to terminate
         # waitForBgsave r
-        r lpush mysavelist hello
-        r lpush mysavelist world
-        r set myemptykey {}
-        r set mynormalkey {blablablba}
-        r zadd mytestzset 10 a
-        r zadd mytestzset 20 b
-        r zadd mytestzset 30 c
+        #r lpush mysavelist hello
+        #r lpush mysavelist world
+        #r set myemptykey {}
+        #r set mynormalkey {blablablba}
+        #r zadd mytestzset 10 a
+        #r zadd mytestzset 20 b
+        #r zadd mytestzset 30 c
         #r debug reload
-    } {OK}
+    #} {OK}
 
     tags {slow} {
         if {$::accurate} {set iterations 10000} else {set iterations 1000}
@@ -38,15 +38,15 @@ start_server {tags {"other"}} {
         }
     }
 
-    test {BGSAVE} {
+    #test {BGSAVE} {
         #waitForBgsave r
         #r save
-        r set x 10
+        #r set x 10
         #r bgsave
         #waitForBgsave r
         #r debug reload
-        r get x
-    } {10}
+        #r get x
+    #} {10}
 
     test {SELECT an out of range DB} {
         catch {r select 1000000} err

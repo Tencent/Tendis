@@ -49,10 +49,11 @@ start_server {tags {"zset"}} {
             set err
         } {ERR*}
 
+        # NOTE: not support type command.
         test "ZADD XX option without key - $encoding" {
             r del ztmp
             assert {[r zadd ztmp xx 10 x] == 0}
-            assert {[r type ztmp] eq {none}}
+            # assert {[r type ztmp] eq {none}}
         }
 
         test "ZADD XX existing key - $encoding" {
