@@ -465,7 +465,7 @@ rocksdb::Options RocksKVStore::options() {
 
     options.max_total_wal_size = uint64_t(4294967296);  // 4GB
 
-    if (dbId() != CATALOG_NAME) {
+    if (_enableFilter && dbId() != CATALOG_NAME) {
         // setup the ttlcompactionfilter expect "catalog" db
         options.compaction_filter_factory.reset(
             new KVTtlCompactionFilterFactory(this));
@@ -857,6 +857,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _isRunning(false),
          _isPaused(false),
          _hasBackup(false),
+         _enableFilter(true),
          _mode(mode),
          _txnMode(txnMode),
          _optdb(nullptr),
@@ -868,6 +869,9 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _logOb(nullptr),
          // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
          _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)) {
+    if (cfg->noexpire) {
+        _enableFilter = false;
+    }
     Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id

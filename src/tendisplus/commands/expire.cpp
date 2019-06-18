@@ -68,7 +68,7 @@ Expected<bool> expireAfterNow(Session *sess,
         auto vt = rv.getRecordType();
         Status s;
 
-        if (vt != RecordType::RT_KV) {
+        if (vt != RecordType::RT_KV && !Command::noExpire()) {
             // delete old index entry
             auto oldTTL = rv.getTtl();
             TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);

@@ -41,6 +41,8 @@ class Command {
     bool isMultiKey() const;
     bool isWriteable() const;
     bool isAdmin() const;
+    static bool noExpire();
+    static void setNoExpire(bool cfg);
     int getFlags() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name
@@ -94,7 +96,8 @@ class Command {
     // protected by mutex
     static std::map<std::string, uint64_t> _unSeenCmds;
 
- private:
+    static bool _noexpire;
+private:
     static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
                             const RecordKey& rk, RecordType valueType,
                             const TTLIndex *ictx = nullptr);
@@ -122,6 +125,7 @@ class Command {
 
     std::atomic<uint64_t> _callTimes;
     std::atomic<uint64_t> _totalNanoSecs;
+
 };
 
 std::map<std::string, Command*>& commandMap();

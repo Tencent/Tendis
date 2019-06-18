@@ -17,6 +17,7 @@
 namespace tendisplus {
 
 std::mutex Command::_mutex;
+bool Command::_noexpire = false;
 
 // TODO(vinchen): limit the size of _unSeenCmds
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
@@ -63,6 +64,14 @@ bool Command::isWriteable() const {
 
 bool Command::isAdmin() const {
     return (_flags & CMD_ADMIN) != 0;
+}
+
+bool Command::noExpire() {
+    return _noexpire;
+}
+
+void Command::setNoExpire(bool cfg) {
+    _noexpire = cfg;
 }
 
 bool Command::isMultiKey() const {
@@ -533,7 +542,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         uint64_t currentTs = msSinceEpoch();
         uint64_t targetTtl = eValue.value().getTtl();
         RecordType valueType = eValue.value().getRecordType();
-        if (targetTtl == 0 || currentTs < targetTtl) {
+        if (_noexpire || targetTtl == 0 || currentTs < targetTtl) {
             if (valueType != tp && tp != RecordType::RT_DATA_META) {
                 return{ ErrorCodes::ERR_WRONG_TYPE, "" };
             }

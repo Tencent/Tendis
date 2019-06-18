@@ -133,7 +133,7 @@ class KeysCommand: public Command {
 
                 auto ttl = exptRcd.value().getRecordValue().getTtl();
                 if (keyType != RecordType::RT_DATA_META ||
-                    (ttl !=0 && ttl < ts)) {      // skip the expired key
+                    (!Command::noExpire() && ttl !=0 && ttl < ts)) {  // skip the expired key
                     continue;
                 }
                 result.emplace_back(std::move(key));

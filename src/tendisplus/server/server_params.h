@@ -41,6 +41,8 @@ class ServerParams {
 
     uint32_t protoMaxBulkLen;
     uint32_t dbNum;
+
+    bool noexpire;
 };
 }  // namespace tendisplus
 
