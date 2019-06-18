@@ -27,6 +27,8 @@ std::string& replaceAll(std::string& str,
     const std::string& old_value,
     const std::string& new_value);
 
+uint64_t getCurThreadId();
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER

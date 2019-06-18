@@ -1,6 +1,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 namespace mgl {
@@ -14,7 +15,8 @@ MGLock::MGLock()
      _targetHash(0),
      _mode(LockMode::LOCK_NONE),
      _res(LockRes::LOCKRES_UNINITED),
-     _resIter(_dummyList.end()) {
+     _resIter(_dummyList.end()),
+     _threadId(getCurThreadId()) {
 }
 
 MGLock::~MGLock() {

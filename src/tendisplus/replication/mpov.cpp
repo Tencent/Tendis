@@ -295,12 +295,16 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     }
     Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
     if (!s.ok()) {
+        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
+            << " writeData failed:" << s.toString() << "; Size:" << stringtoWrite.size();
         return s;
     }
 
     // TODO(vinchen): NO NEED TO READ OK?
     Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
+        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
+            << " readLine failed:" << exptOK.status().toString() << "; Size:" << stringtoWrite.size();
         return exptOK.status();
     } else if (exptOK.value() != "+OK") {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
@@ -489,7 +493,7 @@ void ReplManager::supplyFullSyncRoutine(
     // send binlogPos
     Status s = client->writeLine(
             std::to_string(bkInfo.value().getBinlogPos()),
-            std::chrono::seconds(1));
+            std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send binlogpos failed:" << s.toString();
@@ -505,7 +509,7 @@ void ReplManager::supplyFullSyncRoutine(
         writer.Uint64(kv.second);
     }
     writer.EndObject();
-    s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
+    s = client->writeLine(sb.GetString(), std::chrono::seconds(1000));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send filelist failed:" << s.toString();
@@ -515,7 +519,7 @@ void ReplManager::supplyFullSyncRoutine(
     std::string readBuf;
     readBuf.reserve(FILEBATCH);  // 20MB
     for (auto& fileInfo : bkInfo.value().getFileList()) {
-        s = client->writeLine(fileInfo.first, std::chrono::seconds(1));
+        s = client->writeLine(fileInfo.first, std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(ERROR) << "write fname:" << fileInfo.first
                         << " to client failed:" << s.toString();
@@ -539,7 +543,7 @@ void ReplManager::supplyFullSyncRoutine(
                             << " failed with err:" << strerror(errno);
                 return;
             }
-            s = client->writeData(readBuf, std::chrono::seconds(10));
+            s = client->writeData(readBuf, std::chrono::seconds(100));
             if (!s.ok()) {
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
                 return;

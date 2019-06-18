@@ -12,7 +12,7 @@
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
-std::shared_ptr<ServerParams> makeServerParam() {
+std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt, const std::string& dir) {
     const auto guard = MakeGuard([]{
         remove("test.cfg");
     });
@@ -20,13 +20,25 @@ std::shared_ptr<ServerParams> makeServerParam() {
     std::ofstream myfile;
     myfile.open("test.cfg");
     myfile << "bind 127.0.0.1\n";
-    myfile << "port 8811\n";
+    myfile << "port " << port << "\n";
     myfile << "loglevel debug\n";
-    myfile << "logdir ./log\n";
+    if (dir != "") {
+        myfile << "logdir ./" << dir <<"/log\n";
+        myfile << "dir ./" << dir <<"/db\n";
+        myfile << "dumpdir ./" << dir <<"/dump\n";
+        myfile << "pidfile ./" << dir << "/tendisplus.pid\n";
+    } else {
+        myfile << "logdir ./log\n";
+        myfile << "dir ./db\n";
+        myfile << "dumpdir ./dump\n";
+        myfile << "pidfile ./tendisplus.pid\n";
+    }
     myfile << "storage rocks\n";
-    myfile << "dir ./db\n";
     myfile << "rocks.blockcachemb 4096\n";
     myfile << "generallog on\n";
+    if (storeCnt != 0) {
+        myfile << "kvStoreCount "<< storeCnt << "\n";
+    }
     myfile.close();
 
     auto cfg = std::make_shared<ServerParams>();
@@ -57,6 +69,47 @@ void destroyEnv() {
     filesystem::remove_all("./log", ec);
     filesystem::remove_all("./db", ec);
 }
+
+bool setupReplEnv() {
+    std::error_code ec;
+    auto vec = { "master", "slave" };
+
+    for (auto v : vec) {
+        std::stringstream ss;
+        ss << "./" << v << "/log";
+        filesystem::remove_all(ss.str(), ec);
+        EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
+        EXPECT_TRUE(filesystem::create_directories(ss.str()));
+
+        ss.str("");
+        ss << "./" << v << "/db";
+        filesystem::remove_all(ss.str(), ec);
+        EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
+        EXPECT_TRUE(filesystem::create_directories(ss.str()));
+    }
+
+    return true;
+}
+
+bool destroyReplEnv() {
+    std::error_code ec;
+    auto vec = { "master", "slave" };
+
+    for (auto v : vec) {
+        std::stringstream ss;
+        ss << "./" << v << "/log";
+        filesystem::remove_all(ss.str(), ec);
+        EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
+
+        ss.str("");
+        ss << "./" << v << "/db";
+        filesystem::remove_all(ss.str(), ec);
+        EXPECT_TRUE(ec.value() == 0 || ec.value() == 2);
+    }
+
+    return true;
+}
+
 
 std::string getBulkValue(const std::string& reply, uint32_t index) {
     INVARIANT(index == 0);
@@ -264,6 +317,12 @@ void WorkLoad::expireKeys(const AllKeys &all_keys, uint64_t ttl) {
     }
 
     return;
+}
+
+void WorkLoad::slaveof(char* ip, uint32_t port) {
+    _session->setArgs({ "slaveof", ip, std::to_string(port) });
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
 }
 
 void WorkLoad::delKeys(const KeysWritten& keys) {

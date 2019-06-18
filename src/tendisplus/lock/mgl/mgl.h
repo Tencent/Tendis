@@ -49,6 +49,7 @@ class MGLock {
     std::condition_variable _cv;
     LockRes _res;
     std::list<MGLock*>::iterator _resIter;
+    uint64_t _threadId;
 
     static std::atomic<uint64_t> _idGen;
     static std::list<MGLock*> _dummyList;

@@ -362,7 +362,7 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
         std::stringstream ss;
         ss << "AUTH " << *masterauth;
         client->writeLine(ss.str(), std::chrono::seconds(1));
-        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
+        Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(WARNING) << "fullSync auth error:" << s.status().toString();
             return nullptr;
@@ -458,7 +458,7 @@ void ReplManager::controlRoutine() {
             std::lock_guard<std::mutex> lk(_mutex);
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
-            doSth = schedRecycLogInLock(now) || doSth;
+            //doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {
             std::this_thread::yield();

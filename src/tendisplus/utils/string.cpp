@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cctype>
 #include <locale>
+#include <thread>
+#include <sstream>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -228,6 +230,16 @@ std::string& replaceAll(std::string& str,
         else   break;
     }
     return str;
+}
+
+uint64_t getCurThreadId() {
+    std::ostringstream oss;
+    // TODO(vinchen): the performance is?
+    oss << std::this_thread::get_id();
+    std::string stid = oss.str();
+    unsigned long long tid = std::stoull(stid);
+
+    return tid;
 }
 
 }  // namespace tendisplus
