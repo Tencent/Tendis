@@ -28,6 +28,7 @@ ServerEntry::ServerEntry()
          _replMgr(nullptr),
          _indexMgr(nullptr),
          _pessimisticMgr(nullptr),
+         _mgLockMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -56,6 +57,11 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
 void ServerEntry::installPessimisticMgrInLock(
         std::unique_ptr<PessimisticMgr> o) {
     _pessimisticMgr = std::move(o);
+}
+
+void ServerEntry::installMGLockMgrInLock(
+    std::unique_ptr<mgl::MGLockMgr> o) {
+    _mgLockMgr = std::move(o);
 }
 
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
@@ -173,6 +179,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         kvStoreCount);
     installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
+    auto tmpMGLockMgr = std::make_unique <mgl::MGLockMgr>();
+    installMGLockMgrInLock(std::move(tmpMGLockMgr));
+
     // request executePool
     _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
@@ -248,6 +257,10 @@ SegmentMgr* ServerEntry::getSegmentMgr() const {
 
 PessimisticMgr* ServerEntry::getPessimisticMgr() {
     return _pessimisticMgr.get();
+}
+
+mgl::MGLockMgr* ServerEntry::getMGLockMgr() {
+    return _mgLockMgr.get();
 }
 
 IndexManager* ServerEntry::getIndexMgr() {
@@ -615,6 +628,7 @@ void ServerEntry::stop() {
         _replMgr.reset();
         _indexMgr.reset();
         _pessimisticMgr.reset();
+        _mgLockMgr.reset();
         _segmentMgr.reset();
     }
 

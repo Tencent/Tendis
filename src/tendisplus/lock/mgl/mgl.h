@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "tendisplus/lock/mgl/lock_defines.h"
+#include "tendisplus/lock/mgl/mgl_mgr.h"
 
 namespace tendisplus {
 
@@ -19,7 +20,7 @@ class LockSchedCtx;
 // if you want to lock different targets.
 class MGLock {
  public:
-    MGLock();
+    MGLock(MGLockMgr* mgr);
     MGLock(const MGLock&) = delete;
     MGLock(MGLock&&) = delete;
     ~MGLock();
@@ -49,6 +50,7 @@ class MGLock {
     std::condition_variable _cv;
     LockRes _res;
     std::list<MGLock*>::iterator _resIter;
+    MGLockMgr* _lockMgr;
     uint64_t _threadId;
 
     static std::atomic<uint64_t> _idGen;

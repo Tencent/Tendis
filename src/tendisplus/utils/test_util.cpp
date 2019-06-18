@@ -199,6 +199,9 @@ std::shared_ptr<ServerEntry> makeServerEntry(
         kvStoreCount);
     server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
 
+    auto tmpMGLockMgr = std::make_unique <mgl::MGLockMgr>();
+    server->installMGLockMgrInLock(std::move(tmpMGLockMgr));
+
     return server;
 }
 

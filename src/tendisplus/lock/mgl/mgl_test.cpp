@@ -36,7 +36,7 @@ TEST(LockShard, Align) {
 }
 
 TEST(MGL, OneTarget) {
-    MGLock l1, l2, l3, l4, l5;
+    MGLock l1(nullptr), l2(nullptr), l3(nullptr), l4(nullptr), l5(nullptr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something", LockMode::LOCK_IS, 1000),
@@ -55,7 +55,7 @@ TEST(MGL, OneTarget) {
 }
 
 TEST(MGL, MultiTarget) {
-    MGLock l1, l2;
+    MGLock l1(nullptr), l2(nullptr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something1", LockMode::LOCK_S, 1000),
@@ -65,7 +65,7 @@ TEST(MGL, MultiTarget) {
 }
 
 TEST(MGL, MultiThread) {
-    MGLock l1, l2, l3, l4, l5;
+    MGLock l1(nullptr), l2(nullptr), l3(nullptr), l4(nullptr), l5(nullptr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     EXPECT_EQ(l2.lock("something", LockMode::LOCK_IS, 1000),
@@ -88,7 +88,7 @@ TEST(MGL, MultiThread) {
 }
 
 TEST(MGL, Starvation) {
-    MGLock l1, l2, l3;
+    MGLock l1(nullptr), l2(nullptr), l3(nullptr);
     EXPECT_EQ(l1.lock("something", LockMode::LOCK_IS, 1000),
                       LockRes::LOCKRES_OK);
     std::thread tmp([&l2]() {

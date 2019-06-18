@@ -18,6 +18,7 @@
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
+#include "tendisplus/lock/mgl/mgl_mgr.h"
 
 namespace tendisplus {
 class Session;
@@ -69,6 +70,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void installCatalog(std::unique_ptr<Catalog>);
     void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
+    void ServerEntry::installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
 
     void stop();
     void waitStopComplete();
@@ -76,6 +78,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
     PessimisticMgr* getPessimisticMgr();
+    mgl::MGLockMgr* getMGLockMgr();
     IndexManager* getIndexMgr();
 
     const std::shared_ptr<std::string> requirepass() const;
@@ -121,6 +124,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<ReplManager> _replMgr;
     std::unique_ptr<IndexManager> _indexMgr;
     std::unique_ptr<PessimisticMgr> _pessimisticMgr;
+    std::unique_ptr<mgl::MGLockMgr> _mgLockMgr;
 
     std::vector<PStore> _kvstores;
     std::unique_ptr<Catalog> _catalog;
