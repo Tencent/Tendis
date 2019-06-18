@@ -4,6 +4,7 @@
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/invariant.h"
+#include "endian.h"
 
 namespace tendisplus {
 #ifdef BINLOG_V1
@@ -300,7 +301,7 @@ uint64_t KVStore::getCurrentTime() {
     return ts;
 }
 
-std::ofstream* KVStore::createBinlogFile(const std::string& name) {
+std::ofstream* KVStore::createBinlogFile(const std::string& name, uint32_t storeId) {
     std::ofstream* fs = new std::ofstream(name.c_str(),
         std::ios::out | std::ios::app | std::ios::binary);
     if (!fs->is_open()) {
@@ -311,6 +312,8 @@ std::ofstream* KVStore::createBinlogFile(const std::string& name) {
 
     // the header
     fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+    uint32_t storeIdTrans = htobe32(storeId);
+    fs->write(reinterpret_cast<char*>(&storeIdTrans), sizeof(storeIdTrans));
 
     return fs;
 }

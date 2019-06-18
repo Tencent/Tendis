@@ -188,6 +188,7 @@ struct KVStoreStat {
 };
 
 #define BINLOG_HEADER_V2 "BINLOG_V2\r\n"
+#define BINLOG_HEADER_V2_LEN (strlen(BINLOG_HEADER_V2) + sizeof(uint32_t))
 
 struct TruncateBinlogResult {
     TruncateBinlogResult()
@@ -245,7 +246,7 @@ class KVStore {
     virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
     virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
     virtual uint64_t getNextBinlogSeq() const = 0;
-    static std::ofstream* createBinlogFile(const std::string& name);
+    static std::ofstream* createBinlogFile(const std::string& name, uint32_t storeId);
     virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
         Transaction *txn, std::ofstream *fs) = 0;
     virtual Expected<uint64_t> getBinlogCnt(Transaction* txn) const = 0;

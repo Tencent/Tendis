@@ -404,6 +404,8 @@ TEST(RocksKVStore, BinlogCursorV2) {
     EXPECT_EQ(eTxn3.ok(), true);
     std::unique_ptr<Transaction> txn3 = std::move(eTxn3.value());
 
+    uint64_t ts = msSinceEpoch();
+    uint64_t binlogid = kvstore->getNextBinlogSeq();
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "b", ""),
@@ -418,11 +420,14 @@ TEST(RocksKVStore, BinlogCursorV2) {
 
     int32_t cnt = 0;
     while (true) {
+        // the cursor can't get the last binlog because of the snapshot
         auto v = bcursor->next();
         if (!v.ok()) {
             EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
             break;
         }
+        EXPECT_LE(v.value().getTimestamp(), ts);
+        EXPECT_EQ(v.value().getBinlogId(), binlogid - 1);
         cnt += 1;
     }
     EXPECT_EQ(cnt, 1);

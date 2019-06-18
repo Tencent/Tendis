@@ -37,7 +37,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     }
 
     BackupInfo bkInfo;
-    auto expPos = client->readLine(std::chrono::seconds(3));
+    auto expPos = client->readLine(std::chrono::seconds(1000));
     if (!expPos.ok()) {
         LOG(WARNING) << "fullSync req master error:"
                      << expPos.status().toString();
@@ -55,7 +55,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     }
     bkInfo.setBinlogPos(pos.value());
 
-    auto expFlist = client->readLine(std::chrono::seconds(1));
+    auto expFlist = client->readLine(std::chrono::seconds(100));
     if (!expFlist.ok()) {
         LOG(WARNING) << "fullSync req flist error:"
                      << expFlist.status().toString();
@@ -188,7 +188,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         if (finishedFiles.size() == flist.size()) {
             break;
         }
-        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
+        Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             return;
         }
@@ -215,7 +215,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             size_t batchSize = std::min(remain, FILEBATCH);
             remain -= batchSize;
             Expected<std::string> exptData =
-                client->read(batchSize, std::chrono::seconds(10));
+                client->read(batchSize, std::chrono::seconds(100));
             if (!exptData.ok()) {
                 LOG(ERROR) << "fullsync read bulk data failed:"
                             << exptData.status().toString();
@@ -299,7 +299,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         << ' ' << metaSnapshot.id
         << ' ' << metaSnapshot.binlogId;
     client->writeLine(ss.str(), std::chrono::seconds(1));
-    Expected<std::string> s = client->readLine(std::chrono::seconds(3));
+    Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
                 << " psync master failed with error:" << s.status().toString();
@@ -373,7 +373,8 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
     if (metaSnapshot->syncFromHost == "") {
         // if master is nil, try sched after 1 second
-        nextSched = nextSched + std::chrono::seconds(1);
+        LOG(WARNING) << "metaSnapshot->syncFromHost is nil, sleep 10 seconds";
+        nextSched = nextSched + std::chrono::seconds(10);
         return;
     }
 
@@ -687,7 +688,7 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
         snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
             _dumpPath.c_str(), storeId, storeId, currentId + 1, tbuf);
 
-        fs = KVStore::createBinlogFile(fname);
+        fs = KVStore::createBinlogFile(fname, storeId);
         if (!fs) {
             return fs;
         }
@@ -697,7 +698,7 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
         v->fs.reset(fs);
         v->fileSeq = currentId + 1;
         v->fileCreateTime = SCLOCK::now();
-        v->fileSize = strlen(BINLOG_HEADER_V2);
+        v->fileSize = BINLOG_HEADER_V2_LEN;
     }
     return fs;
 }
