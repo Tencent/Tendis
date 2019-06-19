@@ -47,12 +47,11 @@ uint32_t countTTLIndex(std::shared_ptr<ServerEntry> server,
     return scanned;
 }
 
-void testCreateDelIndex(std::shared_ptr<ServerEntry> server,
-                        std::shared_ptr<NetSession> session,
-                        uint32_t count, uint64_t ttl) {
-    uint64_t pttl = msSinceEpoch() + ttl * 1000;
-
-    WorkLoad work(server, session);
+AllKeys initData(std::shared_ptr<ServerEntry>& server,
+                uint32_t count) {
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(server, ctx1);
+    WorkLoad work(server, sess1);
     work.init();
 
     AllKeys all_keys;
@@ -60,25 +59,121 @@ void testCreateDelIndex(std::shared_ptr<ServerEntry> server,
     auto kv_keys = work.writeWork(RecordType::RT_KV, count);
     all_keys.emplace_back(kv_keys);
 
-    auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 10);
+    auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
     all_keys.emplace_back(list_keys);
 
-    auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 10);
+    auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 50);
     all_keys.emplace_back(hash_keys);
 
-    auto set_keys = work.writeWork(RecordType::RT_SET_META, count, 10);
+    auto set_keys = work.writeWork(RecordType::RT_SET_META, count, 50);
     all_keys.emplace_back(set_keys);
 
-    auto zset_keys = work.writeWork(RecordType::RT_ZSET_META, count, 10);
+    auto zset_keys = work.writeWork(RecordType::RT_ZSET_META, count, 50);
     all_keys.emplace_back(zset_keys);
 
-    work.expireKeys(all_keys, ttl);
+    return std::move(all_keys);
+}
 
-    work.delKeys(kv_keys);
-    work.delKeys(list_keys);
-    work.delKeys(hash_keys);
-    work.delKeys(set_keys);
-    work.delKeys(zset_keys);
+void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
+    const std::shared_ptr<ServerEntry>& slave) {
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(master, ctx1);
+    WorkLoad work1(master, sess1);
+    work1.init();
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(slave, ctx2);
+    WorkLoad work2(master, sess2);
+    work2.init();
+
+    INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
+
+    for (size_t i = 0; i < master->getKVStoreCount(); i++) {
+        auto binlogPos1 = work1.getIntResult({ "binlogpos", std::to_string(i) });
+        while (true) {
+            auto binlogPos2 = work2.getIntResult({ "binlogpos", std::to_string(i) });
+            if (!binlogPos2.ok()) {
+                EXPECT_TRUE(binlogPos2.status().code() == ErrorCodes::ERR_EXHAUST);
+                EXPECT_TRUE(binlogPos1.status().code() == ErrorCodes::ERR_EXHAUST);
+                break;
+            }
+            if (binlogPos2.value() < binlogPos1.value()) {
+                LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
+                    << "<" << binlogPos2.value() << ");";
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            } else {
+                EXPECT_EQ(binlogPos1.value(), binlogPos2.value());
+                break;
+            }
+        }
+    }
+}
+
+void compareData(const std::shared_ptr<ServerEntry>& master,
+    const std::shared_ptr<ServerEntry>& slave) {
+    INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
+
+    for (size_t i = 0; i < master->getKVStoreCount(); i++) {
+        uint64_t count1 = 0;
+        uint64_t count2 = 0;
+        auto kvstore1 = master->getStores()[i];
+        auto kvstore2 = slave->getStores()[i];
+
+        auto ptxn2 = kvstore2->createTransaction();
+        EXPECT_TRUE(ptxn2.ok());
+        std::unique_ptr<Transaction> txn2 = std::move(ptxn2.value());
+
+        auto ptxn1 = kvstore1->createTransaction();
+        EXPECT_TRUE(ptxn1.ok());
+        std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
+        auto cursor1 = txn1->createCursor();
+        cursor1->seek("");
+        while (true) {
+            Expected<Record> exptRcd1 = cursor1->next();
+            if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd1.ok());
+            count1++;
+
+            // check the binlog together
+            auto exptRcdv2 = kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+            EXPECT_TRUE(exptRcdv2.ok());
+            EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+        }
+
+        auto cursor2 = txn2->createCursor();
+        cursor2->seek("");
+        while (true) {
+            Expected<Record> exptRcd2 = cursor2->next();
+            if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd2.ok());
+            count2++;
+        }
+
+        EXPECT_EQ(count1, count2);
+    }
+}
+
+void testInsertOrDelKeys(std::shared_ptr<ServerEntry> server,
+                        std::shared_ptr<NetSession> session,
+                        uint32_t count, uint64_t ttl) {
+    uint64_t pttl = msSinceEpoch() + ttl * 1000;
+
+    WorkLoad work(server, session);
+    work.init();
+
+    AllKeys all_keys = initData(server, 10);
+
+    // wait slave 
+
+    //work.expireKeys(all_keys, ttl);
+
+    for (auto k : all_keys) {
+        work.delKeys(k);
+    }
 
     ASSERT_EQ(0u, countTTLIndex(server, session, pttl));
 }
@@ -245,14 +340,16 @@ TEST(Repl, oneStore) {
 
     auto hosts = makeReplEnv(1);
 
-    sleep(1000);
-
     auto& master = hosts.first;
     auto& slave = hosts.second;
 
+    auto allKeys = initData(master, 1000);
 
-    slave->stop();
+    waitSlaveCatchup(master, slave);
+    compareData(master, slave);
+
     master->stop();
+    slave->stop();
 
     ASSERT_EQ(slave.use_count(), 1);
     ASSERT_EQ(master.use_count(), 1);

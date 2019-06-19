@@ -82,6 +82,7 @@ class Command {
     static std::string fmtOne();
     static std::string fmtZero();
     static std::string fmtLongLong(int64_t);
+    static Expected<uint64_t> getInt64FromFmtLongLong(const std::string & str);
     static std::string fmtBusyKey();
 
     static std::string fmtBulk(const std::string& s);

@@ -44,13 +44,15 @@ class WorkLoad {
         _session(session),
         _max_key_len(32) { }
 
-    void init() { std::srand(std::time(nullptr)); }
+    void init() { std::srand((uint32_t)msSinceEpoch()); }
     KeysWritten writeWork(RecordType, uint32_t count,
                           uint32_t maxlen = 0, bool sharename = true);
     void expireKeys(const AllKeys &keys, uint64_t ttl);
     void slaveof(char* ip, uint32_t port);
     void delKeys(const KeysWritten &keys);
     void setMaxKeyLen(uint32_t max_key_len);
+    Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
+    std::string getStringResult(const std::vector<std::string>& args);
 
  private:
     TestSession _session;

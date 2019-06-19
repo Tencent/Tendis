@@ -10,6 +10,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt, const std::string& dir) {
@@ -326,6 +327,24 @@ void WorkLoad::slaveof(char* ip, uint32_t port) {
     _session->setArgs({ "slaveof", ip, std::to_string(port) });
     auto expect = Command::runSessionCmd(_session.get());
     EXPECT_TRUE(expect.ok());
+}
+
+Expected<uint64_t> WorkLoad::getIntResult(const std::vector<std::string>& args) {
+    _session->setArgs(args);
+    auto expect = Command::runSessionCmd(_session.get());
+    if (!expect.ok()) {
+        return expect.status();
+    }
+
+    return Command::getInt64FromFmtLongLong(expect.value());
+}
+
+std::string WorkLoad::getStringResult(const std::vector<std::string>& args) {
+    _session->setArgs(args);
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+
+    return expect.value();
 }
 
 void WorkLoad::delKeys(const KeysWritten& keys) {

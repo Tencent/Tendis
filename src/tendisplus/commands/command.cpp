@@ -657,6 +657,21 @@ std::string Command::fmtLongLong(int64_t v) {
     return ss.str();
 }
 
+Expected<uint64_t> Command::getInt64FromFmtLongLong(const std::string & str) {
+    if (str[0] != ':') {
+        return{ ErrorCodes::ERR_INTERGER, "not a fmtLongLong" };
+    }
+
+    size_t end = str.find('\r');
+    if (end == std::string::npos) {
+        return{ ErrorCodes::ERR_INTERGER, "not a fmtLongLong" };
+    }
+
+    std::string s(str.c_str() + 1, end - 1);
+    return tendisplus::stoull(s);
+}
+
+
 std::string Command::fmtBusyKey() {
     return "-BUSYKEY Target key name already exists.\r\n";
 }

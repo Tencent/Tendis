@@ -88,7 +88,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t protoMaxBulkLen() const { return _protoMaxBulkLen; }
     uint32_t dbNum() const { return _dbNum; }
 
-    std::vector<PStore> getStores() const;
+    const std::vector<PStore>& getStores() const { return _kvstores; }
 
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
