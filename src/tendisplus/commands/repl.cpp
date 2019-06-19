@@ -525,13 +525,71 @@ class ApplyBinlogsCommandV2 : public Command {
         for (size_t i = 2; i < args.size(); i += 2) {
             Status s = replMgr->applyBinlogV2(storeId, sess->id(),
                 args[i], args[i+1]);
-            if (s.ok()) {
+            if (!s.ok()) {
                 return s;
             }
         }
         return Command::fmtOK();
     }
 } applyBinlogsV2Command;
+
+
+class BinlogHeartbeatCommand : public Command {
+public:
+    BinlogHeartbeatCommand()
+        :Command("binlog_heartbeat", "a") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // binlog_heartbeat storeId 
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint64_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        storeId = exptStoreId.value();
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IS first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Status s = replMgr->applyBinlogV2(storeId, sess->id(), "", "");
+        if (!s.ok()) {
+            return s;
+        }
+        return Command::fmtOK();
+    }
+} binlogHeartbeatCmd;
 #endif
 
 class SlaveofCommand: public Command {

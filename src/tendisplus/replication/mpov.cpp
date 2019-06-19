@@ -56,7 +56,8 @@ bool ReplManager::isFullSupplierFull() const {
 
 void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    auto guard = MakeGuard([this, &nextSched, storeId, clientId] {
+    SCLOCK::time_point lastSend = SCLOCK::time_point::min();
+    auto guard = MakeGuard([this, &nextSched, &lastSend, storeId, clientId] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& mpov = _pushStatus[storeId];
         if (mpov.find(clientId) == mpov.end()) {
@@ -67,6 +68,9 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         if (nextSched > mpov[clientId]->nextSchedTime) {
             mpov[clientId]->nextSchedTime = nextSched;
         }
+        if (lastSend > mpov[clientId]->lastSendBinlogTime) {
+            mpov[clientId]->lastSendBinlogTime = lastSend;
+        }
         // currently nothing waits for master's push process
         // _cv.notify_all();
     });
@@ -74,25 +78,32 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     uint64_t binlogPos = 0;
     BlockingTcpClient *client = nullptr;
     uint32_t dstStoreId = 0;
+    bool needHeartbeat = false;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_incrPaused ||
                 _pushStatus[storeId].find(clientId) ==
                             _pushStatus[storeId].end()) {
             nextSched = nextSched + std::chrono::seconds(1);
+            lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
             return;
         }
         binlogPos = _pushStatus[storeId][clientId]->binlogPos;
         client = _pushStatus[storeId][clientId]->client.get();
         dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
+        lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
     }
-
 #ifdef BINLOG_V1
     Expected<uint64_t> newPos =
             masterSendBinlog(client, storeId, dstStoreId, binlogPos);
 #else
+    // for safe : -5
+    if (lastSend + std::chrono::seconds(BINLOGHEARTBEATSECS - 5) < SCLOCK::now()) {
+        needHeartbeat = true;
+    }
+
     Expected<uint64_t> newPos =
-            masterSendBinlogV2(client, storeId, dstStoreId, binlogPos);
+            masterSendBinlogV2(client, storeId, dstStoreId, binlogPos, needHeartbeat);
 #endif
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
@@ -103,13 +114,17 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         _pushStatus[storeId].erase(clientId);
         return;
     } else {
-        std::lock_guard<std::mutex> lk(_mutex);
-        _pushStatus[storeId][clientId]->binlogPos = newPos.value();
         if (newPos.value() > binlogPos) {
             nextSched = SCLOCK::now();
+            lastSend = nextSched;
         } else {
             nextSched = SCLOCK::now() + std::chrono::seconds(1);
+            if (needHeartbeat) {
+                lastSend = SCLOCK::now();
+            }
         }
+        std::lock_guard<std::mutex> lk(_mutex);
+        _pushStatus[storeId][clientId]->binlogPos = newPos.value();
     }
 }
 
@@ -215,7 +230,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
 }
 #else
 Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
-    uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
+    uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart) {
     constexpr uint32_t suggestBatch = 64;
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
 
@@ -277,11 +292,21 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         }
     }
 
-    // TODO(vinchen): too more copy
     std::stringstream ss2;
-    Command::fmtMultiBulkLen(ss2, cnt * 2 + 2);
-    // ss2 << ss.rdbuf();
-    ss2 << ss.str();
+    if (cnt == 0) {
+        if (!needHeartBeart) {
+            return binlogPos;
+        }
+        // keep the client alive
+        Command::fmtMultiBulkLen(ss2, 2);
+        Command::fmtBulk(ss2, "binlog_heartbeat");
+        Command::fmtBulk(ss2, std::to_string(dstStoreId));
+    } else {
+        // TODO(vinchen): too more copy
+        Command::fmtMultiBulkLen(ss2, cnt * 2 + 2);
+        // ss2 << ss.rdbuf();
+        ss2 << ss.str();
+    }
 
     std::string stringtoWrite = ss2.str();
     uint32_t secs = 1;
@@ -425,6 +450,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                      static_cast<uint32_t>(dstStoreId),
                      binlogPos,
                      SCLOCK::now(),
+                     SCLOCK::time_point::min(),
                      std::move(client),
                      clientId}));
         return true;

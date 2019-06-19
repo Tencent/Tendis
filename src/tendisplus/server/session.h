@@ -34,6 +34,7 @@ class Session: public std::enable_shared_from_this<Session> {
     std::string getName() const;
     void setName(const std::string&);
     static Session* getCurSess();
+    static void setCurSess(Session* sess);
 
  protected:
     std::vector<std::string> _args;

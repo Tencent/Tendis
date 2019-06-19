@@ -124,9 +124,13 @@ std::unique_ptr<BinlogCursorV2> RocksTxn::createBinlogCursorV2(
     if (begin <= Transaction::MIN_VALID_TXNID) {
         auto k = BinlogCursorV2::getMinBinlogId(this);
         if (!k.ok()) {
-            LOG(ERROR) << "BinlogCursorV2::getMinBinlogId() ERROR: "
-                << k.status().toString();
-            begin = Transaction::TXNID_UNINITED;
+            if (k.status().code() == ErrorCodes::ERR_EXHAUST) {
+                begin = hv + 1;
+            } else {
+                LOG(ERROR) << "BinlogCursorV2::getMinBinlogId() ERROR: "
+                    << k.status().toString();
+                begin = Transaction::TXNID_UNINITED;
+            }
         } else {
             begin = k.value();
         }

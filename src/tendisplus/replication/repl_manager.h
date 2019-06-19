@@ -36,6 +36,7 @@ struct MPovStatus {
     // the greatest id that has been applied
     uint64_t binlogPos;
     SCLOCK::time_point nextSchedTime;
+    SCLOCK::time_point lastSendBinlogTime;
     std::shared_ptr<BlockingTcpClient> client;
     uint64_t clientId;
 };
@@ -130,7 +131,7 @@ class ReplManager {
             uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
 #else
     Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
-        uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
+        uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart);
     std::ofstream* getCurBinlogFs(uint32_t storeid);
     void updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t ts);
 #endif
@@ -204,6 +205,7 @@ class ReplManager {
     static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
     static constexpr size_t BINLOGSIZE = 1024 * 1024 * 64;
     static constexpr size_t BINLOGSYNCSECS = 20 * 60;
+    static constexpr size_t BINLOGHEARTBEATSECS = 60;
 };
 
 }  // namespace tendisplus

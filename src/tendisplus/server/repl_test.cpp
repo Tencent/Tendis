@@ -225,9 +225,9 @@ makeReplEnv(uint32_t storeCnt) {
     INVARIANT(s.ok());
     {
         auto ctx = std::make_shared<asio::io_context>();
-        auto session = makeSession(master, ctx);
+        auto session = makeSession(slave, ctx);
 
-        WorkLoad work(master, session);
+        WorkLoad work(slave, session);
         work.init();
         work.slaveof("127.0.0.1", 1111);
     }
@@ -258,7 +258,7 @@ TEST(Repl, oneStore) {
     ASSERT_EQ(master.use_count(), 1);
 }
 
-TEST(IndexManager, scanIndexWhileExpire) {
+TEST_NO(IndexManager, scanIndexWhileExpire) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
 
@@ -288,7 +288,7 @@ TEST(IndexManager, scanIndexWhileExpire) {
     SyncPoint::GetInstance()->ClearAllCallBacks();
 }
 
-TEST(IndexManager, singleJobRunning) {
+TEST_NO(IndexManager, singleJobRunning) {
     uint64_t totalDequeue = 0;
     uint64_t totalEnqueue = 0;
 

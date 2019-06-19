@@ -273,7 +273,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(10) <= SCLOCK::now()) {
+        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS) <= SCLOCK::now()) {
             return true;
         }
         return false;
@@ -350,8 +350,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
     LOG(INFO) << "store:" << metaSnapshot.id
-                << ",binlogId:" << metaSnapshot.binlogId
-                << " psync master succ";
+        << ",binlogId:" << metaSnapshot.binlogId
+        << " psync master succ."
+        << "session id: " << sessionId << ";";
 }
 
 void ReplManager::slaveSyncRoutine(uint32_t storeId) {
@@ -472,9 +473,10 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     return {ErrorCodes::ERR_OK, ""};
 }
 #else
+// if logKey == "", it means binlog_heartbeat
 Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
     const std::string& logKey, const std::string& logValue) {
-    // NOTE(deyukong): donot lock store in IX mode again
+    // NOTE(deyukong): donot lock store in IX/IS mode again
     // the caller has duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
@@ -501,14 +503,20 @@ Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
         return{ ErrorCodes::ERR_NOTFOUND, "sessionId not match" };
     }
 
-    auto binlog = applySingleTxnV2(storeId, logKey, logValue);
-    if (!binlog.ok()) {
-        return binlog.status();
+    if (logKey == "") {
+        // binlog_heartbeat
+        // do nothing
     } else {
-        std::lock_guard<std::mutex> lk(_mutex);
-        // NOTE(vinchen): store the binlogId without changeReplState()
-        // If it's shutdown, we can get the largest binlogId from rocksdb.
-        _syncMeta[storeId]->binlogId = binlog.value();
+        auto binlog = applySingleTxnV2(storeId, logKey, logValue);
+        if (!binlog.ok()) {
+            return binlog.status();
+        }
+        else {
+            std::lock_guard<std::mutex> lk(_mutex);
+            // NOTE(vinchen): store the binlogId without changeReplState()
+            // If it's shutdown, we can get the largest binlogId from rocksdb.
+            _syncMeta[storeId]->binlogId = binlog.value();
+        }
     }
     return{ ErrorCodes::ERR_OK, "" };
 }

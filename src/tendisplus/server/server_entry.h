@@ -70,7 +70,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void installCatalog(std::unique_ptr<Catalog>);
     void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
-    void ServerEntry::installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
+    void installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
 
     void stop();
     void waitStopComplete();
@@ -100,8 +100,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getKVStoreCount() const;
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
-    static void logWarning(const std::string& str);
-    static void logError(const std::string& str);
+    static void logWarning(const std::string& str, Session* sess = nullptr);
+    static void logError(const std::string& str, Session* sess = nullptr);
 
  private:
     ServerEntry();

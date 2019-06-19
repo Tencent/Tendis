@@ -200,7 +200,7 @@ Status ReplManager::startup() {
             new RecycleBinlogStatus {
                 false,
                 tp,
-                Transaction::MIN_VALID_TXNID,
+                Transaction::TXNID_UNINITED,
                 fileSeq,
                 0,
                 tp,
@@ -232,7 +232,7 @@ Status ReplManager::startup() {
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
+                    recBinlogStat->firstBinlogId = Transaction::TXNID_UNINITED;
                     recBinlogStat->timestamp = 0;
                     _logRecycStatus.emplace_back(std::move(recBinlogStat));
                 } else {
@@ -485,7 +485,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         // NOTE(vinchen): like flushdb, the binlog is deleted, is should
         // reset the firstBinlogId
         if (hasError) {
-            v->firstBinlogId = Transaction::MIN_VALID_TXNID;
+            v->firstBinlogId = Transaction::TXNID_UNINITED;
         } else {
             v->firstBinlogId = start;
         }

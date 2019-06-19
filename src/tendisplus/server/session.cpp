@@ -18,11 +18,14 @@ Session::Session(std::shared_ptr<ServerEntry> svr)
          _ctx(std::make_unique<SessionCtx>()),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
-    curSession = this;
 }
 
 Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
+}
+
+void Session::setCurSess(Session* sess) {
+    curSession = sess;
 }
 
 Session* Session::getCurSess() {
@@ -98,6 +101,8 @@ LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
     INVARIANT(svr != nullptr);
+    LOG(INFO) << "local session, id:" << _sess->id()
+        << " destroyed";
     svr->endSession(_sess->id());
 }
 

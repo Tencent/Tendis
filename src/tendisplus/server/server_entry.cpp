@@ -90,8 +90,7 @@ void ServerEntry::logGeneral(Session *sess) {
     LOG(INFO) << sess->getCmdStr();
 }
 
-void ServerEntry::logWarning(const std::string& str) {
-    Session * sess = Session::getCurSess();
+void ServerEntry::logWarning(const std::string& str, Session* sess) {
     std::stringstream ss;
     if (sess) {
         ss << sess->id() << "cmd:" << sess->getCmdStr();
@@ -102,8 +101,7 @@ void ServerEntry::logWarning(const std::string& str) {
     LOG(WARNING) << ss.str();
 }
 
-void ServerEntry::logError(const std::string& str) {
-    Session * sess = Session::getCurSess();
+void ServerEntry::logError(const std::string& str, Session* sess) {
     std::stringstream ss;
     if (sess) {
         ss << sess->id() << "cmd:" << sess->getCmdStr();
@@ -115,7 +113,7 @@ void ServerEntry::logError(const std::string& str) {
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {
-    INVARIANT(_kvstores.size() == _catalog->getKVStoreCount());
+    INVARIANT_D(_kvstores.size() == _catalog->getKVStoreCount());
     return _catalog->getKVStoreCount();
 }
 
@@ -295,7 +293,7 @@ void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     sess->start();
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
-        LOG(FATAL) << "add conn:" << id << ",id already exists";
+        LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
     _sessions[id] = std::move(sess);
 }
@@ -339,20 +337,20 @@ std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
     return sesses;
 }
 
-bool ServerEntry::processRequest(uint64_t connId) {
+bool ServerEntry::processRequest(uint64_t sessionId) {
     Session *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
             return false;
         }
-        auto it = _sessions.find(connId);
+        auto it = _sessions.find(sessionId);
         if (it == _sessions.end()) {
-            LOG(FATAL) << "conn:" << connId << ",invalid state";
+            LOG(FATAL) << "session id:" << sessionId << ",invalid state";
         }
         sess = it->second.get();
         if (sess == nullptr) {
-            LOG(FATAL) << "conn:" << connId << ",null in servermap";
+            LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
         }
     }
     // general log if nessarry
@@ -372,7 +370,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
         return true;
     }
     if (expCmdName.value() == "fullsync") {
-        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -381,7 +379,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
         return false;
     } else if (expCmdName.value() == "incrsync") {
-        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();

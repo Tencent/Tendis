@@ -175,12 +175,12 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
         if (sess->getCtx()->isReplOnly()) {
             // NOTE(vinchen): If it's a slave, the connection should be closed
             // when there is an error. And the error should be log
-            ServerEntry::logError(v.status().toString());
+            ServerEntry::logError(v.status().toString(), sess);
 
             auto vv = dynamic_cast<NetSession*>(sess);
             vv->setCloseAfterRsp();
         } else if (v.status().code() == ErrorCodes::ERR_INTERNAL) {
-            ServerEntry::logError(v.status().toString());
+            ServerEntry::logError(v.status().toString(), sess);
         }
     }
     return v;
