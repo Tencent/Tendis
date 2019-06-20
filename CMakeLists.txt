@@ -1,9 +1,9 @@
 cmake_minimum_required (VERSION 2.8.0)
 project (TENDIS_PLUS)
 
-message("TODO(deyukong): currently libsnappy depends on the system provided, integrate it into thirdparty")
-message("TODO(deyukong): currently jemalloc can only be used by LD_PRELOAD, integrate it into thirdparty \
- and compile internally")
+#message("TODO(deyukong): currently libsnappy depends on the system provided, integrate it into thirdparty")
+#message("TODO(deyukong): currently jemalloc can only be used by LD_PRELOAD, integrate it into thirdparty \
+# and compile internally")
 
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})
@@ -44,7 +44,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 if(CMAKE_COMPILER_IS_GNUCC)
-	option(ENABLE_JEMALLOC "enable jemalloc" ON)
+    #option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	if(ENABLE_JEMALLOC)
 		list(APPEND SYS_LIBS jemalloc)

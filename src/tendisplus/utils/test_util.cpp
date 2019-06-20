@@ -323,7 +323,7 @@ void WorkLoad::expireKeys(const AllKeys &all_keys, uint64_t ttl) {
     return;
 }
 
-void WorkLoad::slaveof(char* ip, uint32_t port) {
+void WorkLoad::slaveof(const std::string& ip, uint32_t port) {
     _session->setArgs({ "slaveof", ip, std::to_string(port) });
     auto expect = Command::runSessionCmd(_session.get());
     EXPECT_TRUE(expect.ok());

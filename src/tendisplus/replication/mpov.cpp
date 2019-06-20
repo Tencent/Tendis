@@ -231,7 +231,8 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
 #else
 Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart) {
-    constexpr uint32_t suggestBatch = 64;
+    // TODO(vinchen): to be options
+    constexpr uint32_t suggestBatch = 256;
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
 
     LocalSessionGuard sg(_svr);

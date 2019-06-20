@@ -48,7 +48,7 @@ class WorkLoad {
     KeysWritten writeWork(RecordType, uint32_t count,
                           uint32_t maxlen = 0, bool sharename = true);
     void expireKeys(const AllKeys &keys, uint64_t ttl);
-    void slaveof(char* ip, uint32_t port);
+    void slaveof(const std::string& ip, uint32_t port);
     void delKeys(const KeysWritten &keys);
     void setMaxKeyLen(uint32_t max_key_len);
     Expected<uint64_t> getIntResult(const std::vector<std::string>& args);

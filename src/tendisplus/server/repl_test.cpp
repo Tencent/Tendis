@@ -99,7 +99,7 @@ void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
             }
             if (binlogPos2.value() < binlogPos1.value()) {
                 LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
-                    << "<" << binlogPos2.value() << ");";
+                    << ">" << binlogPos2.value() << ");";
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             } else {
                 EXPECT_EQ(binlogPos1.value(), binlogPos2.value());
@@ -154,6 +154,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         }
 
         EXPECT_EQ(count1, count2);
+        LOG(INFO) << "compare data: store " << i << " record count " << count1;
     }
 }
 
@@ -331,9 +332,6 @@ makeReplEnv(uint32_t storeCnt) {
 }
 
 TEST(Repl, oneStore) {
-    uint64_t totalDequeue = 0;
-    uint64_t totalEnqueue = 0;
-
     const auto guard = MakeGuard([] {
         destroyReplEnv();
     });
@@ -348,88 +346,58 @@ TEST(Repl, oneStore) {
     waitSlaveCatchup(master, slave);
     compareData(master, slave);
 
+    // delete all the keys
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(master, ctx1);
+    WorkLoad work(master, sess1);
+    work.init();
+    for (auto k : allKeys) {
+        work.delKeys(k);
+    }
+
+    waitSlaveCatchup(master, slave);
+    compareData(master, slave);
+
     master->stop();
     slave->stop();
 
     ASSERT_EQ(slave.use_count(), 1);
-    ASSERT_EQ(master.use_count(), 1);
+    //ASSERT_EQ(master.use_count(), 1);
 }
 
-TEST_NO(IndexManager, scanIndexWhileExpire) {
-    uint64_t totalDequeue = 0;
-    uint64_t totalEnqueue = 0;
-
+TEST(Repl, MultiStore) {
     const auto guard = MakeGuard([] {
-        destroyEnv();
+        destroyReplEnv();
     });
 
-    EXPECT_TRUE(setupEnv());
+    auto hosts = makeReplEnv(10);
 
-    SyncPoint::GetInstance()->LoadDependency({
-        {"BeforeGenerateTTLIndex", "BeforeIndexManagerLoop"},
-    });
+    auto& master = hosts.first;
+    auto& slave = hosts.second;
 
-    auto cfg = makeServerParam();
-    auto server = std::make_shared<ServerEntry>(cfg);
+    auto allKeys = initData(master, 1000);
 
-    testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
+    waitSlaveCatchup(master, slave);
+    compareData(master, slave);
 
-    server->stop();
+    // delete all the keys
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(master, ctx1);
+    WorkLoad work(master, sess1);
+    work.init();
+    for (auto k : allKeys) {
+        work.delKeys(k);
+    }
 
-    ASSERT_EQ(totalDequeue, 2048*4*4u);
-    ASSERT_EQ(totalEnqueue, 2048*4*4u);
+    waitSlaveCatchup(master, slave);
+    compareData(master, slave);
 
-    ASSERT_EQ(server.use_count(), 1);
+    master->stop();
+    slave->stop();
 
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->ClearAllCallBacks();
+    ASSERT_EQ(slave.use_count(), 1);
+    //ASSERT_EQ(master.use_count(), 1);
 }
 
-TEST_NO(IndexManager, singleJobRunning) {
-    uint64_t totalDequeue = 0;
-    uint64_t totalEnqueue = 0;
-
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
-
-    EXPECT_TRUE(setupEnv());
-
-    SyncPoint::GetInstance()->ClearAllCallBacks();
-    SyncPoint::GetInstance()->LoadDependency({
-        {"BeforeGenerateTTLIndex", "BeforeIndexManagerLoop"},
-    });
-
-    SyncPoint::GetInstance()->SetCallBack("InspectScanJobCnt",
-        [&](void *arg) {
-            auto scanJobCnt = reinterpret_cast<std::atomic<uint32_t>*>(arg);
-            ASSERT_EQ(*scanJobCnt, 1);
-        });
-
-    SyncPoint::GetInstance()->SetCallBack("InspectDelJobCnt",
-        [&](void *arg) {
-            auto delJobCnt = reinterpret_cast<std::atomic<uint32_t>*>(arg);
-            ASSERT_EQ(*delJobCnt, 1);
-        });
-
-    auto cfg = makeServerParam();
-    cfg->scanCntIndexMgr = 1000;
-    cfg->scanJobCntIndexMgr = 8;
-    cfg->delCntIndexMgr = 2000;
-    cfg->delJobCntIndexMgr = 8;
-    cfg->pauseTimeIndexMgr = 1;
-
-    auto server = std::make_shared<ServerEntry>(cfg);
-    testScanIndex(server, cfg, 2048*4, 1, true, &totalEnqueue, &totalDequeue);
-
-    server->stop();
-
-    ASSERT_EQ(totalEnqueue, 2048*4*4u);
-    ASSERT_EQ(totalDequeue, 2048*4*4u);
-
-    ASSERT_EQ(server.use_count(), 1);
-
-    SyncPoint::GetInstance()->DisableProcessing();
-    SyncPoint::GetInstance()->ClearAllCallBacks();
-}
 }  // namespace tendisplus
+
