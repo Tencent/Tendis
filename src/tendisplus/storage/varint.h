@@ -27,6 +27,13 @@ std::vector<uint8_t> doubleEncode(double val);
 Expected<double> doubleDecode(const uint8_t *input, size_t maxSize);
 Expected<double> doubleDecode(const std::string& input);
 
+uint16_t int16Encode(uint16_t input);
+uint16_t int16Decode(const char* input);
+uint32_t int32Encode(uint32_t input);
+uint32_t int32Decode(const char* input);
+uint64_t int64Encode(uint64_t input);
+uint64_t int64Decode(const char* input);
+
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_VARINT_H_

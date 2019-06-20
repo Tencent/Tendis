@@ -1,6 +1,8 @@
 #include <string>
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
+#include "endian.h"
 
 namespace tendisplus {
 
@@ -93,6 +95,48 @@ Expected<double> doubleDecode(const std::string& input) {
     INVARIANT(input.size() == 8);
     return doubleDecode(reinterpret_cast<const uint8_t*>(input.c_str()),
                         input.size());
+}
+
+uint16_t int16Encode(uint16_t input) {
+    return htobe16(input);
+}
+
+uint16_t int16Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint16_t tmp;
+    memcpy(&tmp, input, sizeof(uint16_t));
+    return be16toh(tmp);
+#else
+    return be16toh(*(uint16_t*)input);
+#endif
+}
+
+uint32_t int32Encode(uint32_t input) {
+    return htobe32(input);
+}
+
+uint32_t int32Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint32_t tmp;
+    memcpy(&tmp, input, sizeof(uint32_t));
+    return be32toh(tmp);
+#else
+    return be32toh(*(uint32_t*)input);
+#endif
+}
+
+uint64_t int64Encode(uint64_t input) {
+    return htobe64(input);
+}
+
+uint64_t int64Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint64_t tmp;
+    memcpy(&tmp, input, sizeof(uint64_t));
+    return be64toh(tmp);
+#else
+    return be64toh(*(uint64_t*)input);
+#endif
 }
 
 }  // namespace tendisplus

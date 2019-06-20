@@ -330,6 +330,12 @@ makeReplEnv(uint32_t storeCnt) {
 
     return std::make_pair(master, slave);
 }
+#ifdef _WIN32 
+size_t recordSize = 10;
+#else
+size_t recordSize = 1000;
+#endif // 
+
 
 TEST(Repl, oneStore) {
     const auto guard = MakeGuard([] {
@@ -341,7 +347,7 @@ TEST(Repl, oneStore) {
     auto& master = hosts.first;
     auto& slave = hosts.second;
 
-    auto allKeys = initData(master, 1000);
+    auto allKeys = initData(master, recordSize);
 
     waitSlaveCatchup(master, slave);
     compareData(master, slave);
@@ -375,7 +381,7 @@ TEST(Repl, MultiStore) {
     auto& master = hosts.first;
     auto& slave = hosts.second;
 
-    auto allKeys = initData(master, 1000);
+    auto allKeys = initData(master, recordSize);
 
     waitSlaveCatchup(master, slave);
     compareData(master, slave);

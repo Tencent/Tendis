@@ -23,6 +23,8 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -39,7 +41,7 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
         return;
     }
 
-    Expected<int64_t> expStoreId = stoul(storeIdArg);
+    auto expStoreId = tendisplus::stoul(storeIdArg);
     if (!expStoreId.ok() || expStoreId.value() < 0) {
         client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
         return;
@@ -98,12 +100,14 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
             masterSendBinlog(client, storeId, dstStoreId, binlogPos);
 #else
     // for safe : -5
-    if (lastSend + std::chrono::seconds(BINLOGHEARTBEATSECS - 5) < SCLOCK::now()) {
+    if (lastSend + std::chrono::seconds(BINLOGHEARTBEATSECS - 5)
+                < SCLOCK::now()) {
         needHeartbeat = true;
     }
 
     Expected<uint64_t> newPos =
-            masterSendBinlogV2(client, storeId, dstStoreId, binlogPos, needHeartbeat);
+            masterSendBinlogV2(client, storeId, dstStoreId,
+                        binlogPos, needHeartbeat);
 #endif
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
@@ -230,7 +234,8 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
 }
 #else
 Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
-    uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart) {
+            uint32_t storeId, uint32_t dstStoreId,
+            uint64_t binlogPos, bool needHeartBeart) {
     // TODO(vinchen): to be options
     constexpr uint32_t suggestBatch = 256;
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
@@ -265,8 +270,6 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     uint64_t binlogId = binlogPos;
 
     std::stringstream ss;
-    Command::fmtBulk(ss, "applybinlogsv2");
-    Command::fmtBulk(ss, std::to_string(dstStoreId));
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
@@ -274,13 +277,14 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
 
             estimateSize += explog.value().getReplLogKey().size();
             estimateSize += explog.value().getReplLogValue().size();
+            estimateSize += 2 * sizeof(uint32_t);
 
-            Command::fmtBulk(ss, explog.value().getReplLogKey());
-            Command::fmtBulk(ss, explog.value().getReplLogValue());
+            ssAppendSizeAndString(ss, explog.value().getReplLogKey());
+            ssAppendSizeAndString(ss, explog.value().getReplLogValue());
 
             binlogId = explog.value().getBinlogId();
 
-            if (estimateSize > suggestBytes || cnt >= suggestBatch) {
+            if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
                 break;
             }
         } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -304,9 +308,13 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
     } else {
         // TODO(vinchen): too more copy
-        Command::fmtMultiBulkLen(ss2, cnt * 2 + 2);
-        // ss2 << ss.rdbuf();
-        ss2 << ss.str();
+        Command::fmtMultiBulkLen(ss2, 5);
+        Command::fmtBulk(ss2, "applybinlogsv2");
+        Command::fmtBulk(ss2, std::to_string(dstStoreId));
+        Command::fmtBulk(ss2, ss.str());
+        Command::fmtBulk(ss2, std::to_string(cnt));
+        // TODO(vinchen): checksum is always 0 now
+        Command::fmtBulk(ss2, "0");
     }
 
     std::string stringtoWrite = ss2.str();
@@ -322,7 +330,8 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
     if (!s.ok()) {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
-            << " writeData failed:" << s.toString() << "; Size:" << stringtoWrite.size();
+            << " writeData failed:" << s.toString()
+            << "; Size:" << stringtoWrite.size();
         return s;
     }
 
@@ -330,7 +339,8 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
-            << " readLine failed:" << exptOK.status().toString() << "; Size:" << stringtoWrite.size();
+            << " readLine failed:" << exptOK.status().toString()
+            << "; Size:" << stringtoWrite.size();
         return exptOK.status();
     } else if (exptOK.value() != "+OK") {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
@@ -365,13 +375,13 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::move(_svr->getNetwork()->createBlockingClient(
             std::move(sock), 64*1024*1024));
 
-    uint64_t storeId;
-    uint64_t  dstStoreId;
+    uint32_t storeId;
+    uint32_t  dstStoreId;
     uint64_t binlogPos;
     try {
-        storeId = stoul(storeIdArg);
-        dstStoreId = stoul(dstStoreIdArg);
-        binlogPos = stoul(binlogPosArg);
+        storeId = std::stoul(storeIdArg);
+        dstStoreId = std::stoul(dstStoreIdArg);
+        binlogPos = std::stoull(binlogPosArg);
     } catch (const std::exception& ex) {
         std::stringstream ss;
         ss << "-ERR parse opts failed:" << ex.what();

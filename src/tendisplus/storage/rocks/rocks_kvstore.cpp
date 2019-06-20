@@ -22,7 +22,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/server/server_entry.h"
-#include <endian.h>
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -849,12 +849,12 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     INVARIANT_D(fs != nullptr);
 
     uint32_t keyLen = log.getReplLogKey().size();
-    uint32_t keyLenTrans = htobe32(keyLen);
+    uint32_t keyLenTrans = int32Encode(keyLen);
     fs->write(reinterpret_cast<char*>(&keyLenTrans), sizeof(keyLenTrans));
     fs->write(log.getReplLogKey().c_str(), keyLen);
 
     uint32_t valLen = log.getReplLogValue().size();
-    uint32_t valLenTrans = htobe32(valLen);
+    uint32_t valLenTrans = int32Encode(valLen);
     fs->write(reinterpret_cast<char*>(&valLenTrans), sizeof(valLenTrans));
     fs->write(log.getReplLogValue().c_str(), valLen);
     written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);

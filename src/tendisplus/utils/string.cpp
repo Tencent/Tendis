@@ -10,6 +10,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -240,6 +241,14 @@ uint64_t getCurThreadId() {
     unsigned long long tid = std::stoull(stid);
 
     return tid;
+}
+
+std::stringstream& ssAppendSizeAndString (std::stringstream& ss, const std::string& val) {
+    auto size = int32Encode(val.size());
+    std::string strSize((char*)&size, sizeof(size));
+
+    ss << strSize << val;
+    return ss;
 }
 
 }  // namespace tendisplus
