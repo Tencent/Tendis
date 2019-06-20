@@ -1778,6 +1778,11 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
+    sess.setArgs({ "type", "sa" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("set"));
+
     // wrong type
     sess.setArgs({ "mset", "sa", "100", "ma", "1000" });
     expect = Command::runSessionCmd(&sess);
@@ -2361,7 +2366,8 @@ void testAll(std::shared_ptr<ServerEntry> svr) {
     testExpire2(svr);
     testExpire(svr);
     testKV(svr);
-    testMset(svr);
+    // need cfg->checkKeyTypeForSet = true;
+    //testMset(svr);
     testType(svr);
     testPf(svr);
     testZset(svr);

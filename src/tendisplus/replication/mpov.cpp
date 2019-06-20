@@ -322,7 +322,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     if (stringtoWrite.size() > 1024 * 1024) {
         secs = 2;
     } else if (stringtoWrite.size() > 1024 * 1024 * 10) {
-        secs = 4;
+        secs = 10;
     } else {
         // TODO(vinchen):
         secs = 100;
@@ -340,7 +340,8 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     if (!exptOK.ok()) {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
             << " readLine failed:" << exptOK.status().toString()
-            << "; Size:" << stringtoWrite.size();
+            << "; Size:" << stringtoWrite.size()
+            << "; Seconds:" << secs;
         return exptOK.status();
     } else if (exptOK.value() != "+OK") {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
