@@ -330,6 +330,31 @@ makeReplEnv(uint32_t storeCnt) {
 
     return std::make_pair(master, slave);
 }
+
+std::shared_ptr<ServerEntry>
+makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
+    INVARIANT(name != "master" && name != "slave");
+	INVARIANT(port != 1111 && port != 1112);
+    EXPECT_TRUE(setupEnv(name));
+
+    auto cfg1 = makeServerParam(port, storeCnt, name);
+
+    auto slave = std::make_shared<ServerEntry>(cfg1);
+    auto s = slave->startup(cfg1);
+    INVARIANT(s.ok());
+
+    {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto session = makeSession(slave, ctx);
+
+        WorkLoad work(slave, session);
+        work.init();
+        work.slaveof("127.0.0.1", 1111);
+    }
+
+    return slave;
+}
+
 #ifdef _WIN32 
 size_t recordSize = 10;
 #else
@@ -340,6 +365,7 @@ size_t recordSize = 1000;
 TEST(Repl, oneStore) {
     const auto guard = MakeGuard([] {
         destroyReplEnv();
+        destroyEnv("slave1");
     });
 
     auto hosts = makeReplEnv(1);
@@ -352,6 +378,8 @@ TEST(Repl, oneStore) {
     waitSlaveCatchup(master, slave);
     compareData(master, slave);
 
+    auto& slave1 = makeAnotherSlave("slave1", 1, 2111);
+
     // delete all the keys
     auto ctx1 = std::make_shared<asio::io_context>();
     auto sess1 = makeSession(master, ctx1);
@@ -361,14 +389,21 @@ TEST(Repl, oneStore) {
         work.delKeys(k);
     }
 
+    testAll(master);
+
     waitSlaveCatchup(master, slave);
     compareData(master, slave);
 
+    waitSlaveCatchup(master, slave1);
+    compareData(master, slave1);
+
     master->stop();
     slave->stop();
+    slave1->stop();
 
     ASSERT_EQ(slave.use_count(), 1);
-    //ASSERT_EQ(master.use_count(), 1);
+    ASSERT_EQ(master.use_count(), 1);
+    ASSERT_EQ(slave1.use_count(), 1);
 }
 
 TEST(Repl, MultiStore) {
@@ -402,7 +437,7 @@ TEST(Repl, MultiStore) {
     slave->stop();
 
     ASSERT_EQ(slave.use_count(), 1);
-    //ASSERT_EQ(master.use_count(), 1);
+    ASSERT_EQ(master.use_count(), 1);
 }
 
 }  // namespace tendisplus

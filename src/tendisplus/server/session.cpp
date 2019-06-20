@@ -111,8 +111,10 @@ LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
     INVARIANT(svr != nullptr);
+#ifdef _DEBUG
     LOG(INFO) << "local session, id:" << _sess->id()
         << " destroyed";
+#endif
     svr->endSession(_sess->id());
 }
 

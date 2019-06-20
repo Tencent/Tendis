@@ -25,6 +25,8 @@ using AllKeys = std::vector<KeysWritten>;
 
 bool setupEnv();
 void destroyEnv();
+bool setupEnv(const std::string& v);
+void destroyEnv(const std::string& v);
 std::string getBulkValue(const std::string& reply, uint32_t index);
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port = 8811, uint32_t storeCnt = 0,
     const std::string& dir = "");
@@ -33,10 +35,28 @@ std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);
 
 bool setupReplEnv();
-bool destroyReplEnv();
+void destroyReplEnv();
 
 int genRand();
 std::string randomStr(size_t s, bool maybeEmpty);
+
+void testExpire1(std::shared_ptr<ServerEntry> svr);
+void testExpire2(std::shared_ptr<ServerEntry> svr);
+void testExpire(std::shared_ptr<ServerEntry> svr);
+void testKV(std::shared_ptr<ServerEntry> svr);
+void testMset(std::shared_ptr<ServerEntry> svr);
+void testType(std::shared_ptr<ServerEntry> svr);
+void testPf(std::shared_ptr<ServerEntry> svr);
+void testZset(std::shared_ptr<ServerEntry> svr);
+void testSet(std::shared_ptr<ServerEntry> svr);
+void testZset3(std::shared_ptr<ServerEntry> svr);
+void testZset4(std::shared_ptr<ServerEntry> svr);
+void testZset2(std::shared_ptr<ServerEntry> svr);
+void testHash1(std::shared_ptr<ServerEntry> svr);
+void testHash2(std::shared_ptr<ServerEntry> svr);
+void testList(std::shared_ptr<ServerEntry> svr);
+
+void testAll(std::shared_ptr<ServerEntry> svr);
 
 class WorkLoad {
  public:
