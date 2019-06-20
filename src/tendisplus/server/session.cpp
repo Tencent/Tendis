@@ -35,8 +35,14 @@ Session* Session::getCurSess() {
 std::string Session::getCmdStr() const {
     std::stringstream ss;
     if (_args[0] == "applybinlogsv2") {
-        ss << "applybinlogsv2 " << _args[1] <<
-            " size(" << _args.size() - 2 << ")";
+        size_t i = 0;
+        for (auto arg : _args) {
+            if (i++ == 2) {
+                ss << "[" << arg.size() << "]" << " ";
+            } else {
+                ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+            }
+        }
     } else {
         for (auto arg : _args) {
             ss << (arg.size() > 0 ? arg : "\"\"") << " ";

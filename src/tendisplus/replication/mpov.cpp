@@ -42,7 +42,7 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
     }
 
     auto expStoreId = tendisplus::stoul(storeIdArg);
-    if (!expStoreId.ok() || expStoreId.value() < 0) {
+    if (!expStoreId.ok()) {
         client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
         return;
     }
