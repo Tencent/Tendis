@@ -147,7 +147,7 @@ class DumpCommand: public Command {
 
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-                sess, key, mgl::LockMode::LOCK_X);
+                sess, key, Command::RdLock());
         auto exps = getSerializer(sess, key);
         if (!exps.ok()) {
             if (exps.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -709,7 +709,7 @@ class KvDeserializer: public Deserializer {
         RecordKey rk(expdb.value().chunkId,
                 pCtx->getDbId(),
                 RecordType::RT_KV, _key, "");
-        RecordValue rv(ret, RecordType::RT_KV, _ttl);
+        RecordValue rv(ret, RecordType::RT_KV, pCtx->getVersionEP(), _ttl);
         for (int32_t i = 0; i < Command::RETRY_CNT - 1; ++i) {
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
@@ -772,7 +772,7 @@ class SetDeserializer: public Deserializer {
                     metaRk.getDbId(),
                     RecordType::RT_SET_ELE,
                     metaRk.getPrimaryKey(), std::move(ele));
-            RecordValue rv("", RecordType::RT_SET_ELE);
+            RecordValue rv("", RecordType::RT_SET_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -780,7 +780,8 @@ class SetDeserializer: public Deserializer {
         }
         sm.setCount(len);
         Status s = kvstore->setKV(metaRk,
-                RecordValue(sm.encode(), RecordType::RT_SET_META, _ttl),
+                RecordValue(sm.encode(), RecordType::RT_SET_META,
+                        _sess->getCtx()->getVersionEP(), _ttl),
                 txn.get());
         if (!s.ok()) {
             return s;
@@ -841,7 +842,8 @@ class ZsetDeserializer: public Deserializer {
         }
         INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         ZSlMetaValue meta(1, 1, 0);
-        RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, _ttl);
+        RecordValue rv(meta.encode(), RecordType::RT_ZSET_META,
+                _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(rk, rv, txn.get());
         if (!s.ok()) {
             return s;
@@ -852,7 +854,7 @@ class ZsetDeserializer: public Deserializer {
                 rk.getPrimaryKey(),
                 std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
         s = kvstore->setKV(headRk, headRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -917,7 +919,7 @@ class HashDeserializer: public Deserializer {
             // need existence check ?
             RecordKey rk(expdb.value().chunkId, _sess->getCtx()->getDbId(),
                     RecordType::RT_HASH_ELE, _key, field);
-            RecordValue rv(value, RecordType::RT_HASH_ELE);
+            RecordValue rv(value, RecordType::RT_HASH_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -929,7 +931,7 @@ class HashDeserializer: public Deserializer {
         HashMetaValue hashMeta;
         hashMeta.setCount(len);
         RecordValue metaRv(std::move(hashMeta.encode()),
-                RecordType::RT_HASH_META, _ttl);
+                RecordType::RT_HASH_META, _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(metaRk, metaRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -1018,7 +1020,7 @@ class ListDeserializer: public Deserializer {
                              RecordType::RT_LIST_ELE,
                              metaRk.getPrimaryKey(),
                              std::to_string(idx));
-                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE);
+                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE, -1);
                 Status s = kvstore->setKV(rk, rv, txn.get());
                 if (!s.ok()) {
                     return s;
@@ -1027,7 +1029,8 @@ class ListDeserializer: public Deserializer {
         }
         lm.setHead(head);
         lm.setTail(tail);
-        RecordValue metaRv(lm.encode(), RecordType::RT_LIST_META, _ttl);
+        RecordValue metaRv(lm.encode(), RecordType::RT_LIST_META,
+                _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(metaRk, metaRv, txn.get());
         if (!s.ok()) {
             return s;

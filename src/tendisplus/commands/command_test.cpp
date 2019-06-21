@@ -2117,7 +2117,7 @@ TEST(Command, expire) {
     testExpire2(server);
 }
 
-void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
+void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -2157,6 +2157,198 @@ void testExtendedProtocol(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss1, "a");
     Command::fmtBulk(ss1, "b");
     EXPECT_EQ(ss1.str(), expect.value());
+
+    // version ep behaviour test -- hash
+    {
+        sess.setArgs({"hset", "hash", "key", "1000", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        // for normal occasion, smaller version can't overwrite greater op.
+        sess.setArgs({"hset", "hash", "key", "999", "101", "99", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        // cmd with no EP can't modify key's which version is not -1
+        sess.setArgs({"hset", "hash", "key1", "10"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        // cmd with greater version is allowed.
+        sess.setArgs({"hset", "hash", "key1", "1080", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        sess.setArgs({"hget", "hash", "key1", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(Command::fmtBulk("1080"), expect.value());
+
+        sess.setArgs({"hincrby", "hash", "key1", "1", "101", "101", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+        sess.setArgs({"hincrby", "hash", "key1", "2", "103", "103", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        sess.setArgs({"hget", "hash", "key1", "103", "103", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(Command::fmtBulk("1082"), expect.value());
+
+        sess.setArgs({"hset", "hash2", "key2", "ori"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        // overwrite version.
+        sess.setArgs({"hset", "hash2", "key2", "EPset", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        // then this cmd will not be executed.
+        sess.setArgs({"hset", "hash2", "key2", "naked"});
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({"hget", "hash2", "key2", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(Command::fmtBulk("EPset"), expect.value());
+    }
+
+    {
+        sess.setArgs({"zadd", "zset1", "5", "foo", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"zadd", "zset1", "6", "bar", "99", "99", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({"zrange", "zset1", "0", "-1", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 1);
+        Command::fmtBulk(ss1, "foo");
+        EXPECT_EQ(ss1.str(), expect.value());
+
+        sess.setArgs({"zadd", "zset1", "7", "baz", "101", "101", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"zrange", "zset1", "0", "-1", "101", "101", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 2);
+        Command::fmtBulk(ss1, "foo");
+        Command::fmtBulk(ss1, "baz");
+        EXPECT_EQ(ss1.str(), expect.value());
+
+        sess.setArgs({"zrem", "zset1", "baz", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({"zrem", "zset1", "foo", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"zrange", "zset1", "0", "-1", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 1);
+        Command::fmtBulk(ss1, "baz");
+        EXPECT_EQ(ss1.str(), expect.value());
+    }
+
+    {
+        sess.setArgs({"rpush", "list1", "a", "b", "c", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"rpop", "list1", "99", "99", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({"lpop", "list1", "101", "101", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"lrange", "list1", "0", "-1", "101", "101", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 2);
+        Command::fmtBulk(ss1, "b");
+        Command::fmtBulk(ss1, "c");
+        EXPECT_EQ(ss1.str(), expect.value());
+
+        sess.setArgs({"rpush", "list1", "z", "100", "100", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(!expect.ok());
+
+        sess.setArgs({"lpush", "list1", "d", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"lrange", "list1", "0", "-1", "102", "102", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 3);
+        Command::fmtBulk(ss1, "d");
+        Command::fmtBulk(ss1, "b");
+        Command::fmtBulk(ss1, "c");
+        EXPECT_EQ(ss1.str(), expect.value());
+    }
 }
 
 void testLockMulti(std::shared_ptr<ServerEntry> svr) {
@@ -2310,7 +2502,7 @@ TEST(Command, tendisex) {
     //cfg->chunkSize = 420000;
     auto server = makeServerEntry(cfg);
 
-    testExtendedProtocol(server);
+    testExtendProtocol(server);
 }
 
 TEST(Command, checkKeyTypeForSetKV) {

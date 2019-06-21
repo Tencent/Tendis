@@ -17,6 +17,8 @@
 namespace tendisplus {
 
 std::mutex Command::_mutex;
+bool Command::_noexpire = false;
+mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
 
 // TODO(vinchen): limit the size of _unSeenCmds
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
@@ -63,6 +65,21 @@ bool Command::isWriteable() const {
 
 bool Command::isAdmin() const {
     return (_flags & CMD_ADMIN) != 0;
+}
+
+bool Command::noExpire() {
+    return _noexpire;
+}
+
+mgl::LockMode Command::RdLock() {
+    return _expRdLk;
+}
+
+void Command::setNoExpire(bool cfg) {
+    _noexpire = cfg;
+    if (_noexpire) {
+        _expRdLk = mgl::LockMode::LOCK_S;
+    }
 }
 
 bool Command::isMultiKey() const {
@@ -151,7 +168,7 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
-        sess->getServerEntry()->setTsEp(sess->getCtx()->getEpTs());
+        sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
     }
     return v;
 }
@@ -500,11 +517,11 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
 }
 
 Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
-                        const std::string& key, RecordType tp) {
+        const std::string& key, RecordType tp, bool hasVersion) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                        mgl::LockMode::LOCK_X);
+                        RdLock());
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -533,9 +550,24 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         uint64_t currentTs = msSinceEpoch();
         uint64_t targetTtl = eValue.value().getTtl();
         RecordType valueType = eValue.value().getRecordType();
-        if (targetTtl == 0 || currentTs < targetTtl) {
+        if (_noexpire || targetTtl == 0 || currentTs < targetTtl) {
             if (valueType != tp && tp != RecordType::RT_DATA_META) {
                 return{ ErrorCodes::ERR_WRONG_TYPE, "" };
+            }
+            if (hasVersion) {
+                auto pCtx = sess->getCtx();
+                if (pCtx->getVersionEP() == UINT64_MAX) {
+                    // isolate tendis cmd cannot modify value of tendis with cache.
+                    if (eValue.value().getVersionEP() != UINT64_MAX) {
+                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    }
+                } else {
+                    // any command can modify value with versionEP = -1
+                    if (pCtx->getVersionEP() < eValue.value().getVersionEP() &&
+                        eValue.value().getVersionEP() != UINT64_MAX) {
+                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    }
+                }
             }
             return eValue.value();
         } else if (txn->isReplOnly()) {

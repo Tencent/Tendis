@@ -64,7 +64,8 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
                 return { ErrorCodes::ERR_WRONG_TYPE, "" };
             }
         }
-        bool needExpire = (targetTtl != 0
+        bool needExpire = (!Command::noExpire() &&
+                           targetTtl != 0
                            && currentTs >= eValue.value().getTtl());
         bool exists =
             (eValue.status().code() == ErrorCodes::ERR_OK) && (!needExpire);
@@ -217,7 +218,7 @@ class SetCommand: public Command {
         if (params.expire != 0) {
             ts = msSinceEpoch() + params.expire;
         }
-        RecordValue rv(params.value, RecordType::RT_KV, ts);
+        RecordValue rv(params.value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
             auto result = setGeneric(kvstore, txn.get(), params.flags,
@@ -276,7 +277,7 @@ class SetexGeneralCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_KV, key, "");
-        RecordValue rv(val, RecordType::RT_KV, ttl);
+        RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -391,7 +392,7 @@ class SetNxCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                      RecordType::RT_KV, key, "");
-        RecordValue rv(val, RecordType::RT_KV);
+        RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -884,7 +885,7 @@ class GetSetGeneral: public Command {
             const Expected<RecordValue>& newValue =
                                 newValueFromOld(sess, rv);
             if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return RecordValue("", RecordType::RT_KV);
+                return RecordValue("", RecordType::RT_KV, -1);
             }
             if (!newValue.ok()) {
                 return newValue.status();
@@ -902,7 +903,7 @@ class GetSetGeneral: public Command {
                 } else {
                     return rv.ok() ?
                             std::move(rv.value()) :
-                            RecordValue("", RecordType::RT_KV);
+                            RecordValue("", RecordType::RT_KV, -1);
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -950,7 +951,8 @@ class CasCommand: public GetSetGeneral {
         }
 
         auto ttl = oldValue.value().getTtl();
-        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV, ttl, oldValue);
+        RecordValue ret(sess->getArgs()[3], RecordType::RT_KV,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
         if (!oldValue.ok()) {
             ret.setCas(ecas.value());
             return ret;
@@ -1014,7 +1016,8 @@ class AppendCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return std::move(
-                    RecordValue(std::move(cat), type, ttl, oldValue));
+                    RecordValue(std::move(cat), type,
+                            sess->getCtx()->getVersionEP(), ttl, oldValue));
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1086,7 +1089,8 @@ class SetRangeCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(cat), type, ttl, oldValue);
+        return RecordValue(std::move(cat), type,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1169,7 +1173,8 @@ class SetBitCommand: public GetSetGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::move(tomodify), type, ttl, oldValue);
+        return RecordValue(std::move(tomodify), type,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1225,7 +1230,8 @@ class GetSetCommand: public GetSetGeneral {
     Expected<RecordValue> newValueFromOld(Session* sess,
                           const Expected<RecordValue>& oldValue) const {
         // getset overwrites ttl
-        return RecordValue(sess->getArgs()[2], RecordType::RT_KV, 0, oldValue);
+        return RecordValue(sess->getArgs()[2], RecordType::RT_KV,
+                sess->getCtx()->getVersionEP(), 0, oldValue);
     }
 
     Expected<std::string> run(Session *sess) final {
@@ -1355,7 +1361,7 @@ class IncrbyfloatCommand: public GetSetGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(::tendisplus::ldtos(newSum.value(), true),
-                        type, ttl, oldValue);
+                        type, sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } incrbyfloatCmd;
 
@@ -1401,7 +1407,7 @@ class IncrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         return RecordValue(std::to_string(newSum.value()),
-                        type, ttl, oldValue);
+                        type, sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } incrbyCmd;
 
@@ -1449,7 +1455,7 @@ public:
             type = oldValue.value().getRecordType();
         }
         return RecordValue(std::to_string(newSum.value()),
-            type, ttl, oldValue);
+            type, sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } increxCmd;
 
@@ -1489,7 +1495,8 @@ class IncrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
+        return RecordValue(std::to_string(newSum.value()), type,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } incrCmd;
 
@@ -1535,7 +1542,8 @@ class DecrbyCommand: public IncrDecrGeneral {
             type = oldValue.value().getRecordType();
         }
         // LOG(INFO) << "decr new val:" << newSum.value() << ' ' << val;
-        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
+        return RecordValue(std::to_string(newSum.value()), type,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } decrbyCmd;
 
@@ -1575,7 +1583,8 @@ class DecrCommand: public IncrDecrGeneral {
             ttl = oldValue.value().getTtl();
             type = oldValue.value().getRecordType();
         }
-        return RecordValue(std::to_string(newSum.value()), type, ttl, oldValue);
+        return RecordValue(std::to_string(newSum.value()), type,
+                sess->getCtx()->getVersionEP(), ttl, oldValue);
     }
 } decrCmd;
 
@@ -1736,7 +1745,7 @@ class BitopCommand: public Command {
 
         RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                             RecordType::RT_KV, targetKey, "");
-        RecordValue rv(result, RecordType::RT_KV);
+        RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
             auto ptxn = kvstore->createTransaction();
             if (!ptxn.ok()) {
@@ -1826,7 +1835,7 @@ class MSetGenericCommand: public Command {
 
             RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
                                 RecordType::RT_KV, key, "");
-            RecordValue rv(val, RecordType::RT_KV);
+            RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
                 auto etxn = pCtx->createTransaction(kvstore);
                 if (!etxn.ok()) {
@@ -2571,6 +2580,7 @@ class BitFieldCommand: public Command {
                     key, "");
             RecordValue newrv(value,
                     RecordType::RT_KV,
+                    pCtx->getVersionEP(),
                     rv.getTtl(),
                     rv);
             PStore kvstore = expdb.value().store;

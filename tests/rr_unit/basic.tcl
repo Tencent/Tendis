@@ -906,18 +906,18 @@ start_server {tags {"basic"}} {
         r getrange foo 0 4294967297
     } {bar}
 
-    test {CHECK COMMAND KEY HASH} {
-       r config set partial-sync 1
-       r config set sync-range-start 0
-       r config set sync-range-end 250000
-       set len [r lpush list 1 2 3 4 5 6]
-       assert {$len == 6}
-       set ok [r hmset hash 1 a 2 w 3 e]
-       assert {$ok == "OK"}
-       r select 0
-       set len [r lpush list 1 2 3 4 5 6]
-       assert {$len == 6}
-       catch {r hmset hash 1 q 2 w 3 e} err
-       format $err
-    } {*ERR*}
+    #test {CHECK COMMAND KEY HASH} {
+    #   r config set partial-sync 1
+    #   r config set sync-range-start 0
+    #   r config set sync-range-end 250000
+    #   set len [r lpush list 1 2 3 4 5 6]
+    #   assert {$len == 6}
+    #   set ok [r hmset hash 1 a 2 w 3 e]
+    #   assert {$ok == "OK"}
+    #   r select 0
+    #   set len [r lpush list 1 2 3 4 5 6]
+    #   assert {$len == 6}
+    #   catch {r hmset hash 1 q 2 w 3 e} err
+    #   format $err
+    #} {*ERR*}
 }

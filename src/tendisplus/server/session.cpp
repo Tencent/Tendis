@@ -110,7 +110,6 @@ Status Session::processExtendProtocol() {
             return v.status();
         }
         uint64_t timestamp = v.value();
-
         _ctx->setExtendProtocolValue(timestamp, version);
 
         // remove the extra args

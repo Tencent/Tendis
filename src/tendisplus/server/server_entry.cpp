@@ -104,6 +104,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     uint32_t kvStoreCount = cfg->kvStoreCount;
     uint32_t chunkSize = cfg->chunkSize;
 
+    // set command config
+    Command::setNoExpire(cfg->noexpire);
+
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
@@ -183,10 +186,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
-    s = _indexMgr->startup();
-    if (!s.ok()) {
-      return s;
+    if (!cfg->noexpire) {
+        _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
+        s = _indexMgr->startup();
+        if (!s.ok()) {
+            return s;
+        }
     }
 
     // listener should be the lastone to run.

@@ -127,7 +127,7 @@ TEST(Record, Common) {
             pieceSize = val.size() + 1;
         }
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-        auto rv = RecordValue(val, type, ttl, cas, version, versionEP, pieceSize);
+        auto rv = RecordValue(val, type, versionEP, ttl, cas, version, pieceSize);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
         auto prcd1 = Record::decode(kv.first, kv.second);

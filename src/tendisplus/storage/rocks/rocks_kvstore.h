@@ -203,6 +203,7 @@ class RocksKVStore: public KVStore {
     // reopen again.
     bool _isPaused;
     bool _hasBackup;
+    bool _enableFilter;
 
     KVStore::StoreMode _mode;
 
