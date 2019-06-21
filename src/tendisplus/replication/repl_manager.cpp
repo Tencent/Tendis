@@ -223,7 +223,7 @@ Status ReplManager::startup() {
                 recBinlogStat->firstBinlogId = rlk.getTxnId();
                 _logRecycStatus.emplace_back(std::move(recBinlogStat));
 #else
-            auto explog = BinlogCursorV2::getMinBinlog(txn.get());
+            auto explog = RepllogCursorV2::getMinBinlog(txn.get());
             if (explog.ok()) {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
                 recBinlogStat->timestamp = explog.value().getTimestamp();

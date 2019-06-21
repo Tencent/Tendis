@@ -147,7 +147,7 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-    auto expMax = BinlogCursorV2::getMaxBinlogId(txn1.get());
+    auto expMax = RepllogCursorV2::getMaxBinlogId(txn1.get());
     EXPECT_TRUE(expMax.ok());
 
     EXPECT_EQ(expMax.value() + 1, kvstore->getNextBinlogSeq());
@@ -179,15 +179,15 @@ TEST(RocksKVStore, BinlogRightMost) {
 
 #ifndef BINLOG_V1
     {
-        auto expMin = BinlogCursorV2::getMinBinlogId(txn1.get());
+        auto expMin = RepllogCursorV2::getMinBinlogId(txn1.get());
         EXPECT_TRUE(!expMin.ok());
         EXPECT_TRUE(expMin.status().code() == ErrorCodes::ERR_EXHAUST);
 
-        auto expMax = BinlogCursorV2::getMaxBinlogId(txn1.get());
+        auto expMax = RepllogCursorV2::getMaxBinlogId(txn1.get());
         EXPECT_TRUE(!expMax.ok());
         EXPECT_TRUE(expMax.status().code() == ErrorCodes::ERR_EXHAUST);
 
-        auto expMinB = BinlogCursorV2::getMinBinlog(txn1.get());
+        auto expMinB = RepllogCursorV2::getMinBinlog(txn1.get());
         EXPECT_TRUE(!expMinB.ok());
         EXPECT_TRUE(expMinB.status().code() == ErrorCodes::ERR_EXHAUST);
     }
@@ -215,15 +215,15 @@ TEST(RocksKVStore, BinlogRightMost) {
     }
 #else
     {
-        auto expMin = BinlogCursorV2::getMinBinlogId(txn2.get());
+        auto expMin = RepllogCursorV2::getMinBinlogId(txn2.get());
         EXPECT_TRUE(expMin.ok());
         EXPECT_EQ(expMin.value(), 1);
 
-        auto expMax = BinlogCursorV2::getMaxBinlogId(txn2.get());
+        auto expMax = RepllogCursorV2::getMaxBinlogId(txn2.get());
         EXPECT_TRUE(expMax.ok());
         EXPECT_EQ(expMax.value(), 1);
     }
-    auto bcursor = txn2->createBinlogCursorV2(Transaction::MIN_VALID_TXNID);
+    auto bcursor = txn2->createRepllogCursorV2(Transaction::MIN_VALID_TXNID);
     auto ss = bcursor->seekToLast();
     EXPECT_TRUE(ss.ok());
     auto v = bcursor->nextV2();
@@ -347,7 +347,7 @@ TEST(RocksKVStore, BinlogCursor) {
     }
 }
 #else
-TEST(RocksKVStore, BinlogCursorV2) {
+TEST(RocksKVStore, RepllogCursorV2) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
@@ -398,7 +398,7 @@ TEST(RocksKVStore, BinlogCursorV2) {
     auto eTxn2 = kvstore->createTransaction();
     EXPECT_EQ(eTxn2.ok(), true);
     std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
-    auto bcursor = txn2->createBinlogCursorV2(1);
+    auto bcursor = txn2->createRepllogCursorV2(1);
 
     auto eTxn3 = kvstore->createTransaction();
     EXPECT_EQ(eTxn3.ok(), true);
@@ -440,7 +440,7 @@ TEST(RocksKVStore, BinlogCursorV2) {
     auto eTxn4 = kvstore->createTransaction();
     EXPECT_EQ(eTxn4.ok(), true);
     std::unique_ptr<Transaction> txn4 = std::move(eTxn4.value());
-    auto bcursor1 = txn4->createBinlogCursorV2(2);
+    auto bcursor1 = txn4->createRepllogCursorV2(2);
     while (true) {
         auto v = bcursor1->nextV2();
         if (!v.ok()) {
@@ -782,7 +782,7 @@ uint64_t getBinlogCount(Transaction *txn) {
 #ifdef BINLOG_V1
     auto bcursor = txn->createBinlogCursor(0);
 #else
-    auto bcursor = txn->createBinlogCursorV2(Transaction::MIN_VALID_TXNID,
+    auto bcursor = txn->createRepllogCursorV2(Transaction::MIN_VALID_TXNID,
                 true);
 #endif
     uint64_t cnt = 0;
@@ -843,11 +843,11 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         EXPECT_EQ(newFirst.ok(), true);
         EXPECT_EQ(newFirst.value().first, 1U);
 #else
-        auto expMin = BinlogCursorV2::getMinBinlogId(txn1.get());
+        auto expMin = RepllogCursorV2::getMinBinlogId(txn1.get());
         EXPECT_TRUE(expMin.ok());
         EXPECT_EQ(expMin.value(), 1U);
 
-        auto expMax = BinlogCursorV2::getMaxBinlogId(txn1.get());
+        auto expMax = RepllogCursorV2::getMaxBinlogId(txn1.get());
         EXPECT_TRUE(expMax.ok());
         EXPECT_EQ(expMax.value(), 1U);
 
@@ -953,7 +953,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         uint64_t currentCnt = kvstore->getBinlogCnt(txn.get()).value();
         EXPECT_EQ(currentCnt, 1U);
 
-        auto expMin1 = BinlogCursorV2::getMinBinlogId(txn.get());
+        auto expMin1 = RepllogCursorV2::getMinBinlogId(txn.get());
         EXPECT_TRUE(expMin1.ok());
         firstBinlog = expMin1.value();
 
@@ -995,7 +995,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
             EXPECT_EQ(currentCnt + txnCnt, cnt.value());
             currentCnt = cnt.value();
 
-            auto m = BinlogCursorV2::getMaxBinlogId(txn2.get());
+            auto m = RepllogCursorV2::getMaxBinlogId(txn2.get());
             EXPECT_TRUE(m.ok());
             EXPECT_EQ(firstBinlog + txnCnt, m.value());
             endBinlog = m.value();

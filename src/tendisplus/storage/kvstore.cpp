@@ -47,7 +47,7 @@ Expected<ReplLog> BinlogCursor::next() {
     }
 }
 #else
-BinlogCursorV2::BinlogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
+RepllogCursorV2::RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
     : _txn(txn),
     _baseCursor(nullptr),
     _start(begin),
@@ -55,10 +55,10 @@ BinlogCursorV2::BinlogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
     _end(end) {
 }
 
-Status BinlogCursorV2::seekToLast() {
+Status RepllogCursorV2::seekToLast() {
     if (_cur == Transaction::TXNID_UNINITED) {
         return{ ErrorCodes::ERR_INTERNAL,
-            "BinlogCursorV2 error, detailed at the error log" };
+            "RepllogCursorV2 error, detailed at the error log" };
     }
     if (!_baseCursor) {
         _baseCursor = _txn->createCursor();
@@ -73,7 +73,7 @@ Status BinlogCursorV2::seekToLast() {
                     == RecordType::RT_BINLOG) {
             auto v = ReplLogKeyV2::decode(key.value());
             if (!v.ok()) {
-                LOG(ERROR) << "BinlogCursorV2::seekToLast() failed, reason:"
+                LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
                            << v.status().toString();
                 return v.status();
             }
@@ -84,14 +84,14 @@ Status BinlogCursorV2::seekToLast() {
             return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
         }
     } else {
-        LOG(ERROR) << "BinlogCursorV2::seekToLast() failed, reason:"
+        LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
                    << key.status().toString();
     }
 
     return key.status();
 }
 
-Expected<ReplLogRawV2> BinlogCursorV2::getMinBinlog(Transaction* txn) {
+Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
         return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
@@ -112,7 +112,7 @@ Expected<ReplLogRawV2> BinlogCursorV2::getMinBinlog(Transaction* txn) {
     return ReplLogRawV2(expRcd.value());
 }
 
-Expected<uint64_t> BinlogCursorV2::getMinBinlogId(Transaction* txn) {
+Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
         return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
@@ -136,7 +136,7 @@ Expected<uint64_t> BinlogCursorV2::getMinBinlogId(Transaction* txn) {
     return explk.value().getBinlogId();
 }
 
-Expected<uint64_t> BinlogCursorV2::getMaxBinlogId(Transaction* txn) {
+Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
         return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
@@ -165,10 +165,10 @@ Expected<uint64_t> BinlogCursorV2::getMaxBinlogId(Transaction* txn) {
     return key.status();
 }
 
-Expected<ReplLogRawV2> BinlogCursorV2::next() {
+Expected<ReplLogRawV2> RepllogCursorV2::next() {
     if (_cur == Transaction::TXNID_UNINITED) {
         return{ ErrorCodes::ERR_INTERNAL,
-            "BinlogCursorV2 error, detailed at the error log" };
+            "RepllogCursorV2 error, detailed at the error log" };
     }
 
     while (_cur <= _end) {
@@ -194,10 +194,10 @@ Expected<ReplLogRawV2> BinlogCursorV2::next() {
     return { ErrorCodes::ERR_EXHAUST, "" };
 }
 
-Expected<ReplLogV2> BinlogCursorV2::nextV2() {
+Expected<ReplLogV2> RepllogCursorV2::nextV2() {
     if (_cur == Transaction::TXNID_UNINITED) {
         return{ ErrorCodes::ERR_INTERNAL,
-            "BinlogCursorV2 error, detailed at the error log" };
+            "RepllogCursorV2 error, detailed at the error log" };
     }
 
     while (_cur <= _end) {

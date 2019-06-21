@@ -829,7 +829,7 @@ class BinlogTimeCommand: public Command {
         return Command::fmtLongLong(
             explog.value().getReplLogKey().getTimestamp());
 #else
-        auto cursor = txn->createBinlogCursorV2(binlogId.value(), true);
+        auto cursor = txn->createRepllogCursorV2(binlogId.value(), true);
         auto explog = cursor->nextV2();
         if (!explog.ok()) {
             return explog.status();
@@ -894,7 +894,7 @@ class BinlogPosCommand: public Command {
         }
         return Command::fmtLongLong(explog.value().getReplLogKey().getTxnId());
 #else 
-        auto expBinlogid = BinlogCursorV2::getMaxBinlogId(txn.get());
+        auto expBinlogid = RepllogCursorV2::getMaxBinlogId(txn.get());
         if (!expBinlogid.ok()) {
             return expBinlogid.status();
         }

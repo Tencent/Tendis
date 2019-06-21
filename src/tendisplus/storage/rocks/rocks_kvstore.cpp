@@ -111,7 +111,7 @@ std::unique_ptr<BinlogCursor> RocksTxn::createBinlogCursor(
     return std::make_unique<BinlogCursor>(std::move(cursor), begin, hv);
 }
 #else
-std::unique_ptr<BinlogCursorV2> RocksTxn::createBinlogCursorV2(
+std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
                                 uint64_t begin,
                                 bool ignoreReadBarrier) {
     uint64_t hv = 0;
@@ -122,12 +122,12 @@ std::unique_ptr<BinlogCursorV2> RocksTxn::createBinlogCursorV2(
     }
 
     if (begin <= Transaction::MIN_VALID_TXNID) {
-        auto k = BinlogCursorV2::getMinBinlogId(this);
+        auto k = RepllogCursorV2::getMinBinlogId(this);
         if (!k.ok()) {
             if (k.status().code() == ErrorCodes::ERR_EXHAUST) {
                 begin = hv + 1;
             } else {
-                LOG(ERROR) << "BinlogCursorV2::getMinBinlogId() ERROR: "
+                LOG(ERROR) << "RepllogCursorV2::getMinBinlogId() ERROR: "
                     << k.status().toString();
                 begin = Transaction::TXNID_UNINITED;
             }
@@ -135,7 +135,7 @@ std::unique_ptr<BinlogCursorV2> RocksTxn::createBinlogCursorV2(
             begin = k.value();
         }
     }
-    return std::make_unique<BinlogCursorV2>(this, begin, hv);
+    return std::make_unique<RepllogCursorV2>(this, begin, hv);
 }
 #endif
 
@@ -877,9 +877,9 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         return result;
     }
 
-    INVARIANT_D(BinlogCursorV2::getMinBinlogId(txn).value() == start);
+    INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
 
-    auto cursor = txn->createBinlogCursorV2(start);
+    auto cursor = txn->createRepllogCursorV2(start);
 
     // TODO(deyukong): put 1000 into configuration.
     uint64_t cnt = std::min((uint64_t)1000, gap - _maxKeepLogs);
@@ -926,7 +926,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
 }
 
 Expected<uint64_t> RocksKVStore::getBinlogCnt(Transaction* txn) const {
-    auto bcursor = txn->createBinlogCursorV2(Transaction::MIN_VALID_TXNID,
+    auto bcursor = txn->createRepllogCursorV2(Transaction::MIN_VALID_TXNID,
         true);
     uint64_t cnt = 0;
     while (true) {
@@ -942,7 +942,7 @@ Expected<uint64_t> RocksKVStore::getBinlogCnt(Transaction* txn) const {
     return cnt;
 }
 Expected<bool> RocksKVStore::validateAllBinlog(Transaction* txn) const {
-    auto bcursor = txn->createBinlogCursorV2(Transaction::MIN_VALID_TXNID,
+    auto bcursor = txn->createRepllogCursorV2(Transaction::MIN_VALID_TXNID,
         true);
     while (true) {
         auto v = bcursor->nextV2();

@@ -262,8 +262,8 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     }
 
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    std::unique_ptr<BinlogCursorV2> cursor =
-        txn->createBinlogCursorV2(binlogPos + 1);
+    std::unique_ptr<RepllogCursorV2> cursor =
+        txn->createRepllogCursorV2(binlogPos + 1);
 
     uint32_t cnt = 0;
     size_t estimateSize = 0;

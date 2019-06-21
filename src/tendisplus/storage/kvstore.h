@@ -68,12 +68,12 @@ class BinlogCursor {
     const uint64_t _end;
 };
 #else
-class BinlogCursorV2 {
+class RepllogCursorV2 {
  public:
-    BinlogCursorV2() = delete;
+    RepllogCursorV2() = delete;
     // NOTE(vinchen): in range of [begin, end], be careful both close interval
-    BinlogCursorV2(Transaction* txn, uint64_t begin, uint64_t end);
-    ~BinlogCursorV2() = default;
+    RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end);
+    ~RepllogCursorV2() = default;
     Expected<ReplLogRawV2> next();
     Expected<ReplLogV2> nextV2();
     Status seekToLast();
@@ -124,8 +124,8 @@ class Transaction {
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
 #else
-    virtual std::unique_ptr<BinlogCursorV2>
-        createBinlogCursorV2(uint64_t begin,
+    virtual std::unique_ptr<RepllogCursorV2>
+        createRepllogCursorV2(uint64_t begin,
                              bool ignoreReadBarrier = false) = 0;
     virtual Status applyBinlog(const ReplLogValueEntryV2& logEntry) = 0;
     virtual Status setBinlogKV(uint64_t binlogId,

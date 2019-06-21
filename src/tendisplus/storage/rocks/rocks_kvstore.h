@@ -37,7 +37,7 @@ class RocksTxn: public Transaction {
                                     uint64_t begin,
                                     bool ignoreReadBarrier) final;
 #else
-    std::unique_ptr<BinlogCursorV2> createBinlogCursorV2(
+    std::unique_ptr<RepllogCursorV2> createRepllogCursorV2(
                                     uint64_t begin,
                                     bool ignoreReadBarrier) final;
 #endif
