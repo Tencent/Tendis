@@ -317,7 +317,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     } else if (stringtoWrite.size() > 1024 * 1024 * 10) {
         secs = 10;
     } else {
-        // TODO(vinchen):
+        // TODO(takenliu): make configable, one big value is better
         secs = 100;
     }
     Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));

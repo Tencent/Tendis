@@ -244,12 +244,12 @@ uint64_t getCurThreadId() {
 }
 
 size_t ssAppendSizeAndString (std::stringstream& ss, const std::string& val) {
-    auto size = int32Encode(val.size());
-    std::string strSize((char*)&size, sizeof(size));
+    auto v = int32Encode(val.size());
+    std::string strSize((char*)&v, sizeof(v));
 
     ss << strSize << val;
 
-    return size + val.size();
+    return sizeof(v) + val.size();
 }
 
 }  // namespace tendisplus

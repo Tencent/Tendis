@@ -458,6 +458,7 @@ void ReplManager::controlRoutine() {
             std::lock_guard<std::mutex> lk(_mutex);
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
+            // TODO(takenliu): make recycLog work
             //doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {

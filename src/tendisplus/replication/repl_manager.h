@@ -202,6 +202,7 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
     std::shared_ptr<PoolMatrix> _logRecycleMatrix;
 
+    // TODO(takenliu): configable
     static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
     static constexpr size_t BINLOGSIZE = 1024 * 1024 * 64;
     static constexpr size_t BINLOGSYNCSECS = 20 * 60;
