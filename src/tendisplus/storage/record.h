@@ -425,6 +425,18 @@ class ReplLogRawV2 {
     uint64_t _timestamp;
 };
 
+class Binlog {
+ public:
+    Binlog() = default;
+    static size_t writeHeader(std::stringstream& s);
+    static size_t writeRepllogRaw(std::stringstream& s, const ReplLogRawV2& repllog);
+    static size_t decodeHeader(const char* str, size_t size);
+
+    static constexpr size_t HEADERSIZE = 1;
+    static constexpr uint8_t VERSION = 2;
+ private:
+};
+
 class ReplLogV2 {
  public:
     using KV = std::pair<std::string, std::string>;

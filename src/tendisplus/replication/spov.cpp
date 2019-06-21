@@ -474,7 +474,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
 }
 #else
 // if logKey == "", it means binlog_heartbeat
-Status ReplManager::applyBinlogV2(uint32_t storeId, uint64_t sessionId,
+Status ReplManager::applyRepllogV2(uint32_t storeId, uint64_t sessionId,
     const std::string& logKey, const std::string& logValue) {
     // NOTE(deyukong): donot lock store in IX/IS mode again
     // the caller has duty to do this thing.

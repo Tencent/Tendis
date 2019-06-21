@@ -28,7 +28,7 @@ std::string& replaceAll(std::string& str,
     const std::string& new_value);
 
 uint64_t getCurThreadId();
-std::stringstream& ssAppendSizeAndString(std::stringstream& ss, const std::string& val);
+size_t ssAppendSizeAndString(std::stringstream& ss, const std::string& val);
 
 }  // namespace tendisplus
 

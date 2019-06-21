@@ -42,19 +42,13 @@ Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const RecordKey& rk) {
     }
 
     const std::string& key = rk.getPrimaryKey();
-    const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
     if (key.size() != sizeof(_binlogId)) {
         return{ ErrorCodes::ERR_DECODE, "invalid keylen" };
     }
-
+    uint64_t binlogId = int64Decode(key.c_str());
 
     if (rk.getSecondaryKey().size() != 0) {
         return{ ErrorCodes::ERR_DECODE, "invalid seccondkeylen" };
-    }
-
-    uint64_t binlogId = 0;
-    for (size_t i = 0; i < sizeof(binlogId); i++) {
-        binlogId = (binlogId << 8) | keyCstr[i];
     }
 
     return ReplLogKeyV2(binlogId);
@@ -72,9 +66,7 @@ Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const std::string& rawKey) {
 std::string ReplLogKeyV2::encode() const {
     std::string key;
     key.resize(sizeof(_binlogId));
-    for (size_t i = 0; i < sizeof(_binlogId); i++) {
-        key[i] = static_cast<char>((_binlogId >> ((sizeof(_binlogId) - i - 1) * 8)) & 0xff);   // NOLINT
-    }
+    int64Encode(&key[0], _binlogId);
 
     // NOTE(vinchen): the subkey of ReplLogKeyV2 is empty.
     RecordKey tmpRk(ReplLogKeyV2::CHUNKID,
@@ -162,7 +154,7 @@ Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
     if (maxSize <= sizeof(_op)) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
-    uint64_t offset = 0;
+    size_t offset = 0;
 
     // op
     uint8_t op = valCstr[0];
@@ -314,28 +306,24 @@ std::string ReplLogValueV2::encodeHdr() const {
     size_t offset = 0;
 
     // CHUNKID
-    for (size_t i = 0; i < sizeof(_chunkId); ++i) {
-        header[offset++] = ((_chunkId >> ((sizeof(_chunkId) - i - 1) * 8)) & 0xff);  // NOLINT
-    }
+    auto size = int32Encode(&header[offset], _chunkId);
+    offset += size;
 
     // FLAG
-    header[offset++]= static_cast<char>(static_cast<uint16_t>(_flag) >> 8);
-    header[offset++]= static_cast<char>(static_cast<uint16_t>(_flag) & 0xff);
+    size = int16Encode(&header[offset], static_cast<uint16_t>(_flag));
+    offset += size;
 
     // TXNID
-    for (size_t i = 0; i < sizeof(_txnId); i++) {
-        header[offset++] = ((_txnId >> ((sizeof(_txnId) - i - 1) * 8)) & 0xff);
-    }
+    size = int64Encode(&header[offset], _txnId);
+    offset += size;
 
     // timestamp
-    for (size_t i = 0; i < sizeof(_timestamp); i++) {
-        header[offset++] = ((_timestamp >> ((sizeof(_timestamp) - i - 1) * 8)) & 0xff);
-    }
+    size = int64Encode(&header[offset], _timestamp);
+    offset += size;
 
     // versionEP 
-    for (size_t i = 0; i < sizeof(_versionEp); i++) {
-        header[offset++] = ((_versionEp >> ((sizeof(_versionEp) - i - 1) * 8)) & 0xff);
-    }
+    size = int64Encode(&header[offset], _versionEp);
+    offset += size;
 
     INVARIANT(offset == fixedHeaderSize());
 
@@ -398,39 +386,26 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const char* str, size_t size) {
     auto keyCstr = reinterpret_cast<const uint8_t*>(str);
     size_t offset = 0;
     // chunkid
-    for (size_t i = 0; i < sizeof(chunkid); i++) {
-        chunkid = (chunkid << 8) | keyCstr[i + offset];
-    }
+    chunkid = int32Decode(str + offset);
     offset += sizeof(chunkid);
 
     // flag
-    auto flag = static_cast<ReplFlag>((keyCstr[offset] << 8) | keyCstr[offset + 1]); // NOLINT
+    auto flag = static_cast<ReplFlag>(int16Decode(str + offset));
     offset += sizeof(flag);
 
     // txnid
-    for (size_t i = 0; i < sizeof(txnid); i++) {
-        txnid = (txnid << 8) | keyCstr[offset + i];
-    }
+    txnid = int64Decode(str + offset);
     offset += sizeof(txnid);
 
     // timestamp
-    for (size_t i = 0; i < sizeof(timestamp); i++) {
-        timestamp = (timestamp << 8) | keyCstr[offset + i];
-    }
+    timestamp = int64Decode(str + offset);
     offset += sizeof(timestamp);
 
     // versionEp
-    for (size_t i = 0; i < sizeof(versionEp); i++) {
-        versionEp = (versionEp << 8) | keyCstr[offset + i];
-    }
+    versionEp = int64Decode(str + offset);
     offset += sizeof(versionEp);
 
-    // entryCount
-    uint32_t entryCount = 0;
-    for (size_t i = 0; i < sizeof(entryCount); i++) {
-        entryCount = (entryCount << 8) | keyCstr[offset + i];
-    }
-    offset += sizeof(entryCount);
+    INVARIANT_D(offset == fixedHeaderSize());
 
     return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, keyCstr, size);
 }
@@ -517,6 +492,35 @@ uint64_t ReplLogRawV2::getTimestamp() {
     _timestamp = v.value().getTimestamp();
 
     return _timestamp;
+}
+
+size_t Binlog::writeHeader(std::stringstream& ss) {
+    std::string s;
+    s.resize(Binlog::HEADERSIZE);
+    s[0] = (uint8_t)Binlog::VERSION;
+
+    INVARIANT_D(Binlog::HEADERSIZE == 1);
+
+    ss << s;
+    return Binlog::HEADERSIZE;
+}
+
+size_t Binlog::decodeHeader(const char* str, size_t size) {
+    INVARIANT_D(str[0] == (uint8_t)Binlog::VERSION);
+    if (str[0] != Binlog::VERSION) {
+        return std::numeric_limits<size_t>::max();
+    }
+
+    return Binlog::HEADERSIZE;
+}
+
+size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllog) {
+    size_t size = 0;
+
+    size += ssAppendSizeAndString(ss, repllog.getReplLogKey());
+    size += ssAppendSizeAndString(ss, repllog.getReplLogValue());
+
+    return size;
 }
 
 ReplLogV2::ReplLogV2(ReplLogKeyV2&& key, ReplLogValueV2&& value,

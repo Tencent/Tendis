@@ -121,9 +121,15 @@ void testInt(uint64_t val) {
 
     {
         uint16_t val16 = (uint16_t)val;
+
         auto v1 = int16Encode(val16);
         memcpy(buf, &v1, sizeof(v1));
         auto v2 = int16Decode(buf);
+        EXPECT_EQ(v2, val16);
+
+        auto s = int16Encode(buf, val16);
+        EXPECT_EQ(s, sizeof(val16));
+        v2 = int16Decode(buf);
         EXPECT_EQ(v2, val16);
 
         // test align
@@ -141,6 +147,11 @@ void testInt(uint64_t val) {
         auto v2 = int32Decode(buf);
         EXPECT_EQ(v2, val32);
 
+        auto s = int32Encode(buf, val32);
+        EXPECT_EQ(s, sizeof(val32));
+        v2 = int32Decode(buf);
+        EXPECT_EQ(v2, val32);
+
         // test align
         for (size_t i = 0; i < sizeof(uint32_t); i++) {
             memcpy(buf + i, &v1, sizeof(v1));
@@ -154,6 +165,11 @@ void testInt(uint64_t val) {
         auto v1 = int64Encode(val64);
         memcpy(buf, &v1, sizeof(v1));
         auto v2 = int64Decode(buf);
+        EXPECT_EQ(v2, val64);
+
+        auto s = int64Encode(buf, val64);
+        EXPECT_EQ(s, sizeof(val64));
+        v2 = int64Decode(buf);
         EXPECT_EQ(v2, val64);
 
         // test align

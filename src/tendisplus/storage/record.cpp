@@ -372,21 +372,17 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
     }
 
     // chunkid
-    for (size_t i = 0; i < sizeof(chunkid); i++) {
-        chunkid = (chunkid << 8) | keyCstr[i + offset];
-    }
+    chunkid = int32Decode((const char*)keyCstr + offset);
     offset += sizeof(chunkid);
 
     // type
     typec = keyCstr[offset++];
     type = char2Rt(typec);
-    INVARIANT(type == getRealKeyType(type));
-    INVARIANT(type != RecordType::RT_INVALID);
+    INVARIANT_D(type == getRealKeyType(type));
+    INVARIANT_D(type != RecordType::RT_INVALID);
 
     // dbid
-    for (size_t i = 0; i < sizeof(dbid); i++) {
-        dbid = (dbid << 8) | keyCstr[i + offset];
-    }
+    dbid = int32Decode((const char*)keyCstr + offset);
     offset += sizeof(dbid);
 
     *chunkidOut = chunkid;
@@ -397,15 +393,8 @@ static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
 }
 
 uint32_t RecordKey::decodeChunkId(const std::string& key) {
-    uint32_t chunkid = 0;
-    INVARIANT(key.size() > sizeof(chunkid));
-    auto keyCstr = key.c_str();
-
-    for (size_t i = 0; i < sizeof(chunkid); i++) {
-        chunkid = (chunkid << 8) | keyCstr[i];
-    }
-
-    return chunkid;
+    INVARIANT_D(key.size() > sizeof(uint32_t));
+    return int32Decode(key.c_str());
 }
 
 Expected<RecordKey> RecordKey::decode(const std::string& key) {

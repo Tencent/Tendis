@@ -183,13 +183,18 @@ size_t recordSize = 10;
 size_t recordSize = 1000;
 #endif // 
 
-
 TEST(Repl, Common) {
+#ifdef _WIN32
+    size_t i = 1;
+    {
+#else
     for(size_t i = 0; i<2; i++) {
+#endif
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
                 destroyReplEnv();
                 destroyEnv("slave1");
+                destroyEnv("slave2");
                 });
 
         auto hosts = makeReplEnv(i);
@@ -214,7 +219,9 @@ TEST(Repl, Common) {
         }
 
         std::thread thd1([&master]() {
+#ifndef _WIN32
             testAll(master);
+#endif
         });
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -232,6 +239,7 @@ TEST(Repl, Common) {
         waitSlaveCatchup(master, slave2);
         compareData(master, slave2);
 
+#ifndef _WIN32
         master->stop();
         slave->stop();
         slave1->stop();
@@ -241,6 +249,7 @@ TEST(Repl, Common) {
         //ASSERT_EQ(master.use_count(), 1);
         ASSERT_EQ(slave1.use_count(), 1);
         ASSERT_EQ(slave2.use_count(), 1);
+#endif
 
         LOG(INFO) << ">>>>>> test store count:" << i << " end;";
     }

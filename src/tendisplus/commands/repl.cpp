@@ -541,6 +541,11 @@ class ApplyBinlogsCommandV2 : public Command {
         size_t cnt = 0;
         auto ptr = args[2].c_str();
         auto totalSize = args[2].size();
+
+        offset += Binlog::decodeHeader(ptr, totalSize);
+        if (offset > totalSize) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog header" };
+        }
         while (offset < totalSize) {
             // format: keySize|key|valueSize|value * binlogCnt
 
@@ -567,7 +572,7 @@ class ApplyBinlogsCommandV2 : public Command {
             offset += valueSize;
 
             // TODO(vinchen): should one binlog one transaction?
-            Status s = replMgr->applyBinlogV2(storeId, sess->id(),
+            Status s = replMgr->applyRepllogV2(storeId, sess->id(),
                                     logKey, logValue);
             if (!s.ok()) {
                 return s;
@@ -633,7 +638,7 @@ class BinlogHeartbeatCommand : public Command {
             return expdb.status();
         }
 
-        Status s = replMgr->applyBinlogV2(storeId, sess->id(), "", "");
+        Status s = replMgr->applyRepllogV2(storeId, sess->id(), "", "");
         if (!s.ok()) {
             return s;
         }

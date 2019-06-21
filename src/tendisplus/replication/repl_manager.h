@@ -106,7 +106,7 @@ class ReplManager {
     Status applySingleTxn(uint32_t storeId, uint64_t txnId,
         const std::list<ReplLog>& ops);
 #else
-    Status applyBinlogV2(uint32_t storeId, uint64_t sessionId,
+    Status applyRepllogV2(uint32_t storeId, uint64_t sessionId,
             const std::string& logKey, const std::string& logValue);
     Expected<uint64_t> applySingleTxnV2(uint32_t storeId,
         const std::string& logKey, const std::string& logValue);

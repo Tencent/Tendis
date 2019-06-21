@@ -101,6 +101,12 @@ uint16_t int16Encode(uint16_t input) {
     return htobe16(input);
 }
 
+size_t int16Encode(char* dest, uint16_t input) {
+    uint16_t v = htobe16(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
+}
+
 uint16_t int16Decode(const char* input) {
 #ifdef USE_ALIGNED_ACCESS
     uint16_t tmp;
@@ -109,6 +115,12 @@ uint16_t int16Decode(const char* input) {
 #else
     return be16toh(*(uint16_t*)input);
 #endif
+}
+
+size_t int32Encode(char* dest, uint32_t input) {
+    uint32_t v = htobe32(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
 }
 
 uint32_t int32Encode(uint32_t input) {
@@ -127,6 +139,12 @@ uint32_t int32Decode(const char* input) {
 
 uint64_t int64Encode(uint64_t input) {
     return htobe64(input);
+}
+
+size_t int64Encode(char* dest, uint64_t input) {
+    uint64_t v = htobe64(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
 }
 
 uint64_t int64Decode(const char* input) {

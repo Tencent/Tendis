@@ -270,20 +270,13 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     uint64_t binlogId = binlogPos;
 
     std::stringstream ss;
+    estimateSize += Binlog::writeHeader(ss);
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
-            cnt += 1;
-
-            estimateSize += explog.value().getReplLogKey().size();
-            estimateSize += explog.value().getReplLogValue().size();
-            estimateSize += 2 * sizeof(uint32_t);
-
-            ssAppendSizeAndString(ss, explog.value().getReplLogKey());
-            ssAppendSizeAndString(ss, explog.value().getReplLogValue());
-
+            estimateSize += Binlog::writeRepllogRaw(ss, explog.value());
             binlogId = explog.value().getBinlogId();
-
+            cnt += 1;
             if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
                 break;
             }
