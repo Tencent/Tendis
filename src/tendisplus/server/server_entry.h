@@ -97,10 +97,14 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getKVStoreCount() const;
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
+    void AddMonitor(Session* sess);
 
  private:
     ServerEntry();
     void ftmc();
+    void replyMonitors(Session* sess);
+    void DelMonitorNoLock(uint64_t connId);
+
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
     // _isRunning = false && _isStopped = true -> stop complete
@@ -139,6 +143,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
+    std::list<std::shared_ptr<Session>> _monitors;
 };
 }  // namespace tendisplus
 

@@ -18,7 +18,8 @@ SessionCtx::SessionCtx()
      _processPacketStart(0),
      _timestamp(-1),
      _version(-1),
-     _extendProtocol(false) {
+     _extendProtocol(false),
+     _isMonitor(false) {
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -141,6 +142,14 @@ void SessionCtx::setExtendProtocol(bool v) {
 void SessionCtx::setExtendProtocolValue(uint64_t ts, uint64_t version) {
     _timestamp = ts;
     _version = version;
+}
+
+uint32_t SessionCtx::getIsMonitor() const {
+    return _isMonitor;
+}
+
+void SessionCtx::setIsMonitor(bool in) {
+    _isMonitor = in;
 }
 
 void SessionCtx::setKeylock(const std::string& key, mgl::LockMode mode) {

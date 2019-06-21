@@ -1191,6 +1191,7 @@ struct redisCommand redisCommandTable[] = {
     { "scan",scanCommand,-2,"rR",0,NULL,0,0,0,0,0 },
     { "dbsize",dbsizeCommand,1,"rF",0,NULL,0,0,0,0,0 },
     { "auth",authCommand,2,"sltF",0,NULL,0,0,0,0,0 },
+    { "monitor",monitorCommand,1,"r",0,NULL,0,0,0,0,0 },
     { "ping",pingCommand,-1,"tF",0,NULL,0,0,0,0,0 },
     { "echo",echoCommand,2,"F",0,NULL,0,0,0,0,0 },
     { "save",saveCommand,1,"as",0,NULL,0,0,0,0,0 },

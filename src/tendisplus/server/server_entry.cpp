@@ -286,6 +286,11 @@ void ServerEntry::endSession(uint64_t connId) {
     if (it == _sessions.end()) {
         LOG(FATAL) << "destroy conn:" << connId << ",not exists";
     }
+    SessionCtx* pCtx = it->second->getCtx();
+    INVARIANT(pCtx != nullptr);
+    if (pCtx->getIsMonitor()) {
+        DelMonitorNoLock(connId);
+    }
     _sessions.erase(it);
 }
 
@@ -302,6 +307,58 @@ std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
                      << "length:" << sesses.size();
     }
     return sesses;
+}
+
+void ServerEntry::AddMonitor(Session* sess) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    for (const auto& monSess : _monitors) {
+        if (monSess->id() == sess->id()) {
+            return;
+        }
+    }
+    _monitors.push_back(std::shared_ptr<Session>(sess));
+}
+
+void ServerEntry::DelMonitorNoLock(uint64_t connId) {
+    for (auto it = _monitors.begin(); it != _monitors.end(); ++it) {
+        if (it->get()->id() == connId) {
+            _monitors.erase(it);
+            break;
+        }
+    }
+}
+
+void ServerEntry::replyMonitors(Session* sess) {
+    if (_monitors.size() <= 0) {
+        return;
+    }
+
+    std::string info = "+";
+
+    auto timeNow = std::chrono::duration_cast<std::chrono::microseconds>
+        (std::chrono::system_clock::now().time_since_epoch());
+    uint64_t timestamp = timeNow.count();
+
+    SessionCtx* pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+    uint32_t dbId = pCtx->getDbId();
+
+    info += std::to_string(timestamp/1000000) + "." + std::to_string(timestamp%1000000);
+    info += " [" + std::to_string(dbId) + " " + sess->getRemote() + "] ";
+    const auto& args = sess->getArgs();
+    for (uint i = 0; i < args.size(); ++i) {
+        info += "\"" + args[i] + "\"";
+        if (i != (args.size() -1)) {
+            info += " ";
+        }
+    }
+    info += "\r\n";
+
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    for (auto& it : _monitors) {
+        it->setResponse(info);
+    }
 }
 
 bool ServerEntry::processRequest(uint64_t connId) {
@@ -336,6 +393,9 @@ bool ServerEntry::processRequest(uint64_t connId) {
             redis_port::errorReply(expCmdName.status().toString()));
         return true;
     }
+
+    replyMonitors(sess);
+
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "connId:" << connId << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);

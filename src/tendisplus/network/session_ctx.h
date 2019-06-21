@@ -56,6 +56,9 @@ class SessionCtx {
     void unsetKeylock(const std::string& key);
 
     bool isLockedByMe(const std::string& key, mgl::LockMode mode);
+
+    uint32_t getIsMonitor() const;
+    void setIsMonitor(bool in);
  private:
     // not protected by mutex
     bool _authed;
@@ -68,6 +71,7 @@ class SessionCtx {
     uint64_t _version;
     bool _extendProtocol;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
+    bool _isMonitor;
 
     mutable std::mutex _mutex;
 
