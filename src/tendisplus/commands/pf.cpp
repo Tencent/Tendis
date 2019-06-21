@@ -452,7 +452,7 @@ class PfCountCommand : public Command {
 
         // TODO(vinchen): should be LOCK_S
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
-                                args, index, mgl::LockMode::LOCK_X);
+                                args, index, Command::RdLock());
         if (!locklist.ok()) {
             return locklist.status();
         }

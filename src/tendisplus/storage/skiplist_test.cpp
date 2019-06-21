@@ -84,7 +84,7 @@ TEST(SkipList, BackWardTail) {
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), {ErrorCodes::ERR_NOTFOUND, ""});
+        s = sl.save(eTxn.value().get(), {ErrorCodes::ERR_NOTFOUND, ""}, -1);
         EXPECT_TRUE(s.ok());
 
         std::string pointerStr = std::to_string(sl.getTail());
@@ -111,7 +111,7 @@ TEST(SkipList, BackWardTail) {
             std::to_string(keys[CNT-i-1]),
             eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
 
         keys.pop_back();
@@ -205,7 +205,7 @@ TEST(SkipList, Mix) {
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
         Expected<uint64_t> commitStatus = eTxn.value()->commit();
         EXPECT_TRUE(commitStatus.ok());
@@ -216,7 +216,7 @@ TEST(SkipList, Mix) {
 
     s = sl.remove(5, std::to_string(5), eTxn.value().get());
     EXPECT_TRUE(s.ok());
-    s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+    s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
     EXPECT_TRUE(s.ok());
 
     s = sl.insert(1, std::to_string(5), eTxn.value().get());
@@ -308,7 +308,7 @@ TEST(SkipList, InsertDelSameKeys) {
                 sl.traverse(ss, eTxn.value().get());
             // }
             LOG(INFO) << "\n" << ss.str();
-            s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+            s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
             EXPECT_TRUE(s.ok()) << s.toString();
             eTxn.value()->commit();
         }
@@ -366,7 +366,7 @@ TEST(SkipList, Common) {
         Status s = sl.insert(i, std::to_string(i), eTxn2.value().get());
         EXPECT_TRUE(s.ok());
    }
-    s = sl.save(eTxn2.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+    s = sl.save(eTxn2.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
     EXPECT_TRUE(s.ok());
     Expected<uint64_t> commitStatus2 = eTxn2.value()->commit();
     EXPECT_TRUE(commitStatus2.ok());
@@ -385,7 +385,7 @@ TEST(SkipList, Common) {
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
         Expected<uint64_t> commitStatus = eTxn.value()->commit();
         EXPECT_TRUE(commitStatus.ok());
@@ -428,7 +428,7 @@ TEST(SkipList, Common) {
 
         Status s = sl.remove(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
 
         // std::stringstream ss;

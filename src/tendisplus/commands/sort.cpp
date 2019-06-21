@@ -213,7 +213,7 @@ class SortCommand: public Command {
         // thread willing to aquire another lock.
         auto server = sess->getServerEntry();
         auto pCtx = sess->getCtx();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -237,7 +237,7 @@ class SortCommand: public Command {
 
         if (!exist) {
             ListMetaValue lm(INITSEQ, INITSEQ);
-            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META, 0);
+            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META, -1);
         } else {
             rv = std::make_unique<RecordValue>(expRv.value());
         }
@@ -438,7 +438,7 @@ class SortCommand: public Command {
         }
 
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
-                opkeys, opidx, mgl::LockMode::LOCK_X);
+                opkeys, opidx, Command::RdLock());
 
         if (!nosort) {
             const auto& op = ops[0];
@@ -548,16 +548,17 @@ class SortCommand: public Command {
         }
 
         if (store) {
+            auto addDb = server->getSegmentMgr()->getDbWithKeyLock(sess, args[storeKeyIndex],
+                    mgl::LockMode::LOCK_X);
+            if (!addDb.ok()) {
+                return addDb.status();
+            }
             auto expDone = Command::delKeyChkExpire(sess, args[storeKeyIndex], RecordType::RT_DATA_META);
             if (!expDone.ok()) {
                 return expDone.status();
             }
             if (result.size() == 0) {
                 return Command::fmtZero();
-            }
-            auto addDb = server->getSegmentMgr()->getDbHasLocked(sess, args[storeKeyIndex]);
-            if (!addDb.ok()) {
-                return addDb.status();
             }
             auto addStore = addDb.value().store;
             auto addPtxn = addStore->createTransaction();
@@ -579,7 +580,7 @@ class SortCommand: public Command {
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx++));
-                RecordValue subRv(x, RecordType::RT_LIST_ELE, 0);
+                RecordValue subRv(x, RecordType::RT_LIST_ELE, -1);
                 Status s = addStore->setKV(subRk, subRv, addTxn.get());
                 if (!s.ok()) {
                     return s;

@@ -64,7 +64,8 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
                 return { ErrorCodes::ERR_WRONG_TYPE, "" };
             }
         }
-        bool needExpire = (targetTtl != 0
+        bool needExpire = (!Command::noExpire() &&
+                           targetTtl != 0
                            && currentTs >= eValue.value().getTtl());
         bool exists =
             (eValue.status().code() == ErrorCodes::ERR_OK) && (!needExpire);
@@ -884,7 +885,7 @@ class GetSetGeneral: public Command {
             const Expected<RecordValue>& newValue =
                                 newValueFromOld(sess, rv);
             if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return RecordValue("", RecordType::RT_KV, 0);
+                return RecordValue("", RecordType::RT_KV, -1);
             }
             if (!newValue.ok()) {
                 return newValue.status();
@@ -902,7 +903,7 @@ class GetSetGeneral: public Command {
                 } else {
                     return rv.ok() ?
                             std::move(rv.value()) :
-                            RecordValue("", RecordType::RT_KV, 0);
+                            RecordValue("", RecordType::RT_KV, -1);
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

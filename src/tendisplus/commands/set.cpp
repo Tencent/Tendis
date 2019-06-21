@@ -111,7 +111,7 @@ Expected<std::string> genericSAdd(Session *sess,
         } else {
             cnt += 1;
         }
-        RecordValue subRv("", RecordType::RT_SET_ELE, 0);
+        RecordValue subRv("", RecordType::RT_SET_ELE, -1);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -159,7 +159,7 @@ class SMembersCommand: public Command {
 
         auto server = sess->getServerEntry();
         // TODO(vinchen): should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -248,7 +248,7 @@ class SIsMemberCommand: public Command {
 
         auto server = sess->getServerEntry();
         // TODO(vinchen) : should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -340,28 +340,25 @@ class SrandMemberCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
-                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                if (bulk == 1 && !explictBulk) {
-                    return Command::fmtNull();
-                } else {
-                    return Command::fmtZeroBulkLen();
-                }
-            } else if (!rv.status().ok()) {
-                return rv.status();
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
+
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (bulk == 1 && !explictBulk) {
+                return Command::fmtNull();
+            } else {
+                return Command::fmtZeroBulkLen();
             }
+        } else if (!rv.status().ok()) {
+            return rv.status();
         }
 
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
-
 
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
@@ -369,7 +366,6 @@ class SrandMemberCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_SET_META);
 
         ssize_t ssize = 0;
         if (rv.ok()) {
@@ -828,7 +824,8 @@ class SdiffgenericCommand: public Command {
 
         std::vector<int> index = getKeysFromCommand(args);
         // TODO(vinchen): should be LOCK_S if _stroe = false
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }
@@ -1004,7 +1001,8 @@ class SintergenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }
@@ -1343,7 +1341,8 @@ class SuniongenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }

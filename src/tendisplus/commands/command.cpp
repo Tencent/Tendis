@@ -18,6 +18,7 @@ namespace tendisplus {
 
 std::mutex Command::_mutex;
 bool Command::_noexpire = false;
+mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
 
 // TODO(vinchen): limit the size of _unSeenCmds
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
@@ -70,8 +71,15 @@ bool Command::noExpire() {
     return _noexpire;
 }
 
+mgl::LockMode Command::RdLock() {
+    return _expRdLk;
+}
+
 void Command::setNoExpire(bool cfg) {
     _noexpire = cfg;
+    if (_noexpire) {
+        _expRdLk = mgl::LockMode::LOCK_S;
+    }
 }
 
 bool Command::isMultiKey() const {
@@ -513,7 +521,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                        mgl::LockMode::LOCK_X);
+                        RdLock());
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -548,8 +556,17 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
             }
             if (hasVersion) {
                 auto pCtx = sess->getCtx();
-                if (pCtx->getVersionEP() < eValue.value().getVersionEP()) {
-                    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                if (pCtx->getVersionEP() == UINT64_MAX) {
+                    // isolate tendis cmd cannot modify value of tendis with cache.
+                    if (eValue.value().getVersionEP() != UINT64_MAX) {
+                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    }
+                } else {
+                    // any command can modify value with versionEP = -1
+                    if (pCtx->getVersionEP() < eValue.value().getVersionEP() &&
+                        eValue.value().getVersionEP() != UINT64_MAX) {
+                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    }
                 }
             }
             return eValue.value();

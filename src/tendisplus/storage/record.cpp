@@ -456,7 +456,7 @@ RecordValue::RecordValue(RecordType type)
     : _type(type),
     _ttl(0),
     _version(0),
-    _versionEP(0),
+    _versionEP(-1),
     _cas(-1),
     _pieceSize(-1),
     _totalSize(0),
@@ -467,7 +467,7 @@ RecordValue::RecordValue(double v, RecordType type)
     : _type(type),
     _ttl(0),
     _version(0),
-    _versionEP(0),
+    _versionEP(-1),
     _cas(-1),
     _pieceSize(-1) {
     auto d = ::tendisplus::doubleEncode(v);
@@ -490,7 +490,7 @@ RecordValue::RecordValue(RecordValue&& o)
     o._type = RecordType::RT_INVALID;
     o._ttl = 0;
     o._cas = -1;
-    o._version = o._versionEP = 0;
+    o._version = o._versionEP;
     o._pieceSize = -1;
     o._totalSize = o._value.size();
 }
@@ -512,7 +512,7 @@ RecordValue& RecordValue::operator=(RecordValue&& rhs) noexcept {
     rhs._type = RecordType::RT_INVALID;
     rhs._ttl = 0;
     rhs._cas = -1;
-    rhs._version = rhs._versionEP = 0;
+    rhs._version = rhs._versionEP;
     rhs._pieceSize = -1;
     rhs._totalSize = rhs._value.size();
 
@@ -581,7 +581,7 @@ std::string RecordValue::encode() const {
     value.insert(value.end(), varint.begin(), varint.end());
 
     // versionEP
-    varint = varintEncode(_versionEP);
+    varint = varintEncode(_versionEP + 1);
     value.insert(value.end(), varint.begin(), varint.end());
 
     // CAS
@@ -640,7 +640,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         return expt.status();
     }
     offset += expt.value().second;
-    uint64_t versionEP = expt.value().first;
+    uint64_t versionEP = expt.value().first - 1;
 
     expt = varintDecodeFwd(valueCstr+offset, value.size());
     if (!expt.ok()) {
@@ -1002,7 +1002,7 @@ std::string ReplLogValue::encode() const {
     val.insert(val.end(), valBytes.begin(), valBytes.end());
     val.insert(val.end(), _val.begin(), _val.end());
     std::string partial(reinterpret_cast<const char *>(val.data()), val.size());
-    RecordValue tmpRv(std::move(partial), RecordType::RT_BINLOG, 0);
+    RecordValue tmpRv(std::move(partial), RecordType::RT_BINLOG, -1);
     return tmpRv.encode();
 }
 

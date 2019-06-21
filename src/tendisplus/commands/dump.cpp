@@ -147,7 +147,7 @@ class DumpCommand: public Command {
 
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-                sess, key, mgl::LockMode::LOCK_X);
+                sess, key, Command::RdLock());
         auto exps = getSerializer(sess, key);
         if (!exps.ok()) {
             if (exps.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -772,7 +772,7 @@ class SetDeserializer: public Deserializer {
                     metaRk.getDbId(),
                     RecordType::RT_SET_ELE,
                     metaRk.getPrimaryKey(), std::move(ele));
-            RecordValue rv("", RecordType::RT_SET_ELE, 0);
+            RecordValue rv("", RecordType::RT_SET_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -854,7 +854,7 @@ class ZsetDeserializer: public Deserializer {
                 rk.getPrimaryKey(),
                 std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, 0);
+        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
         s = kvstore->setKV(headRk, headRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -919,7 +919,7 @@ class HashDeserializer: public Deserializer {
             // need existence check ?
             RecordKey rk(expdb.value().chunkId, _sess->getCtx()->getDbId(),
                     RecordType::RT_HASH_ELE, _key, field);
-            RecordValue rv(value, RecordType::RT_HASH_ELE, 0);
+            RecordValue rv(value, RecordType::RT_HASH_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -1020,7 +1020,7 @@ class ListDeserializer: public Deserializer {
                              RecordType::RT_LIST_ELE,
                              metaRk.getPrimaryKey(),
                              std::to_string(idx));
-                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE, 0);
+                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE, -1);
                 Status s = kvstore->setKV(rk, rv, txn.get());
                 if (!s.ok()) {
                     return s;

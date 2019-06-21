@@ -105,7 +105,7 @@ size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
         uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-        auto rv = RecordValue(val, type, 0, ttl, cas);
+        auto rv = RecordValue(val, type, -1, ttl, cas);
 
         auto eTxn1 = kvstore->createTransaction();
         EXPECT_EQ(eTxn1.ok(), true);
@@ -161,7 +161,7 @@ TEST(RocksKVStore, BinlogRightMost) {
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
     RecordKey rk(0, 1, RecordType::RT_KV, "a", "");
-    RecordValue rv("txn1", RecordType::RT_KV, 0);
+    RecordValue rv("txn1", RecordType::RT_KV, -1);
     Status s = kvstore->setKV(rk, rv, txn1.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -203,21 +203,21 @@ TEST(RocksKVStore, BinlogCursor) {
     Status s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "abc", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -237,7 +237,7 @@ TEST(RocksKVStore, BinlogCursor) {
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "b", ""),
-            RecordValue("txn3", RecordType::RT_KV, 0)),
+            RecordValue("txn3", RecordType::RT_KV, -1)),
         txn3.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -293,35 +293,35 @@ void cursorVisibleRoutine(RocksKVStore* kvstore) {
     Status s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "abc", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "b", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "bac", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -410,7 +410,7 @@ TEST(RocksKVStore, Backup) {
     Status s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
     Expected<uint64_t> exptCommitId = txn1->commit();
@@ -510,14 +510,14 @@ void commonRoutine(RocksKVStore *kvstore) {
     Status s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn1", RecordType::RT_KV, 0)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
     Expected<RecordValue> e = kvstore->getKV(
         RecordKey(0, 0, RecordType::RT_KV, "a", ""),
         txn1.get());
     EXPECT_EQ(e.ok(), true);
-    EXPECT_EQ(e.value(), RecordValue("txn1", RecordType::RT_KV, 0));
+    EXPECT_EQ(e.value(), RecordValue("txn1", RecordType::RT_KV, -1));
 
     Expected<RecordValue> e1 = kvstore->getKV(
         RecordKey(0, 0, RecordType::RT_KV, "a", ""),
@@ -526,7 +526,7 @@ void commonRoutine(RocksKVStore *kvstore) {
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn2", RecordType::RT_KV, 0)),
+            RecordValue("txn2", RecordType::RT_KV, -1)),
         txn2.get());
     if (kvstore->getTxnMode() == RocksKVStore::TxnMode::TXN_OPT) {
         EXPECT_EQ(s.code(), ErrorCodes::ERR_OK);
@@ -637,7 +637,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
         RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(0), "");
-        RecordValue rv("txn1", RecordType::RT_KV, 0);
+        RecordValue rv("txn1", RecordType::RT_KV, -1);
         Status s = kvstore->setKV(rk, rv, txn1.get());
         EXPECT_EQ(s.ok(), true);
 
@@ -661,7 +661,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
         RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(1), "");
-        RecordValue rv("txn1", RecordType::RT_KV, 0);
+        RecordValue rv("txn1", RecordType::RT_KV, -1);
         Status s = kvstore->setKV(rk, rv, txn1.get());
         EXPECT_EQ(s.ok(), true);
 
@@ -698,7 +698,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
             std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
             RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(i), "");
-            RecordValue rv("txn1", RecordType::RT_KV, 0);
+            RecordValue rv("txn1", RecordType::RT_KV, -1);
             Status s = kvstore->setKV(rk, rv, txn1.get());
             EXPECT_EQ(s.ok(), true);
 

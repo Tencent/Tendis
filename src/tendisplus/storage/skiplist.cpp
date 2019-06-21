@@ -182,7 +182,7 @@ Status SkipList::saveNode(uint64_t pointer,
                  RecordType::RT_ZSET_S_ELE,
                  _pk,
                  std::to_string(pointer));
-    RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE, 0);
+    RecordValue rv(val.encode(), RecordType::RT_ZSET_S_ELE, -1);
 
     // NOTE(vinchen): after saveNode, reset the change flag in ZSLEleValue
     INVARIANT(cache.find(pointer) != cache.end());

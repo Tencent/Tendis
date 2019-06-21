@@ -42,6 +42,9 @@ class Command {
     bool isWriteable() const;
     bool isAdmin() const;
     static bool noExpire();
+    // will be LOCK_S when _noexpire set true.
+    // should use lock upgrade in the future.
+    static mgl::LockMode RdLock();
     static void setNoExpire(bool cfg);
     int getFlags() const;
     static std::vector<std::string> listCommands();
@@ -97,6 +100,7 @@ class Command {
     static std::map<std::string, uint64_t> _unSeenCmds;
 
     static bool _noexpire;
+    static mgl::LockMode _expRdLk;
 private:
     static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
                             const RecordKey& rk, RecordType valueType,

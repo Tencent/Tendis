@@ -117,7 +117,7 @@ Expected<std::string> genericPush(Session *sess,
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx));
-        RecordValue subRv(args[i], RecordType::RT_LIST_ELE, 0);
+        RecordValue subRv(args[i], RecordType::RT_LIST_ELE, -1);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -754,39 +754,30 @@ class LRangeCommand: public Command {
             return eend.status();
         }
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return fmtZeroBulkLen();
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return fmtZeroBulkLen();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
-        }
-
-        SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
-        PStore kvstore = expdb.value().store;
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
 
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtZeroBulkLen();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+
+        PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction();
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_LIST_META);
-        if (!rv.ok()) {
-            if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            }
-            return rv.status();
-        }
 
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
@@ -872,7 +863,7 @@ class LIndexCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
         // TODO(vinchen): should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1008,7 +999,7 @@ class LSetCommand: public Command {
                             RecordType::RT_LIST_ELE,
                             key,
                             std::to_string(realIndex));
-            RecordValue subRv(value, RecordType::RT_LIST_ELE, 0);
+            RecordValue subRv(value, RecordType::RT_LIST_ELE, -1);
             Status s = kvstore->setKV(subRk, subRv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -1400,7 +1391,7 @@ class LInsertCommand: public Command {
                 RecordType::RT_LIST_ELE,
                 key,
                 std::to_string(index));
-        RecordValue targRv(value, RecordType::RT_LIST_ELE, 0);
+        RecordValue targRv(value, RecordType::RT_LIST_ELE, -1);
         Status s = kvstore->setKV(targRk, targRv, txn.get());
         if (!s.ok()) {
             return s;
