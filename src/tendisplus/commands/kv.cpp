@@ -885,7 +885,7 @@ class GetSetGeneral: public Command {
             const Expected<RecordValue>& newValue =
                                 newValueFromOld(sess, rv);
             if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return RecordValue("", RecordType::RT_KV, -1);
+                return RecordValue("", RecordType::RT_KV, sess->getCtx()->getVersionEP());
             }
             if (!newValue.ok()) {
                 return newValue.status();
@@ -903,7 +903,7 @@ class GetSetGeneral: public Command {
                 } else {
                     return rv.ok() ?
                             std::move(rv.value()) :
-                            RecordValue("", RecordType::RT_KV, -1);
+                            RecordValue("", RecordType::RT_KV, sess->getCtx()->getVersionEP());
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

@@ -662,6 +662,7 @@ std::string RecordValue::encode() const {
     // versionEP
     varint = varintEncode(_versionEP + 1);
     value.insert(value.end(), varint.begin(), varint.end());
+    INVARIANT_D(getRealKeyType(_type) != _type || _versionEP == -1);
 
     // CAS
     // NOTE(vinchen): cas should initialize -1, not zero.
@@ -726,6 +727,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t versionEP = expt.value().first - 1;
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || versionEP == -1);
 
     // CAS
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);

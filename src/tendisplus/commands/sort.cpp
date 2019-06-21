@@ -154,7 +154,7 @@ class SortCommand: public Command {
             size_t leftargs = args.size() - i - 1;
             if (!::strcasecmp(args[i].c_str(), "asc")) {
                 desc = false;
-            }else if (!::strcasecmp(args[i].c_str(), "desc")) {
+            } else if (!::strcasecmp(args[i].c_str(), "desc")) {
                 desc = true;
             } else if (!::strcasecmp(args[i].c_str(), "alpha")) {
                 alpha = true;
@@ -243,7 +243,8 @@ class SortCommand: public Command {
 
         if (!exist) {
             ListMetaValue lm(INITSEQ, INITSEQ);
-            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META, -1);
+            rv = std::make_unique<RecordValue>(lm.encode(), RecordType::RT_LIST_META,
+                sess->getCtx()->getVersionEP());
         } else {
             rv = std::make_unique<RecordValue>(expRv.value());
         }
@@ -443,112 +444,114 @@ class SortCommand: public Command {
             }
         }
 
-        auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
+        // handle GET
+        std::vector<std::string> result;
+        {
+            auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
                 opkeys, opidx, Command::RdLock());
 
-        if (!nosort) {
-            const auto& op = ops[0];
-            const auto& priKeylist = op.priKey;
-            std::string nval;
-            for (size_t i = 0; i < records.size(); i++) {
-                auto& ele = records[i];
-                if (!sortby) {
-                    nval = ele.key;
-                } else {
-                    // handle * not found
-                    if (priKeylist[i].size() == 0) {
-                        continue;
-                    }
-                    // handle "BY #"
-                    if (priKeylist[i] == ele.key) {
-                        // set subkey itself as value.
+            if (!nosort) {
+                const auto& op = ops[0];
+                const auto& priKeylist = op.priKey;
+                std::string nval;
+                for (size_t i = 0; i < records.size(); i++) {
+                    auto& ele = records[i];
+                    if (!sortby) {
                         nval = ele.key;
                     } else {
+                        // handle * not found
+                        if (priKeylist[i].size() == 0) {
+                            continue;
+                        }
+                        // handle "BY #"
+                        if (priKeylist[i] == ele.key) {
+                            // set subkey itself as value.
+                            nval = ele.key;
+                        } else {
+                            const auto& field = op.field;
+                            auto expVal = getPatternResult(sess, priKeylist[i], field);
+                            if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
+                                expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
+                                continue;
+                            }
+                            if (!expVal.ok()) {
+                                return expVal.status();
+                            }
+                            nval = std::move(expVal.value());
+                        }
+                    }
+
+                    // if alpha set, nkey
+                    if (alpha) {
+                        ele.sortBy = std::move(nval);
+                    } else {
+                        auto eScore = tendisplus::stod(nval);
+                        if (!eScore.ok()) {
+                            return{ ErrorCodes::ERR_WRONG_TYPE,
+                                    "One or more scores can't be converted into double" };
+                        }
+                        records[i].score = eScore.value();
+                    }
+                }
+            }
+
+            if (!nosort) {
+                std::sort(records.begin(), records.end(),
+                    [&sortby, &desc, &alpha](const Element& a, const Element& b) {
+                    bool ret(true);
+                    if (alpha) {
+                        if (sortby) {
+                            ret = a.sortBy < b.sortBy;
+                        } else {
+                            ret = a.key < b.key;
+                        }
+                    } else {
+                        if (a.score == b.score) {
+                            ret = a.key < b.key;
+                        } else {
+                            ret = a.score < b.score;
+                        }
+                    }
+                    return desc ? !ret : ret;
+                });
+            }
+
+            // ops has a minimum size 1.
+            result.reserve(ops.size() > 1 ? (ops.size() - 1) * records.size() : records.size());  // NOLINT
+            if (ops.size() == 1) {
+                ops.emplace_back(SortOp{ "", "" });
+            }
+            ssize_t sortStart(0), sortEnd(records.size());
+            if (start != 0 || end != 0) {
+                sortStart = start;
+                sortEnd = end + 1;
+            }
+            for (ssize_t i = sortStart; i < sortEnd; i++) {
+                for (size_t j = 1; j < ops.size(); j++) {
+                    const auto& op = ops[j];
+                    size_t uniqueId = records[i].uniqueId;
+                    if (op.cmd == "") {
+                        result.emplace_back(records[i].key);
+                        continue;
+                    }
+                    const auto& priKeylist = op.priKey;
+                    if (priKeylist[uniqueId].size() == 0) {
+                        // nullBulk.
+                        result.emplace_back("");
+                    } else if (priKeylist[uniqueId] == records[i].key) {
+                        result.emplace_back(records[i].key);
+                    } else {
                         const auto& field = op.field;
-                        auto expVal = getPatternResult(sess, priKeylist[i], field);
+                        auto expVal = getPatternResult(sess, priKeylist[uniqueId], field);
                         if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
                             expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
-                            continue;
+                            result.emplace_back("");
                         }
                         if (!expVal.ok()) {
                             return expVal.status();
                         }
-                        nval = std::move(expVal.value());
+                        result.emplace_back(expVal.value());
                     }
-                }
-
-                // if alpha set, nkey
-                if (alpha) {
-                    ele.sortBy = std::move(nval);
-                } else {
-                    auto eScore = tendisplus::stod(nval);
-                    if (!eScore.ok()) {
-                        return {ErrorCodes::ERR_WRONG_TYPE,
-                                "One or more scores can't be converted into double"};
-                    }
-                    records[i].score = eScore.value();
-                }
-            }
-        }
-
-        if (!nosort) {
-            std::sort(records.begin(), records.end(),
-                    [&sortby, &desc, &alpha](const Element& a, const Element& b) {
-                bool ret(true);
-                if (alpha) {
-                    if (sortby) {
-                        ret = a.sortBy < b.sortBy;
-                    } else {
-                        ret = a.key < b.key;
-                    }
-                } else {
-                    if (a.score == b.score) {
-                        ret = a.key < b.key;
-                    } else {
-                        ret = a.score < b.score;
-                    }
-                }
-                return desc ? !ret : ret;
-            });
-        }
-
-        // handle GET
-        std::vector<std::string> result;
-        // ops has a minimum size 1.
-        result.reserve(ops.size() > 1 ? (ops.size()-1) * records.size() : records.size());  // NOLINT
-        if (ops.size() == 1) {
-            ops.emplace_back(SortOp{"", ""});
-        }
-        ssize_t sortStart(0), sortEnd(records.size());
-        if (start != 0 || end != 0) {
-            sortStart = start;
-            sortEnd = end + 1;
-        }
-        for (ssize_t i = sortStart; i < sortEnd; i++) {
-            for (size_t j = 1; j < ops.size(); j++) {
-                const auto& op = ops[j];
-                size_t uniqueId = records[i].uniqueId;
-                if (op.cmd == "") {
-                    result.emplace_back(records[i].key);
-                    continue;
-                }
-                const auto& priKeylist = op.priKey;
-                if (priKeylist[uniqueId].size() == 0) {
-                    // nullBulk.
-                    result.emplace_back("");
-                } else if (priKeylist[uniqueId] == records[i].key) {
-                    result.emplace_back(records[i].key);
-                } else {
-                    const auto& field = op.field;
-                    auto expVal = getPatternResult(sess, priKeylist[uniqueId], field);
-                    if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
-                        expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
-                        result.emplace_back("");
-                    }
-                    if (!expVal.ok()) {
-                        return expVal.status();
-                    }
-                    result.emplace_back(expVal.value());
                 }
             }
         }
@@ -617,4 +620,4 @@ class SortCommand: public Command {
     }
 } sortCmd;
 
-} // namespace tendisplus
+}  // namespace tendisplus

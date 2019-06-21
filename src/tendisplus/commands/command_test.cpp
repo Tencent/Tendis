@@ -411,7 +411,8 @@ void testLockMulti(std::shared_ptr<ServerEntry> svr) {
         std::vector<int> index;
 
         for (int j = 0; j < 100; j++) {
-            vec.emplace_back(randomStr(20, true));
+            // different string
+            vec.emplace_back(randomStr(20, true) + std::to_string(j));
             index.emplace_back(j);
         }
 

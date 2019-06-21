@@ -124,6 +124,9 @@ TEST(Record, Common) {
         uint64_t cas = genRand()*genRand();
         uint64_t version = genRand()*genRand();
         uint64_t versionEP = genRand()*genRand();
+        if (getRealKeyType(type) == type) {
+            versionEP = -1;
+        }
         auto val = randomStr(5, true);
         uint64_t pieceSize = (uint64_t)-1;
         if (val.size() % 2 == 0) {

@@ -363,8 +363,6 @@ TEST(RocksKVStore, RepllogCursorV2) {
         cfg,
         blockCache);
 
-
-
     auto eTxn1 = kvstore->createTransaction();
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
@@ -372,21 +370,21 @@ TEST(RocksKVStore, RepllogCursorV2) {
     Status s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "a", ""),
-            RecordValue("txn1", RecordType::RT_KV)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "ab", ""),
-            RecordValue("txn1", RecordType::RT_KV)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "abc", ""),
-            RecordValue("txn1", RecordType::RT_KV)),
+            RecordValue("txn1", RecordType::RT_KV, -1)),
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -409,7 +407,7 @@ TEST(RocksKVStore, RepllogCursorV2) {
     s = kvstore->setKV(
         Record(
             RecordKey(0, 0, RecordType::RT_KV, "b", ""),
-            RecordValue("txn3", RecordType::RT_KV)),
+            RecordValue("txn3", RecordType::RT_KV, -1)),
         txn3.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -970,7 +968,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
                 size_t cnt = genRand() % 123 + 1;
                 for (size_t j = 0; j < cnt; j++) {
                     RecordKey rk(0, 1, RecordType::RT_KV, std::to_string(j*range), "");
-                    RecordValue rv("txn1", RecordType::RT_KV);
+                    RecordValue rv("txn1", RecordType::RT_KV, -1);
                     Status s;
                     if (j % 2 == 0) {
                         s = kvstore->setKV(rk, rv, txn1.get());

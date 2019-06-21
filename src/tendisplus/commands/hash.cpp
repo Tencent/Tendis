@@ -770,17 +770,7 @@ class HMGetGeneric: public Command {
         std::stringstream ss;
         if (_returnVsn) {
             Command::fmtMultiBulkLen(ss, args.size()-1);
-            Expected<RecordValue> eValue = kvstore->getKV(metaRk, txn.get(),
-                                            RecordType::RT_HASH_META);
-            if (!eValue.ok() &&
-                eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                return eValue.status();
-            }
-            if (!eValue.ok()) {
-                Command::fmtNull(ss);
-            } else {
-                Command::fmtBulk(ss, std::to_string(eValue.value().getCas()));
-            }
+            Command::fmtBulk(ss, std::to_string(rv.value().getCas()));
         } else {
             Command::fmtMultiBulkLen(ss, args.size()-2);
         }
@@ -1219,7 +1209,7 @@ class HMSetGeneric: public Command {
         for (size_t i = 2; i < args.size(); i+=2) {
             RecordKey subKey(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_HASH_ELE, key, args[i]);
-            RecordValue subRv(args[i+1], RecordType::RT_HASH_ELE, 0);
+            RecordValue subRv(args[i+1], RecordType::RT_HASH_ELE, -1);
             rcds.emplace_back(Record(std::move(subKey), std::move(subRv)));
         }
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {

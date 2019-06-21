@@ -99,7 +99,7 @@ std::string Status::getErrStr(ErrorCodes code) {
     case ErrorCodes::ERR_OUT_OF_RANGE:
         return "-ERR index out of range\r\n";
     case ErrorCodes::ERR_WRONG_VERSION_EP:
-        return "-WRONGVERSION \r\n";
+        return "-WRONGVERSION\r\n";
     default:
         break;
     }

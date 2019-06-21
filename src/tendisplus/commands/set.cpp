@@ -368,21 +368,14 @@ class SrandMemberCommand: public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
         ssize_t ssize = 0;
-        if (rv.ok()) {
-            Expected<SetMetaValue> exptSm =
-                SetMetaValue::decode(rv.value().getValue());
-            INVARIANT(exptSm.ok());
-            ssize = exptSm.value().getCount();
-            INVARIANT(ssize != 0);
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            if (bulk == 1 && !explictBulk) {
-                return Command::fmtNull();
-            } else {
-                return Command::fmtZeroBulkLen();
-            }
-        } else {
-            return rv.status();
+        Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
         }
+        ssize = exptSm.value().getCount();
+        INVARIANT_D(ssize != 0);
 
         auto cursor = txn->createCursor();
         uint32_t beginIdx = 0;

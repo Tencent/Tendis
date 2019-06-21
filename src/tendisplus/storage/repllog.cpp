@@ -353,7 +353,7 @@ std::string ReplLogValueV2::encode(
 
     val.resize(offset);
 
-    RecordValue tmpRv(std::move(val), RecordType::RT_BINLOG);
+    RecordValue tmpRv(std::move(val), RecordType::RT_BINLOG, -1);
 
     return tmpRv.encode();
 }
