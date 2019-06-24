@@ -770,7 +770,7 @@ class ZRevRankCommand : public Command {
 
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                                               mgl::LockMode::LOCK_S);
+                                RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
