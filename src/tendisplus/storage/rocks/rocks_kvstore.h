@@ -26,6 +26,7 @@ class RocksTxn: public Transaction {
  public:
     RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
         std::shared_ptr<BinlogObserver> logob,
+        Session* sess,
         uint64_t binlogId = Transaction::TXNID_UNINITED,
         uint32_t chunkId = Transaction::CHUNKID_UNINITED);
     RocksTxn(const RocksTxn&) = delete;
@@ -95,6 +96,7 @@ class RocksTxn: public Transaction {
     bool _replOnly;
 
     std::shared_ptr<BinlogObserver> _logOb;
+    Session * _session;
 
  private:
     // 0 for master, otherwise it's the latest commit binlog timestamp
@@ -109,7 +111,7 @@ class RocksTxn: public Transaction {
 class RocksOptTxn: public RocksTxn {
  public:
     RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
-        std::shared_ptr<BinlogObserver> logob);
+        std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
     virtual ~RocksOptTxn() = default;
@@ -121,7 +123,7 @@ class RocksOptTxn: public RocksTxn {
 class RocksPesTxn: public RocksTxn {
  public:
     RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
-        std::shared_ptr<BinlogObserver> logob);
+        std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksPesTxn(const RocksPesTxn&) = delete;
     RocksPesTxn(RocksPesTxn&&) = delete;
     virtual ~RocksPesTxn() = default;
@@ -159,7 +161,7 @@ class RocksKVStore: public KVStore {
         TxnMode txnMode = TxnMode::TXN_PES,
         uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
     virtual ~RocksKVStore() = default;
-    Expected<std::unique_ptr<Transaction>> createTransaction() final;
+    Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn,
                         RecordType valueType) final;

@@ -21,7 +21,7 @@ Expected<std::string> hincrfloatGeneric(Session *sess,
                    const RecordKey& subRk,
                    long double inc,
                    PStore kvstore) {
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -86,7 +86,7 @@ Expected<std::string> hincrGeneric(Session *sess,
                    const RecordKey& subRk,
                    int64_t inc,
                    PStore kvstore) {
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -248,7 +248,7 @@ class HExistsCommand: public Command {
                     RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -315,7 +315,7 @@ class HAllCommand: public Command {
         // uint32_t storeId = expdb.value().dbId;
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -463,7 +463,7 @@ class HGetRecordCommand: public Command {
                     RecordType::RT_HASH_ELE, key, subkey);
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -761,7 +761,7 @@ class HMGetGeneric: public Command {
                         RecordType::RT_HASH_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -835,7 +835,7 @@ Status hmcas(Session *sess, const std::string& key,
                     RecordType::RT_HASH_META, key, "");
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -1124,7 +1124,7 @@ class HMSetGeneric: public Command {
                         const Expected<RecordValue>& eValue,
                         const std::vector<Record>& rcds,
                         PStore kvstore) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1302,7 +1302,7 @@ class HSetGeneric: public Command {
                        const RecordKey& subRk,
                        const RecordValue& subRv,
                        PStore kvstore) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1504,7 +1504,7 @@ class HDelCommand: public Command {
         }
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }

@@ -154,7 +154,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -256,7 +256,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         return ptxn.status();
     }

@@ -218,7 +218,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
     uint64_t totalCount = 0;
     const uint32_t batchSize = 2048;
     while (true) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -234,7 +234,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
             continue;
         }
         TEST_SYNC_POINT_CALLBACK("delKeyPessimistic::TotalCount", &totalCount);
-        ptxn = kvstore->createTransaction();
+        ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -487,7 +487,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
 
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -549,7 +549,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
     // }
     PStore kvstore = expdb.value().store;
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

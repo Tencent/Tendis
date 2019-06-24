@@ -414,15 +414,15 @@ class ReplLogRawV2 {
     ReplLogRawV2(const Record& record);
     ReplLogRawV2(std::string&& key, std::string&& value);
     uint64_t getBinlogId();
+    uint64_t getVersionEp();
     uint64_t getTimestamp();
+    uint64_t getChunkId();
     const std::string& getReplLogKey() const { return _key; }
     const std::string& getReplLogValue() const { return _val; }
 
  private:
     std::string _key;
     std::string _val;
-    uint64_t _binlogId;
-    uint64_t _timestamp;
 };
 
 class Binlog {

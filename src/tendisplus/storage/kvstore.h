@@ -16,6 +16,7 @@
 #include "rapidjson/stringbuffer.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/server/session.h"
 
 #define CATALOG_NAME "catalog"
 
@@ -218,7 +219,7 @@ class KVStore {
     const std::string& dbPath() const { return _dbPath; }
     const std::string& dbId() const { return _id; }
     const std::string dftBackupDir() const { return _backupDir; }
-    virtual Expected<std::unique_ptr<Transaction>> createTransaction() = 0;
+    virtual Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,
                                         Transaction* txn) = 0;
     virtual Expected<RecordValue> getKV(const RecordKey& key,

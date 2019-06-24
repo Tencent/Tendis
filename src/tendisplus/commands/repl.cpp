@@ -217,7 +217,7 @@ class PullBinlogsCommand: public Command {
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
-        auto ptxn = store->createTransaction();
+        auto ptxn = store->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -326,7 +326,7 @@ class RestoreBinlogCommand: public Command {
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
-        auto ptxn = store->createTransaction();
+        auto ptxn = store->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -572,8 +572,7 @@ class ApplyBinlogsCommandV2 : public Command {
             offset += valueSize;
 
             // TODO(vinchen): should one binlog one transaction?
-            Status s = replMgr->applyRepllogV2(storeId, sess->id(),
-                                    logKey, logValue);
+            Status s = replMgr->applyRepllogV2(sess, storeId, logKey, logValue);
             if (!s.ok()) {
                 return s;
             }
@@ -638,7 +637,7 @@ class BinlogHeartbeatCommand : public Command {
             return expdb.status();
         }
 
-        Status s = replMgr->applyRepllogV2(storeId, sess->id(), "", "");
+        Status s = replMgr->applyRepllogV2(sess, storeId, "", "");
         if (!s.ok()) {
             return s;
         }

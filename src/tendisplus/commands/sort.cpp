@@ -88,7 +88,7 @@ class SortCommand: public Command {
             return byRv.status();
         }
         auto byStore = expdb.value().store;
-        auto byExptxn = byStore->createTransaction();
+        auto byExptxn = byStore->createTransaction(sess);
         if (!byExptxn.ok()) {
             return byExptxn.status();
         }
@@ -337,7 +337,7 @@ class SortCommand: public Command {
         std::vector<Element> records;
         records.reserve(veclen);
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -570,7 +570,7 @@ class SortCommand: public Command {
                 return Command::fmtZero();
             }
             auto addStore = addDb.value().store;
-            auto addPtxn = addStore->createTransaction();
+            auto addPtxn = addStore->createTransaction(sess);
             if (!addPtxn.ok()) {
                 return addPtxn.status();
             }

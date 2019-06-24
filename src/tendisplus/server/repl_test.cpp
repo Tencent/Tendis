@@ -88,11 +88,11 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         auto kvstore1 = master->getStores()[i];
         auto kvstore2 = slave->getStores()[i];
 
-        auto ptxn2 = kvstore2->createTransaction();
+        auto ptxn2 = kvstore2->createTransaction(nullptr);
         EXPECT_TRUE(ptxn2.ok());
         std::unique_ptr<Transaction> txn2 = std::move(ptxn2.value());
 
-        auto ptxn1 = kvstore1->createTransaction();
+        auto ptxn1 = kvstore1->createTransaction(nullptr);
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
         auto cursor1 = txn1->createCursor();

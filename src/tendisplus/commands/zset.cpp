@@ -25,7 +25,7 @@ Expected<std::string> genericZrem(Session *sess,
                             const std::vector<std::string>& subkeys) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -135,7 +135,7 @@ Expected<std::string> genericZadd(Session *sess,
 
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -280,7 +280,7 @@ Expected<std::string> genericZRank(Session *sess,
                                    const RecordValue& mv,
                                    const std::string& subkey,
                                    bool reverse) {
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -370,7 +370,7 @@ class ZRemByRangeGenericCommand: public Command {
                             int64_t end) {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -922,7 +922,7 @@ class ZCountCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1019,7 +1019,7 @@ class ZlexCountCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1159,7 +1159,7 @@ class ZRangeByScoreGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1296,7 +1296,7 @@ class ZRangeByLexGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1402,7 +1402,7 @@ class ZRangeGenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1519,7 +1519,7 @@ class ZScoreCommand: public Command {
                             RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1897,7 +1897,7 @@ class ZUnionInterGenericCommand : public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -2005,7 +2005,7 @@ class ZUnionInterGenericCommand : public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

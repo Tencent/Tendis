@@ -94,7 +94,7 @@ class KeysCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -200,7 +200,7 @@ class DbsizeCommand: public Command {
             }
 
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -383,7 +383,7 @@ class IterAllCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -814,7 +814,7 @@ class BinlogTimeCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -879,7 +879,7 @@ class BinlogPosCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

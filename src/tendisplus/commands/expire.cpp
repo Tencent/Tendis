@@ -53,7 +53,7 @@ Expected<bool> expireAfterNow(Session *sess,
     //     return {ErrorCodes::ERR_BUSY, "key locked"};
     // }
     for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -447,7 +447,7 @@ class PersistCommand : public Command {
                     vt, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

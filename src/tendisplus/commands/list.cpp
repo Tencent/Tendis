@@ -235,7 +235,7 @@ class ListPopWrapper: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -342,7 +342,7 @@ class ListPushWrapper: public Command {
             valargs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -592,7 +592,7 @@ class LtrimCommand: public Command {
                             const ListMetaValue& lm,
                             int64_t start, int64_t end,
                             const Expected<RecordValue>& rv) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -617,7 +617,7 @@ class LtrimCommand: public Command {
                     if (!v.ok()) {
                         return v.status();
                     }
-                    auto ptxn = kvstore->createTransaction();
+                    auto ptxn = kvstore->createTransaction(sess);
                     if (!ptxn.ok()) {
                         return ptxn.status();
                     }
@@ -773,7 +773,7 @@ class LRangeCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -882,7 +882,7 @@ class LIndexCommand: public Command {
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -988,7 +988,7 @@ class LSetCommand: public Command {
 
         PStore kvstore = expdb.value().store;
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1089,7 +1089,7 @@ class LRemCommand: public Command {
         hole.push_back(head - 1);
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1314,7 +1314,7 @@ class LInsertCommand: public Command {
         uint64_t index = step < 0 ? tail - 1 : head;
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

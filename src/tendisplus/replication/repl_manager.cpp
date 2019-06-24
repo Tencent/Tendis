@@ -209,7 +209,7 @@ Status ReplManager::startup() {
             });
 
         if (isOpen) {
-            auto ptxn = store->createTransaction();
+            auto ptxn = store->createTransaction(nullptr);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -512,7 +512,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         return;
     }
     auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         LOG(ERROR) << "recycleBinlog create txn failed:"
                    << ptxn.status().toString();

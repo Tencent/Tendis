@@ -436,62 +436,59 @@ bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
 
 ReplLogRawV2::ReplLogRawV2(const std::string& key,
                 const std::string& value) :
-                _key(key), _val(value),
-                _binlogId(Transaction::TXNID_UNINITED),
-                _timestamp(0) {
+                _key(key), _val(value) {
 }
 
 ReplLogRawV2::ReplLogRawV2(const Record& record)
     : _key(record.getRecordKey().encode()),
-    _val(record.getRecordValue().encode()),
-    _binlogId(Transaction::TXNID_UNINITED),
-    _timestamp(0) {
+    _val(record.getRecordValue().encode()) {
 }
 
 ReplLogRawV2::ReplLogRawV2(std::string&& key, std::string&& value) :
             _key(std::move(key)),
-            _val(std::move(value)),
-            _binlogId(Transaction::TXNID_UNINITED),
-            _timestamp(0) {
+            _val(std::move(value)) {
 }
 
 ReplLogRawV2::ReplLogRawV2(ReplLogRawV2&& o)
             : _key(std::move(o._key)),
-            _val(std::move(o._val)),
-            _binlogId(o._binlogId),
-            _timestamp(o._timestamp) {
-    o._binlogId = Transaction::TXNID_UNINITED;
-    o._timestamp = 0;
+            _val(std::move(o._val)) {
 }
 
+// TODO(vinchen): low performance now
 uint64_t ReplLogRawV2::getBinlogId() {
-    if (_binlogId != Transaction::TXNID_UNINITED) {
-        return _binlogId;
-    }
-
     auto k = ReplLogKeyV2::decode(_key);
     INVARIANT_D(k.ok());
     if (!k.ok()) {
         return Transaction::TXNID_UNINITED;
     }
-    _binlogId = k.value().getBinlogId();
+    return k.value().getBinlogId();
+}
 
-    return _binlogId;
+uint64_t ReplLogRawV2::getVersionEp() {
+    auto v = ReplLogValueV2::decode(_val);
+    INVARIANT_D(v.ok());
+    if (!v.ok()) {
+        return (uint64_t)-1;
+    }
+    return v.value().getVersionEp();
 }
 
 uint64_t ReplLogRawV2::getTimestamp() {
-    if (_timestamp != 0) {
-        return _timestamp;
-    }
-
     auto v = ReplLogValueV2::decode(_val);
     INVARIANT_D(v.ok());
     if (!v.ok()) {
         return 0;
     }
-    _timestamp = v.value().getTimestamp();
+    return v.value().getTimestamp();
+}
 
-    return _timestamp;
+uint64_t ReplLogRawV2::getChunkId() {
+    auto v = ReplLogValueV2::decode(_val);
+    INVARIANT_D(v.ok());
+    if (!v.ok()) {
+        return 0;
+    }
+    return v.value().getChunkId();
 }
 
 size_t Binlog::writeHeader(std::stringstream& ss) {

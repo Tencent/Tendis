@@ -87,6 +87,7 @@ Expected<std::string> RocksKVCursor::key() {
 
 RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
                    std::shared_ptr<tendisplus::BinlogObserver> ob,
+                   Session* sess,
                    uint64_t binlogId, uint32_t chunkId)
         :_txnId(txnId),
          _binlogId(binlogId),
@@ -95,7 +96,8 @@ RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
          _store(store),
          _done(false),
          _replOnly(replOnly),
-         _logOb(ob) {
+         _logOb(ob),
+         _session(sess) {
 }
 
 #ifdef BINLOG_V1
@@ -217,7 +219,11 @@ Expected<uint64_t> RocksTxn::commit() {
         // TODO(vinchen): versionEp should get from session
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,
             _replLogValues.back().getTimestamp(),
-            0,  // versionEp
+#ifndef NO_VERSIONEP
+            _session ? _session->getCtx()->getVersionEP() : SessionCtx::VERSIONEP_UNINITED,
+#else
+            SessionCtx::VERSIONEP_UNINITED,
+#endif // !
             nullptr, 0);
 
         binlogTxnId = _txnId;
@@ -526,8 +532,8 @@ RocksTxn::~RocksTxn() {
 }
 
 RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
-            std::shared_ptr<tendisplus::BinlogObserver> ob)
-    :RocksTxn(store, txnId, replOnly, ob) {
+            std::shared_ptr<tendisplus::BinlogObserver> ob, Session* sess)
+    :RocksTxn(store, txnId, replOnly, ob, sess) {
     // NOTE(deyukong): the rocks-layer's snapshot should be opened in
     // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
     // or, we are not able to guarantee the oplog order is the same as the
@@ -566,8 +572,8 @@ void RocksOptTxn::ensureTxn() {
 }
 
 RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
-            std::shared_ptr<BinlogObserver> ob)
-    :RocksTxn(store, txnId, replOnly, ob) {
+            std::shared_ptr<BinlogObserver> ob, Session* sess)
+    :RocksTxn(store, txnId, replOnly, ob, sess) {
     // NOTE(deyukong): the rocks-layer's snapshot should be opened in
     // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
     // or, we are not able to guarantee the oplog order is the same as the
@@ -1331,7 +1337,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     return result;
 }
 
-Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
+Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "db stopped!"};
@@ -1341,9 +1347,9 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction() {
     std::unique_ptr<Transaction> ret = nullptr;
     // TODO(vinchen): should new RocksTxn out of mutex?
     if (_txnMode == TxnMode::TXN_OPT) {
-        ret.reset(new RocksOptTxn(this, txnId, replOnly, _logOb));
+        ret.reset(new RocksOptTxn(this, txnId, replOnly, _logOb, sess));
     } else {
-        ret.reset(new RocksPesTxn(this, txnId, replOnly, _logOb));
+        ret.reset(new RocksPesTxn(this, txnId, replOnly, _logOb, sess));
     }
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);

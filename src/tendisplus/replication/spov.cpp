@@ -453,7 +453,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(nullptr);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -474,8 +474,8 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
 }
 #else
 // if logKey == "", it means binlog_heartbeat
-Status ReplManager::applyRepllogV2(uint32_t storeId, uint64_t sessionId,
-    const std::string& logKey, const std::string& logValue) {
+Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
+        const std::string& logKey, const std::string& logValue) {
     // NOTE(deyukong): donot lock store in IX/IS mode again
     // the caller has duty to do this thing.
     [this, storeId]() {
@@ -486,6 +486,7 @@ Status ReplManager::applyRepllogV2(uint32_t storeId, uint64_t sessionId,
         _syncStatus[storeId]->isRunning = true;
     }();
 
+    uint64_t sessionId = sess->id();
     bool idMatch = [this, storeId, sessionId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         return (sessionId == _syncStatus[storeId]->sessionId);
@@ -507,7 +508,7 @@ Status ReplManager::applyRepllogV2(uint32_t storeId, uint64_t sessionId,
         // binlog_heartbeat
         // do nothing
     } else {
-        auto binlog = applySingleTxnV2(storeId, logKey, logValue);
+        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue);
         if (!binlog.ok()) {
             return binlog.status();
         }
@@ -522,7 +523,7 @@ Status ReplManager::applyRepllogV2(uint32_t storeId, uint64_t sessionId,
 }
 
 
-Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
+Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue) {
     // TODO(vinchen): should be called with lock held
     auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
@@ -532,7 +533,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(uint32_t storeId,
     }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }

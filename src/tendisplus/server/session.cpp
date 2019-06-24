@@ -15,7 +15,7 @@ thread_local Session* curSession = nullptr;
 Session::Session(std::shared_ptr<ServerEntry> svr)
         :_args(std::vector<std::string>()),
          _server(svr),
-         _ctx(std::make_unique<SessionCtx>()),
+         _ctx(std::make_unique<SessionCtx>(this)),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
@@ -105,17 +105,20 @@ void LocalSession::setResponse(const std::string& s) {
 
 LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
     _sess = std::make_shared<LocalSession>(svr);
-    svr->addSession(_sess);
+    if (svr.get()) {
+        svr->addSession(_sess);
+    }
 }
 
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
-    INVARIANT(svr != nullptr);
 #ifdef _DEBUG
     LOG(INFO) << "local session, id:" << _sess->id()
         << " destroyed";
 #endif
-    svr->endSession(_sess->id());
+    if (svr.get()) {
+        svr->endSession(_sess->id());
+    }
 }
 
 LocalSession* LocalSessionGuard::getSession() {

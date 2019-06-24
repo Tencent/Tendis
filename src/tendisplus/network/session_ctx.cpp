@@ -9,17 +9,18 @@
 
 namespace tendisplus {
 
-SessionCtx::SessionCtx()
+SessionCtx::SessionCtx(Session* sess)
     :_authed(false),
      _dbId(0),
      _waitlockStore(0),
      _waitlockMode(mgl::LockMode::LOCK_NONE),
      _waitlockKey(""),
      _processPacketStart(0),
-     _timestamp(-1),
-     _version(-1),
+     _timestamp(TSEP_UNINITED),
+     _version(VERSIONEP_UNINITED),
      _extendProtocol(false),
-     _replOnly(false) {
+     _replOnly(false),
+     _session(sess) {
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -89,7 +90,7 @@ Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
         txn = _txnMap[kvstore->dbId()].get();
     }
     else {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_session);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

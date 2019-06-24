@@ -202,7 +202,7 @@ class SetCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -226,7 +226,7 @@ class SetCommand: public Command {
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
-            ptxn = kvstore->createTransaction();
+            ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -279,7 +279,7 @@ class SetexGeneralCommand: public Command {
                         RecordType::RT_KV, key, "");
         RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -394,7 +394,7 @@ class SetNxCommand: public Command {
                      RecordType::RT_KV, key, "");
         RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -877,7 +877,7 @@ class GetSetGeneral: public Command {
                      RecordType::RT_KV, key, "");
 
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1747,7 +1747,7 @@ class BitopCommand: public Command {
                             RecordType::RT_KV, targetKey, "");
         RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -2584,7 +2584,7 @@ class BitFieldCommand: public Command {
                     rv.getTtl(),
                     rv);
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }

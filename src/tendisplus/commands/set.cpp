@@ -177,7 +177,7 @@ class SMembersCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -266,7 +266,7 @@ class SIsMemberCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -361,7 +361,7 @@ class SrandMemberCommand: public Command {
         }
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -513,7 +513,7 @@ class SpopCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -539,7 +539,7 @@ class SpopCommand: public Command {
             if (rcds.size() > 1) {
                 Command::fmtMultiBulkLen(ss, rcds.size());
             }
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -642,7 +642,7 @@ class SaddCommand: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -772,7 +772,7 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -841,7 +841,7 @@ class SdiffgenericCommand: public Command {
             RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
             PStore kvstore = expdb.value().store;
 
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -898,7 +898,7 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1040,7 +1040,7 @@ class SintergenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1123,7 +1123,7 @@ class SintergenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1355,7 +1355,7 @@ class SuniongenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1410,7 +1410,7 @@ class SuniongenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
