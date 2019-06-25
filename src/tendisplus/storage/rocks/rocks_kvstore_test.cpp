@@ -551,6 +551,9 @@ void cursorVisibleRoutine(RocksKVStore* kvstore) {
         cnt += 1;
     }
     EXPECT_EQ(cnt, 2);
+
+    auto s1 = txn1->commit();
+    EXPECT_TRUE(s1.ok());
 }
 
 TEST(RocksKVStore, OptCursorVisible) {

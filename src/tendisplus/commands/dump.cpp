@@ -711,23 +711,28 @@ class KvDeserializer: public Deserializer {
                 pCtx->getDbId(),
                 RecordType::RT_KV, _key, "");
         RecordValue rv(ret, RecordType::RT_KV, pCtx->getVersionEP(), _ttl);
-        for (int32_t i = 0; i < Command::RETRY_CNT - 1; ++i) {
+        for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
             }
             Expected<uint64_t> expCmt = txn->commit();
-            if (!expCmt.ok()) {
+            if (expCmt.ok()) {
+                return { ErrorCodes::ERR_OK, "OK"};
+            } else if (expCmt.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return expCmt.status();
             }
+
+            if (i == Command::RETRY_CNT - 1) {
+                return expCmt.status();
+            }
+
             ptxn = kvstore->createTransaction(_sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             txn = std::move(ptxn.value());
         }
-
-        return { ErrorCodes::ERR_OK, "OK"};
     }
 };
 

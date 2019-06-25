@@ -527,6 +527,13 @@ RocksTxn::~RocksTxn() {
     if (_done) {
         return;
     }
+
+#ifndef BINLOG_V1
+    // NOTE(vinchen): for unittest, make sure whether is there any command
+    // forget to commit or rollback
+    INVARIANT_D(_replLogValues.size() == 0);
+#endif
+
     _txn.reset();
     _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
 }

@@ -13,6 +13,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -1839,7 +1840,8 @@ class MSetGenericCommand: public Command {
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
                 auto etxn = pCtx->createTransaction(kvstore);
                 if (!etxn.ok()) {
-                    return etxn.status();
+                    failed = true;
+                    break;
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
@@ -1857,28 +1859,33 @@ class MSetGenericCommand: public Command {
                         break;
                     } else {
                         failed = true;
-                        goto END;
+                        break;
                     }
                 } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {   // NOLINT
                     failed = true;
-                    goto END;
+                    break;
                 } else {
                     if (i == RETRY_CNT - 1) {
                         failed = true;
-                        goto END;
+                        break;
                     } else {
                         continue;
                     }
                 }
             }
+
+            if (failed) {
+                break;
+            }
         }
-        {
+        if (!failed) {
             auto s = pCtx->commitAll("mset(nx)");
             if (!s.ok()) {
                 failed = true;
             }
+        } else {
+            pCtx->rollbackAll();
         }
-        END:
         if (_flags == REDIS_SET_NO_FLAGS) {
             // mset
             return Command::fmtOK();
@@ -2019,6 +2026,12 @@ public:
         if (!sptxn.ok()) {
             return sptxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         // del old meta k/v
         Status s = srcstore->delKV(rk, sptxn.value());
@@ -2040,6 +2053,7 @@ public:
 
         if (rv.value().getRecordType() == RecordType::RT_KV) {
             pCtx->commitAll("rename");
+            rollback = false;
             return _flagnx ? Command::fmtOne() : Command::fmtOK();
         }
 
@@ -2091,6 +2105,7 @@ public:
         }
 
         pCtx->commitAll("rename");
+        rollback = false;
 
         return _flagnx ? Command::fmtOne() : Command::fmtOK();
     }

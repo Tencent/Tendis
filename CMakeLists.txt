@@ -5,6 +5,9 @@ project (TENDIS_PLUS)
 #message("TODO(deyukong): currently jemalloc can only be used by LD_PRELOAD, integrate it into thirdparty \
 # and compile internally")
 
+message("TODO(vinchen): only in debug mode, remove it when release")
+add_definitions(-DTENDIS_DEBUG)
+
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})
 if(CMAKE_COMPILER_IS_GNUCC)

@@ -240,19 +240,17 @@ class ListPopWrapper: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPop(sess, kvstore, txn.get(), metaRk, rv, _pos);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return Command::fmtBulk(s.value());
-            }
-            if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (s1.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtNull();
+            } else if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return Command::fmtBulk(s1.value());
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -347,16 +345,15 @@ class ListPushWrapper: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPush(sess, kvstore, txn.get(), metaRk, rv, valargs, _pos, _needExist);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return s.value();
+            if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return s1.value();
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -461,6 +458,12 @@ class RPopLPushCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -505,6 +508,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -548,6 +552,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {

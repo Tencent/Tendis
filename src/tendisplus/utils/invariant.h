@@ -11,7 +11,7 @@
         } \
     } while (0)
 
-#ifdef _DEBUG
+#ifdef TENDIS_DEBUG 
 #define INVARIANT_D(e) INVARIANT(e)
 #else
 #define INVARIANT_D(e) 

@@ -10,6 +10,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -1264,6 +1265,12 @@ class SmoveCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
         // directly remove member from source
@@ -1302,6 +1309,7 @@ class SmoveCommand: public Command {
                 Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, { "", "" , member });
                 if (addRet.ok()) {
                     pCtx->commitAll("smove");
+                    rollback = false;
                     return addRet.value();
                 }
                 if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
