@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
     "time"
 	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
@@ -17,19 +18,25 @@ const (
 )
 
 var (
-	backend     = flag.String("backendhost", "9.24.0.133:10001", "backend tendisplus host")
+	// backend     = flag.String("backendhost", "9.24.0.133:10001", "backend tendisplus host")
 	backendpass = flag.String("backendpassword", "", "backend password")
 	frontproxy  = flag.String("frontproxy", "9.24.0.133:10001", "frontend proxy host")
-	frontpass   = flag.String("frontpass", "tt7715TTC", "front password")
+	frontpass   = flag.String("frontpass", "", "front password")
 )
 
 func main() {
 	flag.Parse()
-	be, err := redis.DialTimeout("tcp", *backend, 10*time.Second)
+	args := os.Args
+    log.Infof("args %+v",args)
+	backend := args[1]
+	frontend := args[2]
+	be, err := redis.DialTimeout("tcp", backend, 10*time.Second)
+	// be, err := redis.DialTimeout("tcp", *backend, 10*time.Second)
 	if err != nil {
-		log.Fatalf("dial %s failed:%v", *backend, err)
+		log.Fatalf("dial %s failed:%v", backend, err)
 	}
-	fe, err := redis.DialTimeout("tcp", *frontproxy, 10*time.Second)
+	fe, err := redis.DialTimeout("tcp", frontend, 10*time.Second)
+	// fe, err := redis.DialTimeout("tcp", *frontproxy, 10*time.Second)
 	if err != nil {
 		log.Fatalf("dial %s failed:%v", *frontproxy, err)
 	}
@@ -40,12 +47,12 @@ func main() {
     }
     if *backendpass != "" {
         if v, err := be.Cmd("AUTH", *backendpass).Str(); err != nil || v != "OK" {
-            log.Fatalf("auth %s failed", *backend)
+            log.Fatalf("auth %s failed", backend)
         }
     }
 	batch := 10
 	cnt := 0
-	for i := 0; i < 1; i += 1 {
+	for i := 0; i < 10; i += 1 {
 		iter := "0"
 		for {
 			if arr, err := be.Cmd("iterall", i, iter, batch).Array(); err != nil {
@@ -71,10 +78,14 @@ func main() {
 					if err != nil {
 						log.Fatalf("parse into record failed:%v", err)
 					}
-					types, _ := arr2[0].Str()
-					key, _ := arr2[1].Str()
-					subkey, _ := arr2[2].Str()
-					val, _ := arr2[3].Str()
+					dbid, _ := arr2[0].Str()
+					if _, err := fe.Cmd("SELECT", dbid).Str(); err != nil {
+					    log.Fatalf("select %s failed %v", dbid, err)
+					}
+					types, _ := arr2[1].Str()
+					key, _ := arr2[2].Str()
+					subkey, _ := arr2[3].Str()
+					val, _ := arr2[4].Str()
 					typ, _ := strconv.ParseInt(types, 10, 64)
 					if typ == KV {
 						if v, err := fe.Cmd("GET", key).Str(); err != nil {
@@ -115,4 +126,5 @@ func main() {
 			}
 		}
 	}
+	log.Infof("%d records compared", cnt)
 }

@@ -115,6 +115,7 @@ proc r {args} {
         set level [lindex $args 0]
         set args [lrange $args 1 end]
     }
+
     [srv $level "client"] {*}$args
 }
 
@@ -167,13 +168,15 @@ proc s {args} {
 }
 
 proc cleanup {} {
+    puts "clean up..."
     if {!$::quiet} {puts -nonewline "Cleanup: may take some time... "}
     flush stdout
     catch {exec rm -rf {*}[glob tests/tmp/tendisplus.conf.*]}
     catch {exec rm -rf {*}[glob tests/tmp/server.*]}
-    catch {exec rm -rf {*}[glob tests/tmp/dump]}
-    catch {exec rm -rf {*}[glob tests/tmp/log]}
-    catch {exec rm -rf {*}[glob tests/tmp/*.pid]}
+    catch {exec rm -rf {*}[glob tests/tmp/slave.*]}
+    catch {exec rm -rf {*}[glob tests/tmp/dump*]}
+    catch {exec rm -rf {*}[glob tests/tmp/log*]}
+    catch {exec rm -rf {*}[glob tests/tmp/tendisplus.pid*]}
     if {!$::quiet} {puts "OK"}
 }
 

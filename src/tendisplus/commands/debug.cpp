@@ -438,13 +438,14 @@ class IterAllCommand: public Command {
         Command::fmtBulk(ss, nextCursor);
         Command::fmtMultiBulkLen(ss, result.size());
         for (const auto& o : result) {
-            Command::fmtMultiBulkLen(ss, 4);
+            Command::fmtMultiBulkLen(ss, 5);
             const auto& t = o.getRecordKey().getRecordType();
             const auto& vt = o.getRecordValue().getRecordType();
             Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(vt)));
             switch (t) {
                 case RecordType::RT_DATA_META:
                     INVARIANT(vt == RecordType::RT_KV);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, "");
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
@@ -453,6 +454,7 @@ class IterAllCommand: public Command {
                 case RecordType::RT_LIST_ELE:
                 case RecordType::RT_SET_ELE:
                     INVARIANT(vt == t);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
@@ -460,6 +462,7 @@ class IterAllCommand: public Command {
                 case RecordType::RT_ZSET_H_ELE:
                 {
                     INVARIANT(vt == t);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     auto d = tendisplus::doubleDecode(

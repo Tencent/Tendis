@@ -27,7 +27,9 @@ proc check_valgrind_errors stderr {
 proc kill_server config {
     # nothing to kill when running against external server
     if {$::external} return
-
+    if {[dict exists $config "slave"]} {
+        kill_server [dict get $config slave]
+    }
     # nevermind if its already dead
     if {![is_alive $config]} { return }
     set pid [dict get $config pid]
@@ -181,10 +183,12 @@ proc start_server {options {code undefined}} {
 
     # use a different directory every time a server is started
     dict set config dir [tmpdir server]
+    set slave_dir [tmpdir slave]
 
     # start every server on a different port
     set ::port [find_available_port [expr {$::port+1}]]
-    dict set config port $::port
+
+    set slave_port [find_available_port [expr {$::port+1}]]
 
     # apply overrides from global space and arguments
     foreach {directive arguments} [concat $::global_overrides $overrides] {
@@ -193,11 +197,29 @@ proc start_server {options {code undefined}} {
 
     # write new configuration to temporary file
     set config_file [tmpfile tendisplus.conf]
+    set slave_cfg_file [tmpfile tendisplus.conf]
     set fp [open $config_file w+]
+    set fp2 [open $slave_cfg_file w+]
+    set slave_cfg {}
     foreach directive [dict keys $config] {
         puts -nonewline $fp "$directive "
         puts $fp [dict get $config $directive]
+
+        puts -nonewline $fp2 "$directive "
+        if {$directive eq {logdir} || $directive eq {dumpdir} || $directive eq {pidfile}} {
+            dict set slave_cfg $directive [dict get $config $directive]_slave
+            puts $fp2 "[dict get $config $directive]_slave"
+        } elseif {$directive eq {dir}} {
+            dict set slave_cfg dir $slave_dir
+            puts $fp2 $slave_dir
+        } else {
+            dict set slave_cfg $directive [dict get $config $directive]
+            puts $fp2 [dict get $config $directive]
+        }
     }
+
+    dict set config port $::port
+    dict set slave_cfg port $slave_port
 
     # write host and port into config file
     puts -nonewline $fp "bind "
@@ -205,6 +227,12 @@ proc start_server {options {code undefined}} {
     puts -nonewline $fp "port "
     puts $fp $::port
     close $fp
+
+    puts -nonewline $fp2 "bind "
+    puts $fp2 $::host
+    puts -nonewline $fp2 "port "
+    puts $fp2 $slave_port
+    close $fp2
 
     set stdout [format "%s/%s" [dict get $config "dir"] "stdout"]
     set stderr [format "%s/%s" [dict get $config "dir"] "stderr"]
@@ -215,6 +243,7 @@ proc start_server {options {code undefined}} {
     } else {
         exec ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
     }
+    exec ./build/bin/tendisplus $slave_cfg_file > $stdout 2> $stderr &
 
     # check that the server actually started
     # ugly but tries to be as fast as possible...
@@ -248,6 +277,12 @@ proc start_server {options {code undefined}} {
         after 100
     }
 
+    set pidfile2 [dict get $slave_cfg "pidfile"]
+    while {![info exists slave_pid]} {
+        set slave_pid [exec cat $pidfile2]
+        after 100
+    }
+
     # setup properties to be able to initialize a client object
     set host $::host
     set port $::port
@@ -262,6 +297,16 @@ proc start_server {options {code undefined}} {
     dict set srv "port" $port
     dict set srv "stdout" $stdout
     dict set srv "stderr" $stderr
+
+    dict set slave "config_file" $slave_cfg_file
+    dict set slave "config" $slave_cfg
+    dict set slave "pid" $slave_pid
+    dict set slave "host" $host
+    dict set slave "port" $slave_port
+    dict set slave "stdout" $stdout
+    dict set slave "stderr" $stderr
+
+    dict set srv "slave" $slave
 
     # if a block of code is supplied, we wait for the server to become
     # available, create a client object and kill the server afterwards
@@ -281,6 +326,13 @@ proc start_server {options {code undefined}} {
             }
             after 10
         }
+
+        # create a client of slave
+        set cli [redis $host $slave_port]
+        dict set slave "client" $cli
+        set args "slaveof $host $port"
+        puts "$slave_port $args"
+        $cli {*}$args
 
         # append the server to the stack
         lappend ::servers $srv
@@ -319,7 +371,20 @@ proc start_server {options {code undefined}} {
         set ::servers [lrange $::servers 0 end-1]
 
         set ::tags [lrange $::tags 0 end-[llength $tags]]
-        kill_server $srv
+
+        # compare master and slave
+        set slv [dict get $srv slave]
+        set src "[dict get $srv host]:[dict get $srv port]"
+        set dst "[dict get $slv host]:[dict get $slv port]"
+        puts "compare with args $src $dst"
+        if {[catch {set ret [exec ./compare $src $dst]} err]} {
+            puts [format "\nLogged warnings (pid %d):" [dict get $srv "pid"]]
+            puts "compare failed, $err"
+            kill_server $srv
+        } else {
+            puts "compare finish"
+            kill_server $srv
+        }
     } else {
         set ::tags [lrange $::tags 0 end-[llength $tags]]
         set _ $srv
