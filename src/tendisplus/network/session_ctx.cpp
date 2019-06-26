@@ -116,18 +116,18 @@ Status SessionCtx::commitAll(const std::string& cmd) {
     return s;
 }
 
-void SessionCtx::rollbackAll() {
+Status SessionCtx::rollbackAll() {
     std::lock_guard<std::mutex> lk(_mutex);
-    Status s;
+    Status s = {ErrorCodes::ERR_OK, ""};
     for (auto& txn : _txnMap) {
-        Expected<uint64_t> exptCommit = txn.second->rollback();
-        if (!exptCommit.ok()) {
+        s = txn.second->rollback();
+        if (!s.ok()) {
             LOG(ERROR) << "rollback error at kvstore " << txn.first
                 << ". It maybe lead to partial success.";
-            s = exptCommit.status();
         }
     }
     _txnMap.clear();
+    return s;
 }
 
 void SessionCtx::setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode) {

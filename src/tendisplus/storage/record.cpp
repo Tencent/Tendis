@@ -641,7 +641,7 @@ std::string RecordValue::encode() const {
     // versionEP
     varint = varintEncode(_versionEP + 1);
     value.insert(value.end(), varint.begin(), varint.end());
-    INVARIANT_D(getRealKeyType(_type) != _type || _versionEP == -1);
+    INVARIANT_D(getRealKeyType(_type) != _type || _versionEP == (uint64_t)-1);
 
     // CAS
     // NOTE(vinchen): cas should initialize -1, not zero.

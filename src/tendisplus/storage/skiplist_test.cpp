@@ -226,6 +226,9 @@ TEST(SkipList, Mix) {
         sl.rank(1, std::to_string(5), eTxn.value().get());
     EXPECT_TRUE(expRank.ok());
     EXPECT_EQ(expRank.value(), 2U);
+
+    auto sc = eTxn.value()->commit();
+    EXPECT_TRUE(sc.ok());
 }
 
 TEST(SkipList, InsertDelSameKeys) {
