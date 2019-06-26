@@ -556,6 +556,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
         if (!eValue.ok()) {
+            LOG(INFO) << eValue.status().toString();
             // maybe ErrorCodes::ERR_NOTFOUND
             return eValue.status();
         }

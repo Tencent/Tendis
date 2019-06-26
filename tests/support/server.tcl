@@ -124,6 +124,24 @@ proc server_is_up {host port retrynum} {
     return 0
 }
 
+proc wait_for_binlog_ready {mcli scli} {
+    after 1000
+    for {set i 0} {$i<10} {incr i 1} {
+        set ret [catch {$mcli binlogpos $i} master_pos]
+        if {$ret != 0} {
+            error $ret $::errorInfo
+        }
+        set slave_pos 0
+        while {$slave_pos ne $master_pos} {
+            if {[catch {$scli binlogpos $i} slave_pos] != 0} {
+                error $::errorInfo
+            }
+            after 1000
+        }
+        puts "store $i get master_pos $master_pos slave_pos $slave_pos"
+    }
+}
+
 # doesn't really belong here, but highly coupled to code in start_server
 proc tags {tags code} {
     set ::tags [concat $::tags $tags]
@@ -328,17 +346,18 @@ proc start_server {options {code undefined}} {
         }
 
         # create a client of slave
-        set cli [redis $host $slave_port]
-        dict set slave "client" $cli
+        set scli [redis $host $slave_port]
+        dict set slave "client" $scli
         set args "slaveof $host $port"
         puts "$slave_port $args"
-        $cli {*}$args
+        $scli {*}$args
 
         # append the server to the stack
         lappend ::servers $srv
 
         # connect client (after server dict is put on the stack)
         reconnect
+        set mcli [redis $host $port]
 
         # execute provided block
         set num_tests $::num_tests
@@ -372,19 +391,39 @@ proc start_server {options {code undefined}} {
 
         set ::tags [lrange $::tags 0 end-[llength $tags]]
 
+        # execute keys command to expire expired keys
+        if {[catch {for {set i 0} {$i < 16} {incr i} {
+            $mcli select $i
+            $mcli keys *
+        }} err]} {
+            kill_server $srv
+            error $err
+        }
+        # wait for slave applying binlog
+        if {[catch {wait_for_binlog_ready $mcli $scli} err]} {
+            kill_server $srv
+            error $err
+        }
+
         # compare master and slave
         set slv [dict get $srv slave]
         set src "[dict get $srv host]:[dict get $srv port]"
         set dst "[dict get $slv host]:[dict get $slv port]"
-        puts "compare with args $src $dst"
-        if {[catch {set ret [exec ./compare $src $dst]} err]} {
-            puts [format "\nLogged warnings (pid %d):" [dict get $srv "pid"]]
-            puts "compare failed, $err"
-            kill_server $srv
-        } else {
-            puts "compare finish"
+
+        # check binary file existance
+        if {[file exists compare] == 0} {
+            error "can't find binary file: compare"
             kill_server $srv
         }
+
+        set retcode [catch {exec ./compare $src $dst} result]
+        if {$retcode != 0} {
+            kill_server $srv
+            error $retcode $result
+        } else {
+            puts "\[[colorstr green ok]\]: COMPARE $result"
+        }
+        kill_server $srv
     } else {
         set ::tags [lrange $::tags 0 end-[llength $tags]]
         set _ $srv

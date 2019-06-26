@@ -222,4 +222,8 @@ start_server {tags {"expire"}} {
         r set foo b
         lsort [r keys *]
     } {a e foo s t}
+
+    test {DELETE expired keys} {
+        r del a
+    }
 }

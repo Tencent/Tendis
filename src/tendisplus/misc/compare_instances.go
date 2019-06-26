@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
     "time"
 	"github.com/mediocregopher/radix.v2/redis"
@@ -27,7 +28,6 @@ var (
 func main() {
 	flag.Parse()
 	args := os.Args
-    log.Infof("args %+v",args)
 	backend := args[1]
 	frontend := args[2]
 	be, err := redis.DialTimeout("tcp", backend, 10*time.Second)
@@ -55,6 +55,7 @@ func main() {
 	for i := 0; i < 10; i += 1 {
 		iter := "0"
 		for {
+			// fmt.Printf("iterall %d %s %d\n", i, iter, batch);
 			if arr, err := be.Cmd("iterall", i, iter, batch).Array(); err != nil {
 				log.Fatalf("iter store:%d failed:%v", i, err)
 			} else {
@@ -78,11 +79,11 @@ func main() {
 					if err != nil {
 						log.Fatalf("parse into record failed:%v", err)
 					}
-					dbid, _ := arr2[0].Str()
+					dbid, _ := arr2[1].Str()
 					if _, err := fe.Cmd("SELECT", dbid).Str(); err != nil {
 					    log.Fatalf("select %s failed %v", dbid, err)
 					}
-					types, _ := arr2[1].Str()
+					types, _ := arr2[0].Str()
 					key, _ := arr2[2].Str()
 					subkey, _ := arr2[3].Str()
 					val, _ := arr2[4].Str()
@@ -94,8 +95,12 @@ func main() {
 							log.Errorf("key:%s, front:%s, back:%s", key, v, val)
 						}
 					} else if typ == LIST_ELE {
-						// LIST not easy to compare
-					} else if typ == HASH_ELE {
+						if v, err := fe.Cmd("LINDEX", key, subkey).Str(); err != nil {
+						    log.Fatalf("lindex front:%s:%s failed:%v", key, subkey, err)
+						} else if v != val {
+						    log.Errorf("list key:%s, index:%s, front:%s, back:%s", key, subkey, v, val)
+						}
+ 					} else if typ == HASH_ELE {
 						if v, err := fe.Cmd("HGET", key, subkey).Str(); err != nil {
 							log.Fatalf("hget front:%s:%s failed:%v", key, subkey, err)
 						} else if v != val {
@@ -108,8 +113,8 @@ func main() {
 							log.Errorf("set key:%s, subkey:%s, front:%d, back:1", key, subkey, v)
 						}
 					} else if typ == ZSET_H_ELE {
-						score, _ := strconv.ParseInt(val, 10, 64)
-						if v, err := fe.Cmd("ZSCORE", key, subkey).Int64(); err != nil {
+						score, _ := strconv.ParseFloat(val, 64)
+						if v, err := fe.Cmd("ZSCORE", key, subkey).Float64(); err != nil {
 							log.Fatalf("zset front:%s:%s failed:%v", key, subkey, err)
 						} else if score != v {
 							log.Errorf("zset key:%s, subkey:%s, front:%d, back:%d", key, subkey, v, score)
@@ -117,7 +122,7 @@ func main() {
 					}
 					cnt += 1
 					if cnt%10000 == 0 {
-						log.Infof("%d records compared", cnt)
+					    // fmt.Printf("%d records compared\n", cnt)
 					}
 				}
 				if iter == "0" {
@@ -126,5 +131,6 @@ func main() {
 			}
 		}
 	}
-	log.Infof("%d records compared", cnt)
+	fmt.Printf("%d records compared\n", cnt)
+	os.Exit(0)
 }
