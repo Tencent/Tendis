@@ -1,8 +1,25 @@
 #include <string>
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
+#include "endian.h"
 
 namespace tendisplus {
+
+size_t varintMaxSize(size_t size) {
+    switch (size) {
+    case sizeof(uint64_t) :
+        return 10;
+        break;
+    case sizeof(uint32_t) :
+        return 5;
+    default:
+        INVARIANT(0);
+        break;
+    }
+
+    return 0;
+}
 
 std::vector<uint8_t> varintEncode(uint64_t val) {
     std::vector<uint8_t> result;
@@ -78,6 +95,66 @@ Expected<double> doubleDecode(const std::string& input) {
     INVARIANT(input.size() == 8);
     return doubleDecode(reinterpret_cast<const uint8_t*>(input.c_str()),
                         input.size());
+}
+
+uint16_t int16Encode(uint16_t input) {
+    return htobe16(input);
+}
+
+size_t int16Encode(char* dest, uint16_t input) {
+    uint16_t v = htobe16(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
+}
+
+uint16_t int16Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint16_t tmp;
+    memcpy(&tmp, input, sizeof(uint16_t));
+    return be16toh(tmp);
+#else
+    return be16toh(*(uint16_t*)input);
+#endif
+}
+
+size_t int32Encode(char* dest, uint32_t input) {
+    uint32_t v = htobe32(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
+}
+
+uint32_t int32Encode(uint32_t input) {
+    return htobe32(input);
+}
+
+uint32_t int32Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint32_t tmp;
+    memcpy(&tmp, input, sizeof(uint32_t));
+    return be32toh(tmp);
+#else
+    return be32toh(*(uint32_t*)input);
+#endif
+}
+
+uint64_t int64Encode(uint64_t input) {
+    return htobe64(input);
+}
+
+size_t int64Encode(char* dest, uint64_t input) {
+    uint64_t v = htobe64(input);
+    memcpy(dest, &v, sizeof(v));
+    return sizeof(v);
+}
+
+uint64_t int64Decode(const char* input) {
+#ifdef USE_ALIGNED_ACCESS
+    uint64_t tmp;
+    memcpy(&tmp, input, sizeof(uint64_t));
+    return be64toh(tmp);
+#else
+    return be64toh(*(uint64_t*)input);
+#endif
 }
 
 }  // namespace tendisplus

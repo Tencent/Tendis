@@ -12,6 +12,8 @@
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -162,6 +164,7 @@ class IncrSyncCommand: public Command {
     }
 } incrSyncCommand;
 
+#ifdef BINLOG_V1
 // @input pullbinlogs storeId startBinlogId
 // @output nextBinlogId [[k,v], [k,v]...]
 class PullBinlogsCommand: public Command {
@@ -214,7 +217,7 @@ class PullBinlogsCommand: public Command {
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
-        auto ptxn = store->createTransaction();
+        auto ptxn = store->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -323,7 +326,7 @@ class RestoreBinlogCommand: public Command {
         auto store = std::move(expdb.value().store);
         INVARIANT(store != nullptr);
 
-        auto ptxn = store->createTransaction();
+        auto ptxn = store->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -467,6 +470,181 @@ class ApplyBinlogsCommand: public Command {
         }
     }
 } applyBinlogsCommand;
+#else
+class ApplyBinlogsCommandV2 : public Command {
+ public:
+    ApplyBinlogsCommandV2()
+        :Command("applybinlogsv2", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 5;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // applybinlogs storeId binlogs cnt checksum
+    // why is there no storeId ? storeId is contained in this
+    // session in fact.
+    // please refer to comments of ReplManager::registerIncrSync
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (storeId >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+
+        uint64_t binlogCnt;
+        auto exptCnt = ::tendisplus::stoul(args[3]);
+        if (!exptCnt.ok()) {
+            return exptCnt.status();
+        }
+        binlogCnt = exptCnt.value();
+
+        // TODO(vinchen): binlog checksum support in the future
+        // Now it is always 0
+        auto binlogChecksum = args[4];
+        if (binlogChecksum != "0") {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog checksum" };
+        }
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IX first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        size_t offset = 0;
+        size_t cnt = 0;
+        auto ptr = args[2].c_str();
+        auto totalSize = args[2].size();
+
+        offset += Binlog::decodeHeader(ptr, totalSize);
+        if (offset > totalSize) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog header" };
+        }
+        while (offset < totalSize) {
+            // format: keySize|key|valueSize|value * binlogCnt
+
+            if (totalSize - offset < sizeof(uint32_t)) {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
+            }
+            uint32_t keySize = int32Decode(ptr + offset);
+            offset += sizeof(uint32_t);
+
+            if (totalSize - offset < keySize + sizeof(uint32_t)) {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
+            }
+            // TODO(vinchen): too more copy
+            std::string logKey(ptr + offset, keySize);
+            offset += keySize;
+
+            uint32_t valueSize = int32Decode(ptr + offset);
+            offset += sizeof(uint32_t);
+
+            if (totalSize - offset < valueSize) {
+                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
+            }
+            std::string logValue(ptr + offset, valueSize);
+            offset += valueSize;
+
+            // TODO(vinchen): should one binlog one transaction?
+            Status s = replMgr->applyRepllogV2(sess, storeId, logKey, logValue);
+            if (!s.ok()) {
+                return s;
+            }
+            cnt++;
+        }
+
+        if (offset != totalSize || cnt != binlogCnt) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog size of binlog count" };
+        }
+
+        return Command::fmtOK();
+    }
+} applyBinlogsV2Command;
+
+
+class BinlogHeartbeatCommand : public Command {
+ public:
+    BinlogHeartbeatCommand()
+        :Command("binlog_heartbeat", "a") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // binlog_heartbeat storeId
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IS first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Status s = replMgr->applyRepllogV2(sess, storeId, "", "");
+        if (!s.ok()) {
+            return s;
+        }
+        return Command::fmtOK();
+    }
+} binlogHeartbeatCmd;
+#endif
 
 class SlaveofCommand: public Command {
  public:
@@ -482,7 +660,7 @@ class SlaveofCommand: public Command {
         INVARIANT(replMgr != nullptr);
 
         std::string ip = args[1];
-        uint64_t port;
+        uint32_t port;
         try {
             port = std::stoul(args[2]);
         } catch (std::exception& ex) {
@@ -505,8 +683,8 @@ class SlaveofCommand: public Command {
             }
             return Command::fmtOK();
         } else if (args.size() == 5) {
-            uint64_t storeId;
-            uint64_t sourceStoreId;
+            uint32_t storeId;
+            uint32_t sourceStoreId;
             try {
                 storeId = std::stoul(args[3]);
                 sourceStoreId = std::stoul(args[4]);
@@ -543,7 +721,7 @@ class SlaveofCommand: public Command {
         INVARIANT(replMgr != nullptr);
 
         if (args.size() == 4) {
-            uint64_t storeId = 0;
+            uint32_t storeId = 0;
             try {
                 storeId = std::stoul(args[3]);
             } catch (std::exception& ex) {

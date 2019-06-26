@@ -11,5 +11,11 @@
         } \
     } while (0)
 
+#ifdef TENDIS_DEBUG 
+#define INVARIANT_D(e) INVARIANT(e)
+#else
+#define INVARIANT_D(e) 
+#endif
+
 
 #endif  // SRC_TENDISPLUS_UTILS_INVARIANT_H_

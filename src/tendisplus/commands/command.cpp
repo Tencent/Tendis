@@ -168,7 +168,20 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
-        sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
+        if (sess->getCtx()->isEp()) {
+            sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
+        }
+    } else {
+        if (sess->getCtx()->isReplOnly()) {
+            // NOTE(vinchen): If it's a slave, the connection should be closed
+            // when there is an error. And the error should be log
+            ServerEntry::logError(v.status().toString(), sess);
+
+            auto vv = dynamic_cast<NetSession*>(sess);
+            vv->setCloseAfterRsp();
+        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL) {
+            ServerEntry::logError(v.status().toString(), sess);
+        }
     }
     return v;
 }
@@ -205,7 +218,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
     uint64_t totalCount = 0;
     const uint32_t batchSize = 2048;
     while (true) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -221,7 +234,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
             continue;
         }
         TEST_SYNC_POINT_CALLBACK("delKeyPessimistic::TotalCount", &totalCount);
-        ptxn = kvstore->createTransaction();
+        ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -474,7 +487,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
 
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -536,7 +549,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
     // }
     PStore kvstore = expdb.value().store;
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -643,6 +656,21 @@ std::string Command::fmtLongLong(int64_t v) {
     ss << ":" << v << "\r\n";
     return ss.str();
 }
+
+Expected<uint64_t> Command::getInt64FromFmtLongLong(const std::string & str) {
+    if (str[0] != ':') {
+        return{ ErrorCodes::ERR_INTERGER, "not a fmtLongLong" };
+    }
+
+    size_t end = str.find('\r');
+    if (end == std::string::npos) {
+        return{ ErrorCodes::ERR_INTERGER, "not a fmtLongLong" };
+    }
+
+    std::string s(str.c_str() + 1, end - 1);
+    return tendisplus::stoull(s);
+}
+
 
 std::string Command::fmtBusyKey() {
     return "-BUSYKEY Target key name already exists.\r\n";

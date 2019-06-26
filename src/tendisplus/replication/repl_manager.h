@@ -36,6 +36,7 @@ struct MPovStatus {
     // the greatest id that has been applied
     uint64_t binlogPos;
     SCLOCK::time_point nextSchedTime;
+    SCLOCK::time_point lastSendBinlogTime;
     std::shared_ptr<BlockingTcpClient> client;
     uint64_t clientId;
 };
@@ -45,6 +46,8 @@ struct RecycleBinlogStatus {
     SCLOCK::time_point nextSchedTime;
     uint64_t firstBinlogId;
     uint32_t fileSeq;
+	// the timestamp of last binlog in prev file or the first binlog in cur file
+    uint64_t timestamp;
     SCLOCK::time_point fileCreateTime;
     uint64_t fileSize;
     std::unique_ptr<std::ofstream> fs;
@@ -80,6 +83,7 @@ enum class ReplState: std::uint8_t {
 class ServerEntry;
 class StoreMeta;
 
+
 class ReplManager {
  public:
     explicit ReplManager(std::shared_ptr<ServerEntry> svr, 
@@ -96,8 +100,17 @@ class ReplManager {
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg);
+#ifdef BINLOG_V1
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
+    Status applySingleTxn(uint32_t storeId, uint64_t txnId,
+        const std::list<ReplLog>& ops);
+#else
+    Status applyRepllogV2(Session* sess, uint32_t storeId,
+            const std::string& logKey, const std::string& logValue);
+    Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
+        const std::string& logKey, const std::string& logValue);
+#endif
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
     static constexpr size_t INCR_POOL_SIZE = 12;
     static constexpr size_t MAX_FULL_PARAL = 4;
@@ -106,17 +119,22 @@ class ReplManager {
     void controlRoutine();
     void supplyFullSyncRoutine(std::shared_ptr<BlockingTcpClient> client,
             uint32_t storeId);
-    Status applySingleTxn(uint32_t storeId, uint64_t txnId,
-        const std::list<ReplLog>& ops);
     bool isFullSupplierFull() const;
 
     std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 
+#ifdef BINLOG_V1
     // binlogPos: the greatest id that has been applied
     Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
             uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
+#else
+    Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
+        uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart);
+    std::ofstream* getCurBinlogFs(uint32_t storeid);
+    void updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t ts);
+#endif
 
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
     void slaveSyncRoutine(uint32_t  storeId);
@@ -129,7 +147,9 @@ class ReplManager {
     void changeReplStateInLock(const StoreMeta&, bool persist);
 
     Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
+#ifdef BINLOG_V1
     Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
+#endif
 
     mutable std::mutex _mutex;
     std::condition_variable _cv;
@@ -182,9 +202,11 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
     std::shared_ptr<PoolMatrix> _logRecycleMatrix;
 
+    // TODO(takenliu): configable
     static constexpr size_t FILEBATCH = size_t(20ULL*1024*1024);
     static constexpr size_t BINLOGSIZE = 1024 * 1024 * 64;
     static constexpr size_t BINLOGSYNCSECS = 20 * 60;
+    static constexpr size_t BINLOGHEARTBEATSECS = 60;
 };
 
 }  // namespace tendisplus

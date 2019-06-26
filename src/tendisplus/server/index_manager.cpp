@@ -100,7 +100,7 @@ namespace tendisplus {
           return {ErrorCodes::ERR_OK, ""};
       }
 
-      auto ptxn = store->createTransaction();
+      auto ptxn = store->createTransaction(sg.getSession());
       if (!ptxn.ok()) {
           return ptxn.status();
       }

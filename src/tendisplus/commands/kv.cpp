@@ -13,6 +13,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -202,7 +203,7 @@ class SetCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -226,7 +227,7 @@ class SetCommand: public Command {
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
             }
-            ptxn = kvstore->createTransaction();
+            ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -279,7 +280,7 @@ class SetexGeneralCommand: public Command {
                         RecordType::RT_KV, key, "");
         RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -394,7 +395,7 @@ class SetNxCommand: public Command {
                      RecordType::RT_KV, key, "");
         RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -877,7 +878,7 @@ class GetSetGeneral: public Command {
                      RecordType::RT_KV, key, "");
 
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -885,7 +886,7 @@ class GetSetGeneral: public Command {
             const Expected<RecordValue>& newValue =
                                 newValueFromOld(sess, rv);
             if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return RecordValue("", RecordType::RT_KV, -1);
+                return RecordValue("", RecordType::RT_KV, sess->getCtx()->getVersionEP());
             }
             if (!newValue.ok()) {
                 return newValue.status();
@@ -903,7 +904,7 @@ class GetSetGeneral: public Command {
                 } else {
                     return rv.ok() ?
                             std::move(rv.value()) :
-                            RecordValue("", RecordType::RT_KV, -1);
+                            RecordValue("", RecordType::RT_KV, sess->getCtx()->getVersionEP());
                 }
             }
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1747,7 +1748,7 @@ class BitopCommand: public Command {
                             RecordType::RT_KV, targetKey, "");
         RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
         for (int32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1839,7 +1840,8 @@ class MSetGenericCommand: public Command {
             for (int32_t i = 0; i < RETRY_CNT; ++i) {
                 auto etxn = pCtx->createTransaction(kvstore);
                 if (!etxn.ok()) {
-                    return etxn.status();
+                    failed = true;
+                    break;
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
@@ -1857,28 +1859,33 @@ class MSetGenericCommand: public Command {
                         break;
                     } else {
                         failed = true;
-                        goto END;
+                        break;
                     }
                 } else if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {   // NOLINT
                     failed = true;
-                    goto END;
+                    break;
                 } else {
                     if (i == RETRY_CNT - 1) {
                         failed = true;
-                        goto END;
+                        break;
                     } else {
                         continue;
                     }
                 }
             }
+
+            if (failed) {
+                break;
+            }
         }
-        {
+        if (!failed) {
             auto s = pCtx->commitAll("mset(nx)");
             if (!s.ok()) {
                 failed = true;
             }
+        } else {
+            pCtx->rollbackAll();
         }
-        END:
         if (_flags == REDIS_SET_NO_FLAGS) {
             // mset
             return Command::fmtOK();
@@ -2019,6 +2026,12 @@ public:
         if (!sptxn.ok()) {
             return sptxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         // del old meta k/v
         Status s = srcstore->delKV(rk, sptxn.value());
@@ -2040,6 +2053,7 @@ public:
 
         if (rv.value().getRecordType() == RecordType::RT_KV) {
             pCtx->commitAll("rename");
+            rollback = false;
             return _flagnx ? Command::fmtOne() : Command::fmtOK();
         }
 
@@ -2091,6 +2105,7 @@ public:
         }
 
         pCtx->commitAll("rename");
+        rollback = false;
 
         return _flagnx ? Command::fmtOne() : Command::fmtOK();
     }
@@ -2584,7 +2599,7 @@ class BitFieldCommand: public Command {
                     rv.getTtl(),
                     rv);
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }

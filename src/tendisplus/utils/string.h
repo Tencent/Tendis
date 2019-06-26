@@ -27,6 +27,14 @@ std::string& replaceAll(std::string& str,
     const std::string& old_value,
     const std::string& new_value);
 
+uint64_t getCurThreadId();
+size_t ssAppendSizeAndString(std::stringstream& ss, const std::string& val);
+
 }  // namespace tendisplus
+
+#ifdef _MSC_VER
+#define strcasecmp stricmp
+#define strncasecmp  strnicmp 
+#endif
 
 #endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 

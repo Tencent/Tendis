@@ -10,6 +10,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -177,7 +178,7 @@ class SMembersCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -266,7 +267,7 @@ class SIsMemberCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -361,28 +362,21 @@ class SrandMemberCommand: public Command {
         }
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
         ssize_t ssize = 0;
-        if (rv.ok()) {
-            Expected<SetMetaValue> exptSm =
-                SetMetaValue::decode(rv.value().getValue());
-            INVARIANT(exptSm.ok());
-            ssize = exptSm.value().getCount();
-            INVARIANT(ssize != 0);
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            if (bulk == 1 && !explictBulk) {
-                return Command::fmtNull();
-            } else {
-                return Command::fmtZeroBulkLen();
-            }
-        } else {
-            return rv.status();
+        Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
         }
+        ssize = exptSm.value().getCount();
+        INVARIANT_D(ssize != 0);
 
         auto cursor = txn->createCursor();
         uint32_t beginIdx = 0;
@@ -520,7 +514,7 @@ class SpopCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -546,7 +540,7 @@ class SpopCommand: public Command {
             if (rcds.size() > 1) {
                 Command::fmtMultiBulkLen(ss, rcds.size());
             }
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -649,7 +643,7 @@ class SaddCommand: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -779,7 +773,7 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -848,7 +842,7 @@ class SdiffgenericCommand: public Command {
             RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
             PStore kvstore = expdb.value().store;
 
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -905,7 +899,7 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1047,7 +1041,7 @@ class SintergenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1130,7 +1124,7 @@ class SintergenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1271,6 +1265,12 @@ class SmoveCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
         // directly remove member from source
@@ -1309,6 +1309,7 @@ class SmoveCommand: public Command {
                 Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, { "", "" , member });
                 if (addRet.ok()) {
                     pCtx->commitAll("smove");
+                    rollback = false;
                     return addRet.value();
                 }
                 if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1362,7 +1363,7 @@ class SuniongenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1417,7 +1418,7 @@ class SuniongenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }

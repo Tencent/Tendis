@@ -9,16 +9,18 @@
 
 namespace tendisplus {
 
-SessionCtx::SessionCtx()
+SessionCtx::SessionCtx(Session* sess)
     :_authed(false),
      _dbId(0),
      _waitlockStore(0),
      _waitlockMode(mgl::LockMode::LOCK_NONE),
      _waitlockKey(""),
      _processPacketStart(0),
-     _timestamp(-1),
-     _version(-1),
-     _extendProtocol(false) {
+     _timestamp(TSEP_UNINITED),
+     _version(VERSIONEP_UNINITED),
+     _extendProtocol(false),
+     _replOnly(false),
+     _session(sess) {
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -88,7 +90,7 @@ Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
         txn = _txnMap[kvstore->dbId()].get();
     }
     else {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_session);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -108,6 +110,20 @@ Status SessionCtx::commitAll(const std::string& cmd) {
             LOG(ERROR) << cmd << " commit error at kvstore " << txn.first
                 << ". It lead to partial success.";
             s = exptCommit.status();
+        }
+    }
+    _txnMap.clear();
+    return s;
+}
+
+Status SessionCtx::rollbackAll() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    Status s = {ErrorCodes::ERR_OK, ""};
+    for (auto& txn : _txnMap) {
+        s = txn.second->rollback();
+        if (!s.ok()) {
+            LOG(ERROR) << "rollback error at kvstore " << txn.first
+                << ". It maybe lead to partial success.";
         }
     }
     _txnMap.clear();

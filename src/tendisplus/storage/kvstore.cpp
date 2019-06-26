@@ -1,10 +1,13 @@
+#include <fstream>
 #include "glog/logging.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
+#include "tendisplus/utils/invariant.h"
+#include "endian.h"
 
 namespace tendisplus {
-
+#ifdef BINLOG_V1
 BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin,
             uint64_t end)
         :_baseCursor(std::move(cursor)),
@@ -43,6 +46,185 @@ Expected<ReplLog> BinlogCursor::next() {
         return expRcd.status();
     }
 }
+#else
+RepllogCursorV2::RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
+    : _txn(txn),
+    _baseCursor(nullptr),
+    _start(begin),
+    _cur(begin),
+    _end(end) {
+}
+
+Status RepllogCursorV2::seekToLast() {
+    if (_cur == Transaction::TXNID_UNINITED) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "RepllogCursorV2 error, detailed at the error log" };
+    }
+    if (!_baseCursor) {
+        _baseCursor = _txn->createCursor();
+    }
+
+    // NOTE(vinchen): it works because binlog has a maximum prefix.
+    // see RecordType::RT_BINLOG, plz note that it's tricky.
+    _baseCursor->seekToLast();
+    auto key = _baseCursor->key();
+    if (key.ok()) {
+        if (RecordKey::decodeType(key.value()) == RecordType::RT_BINLOG) {
+            auto v = ReplLogKeyV2::decode(key.value());
+            if (!v.ok()) {
+                LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
+                           << v.status().toString();
+                return v.status();
+            }
+
+            _cur = v.value().getBinlogId();
+            return { ErrorCodes::ERR_OK, "" };
+        } else {
+            return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
+        }
+    } else {
+        LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
+                   << key.status().toString();
+    }
+
+    return key.status();
+}
+
+Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
+    auto cursor = txn->createCursor();
+    if (!cursor) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+    }
+    cursor->seek(RecordKey::prefixReplLogV2());
+    // TODO(vinchen): should more fast
+    Expected<Record> expRcd = cursor->next();
+    if (!expRcd.ok()) {
+        return expRcd.status();
+    }
+
+    if (expRcd.value().getRecordKey().getRecordType()
+        != RecordType::RT_BINLOG) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+
+    // TODO(vinchen): too more copy
+    return ReplLogRawV2(expRcd.value());
+}
+
+Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
+    auto cursor = txn->createCursor();
+    if (!cursor) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+    }
+    cursor->seek(RecordKey::prefixReplLogV2());
+    Expected<Record> expRcd = cursor->next();
+    if (!expRcd.ok()) {
+        return expRcd.status();
+    }
+
+    if (expRcd.value().getRecordKey().getRecordType()
+        != RecordType::RT_BINLOG) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+
+    const RecordKey& rk = expRcd.value().getRecordKey();
+    auto explk = ReplLogKeyV2::decode(rk);
+    if (!explk.ok()) {
+        return explk.status();
+    }
+    return explk.value().getBinlogId();
+}
+
+Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
+    auto cursor = txn->createCursor();
+    if (!cursor) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+    }
+
+    // NOTE(vinchen): it works because binlog has a maximum prefix.
+    // see RecordType::RT_BINLOG, plz note that it's tricky.
+    cursor->seekToLast();
+    auto key = cursor->key();
+    if (key.ok()) {
+        if (RecordKey::decodeType(key.value()) == RecordType::RT_BINLOG) {
+            auto v = ReplLogKeyV2::decode(key.value());
+            if (!v.ok()) {
+                LOG(ERROR) << "ReplLogKeyV2::getMaxBinlogId() failed, reason:"
+                    << v.status().toString();
+                return v.status();
+            }
+
+            return v.value().getBinlogId();
+        } else {
+            return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
+        }
+    } 
+
+    return key.status();
+}
+
+Expected<ReplLogRawV2> RepllogCursorV2::next() {
+    if (_cur == Transaction::TXNID_UNINITED) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "RepllogCursorV2 error, detailed at the error log" };
+    }
+
+    while (_cur <= _end) {
+        ReplLogKeyV2 key(_cur);
+        auto keyStr = key.encode();
+        auto eval = _txn->getKV(key.encode());
+        if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            _cur++;
+            LOG(WARNING) << "binlogid " << _cur << " is not exists";
+
+            continue;
+        } else if (!eval.ok()) {
+            LOG(WARNING) << "get binlogid " << _cur << " error:"
+                << eval.status().toString();
+            return eval.status();
+        }
+
+        INVARIANT_D(ReplLogValueV2::decode(eval.value()).ok());
+        _cur++;
+        return ReplLogRawV2(keyStr, eval.value());
+    }
+
+    return { ErrorCodes::ERR_EXHAUST, "" };
+}
+
+Expected<ReplLogV2> RepllogCursorV2::nextV2() {
+    if (_cur == Transaction::TXNID_UNINITED) {
+        return{ ErrorCodes::ERR_INTERNAL,
+            "RepllogCursorV2 error, detailed at the error log" };
+    }
+
+    while (_cur <= _end) {
+        ReplLogKeyV2 key(_cur);
+        auto keyStr = key.encode();
+        auto eval = _txn->getKV(key.encode());
+        if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            _cur++;
+            LOG(WARNING) << "binlogid " << _cur << " is not exists";
+
+            continue;
+        } else if (!eval.ok()) {
+            LOG(WARNING) << "get binlogid " << _cur << " error:"
+                << eval.status().toString();
+            return eval.status();
+        }
+
+        auto v = ReplLogV2::decode(keyStr, eval.value());
+        if (!v.ok()) {
+            return v.status();
+        }
+        _cur++;
+
+        return std::move(v.value());
+    }
+
+    return{ ErrorCodes::ERR_EXHAUST, "" };
+}
+#endif
 
 TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor,
     std::uint64_t until)
@@ -115,6 +297,23 @@ uint64_t KVStore::getCurrentTime() {
         ts = msSinceEpoch();
     }
     return ts;
+}
+
+std::ofstream* KVStore::createBinlogFile(const std::string& name, uint32_t storeId) {
+    std::ofstream* fs = new std::ofstream(name.c_str(),
+        std::ios::out | std::ios::app | std::ios::binary);
+    if (!fs->is_open()) {
+        std::stringstream ss;
+        ss << "open:" << name << " failed";
+        return nullptr;
+    }
+
+    // the header
+    fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+    uint32_t storeIdTrans = htobe32(storeId);
+    fs->write(reinterpret_cast<char*>(&storeIdTrans), sizeof(storeIdTrans));
+
+    return fs;
 }
 
 BackupInfo::BackupInfo()

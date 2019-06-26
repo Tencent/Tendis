@@ -195,7 +195,7 @@ Status ServerParams::parseFile(const std::string& filename) {
             //            "invalid chunkSize config" };
             //    }
             //    chunkSize = std::stoi(tokens[1]);
-            } else if (tokens[0] == "kvStoreCount") {
+            } else if (tokens[0] == "kvstorecount") {
                 if (tokens.size() != 2) {
                     return{ ErrorCodes::ERR_PARSEOPT,
                         "invalid kvStoreCount config" };

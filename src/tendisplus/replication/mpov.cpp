@@ -23,6 +23,8 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -39,8 +41,8 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
         return;
     }
 
-    Expected<int64_t> expStoreId = stoul(storeIdArg);
-    if (!expStoreId.ok() || expStoreId.value() < 0) {
+    auto expStoreId = tendisplus::stoul(storeIdArg);
+    if (!expStoreId.ok()) {
         client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
         return;
     }
@@ -56,7 +58,8 @@ bool ReplManager::isFullSupplierFull() const {
 
 void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    auto guard = MakeGuard([this, &nextSched, storeId, clientId] {
+    SCLOCK::time_point lastSend = SCLOCK::time_point::min();
+    auto guard = MakeGuard([this, &nextSched, &lastSend, storeId, clientId] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& mpov = _pushStatus[storeId];
         if (mpov.find(clientId) == mpov.end()) {
@@ -67,6 +70,9 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         if (nextSched > mpov[clientId]->nextSchedTime) {
             mpov[clientId]->nextSchedTime = nextSched;
         }
+        if (lastSend > mpov[clientId]->lastSendBinlogTime) {
+            mpov[clientId]->lastSendBinlogTime = lastSend;
+        }
         // currently nothing waits for master's push process
         // _cv.notify_all();
     });
@@ -74,21 +80,35 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     uint64_t binlogPos = 0;
     BlockingTcpClient *client = nullptr;
     uint32_t dstStoreId = 0;
+    bool needHeartbeat = false;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_incrPaused ||
                 _pushStatus[storeId].find(clientId) ==
                             _pushStatus[storeId].end()) {
             nextSched = nextSched + std::chrono::seconds(1);
+            lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
             return;
         }
         binlogPos = _pushStatus[storeId][clientId]->binlogPos;
         client = _pushStatus[storeId][clientId]->client.get();
         dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
+        lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
+    }
+#ifdef BINLOG_V1
+    Expected<uint64_t> newPos =
+            masterSendBinlog(client, storeId, dstStoreId, binlogPos);
+#else
+    // for safe : -5
+    if (lastSend + std::chrono::seconds(BINLOGHEARTBEATSECS - 5)
+                < SCLOCK::now()) {
+        needHeartbeat = true;
     }
 
     Expected<uint64_t> newPos =
-            masterSendBinlog(client, storeId, dstStoreId, binlogPos);
+            masterSendBinlogV2(client, storeId, dstStoreId,
+                        binlogPos, needHeartbeat);
+#endif
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
                 << client->getRemoteRepr() << " failed:"
@@ -98,16 +118,21 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         _pushStatus[storeId].erase(clientId);
         return;
     } else {
-        std::lock_guard<std::mutex> lk(_mutex);
-        _pushStatus[storeId][clientId]->binlogPos = newPos.value();
         if (newPos.value() > binlogPos) {
             nextSched = SCLOCK::now();
+            lastSend = nextSched;
         } else {
             nextSched = SCLOCK::now() + std::chrono::seconds(1);
+            if (needHeartbeat) {
+                lastSend = SCLOCK::now();
+            }
         }
+        std::lock_guard<std::mutex> lk(_mutex);
+        _pushStatus[storeId][clientId]->binlogPos = newPos.value();
     }
 }
 
+#ifdef BINLOG_V1
 Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
                 uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
     constexpr uint32_t suggestBatch = 64;
@@ -129,7 +154,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -190,6 +215,8 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     if (!s.ok()) {
         return s;
     }
+
+    // TODO(vinchen): NO NEED TO READ OK
     Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
         return exptOK.status();
@@ -205,6 +232,125 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
         return binlogs[binlogs.size()-1].getReplLogKey().getTxnId();
     }
 }
+#else
+Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
+            uint32_t storeId, uint32_t dstStoreId,
+            uint64_t binlogPos, bool needHeartBeart) {
+    // TODO(vinchen): to be options
+    constexpr uint32_t suggestBatch = 256;
+    constexpr size_t suggestBytes = 16 * 1024 * 1024;
+
+    LocalSessionGuard sg(_svr);
+    sg.getSession()->getCtx()->setArgsBrief(
+    { "mastersendlog",
+        std::to_string(storeId),
+        client->getRemoteRepr(),
+        std::to_string(dstStoreId),
+        std::to_string(binlogPos) });
+
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
+        storeId, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto store = std::move(expdb.value().store);
+    INVARIANT(store != nullptr);
+
+    auto ptxn = store->createTransaction(sg.getSession());
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    std::unique_ptr<RepllogCursorV2> cursor =
+        txn->createRepllogCursorV2(binlogPos + 1);
+
+    uint32_t cnt = 0;
+    size_t estimateSize = 0;
+    uint64_t binlogId = binlogPos;
+
+    std::stringstream ss;
+    estimateSize += Binlog::writeHeader(ss);
+    while (true) {
+        Expected<ReplLogRawV2> explog = cursor->next();
+        if (explog.ok()) {
+            estimateSize += Binlog::writeRepllogRaw(ss, explog.value());
+            binlogId = explog.value().getBinlogId();
+            INVARIANT_D(binlogId > binlogPos);
+            cnt += 1;
+            if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
+                break;
+            }
+        } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+            // no more data
+            break;
+        } else {
+            LOG(ERROR) << "iter binlog failed:"
+                << explog.status().toString();
+            return explog.status();
+        }
+    }
+
+    std::stringstream ss2;
+    if (cnt == 0) {
+        if (!needHeartBeart) {
+            return binlogPos;
+        }
+        // keep the client alive
+        Command::fmtMultiBulkLen(ss2, 2);
+        Command::fmtBulk(ss2, "binlog_heartbeat");
+        Command::fmtBulk(ss2, std::to_string(dstStoreId));
+    } else {
+        // TODO(vinchen): too more copy
+        Command::fmtMultiBulkLen(ss2, 5);
+        Command::fmtBulk(ss2, "applybinlogsv2");
+        Command::fmtBulk(ss2, std::to_string(dstStoreId));
+        Command::fmtBulk(ss2, ss.str());
+        Command::fmtBulk(ss2, std::to_string(cnt));
+        // TODO(vinchen): checksum is always 0 now
+        Command::fmtBulk(ss2, "0");
+    }
+
+    std::string stringtoWrite = ss2.str();
+    uint32_t secs = 1;
+    if (stringtoWrite.size() > 1024 * 1024) {
+        secs = 2;
+    } else if (stringtoWrite.size() > 1024 * 1024 * 10) {
+        secs = 10;
+    } else {
+        // TODO(takenliu): make configable, one big value is better
+        secs = 100;
+    }
+    Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
+    if (!s.ok()) {
+        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
+            << " writeData failed:" << s.toString()
+            << "; Size:" << stringtoWrite.size();
+        return s;
+    }
+
+    // TODO(vinchen): NO NEED TO READ OK?
+    Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
+    if (!exptOK.ok()) {
+        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
+            << " readLine failed:" << exptOK.status().toString()
+            << "; Size:" << stringtoWrite.size()
+            << "; Seconds:" << secs;
+        return exptOK.status();
+    } else if (exptOK.value() != "+OK") {
+        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
+            << " apply binlogs failed:" << exptOK.value();
+        return{ ErrorCodes::ERR_NETWORK, "bad return string" };
+    }
+
+    if (cnt == 0) {
+        return binlogPos;
+    } else {
+        INVARIANT_D(binlogPos + cnt <= binlogId);
+        return binlogId;
+    }
+}
+#endif
 
 //  1) s->m INCRSYNC (m side: session2Client)
 //  2) m->s +OK
@@ -225,13 +371,13 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::move(_svr->getNetwork()->createBlockingClient(
             std::move(sock), 64*1024*1024));
 
-    uint64_t storeId;
-    uint64_t  dstStoreId;
+    uint32_t storeId;
+    uint32_t  dstStoreId;
     uint64_t binlogPos;
     try {
-        storeId = stoul(storeIdArg);
-        dstStoreId = stoul(dstStoreIdArg);
-        binlogPos = stoul(binlogPosArg);
+        storeId = std::stoul(storeIdArg);
+        dstStoreId = std::stoul(dstStoreIdArg);
+        binlogPos = std::stoull(binlogPosArg);
     } catch (const std::exception& ex) {
         std::stringstream ss;
         ss << "-ERR parse opts failed:" << ex.what();
@@ -311,6 +457,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                      static_cast<uint32_t>(dstStoreId),
                      binlogPos,
                      SCLOCK::now(),
+                     SCLOCK::time_point::min(),
                      std::move(client),
                      clientId}));
         return true;
@@ -379,7 +526,7 @@ void ReplManager::supplyFullSyncRoutine(
     // send binlogPos
     Status s = client->writeLine(
             std::to_string(bkInfo.value().getBinlogPos()),
-            std::chrono::seconds(1));
+            std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send binlogpos failed:" << s.toString();
@@ -395,7 +542,7 @@ void ReplManager::supplyFullSyncRoutine(
         writer.Uint64(kv.second);
     }
     writer.EndObject();
-    s = client->writeLine(sb.GetString(), std::chrono::seconds(1));
+    s = client->writeLine(sb.GetString(), std::chrono::seconds(1000));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send filelist failed:" << s.toString();
@@ -405,7 +552,7 @@ void ReplManager::supplyFullSyncRoutine(
     std::string readBuf;
     readBuf.reserve(FILEBATCH);  // 20MB
     for (auto& fileInfo : bkInfo.value().getFileList()) {
-        s = client->writeLine(fileInfo.first, std::chrono::seconds(1));
+        s = client->writeLine(fileInfo.first, std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(ERROR) << "write fname:" << fileInfo.first
                         << " to client failed:" << s.toString();
@@ -429,7 +576,7 @@ void ReplManager::supplyFullSyncRoutine(
                             << " failed with err:" << strerror(errno);
                 return;
             }
-            s = client->writeData(readBuf, std::chrono::seconds(10));
+            s = client->writeData(readBuf, std::chrono::seconds(100));
             if (!s.ok()) {
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
                 return;
@@ -440,7 +587,7 @@ void ReplManager::supplyFullSyncRoutine(
                            << "file:" << fileInfo.first
                            << ",size:" << fileInfo.second
                            << " failed:"
-                           << (rpl.ok() ? rpl.value() : rpl.status().toString());
+                           << (rpl.ok() ? rpl.value() : rpl.status().toString());      // NOLINT
                 return;
             }
         }

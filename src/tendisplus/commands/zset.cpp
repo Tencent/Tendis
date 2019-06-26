@@ -25,7 +25,7 @@ Expected<std::string> genericZrem(Session *sess,
                             const std::vector<std::string>& subkeys) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -135,7 +135,7 @@ Expected<std::string> genericZadd(Session *sess,
 
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -277,9 +277,10 @@ Expected<std::string> genericZadd(Session *sess,
 Expected<std::string> genericZRank(Session *sess,
                                    PStore kvstore,
                                    const RecordKey& mk,
+                                   const RecordValue& mv,
                                    const std::string& subkey,
                                    bool reverse) {
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -302,18 +303,12 @@ Expected<std::string> genericZRank(Session *sess,
     if (!score.ok()) {
         return score.status();
     }
-    Expected<RecordValue> mv = kvstore->getKV(mk, txn.get());
-    if (!mv.ok()) {
-        // since we have found it in the hash structure
-        INVARIANT(mv.status().code() != ErrorCodes::ERR_NOTFOUND);
-        return mv.status();
-    }
 
-    auto eMetaContent = ZSlMetaValue::decode(mv.value().getValue());
+    auto eMetaContent = ZSlMetaValue::decode(mv.getValue());
     if (!eMetaContent.ok()) {
         return eMetaContent.status();
     }
-    ZSlMetaValue meta = eMetaContent.value();
+    const ZSlMetaValue& meta = eMetaContent.value();
     SkipList sl(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(),
                     meta, kvstore);
     Expected<uint32_t> rank = sl.rank(score.value(), subkey, txn.get());
@@ -375,7 +370,7 @@ class ZRemByRangeGenericCommand: public Command {
                             int64_t end) {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -741,7 +736,7 @@ class ZRankCommand: public Command {
                             RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        return genericZRank(sess, kvstore, metaRk, subkey, false);
+        return genericZRank(sess, kvstore, metaRk, rv.value(), subkey, false);
     }
 } zrankCmd;
 
@@ -775,7 +770,7 @@ class ZRevRankCommand : public Command {
 
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                                               mgl::LockMode::LOCK_S);
+                                RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -795,7 +790,7 @@ class ZRevRankCommand : public Command {
                                 RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        return genericZRank(sess, kvstore, metaRk, subkey, true);
+        return genericZRank(sess, kvstore, metaRk, rv.value(), subkey, true);
     }
 } zrevrankCmd;
 
@@ -926,28 +921,18 @@ class ZCountCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZero();
-            } else {
-                return eMeta.status();
-            }
-        }
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
         auto f = sl.firstInRange(range, txn.get());
         if (!f.ok()) {
             return f.status();
@@ -1033,28 +1018,18 @@ class ZlexCountCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZero();
-            } else {
-                return eMeta.status();
-            }
-        }
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
 
         auto f = sl.firstInLexRange(range, txn.get());
         if (!f.ok()) {
@@ -1183,30 +1158,19 @@ class ZRangeByScoreGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                            RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                    metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                    key, meta, kvstore);
         auto arr = sl.scanByScore(range, offset, limit, _rev, txn.get());
         if (!arr.ok()) {
             return arr.status();
@@ -1331,30 +1295,19 @@ class ZRangeByLexGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                         RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                    metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                    key, meta, kvstore);
         auto arr = sl.scanByLex(range, offset, limit, _rev, txn.get());
         if (!arr.ok()) {
             return arr.status();
@@ -1448,30 +1401,19 @@ class ZRangeGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                            RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                        metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                        key, meta, kvstore);
         int64_t len = sl.getCount() - 1;
         if (start < 0) {
             start = len + start;
@@ -1577,7 +1519,7 @@ class ZScoreCommand: public Command {
                             RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1955,7 +1897,7 @@ class ZUnionInterGenericCommand : public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -2063,7 +2005,7 @@ class ZUnionInterGenericCommand : public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

@@ -94,7 +94,7 @@ class KeysCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -200,7 +200,7 @@ class DbsizeCommand: public Command {
             }
 
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -268,7 +268,8 @@ class PingCommand: public Command {
             return std::string("+PONG\r\n");
         }
         if (sess->getArgs().size() != 2) {
-            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, "wrong number of arguments for 'ping' command"};
+            return {ErrorCodes::ERR_WRONG_ARGS_SIZE,
+                "wrong number of arguments for 'ping' command"};
         }
         return Command::fmtBulk(sess->getArgs()[1]);
     }
@@ -382,7 +383,7 @@ class IterAllCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -813,11 +814,12 @@ class BinlogTimeCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+#ifdef BINLOG_V1
         std::unique_ptr<BinlogCursor> cursor =
             txn->createBinlogCursor(binlogId.value(), true);
         Expected<ReplLog> explog = cursor->next();
@@ -826,6 +828,14 @@ class BinlogTimeCommand: public Command {
         }
         return Command::fmtLongLong(
             explog.value().getReplLogKey().getTimestamp());
+#else
+        auto cursor = txn->createRepllogCursorV2(binlogId.value(), true);
+        auto explog = cursor->nextV2();
+        if (!explog.ok()) {
+            return explog.status();
+        }
+        return Command::fmtLongLong(explog.value().getTimestamp());
+#endif
     }
 } binlogTimeCmd;
 
@@ -869,11 +879,12 @@ class BinlogPosCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+#ifdef BINLOG_V1
         std::unique_ptr<BinlogCursor> cursor =
             txn->createBinlogCursor(Transaction::MIN_VALID_TXNID, true);
         cursor->seekToLast();
@@ -882,6 +893,14 @@ class BinlogPosCommand: public Command {
             return explog.status();
         }
         return Command::fmtLongLong(explog.value().getReplLogKey().getTxnId());
+#else 
+        auto expBinlogid = RepllogCursorV2::getMaxBinlogId(txn.get());
+        if (!expBinlogid.ok()) {
+            return expBinlogid.status();
+        }
+
+        return Command::fmtLongLong(expBinlogid.value());
+#endif // 
     }
 } binlogPosCommand;
 

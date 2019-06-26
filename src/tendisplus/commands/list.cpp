@@ -235,24 +235,22 @@ class ListPopWrapper: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPop(sess, kvstore, txn.get(), metaRk, rv, _pos);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return Command::fmtBulk(s.value());
-            }
-            if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (s1.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtNull();
+            } else if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return Command::fmtBulk(s1.value());
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -342,21 +340,20 @@ class ListPushWrapper: public Command {
             valargs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPush(sess, kvstore, txn.get(), metaRk, rv, valargs, _pos, _needExist);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return s.value();
+            if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return s1.value();
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -461,6 +458,12 @@ class RPopLPushCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -505,6 +508,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -548,6 +552,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -592,7 +597,7 @@ class LtrimCommand: public Command {
                             const ListMetaValue& lm,
                             int64_t start, int64_t end,
                             const Expected<RecordValue>& rv) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -617,7 +622,7 @@ class LtrimCommand: public Command {
                     if (!v.ok()) {
                         return v.status();
                     }
-                    auto ptxn = kvstore->createTransaction();
+                    auto ptxn = kvstore->createTransaction(sess);
                     if (!ptxn.ok()) {
                         return ptxn.status();
                     }
@@ -773,7 +778,7 @@ class LRangeCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -882,7 +887,7 @@ class LIndexCommand: public Command {
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -988,7 +993,7 @@ class LSetCommand: public Command {
 
         PStore kvstore = expdb.value().store;
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1089,7 +1094,7 @@ class LRemCommand: public Command {
         hole.push_back(head - 1);
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1314,7 +1319,7 @@ class LInsertCommand: public Command {
         uint64_t index = step < 0 ? tail - 1 : head;
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

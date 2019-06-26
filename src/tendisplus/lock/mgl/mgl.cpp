@@ -1,6 +1,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 namespace mgl {
@@ -8,13 +9,15 @@ namespace mgl {
 std::atomic<uint64_t> MGLock::_idGen(0);
 std::list<MGLock*> MGLock::_dummyList{};
 
-MGLock::MGLock()
+MGLock::MGLock(MGLockMgr* mgr)
     :_id(_idGen.fetch_add(1, std::memory_order_relaxed)),
      _target(""),
      _targetHash(0),
      _mode(LockMode::LOCK_NONE),
      _res(LockRes::LOCKRES_UNINITED),
-     _resIter(_dummyList.end()) {
+     _resIter(_dummyList.end()),
+     _lockMgr(mgr),
+     _threadId(getCurThreadId()) {
 }
 
 MGLock::~MGLock() {
@@ -36,7 +39,11 @@ void MGLock::setLockResult(LockRes res, std::list<MGLock*>::iterator iter) {
 void MGLock::unlock() {
     LockRes status = getStatus();
     INVARIANT(status == LockRes::LOCKRES_OK || status == LockRes::LOCKRES_WAIT);
-    MGLockMgr::getInstance().unlock(this);
+    if (!_lockMgr) {
+        MGLockMgr::getInstance().unlock(this);
+    } else {
+        _lockMgr->unlock(this);
+    }
     status = getStatus();
     INVARIANT(status == LockRes::LOCKRES_UNINITED);
 }
@@ -52,7 +59,11 @@ LockRes MGLock::lock(const std::string& target, LockMode mode,
     } else {
         _targetHash = 0;
     }
-    MGLockMgr::getInstance().lock(this);
+    if (!_lockMgr) {
+        MGLockMgr::getInstance().lock(this);
+    } else {
+        _lockMgr->lock(this);
+    }
     if (getStatus() == LockRes::LOCKRES_OK) {
         return LockRes::LOCKRES_OK;
     }

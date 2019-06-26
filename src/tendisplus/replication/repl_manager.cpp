@@ -179,6 +179,11 @@ Status ReplManager::startup() {
             } else {
                 status = _svr->setStoreMode(store,
                     KVStore::StoreMode::REPLICATE_ONLY);
+
+                // NOTE(vinchen): the binlog of slave is sync from master,
+                // when the slave startup, _syncMeta[i]->binlogId should depend
+                // on store->getHighestBinlogId();
+                _syncMeta[i]->binlogId = store->getHighestBinlogId();
             }
             if (!status.ok()) {
                 return status;
@@ -197,17 +202,19 @@ Status ReplManager::startup() {
                 tp,
                 Transaction::TXNID_UNINITED,
                 fileSeq,
+                0,
                 tp,
                 0,
                 nullptr,
             });
 
         if (isOpen) {
-            auto ptxn = store->createTransaction();
+            auto ptxn = store->createTransaction(nullptr);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             auto txn = std::move(ptxn.value());
+#ifdef BINLOG_V1
             std::unique_ptr<BinlogCursor> cursor =
                 txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
             Expected<ReplLog> explog = cursor->next();
@@ -215,11 +222,18 @@ Status ReplManager::startup() {
                 const auto& rlk = explog.value().getReplLogKey();
                 recBinlogStat->firstBinlogId = rlk.getTxnId();
                 _logRecycStatus.emplace_back(std::move(recBinlogStat));
+#else
+            auto explog = RepllogCursorV2::getMinBinlog(txn.get());
+            if (explog.ok()) {
+                recBinlogStat->firstBinlogId = explog.value().getBinlogId();
+                recBinlogStat->timestamp = explog.value().getTimestamp();
+                _logRecycStatus.emplace_back(std::move(recBinlogStat));
+#endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    uint64_t v = Transaction::TXNID_UNINITED;
-                    recBinlogStat->firstBinlogId = v;
+                    recBinlogStat->firstBinlogId = Transaction::TXNID_UNINITED;
+                    recBinlogStat->timestamp = 0;
                     _logRecycStatus.emplace_back(std::move(recBinlogStat));
                 } else {
                     return explog.status();
@@ -227,7 +241,9 @@ Status ReplManager::startup() {
             }
             LOG(INFO) << "store:" << i
                 << ",_firstBinlogId:"
-                << _logRecycStatus.back()->firstBinlogId;
+                << _logRecycStatus.back()->firstBinlogId
+                << ",_timestamp:"
+                << _logRecycStatus.back()->timestamp;
         } else {
             _logRecycStatus.emplace_back(std::move(recBinlogStat));
         }
@@ -346,7 +362,7 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
         std::stringstream ss;
         ss << "AUTH " << *masterauth;
         client->writeLine(ss.str(), std::chrono::seconds(1));
-        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
+        Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(WARNING) << "fullSync auth error:" << s.status().toString();
             return nullptr;
@@ -420,6 +436,7 @@ void ReplManager::controlRoutine() {
                 continue;
             }
             doSth = true;
+            // TODO(vinchen): check if any connected slaves or REPL_ONLY?
             bool saveLogs = (_pushStatus[i].size() == 0);
             _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
@@ -441,7 +458,8 @@ void ReplManager::controlRoutine() {
             std::lock_guard<std::mutex> lk(_mutex);
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
-            doSth = schedRecycLogInLock(now) || doSth;
+            // TODO(takenliu): make recycLog work
+            //doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {
             std::this_thread::yield();
@@ -494,7 +512,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         return;
     }
     auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         LOG(ERROR) << "recycleBinlog create txn failed:"
                    << ptxn.status().toString();
@@ -503,6 +521,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     }
     auto txn = std::move(ptxn.value());
 
+#ifdef BINLOG_V1
     auto toDel = kvstore->getTruncateLog(start, end, txn.get());
     if (!toDel.ok()) {
         LOG(ERROR) << "get to be truncated binlog store:" << storeId
@@ -534,6 +553,30 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         hasError = true;
         return;
     }
+    uint64_t newStart = toDel.value().first;
+#else
+    std::ofstream* fs = nullptr;
+    if (saveLogs) {
+        fs = getCurBinlogFs(storeId);
+        if (!fs) {
+            LOG(ERROR) << "getCurBinlogFs() store;" << storeId
+                << "failed:";
+            hasError = true;
+            return;
+        }
+    }
+
+    auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
+    if (!s.ok()) {
+        LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
+            << "failed:" << s.status().toString();
+        hasError = true;
+        return;
+    }
+    updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
+    // TODO(vinchen): stat for binlog deleted
+    uint64_t newStart = s.value().newStart;
+#endif
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {
         LOG(ERROR) << "truncate binlog store:" << storeId
@@ -542,8 +585,8 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         return;
     }
     LOG(INFO) << "truncate binlog from:" << start
-                 << " to end:" << toDel.value().first << " success";
-    start = toDel.value().first;
+                 << " to end:" << newStart << " success";
+    start = newStart;
 }
 
 // changeReplSource should be called with LOCK_X held
@@ -639,6 +682,9 @@ void ReplManager::appendJSONStat(
 
         w.Key("first_binlog");
         w.Uint64(_logRecycStatus[i]->firstBinlogId);
+
+        w.Key("timestamp");
+        w.Uint64(_logRecycStatus[i]->timestamp);
 
         w.Key("incr_paused");
         w.Uint64(_incrPaused);

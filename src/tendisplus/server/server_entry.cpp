@@ -28,6 +28,7 @@ ServerEntry::ServerEntry()
          _replMgr(nullptr),
          _indexMgr(nullptr),
          _pessimisticMgr(nullptr),
+         _mgLockMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -42,7 +43,7 @@ ServerEntry::ServerEntry()
          _dbNum(CONFIG_DEFAULT_DBNUM) {
 }
 
-ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg) 
+ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     : ServerEntry() {
     _requirepass = std::make_shared<std::string>(cfg->requirepass);
     _masterauth = std::make_shared<std::string>(cfg->masterauth);
@@ -56,6 +57,11 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
 void ServerEntry::installPessimisticMgrInLock(
         std::unique_ptr<PessimisticMgr> o) {
     _pessimisticMgr = std::move(o);
+}
+
+void ServerEntry::installMGLockMgrInLock(
+    std::unique_ptr<mgl::MGLockMgr> o) {
+    _mgLockMgr = std::move(o);
 }
 
 void ServerEntry::installStoresInLock(const std::vector<PStore>& o) {
@@ -80,19 +86,34 @@ void ServerEntry::logGeneral(Session *sess) {
     if (!_generalLog) {
         return;
     }
-    const std::vector<std::string>& args = sess->getArgs();
 
+    LOG(INFO) << sess->getCmdStr();
+}
+
+void ServerEntry::logWarning(const std::string& str, Session* sess) {
     std::stringstream ss;
-    ss << "Command: ";
-    for (auto arg : args) {
-        ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+    if (sess) {
+        ss << sess->id() << "cmd:" << sess->getCmdStr();
     }
 
-    LOG(INFO) << ss.str();
+    ss << ", warning:" << str;
+
+    LOG(WARNING) << ss.str();
+}
+
+void ServerEntry::logError(const std::string& str, Session* sess) {
+    std::stringstream ss;
+    if (sess) {
+        ss << sess->id() << "cmd:" << sess->getCmdStr();
+    }
+
+    ss << ", error:" << str;
+
+    LOG(ERROR) << ss.str();
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {
-    INVARIANT(_kvstores.size() == _catalog->getKVStoreCount());
+    INVARIANT_D(_kvstores.size() == _catalog->getKVStoreCount());
     return _catalog->getKVStoreCount();
 }
 
@@ -110,7 +131,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore(CATALOG_NAME, cfg, nullptr))),
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr, false))),
           kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
@@ -141,7 +162,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(std::to_string(i), cfg, blockCache, mode)));
+            new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode)));
     }
     installStoresInLock(tmpStores);
     INVARIANT(getKVStoreCount() == kvStoreCount);
@@ -155,6 +176,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(
         kvStoreCount);
     installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
+
+    auto tmpMGLockMgr = std::make_unique <mgl::MGLockMgr>();
+    installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
     // request executePool
     _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
@@ -233,6 +257,10 @@ PessimisticMgr* ServerEntry::getPessimisticMgr() {
     return _pessimisticMgr.get();
 }
 
+mgl::MGLockMgr* ServerEntry::getMGLockMgr() {
+    return _mgLockMgr.get();
+}
+
 IndexManager* ServerEntry::getIndexMgr() {
     return _indexMgr.get();
 }
@@ -265,7 +293,7 @@ void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     sess->start();
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
-        LOG(FATAL) << "add conn:" << id << ",id already exists";
+        LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
     _sessions[id] = std::move(sess);
 }
@@ -309,25 +337,25 @@ std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
     return sesses;
 }
 
-bool ServerEntry::processRequest(uint64_t connId) {
+bool ServerEntry::processRequest(uint64_t sessionId) {
     Session *sess = nullptr;
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
             return false;
         }
-        auto it = _sessions.find(connId);
+        auto it = _sessions.find(sessionId);
         if (it == _sessions.end()) {
-            LOG(FATAL) << "conn:" << connId << ",invalid state";
+            LOG(FATAL) << "session id:" << sessionId << ",invalid state";
         }
         sess = it->second.get();
         if (sess == nullptr) {
-            LOG(FATAL) << "conn:" << connId << ",null in servermap";
+            LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
         }
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
-    // NOTE(vinchen): process the ExtraProtocol of timestamp and version 
+    // NOTE(vinchen): process the ExtraProtocol of timestamp and version
     auto s = sess->processExtendProtocol();
     if (!s.ok()) {
         sess->setResponse(
@@ -342,7 +370,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
         return true;
     }
     if (expCmdName.value() == "fullsync") {
-        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -351,7 +379,7 @@ bool ServerEntry::processRequest(uint64_t connId) {
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
         return false;
     } else if (expCmdName.value() == "incrsync") {
-        LOG(WARNING) << "connId:" << connId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -591,13 +619,14 @@ void ServerEntry::stop() {
     _sessions.clear();
 
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
-        // NOTE(vinchen): if it's not the shutdown command, it should reset the 
+        // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
         _network.reset();
         _executor.reset();
         _replMgr.reset();
         _indexMgr.reset();
         _pessimisticMgr.reset();
+        _mgLockMgr.reset();
         _segmentMgr.reset();
     }
 

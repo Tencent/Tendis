@@ -22,6 +22,15 @@ else()
 	set_target_properties(index_mgr_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
 
+add_executable(repl_test repl_test.cpp)
+if(CMAKE_COMPILER_IS_GNUCC)
+	target_link_libraries(repl_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
+	target_link_libraries(repl_test index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
+else()
+	target_link_libraries(repl_test commands index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
+	set_target_properties(repl_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
+endif()
+
 
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})

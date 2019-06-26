@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <thread>
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/network/session_ctx.h"
@@ -9,16 +10,45 @@ namespace tendisplus {
 std::atomic<uint64_t> Session::_idGen(0);
 std::atomic<uint64_t> Session::_aliveCnt(0);
 
+thread_local Session* curSession = nullptr;
+
 Session::Session(std::shared_ptr<ServerEntry> svr)
         :_args(std::vector<std::string>()),
          _server(svr),
-         _ctx(std::make_unique<SessionCtx>()),
+         _ctx(std::make_unique<SessionCtx>(this)),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
 
 Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
+}
+
+void Session::setCurSess(Session* sess) {
+    curSession = sess;
+}
+
+Session* Session::getCurSess() {
+    return curSession;
+}
+
+std::string Session::getCmdStr() const {
+    std::stringstream ss;
+    if (_args[0] == "applybinlogsv2") {
+        size_t i = 0;
+        for (auto arg : _args) {
+            if (i++ == 2) {
+                ss << "[" << arg.size() << "]" << " ";
+            } else {
+                ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+            }
+        }
+    } else {
+        for (auto arg : _args) {
+            ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+        }
+    }
+    return ss.str();
 }
 
 std::string Session::getName() const {
@@ -75,13 +105,20 @@ void LocalSession::setResponse(const std::string& s) {
 
 LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
     _sess = std::make_shared<LocalSession>(svr);
-    svr->addSession(_sess);
+    if (svr.get()) {
+        svr->addSession(_sess);
+    }
 }
 
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
-    INVARIANT(svr != nullptr);
-    svr->endSession(_sess->id());
+#ifdef _DEBUG
+    LOG(INFO) << "local session, id:" << _sess->id()
+        << " destroyed";
+#endif
+    if (svr.get()) {
+        svr->endSession(_sess->id());
+    }
 }
 
 LocalSession* LocalSessionGuard::getSession() {
