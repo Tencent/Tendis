@@ -733,6 +733,8 @@ class KvDeserializer: public Deserializer {
             }
             txn = std::move(ptxn.value());
         }
+
+        return { ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
 
