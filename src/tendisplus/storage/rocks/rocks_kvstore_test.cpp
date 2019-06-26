@@ -363,6 +363,7 @@ TEST(RocksKVStore, RepllogCursorV2) {
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
 
+    uint64_t ts0 = msSinceEpoch();
     const auto guard = MakeGuard([] {
         filesystem::remove_all("./log");
         filesystem::remove_all("./db");
@@ -441,9 +442,11 @@ TEST(RocksKVStore, RepllogCursorV2) {
             EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
             break;
         }
-        EXPECT_LE(v.value().getTimestamp(), ts);
+        EXPECT_LT(v.value().getTimestamp(), ts);
+        EXPECT_GT(v.value().getTimestamp(), ts0);
         EXPECT_EQ(v.value().getVersionEp(), versionep);
         EXPECT_LE(v.value().getBinlogId(), binlogid - 1);
+        EXPECT_NE(v.value().getBinlogId(), Transaction::TXNID_UNINITED);
         // different chunk
         uint64_t multi = Transaction::CHUNKID_MULTI;
         EXPECT_EQ(v.value().getChunkId(), multi);

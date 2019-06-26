@@ -276,6 +276,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         if (explog.ok()) {
             estimateSize += Binlog::writeRepllogRaw(ss, explog.value());
             binlogId = explog.value().getBinlogId();
+            INVARIANT_D(binlogId > binlogPos);
             cnt += 1;
             if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
                 break;
@@ -345,6 +346,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     if (cnt == 0) {
         return binlogPos;
     } else {
+        INVARIANT_D(binlogPos + cnt <= binlogId);
         return binlogId;
     }
 }

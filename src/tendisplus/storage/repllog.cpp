@@ -449,7 +449,7 @@ uint64_t ReplLogRawV2::getBinlogId() {
         return Transaction::TXNID_UNINITED;
     }
 
-    return int32Decode(_key.c_str() + ReplLogKeyV2::BINLOG_OFFSET);
+    return int64Decode(_key.c_str() + ReplLogKeyV2::BINLOG_OFFSET);
 }
 
 uint64_t ReplLogRawV2::getVersionEp() {
@@ -464,7 +464,7 @@ uint64_t ReplLogRawV2::getVersionEp() {
         return (uint64_t)-1;
     }
 
-    return int32Decode(_val.c_str() +
+    return int64Decode(_val.c_str() +
         rvHdrSize.value() + ReplLogValueV2::VERSIONEP_OFFSET);
 }
 
@@ -479,11 +479,11 @@ uint64_t ReplLogRawV2::getTimestamp() {
         return (uint64_t)0;
     }
 
-    return int32Decode(_val.c_str() +
+    return int64Decode(_val.c_str() +
         rvHdrSize.value() + ReplLogValueV2::TIMESTAMP_OFFSET);
 }
 
-uint64_t ReplLogRawV2::getChunkId() {
+uint32_t ReplLogRawV2::getChunkId() {
     if (_val.size() < RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
         INVARIANT_D(0);
         return (uint64_t)-1;

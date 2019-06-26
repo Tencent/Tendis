@@ -437,7 +437,7 @@ class ReplLogRawV2 {
     uint64_t getBinlogId();
     uint64_t getVersionEp();
     uint64_t getTimestamp();
-    uint64_t getChunkId();
+    uint32_t getChunkId();
     const std::string& getReplLogKey() const { return _key; }
     const std::string& getReplLogValue() const { return _val; }
 
