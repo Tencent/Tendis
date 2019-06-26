@@ -109,13 +109,20 @@ class RecordKey {
     RecordType getRecordValueType() const;
     std::string encode() const;
     static uint32_t decodeChunkId(const std::string& key);
+    static uint32_t decodeDbId(const std::string& key);
+    static RecordType decodeType(const std::string& key);
     static Expected<RecordKey> decode(const std::string& key);
-    static RecordType getRecordTypeRaw(const char* key, size_t size);
+    static RecordType decodeType(const char* key, size_t size);
     static Expected<bool> validate(const std::string& key,
         RecordType type = RecordType::RT_INVALID);
-    static size_t getHdrSize()
-        { return sizeof(_chunkId) + sizeof(_dbId) + sizeof(uint8_t); }
+    static size_t minSize();
+    static size_t getHdrSize() { return PK_OFFSET; }
     bool operator==(const RecordKey& other) const;
+
+    static constexpr size_t CHUNKID_OFFSET = 0;
+    static constexpr size_t TYPE_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
+    static constexpr size_t DBID_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
+    static constexpr size_t PK_OFFSET = DBID_OFFSET + sizeof(uint32_t);
 
  private:
     void encodePrefixPk(std::vector<uint8_t>*) const;
@@ -172,11 +179,16 @@ class RecordValue {
     std::string encode() const;
     static Expected<RecordValue> decode(const std::string& value);
     static Expected<size_t> decodeHdrSize(const std::string& value);
+    static Expected<size_t> decodeHdrSizeNoMeta(const std::string& value);
     static Expected<bool> validate(const std::string& value,
         RecordType type = RecordType::RT_INVALID);
-    static uint64_t getTtlRaw(const char* value, size_t size);
-    static RecordType getRecordTypeRaw(const char* value, size_t size);
+    static uint64_t decodeTtl(const char* value, size_t size);
+    static RecordType decodeType(const char* value, size_t size);
+    static size_t minSize();
     bool operator==(const RecordValue& other) const;
+
+    static constexpr size_t TYPE_OFFSET = 0;
+    static constexpr size_t TTL_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
 
  private:
     // if RecordKey._type = META, _typeForMeta means the real
@@ -336,6 +348,8 @@ class ReplLogKeyV2 {
 
     static constexpr uint32_t DBID = 0XFFFFFF01U;
     static constexpr uint32_t CHUNKID = 0XFFFFFF01U;
+    static constexpr size_t BINLOG_OFFSET = RecordKey::PK_OFFSET;
+    static constexpr size_t BINLOG_SIZE = sizeof(uint64_t);
 
  private:
     uint64_t _binlogId;
@@ -390,6 +404,13 @@ class ReplLogValueV2 {
     uint32_t getChunkId() const { return _chunkId; }
     uint64_t getTimestamp() const { return _timestamp; }
     uint64_t getVersionEp() const { return _versionEp; }
+
+    static constexpr size_t CHUNKID_OFFSET = 0;
+    static constexpr size_t FLAG_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
+    static constexpr size_t TXNID_OFFSET = FLAG_OFFSET + sizeof(uint16_t);
+    static constexpr size_t TIMESTAMP_OFFSET = TXNID_OFFSET + sizeof(uint64_t);
+    static constexpr size_t VERSIONEP_OFFSET = TIMESTAMP_OFFSET + sizeof(uint64_t);
+    static constexpr size_t FIXED_HEADER_SIZE = VERSIONEP_OFFSET + sizeof(uint64_t);
 
  private:
     uint32_t _chunkId;

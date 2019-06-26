@@ -69,8 +69,7 @@ Status RepllogCursorV2::seekToLast() {
     _baseCursor->seekToLast();
     auto key = _baseCursor->key();
     if (key.ok()) {
-        if (RecordKey::getRecordTypeRaw(key.value().c_str(), key.value().size())
-                    == RecordType::RT_BINLOG) {
+        if (RecordKey::decodeType(key.value()) == RecordType::RT_BINLOG) {
             auto v = ReplLogKeyV2::decode(key.value());
             if (!v.ok()) {
                 LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
@@ -147,8 +146,7 @@ Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
     cursor->seekToLast();
     auto key = cursor->key();
     if (key.ok()) {
-        if (RecordKey::getRecordTypeRaw(key.value().c_str(), key.value().size())
-            == RecordType::RT_BINLOG) {
+        if (RecordKey::decodeType(key.value()) == RecordType::RT_BINLOG) {
             auto v = ReplLogKeyV2::decode(key.value());
             if (!v.ok()) {
                 LOG(ERROR) << "ReplLogKeyV2::getMaxBinlogId() failed, reason:"

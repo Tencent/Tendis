@@ -296,7 +296,7 @@ ReplLogValueV2::ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, 
 }
 
 size_t ReplLogValueV2::fixedHeaderSize() {
-    return sizeof(_chunkId) + sizeof(uint16_t) + sizeof(_txnId) + sizeof(_timestamp) + sizeof(_versionEp); // NOLINT
+    return ReplLogValueV2::FIXED_HEADER_SIZE;
 }
 
 std::string ReplLogValueV2::encodeHdr() const {
@@ -359,13 +359,13 @@ std::string ReplLogValueV2::encode(
 }
 
 Expected<ReplLogValueV2> ReplLogValueV2::decode(const std::string& s) {
-    auto type = RecordValue::getRecordTypeRaw(s.c_str(), s.size());
+    auto type = RecordValue::decodeType(s.c_str(), s.size());
     if (type != RecordType::RT_BINLOG) {
         return{ ErrorCodes::ERR_DECODE,
            "ReplLogValueV2::decode: it is not a valid binlog type" + rt2Char(type) };   // NOLINT
     }
 
-    auto hdrSize = RecordValue::decodeHdrSize(s);
+    auto hdrSize = RecordValue::decodeHdrSizeNoMeta(s);
     if (!hdrSize.ok()) {
         return hdrSize.status();
     }
@@ -383,29 +383,18 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const char* str, size_t size) {
             "ReplLogValueV2::decode() error, too small" };
     }
 
-    auto keyCstr = reinterpret_cast<const uint8_t*>(str);
-    size_t offset = 0;
     // chunkid
-    chunkid = int32Decode(str + offset);
-    offset += sizeof(chunkid);
-
+    chunkid = int32Decode(str + CHUNKID_OFFSET);
     // flag
-    auto flag = static_cast<ReplFlag>(int16Decode(str + offset));
-    offset += sizeof(flag);
-
+    auto flag = static_cast<ReplFlag>(int16Decode(str + FLAG_OFFSET));
     // txnid
-    txnid = int64Decode(str + offset);
-    offset += sizeof(txnid);
-
+    txnid = int64Decode(str + TXNID_OFFSET);
     // timestamp
-    timestamp = int64Decode(str + offset);
-    offset += sizeof(timestamp);
-
+    timestamp = int64Decode(str + TIMESTAMP_OFFSET);
     // versionEp
-    versionEp = int64Decode(str + offset);
-    offset += sizeof(versionEp);
+    versionEp = int64Decode(str + VERSIONEP_OFFSET);
 
-    INVARIANT_D(offset == fixedHeaderSize());
+    auto keyCstr = reinterpret_cast<const uint8_t*>(str);
 
     return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, keyCstr, size);
 }
@@ -454,41 +443,59 @@ ReplLogRawV2::ReplLogRawV2(ReplLogRawV2&& o)
             _val(std::move(o._val)) {
 }
 
-// TODO(vinchen): low performance now
 uint64_t ReplLogRawV2::getBinlogId() {
-    auto k = ReplLogKeyV2::decode(_key);
-    INVARIANT_D(k.ok());
-    if (!k.ok()) {
+    if (_key.size() < RecordKey::minSize()) {
+        INVARIANT_D(0);
         return Transaction::TXNID_UNINITED;
     }
-    return k.value().getBinlogId();
+
+    return int32Decode(_key.c_str() + ReplLogKeyV2::BINLOG_OFFSET);
 }
 
 uint64_t ReplLogRawV2::getVersionEp() {
-    auto v = ReplLogValueV2::decode(_val);
-    INVARIANT_D(v.ok());
-    if (!v.ok()) {
+    if (_val.size() < RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
+        INVARIANT_D(0);
         return (uint64_t)-1;
     }
-    return v.value().getVersionEp();
+
+    auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
+    if (!rvHdrSize.ok()) {
+         INVARIANT_D(0);
+        return (uint64_t)-1;
+    }
+
+    return int32Decode(_val.c_str() +
+        rvHdrSize.value() + ReplLogValueV2::VERSIONEP_OFFSET);
 }
 
 uint64_t ReplLogRawV2::getTimestamp() {
-    auto v = ReplLogValueV2::decode(_val);
-    INVARIANT_D(v.ok());
-    if (!v.ok()) {
-        return 0;
+    if (_val.size() < RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
+        INVARIANT_D(0);
+        return (uint64_t)0;
     }
-    return v.value().getTimestamp();
+    auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
+    if (!rvHdrSize.ok()) {
+         INVARIANT_D(0);
+        return (uint64_t)0;
+    }
+
+    return int32Decode(_val.c_str() +
+        rvHdrSize.value() + ReplLogValueV2::TIMESTAMP_OFFSET);
 }
 
 uint64_t ReplLogRawV2::getChunkId() {
-    auto v = ReplLogValueV2::decode(_val);
-    INVARIANT_D(v.ok());
-    if (!v.ok()) {
-        return 0;
+    if (_val.size() < RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
+        INVARIANT_D(0);
+        return (uint64_t)-1;
     }
-    return v.value().getChunkId();
+    auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
+    if (!rvHdrSize.ok()) {
+         INVARIANT_D(0);
+        return (uint64_t)-1;
+    }
+
+    return int32Decode(_val.c_str() +
+        rvHdrSize.value() + ReplLogValueV2::CHUNKID_OFFSET);
 }
 
 size_t Binlog::writeHeader(std::stringstream& ss) {

@@ -112,6 +112,16 @@ std::string overflip(const std::string& s) {
         reinterpret_cast<const char *>(buf.data()), buf.size());
 }
 
+TEST(Record, MinRec) {
+    auto rk = RecordKey(0, 0, RecordType::RT_DATA_META, "", "");
+    auto rv = RecordValue("", RecordType::RT_KV, -1);
+
+    auto minSize = rk.encode().size();
+    EXPECT_TRUE(minSize == RecordKey::minSize());
+    minSize = rv.encode().size();
+    EXPECT_TRUE(minSize == RecordValue::minSize());
+}
+
 TEST(Record, Common) {
     srand((unsigned int)time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
@@ -124,14 +134,19 @@ TEST(Record, Common) {
         uint64_t cas = genRand()*genRand();
         uint64_t version = genRand()*genRand();
         uint64_t versionEP = genRand()*genRand();
-        if (getRealKeyType(type) == type) {
-            versionEP = -1;
-        }
         auto val = randomStr(5, true);
         uint64_t pieceSize = (uint64_t)-1;
         if (val.size() % 2 == 0) {
             pieceSize = val.size() + 1;
         }
+        if (getRealKeyType(type) == type) {
+            versionEP = -1;
+            ttl = 0;
+            cas = -1;
+            version = 0;
+            pieceSize = -1;
+        }
+
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
         auto rv = RecordValue(val, type, versionEP, ttl, cas, version, pieceSize);
         auto rcd = Record(rk, rv);
@@ -150,9 +165,9 @@ TEST(Record, Common) {
         EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
 
         auto prcd1 = Record::decode(kv.first, kv.second);
-        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(),
+        auto type_ = RecordKey::decodeType(kv.first.c_str(),
             kv.first.size());
-        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(),
+        auto ttl_ = RecordValue::decodeTtl(kv.second.c_str(),
             kv.second.size());
 
         EXPECT_EQ(cas, rv.getCas());

@@ -121,7 +121,8 @@ RecordType char2Rt(uint8_t t) {
         case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
-            LOG(FATAL) << "invalid rcdchr:" << static_cast<uint32_t>(t);
+            INVARIANT_D(0);
+            LOG(ERROR) << "invalid rcdchr:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
             return RecordType::RT_INVALID;
     }
@@ -355,66 +356,25 @@ const std::string& RecordKey::getSecondaryKey() const {
     return _sk;
 }
 
-#define INVALID_RK_OFFSET ((size_t)-1)
-
-static size_t recordKeyDecodeFixPrefix(const uint8_t* keyCstr, size_t size,
-        uint32_t* chunkidOut, uint32_t* dbidOut, RecordType* typeOut) {
-    size_t offset = 0;
-    uint32_t chunkid = 0;
-    uint32_t dbid = 0;
-    uint8_t typec;
-    RecordType type = RecordType::RT_INVALID;
-
-    if (size < sizeof(chunkid) + sizeof(dbid) + sizeof(uint8_t)
-        + sizeof(RecordKey::TRSV)) {
-        // invalid key
-        return INVALID_RK_OFFSET;
-    }
-
-    // chunkid
-    chunkid = int32Decode((const char*)keyCstr + offset);
-    offset += sizeof(chunkid);
-
-    // type
-    typec = keyCstr[offset++];
-    type = char2Rt(typec);
-    INVARIANT_D(type == getRealKeyType(type));
-    INVARIANT_D(type != RecordType::RT_INVALID);
-
-    // dbid
-    dbid = int32Decode((const char*)keyCstr + offset);
-    offset += sizeof(dbid);
-
-    *chunkidOut = chunkid;
-    *dbidOut = dbid;
-    *typeOut = type;
-
-    return offset;
-}
-
-uint32_t RecordKey::decodeChunkId(const std::string& key) {
-    INVARIANT_D(key.size() > sizeof(uint32_t));
-    return int32Decode(key.c_str());
-}
-
 Expected<RecordKey> RecordKey::decode(const std::string& key) {
     constexpr size_t rsvd = sizeof(TRSV);
     size_t offset = 0;
     size_t rvsOffset = 0;
     size_t pkLen = 0;
     size_t skLen = 0;
-    uint32_t chunkid = 0;
-    uint32_t dbid = 0;
-    RecordType type = RecordType::RT_INVALID;
     std::string pk = "";
     std::string sk = "";
 
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
-    offset = recordKeyDecodeFixPrefix(keyCstr, key.size(),
-            &chunkid, &dbid, &type);
-    if (offset == INVALID_RK_OFFSET) {
+
+    if (key.size() < minSize()) { 
         return {ErrorCodes::ERR_DECODE, "invalid recordkey"};
     }
+
+    offset = getHdrSize();
+    auto chunkid = decodeChunkId(key);
+    auto type = decodeType(key);
+    auto dbid = decodeDbId(key);
 
     // pklen is stored in the reverse order
     // pklen
@@ -443,7 +403,7 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
     }
     size_t versionLen = v.value().second;
     auto version = v.value().first;
-    INVARIANT(version == 0);
+    INVARIANT_D(version == 0);
 
     // sk
     skLen = left - versionLen;
@@ -457,6 +417,11 @@ Expected<RecordKey> RecordKey::decode(const std::string& key) {
                 std::move(pk), std::move(sk), version);
 }
 
+size_t RecordKey::minSize() {
+    // min key len = 13, 3 is the min size of \0|version|pklen
+    return getHdrSize() + sizeof(TRSV) + 3;
+}
+
 Expected<bool> RecordKey::validate(const std::string& key,
     RecordType type) {
     constexpr size_t rsvd = sizeof(TRSV);
@@ -465,14 +430,15 @@ Expected<bool> RecordKey::validate(const std::string& key,
     size_t pkLen = 0;
     uint32_t chunkid = 0;
     uint32_t dbid = 0;
-    RecordType thisType = RecordType::RT_INVALID;
 
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
-    offset = recordKeyDecodeFixPrefix(keyCstr, key.size(),
-        &chunkid, &dbid, &thisType);
-    if (offset == INVALID_RK_OFFSET) {
+
+    if (key.size() < minSize()) {
         return{ ErrorCodes::ERR_DECODE, "invalid recordkey" };
     }
+
+    offset = getHdrSize();
+    auto thisType = decodeType(key);
 
     if (type != RecordType::RT_INVALID && type != thisType) {
         return{ ErrorCodes::ERR_DECODE, "mismatch key type" };
@@ -508,14 +474,27 @@ Expected<bool> RecordKey::validate(const std::string& key,
     return true;
 }
 
-RecordType RecordKey::getRecordTypeRaw(const char* key, size_t size) {
-    size_t offset = 0;
-    uint32_t chunkid = 0;
-    uint32_t dbid = 0;
-    RecordType type = RecordType::RT_INVALID;
+uint32_t RecordKey::decodeChunkId(const std::string& key) {
+    INVARIANT_D(key.size() > getHdrSize());
+    return int32Decode(key.c_str() + CHUNKID_OFFSET);
+}
 
-    offset = recordKeyDecodeFixPrefix(reinterpret_cast<const uint8_t*>(key),
-        size, &chunkid, &dbid, &type);
+uint32_t RecordKey::decodeDbId(const std::string& key) {
+    INVARIANT_D(key.size() > getHdrSize());
+    return int32Decode(key.c_str() + DBID_OFFSET);
+}
+
+RecordType RecordKey::decodeType(const std::string& key) {
+    INVARIANT_D(key.size() > getHdrSize());
+
+    return decodeType(key.c_str(), key.size());
+}
+
+RecordType RecordKey::decodeType(const char* data, const size_t size) {
+    INVARIANT_D(size > getHdrSize());
+    auto type = char2Rt(data[TYPE_OFFSET]);
+    INVARIANT_D(type == getRealKeyType(type));
+    INVARIANT_D(type != RecordType::RT_INVALID);
 
     return type;
 }
@@ -711,6 +690,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t ttl = expt.value().first;
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || ttl == 0);
 
     // version
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
@@ -719,6 +699,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t version = expt.value().first;
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || version == 0);
 
     // versionEP
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
@@ -727,7 +708,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t versionEP = expt.value().first - 1;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || versionEP == -1);
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || versionEP == (uint64_t)-1);
 
     // CAS
     expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
@@ -739,6 +720,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     // And it should be store as (cas + 1) in the kvstore
     // to improve storage efficiency
     int64_t cas = expt.value().first - 1;
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || cas == -1);
 
     // pieceSize
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
@@ -747,6 +729,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
     }
     offset += expt.value().second;
     uint64_t pieceSize = expt.value().first - 1;
+    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || pieceSize == (uint64_t)-1);
 
     // totalSize
     expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
@@ -776,7 +759,7 @@ Expected<bool> RecordValue::validate(const std::string& value,
         RecordType type) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
 
-    if (value.size() < 7) {
+    if (value.size() < minSize()) {
         return{ ErrorCodes::ERR_DECODE, "too small RecordValue" };
     }
 
@@ -896,22 +879,54 @@ Expected<size_t> RecordValue::decodeHdrSize(const std::string& value) {
     return offset;
 }
 
-uint64_t RecordValue::getTtlRaw(const char* value, size_t size) {
+Expected<size_t> RecordValue::decodeHdrSizeNoMeta(const std::string& value) {
+    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
+
+    if (value.size() < minSize()) {
+        return{ ErrorCodes::ERR_DECODE, "too small RecordValue" };
+    }
+
+    // RT_*_META can't call it
+    INVARIANT_D(getRealKeyType(decodeType(value.c_str(), value.size())) ==
+        decodeType(value.c_str(), value.size()));
+
+    // type
+    // ttl
+    // version
+    // versionEP
+    // CAS
+    // pieceSize
+    size_t offset = 6;
+    // totalSize
+    auto expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+    if (!expt.ok()) {
+        return expt.status();
+    }
+    offset += expt.value().second;
+
+    return offset;
+}
+
+uint64_t RecordValue::decodeTtl(const char* value, size_t size) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value);
-    size_t offset = 1;
+    size_t offset = RecordValue::TTL_OFFSET;
 
     auto expt = varintDecodeFwd(valueCstr + offset, size - offset);
     if (!expt.ok()) {
         return 0;
     }
-    offset += expt.value().second;
     uint64_t ttl = expt.value().first;;
 
     return ttl;
 }
 
-RecordType RecordValue::getRecordTypeRaw(const char* value, size_t size) {
-    return char2Rt(value[0]);
+RecordType RecordValue::decodeType(const char* value, size_t size) {
+    return char2Rt(value[RecordValue::TYPE_OFFSET]);
+}
+
+size_t RecordValue::minSize() {
+    // 7 elements in header
+    return 7;
 }
 
 const std::string& RecordValue::getValue() const {
