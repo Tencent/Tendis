@@ -428,8 +428,6 @@ Expected<bool> RecordKey::validate(const std::string& key,
     size_t offset = 0;
     size_t rvsOffset = 0;
     size_t pkLen = 0;
-    uint32_t chunkid = 0;
-    uint32_t dbid = 0;
 
     const uint8_t *keyCstr = reinterpret_cast<const uint8_t*>(key.c_str());
 

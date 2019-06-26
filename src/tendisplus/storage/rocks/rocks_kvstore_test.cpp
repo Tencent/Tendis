@@ -9,6 +9,7 @@
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/time.h"
@@ -442,11 +443,12 @@ TEST(RocksKVStore, RepllogCursorV2) {
             EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
             break;
         }
-        EXPECT_LT(v.value().getTimestamp(), ts);
-        EXPECT_GT(v.value().getTimestamp(), ts0);
+        EXPECT_LE(v.value().getTimestamp(), ts);
+        EXPECT_GE(v.value().getTimestamp(), ts0);
         EXPECT_EQ(v.value().getVersionEp(), versionep);
         EXPECT_LE(v.value().getBinlogId(), binlogid - 1);
-        EXPECT_NE(v.value().getBinlogId(), Transaction::TXNID_UNINITED);
+        uint64_t invalid = Transaction::TXNID_UNINITED;
+        EXPECT_NE(v.value().getBinlogId(), invalid);
         // different chunk
         uint64_t multi = Transaction::CHUNKID_MULTI;
         EXPECT_EQ(v.value().getChunkId(), multi);
