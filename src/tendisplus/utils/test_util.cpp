@@ -182,7 +182,7 @@ std::shared_ptr<ServerEntry> makeServerEntry(
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore(CATALOG_NAME, cfg, nullptr))),
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr, false))),
         kvStoreCount, chunkSize);
     server->installCatalog(std::move(catalog));
 
@@ -210,7 +210,7 @@ std::shared_ptr<ServerEntry> makeServerEntry(
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
                 new RocksKVStore(std::to_string(dbId), cfg,
-                    block_cache, mode)));
+                    block_cache, true, mode)));
     }
     server->installStoresInLock(tmpStores);
     auto seg_mgr = std::unique_ptr<SegmentMgr>(

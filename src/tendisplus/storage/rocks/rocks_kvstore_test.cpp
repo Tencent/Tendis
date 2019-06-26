@@ -575,6 +575,7 @@ TEST(RocksKVStore, OptCursorVisible) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_OPT);
     cursorVisibleRoutine(kvstore.get());
@@ -594,6 +595,7 @@ TEST(RocksKVStore, PesCursorVisible) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_PES);
     cursorVisibleRoutine(kvstore.get());
@@ -783,6 +785,7 @@ TEST(RocksKVStore, OptCommon) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_OPT);
     commonRoutine(kvstore.get());
@@ -803,6 +806,7 @@ TEST(RocksKVStore, PesCommon) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_PES);
     commonRoutine(kvstore.get());
@@ -843,6 +847,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_PES,
         keepBinlog /* max keep logs */);
@@ -1109,6 +1114,7 @@ TEST(RocksKVStore, Compaction) {
         "0",
         cfg,
         blockCache,
+        true,
         KVStore::StoreMode::READ_WRITE,
         RocksKVStore::TxnMode::TXN_PES);
 

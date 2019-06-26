@@ -131,7 +131,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // catalog init
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
-            new RocksKVStore(CATALOG_NAME, cfg, nullptr))),
+            new RocksKVStore(CATALOG_NAME, cfg, nullptr, false))),
           kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
@@ -162,7 +162,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
-            new RocksKVStore(std::to_string(i), cfg, blockCache, mode)));
+            new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode)));
     }
     installStoresInLock(tmpStores);
     INVARIANT(getKVStoreCount() == kvStoreCount);

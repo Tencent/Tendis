@@ -203,10 +203,10 @@ Expected<uint64_t> RocksTxn::commit() {
 #else
     if (_replLogValues.size() != 0) {
         // NOTE(vinchen): for repl, binlog should be inserted by setBinlogKV()
-        INVARIANT(!isReplOnly());
+        INVARIANT_D(!isReplOnly());
 
         _store->assignBinlogIdIfNeeded(this);
-        INVARIANT(_binlogId != Transaction::TXNID_UNINITED);
+        INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
 
         uint32_t chunkId = getChunkId();
 
@@ -216,7 +216,6 @@ Expected<uint64_t> RocksTxn::commit() {
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
         ReplLogKeyV2 key(_binlogId);
-        // TODO(vinchen): versionEp should get from session
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,
             _replLogValues.back().getTimestamp(),
 #ifndef NO_VERSIONEP
@@ -332,18 +331,20 @@ Status RocksTxn::setKV(const std::string& key,
             std::move(
                 ReplLog(std::move(logKey), std::move(logVal))));
 #else
-    setChunkId(RecordKey::decodeChunkId(key));
-    if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-        // TODO(vinchen): if too large, it can flush to rocksdb first, and get
-        // another binlogid using assignBinlogIdIfNeeded()
+    if (_store->enableRepllog()) {
+        INVARIANT_D(_store->dbId() != CATALOG_NAME);
+        setChunkId(RecordKey::decodeChunkId(key));
+        if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
+            // TODO(vinchen): if too large, it can flush to rocksdb first, and get
+            // another binlogid using assignBinlogIdIfNeeded()
 
-        LOG(WARNING) << "too big binlog size";
+            LOG(WARNING) << "too big binlog size";
+        }
+
+        ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_SET, ts ? ts : msSinceEpoch(),
+            key, val);
+        _replLogValues.emplace_back(std::move(logVal));
     }
-
-    ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_SET, ts ? ts : msSinceEpoch(),
-                key, val);
-    _replLogValues.emplace_back(std::move(logVal));
-
 #endif
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -373,16 +374,19 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
         std::move(
             ReplLog(std::move(logKey), std::move(logVal))));
 #else
-    setChunkId(RecordKey::decodeChunkId(key));
-    if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-        // TODO(vinchen): if too large, it can flush to rocksdb first, and get
-        // another binlogid using assignBinlogIdIfNeeded()
+    if (_store->enableRepllog()) {
+        INVARIANT_D(_store->dbId() != CATALOG_NAME);
+        setChunkId(RecordKey::decodeChunkId(key));
+        if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
+            // TODO(vinchen): if too large, it can flush to rocksdb first, and get
+            // another binlogid using assignBinlogIdIfNeeded()
 
-        LOG(WARNING) << "too big binlog size";
+            LOG(WARNING) << "too big binlog size";
+        }
+        ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL, ts ? ts : msSinceEpoch(),
+            key, "");
+        _replLogValues.emplace_back(std::move(logVal));
     }
-    ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL, ts ? ts : msSinceEpoch(),
-                key, "");
-    _replLogValues.emplace_back(std::move(logVal));
 #endif
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -529,7 +533,7 @@ RocksTxn::~RocksTxn() {
     }
 
 #ifndef BINLOG_V1
-    // NOTE(vinchen): for unittest, make sure whether is there any command
+    // NOTE(vinchen): make sure whether is there any command
     // forget to commit or rollback
     INVARIANT_D(_replLogValues.size() == 0);
 #endif
@@ -1196,6 +1200,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
 RocksKVStore::RocksKVStore(const std::string& id,
             const std::shared_ptr<ServerParams>& cfg,
             std::shared_ptr<rocksdb::Cache> blockCache,
+            bool enableRepllog,
             KVStore::StoreMode mode,
             TxnMode txnMode,
             uint64_t maxKeepLogs)
@@ -1204,6 +1209,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _isPaused(false),
          _hasBackup(false),
          _enableFilter(true),
+         _enableRepllog(enableRepllog),
          _mode(mode),
          _txnMode(txnMode),
          _optdb(nullptr),
@@ -1493,8 +1499,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
     }
 #else
     auto it = _aliveTxns.find(txnId);
-    INVARIANT(it != _aliveTxns.end());
-    INVARIANT(!it->second.first);
+    INVARIANT_D(it != _aliveTxns.end());
+    INVARIANT_D(!it->second.first);
 
     it->second.first = true;
     auto binlogId = it->second.second;
@@ -1502,8 +1508,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
     if (binlogId != Transaction::TXNID_UNINITED) {
         auto i = _aliveBinlogs.find(binlogId);
-        INVARIANT(i != _aliveBinlogs.end());
-        INVARIANT(i->second.second == txnId ||
+        INVARIANT_D(i != _aliveBinlogs.end());
+        INVARIANT_D(i->second.second == txnId ||
             i->second.second == Transaction::TXNID_UNINITED);  // rollback
 
         i->second.first = true;

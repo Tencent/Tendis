@@ -157,6 +157,7 @@ class RocksKVStore: public KVStore {
     RocksKVStore(const std::string& id,
         const std::shared_ptr<ServerParams>& cfg,
         std::shared_ptr<rocksdb::Cache> blockCache,
+        bool enableRepllog = true,
         KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
         TxnMode txnMode = TxnMode::TXN_PES,
         uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
@@ -205,6 +206,7 @@ class RocksKVStore: public KVStore {
     bool isEmpty() const final;
     // check whether the store get do get/set operations
     bool isPaused() const final;
+    bool enableRepllog() const { return _enableRepllog; }
     Status pause() final;
     Status resume() final;
     // stop() && clear()
@@ -244,6 +246,7 @@ class RocksKVStore: public KVStore {
     bool _isPaused;
     bool _hasBackup;
     bool _enableFilter;
+    bool _enableRepllog;
 
     KVStore::StoreMode _mode;
 
@@ -284,6 +287,7 @@ class RocksKVStore: public KVStore {
 
     // NOTE(deyukong): _highestVisible is the largest committed binlog
     // before _aliveTxns.begin()
+    // TOD0(vinchen) : make it actomic?
     uint64_t _highestVisible;
 
     std::shared_ptr<BinlogObserver> _logOb;
