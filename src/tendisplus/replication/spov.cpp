@@ -558,7 +558,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId
     while (offset < dataSize) {
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
-                        dataSize - offset, size);
+                        dataSize - offset, &size);
         if (!entry.ok()) {
             return entry.status();
         }

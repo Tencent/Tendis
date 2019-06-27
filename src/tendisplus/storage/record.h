@@ -369,10 +369,10 @@ class ReplLogValueEntryV2 {
     ReplOp getOp() const { return _op; }
 
     static Expected<ReplLogValueEntryV2> decode(const char* rawVal, size_t maxSize,
-        size_t& decodeSize);
+        size_t* decodeSize);
     std::string encode() const;
     size_t encode(uint8_t* dest, size_t destSize) const;
-    size_t maxSize() const;
+    size_t encodeSize() const;
     ReplLogValueEntryV2& operator=(ReplLogValueEntryV2&&);
     bool operator==(const ReplLogValueEntryV2&) const;
 

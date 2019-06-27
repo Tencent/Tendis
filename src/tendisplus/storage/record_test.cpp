@@ -311,12 +311,13 @@ TEST(ReplRecordV2, Common) {
             }
 
             timestamp += 1;
-            size_t size = 0;
             auto entryStr = entry.encode();
-            auto pentry = ReplLogValueEntryV2::decode(entryStr.c_str(), entryStr.size(), size);
+            size_t size = 0;
+            auto pentry = ReplLogValueEntryV2::decode(entryStr.c_str(), entryStr.size(), &size);
             EXPECT_TRUE(pentry.ok());
             EXPECT_EQ(pentry.value(), entry);
-            EXPECT_EQ(size, entryStr.size());
+            EXPECT_EQ(pentry.value().encodeSize(), entryStr.size());
+            EXPECT_EQ(pentry.value().encodeSize(), size);
 
             vec.emplace_back(entry);
         }
@@ -342,9 +343,10 @@ TEST(ReplRecordV2, Common) {
         while (offset < datasize) {
             const ReplLogValueEntryV2& entry = vec[j++];
             size_t size = 0;
-            auto v = ReplLogValueEntryV2::decode((const char*)desc + offset, datasize - offset, size);
+            auto v = ReplLogValueEntryV2::decode((const char*)desc + offset, datasize - offset, &size);
             EXPECT_TRUE(v.ok());
             offset += size;
+            EXPECT_EQ(size, v.value().encodeSize());
             EXPECT_EQ(entry, v.value());
         }
         EXPECT_EQ(offset, datasize);

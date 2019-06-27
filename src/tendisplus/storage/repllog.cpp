@@ -149,7 +149,7 @@ ReplLogValueEntryV2& ReplLogValueEntryV2::operator=(ReplLogValueEntryV2&& o) {
 }
 
 Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
-                size_t maxSize, size_t& decodeSize) {
+                size_t maxSize, size_t* decodeSize) {
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(rawVal);
     if (maxSize <= sizeof(_op)) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
@@ -169,83 +169,59 @@ Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
     uint64_t timestamp = expt.value().first;
 
     // key
-    expt = varintDecodeFwd(valCstr + offset, maxSize - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-
-    if (maxSize - offset < expt.value().first) {
+    auto eKey = decodeLenStr(rawVal + offset, maxSize - offset);
+    if (!eKey.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
-    auto key = std::string(reinterpret_cast<const char*>(rawVal) + offset,
-                expt.value().first);
-    offset += expt.value().first;
+    offset += eKey.value().second;
 
     // val
-    expt = varintDecodeFwd(valCstr + offset, maxSize - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-
-    if (maxSize - offset < expt.value().first) {
+    auto eVal = decodeLenStr(rawVal + offset, maxSize - offset);
+    if (!eVal.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
-    auto val = std::string(reinterpret_cast<const char*>(rawVal) + offset,
-                    expt.value().first);
-    offset += expt.value().first;
+    offset += eVal.value().second;
 
     // output
-    decodeSize = offset;
+    *decodeSize = offset;
 
     return ReplLogValueEntryV2(static_cast<ReplOp>(op), timestamp,
-            std::move(key), std::move(val));
+            std::move(eKey.value().first), std::move(eVal.value().first));
 }
 
-size_t ReplLogValueEntryV2::maxSize() const {
-    return sizeof(uint8_t) + varintMaxSize(sizeof(_timestamp)) +
-        varintMaxSize(sizeof(_key.size())) +
-        varintMaxSize(sizeof(_val.size())) + _val.size() + _key.size();
+size_t ReplLogValueEntryV2::encodeSize() const {
+    return sizeof(uint8_t) + varintEncodeSize(_timestamp) +
+        encodeLenStrSize(_key) + encodeLenStrSize(_val);
 }
 
 size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
-    INVARIANT(destSize >= maxSize());
+    INVARIANT_D(destSize >= encodeSize());
 
     size_t offset = 0;
     // op
     dest[offset++] = static_cast<char>(_op);
 
     // ts
-    auto tsBytes = varintEncode(_timestamp);
-    memcpy(dest + offset, tsBytes.data(), tsBytes.size());
-    offset += tsBytes.size();
+    offset += varintEncodeBuf(dest + offset, destSize - offset, _timestamp);
 
     // key
-    auto keyBytes = varintEncode(_key.size());
-    memcpy(dest + offset, keyBytes.data(), keyBytes.size());
-    offset += keyBytes.size();
-    memcpy(dest + offset, _key.c_str(), _key.size());
-    offset += _key.size();
+    offset += encodeLenStr((char*)dest + offset, destSize - offset, _key);
 
     // val
-    auto valBytes = varintEncode(_val.size());
-    memcpy(dest + offset, valBytes.data(), valBytes.size());
-    offset += valBytes.size();
-    memcpy(dest + offset, _val.c_str(), _val.size());
-    offset += _val.size();
+    offset += encodeLenStr((char*)dest + offset, destSize - offset, _val);
+
+    INVARIANT_D(offset == encodeSize());
 
     return offset;
 }
 
 std::string ReplLogValueEntryV2::encode() const {
     std::string val;
-    val.resize(maxSize());
+    val.resize(encodeSize());
 
     size_t offset = encode((uint8_t*)(val.c_str()), val.size());
 
-    // resize to the exactly size
-    val.resize(offset);
+    INVARIANT_D(offset == encodeSize());
 
     return val;
 }
@@ -350,23 +326,21 @@ std::string ReplLogValueV2::encode(
     std::string val = encodeHdr();
     size_t offset = val.size();
 
-    size_t maxSize = offset;
+    size_t allocSize = offset;
     for (auto v : vec) {
-        maxSize += v.maxSize();
+        allocSize += v.encodeSize();
     }
 
-    val.resize(maxSize);
+    val.resize(allocSize);
 
     for (auto v : vec) {
         uint8_t* desc = (uint8_t*)val.c_str() + offset;
-        size_t len = v.encode(desc, maxSize - offset);
+        size_t len = v.encode(desc, allocSize - offset);
         INVARIANT(len > 0);
         offset += len;
     }
 
-    INVARIANT(offset <= maxSize);
-
-    val.resize(offset);
+    INVARIANT(offset == allocSize);
 
     RecordValue tmpRv(std::move(val), RecordType::RT_BINLOG, -1);
 
@@ -582,7 +556,7 @@ Expected<ReplLogV2> ReplLogV2::decode(const std::string& key,
     while (offset < dataSize) {
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
-            dataSize - offset, size);
+            dataSize - offset, &size);
         INVARIANT(entry.ok());
         if (!entry.ok()) {
             return entry.status();

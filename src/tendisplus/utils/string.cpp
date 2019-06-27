@@ -267,6 +267,10 @@ size_t encodeLenStr(char* dest, size_t destsize, const std::string& val) {
     return size + val.size();
 }
 
+size_t encodeLenStrSize(const std::string& val) {
+    return varintEncodeSize(val.size()) + val.size();
+}
+
 Expected<StrDecodeResult> decodeLenStr(const std::string& str) {
     return decodeLenStr(str.c_str(), str.size());
 }

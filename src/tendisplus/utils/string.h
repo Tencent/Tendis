@@ -33,6 +33,7 @@ using StrDecodeResult = std::pair<std::string, size_t>;
 size_t encodeLenStr(std::stringstream& ss, const std::string& val);
 std::string encodeLenStr(const std::string& val);
 size_t encodeLenStr(char* dest, size_t destsize, const std::string& val);
+size_t encodeLenStrSize(const std::string& val);
 Expected<StrDecodeResult> decodeLenStr(const std::string& str);
 Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size);
 
