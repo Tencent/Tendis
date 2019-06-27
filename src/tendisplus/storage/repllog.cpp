@@ -521,8 +521,8 @@ size_t Binlog::decodeHeader(const char* str, size_t size) {
 size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllog) {
     size_t size = 0;
 
-    size += ssAppendSizeAndString(ss, repllog.getReplLogKey());
-    size += ssAppendSizeAndString(ss, repllog.getReplLogValue());
+    size += encodeLenStr(ss, repllog.getReplLogKey());
+    size += encodeLenStr(ss, repllog.getReplLogValue());
 
     return size;
 }

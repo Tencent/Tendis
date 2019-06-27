@@ -548,31 +548,22 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         while (offset < totalSize) {
             // format: keySize|key|valueSize|value * binlogCnt
-
-            if (totalSize - offset < sizeof(uint32_t)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
+            auto eKey = decodeLenStr(ptr + offset, totalSize - offset);
+            if (!eKey.ok()) {
+                return{ ErrorCodes::ERR_PARSEOPT,
+                    "invalid binlog format" + eKey.status().toString() };
             }
-            uint32_t keySize = int32Decode(ptr + offset);
-            offset += sizeof(uint32_t);
+            offset += eKey.value().second;
 
-            if (totalSize - offset < keySize + sizeof(uint32_t)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
+            auto eValue = decodeLenStr(ptr + offset, totalSize - offset);
+            if (!eValue.ok()) {
+                return{ ErrorCodes::ERR_PARSEOPT,
+                    "invalid binlog format" + eValue.status().toString() };
             }
-            // TODO(vinchen): too more copy
-            std::string logKey(ptr + offset, keySize);
-            offset += keySize;
+            offset += eValue.value().second;
 
-            uint32_t valueSize = int32Decode(ptr + offset);
-            offset += sizeof(uint32_t);
-
-            if (totalSize - offset < valueSize) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
-            }
-            std::string logValue(ptr + offset, valueSize);
-            offset += valueSize;
-
-            // TODO(vinchen): should one binlog one transaction?
-            Status s = replMgr->applyRepllogV2(sess, storeId, logKey, logValue);
+            Status s = replMgr->applyRepllogV2(sess, storeId,
+                                  eKey.value().first, eValue.value().first);
             if (!s.ok()) {
                 return s;
             }

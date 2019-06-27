@@ -28,7 +28,12 @@ std::string& replaceAll(std::string& str,
     const std::string& new_value);
 
 uint64_t getCurThreadId();
-size_t ssAppendSizeAndString(std::stringstream& ss, const std::string& val);
+
+using StrDecodeResult = std::pair<std::string, size_t>;
+size_t encodeLenStr(std::stringstream& ss, const std::string& val);
+std::string encodeLenStr(const std::string& val);
+Expected<StrDecodeResult> decodeLenStr(const std::string& str);
+Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size);
 
 }  // namespace tendisplus
 

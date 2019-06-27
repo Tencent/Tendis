@@ -243,13 +243,40 @@ uint64_t getCurThreadId() {
     return tid;
 }
 
-size_t ssAppendSizeAndString (std::stringstream& ss, const std::string& val) {
-    auto v = int32Encode(val.size());
-    std::string strSize((char*)&v, sizeof(v));
 
-    ss << strSize << val;
+size_t encodeLenStr(std::stringstream& ss, const std::string& val) {
+    auto sizeStr = varintEncodeStr(val.size());
+    ss << sizeStr << val;
 
-    return sizeof(v) + val.size();
+    return sizeStr.size() + val.size();
+}
+
+std::string encodeLenStr(const std::string& val) {
+    auto sizeStr = varintEncodeStr(val.size());
+
+    return sizeStr.append(val);
+}
+
+Expected<StrDecodeResult> decodeLenStr(const std::string& str) {
+    return decodeLenStr(str.c_str(), str.size());
+}
+
+Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size) {
+    auto eSize = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), size);
+    if (!eSize.ok()) {
+        return eSize.status();
+    }
+    uint32_t keySize = eSize.value().first;
+    size_t offset = eSize.value().second;
+
+    if (size - offset < keySize) {
+        return{ ErrorCodes::ERR_DECODE, "invalid string" };
+    }
+    // TODO(vinchen): too more copy
+    std::string str(ptr + offset, keySize);
+    offset += keySize;
+
+    return StrDecodeResult{ std::move(str), offset };
 }
 
 }  // namespace tendisplus
