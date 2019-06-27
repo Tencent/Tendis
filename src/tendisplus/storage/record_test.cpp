@@ -136,19 +136,14 @@ TEST(Record, Common) {
         auto sk = randomStr(5, true);
         uint64_t ttl = genRand()*genRand();
         uint64_t cas = genRand()*genRand();
-        uint64_t version = genRand()*genRand();
+        uint64_t version = 0;
         uint64_t versionEP = genRand()*genRand();
         auto val = randomStr(5, true);
         uint64_t pieceSize = (uint64_t)-1;
-        if (val.size() % 2 == 0) {
-            pieceSize = val.size() + 1;
-        }
         if (getRealKeyType(type) == type) {
             versionEP = -1;
             ttl = 0;
             cas = -1;
-            version = 0;
-            pieceSize = -1;
         }
 
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
@@ -167,6 +162,9 @@ TEST(Record, Common) {
         auto hdrSize = RecordValue::decodeHdrSize(kv.second);
         EXPECT_TRUE(hdrSize.ok());
         EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
+        if (getRealKeyType(type) == type) {
+            EXPECT_EQ(hdrSize.value(), RecordValue::decodeHdrSizeNoMeta(kv.second).value());
+        }
 
         auto prcd1 = Record::decode(kv.first, kv.second);
         auto type_ = RecordKey::decodeType(kv.first.c_str(),

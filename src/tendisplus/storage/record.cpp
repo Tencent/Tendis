@@ -514,7 +514,7 @@ RecordValue::RecordValue(RecordType type)
     _versionEP(-1),
     _cas(-1),
     _pieceSize(-1),
-    _totalSize(0),
+    _totalSize(-1),
     _value("") {
 }
 
@@ -530,7 +530,7 @@ RecordValue::RecordValue(double v, RecordType type)
     std::string str;
     str.insert(str.end(), d.begin(), d.end());
     _value = std::move(str);
-    _totalSize = _value.size();
+    _totalSize = -1;
 }
 
 RecordValue::RecordValue(RecordValue&& o)
@@ -547,7 +547,7 @@ RecordValue::RecordValue(RecordValue&& o)
     o._cas = -1;
     o._version = o._versionEP;
     o._pieceSize = -1;
-    o._totalSize = o._value.size();
+    o._totalSize = -1;
 }
 
 RecordValue& RecordValue::operator=(RecordValue&& rhs) noexcept {
@@ -569,7 +569,7 @@ RecordValue& RecordValue::operator=(RecordValue&& rhs) noexcept {
     rhs._cas = -1;
     rhs._version = rhs._versionEP;
     rhs._pieceSize = -1;
-    rhs._totalSize = rhs._value.size();
+    rhs._totalSize = -1;
 
     return *this;
 }
@@ -583,7 +583,7 @@ RecordValue::RecordValue(const std::string& val, RecordType type, uint64_t versi
     _versionEP(versionEp),
     _cas(cas),
     _pieceSize(pieceSize),
-    _totalSize(val.size()),
+    _totalSize(-1),
     _value(val) {
 }
 
@@ -596,7 +596,7 @@ RecordValue::RecordValue(std::string&& val, RecordType type, uint64_t versionEp,
     _versionEP(versionEp),
     _cas(cas),
     _pieceSize(pieceSize),
-    _totalSize(val.size()),
+    _totalSize(-1),
     _value(std::move(val)) {
 }
 // NOTE(vinchen): except RT_KV, update one key should inherit the ttl and other
@@ -622,50 +622,54 @@ RecordValue::RecordValue(const std::string&& val, RecordType type, uint64_t vers
 }
 
 std::string RecordValue::encode() const {
-    std::vector<uint8_t> value;
-    value.reserve(128);
+    std::string value;
+    size_t size = 128;
+    // for header, 128 is enough
+    value.resize(size);
+    size_t offset = 0;
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(&value[offset]);
 
     // _typeForMeta
-    value.emplace_back(rt2Char(_type));
+    value[offset++] = rt2Char(_type);
 
     // TTL
-    auto varint = varintEncode(_ttl);
-    value.insert(value.end(), varint.begin(), varint.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _ttl);
+    INVARIANT_D(getRealKeyType(_type) != _type || _ttl == (uint64_t)0);
 
     // version
-    varint = varintEncode(_version);
-    value.insert(value.end(), varint.begin(), varint.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _version);
+    INVARIANT_D(_version == (uint64_t)0);
 
     // versionEP
-    varint = varintEncode(_versionEP + 1);
-    value.insert(value.end(), varint.begin(), varint.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _versionEP + 1);
     INVARIANT_D(getRealKeyType(_type) != _type || _versionEP == (uint64_t)-1);
 
     // CAS
     // NOTE(vinchen): cas should initialize -1, not zero.
     // And it should be store as (cas + 1) in the kvstore
     // to improve storage efficiency
-    auto casBytes = varintEncode(_cas + 1);
-    value.insert(value.end(), casBytes.begin(), casBytes.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _cas + 1);
+    INVARIANT_D(getRealKeyType(_type) != _type || _cas == (uint64_t)-1);
 
     // pieceSize
     // why +1? same as CAS
-    varint = varintEncode(_pieceSize + 1);
-    value.insert(value.end(), varint.begin(), varint.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _pieceSize + 1);
+    INVARIANT_D(_pieceSize == (uint64_t)-1);
 
     // totalSize
-    varint = varintEncode(_totalSize);
-    value.insert(value.end(), varint.begin(), varint.end());
+    offset += varintEncodeBuf(ptr + offset, size - offset, _totalSize + 1);
+    INVARIANT_D(_totalSize == (uint64_t)-1);
 
-    INVARIANT(_pieceSize >= _totalSize);
-    INVARIANT(_totalSize == _value.size());
+    INVARIANT_D(getRealKeyType(_type) != _type || offset == minSize());
+
+    value.resize(offset);
 
     // Value
     if (_value.size() > 0) {
         value.insert(value.end(), _value.begin(), _value.end());
     }
-    return std::string(reinterpret_cast<const char *>(
-        value.data()), value.size());
+
+    return value;
 }
 
 // NOTE(vinchen): if you want to change the record format, please remember to
@@ -673,82 +677,90 @@ std::string RecordValue::encode() const {
 Expected<RecordValue> RecordValue::decode(const std::string& value) {
     const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
 
-    if (value.size() < 7) {
+    if (value.size() < minSize()) {
         return {ErrorCodes::ERR_DECODE, "too small RecordValue"};
     }
+
+    uint64_t ttl = 0;
+    uint64_t version = 0;
+    uint64_t versionEP = -1;
+    int64_t cas = -1;
+    uint64_t pieceSize = -1;
+    uint64_t totalSize = -1;
 
     // type
     size_t offset = 0;
     auto typeForMeta = char2Rt(valueCstr[offset++]);
+    if (getRealKeyType(typeForMeta) != typeForMeta) {
+        // *_META
 
-    // ttl
-    auto expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    uint64_t ttl = expt.value().first;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || ttl == 0);
+        // ttl
+        auto expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        ttl = expt.value().first;
 
-    // version
-    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    uint64_t version = expt.value().first;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || version == 0);
+        // version
+        expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        version = expt.value().first;
 
-    // versionEP
-    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    uint64_t versionEP = expt.value().first - 1;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || versionEP == (uint64_t)-1);
+        // versionEP
+        expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        versionEP = expt.value().first - 1;
 
-    // CAS
-    expt = varintDecodeFwd(valueCstr+offset, value.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    // NOTE(vinchen): cas should initialize -1, not zero.
-    // And it should be store as (cas + 1) in the kvstore
-    // to improve storage efficiency
-    int64_t cas = expt.value().first - 1;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || cas == -1);
+        // CAS
+        expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        // NOTE(vinchen): cas should initialize -1, not zero.
+        // And it should be store as (cas + 1) in the kvstore
+        // to improve storage efficiency
+        cas = expt.value().first - 1;
 
-    // pieceSize
-    expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    uint64_t pieceSize = expt.value().first - 1;
-    INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || pieceSize == (uint64_t)-1);
+        // pieceSize
+        expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        pieceSize = expt.value().first - 1;
 
-    // totalSize
-    expt = varintDecodeFwd(valueCstr+offset, value.size()-offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-    uint64_t totalSize = expt.value().first;
-    INVARIANT(pieceSize >= totalSize);
+        // totalSize
+        expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
+        if (!expt.ok()) {
+            return expt.status();
+        }
+        offset += expt.value().second;
+        totalSize = expt.value().first - 1;
+        //INVARIANT_D(pieceSize >= totalSize);
+        INVARIANT_D(totalSize == -1);
+        //INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || totalSize == (uint64_t)-1);
 
-    if (offset > value.size()) {
-        std::stringstream ss;
-        ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
-        return {ErrorCodes::ERR_DECODE, ss.str()};
+        if (offset > value.size()) {
+            std::stringstream ss;
+            ss << "marshaled value content, offset:" << offset << ",ttl:" << ttl;
+            return{ ErrorCodes::ERR_DECODE, ss.str() };
+        }
+    } else {
+        offset = minSize();
     }
     std::string rawValue;
     if (value.size() > offset) {
         rawValue = std::string(value.c_str() + offset,
             value.size() - offset);
     }
-    INVARIANT(totalSize == rawValue.size());
     return RecordValue(std::move(rawValue), typeForMeta, versionEP, ttl, cas,
                         version, pieceSize);
 }
@@ -810,12 +822,12 @@ Expected<bool> RecordValue::validate(const std::string& value,
         return expt.status();
     }
     offset += expt.value().second;
-    uint64_t totalSize = expt.value().first;
+    uint64_t totalSize = expt.value().first -1;
     if (pieceSize < totalSize) {
         return{ ErrorCodes::ERR_DECODE, "invalid pieceSize" };
     }
 
-    if (totalSize != value.size() - offset) {
+    if (totalSize != value.size() - offset && totalSize != (uint64_t)-1) {
         return{ ErrorCodes::ERR_DECODE, "invalid totalSize" };
     }
 
@@ -878,8 +890,6 @@ Expected<size_t> RecordValue::decodeHdrSize(const std::string& value) {
 }
 
 Expected<size_t> RecordValue::decodeHdrSizeNoMeta(const std::string& value) {
-    const uint8_t *valueCstr = reinterpret_cast<const uint8_t *>(value.c_str());
-
     if (value.size() < minSize()) {
         return{ ErrorCodes::ERR_DECODE, "too small RecordValue" };
     }
@@ -894,15 +904,9 @@ Expected<size_t> RecordValue::decodeHdrSizeNoMeta(const std::string& value) {
     // versionEP
     // CAS
     // pieceSize
-    size_t offset = 6;
     // totalSize
-    auto expt = varintDecodeFwd(valueCstr + offset, value.size() - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
 
-    return offset;
+    return minSize();
 }
 
 uint64_t RecordValue::decodeTtl(const char* value, size_t size) {
