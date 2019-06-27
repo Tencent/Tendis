@@ -548,14 +548,14 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         while (offset < totalSize) {
             // format: keySize|key|valueSize|value * binlogCnt
-            auto eKey = decodeLenStr(ptr + offset, totalSize - offset);
+            auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
             if (!eKey.ok()) {
                 return{ ErrorCodes::ERR_PARSEOPT,
                     "invalid binlog format" + eKey.status().toString() };
             }
             offset += eKey.value().second;
 
-            auto eValue = decodeLenStr(ptr + offset, totalSize - offset);
+            auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
             if (!eValue.ok()) {
                 return{ ErrorCodes::ERR_PARSEOPT,
                     "invalid binlog format" + eValue.status().toString() };

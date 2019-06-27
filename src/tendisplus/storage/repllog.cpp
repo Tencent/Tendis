@@ -169,14 +169,14 @@ Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
     uint64_t timestamp = expt.value().first;
 
     // key
-    auto eKey = decodeLenStr(rawVal + offset, maxSize - offset);
+    auto eKey = lenStrDecode(rawVal + offset, maxSize - offset);
     if (!eKey.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
     offset += eKey.value().second;
 
     // val
-    auto eVal = decodeLenStr(rawVal + offset, maxSize - offset);
+    auto eVal = lenStrDecode(rawVal + offset, maxSize - offset);
     if (!eVal.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
@@ -191,7 +191,7 @@ Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
 
 size_t ReplLogValueEntryV2::encodeSize() const {
     return sizeof(uint8_t) + varintEncodeSize(_timestamp) +
-        encodeLenStrSize(_key) + encodeLenStrSize(_val);
+        lenStrEncodeSize(_key) + lenStrEncodeSize(_val);
 }
 
 size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
@@ -205,10 +205,10 @@ size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
     offset += varintEncodeBuf(dest + offset, destSize - offset, _timestamp);
 
     // key
-    offset += encodeLenStr((char*)dest + offset, destSize - offset, _key);
+    offset += lenStrEncode((char*)dest + offset, destSize - offset, _key);
 
     // val
-    offset += encodeLenStr((char*)dest + offset, destSize - offset, _val);
+    offset += lenStrEncode((char*)dest + offset, destSize - offset, _val);
 
     INVARIANT_D(offset == encodeSize());
 
@@ -314,7 +314,7 @@ std::string ReplLogValueV2::encodeHdr() const {
 
     INVARIANT_D(offset == fixedHeaderSize());
 
-    size = encodeLenStr(&header[offset], hdrSize - offset, _cmdStr);
+    size = lenStrEncode(&header[offset], hdrSize - offset, _cmdStr);
     offset += size;
     INVARIANT(offset == hdrSize);
 
@@ -383,7 +383,7 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const char* str, size_t size) {
     // versionEp
     versionEp = int64Decode(str + VERSIONEP_OFFSET);
 
-    auto eCmd = decodeLenStr(str + FIXED_HEADER_SIZE, size - FIXED_HEADER_SIZE);
+    auto eCmd = lenStrDecode(str + FIXED_HEADER_SIZE, size - FIXED_HEADER_SIZE);
     if (!eCmd.ok()) {
         return{ ErrorCodes::ERR_DECODE,
             "ReplLogValueV2::decode() error:"  + eCmd.status().toString() };
@@ -517,8 +517,8 @@ size_t Binlog::decodeHeader(const char* str, size_t size) {
 size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllog) {
     size_t size = 0;
 
-    size += encodeLenStr(ss, repllog.getReplLogKey());
-    size += encodeLenStr(ss, repllog.getReplLogValue());
+    size += lenStrEncode(ss, repllog.getReplLogKey());
+    size += lenStrEncode(ss, repllog.getReplLogValue());
 
     return size;
 }

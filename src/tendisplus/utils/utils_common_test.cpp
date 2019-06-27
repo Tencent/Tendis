@@ -42,18 +42,18 @@ TEST(String, Common) {
     for (size_t i = 0; i < 1000; i++) {
         ss.str("");
         auto orig = randomStr(genRand() % 20000, 1);
-        auto size = encodeLenStr(ss, orig);
-        auto s1 = encodeLenStr(orig);
+        auto size = lenStrEncode(ss, orig);
+        auto s1 = lenStrEncode(orig);
 
-        auto size2 = encodeLenStr(buf, sizeof(buf), orig);
+        auto size2 = lenStrEncode(buf, sizeof(buf), orig);
 
         auto s2 = ss.str();
         EXPECT_EQ(s2.size(), size);
         EXPECT_EQ(s2.size(), size2);
         EXPECT_EQ(s2, s1);
 
-        auto ed = decodeLenStr(s2);
-        auto ed2 = decodeLenStr(buf, size2);
+        auto ed = lenStrDecode(s2);
+        auto ed2 = lenStrDecode(buf, size2);
         EXPECT_EQ(ed.value().first, orig);
         EXPECT_EQ(ed2.value().first, orig);
     }

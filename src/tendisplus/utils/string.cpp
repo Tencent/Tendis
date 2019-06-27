@@ -245,21 +245,21 @@ uint64_t getCurThreadId() {
 }
 
 
-size_t encodeLenStr(std::stringstream& ss, const std::string& val) {
+size_t lenStrEncode(std::stringstream& ss, const std::string& val) {
     auto sizeStr = varintEncodeStr(val.size());
     ss << sizeStr << val;
 
     return sizeStr.size() + val.size();
 }
 
-std::string encodeLenStr(const std::string& val) {
+std::string lenStrEncode(const std::string& val) {
     auto sizeStr = varintEncodeStr(val.size());
 
     return sizeStr.append(val);
 }
 
 // guarantee dest's size is enough 
-size_t encodeLenStr(char* dest, size_t destsize, const std::string& val) {
+size_t lenStrEncode(char* dest, size_t destsize, const std::string& val) {
     size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest), destsize, val.size());
 
     INVARIANT_D(destsize >= size + val.size());
@@ -267,15 +267,15 @@ size_t encodeLenStr(char* dest, size_t destsize, const std::string& val) {
     return size + val.size();
 }
 
-size_t encodeLenStrSize(const std::string& val) {
+size_t lenStrEncodeSize(const std::string& val) {
     return varintEncodeSize(val.size()) + val.size();
 }
 
-Expected<StrDecodeResult> decodeLenStr(const std::string& str) {
-    return decodeLenStr(str.c_str(), str.size());
+Expected<LenStrDecodeResult> lenStrDecode(const std::string& str) {
+    return lenStrDecode(str.c_str(), str.size());
 }
 
-Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size) {
+Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
     auto eSize = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), size);
     if (!eSize.ok()) {
         return eSize.status();
@@ -290,7 +290,7 @@ Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size) {
     std::string str(ptr + offset, keySize);
     offset += keySize;
 
-    return StrDecodeResult{ std::move(str), offset };
+    return LenStrDecodeResult{ std::move(str), offset };
 }
 
 }  // namespace tendisplus
