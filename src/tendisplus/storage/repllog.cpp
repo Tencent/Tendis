@@ -263,6 +263,7 @@ ReplLogValueV2::ReplLogValueV2()
     _txnId(Transaction::TXNID_UNINITED),
     _timestamp(0),
     _versionEp(0),
+    _cmdStr(""),
     _data(nullptr),
     _dataSize(0) {
 }
@@ -273,6 +274,7 @@ ReplLogValueV2::ReplLogValueV2(ReplLogValueV2&& o)
     _txnId(o._txnId),
     _timestamp(o._timestamp),
     _versionEp(o._versionEp),
+    _cmdStr(std::move(o._cmdStr)),
     _data(o._data),
     _dataSize(o._dataSize) {
     o._chunkId = 0;
@@ -280,17 +282,20 @@ ReplLogValueV2::ReplLogValueV2(ReplLogValueV2&& o)
     o._txnId = Transaction::TXNID_UNINITED;
     o._timestamp = 0;
     o._versionEp = 0;
+    o._cmdStr = "";
     o._data = nullptr;
     o._dataSize = 0;
 }
 
 ReplLogValueV2::ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint64_t timestamp, uint64_t versionEp,
+        const std::string& cmd,
         const uint8_t* data, size_t dataSize)
     :_chunkId(chunkId),
     _flag(flag),
     _txnId(txnid),
     _timestamp(timestamp),
     _versionEp(versionEp),
+    _cmdStr(cmd),
     _data(data),
     _dataSize(dataSize) {
 }
@@ -299,9 +304,15 @@ size_t ReplLogValueV2::fixedHeaderSize() {
     return ReplLogValueV2::FIXED_HEADER_SIZE;
 }
 
+size_t ReplLogValueV2::getHdrSize() const {
+    return ReplLogValueV2::fixedHeaderSize() +
+            varintEncodeSize(_cmdStr.size()) + _cmdStr.size();
+}
+
 std::string ReplLogValueV2::encodeHdr() const {
     std::string header;
-    header.resize(fixedHeaderSize());
+    size_t hdrSize = getHdrSize();
+    header.resize(hdrSize);
 
     size_t offset = 0;
 
@@ -325,7 +336,11 @@ std::string ReplLogValueV2::encodeHdr() const {
     size = int64Encode(&header[offset], _versionEp);
     offset += size;
 
-    INVARIANT(offset == fixedHeaderSize());
+    INVARIANT_D(offset == fixedHeaderSize());
+
+    size = encodeLenStr(&header[offset], hdrSize - offset, _cmdStr);
+    offset += size;
+    INVARIANT(offset == hdrSize);
 
     return header;
 }
@@ -394,9 +409,15 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const char* str, size_t size) {
     // versionEp
     versionEp = int64Decode(str + VERSIONEP_OFFSET);
 
+    auto eCmd = decodeLenStr(str + FIXED_HEADER_SIZE, size - FIXED_HEADER_SIZE);
+    if (!eCmd.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "ReplLogValueV2::decode() error:"  + eCmd.status().toString() };
+    }
+
     auto keyCstr = reinterpret_cast<const uint8_t*>(str);
 
-    return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, keyCstr, size);
+    return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, eCmd.value().first, keyCstr, size);
 }
 
 bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
@@ -404,7 +425,8 @@ bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
         _flag == o._flag &&
         _txnId == o._txnId &&
         _timestamp == o._timestamp &&
-        _versionEp == o._versionEp;
+        _versionEp == o._versionEp &&
+        _cmdStr == o._cmdStr;
 }
 
 // std::string& ReplLogValueV2::updateTxnId(std::string& encodeStr,
@@ -554,7 +576,7 @@ Expected<ReplLogV2> ReplLogV2::decode(const std::string& key,
 
     std::vector<ReplLogValueEntryV2> entrys;
 
-    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    size_t offset = v.value().getHdrSize();
     auto data = v.value().getData();
     size_t dataSize = v.value().getDataSize();
     while (offset < dataSize) {

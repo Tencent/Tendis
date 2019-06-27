@@ -124,7 +124,11 @@ TEST(Record, MinRec) {
 
 TEST(Record, Common) {
     srand((unsigned int)time(NULL));
+#ifdef _WIN32
+    for (size_t i = 0; i < 100; i++) {
+#else
     for (size_t i = 0; i < 1000000; i++) {
+#endif
         uint32_t dbid = genRand();
         uint32_t chunkid = genRand();
         auto type = randomType();
@@ -270,7 +274,11 @@ TEST(ReplRecordV2, Prefix) {
 
 TEST(ReplRecordV2, Common) {
     srand(time(NULL));
+#ifdef _WIN32
+    for (size_t i = 0; i < 10; i++) {
+#else
     for (size_t i = 0; i < 1000; i++) {
+#endif
         uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
         uint64_t binlogid = uint64_t(genRand())*uint64_t(genRand());
         uint64_t versionEp = uint64_t(genRand())*uint64_t(genRand());
@@ -313,7 +321,8 @@ TEST(ReplRecordV2, Common) {
             vec.emplace_back(entry);
         }
 
-        auto rv = ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, nullptr, 0);
+        auto cmd = randomStr(50, false);
+        auto rv = ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, cmd, nullptr, 0);
         auto rvStr = rv.encode(vec);
         auto prv = ReplLogValueV2::decode(rvStr);
         EXPECT_TRUE(prv.ok());
@@ -323,8 +332,9 @@ TEST(ReplRecordV2, Common) {
         EXPECT_EQ(prv.value().getTxnId(), txnid);
         EXPECT_EQ(prv.value().getTimestamp(), timestamp);
         EXPECT_EQ(prv.value().getVersionEp(), versionEp);
+        EXPECT_EQ(prv.value().getCmd(), cmd);
 
-        size_t offset = ReplLogValueV2::fixedHeaderSize();
+        size_t offset = prv.value().getHdrSize();
         auto desc = prv.value().getData();
         size_t datasize = prv.value().getDataSize();
 
@@ -343,6 +353,7 @@ TEST(ReplRecordV2, Common) {
         EXPECT_TRUE(expRepllog.ok());
         EXPECT_TRUE(expRepllog.value().getReplLogValue().isEqualHdr(rv));
         EXPECT_EQ(expRepllog.value().getReplLogValueEntrys().size(), vec.size());
+        EXPECT_EQ(expRepllog.value().getReplLogValue().getCmd(), cmd);
         for (j = 0; j < vec.size(); j++) {
             const ReplLogValueEntryV2& entry = vec[j];
             const ReplLogValueEntryV2& entry2 = expRepllog.value().getReplLogValueEntrys()[j];
@@ -381,7 +392,12 @@ TEST(TTLIndex, Prefix) {
 
 TEST(ZSl, Common) {
     srand(time(NULL));
-    for (size_t i = 0; i < 1000000; i++) {
+#ifdef _WIN32
+    size_t num = 100;
+#else
+    size_t num = 1000000;
+#endif
+    for (size_t i = 0; i < num; i++) {
         // uint8_t maxLvl = genRand() % std::numeric_limits<uint8_t>::max();
         uint8_t maxLvl = ZSlMetaValue::MAX_LAYER;
         uint8_t lvl = genRand() % maxLvl;
@@ -401,7 +417,7 @@ TEST(ZSl, Common) {
         EXPECT_EQ(expm.value().getTail(), tail);
     }
 
-    for (size_t i = 0; i < 1000000; i++) {
+    for (size_t i = 0; i < num; i++) {
         ZSlEleValue v(genRand(), randomStr(256, false));
         for (uint8_t i = 1; i <= ZSlMetaValue::MAX_LAYER; ++i) {
             v.setForward(i, genRand());

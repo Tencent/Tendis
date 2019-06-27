@@ -389,11 +389,14 @@ class ReplLogValueV2 {
     ReplLogValueV2(const ReplLogValueV2&) = delete;
     ReplLogValueV2(ReplLogValueV2&&);
     ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint64_t timestamp, uint64_t versionEp,
+                const std::string& cmd,
                 const uint8_t* data, size_t dataSize);
     static Expected<ReplLogValueV2> decode(const std::string& rvStr);
     static Expected<ReplLogValueV2> decode(const char* str, size_t size);
-    // static std::string& updateTxnId(std::string& encodeStr, uint64_t newTxnId);
+    // not include cmdStr
     static size_t fixedHeaderSize();
+    // include cmdStr
+    size_t getHdrSize() const;
     std::string encodeHdr() const;
     std::string encode(const std::vector<ReplLogValueEntryV2>& vec) const;
     bool isEqualHdr(const ReplLogValueV2&) const;
@@ -404,6 +407,7 @@ class ReplLogValueV2 {
     uint32_t getChunkId() const { return _chunkId; }
     uint64_t getTimestamp() const { return _timestamp; }
     uint64_t getVersionEp() const { return _versionEp; }
+    const std::string& getCmd() const { return _cmdStr; }
 
     static constexpr size_t CHUNKID_OFFSET = 0;
     static constexpr size_t FLAG_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
@@ -418,6 +422,7 @@ class ReplLogValueV2 {
     uint64_t _txnId;
     uint64_t _timestamp;
     uint64_t _versionEp;
+    std::string _cmdStr;
     // NOTE(vinchen) : take care about "_data", the caller should guarantee the
     // memory is ok;
     // printer to the RecordValue.getValue().c_str()

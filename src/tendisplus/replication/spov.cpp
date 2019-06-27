@@ -552,7 +552,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId
     }
 
     uint64_t timestamp = 0;
-    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    size_t offset = value.value().getHdrSize();
     auto data = value.value().getData();
     size_t dataSize = value.value().getDataSize();
     while (offset < dataSize) {

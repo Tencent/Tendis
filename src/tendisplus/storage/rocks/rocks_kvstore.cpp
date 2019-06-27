@@ -220,9 +220,11 @@ Expected<uint64_t> RocksTxn::commit() {
             _replLogValues.back().getTimestamp(),
 #ifndef NO_VERSIONEP
             _session ? _session->getCtx()->getVersionEP() : SessionCtx::VERSIONEP_UNINITED,
+            (_session && _session->getArgs().size() > 0) ? _session->getArgs()[0] : "",
 #else
             SessionCtx::VERSIONEP_UNINITED,
-#endif // !
+            "",
+#endif
             nullptr, 0);
 
         binlogTxnId = _txnId;

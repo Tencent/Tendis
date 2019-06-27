@@ -11,6 +11,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -257,6 +258,15 @@ std::string encodeLenStr(const std::string& val) {
     return sizeStr.append(val);
 }
 
+// guarantee dest's size is enough 
+size_t encodeLenStr(char* dest, size_t destsize, const std::string& val) {
+    size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest), destsize, val.size());
+
+    INVARIANT_D(destsize >= size + val.size());
+    memcpy(dest + size, val.c_str(), val.size());
+    return size + val.size();
+}
+
 Expected<StrDecodeResult> decodeLenStr(const std::string& str) {
     return decodeLenStr(str.c_str(), str.size());
 }
@@ -266,7 +276,7 @@ Expected<StrDecodeResult> decodeLenStr(const char* ptr, size_t size) {
     if (!eSize.ok()) {
         return eSize.status();
     }
-    uint32_t keySize = eSize.value().first;
+    size_t keySize = eSize.value().first;
     size_t offset = eSize.value().second;
 
     if (size - offset < keySize) {
