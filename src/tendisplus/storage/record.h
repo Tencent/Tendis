@@ -42,6 +42,8 @@ enum class RecordType {
 
 uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
+bool isDataMetaType(RecordType t);
+bool isKeyType(RecordType t);
 RecordType getRealKeyType(RecordType t);
 bool isRealEleType(RecordType keyType, RecordType valueType);
 

@@ -140,7 +140,7 @@ TEST(Record, Common) {
         uint64_t versionEP = genRand()*genRand();
         auto val = randomStr(5, true);
         uint64_t pieceSize = (uint64_t)-1;
-        if (getRealKeyType(type) == type) {
+        if (!isDataMetaType(type)) {
             versionEP = -1;
             ttl = 0;
             cas = -1;
@@ -162,7 +162,7 @@ TEST(Record, Common) {
         auto hdrSize = RecordValue::decodeHdrSize(kv.second);
         EXPECT_TRUE(hdrSize.ok());
         EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
-        if (getRealKeyType(type) == type) {
+        if (!isDataMetaType(type)) {
             EXPECT_EQ(hdrSize.value(), RecordValue::decodeHdrSizeNoMeta(kv.second).value());
         }
 

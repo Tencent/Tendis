@@ -97,7 +97,7 @@ size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
         uint64_t this_ttl = ttl;
         if (type == RecordType::RT_KV) {
             kvCount++;
-        } else if (getRealKeyType(type) == type) {
+        } else if (!isDataMetaType(type)) {
             this_ttl = 0;
         }
         std::string pk;
