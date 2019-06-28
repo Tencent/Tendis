@@ -649,7 +649,7 @@ std::string RecordValue::encode() const {
     // And it should be store as (cas + 1) in the kvstore
     // to improve storage efficiency
     offset += varintEncodeBuf(ptr + offset, size - offset, _cas + 1);
-    INVARIANT_D(getRealKeyType(_type) != _type || _cas == (uint64_t)-1);
+    INVARIANT_D(getRealKeyType(_type) != _type || _cas == -1);
 
     // pieceSize
     // why +1? same as CAS
@@ -745,7 +745,7 @@ Expected<RecordValue> RecordValue::decode(const std::string& value) {
         offset += expt.value().second;
         totalSize = expt.value().first - 1;
         //INVARIANT_D(pieceSize >= totalSize);
-        INVARIANT_D(totalSize == -1);
+        INVARIANT_D(totalSize == (uint64_t)-1);
         //INVARIANT_D(getRealKeyType(typeForMeta) != typeForMeta || totalSize == (uint64_t)-1);
 
         if (offset > value.size()) {
