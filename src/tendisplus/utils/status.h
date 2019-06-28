@@ -46,6 +46,7 @@ enum class ErrorCodes {
     ERR_INVALID_HLL,
     ERR_NO_KEY,
     ERR_OUT_OF_RANGE,
+    ERR_WRONG_VERSION_EP,
 };
 
 class Status {

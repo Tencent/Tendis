@@ -104,6 +104,10 @@ Expected<uint64_t> NetworkAsio::client2Session(
     auto sess = std::make_shared<NetSession>(
                 _server, std::move(c->borrowConn()),
                 connId, true, _netMatrix, _reqMatrix);
+    LOG(INFO) << "new net session, id:" << sess->id()
+        << ",connId:" << connId
+        << ",from:" << sess->getRemoteRepr()
+        << " client2Session";
     sess->getCtx()->setAuthed();
     _server->addSession(sess);
     ++_netMatrix->connCreated;

@@ -8,12 +8,13 @@
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/test_util.h"
 #include "tendisplus/utils/time.h"
 #include "gtest/gtest.h"
 
 namespace tendisplus {
 
-static int genRand() {
+int genRand() {
     int grand = 0;
     uint32_t ms = nsSinceEpoch();
     grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
@@ -54,13 +55,15 @@ RecordType randomType() {
 }
 
 ReplFlag randomReplFlag() {
-    switch ((genRand() % 3)) {
+    switch ((genRand() % 4)) {
         case 0:
             return ReplFlag::REPL_GROUP_MID;
         case 1:
             return ReplFlag::REPL_GROUP_START;
         case 2:
             return ReplFlag::REPL_GROUP_END;
+        case 3:
+            return static_cast<ReplFlag>((uint16_t)ReplFlag::REPL_GROUP_START | (uint16_t)ReplFlag::REPL_GROUP_END);
         default:
             INVARIANT(0);
             // void compiler complain
@@ -109,6 +112,16 @@ std::string overflip(const std::string& s) {
         reinterpret_cast<const char *>(buf.data()), buf.size());
 }
 
+TEST(Record, MinRec) {
+    auto rk = RecordKey(0, 0, RecordType::RT_DATA_META, "", "");
+    auto rv = RecordValue("", RecordType::RT_KV, -1);
+
+    auto minSize = rk.encode().size();
+    EXPECT_TRUE(minSize == RecordKey::minSize());
+    minSize = rv.encode().size();
+    EXPECT_TRUE(minSize == RecordValue::minSize());
+}
+
 TEST(Record, Common) {
     srand((unsigned int)time(NULL));
     for (size_t i = 0; i < 1000000; i++) {
@@ -126,16 +139,37 @@ TEST(Record, Common) {
         if (val.size() % 2 == 0) {
             pieceSize = val.size() + 1;
         }
+        if (getRealKeyType(type) == type) {
+            versionEP = -1;
+            ttl = 0;
+            cas = -1;
+            version = 0;
+            pieceSize = -1;
+        }
+
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-        auto rv = RecordValue(val, type, ttl, cas, version, versionEP, pieceSize);
+        auto rv = RecordValue(val, type, versionEP, ttl, cas, version, pieceSize);
         auto rcd = Record(rk, rv);
         auto kv = rcd.encode();
+
+        auto validateK = RecordKey::validate(kv.first);
+        EXPECT_TRUE(validateK.ok());
+        EXPECT_TRUE(validateK.value());
+
+        auto validateV = RecordValue::validate(kv.second);
+        EXPECT_TRUE(validateV.ok());
+        EXPECT_TRUE(validateV.value());
+
+        auto hdrSize = RecordValue::decodeHdrSize(kv.second);
+        EXPECT_TRUE(hdrSize.ok());
+        EXPECT_EQ(hdrSize.value() + val.size(), kv.second.size());
+
         auto prcd1 = Record::decode(kv.first, kv.second);
-        auto type_ = RecordKey::getRecordTypeRaw(kv.first.c_str(), 
+        auto type_ = RecordKey::decodeType(kv.first.c_str(),
             kv.first.size());
-        auto ttl_ = RecordValue::getTtlRaw(kv.second.c_str(), 
+        auto ttl_ = RecordValue::decodeTtl(kv.second.c_str(),
             kv.second.size());
-        
+
         EXPECT_EQ(cas, rv.getCas());
         EXPECT_EQ(version, rv.getVersion());
         EXPECT_EQ(versionEP, rv.getVersionEP());
@@ -153,27 +187,8 @@ TEST(Record, Common) {
         EXPECT_TRUE(prcd1.ok());
         EXPECT_EQ(prcd1.value(), rcd);
     }
-
-    //for (size_t i = 0; i < 1000000; i++) {
-    //    uint32_t dbid = genRand();
-    //    uint32_t chunkid = genRand();
-    //    auto type = randomType();
-    //    auto pk = randomStr(5, false);
-    //    auto sk = randomStr(5, true);
-    //    uint64_t ttl = genRand()*genRand();
-    //    uint64_t cas = genRand()*genRand();
-    //    auto val = randomStr(5, true);
-    //    auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-    //    auto rv = RecordValue(val, ttl, cas);
-    //    auto rcd = Record(rk, rv);
-    //    auto kv = rcd.encode();
-    //    auto prcd1 = Record::decode(overflip(kv.first), kv.second);
-    //    EXPECT_TRUE(
-    //        prcd1.status().code() == ErrorCodes::ERR_DECODE ||
-    //        !(prcd1.value().getRecordKey() == rk));
-    //}
 }
-
+#ifdef BINLOG_V1
 TEST(ReplRecord, Prefix) {
     uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
     auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), timestamp);
@@ -183,12 +198,12 @@ TEST(ReplRecord, Prefix) {
     EXPECT_EQ(s[0], '\xff');
     EXPECT_EQ(s[1], '\xff');
     EXPECT_EQ(s[2], '\xff');
-    EXPECT_EQ(s[3], '\xff');
+    EXPECT_EQ(s[3], '\x00');
     EXPECT_EQ(s[4], '\xff');
     EXPECT_EQ(s[5], '\xff');
     EXPECT_EQ(s[6], '\xff');
     EXPECT_EQ(s[7], '\xff');
-    EXPECT_EQ(s[8], '\xff');
+    EXPECT_EQ(s[8], '\x00');
     const std::string& prefix = RecordKey::prefixReplLog();
     for (int i = 0; i < 100000; ++i) {
         EXPECT_TRUE(randomStr(5, false) <= prefix);
@@ -224,6 +239,144 @@ TEST(ReplRecord, Common) {
     std::string s = rlv.encode();
     Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
     EXPECT_TRUE(erlv.ok());
+}
+#else
+TEST(ReplRecordV2, Prefix) {
+    uint64_t binlogid = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
+    auto rlk = ReplLogKeyV2(binlogid);
+    RecordKey rk(ReplLogKeyV2::CHUNKID, ReplLogKeyV2::DBID,
+        RecordType::RT_BINLOG, rlk.encode(), "");
+    const std::string s = rk.encode();
+    EXPECT_EQ(s[0], '\xff');
+    EXPECT_EQ(s[1], '\xff');
+    EXPECT_EQ(s[2], '\xff');
+    EXPECT_EQ(s[3], '\x01');
+    EXPECT_EQ(s[4], '\xff');
+    EXPECT_EQ(s[5], '\xff');
+    EXPECT_EQ(s[6], '\xff');
+    EXPECT_EQ(s[7], '\xff');
+    EXPECT_EQ(s[8], '\x01');
+    const std::string& prefix = RecordKey::prefixReplLogV2();
+    EXPECT_EQ(prefix[0], '\xff');
+    EXPECT_EQ(prefix[1], '\xff');
+    EXPECT_EQ(prefix[2], '\xff');
+    EXPECT_EQ(prefix[3], '\x01');
+    EXPECT_EQ(prefix[4], '\xff');
+    EXPECT_EQ(prefix[5], '\xff');
+    EXPECT_EQ(prefix[6], '\xff');
+    EXPECT_EQ(prefix[7], '\xff');
+    EXPECT_EQ(prefix[8], '\x01');
+}
+
+TEST(ReplRecordV2, Common) {
+    srand(time(NULL));
+    for (size_t i = 0; i < 1000; i++) {
+        uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
+        uint64_t binlogid = uint64_t(genRand())*uint64_t(genRand());
+        uint64_t versionEp = uint64_t(genRand())*uint64_t(genRand());
+        uint32_t chunkid = genRand() % 16384;
+
+        ReplFlag flag = randomReplFlag();
+        uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+
+        auto rk = ReplLogKeyV2(binlogid);
+        auto rkStr = rk.encode();
+        auto prk = ReplLogKeyV2::decode(rkStr);
+        EXPECT_TRUE(prk.ok());
+        EXPECT_EQ(prk.value(), rk);
+
+        size_t count = genRand() % 12345;
+
+        std::vector<ReplLogValueEntryV2> vec;
+        vec.reserve(count);
+        for (size_t j = 0; j < count; j++) {
+            uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max() + 1;
+
+            size_t keyLen = genRand() % 128;
+            size_t valLen = genRand() % 1024;
+
+            ReplLogValueEntryV2 entry;
+            if (genRand() % 2 == 0) {
+                entry = ReplLogValueEntryV2(ReplOp::REPL_OP_SET, timestamp, randomStr(keyLen, false), randomStr(valLen, true));
+            } else {
+                entry = ReplLogValueEntryV2(ReplOp::REPL_OP_DEL, timestamp, randomStr(keyLen, false), "");
+            }
+
+            timestamp += 1;
+            size_t size = 0;
+            auto entryStr = entry.encode();
+            auto pentry = ReplLogValueEntryV2::decode(entryStr.c_str(), entryStr.size(), size);
+            EXPECT_TRUE(pentry.ok());
+            EXPECT_EQ(pentry.value(), entry);
+            EXPECT_EQ(size, entryStr.size());
+
+            vec.emplace_back(entry);
+        }
+
+        auto rv = ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, nullptr, 0);
+        auto rvStr = rv.encode(vec);
+        auto prv = ReplLogValueV2::decode(rvStr);
+        EXPECT_TRUE(prv.ok());
+        EXPECT_TRUE(rv.isEqualHdr(prv.value()));
+        EXPECT_EQ(prv.value().getChunkId(), chunkid);
+        EXPECT_EQ(prv.value().getReplFlag(), flag);
+        EXPECT_EQ(prv.value().getTxnId(), txnid);
+        EXPECT_EQ(prv.value().getTimestamp(), timestamp);
+        EXPECT_EQ(prv.value().getVersionEp(), versionEp);
+
+        size_t offset = ReplLogValueV2::fixedHeaderSize();
+        auto desc = prv.value().getData();
+        size_t datasize = prv.value().getDataSize();
+
+        size_t j = 0;
+        while (offset < datasize) {
+            const ReplLogValueEntryV2& entry = vec[j++];
+            size_t size = 0;
+            auto v = ReplLogValueEntryV2::decode((const char*)desc + offset, datasize - offset, size);
+            EXPECT_TRUE(v.ok());
+            offset += size;
+            EXPECT_EQ(entry, v.value());
+        }
+        EXPECT_EQ(offset, datasize);
+
+        auto expRepllog = ReplLogV2::decode(rkStr, rvStr);
+        EXPECT_TRUE(expRepllog.ok());
+        EXPECT_TRUE(expRepllog.value().getReplLogValue().isEqualHdr(rv));
+        EXPECT_EQ(expRepllog.value().getReplLogValueEntrys().size(), vec.size());
+        for (j = 0; j < vec.size(); j++) {
+            const ReplLogValueEntryV2& entry = vec[j];
+            const ReplLogValueEntryV2& entry2 = expRepllog.value().getReplLogValueEntrys()[j];
+            EXPECT_EQ(entry, entry2);
+        }
+    }
+}
+#endif
+
+TEST(TTLIndex, Prefix) {
+    auto rlk = TTLIndex("abc", RecordType::RT_KV, 0, 10);
+    RecordKey rk(TTLIndex::CHUNKID, TTLIndex::DBID,
+        RecordType::RT_TTL_INDEX, rlk.encode(), "");
+    const std::string s = rk.encode();
+    char rt = rt2Char(RecordType::RT_TTL_INDEX);
+    EXPECT_EQ(s[0], '\xff');
+    EXPECT_EQ(s[1], '\xff');
+    EXPECT_EQ(s[2], '\x00');
+    EXPECT_EQ(s[3], '\x00');
+    EXPECT_EQ(s[4], rt);
+    EXPECT_EQ(s[5], '\xff');
+    EXPECT_EQ(s[6], '\xff');
+    EXPECT_EQ(s[7], '\x00');
+    EXPECT_EQ(s[8], '\x00');
+    const std::string& prefix = RecordKey::prefixTTLIndex();
+    EXPECT_EQ(prefix[0], '\xff');
+    EXPECT_EQ(prefix[1], '\xff');
+    EXPECT_EQ(prefix[2], '\x00');
+    EXPECT_EQ(prefix[3], '\x00');
+    EXPECT_EQ(prefix[4], rt);
+    EXPECT_EQ(prefix[5], '\xff');
+    EXPECT_EQ(prefix[6], '\xff');
+    EXPECT_EQ(prefix[7], '\x00');
+    EXPECT_EQ(prefix[8], '\x00');
 }
 
 TEST(ZSl, Common) {

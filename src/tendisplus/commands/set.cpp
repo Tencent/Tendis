@@ -10,6 +10,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -62,7 +63,8 @@ Expected<std::string> genericSRem(Session *sess,
     } else {
         sm.setCount(sm.getCount()-cnt);
         s = kvstore->setKV(metaRk,
-              RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+              RecordValue(sm.encode(), RecordType::RT_SET_META,
+                      sess->getCtx()->getVersionEP(), ttl, rv),
               txn);
     }
     if (!s.ok()) {
@@ -110,7 +112,7 @@ Expected<std::string> genericSAdd(Session *sess,
         } else {
             cnt += 1;
         }
-        RecordValue subRv("", RecordType::RT_SET_ELE);
+        RecordValue subRv("", RecordType::RT_SET_ELE, -1);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -118,7 +120,8 @@ Expected<std::string> genericSAdd(Session *sess,
     }
     sm.setCount(sm.getCount()+cnt);
     Status s = kvstore->setKV(metaRk,
-                    RecordValue(sm.encode(), RecordType::RT_SET_META, ttl, rv),
+                    RecordValue(sm.encode(), RecordType::RT_SET_META,
+                            sess->getCtx()->getVersionEP(), ttl, rv),
                     txn);
     if (!s.ok()) {
         return s;
@@ -157,7 +160,7 @@ class SMembersCommand: public Command {
 
         auto server = sess->getServerEntry();
         // TODO(vinchen): should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -175,7 +178,7 @@ class SMembersCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -246,7 +249,7 @@ class SIsMemberCommand: public Command {
 
         auto server = sess->getServerEntry();
         // TODO(vinchen) : should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -264,7 +267,7 @@ class SIsMemberCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -338,53 +341,42 @@ class SrandMemberCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
-                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                if (bulk == 1 && !explictBulk) {
-                    return Command::fmtNull();
-                } else {
-                    return Command::fmtZeroBulkLen();
-                }
-            } else if (!rv.status().ok()) {
-                return rv.status();
-            }
-        }
-
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
 
-
-        PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_SET_META);
-
-        ssize_t ssize = 0;
-        if (rv.ok()) {
-            Expected<SetMetaValue> exptSm =
-                SetMetaValue::decode(rv.value().getValue());
-            INVARIANT(exptSm.ok());
-            ssize = exptSm.value().getCount();
-            INVARIANT(ssize != 0);
-        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_SET_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             if (bulk == 1 && !explictBulk) {
                 return Command::fmtNull();
             } else {
                 return Command::fmtZeroBulkLen();
             }
-        } else {
+        } else if (!rv.status().ok()) {
             return rv.status();
         }
+
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        ssize_t ssize = 0;
+        Expected<SetMetaValue> exptSm =
+            SetMetaValue::decode(rv.value().getValue());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
+        }
+        ssize = exptSm.value().getCount();
+        INVARIANT_D(ssize != 0);
 
         auto cursor = txn->createCursor();
         uint32_t beginIdx = 0;
@@ -522,7 +514,7 @@ class SpopCommand: public Command {
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -548,7 +540,7 @@ class SpopCommand: public Command {
             if (rcds.size() > 1) {
                 Command::fmtMultiBulkLen(ss, rcds.size());
             }
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -575,6 +567,7 @@ class SpopCommand: public Command {
                 s = kvstore->setKV(metaRk,
                         RecordValue(sm.encode(),
                                 RecordType::RT_SET_META,
+                                pCtx->getVersionEP(),
                                 rv.value().getTtl(),
                                 rv),
                                 txn.get());
@@ -650,7 +643,7 @@ class SaddCommand: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -780,7 +773,7 @@ class SRemCommand: public Command {
             valArgs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -825,7 +818,8 @@ class SdiffgenericCommand: public Command {
 
         std::vector<int> index = getKeysFromCommand(args);
         // TODO(vinchen): should be LOCK_S if _stroe = false
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }
@@ -848,7 +842,7 @@ class SdiffgenericCommand: public Command {
             RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, args[i], "");
             PStore kvstore = expdb.value().store;
 
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -905,7 +899,7 @@ class SdiffgenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1001,7 +995,8 @@ class SintergenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }
@@ -1046,7 +1041,7 @@ class SintergenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1129,7 +1124,7 @@ class SintergenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i=0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1270,6 +1265,12 @@ class SmoveCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         RecordKey remRk(srcDb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, source, "");
         // directly remove member from source
@@ -1308,6 +1309,7 @@ class SmoveCommand: public Command {
                 Expected<std::string> addRet = genericSAdd(sess, destStore, etxn2.value(), addRk, destRv, { "", "" , member });
                 if (addRet.ok()) {
                     pCtx->commitAll("smove");
+                    rollback = false;
                     return addRet.value();
                 }
                 if (addRet.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -1340,7 +1342,8 @@ class SuniongenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
-        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index, mgl::LockMode::LOCK_X);
+        auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
+                _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {
             return lock.status();
         }
@@ -1360,7 +1363,7 @@ class SuniongenericCommand: public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1415,7 +1418,7 @@ class SuniongenericCommand: public Command {
         PStore kvstore = expdb.value().store;
         RecordKey storeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, storeKey, "");
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }

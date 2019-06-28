@@ -8,6 +8,7 @@
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/network/session_ctx.h"
+#include "tendisplus/lock/mgl/mgl_mgr.h"
 
 namespace tendisplus {
 
@@ -31,7 +32,7 @@ class ILock {
 
 class StoresLock: public ILock {
  public:
-    explicit StoresLock(mgl::LockMode mode, Session* sess);
+    explicit StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
     virtual ~StoresLock() = default;
 
  private:
@@ -41,7 +42,7 @@ class StoresLock: public ILock {
 class StoreLock: public ILock {
  public:
     StoreLock(uint32_t storeId, mgl::LockMode mode,
-              Session* sess);
+              Session* sess, mgl::MGLockMgr* mgr);
     uint32_t getStoreId() const final;
     virtual ~StoreLock() = default;
 
@@ -52,9 +53,9 @@ class StoreLock: public ILock {
 class KeyLock: public ILock {
  public:
     static std::unique_ptr<KeyLock> AquireKeyLock(uint32_t storeId, const std::string& key,
-            mgl::LockMode mode, Session* sess);
+            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
     KeyLock(uint32_t storeId, const std::string& key,
-            mgl::LockMode mode, Session* sess);
+            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
     uint32_t getStoreId() const final;
     std::string getKey() const final;
     // remove lock from session before that lock has really been unlocked in its parent's destructor.

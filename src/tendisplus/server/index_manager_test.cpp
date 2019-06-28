@@ -24,7 +24,7 @@ uint32_t countTTLIndex(std::shared_ptr<ServerEntry> server,
             session.get(), i, mgl::LockMode::LOCK_IS);
         EXPECT_TRUE(expdb.ok());
         PStore kvstore = expdb.value().store;
-        auto exptxn = kvstore->createTransaction();
+        auto exptxn = kvstore->createTransaction(session.get());
         EXPECT_TRUE(exptxn.ok());
 
         auto txn = std::move(exptxn.value());

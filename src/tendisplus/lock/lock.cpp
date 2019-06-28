@@ -57,8 +57,8 @@ mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
     return parentMode;
 }
 
-StoresLock::StoresLock(mgl::LockMode mode, Session* sess)
-        :ILock(nullptr, new mgl::MGLock, sess) {
+StoresLock::StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr)
+        :ILock(nullptr, new mgl::MGLock(mgr), sess) {
     // a duration of 49 days. If lock still not acquired, fail it
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
     auto lockResult = _mgl->lock(_target, mode, timeoutMs);
@@ -66,9 +66,9 @@ StoresLock::StoresLock(mgl::LockMode mode, Session* sess)
 }
 
 StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
-                     Session *sess)
-        :ILock(new StoresLock(getParentMode(mode), nullptr),
-                                new mgl::MGLock, sess),
+                     Session *sess, mgl::MGLockMgr* mgr)
+        :ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
+                                new mgl::MGLock(mgr), sess),
          _storeId(storeId) {
     std::string target = "store_" + std::to_string(storeId);
     // a duration of 49 days. If lock still not acquired, fail it
@@ -88,19 +88,20 @@ uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
-std::unique_ptr<KeyLock> KeyLock::AquireKeyLock(uint32_t storeId, const std::string &key,
-        mgl::LockMode mode, Session *sess) {
+std::unique_ptr<KeyLock> KeyLock::AquireKeyLock(uint32_t storeId,
+        const std::string &key, mgl::LockMode mode,
+        Session *sess, mgl::MGLockMgr* mgr) {
     if (sess->getCtx()->isLockedByMe(key, mode)) {
         return std::unique_ptr<KeyLock>(nullptr);
     } else {
-        return std::make_unique<KeyLock>(storeId, key, mode, sess);
+        return std::make_unique<KeyLock>(storeId, key, mode, sess, mgr);
     }
 }
 
 KeyLock::KeyLock(uint32_t storeId, const std::string& key,
-                mgl::LockMode mode, Session *sess)
-        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr),
-                            new mgl::MGLock, sess),
+    mgl::LockMode mode, Session *sess, mgl::MGLockMgr* mgr)
+        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr),
+                            new mgl::MGLock(mgr), sess),
          _key(key) {
     std::string target = "key_" + key;
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();

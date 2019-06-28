@@ -105,9 +105,9 @@ Status Catalog::setStoreMeta(const StoreMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString(), RecordType::RT_META);
+    RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }
@@ -128,7 +128,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
     ss << "store_" << idx;
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }
@@ -205,9 +205,9 @@ Status Catalog::setStoreMainMeta(const StoreMainMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString(), RecordType::RT_META);
+    RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }
@@ -229,7 +229,7 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
     ss << "store_main_" << idx;
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }
@@ -286,9 +286,9 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
 
     writer.EndObject();
 
-    RecordValue rv(sb.GetString(), RecordType::RT_META);
+    RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }
@@ -309,7 +309,7 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     ss << "main_meta";
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
 
-    auto exptxn = _store->createTransaction();
+    auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         return exptxn.status();
     }

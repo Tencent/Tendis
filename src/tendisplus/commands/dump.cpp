@@ -147,7 +147,7 @@ class DumpCommand: public Command {
 
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-                sess, key, mgl::LockMode::LOCK_X);
+                sess, key, Command::RdLock());
         auto exps = getSerializer(sess, key);
         if (!exps.ok()) {
             if (exps.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -231,7 +231,7 @@ class ListSerializer: public Serializer {
         }
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -241,6 +241,7 @@ class ListSerializer: public Serializer {
          * then compress it using lzf(not implemented), or just write raw to buffer, both can work.*/
         size_t zlInitPos(_pos);
         _pos += 8;
+        // TODO(comboqiu) : support more than one ziplist
         if (len > UINT16_MAX) {
             return { ErrorCodes::ERR_INTERNAL, "Currently not support" };
         }
@@ -323,7 +324,7 @@ class SetSerializer: public Serializer {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -377,7 +378,7 @@ class ZsetSerializer: public Serializer {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -443,7 +444,7 @@ class HashSerializer: public Serializer {
         }
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -626,7 +627,7 @@ class RestoreCommand: public Command {
         const std::string &sttl = args[2];
         const std::string &payload = args[3];
 
-        // TODO: parse additional args
+        // TODO(comboqiu): parse additional args
         {
             for (size_t i = 4; i < args.size(); i++) {
                 if (::strcasecmp(args[i].c_str(), "replace")) {
@@ -696,7 +697,7 @@ class KvDeserializer: public Deserializer {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -709,24 +710,31 @@ class KvDeserializer: public Deserializer {
         RecordKey rk(expdb.value().chunkId,
                 pCtx->getDbId(),
                 RecordType::RT_KV, _key, "");
-        RecordValue rv(ret, RecordType::RT_KV, _ttl);
-        for (int32_t i = 0; i < Command::RETRY_CNT - 1; ++i) {
+        RecordValue rv(ret, RecordType::RT_KV, pCtx->getVersionEP(), _ttl);
+        for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
             }
             Expected<uint64_t> expCmt = txn->commit();
-            if (!expCmt.ok()) {
+            if (expCmt.ok()) {
+                return { ErrorCodes::ERR_OK, "OK"};
+            } else if (expCmt.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return expCmt.status();
             }
-            ptxn = kvstore->createTransaction();
+
+            if (i == Command::RETRY_CNT - 1) {
+                return expCmt.status();
+            }
+
+            ptxn = kvstore->createTransaction(_sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             txn = std::move(ptxn.value());
         }
 
-        return { ErrorCodes::ERR_OK, "OK"};
+        return { ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
 
@@ -755,7 +763,7 @@ class SetDeserializer: public Deserializer {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -772,7 +780,7 @@ class SetDeserializer: public Deserializer {
                     metaRk.getDbId(),
                     RecordType::RT_SET_ELE,
                     metaRk.getPrimaryKey(), std::move(ele));
-            RecordValue rv("", RecordType::RT_SET_ELE);
+            RecordValue rv("", RecordType::RT_SET_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -780,7 +788,8 @@ class SetDeserializer: public Deserializer {
         }
         sm.setCount(len);
         Status s = kvstore->setKV(metaRk,
-                RecordValue(sm.encode(), RecordType::RT_SET_META, _ttl),
+                RecordValue(sm.encode(), RecordType::RT_SET_META,
+                        _sess->getCtx()->getVersionEP(), _ttl),
                 txn.get());
         if (!s.ok()) {
             return s;
@@ -828,7 +837,7 @@ class ZsetDeserializer: public Deserializer {
                 RecordType::RT_ZSET_META, _key, "");
         PStore kvstore = expdb.value().store;
         // set ttl first
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -841,7 +850,8 @@ class ZsetDeserializer: public Deserializer {
         }
         INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         ZSlMetaValue meta(1, 1, 0);
-        RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, _ttl);
+        RecordValue rv(meta.encode(), RecordType::RT_ZSET_META,
+                _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(rk, rv, txn.get());
         if (!s.ok()) {
             return s;
@@ -852,7 +862,7 @@ class ZsetDeserializer: public Deserializer {
                 rk.getPrimaryKey(),
                 std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+        RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
         s = kvstore->setKV(headRk, headRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -906,7 +916,7 @@ class HashDeserializer: public Deserializer {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -917,7 +927,7 @@ class HashDeserializer: public Deserializer {
             // need existence check ?
             RecordKey rk(expdb.value().chunkId, _sess->getCtx()->getDbId(),
                     RecordType::RT_HASH_ELE, _key, field);
-            RecordValue rv(value, RecordType::RT_HASH_ELE);
+            RecordValue rv(value, RecordType::RT_HASH_ELE, -1);
             Status s = kvstore->setKV(rk, rv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -928,8 +938,8 @@ class HashDeserializer: public Deserializer {
                 RecordType::RT_HASH_META, _key, "");
         HashMetaValue hashMeta;
         hashMeta.setCount(len);
-        RecordValue metaRv(std::move(hashMeta.encode()),
-                RecordType::RT_HASH_META, _ttl);
+        RecordValue metaRv(std::move(hashMeta.encode()), RecordType::RT_HASH_META,
+                    _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(metaRk, metaRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -994,7 +1004,7 @@ class ListDeserializer: public Deserializer {
         RecordKey metaRk(expdb.value().chunkId, _sess->getCtx()->getDbId(),
                 RecordType::RT_LIST_META, _key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(_sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1018,7 +1028,7 @@ class ListDeserializer: public Deserializer {
                              RecordType::RT_LIST_ELE,
                              metaRk.getPrimaryKey(),
                              std::to_string(idx));
-                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE);
+                RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE, -1);
                 Status s = kvstore->setKV(rk, rv, txn.get());
                 if (!s.ok()) {
                     return s;
@@ -1027,7 +1037,8 @@ class ListDeserializer: public Deserializer {
         }
         lm.setHead(head);
         lm.setTail(tail);
-        RecordValue metaRv(lm.encode(), RecordType::RT_LIST_META, _ttl);
+        RecordValue metaRv(lm.encode(), RecordType::RT_LIST_META,
+                _sess->getCtx()->getVersionEP(), _ttl);
         Status s = kvstore->setKV(metaRk, metaRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -1077,4 +1088,4 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
     return std::move(ptr);
 }
 
-} // namespace tendisplus
+}  // namespace tendisplus

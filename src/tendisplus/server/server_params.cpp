@@ -195,7 +195,7 @@ Status ServerParams::parseFile(const std::string& filename) {
             //            "invalid chunkSize config" };
             //    }
             //    chunkSize = std::stoi(tokens[1]);
-            } else if (tokens[0] == "kvStoreCount") {
+            } else if (tokens[0] == "kvstorecount") {
                 if (tokens.size() != 2) {
                     return{ ErrorCodes::ERR_PARSEOPT,
                         "invalid kvStoreCount config" };
@@ -237,6 +237,14 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "Invalid number of databases" };
                 }
                 dbNum = std::stoi(tokens[1]);
+            } else if (tokens[0] == "noexpire") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid expire option"};
+                }
+                if (isOptionOn(tokens[1])) {
+                    noexpire = true;
+                }
             }
         }
     } catch (const std::exception& ex) {
@@ -272,6 +280,7 @@ ServerParams::ServerParams()
     checkKeyTypeForSet = false;
     protoMaxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
     dbNum = CONFIG_DEFAULT_DBNUM;
+    noexpire = false;
 }
 
 

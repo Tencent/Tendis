@@ -14,9 +14,10 @@ start_server {tags {"hash"}} {
         list [r hlen smallhash]
     } {8}
 
-    test {Is the small hash encoded with a ziplist?} {
-        # assert_encoding ziplist smallhash
-    }
+    # NOTE: we don't have such "ziplist"
+    #test {Is the small hash encoded with a ziplist?} {
+    #    assert_encoding ziplist smallhash
+    #}
 
     test {HSET/HLEN - Big hash creation} {
         array set bighash {}
@@ -252,10 +253,11 @@ start_server {tags {"hash"}} {
         lappend rv [r hexists bighash nokey]
     } {1 0 1 0}
 
-    test {Is a ziplist encoded Hash promoted on big payload?} {
-        r hset smallhash foo [string repeat a 1024]
-        # r debug object smallhash
-    } {*hashtable*}
+    # NOTE: no debug object
+    #test {Is a ziplist encoded Hash promoted on big payload?} {
+    #    r hset smallhash foo [string repeat a 1024]
+    #    r debug object smallhash
+    #} {*hashtable*}
 
     test {HINCRBY against non existing database key} {
         r del htest

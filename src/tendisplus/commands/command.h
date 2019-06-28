@@ -41,6 +41,11 @@ class Command {
     bool isMultiKey() const;
     bool isWriteable() const;
     bool isAdmin() const;
+    static bool noExpire();
+    // will be LOCK_S when _noexpire set true.
+    // should use lock upgrade in the future.
+    static mgl::LockMode RdLock();
+    static void setNoExpire(bool cfg);
     int getFlags() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name
@@ -55,7 +60,7 @@ class Command {
     // return ERR_EXPIRED if expired
     // return errors on other unexpected conditions
     static Expected<RecordValue> expireKeyIfNeeded(Session *sess,
-                            const std::string& key, RecordType tp);
+            const std::string& key, RecordType tp, bool hasVersion = true);
 
     static Expected<std::pair<std::string, std::list<Record>>>
     scan(const std::string& pk,
@@ -77,6 +82,7 @@ class Command {
     static std::string fmtOne();
     static std::string fmtZero();
     static std::string fmtLongLong(int64_t);
+    static Expected<uint64_t> getInt64FromFmtLongLong(const std::string & str);
     static std::string fmtBusyKey();
 
     static std::string fmtBulk(const std::string& s);
@@ -94,7 +100,9 @@ class Command {
     // protected by mutex
     static std::map<std::string, uint64_t> _unSeenCmds;
 
- private:
+    static bool _noexpire;
+    static mgl::LockMode _expRdLk;
+private:
     static Status delKeyPessimisticInLock(Session *sess, uint32_t storeId,
                             const RecordKey& rk, RecordType valueType,
                             const TTLIndex *ictx = nullptr);
@@ -122,6 +130,7 @@ class Command {
 
     std::atomic<uint64_t> _callTimes;
     std::atomic<uint64_t> _totalNanoSecs;
+
 };
 
 std::map<std::string, Command*>& commandMap();

@@ -37,7 +37,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     }
 
     BackupInfo bkInfo;
-    auto expPos = client->readLine(std::chrono::seconds(3));
+    auto expPos = client->readLine(std::chrono::seconds(1000));
     if (!expPos.ok()) {
         LOG(WARNING) << "fullSync req master error:"
                      << expPos.status().toString();
@@ -55,7 +55,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     }
     bkInfo.setBinlogPos(pos.value());
 
-    auto expFlist = client->readLine(std::chrono::seconds(1));
+    auto expFlist = client->readLine(std::chrono::seconds(100));
     if (!expFlist.ok()) {
         LOG(WARNING) << "fullSync req flist error:"
                      << expFlist.status().toString();
@@ -73,7 +73,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     std::map<std::string, uint64_t> result;
 #ifdef _WIN32
 #undef GetObject
-#endif // 
+#endif
     for (auto& o : doc.GetObject()) {
         if (!o.value.IsUint64()) {
             return {ErrorCodes::ERR_NOTFOUND, "json value not uint64"};
@@ -188,7 +188,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         if (finishedFiles.size() == flist.size()) {
             break;
         }
-        Expected<std::string> s = client->readLine(std::chrono::seconds(1));
+        Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             return;
         }
@@ -215,7 +215,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             size_t batchSize = std::min(remain, FILEBATCH);
             remain -= batchSize;
             Expected<std::string> exptData =
-                client->read(batchSize, std::chrono::seconds(10));
+                client->read(batchSize, std::chrono::seconds(100));
             if (!exptData.ok()) {
                 LOG(ERROR) << "fullsync read bulk data failed:"
                             << exptData.status().toString();
@@ -273,7 +273,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(10) <= SCLOCK::now()) {
+        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS) <= SCLOCK::now()) {
             return true;
         }
         return false;
@@ -299,7 +299,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         << ' ' << metaSnapshot.id
         << ' ' << metaSnapshot.binlogId;
     client->writeLine(ss.str(), std::chrono::seconds(1));
-    Expected<std::string> s = client->readLine(std::chrono::seconds(3));
+    Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
                 << " psync master failed with error:" << s.status().toString();
@@ -350,8 +350,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
     LOG(INFO) << "store:" << metaSnapshot.id
-                << ",binlogId:" << metaSnapshot.binlogId
-                << " psync master succ";
+        << ",binlogId:" << metaSnapshot.binlogId
+        << " psync master succ."
+        << "session id: " << sessionId << ";";
 }
 
 void ReplManager::slaveSyncRoutine(uint32_t storeId) {
@@ -373,7 +374,8 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
     if (metaSnapshot->syncFromHost == "") {
         // if master is nil, try sched after 1 second
-        nextSched = nextSched + std::chrono::seconds(1);
+        LOG(WARNING) << "metaSnapshot->syncFromHost is nil, sleep 10 seconds";
+        nextSched = nextSched + std::chrono::seconds(10);
         return;
     }
 
@@ -393,6 +395,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
     }
 }
 
+#ifdef BINLOG_V1
 Status ReplManager::applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs) {
     // NOTE(deyukong): donot lock store in IX mode again
@@ -450,7 +453,7 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
-    auto ptxn = store->createTransaction();
+    auto ptxn = store->createTransaction(nullptr);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -469,7 +472,130 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
     store->setBinlogTime(txn->getBinlogTime());
     return {ErrorCodes::ERR_OK, ""};
 }
+#else
+// if logKey == "", it means binlog_heartbeat
+Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
+        const std::string& logKey, const std::string& logValue) {
+    // NOTE(deyukong): donot lock store in IX/IS mode again
+    // the caller has duty to do this thing.
+    [this, storeId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        _cv.wait(lk,
+            [this, storeId]
+        {return !_syncStatus[storeId]->isRunning; });
+        _syncStatus[storeId]->isRunning = true;
+    }();
 
+    uint64_t sessionId = sess->id();
+    bool idMatch = [this, storeId, sessionId]() {
+        std::unique_lock<std::mutex> lk(_mutex);
+        return (sessionId == _syncStatus[storeId]->sessionId);
+    }();
+    auto guard = MakeGuard([this, storeId, &idMatch] {
+        std::unique_lock<std::mutex> lk(_mutex);
+        INVARIANT(_syncStatus[storeId]->isRunning);
+        _syncStatus[storeId]->isRunning = false;
+        if (idMatch) {
+            _syncStatus[storeId]->lastSyncTime = SCLOCK::now();
+        }
+    });
+
+    if (!idMatch) {
+        return{ ErrorCodes::ERR_NOTFOUND, "sessionId not match" };
+    }
+
+    if (logKey == "") {
+        // binlog_heartbeat
+        // do nothing
+    } else {
+        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue);
+        if (!binlog.ok()) {
+            return binlog.status();
+        }
+        else {
+            std::lock_guard<std::mutex> lk(_mutex);
+            // NOTE(vinchen): store the binlogId without changeReplState()
+            // If it's shutdown, we can get the largest binlogId from rocksdb.
+            _syncMeta[storeId]->binlogId = binlog.value();
+        }
+    }
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
+
+Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
+    const std::string& logKey, const std::string& logValue) {
+    // TODO(vinchen): should be called with lock held
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
+        mgl::LockMode::LOCK_NONE);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto store = std::move(expdb.value().store);
+    INVARIANT(store != nullptr);
+    auto ptxn = store->createTransaction(sess);
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    auto key = ReplLogKeyV2::decode(logKey);
+    if (!key.ok()) {
+        return key.status();
+    }
+    auto binlogId = key.value().getBinlogId();
+
+    auto value = ReplLogValueV2::decode(logValue);
+    if (!value.ok()) {
+        return value.status();
+    }
+
+    uint64_t timestamp = 0;
+    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    auto data = value.value().getData();
+    size_t dataSize = value.value().getDataSize();
+    while (offset < dataSize) {
+        size_t size = 0;
+        auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
+                        dataSize - offset, size);
+        if (!entry.ok()) {
+            return entry.status();
+        }
+        offset += size;
+
+        timestamp = entry.value().getTimestamp();
+
+        auto s = txn->applyBinlog(entry.value());
+        if (!s.ok()) {
+            return s;
+        }
+    }
+
+    if (offset != dataSize) {
+        return { ErrorCodes::ERR_INTERNAL, "bad binlog" };
+    }
+
+    // store the binlog directly, same as master
+    auto s = txn->setBinlogKV(binlogId, logKey, logValue);
+    if (!s.ok()) {
+        return s;
+    }
+
+    Expected<uint64_t> expCmit = txn->commit();
+    if (!expCmit.ok()) {
+        return expCmit.status();
+    }
+
+    // NOTE(vinchen): store the binlog time spov when txn commited.
+    // only need to set the last timestamp
+    store->setBinlogTime(timestamp);
+
+    return binlogId;
+}
+#endif
+
+#ifdef BINLOG_V1
 Status ReplManager::saveBinlogs(uint32_t storeId,
     const std::list<ReplLog>& logs) {
     if (logs.size() == 0) {
@@ -488,7 +614,7 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         memset(tbuf, 0, 128);
 
         // ms to second
-        time_t time = (time_t)(uint32_t)(logs.front().getReplLogKey().getTimestamp()/1000);
+        time_t time = (time_t)(uint32_t)(logs.front().getReplLogKey().getTimestamp()/1000);     // NOLINT
         struct tm lt;
         (void) localtime_r(&time, &lt);
         strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
@@ -546,5 +672,64 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
     }
     return {ErrorCodes::ERR_OK, ""};
 }
+#else
+std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
+    std::ofstream *fs = nullptr;
+    uint32_t currentId = 0;
+    uint64_t ts = 0;
+    {
+        std::unique_lock<std::mutex> lk(_mutex);
+        fs = _logRecycStatus[storeId]->fs.get();
+        currentId = _logRecycStatus[storeId]->fileSeq;
+        ts = _logRecycStatus[storeId]->timestamp;
+    }
+    if (fs == nullptr) {
+        char fname[256], tbuf[256];
+        memset(fname, 0, 128);
+        memset(tbuf, 0, 128);
+
+        // ms to second
+        time_t time = (time_t)(uint32_t)(ts / 1000);
+        struct tm lt;
+        (void)localtime_r(&time, &lt);
+        strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);
+
+        snprintf(fname, sizeof(fname), "%s/%d/binlog-%d-%07d-%s.log",
+            _dumpPath.c_str(), storeId, storeId, currentId + 1, tbuf);
+
+        fs = KVStore::createBinlogFile(fname, storeId);
+        if (!fs) {
+            return fs;
+        }
+
+        std::unique_lock<std::mutex> lk(_mutex);
+        auto& v = _logRecycStatus[storeId];
+        v->fs.reset(fs);
+        v->fileSeq = currentId + 1;
+        v->fileCreateTime = SCLOCK::now();
+        v->fileSize = BINLOG_HEADER_V2_LEN;
+    }
+    return fs;
+}
+
+void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
+                uint64_t ts) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    auto& v = _logRecycStatus[storeId];
+    v->fileSize += written;
+    if (v->fileSize >= ReplManager::BINLOGSIZE
+        || v->fileCreateTime +
+        std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+        <= SCLOCK::now()) {
+        if (v->fs) {
+            v->fs->close();
+            v->fs.reset();
+        }
+        if (ts) {
+            v->timestamp = ts;
+        }
+    }
+}
+#endif
 
 }  // namespace tendisplus

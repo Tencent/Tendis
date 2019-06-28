@@ -4,6 +4,7 @@
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 
@@ -46,7 +47,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 
     std::unique_ptr<KeyLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
-        lk = KeyLock::AquireKeyLock(segId, key, mode, sess);
+        lk = KeyLock::AquireKeyLock(segId, key, mode, sess,
+            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr);
     }
     return DbWithLock{
             segId, chunkId, _instances[segId], nullptr, std::move(lk)
@@ -112,7 +114,8 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
                 [](const std::string& a, const std::string& b) { return a < b; });
         for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {
             const std::string& key = *keyIter;
-            locklist.emplace_back(KeyLock::AquireKeyLock(segId, key, mode, sess));
+            locklist.emplace_back(KeyLock::AquireKeyLock(segId, key, mode, sess,
+                (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr));
         }
     }
 
@@ -143,7 +146,13 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
 
     std::unique_ptr<StoreLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
-        lk = std::make_unique<StoreLock>(insId, mode, sess);
+        lk = std::make_unique<StoreLock>(insId, mode, sess,
+            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr);
+    }
+
+    if (sess && sess->getCtx() &&
+        _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+        sess->getCtx()->setReplOnly(true);
     }
     return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
 }

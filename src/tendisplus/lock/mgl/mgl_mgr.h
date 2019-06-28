@@ -55,14 +55,16 @@ struct alignas(128) LockShard {
     std::mutex mutex;
     std::unordered_map<std::string, LockSchedCtx> map;
 };
-
+// TODO(vinchen): now there is a warning here, because the MGLockMgr change from
+// a static object to a heap object of ServerEntry
+// warning C4316: “tendisplus::mgl::MGLockMgr”: 在堆上分配的对象可能不是对齐 128
 class MGLockMgr {
  public:
+    MGLockMgr() = default;
     void lock(MGLock* core);
     void unlock(MGLock* core);
     static MGLockMgr& getInstance();
  private:
-    MGLockMgr() = default;
     static constexpr size_t SHARD_NUM = 32;
     LockShard _shards[SHARD_NUM];
 };

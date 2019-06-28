@@ -20,6 +20,20 @@
 # include <functional>
 # include <string>
 # include <stdexcept>
+# include <iostream>
+
+#ifdef _WIN32
+#define my_assert(e) \
+    do { \
+        if (!(e)) { \
+            std::cout << "assert failed:" << #e \
+            << ' ' << __FILE__ << ' ' << __LINE__ << std::endl; \
+            __debugbreak();\
+        } \
+    } while (0)
+#else 
+#define my_assert(e) assert(e)
+#endif
 
 # define TR2_OPTIONAL_REQUIRES(...) typename enable_if<__VA_ARGS__::value, bool>::type = false
 
@@ -396,7 +410,7 @@ class optional : private OptionalBase<T>
   template <class... Args>
   void initialize(Args&&... args) noexcept(noexcept(T(std::forward<Args>(args)...)))
   {
-    assert(!OptionalBase<T>::init_);
+    my_assert(!OptionalBase<T>::init_);
     ::new (static_cast<void*>(dataptr())) T(std::forward<Args>(args)...);
     OptionalBase<T>::init_ = true;
   }
@@ -404,7 +418,7 @@ class optional : private OptionalBase<T>
   template <class U, class... Args>
   void initialize(std::initializer_list<U> il, Args&&... args) noexcept(noexcept(T(il, std::forward<Args>(args)...)))
   {
-    assert(!OptionalBase<T>::init_);
+    my_assert(!OptionalBase<T>::init_);
     ::new (static_cast<void*>(dataptr())) T(il, std::forward<Args>(args)...);
     OptionalBase<T>::init_ = true;
   }
@@ -522,7 +536,7 @@ public:
 # if OPTIONAL_HAS_MOVE_ACCESSORS == 1
 
   OPTIONAL_MUTABLE_CONSTEXPR T* operator ->() {
-    assert (initialized());
+    my_assert (initialized());
     return dataptr();
   }
   
@@ -531,12 +545,12 @@ public:
   }
   
   OPTIONAL_MUTABLE_CONSTEXPR T& operator *() & {
-    assert (initialized());
+    my_assert (initialized());
     return contained_val();
   }
   
   OPTIONAL_MUTABLE_CONSTEXPR T&& operator *() && {
-    assert (initialized());
+    my_assert (initialized());
     return constexpr_move(contained_val());
   }
 
@@ -556,7 +570,7 @@ public:
 # else
 
   T* operator ->() {
-    assert (initialized());
+    my_assert(initialized());
     return dataptr();
   }
   
@@ -565,7 +579,7 @@ public:
   }
   
   T& operator *() {
-    assert (initialized());
+    my_assert(initialized());
     return contained_val();
   }
   

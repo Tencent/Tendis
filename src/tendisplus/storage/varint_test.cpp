@@ -75,6 +75,14 @@ void testdouble(double val) {
     auto en = doubleEncode(val);
     auto ret = doubleDecode(en.data(), en.size());
     EXPECT_EQ(val, ret.value());
+
+    // test align
+    uint8_t buf[2 * sizeof(double)];
+    for (size_t i = 0; i < sizeof(double); i++) {
+        memcpy(buf + i, en.data(), en.size());
+        auto ret1 = doubleDecode(buf + i, en.size());
+        EXPECT_EQ(val, ret1.value());
+    }
 }
 
 TEST(Double, Common) {
@@ -87,6 +95,101 @@ TEST(Double, Common) {
     for (int i = 0; i < 100000; i++) {
         double v = genDouble();
         testdouble(v);
+    }
+}
+
+
+uint64_t genInt() {
+    // static int rank = 0;
+    std::srand(time(0));
+    uint64_t r1 = std::rand();
+
+    std::srand(time(0));
+    uint64_t r2 = std::rand();
+
+    uint64_t r = r1*r2;
+
+    if (r2 % 5 == 0) {
+        r += std::numeric_limits<uint32_t>::max();
+    }
+
+    return r;
+}
+
+void testInt(uint64_t val) {
+    char buf[sizeof(uint64_t)*2];
+
+    {
+        uint16_t val16 = (uint16_t)val;
+
+        auto v1 = int16Encode(val16);
+        memcpy(buf, &v1, sizeof(v1));
+        auto v2 = int16Decode(buf);
+        EXPECT_EQ(v2, val16);
+
+        auto s = int16Encode(buf, val16);
+        EXPECT_EQ(s, sizeof(val16));
+        v2 = int16Decode(buf);
+        EXPECT_EQ(v2, val16);
+
+        // test align
+        for (size_t i = 0; i < sizeof(uint16_t); i++) {
+            memcpy(buf + i, &v1, sizeof(v1));
+            auto ret1 = int16Decode(buf + i);
+            EXPECT_EQ(val16, ret1);
+        }
+    }
+
+    {
+        uint32_t val32 = (uint32_t)val;
+        auto v1 = int32Encode(val32);
+        memcpy(buf, &v1, sizeof(v1));
+        auto v2 = int32Decode(buf);
+        EXPECT_EQ(v2, val32);
+
+        auto s = int32Encode(buf, val32);
+        EXPECT_EQ(s, sizeof(val32));
+        v2 = int32Decode(buf);
+        EXPECT_EQ(v2, val32);
+
+        // test align
+        for (size_t i = 0; i < sizeof(uint32_t); i++) {
+            memcpy(buf + i, &v1, sizeof(v1));
+            auto ret1 = int32Decode(buf + i);
+            EXPECT_EQ(val32, ret1);
+        }
+    }
+
+    {
+        uint64_t val64 = (uint64_t)val;
+        auto v1 = int64Encode(val64);
+        memcpy(buf, &v1, sizeof(v1));
+        auto v2 = int64Decode(buf);
+        EXPECT_EQ(v2, val64);
+
+        auto s = int64Encode(buf, val64);
+        EXPECT_EQ(s, sizeof(val64));
+        v2 = int64Decode(buf);
+        EXPECT_EQ(v2, val64);
+
+        // test align
+        for (size_t i = 0; i < sizeof(uint64_t); i++) {
+            memcpy(buf + i, &v1, sizeof(v1));
+            auto ret1 = int64Decode(buf + i);
+            EXPECT_EQ(val64, ret1);
+        }
+    }
+}
+
+TEST(Int, Common) {
+    testInt(1);
+    testInt(1000);
+    testInt(-1);
+    testInt(-2);
+
+    for (int i = 0; i < 100000; i++) {
+        auto v = genInt();
+        testInt(v);
     }
 }
 

@@ -98,7 +98,7 @@ class ScanGenericCommand: public Command {
                             getRcdType(), key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

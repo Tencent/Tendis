@@ -18,6 +18,7 @@
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
+#include "tendisplus/lock/mgl/mgl_mgr.h"
 
 namespace tendisplus {
 class Session;
@@ -69,6 +70,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
     void installCatalog(std::unique_ptr<Catalog>);
     void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
+    void installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
 
     void stop();
     void waitStopComplete();
@@ -76,6 +78,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     ReplManager* getReplManager();;
     NetworkAsio* getNetwork();
     PessimisticMgr* getPessimisticMgr();
+    mgl::MGLockMgr* getMGLockMgr();
     IndexManager* getIndexMgr();
 
     const std::shared_ptr<std::string> requirepass() const;
@@ -85,7 +88,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t protoMaxBulkLen() const { return _protoMaxBulkLen; }
     uint32_t dbNum() const { return _dbNum; }
 
-    std::vector<PStore> getStores() const;
+    const std::vector<PStore>& getStores() const { return _kvstores; }
 
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
@@ -98,6 +101,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
     void AddMonitor(Session* sess);
+    static void logWarning(const std::string& str, Session* sess = nullptr);
+    static void logError(const std::string& str, Session* sess = nullptr);
 
  private:
     ServerEntry();
@@ -123,6 +128,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<ReplManager> _replMgr;
     std::unique_ptr<IndexManager> _indexMgr;
     std::unique_ptr<PessimisticMgr> _pessimisticMgr;
+    std::unique_ptr<mgl::MGLockMgr> _mgLockMgr;
 
     std::vector<PStore> _kvstores;
     std::unique_ptr<Catalog> _catalog;

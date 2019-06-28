@@ -69,7 +69,8 @@ Expected<std::string> genericPop(Session *sess,
         lm.setHead(head);
         lm.setTail(tail);
         s = kvstore->setKV(metaRk,
-                           RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
+                           RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                                   sess->getCtx()->getVersionEP(), ttl, rv),
                            txn);
     }
     if (!s.ok()) {
@@ -116,7 +117,7 @@ Expected<std::string> genericPush(Session *sess,
                         RecordType::RT_LIST_ELE,
                         metaRk.getPrimaryKey(),
                         std::to_string(idx));
-        RecordValue subRv(args[i], RecordType::RT_LIST_ELE);
+        RecordValue subRv(args[i], RecordType::RT_LIST_ELE, -1);
         Status s = kvstore->setKV(subRk, subRv, txn);
         if (!s.ok()) {
             return s;
@@ -125,7 +126,8 @@ Expected<std::string> genericPush(Session *sess,
     lm.setHead(head);
     lm.setTail(tail);
     Status s = kvstore->setKV(metaRk,
-                              RecordValue(lm.encode(), RecordType::RT_LIST_META, ttl, rv),
+                              RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                                      sess->getCtx()->getVersionEP(), ttl, rv),
                               txn);
     if (!s.ok()) {
         return s;
@@ -233,24 +235,22 @@ class ListPopWrapper: public Command {
         PStore kvstore = expdb.value().store;
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPop(sess, kvstore, txn.get(), metaRk, rv, _pos);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return Command::fmtBulk(s.value());
-            }
-            if (s.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            if (s1.status().code() == ErrorCodes::ERR_NOTFOUND) {
                 return Command::fmtNull();
+            } else if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return Command::fmtBulk(s1.value());
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -340,21 +340,20 @@ class ListPushWrapper: public Command {
             valargs.push_back(args[i]);
         }
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            Expected<std::string> s =
+            Expected<std::string> s1 =
                 genericPush(sess, kvstore, txn.get(), metaRk, rv, valargs, _pos, _needExist);
-            if (s.ok()) {
-                auto s1 = txn->commit();
-                if (!s1.ok()) {
-                    return s1.status();
-                }
-                return s.value();
+            if (!s1.ok()) {
+                return s1.status();
             }
-            if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+            auto s = txn->commit();
+            if (s.ok()) {
+                return s1.value();
+            } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return s.status();
             }
             if (i == RETRY_CNT - 1) {
@@ -459,6 +458,12 @@ class RPopLPushCommand: public Command {
         if (!etxn.ok()) {
             return etxn.status();
         }
+        bool rollback = true;
+        const auto guard = MakeGuard([&rollback, &pCtx] {
+            if (rollback) {
+                pCtx->rollbackAll();
+            }
+        });
 
         std::string val = "";
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -503,6 +508,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -546,6 +552,7 @@ class RPopLPushCommand: public Command {
                     false /*need_exist*/);
                 if (s.ok()) {
                     pCtx->commitAll("rpoplpush");
+                    rollback = false;
                     return Command::fmtBulk(val);
                 }
                 if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -590,7 +597,7 @@ class LtrimCommand: public Command {
                             const ListMetaValue& lm,
                             int64_t start, int64_t end,
                             const Expected<RecordValue>& rv) {
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -615,7 +622,7 @@ class LtrimCommand: public Command {
                     if (!v.ok()) {
                         return v.status();
                     }
-                    auto ptxn = kvstore->createTransaction();
+                    auto ptxn = kvstore->createTransaction(sess);
                     if (!ptxn.ok()) {
                         return ptxn.status();
                     }
@@ -639,7 +646,8 @@ class LtrimCommand: public Command {
             }
         } else {
             ListMetaValue newLm(start+head, end+1+head);
-            RecordValue metarcd(newLm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv);
+            RecordValue metarcd(newLm.encode(), RecordType::RT_LIST_META,
+                    sess->getCtx()->getVersionEP(), rv.value().getTtl(), rv);
             st = kvstore->setKV(mk, metarcd, txn.get());
             if (!st.ok()) {
                 return st;
@@ -751,39 +759,30 @@ class LRangeCommand: public Command {
             return eend.status();
         }
 
-        {
-            Expected<RecordValue> rv =
-                Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
-            if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-                return fmtZeroBulkLen();
-            } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return fmtZeroBulkLen();
-            } else if (!rv.ok()) {
-                return rv.status();
-            }
-        }
-
-        SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_S);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
-        PStore kvstore = expdb.value().store;
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
 
-        auto ptxn = kvstore->createTransaction();
+        Expected<RecordValue> rv =
+            Command::expireKeyIfNeeded(sess, key, RecordType::RT_LIST_META);
+        if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+            return fmtZeroBulkLen();
+        } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return fmtZeroBulkLen();
+        } else if (!rv.ok()) {
+            return rv.status();
+        }
+
+        SessionCtx *pCtx = sess->getCtx();
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> rv = kvstore->getKV(metaRk, txn.get(), RecordType::RT_LIST_META);
-        if (!rv.ok()) {
-            if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            }
-            return rv.status();
-        }
 
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
@@ -869,7 +868,7 @@ class LIndexCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
         // TODO(vinchen): should be LOCK_S
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -888,7 +887,7 @@ class LIndexCommand: public Command {
         // uint32_t storeId = expdb.value().dbId;
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_LIST_META, key, "");
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -994,7 +993,7 @@ class LSetCommand: public Command {
 
         PStore kvstore = expdb.value().store;
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -1005,7 +1004,7 @@ class LSetCommand: public Command {
                             RecordType::RT_LIST_ELE,
                             key,
                             std::to_string(realIndex));
-            RecordValue subRv(value, RecordType::RT_LIST_ELE);
+            RecordValue subRv(value, RecordType::RT_LIST_ELE, -1);
             Status s = kvstore->setKV(subRk, subRv, txn.get());
             if (!s.ok()) {
                 return s;
@@ -1095,7 +1094,7 @@ class LRemCommand: public Command {
         hole.push_back(head - 1);
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1240,8 +1239,9 @@ class LRemCommand: public Command {
             s = kvstore->delKV(metaRk, txn.get());
         } else {
             s = kvstore->setKV(metaRk,
-                               RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
-                               txn.get());
+                    RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                            sess->getCtx()->getVersionEP(), rv.value().getTtl(), rv),
+                    txn.get());
         }
         if (!s.ok()) {
             return s;
@@ -1319,7 +1319,7 @@ class LInsertCommand: public Command {
         uint64_t index = step < 0 ? tail - 1 : head;
 
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1396,7 +1396,7 @@ class LInsertCommand: public Command {
                 RecordType::RT_LIST_ELE,
                 key,
                 std::to_string(index));
-        RecordValue targRv(value, RecordType::RT_LIST_ELE);
+        RecordValue targRv(value, RecordType::RT_LIST_ELE, -1);
         Status s = kvstore->setKV(targRk, targRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -1410,7 +1410,8 @@ class LInsertCommand: public Command {
                 key,
                 "");
         s = kvstore->setKV(metaRk,
-                RecordValue(lm.encode(), RecordType::RT_LIST_META, rv.value().getTtl(), rv),
+                RecordValue(lm.encode(), RecordType::RT_LIST_META,
+                        pCtx->getVersionEP(), rv.value().getTtl(), rv),
                 txn.get());
         if (!s.ok()) {
             return s;

@@ -46,11 +46,11 @@ TEST(SkipList, BackWardTail) {
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto store = std::shared_ptr<KVStore>(
         new RocksKVStore("0", cfg, blockCache));
-    auto eTxn1 = store->createTransaction();
+    auto eTxn1 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn1.ok());
 
     ZSlMetaValue meta(1, 1, 0);
-    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META);
+    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, -1);
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -60,7 +60,7 @@ TEST(SkipList, BackWardTail) {
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
 
     s = store->setKV(head, subRv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -80,11 +80,11 @@ TEST(SkipList, BackWardTail) {
     // check tail always points to the max num
     for (auto& i : keys) {
         currMax = std::max(currMax, i);
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), {ErrorCodes::ERR_NOTFOUND, ""});
+        s = sl.save(eTxn.value().get(), {ErrorCodes::ERR_NOTFOUND, ""}, -1);
         EXPECT_TRUE(s.ok());
 
         std::string pointerStr = std::to_string(sl.getTail());
@@ -104,14 +104,14 @@ TEST(SkipList, BackWardTail) {
     // randomly erase 500 elements
     std::random_shuffle(keys.begin(), keys.end());
     for (uint32_t i = 0; i < CNT/2; ++i) {
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.remove(
             keys[CNT-i-1],
             std::to_string(keys[CNT-i-1]),
             eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
 
         keys.pop_back();
@@ -132,7 +132,7 @@ TEST(SkipList, BackWardTail) {
     }
 
     // reload
-    auto eTxn2 = store->createTransaction();
+    auto eTxn2 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn2.ok());
     Expected<RecordValue> eMeta = store->getKV(mk, eTxn2.value().get());
     auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
@@ -169,11 +169,11 @@ TEST(SkipList, Mix) {
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto store = std::shared_ptr<KVStore>(
         new RocksKVStore("0", cfg, blockCache));
-    auto eTxn1 = store->createTransaction();
+    auto eTxn1 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn1.ok());
 
     ZSlMetaValue meta(1, 1, 0);
-    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META);
+    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, -1);
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -183,7 +183,7 @@ TEST(SkipList, Mix) {
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
 
     s = store->setKV(head, subRv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -201,22 +201,22 @@ TEST(SkipList, Mix) {
     }
     std::random_shuffle(keys.begin(), keys.end());
     for (auto& i : keys) {
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
         Expected<uint64_t> commitStatus = eTxn.value()->commit();
         EXPECT_TRUE(commitStatus.ok());
     }
 
-    auto eTxn = store->createTransaction();
+    auto eTxn = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn.ok());
 
     s = sl.remove(5, std::to_string(5), eTxn.value().get());
     EXPECT_TRUE(s.ok());
-    s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+    s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
     EXPECT_TRUE(s.ok());
 
     s = sl.insert(1, std::to_string(5), eTxn.value().get());
@@ -226,6 +226,9 @@ TEST(SkipList, Mix) {
         sl.rank(1, std::to_string(5), eTxn.value().get());
     EXPECT_TRUE(expRank.ok());
     EXPECT_EQ(expRank.value(), 2U);
+
+    auto sc = eTxn.value()->commit();
+    EXPECT_TRUE(sc.ok());
 }
 
 TEST(SkipList, InsertDelSameKeys) {
@@ -240,12 +243,12 @@ TEST(SkipList, InsertDelSameKeys) {
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto store = std::shared_ptr<KVStore>(
         new RocksKVStore("0", cfg, blockCache));
-    auto eTxn1 = store->createTransaction();
+    auto eTxn1 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn1.ok());
 
     // init a key
     ZSlMetaValue meta(1, 1, 0);
-    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META);
+    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, -1);
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "skiplistkey", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -255,7 +258,7 @@ TEST(SkipList, InsertDelSameKeys) {
                    "skiplistkey",
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
 
     s = store->setKV(head, subRv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -270,7 +273,7 @@ TEST(SkipList, InsertDelSameKeys) {
     for (int i = 0; i < 10; ++i) {
         for (const auto& k : {std::string("k1"), std::string("k2")}) {
             RecordKey mk(0, 0, RecordType::RT_ZSET_META, "skiplistkey", "");
-            auto eTxn = store->createTransaction();
+            auto eTxn = store->createTransaction(nullptr);
             EXPECT_TRUE(eTxn.ok());
             Expected<RecordValue> eMeta = store->getKV(mk, eTxn.value().get());
             auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
@@ -308,7 +311,7 @@ TEST(SkipList, InsertDelSameKeys) {
                 sl.traverse(ss, eTxn.value().get());
             // }
             LOG(INFO) << "\n" << ss.str();
-            s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+            s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
             EXPECT_TRUE(s.ok()) << s.toString();
             eTxn.value()->commit();
         }
@@ -327,11 +330,11 @@ TEST(SkipList, Common) {
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     auto store = std::shared_ptr<KVStore>(
         new RocksKVStore("0", cfg, blockCache));
-    auto eTxn1 = store->createTransaction();
+    auto eTxn1 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn1.ok());
 
     ZSlMetaValue meta(1, 1, 0);
-    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META);
+    RecordValue rv(meta.encode(), RecordType::RT_ZSET_META, -1);
     RecordKey mk(0, 0, RecordType::RT_ZSET_META, "test", "");
     Status s = store->setKV(mk, rv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -341,7 +344,7 @@ TEST(SkipList, Common) {
                    "test",
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
-    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+    RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
 
     s = store->setKV(head, subRv, eTxn1.value().get());
     EXPECT_TRUE(s.ok());
@@ -360,13 +363,13 @@ TEST(SkipList, Common) {
         keys.push_back(i);
     }
     std::random_shuffle(keys.begin(), keys.end());
-    auto eTxn2 = store->createTransaction();
+    auto eTxn2 = store->createTransaction(nullptr);
     EXPECT_TRUE(eTxn2.ok());
     for (auto& i : keys) {
         Status s = sl.insert(i, std::to_string(i), eTxn2.value().get());
         EXPECT_TRUE(s.ok());
    }
-    s = sl.save(eTxn2.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+    s = sl.save(eTxn2.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
     EXPECT_TRUE(s.ok());
     Expected<uint64_t> commitStatus2 = eTxn2.value()->commit();
     EXPECT_TRUE(commitStatus2.ok());
@@ -381,11 +384,11 @@ TEST(SkipList, Common) {
     }
     std::random_shuffle(keys.begin(), keys.end());
     for (auto& i : keys) {
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
         Status s = sl.insert(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
         Expected<uint64_t> commitStatus = eTxn.value()->commit();
         EXPECT_TRUE(commitStatus.ok());
@@ -393,7 +396,7 @@ TEST(SkipList, Common) {
     CNT += tmp;
 
     for (uint32_t i = 1; i <= CNT; ++i) {
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
         Expected<uint32_t> expRank =
             sl.rank(i, std::to_string(i), eTxn.value().get());
@@ -411,7 +414,7 @@ TEST(SkipList, Common) {
     EXPECT_EQ(sl.getCount(), CNT+1);
     EXPECT_EQ(sl.getAlloc(), CNT+ZSlMetaValue::MIN_POS);
     for (uint32_t i = 1; i <= CNT; ++i) {
-        auto eTxn = store->createTransaction();
+        auto eTxn = store->createTransaction(nullptr);
         EXPECT_TRUE(eTxn.ok());
 
         Expected<uint32_t> expRank =
@@ -428,7 +431,7 @@ TEST(SkipList, Common) {
 
         Status s = sl.remove(i, std::to_string(i), eTxn.value().get());
         EXPECT_TRUE(s.ok());
-        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" });
+        s = sl.save(eTxn.value().get(), { ErrorCodes::ERR_NOTFOUND, "" }, -1);
         EXPECT_TRUE(s.ok());
 
         // std::stringstream ss;

@@ -25,7 +25,7 @@ Expected<std::string> genericZrem(Session *sess,
                             const std::vector<std::string>& subkeys) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -79,7 +79,7 @@ Expected<std::string> genericZrem(Session *sess,
     }
     Status s;
     if (sl.getCount() > 1) {
-        s = sl.save(txn.get(), eMeta);
+        s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
     } else {
         INVARIANT(sl.getCount() == 1);
         s = kvstore->delKV(mk, txn.get());
@@ -135,7 +135,7 @@ Expected<std::string> genericZadd(Session *sess,
 
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -156,7 +156,7 @@ Expected<std::string> genericZadd(Session *sess,
         ZSlMetaValue tmp(1/*lvl*/,
                          1/*count*/,
                          0/*tail*/);
-        RecordValue rv(tmp.encode(), RecordType::RT_ZSET_META);
+        RecordValue rv(tmp.encode(), RecordType::RT_ZSET_META, pCtx->getVersionEP());
         Status s = kvstore->setKV(mk, rv, txn.get());
         if (!s.ok()) {
             return s;
@@ -167,7 +167,7 @@ Expected<std::string> genericZadd(Session *sess,
                        mk.getPrimaryKey(),
                        std::to_string(ZSlMetaValue::HEAD_ID));
         ZSlEleValue headVal;
-        RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE);
+        RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
         s = kvstore->setKV(head, subRv, txn.get());
         if (!s.ok()) {
             return s;
@@ -256,7 +256,7 @@ Expected<std::string> genericZadd(Session *sess,
         }
     }
     // NOTE(vinchen): skiplist save one time
-    Status s = sl.save(txn.get(), eMeta);
+    Status s = sl.save(txn.get(), eMeta, sess->getCtx()->getVersionEP());
     if (!s.ok()) {
         return s;
     }
@@ -277,9 +277,10 @@ Expected<std::string> genericZadd(Session *sess,
 Expected<std::string> genericZRank(Session *sess,
                                    PStore kvstore,
                                    const RecordKey& mk,
+                                   const RecordValue& mv,
                                    const std::string& subkey,
                                    bool reverse) {
-    auto ptxn = kvstore->createTransaction();
+    auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
@@ -302,18 +303,12 @@ Expected<std::string> genericZRank(Session *sess,
     if (!score.ok()) {
         return score.status();
     }
-    Expected<RecordValue> mv = kvstore->getKV(mk, txn.get());
-    if (!mv.ok()) {
-        // since we have found it in the hash structure
-        INVARIANT(mv.status().code() != ErrorCodes::ERR_NOTFOUND);
-        return mv.status();
-    }
 
-    auto eMetaContent = ZSlMetaValue::decode(mv.value().getValue());
+    auto eMetaContent = ZSlMetaValue::decode(mv.getValue());
     if (!eMetaContent.ok()) {
         return eMetaContent.status();
     }
-    ZSlMetaValue meta = eMetaContent.value();
+    const ZSlMetaValue& meta = eMetaContent.value();
     SkipList sl(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(),
                     meta, kvstore);
     Expected<uint32_t> rank = sl.rank(score.value(), subkey, txn.get());
@@ -375,7 +370,7 @@ class ZRemByRangeGenericCommand: public Command {
                             int64_t end) {
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -449,7 +444,7 @@ class ZRemByRangeGenericCommand: public Command {
 
         Status s;
         if (sl.getCount() > 1) {
-            s = sl.save(txn.get(), eMeta);
+            s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
         } else {
             INVARIANT(sl.getCount() == 1);
             s = kvstore->delKV(mk, txn.get());
@@ -720,6 +715,12 @@ class ZRankCommand: public Command {
         const std::string& key = args[1];
         const std::string& subkey = args[2];
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -731,17 +732,11 @@ class ZRankCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                            mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
                             RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        return genericZRank(sess, kvstore, metaRk, subkey, false);
+        return genericZRank(sess, kvstore, metaRk, rv.value(), subkey, false);
     }
 } zrankCmd;
 
@@ -773,6 +768,13 @@ class ZRevRankCommand : public Command {
         const std::string& key = args[1];
         const std::string& subkey = args[2];
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -784,17 +786,11 @@ class ZRevRankCommand : public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                    mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
         RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
                                 RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        return genericZRank(sess, kvstore, metaRk, subkey, true);
+        return genericZRank(sess, kvstore, metaRk, rv.value(), subkey, true);
     }
 } zrevrankCmd;
 
@@ -907,10 +903,17 @@ class ZCountCommand: public Command {
             return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
         }
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
-                rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
             return Command::fmtZero();
         } else if (!rv.ok()) {
             return rv.status();
@@ -918,34 +921,18 @@ class ZCountCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                            mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZero();
-            } else {
-                return eMeta.status();
-            }
-        }
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
         auto f = sl.firstInRange(range, txn.get());
         if (!f.ok()) {
             return f.status();
@@ -1013,6 +1000,13 @@ class ZlexCountCommand: public Command {
             return {ErrorCodes::ERR_ZSLPARSELEXRANGE, ""};
         }
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -1024,34 +1018,18 @@ class ZlexCountCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                            mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZero();
-            } else {
-                return eMeta.status();
-            }
-        }
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(), key, meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
 
         auto f = sl.firstInLexRange(range, txn.get());
         if (!f.ok()) {
@@ -1162,6 +1140,13 @@ class ZRangeByScoreGenericCommand: public Command {
             }
         }
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -1173,36 +1158,19 @@ class ZRangeByScoreGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                            mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                                            RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                    metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                    key, meta, kvstore);
         auto arr = sl.scanByScore(range, offset, limit, _rev, txn.get());
         if (!arr.ok()) {
             return arr.status();
@@ -1309,6 +1277,13 @@ class ZRangeByLexGenericCommand: public Command {
             }
         }
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -1320,36 +1295,19 @@ class ZRangeByLexGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                                mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                         RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                    metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                    key, meta, kvstore);
         auto arr = sl.scanByLex(range, offset, limit, _rev, txn.get());
         if (!arr.ok()) {
             return arr.status();
@@ -1425,6 +1383,13 @@ class ZRangeGenericCommand: public Command {
             return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
 
+        auto server = sess->getServerEntry();
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                                               Command::RdLock());
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
         Expected<RecordValue> rv =
             Command::expireKeyIfNeeded(sess, key, RecordType::RT_ZSET_META);
         if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -1436,36 +1401,19 @@ class ZRangeGenericCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
-        auto server = sess->getServerEntry();
-        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                        mgl::LockMode::LOCK_S);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
-                            RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        Expected<RecordValue> eMeta = kvstore->getKV(metaRk, txn.get(), RecordType::RT_ZSET_META);
-        if (!eMeta.ok()) {
-            if (eMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                return Command::fmtZeroBulkLen();
-            } else {
-                return eMeta.status();
-            }
-        }
-
-        auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
+        auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
         if (!eMetaContent.ok()) {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        SkipList sl(metaRk.getChunkId(), metaRk.getDbId(),
-                        metaRk.getPrimaryKey(), meta, kvstore);
+        SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                        key, meta, kvstore);
         int64_t len = sl.getCount() - 1;
         if (start < 0) {
             start = len + start;
@@ -1550,7 +1498,7 @@ class ZScoreCommand: public Command {
         // TODO(vinchen): should be LOCK_S
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
-                                mgl::LockMode::LOCK_X);
+                                Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1571,7 +1519,7 @@ class ZScoreCommand: public Command {
                             RecordType::RT_ZSET_META, key, "");
         PStore kvstore = expdb.value().store;
 
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }
@@ -1949,7 +1897,7 @@ class ZUnionInterGenericCommand : public Command {
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            auto ptxn = kvstore->createTransaction();
+            auto ptxn = kvstore->createTransaction(sess);
             if (!ptxn.ok()) {
                 return ptxn.status();
             }
@@ -2057,7 +2005,7 @@ class ZUnionInterGenericCommand : public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction();
+        auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {
             return ptxn.status();
         }

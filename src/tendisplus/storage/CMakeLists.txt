@@ -7,7 +7,7 @@ target_link_libraries(pessimistic glog)
 add_library(varint STATIC varint.cpp)
 target_link_libraries(varint glog)
 
-add_library(record STATIC record.cpp)
+add_library(record STATIC record.cpp repllog.cpp)
 target_link_libraries(record varint status glog utils_common)
 
 add_library(skiplist STATIC skiplist.cpp)
@@ -20,7 +20,7 @@ add_executable(record_test record_test.cpp)
 target_link_libraries(record_test record status gtest_main ${SYS_LIBS})
 
 add_executable(skiplist_test skiplist_test.cpp)
-target_link_libraries(skiplist_test skiplist rocks_kvstore server_params status gtest_main ${SYS_LIBS})
+target_link_libraries(skiplist_test skiplist rocks_kvstore_for_test server_params status gtest_main ${SYS_LIBS})
 
 add_subdirectory(rocks)
 
