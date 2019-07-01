@@ -558,7 +558,7 @@ class ShowCommand: public Command {
             writer.Key("args");
             writer.StartArray();
             for (const auto& arg : args) {
-                writer.String(arg);
+                writer.String(arg.data(), arg.size());
             }
             writer.EndArray();
 

@@ -1424,11 +1424,13 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* 
     }
     uint64_t txnId = _nextTxnSeq++;
     bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
+#ifndef NO_VERSIONEP
     if (sess) {
         // NOTE(vinchen): In some cases, it should do some writes in a
         // replonly KVStore, such as "flushalldisk"
         replOnly = sess->getCtx()->isReplOnly();
     }
+#endif
     std::unique_ptr<Transaction> ret = nullptr;
     // TODO(vinchen): should new RocksTxn out of mutex?
     if (_txnMode == TxnMode::TXN_OPT) {

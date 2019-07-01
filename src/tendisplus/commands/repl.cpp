@@ -557,7 +557,6 @@ class ApplyBinlogsCommandV2 : public Command {
         }
 
         size_t offset = 0;
-        size_t cnt = 0;
         auto ptr = binlogs.c_str();
         auto totalSize = binlogs.size();
 

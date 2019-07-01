@@ -676,8 +676,8 @@ std::string RecordValue::encode() const {
         INVARIANT_D(_version == 0);
         INVARIANT_D(_versionEP == (uint64_t)-1);
         INVARIANT_D(_cas == -1);
-        INVARIANT_D(_pieceSize == -1);
-        INVARIANT_D(_totalSize == -1);
+        INVARIANT_D(_pieceSize == (uint64_t)-1);
+        INVARIANT_D(_totalSize == (uint64_t)-1);
 
         memset(ptr + offset, 0, minSize() - offset);
 
