@@ -98,7 +98,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     LocalSessionGuard sg(_svr);
     // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
     // since it's on stack
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"slavefullsync", std::to_string(metaSnapshot.id)});
 
     // 1) stop store and clean it's directory

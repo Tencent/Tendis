@@ -600,15 +600,20 @@ class ApplyBinlogsCommandV2 : public Command {
 
         LOG(INFO) << "doing flush " << elogValue.value().getCmd();
 
-        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+        LocalSessionGuard sg(svr);
+        sg.getSession()->setArgs({ elogValue.value().getCmd() });
+
+        auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
             mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
             return expdb.status();
         }
+        // fake the session to be not replonly!
+        sg.getSession()->getCtx()->setReplOnly(false);
 
         // set binlog time before flush, because the flush binlog is logical, not binary
         expdb.value().store->setBinlogTime(elogValue.value().getTimestamp());
-        auto eflush = expdb.value().store->flush(sess,
+        auto eflush = expdb.value().store->flush(sg.getSession(),
                                     eLogKey.value().getBinlogId());
         if (!eflush.ok()) {
             return eflush.status();

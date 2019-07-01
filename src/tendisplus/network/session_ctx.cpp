@@ -6,6 +6,7 @@
 
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -63,7 +64,7 @@ void SessionCtx::removeLock(ILock *lock) {
     INVARIANT(0);
 }
 
-std::vector<std::string> SessionCtx::getArgsBrief() const {
+std::vector<mystring_view> SessionCtx::getArgsBrief() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _argsBrief;
 }

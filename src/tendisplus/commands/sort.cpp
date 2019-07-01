@@ -2,7 +2,6 @@
 #include <vector>
 #include <algorithm>
 #ifndef _WIN32
-#include <experimental/string_view>
 #include <experimental/optional>
 #endif
 #include "tendisplus/storage/varint.h"
@@ -14,16 +13,12 @@
 namespace tendisplus {
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ/2ULL;
-#ifndef _WIN32
-using std::experimental::string_view;
-#else
-#define string_view std::string
-#endif
+
 class SortCommand: public Command {
  private:
     struct SortOp {
-        string_view cmd;
-        string_view pattern;
+        mystring_view cmd;
+        mystring_view pattern;
         std::vector<std::string> priKey;
         std::string field;
     };
@@ -36,7 +31,7 @@ class SortCommand: public Command {
     };
 
     std::pair<std::string, std::string>
-    parsePattern(const std::string& key, string_view pattern) {
+    parsePattern(const std::string& key, mystring_view pattern) {
         if (pattern.size() == 0) {
             return std::make_pair("", "");
         }
@@ -178,7 +173,7 @@ class SortCommand: public Command {
                         leftargs >= 1) {
                 sortby = true;
                 ops[0].cmd = "by";
-                ops[0].pattern = string_view(args[i+1].c_str(), args[i+1].size());
+                ops[0].pattern = mystring_view(args[i+1].c_str(), args[i+1].size());
                 i++;
                 if (ops[0].pattern.find('*') == decltype(ops[0].pattern)::npos) {
                     nosort = true;
@@ -202,7 +197,7 @@ class SortCommand: public Command {
                 //     syntax_error++;
                 //     break;
                 // }
-                string_view cmd("get");
+                mystring_view cmd("get");
                 ops.emplace_back(SortOp{
                     "get",
                     {args[i+1].c_str(), args[i+1].size()},

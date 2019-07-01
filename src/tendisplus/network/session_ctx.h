@@ -14,6 +14,7 @@
 #include "tendisplus/lock/mgl/lock_defines.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -42,7 +43,7 @@ class SessionCtx {
     void removeLock(ILock *lock);
 
     // return by value, only for stats
-    std::vector<std::string> getArgsBrief() const;
+    std::vector<mystring_view> getArgsBrief() const;
     void setArgsBrief(const std::vector<std::string>& v);
     void clearRequestCtx();
     Status commitAll(const std::string& cmd);
@@ -84,8 +85,7 @@ class SessionCtx {
     std::vector<ILock*> _locks;
     // multi key
     std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
-    std::vector<std::string> _argsBrief;
-    std::list<std::string> _delBigKeys;
+    std::vector<mystring_view> _argsBrief;
 };
 
 }  // namespace tendisplus

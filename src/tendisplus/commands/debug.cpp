@@ -549,7 +549,7 @@ class ShowCommand: public Command {
         writer.StartArray();
         for (const auto& sess : sesses) {
             SessionCtx *ctx = sess->getCtx();
-            std::vector<std::string> args = ctx->getArgsBrief();
+            auto args = ctx->getArgsBrief();
             if (args.size() == 0 && !all) {
                 continue;
             }

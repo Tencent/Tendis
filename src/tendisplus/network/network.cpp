@@ -300,8 +300,10 @@ Status NetSession::cancel() {
     return {ErrorCodes::ERR_NETWORK, ec.message()};
 }
 
+// only for test!
 void NetSession::setArgs(const std::vector<std::string>& args) {
     _args = args;
+    _ctx->setArgsBrief(args);
 }
 
 const std::vector<std::string>& NetSession::getArgs() const {

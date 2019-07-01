@@ -31,6 +31,10 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server,
     auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
     all_keys.emplace_back(list_keys);
 
+#ifdef _WIN32
+    work.flush();
+#endif
+
     auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 50);
     all_keys.emplace_back(hash_keys);
 
@@ -185,7 +189,7 @@ size_t recordSize = 1000;
 
 TEST(Repl, Common) {
 #ifdef _WIN32
-    size_t i = 1;
+    size_t i = 0;
     {
 #else
     for(size_t i = 0; i<2; i++) {
@@ -208,7 +212,7 @@ TEST(Repl, Common) {
         auto sess1 = makeSession(master, ctx1);
         WorkLoad work(master, sess1);
         work.init();
-        //work.flush();
+        work.flush();
 
         auto allKeys = initData(master, recordSize);
 
@@ -219,7 +223,9 @@ TEST(Repl, Common) {
 
         // delete all the keys
         for (auto k : allKeys) {
-            work.delKeys(k);
+            if (genRand() % 4 == 0) {
+                work.delKeys(k);
+            }
         }
 
         std::thread thd1([&master]() {
@@ -228,11 +234,23 @@ TEST(Repl, Common) {
 #endif
         });
 
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::thread thd2([&master]() {
+#ifndef _WIN32
+            std::this_thread::sleep_for(std::chrono::seconds(genRand() % 50));
+            auto ctx1 = std::make_shared<asio::io_context>();
+            auto sess1 = makeSession(master, ctx1);
+            WorkLoad work(master, sess1);
+            work.init();
+            work.flush();
+#endif
+        });
+
+        std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10));
         auto slave2 = makeAnotherSlave("slave2", i, 2112);
 
         LOG(INFO) << "waiting thd1 to exited";
         thd1.join();
+        thd2.join();
 
         waitSlaveCatchup(master, slave);
         compareData(master, slave);

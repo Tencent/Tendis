@@ -4,6 +4,9 @@
 #include <string>
 
 #include "tendisplus/utils/status.h"
+#ifndef _WIN32
+#include <experimental/string_view>
+#endif
 
 namespace tendisplus {
 
@@ -42,6 +45,13 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
 #ifdef _MSC_VER
 #define strcasecmp stricmp
 #define strncasecmp  strnicmp 
+#endif
+
+#ifndef _WIN32
+using std::experimental::string_view;
+#define mystring_view string_view
+#else
+#define mystring_view std::string
 #endif
 
 #endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 

@@ -85,6 +85,11 @@ void LocalSession::start() {
     _ctx->setProcessPacketStart(nsSinceEpoch());
 }
 
+void LocalSession::setArgs(const std::vector<std::string>& args) {
+    _args = args;
+    _ctx->setArgsBrief(_args);
+}
+
 Status LocalSession::cancel() {
     return {ErrorCodes::ERR_INTERNAL,
         "LocalSession::cancel should not be called"};

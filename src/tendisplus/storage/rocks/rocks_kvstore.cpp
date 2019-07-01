@@ -340,9 +340,8 @@ Status RocksTxn::setKV(const std::string& key,
         INVARIANT_D(_store->dbId() != CATALOG_NAME);
         setChunkId(RecordKey::decodeChunkId(key));
         if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-            // TODO(vinchen): if too large, it can flush to rocksdb first, and get
-            // another binlogid using assignBinlogIdIfNeeded()
-
+            // TODO(vinchen): if too large, it can flush to rocksdb first,
+            // and get another binlogid using assignBinlogIdIfNeeded()
             LOG(WARNING) << "too big binlog size";
         }
 
@@ -383,9 +382,8 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
         INVARIANT_D(_store->dbId() != CATALOG_NAME);
         setChunkId(RecordKey::decodeChunkId(key));
         if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
-            // TODO(vinchen): if too large, it can flush to rocksdb first, and get
-            // another binlogid using assignBinlogIdIfNeeded()
-
+            // TODO(vinchen): if too large, it can flush to rocksdb first,
+            // and get another binlogid using assignBinlogIdIfNeeded()
             LOG(WARNING) << "too big binlog size";
         }
         ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL, ts ? ts : msSinceEpoch(),
@@ -1091,7 +1089,7 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
     }
     INVARIANT_D(ret.value() == nextBinlogid - 1);
 
-    // NOTE(vinchen): make sure the first binlog is flush db, 
+    // NOTE(vinchen): make sure the first binlog is flush db,
     // and write the flush binlog using nextBinlogid.
     // it will make everything simple.
     auto eptxn = createTransaction(sess);
@@ -1426,6 +1424,11 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* 
     }
     uint64_t txnId = _nextTxnSeq++;
     bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
+    if (sess) {
+        // NOTE(vinchen): In some cases, it should do some writes in a
+        // replonly KVStore, such as "flushalldisk"
+        replOnly = sess->getCtx()->isReplOnly();
+    }
     std::unique_ptr<Transaction> ret = nullptr;
     // TODO(vinchen): should new RocksTxn out of mutex?
     if (_txnMode == TxnMode::TXN_OPT) {

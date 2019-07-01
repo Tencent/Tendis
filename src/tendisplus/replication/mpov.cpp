@@ -139,7 +139,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     constexpr size_t suggestBytes = 16*1024*1024;
 
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"mastersendlog",
          std::to_string(storeId),
          client->getRemoteRepr(),
@@ -241,7 +241,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
 
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
     { "mastersendlog",
         std::to_string(storeId),
         client->getRemoteRepr(),
@@ -492,7 +492,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"masterfullsync",
          client->getRemoteRepr(),
          std::to_string(storeId)});
