@@ -269,16 +269,32 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     size_t estimateSize = 0;
     uint64_t binlogId = binlogPos;
 
+    bool flushbinlog = false;
     std::stringstream ss;
+    BinlogFlag flag = BinlogFlag::NORMAL;
     estimateSize += Binlog::writeHeader(ss);
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
+            if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+                // flush binlog should be alone
+                if (cnt > 0)
+                    break;
+                
+                flushbinlog = true;
+            }
             estimateSize += Binlog::writeRepllogRaw(ss, explog.value());
             binlogId = explog.value().getBinlogId();
             INVARIANT_D(binlogId > binlogPos);
             cnt += 1;
             if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
+                break;
+            }
+            if (flushbinlog) {
+                flag = BinlogFlag::FLUSH;
+                INVARIANT_D(cnt == 1);
+                // flush binlog should be alone
+                LOG(INFO) << "send flush binlog to slave, store:" << storeId;
                 break;
             }
         } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -307,8 +323,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
         Command::fmtBulk(ss2, ss.str());
         Command::fmtBulk(ss2, std::to_string(cnt));
-        // TODO(vinchen): checksum is always 0 now
-        Command::fmtBulk(ss2, "0");
+        Command::fmtBulk(ss2, std::to_string((uint32_t)flag));
     }
 
     std::string stringtoWrite = ss2.str();

@@ -245,6 +245,7 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_NONE = 0,
     REPL_OP_SET = 1,
     REPL_OP_DEL = 2,
+    REPL_OP_STMT = 3,
 };
 
 #ifdef BINLOG_V1
@@ -451,6 +452,11 @@ class ReplLogRawV2 {
  private:
     std::string _key;
     std::string _val;
+};
+
+enum class BinlogFlag {
+    NORMAL = 0,
+    FLUSH = 1,
 };
 
 class Binlog {

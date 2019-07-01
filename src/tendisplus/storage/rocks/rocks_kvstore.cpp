@@ -287,7 +287,10 @@ uint64_t RocksTxn::getTxnId() const {
 void RocksTxn::setChunkId(uint32_t chunkId) {
     if (_chunkId == Transaction::CHUNKID_UNINITED) {
         _chunkId = chunkId;
+    } else if (chunkId == Transaction::CHUNKID_FLUSH) {
+        _chunkId = chunkId;
     } else if (_chunkId != chunkId) {
+        INVARIANT_D(_chunkId != Transaction::CHUNKID_FLUSH);
         _chunkId = Transaction::CHUNKID_MULTI;
     }
 }
@@ -454,6 +457,31 @@ Status RocksTxn::applyBinlog(const std::list<ReplLog>& ops) {
 }
 
 #else
+Status RocksTxn::flushall() {
+    if (_replOnly) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn is replOnly" };
+    }
+    if (!_store->enableRepllog()) {
+        return{ ErrorCodes::ERR_INTERNAL, "repllog is not enable" };
+    }
+
+    INVARIANT_D(_store->dbId() != CATALOG_NAME);
+    setChunkId(Transaction::CHUNKID_FLUSH);
+    INVARIANT_D(_replLogValues.size() == 0);
+
+    std::string cmd = "flush";
+#ifndef NO_VERSIONEP
+    if (_session) {
+        cmd = _session->getCmdStr();
+    }
+#endif
+
+    ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_STMT, _store->getCurrentTime(),
+        cmd, "");
+    _replLogValues.emplace_back(std::move(logVal));
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     if (!_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
@@ -474,8 +502,11 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
         }
         break;
     }
+    case ReplOp::REPL_OP_STMT: {
+        INVARIANT_D(0);
+    }
     default:
-        INVARIANT(0);
+        INVARIANT_D(0);
         return{ ErrorCodes::ERR_DECODE, "not a valid binlog" };
     }
 
@@ -1043,11 +1074,46 @@ Status RocksKVStore::clear() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Expected<uint64_t> RocksKVStore::restart(bool restore) {
+Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
+    auto s = stop();
+    if (!s.ok()) {
+        return s;
+    }
+
+    s = clear();
+    if (!s.ok()) {
+        return s;
+    }
+
+    auto ret = restart(false, nextBinlogid);
+    if (!ret.ok()) {
+        return ret.status();
+    }
+    INVARIANT_D(ret.value() == nextBinlogid - 1);
+
+    // NOTE(vinchen): make sure the first binlog is flush db, 
+    // and write the flush binlog using nextBinlogid.
+    // it will make everything simple.
+    auto eptxn = createTransaction(sess);
+    if (!eptxn.ok()) {
+        return eptxn.status();
+    }
+    auto txn = std::move(eptxn.value());
+    s = txn->flushall();
+    if (!s.ok()) {
+        return s;
+    }
+
+    return txn->commit();
+}
+
+Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
+
+    INVARIANT_D(nextBinlogid != Transaction::TXNID_UNINITED);
 
     // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
     // to open in rocksdb layer.
@@ -1126,7 +1192,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
 
-    uint64_t maxCommitId = Transaction::TXNID_UNINITED;
+    uint64_t maxCommitId = nextBinlogid - 1;
+    INVARIANT_D(nextBinlogid > maxCommitId);
 #ifdef BINLOG_V1
     if (expRcd.ok()) {
         const RecordKey& rk = expRcd.value().getRecordKey();
@@ -1176,20 +1243,20 @@ Expected<uint64_t> RocksKVStore::restart(bool restore) {
                 _highestVisible = maxCommitId;
             }
         } else {
-            _nextTxnSeq = Transaction::MIN_VALID_TXNID;
+            _nextTxnSeq = nextBinlogid;
             _nextBinlogSeq = _nextTxnSeq;
             LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
                 << " have no binlog, set nextSeq to " << _nextTxnSeq;
-            _highestVisible = Transaction::TXNID_UNINITED;
-            INVARIANT(_highestVisible < _nextTxnSeq);
+            _highestVisible = _nextBinlogSeq - 1;
+            INVARIANT(_highestVisible < _nextBinlogSeq);
         }
     } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        _nextTxnSeq = Transaction::MIN_VALID_TXNID;
+        _nextTxnSeq = nextBinlogid;
         _nextBinlogSeq = _nextTxnSeq;
         LOG(INFO) << "store:" << dbId()
             << " all empty, set nextSeq to " << _nextTxnSeq;
-        _highestVisible = Transaction::TXNID_UNINITED;
-        INVARIANT(_highestVisible < _nextTxnSeq);
+        _highestVisible = _nextBinlogSeq - 1;
+        INVARIANT(_highestVisible < _nextBinlogSeq);
     } else {
         return expRcd.status();
     }

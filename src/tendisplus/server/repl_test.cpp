@@ -202,6 +202,14 @@ TEST(Repl, Common) {
         auto& master = hosts.first;
         auto& slave = hosts.second;
 
+        // make sure slaveof is ok
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        auto ctx1 = std::make_shared<asio::io_context>();
+        auto sess1 = makeSession(master, ctx1);
+        WorkLoad work(master, sess1);
+        work.init();
+        //work.flush();
+
         auto allKeys = initData(master, recordSize);
 
         waitSlaveCatchup(master, slave);
@@ -210,10 +218,6 @@ TEST(Repl, Common) {
         auto slave1 = makeAnotherSlave("slave1", i, 2111);
 
         // delete all the keys
-        auto ctx1 = std::make_shared<asio::io_context>();
-        auto sess1 = makeSession(master, ctx1);
-        WorkLoad work(master, sess1);
-        work.init();
         for (auto k : allKeys) {
             work.delKeys(k);
         }

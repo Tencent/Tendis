@@ -348,6 +348,12 @@ void WorkLoad::slaveof(const std::string& ip, uint32_t port) {
     EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::flush() {
+    _session->setArgs({ "flushalldisk"});
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
 Expected<uint64_t> WorkLoad::getIntResult(
                 const std::vector<std::string>& args) {
     _session->setArgs(args);

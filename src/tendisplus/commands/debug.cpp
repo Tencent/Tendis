@@ -1478,27 +1478,18 @@ class FlushGeneric : public Command {
                 return expdb.status();
             }
 
-            // TODO(vinchen): how to translate it to slave
             auto store = expdb.value().store;
 
             // TODO(vinchen): handle STORE_NONE database in the future
-            INVARIANT(!store->isPaused() && store->isOpen());
-            INVARIANT(store->isRunning());
+            INVARIANT_D(!store->isPaused() && store->isOpen());
+            INVARIANT_D(store->isRunning());
 
-            auto s = store->stop();
-            if (!s.ok()) {
-                return s;
-            }
+            auto nextBinlogid = store->getNextBinlogSeq();
 
-            s = store->clear();
-            if (!s.ok()) {
-                return s;
-            }
+            auto eflush = store->flush(sess, nextBinlogid);
 
-            auto ret = store->restart(false);
-            if (!ret.ok()) {
-                return ret.status();
-            }
+            // it is the first txn and binlog, because of LOCK_X
+            INVARIANT_D(eflush.value() == nextBinlogid);
         }
         return{ ErrorCodes::ERR_OK, "" };
     }
