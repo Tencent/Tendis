@@ -523,6 +523,104 @@ size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllo
     return size;
 }
 
+BinlogWriter::BinlogWriter(size_t maxSize, size_t maxCount)
+    : _curSize(0), _maxSize(maxSize),
+      _curCnt(0), _maxCnt(maxCount),
+      _flag(BinlogFlag::NORMAL) {
+    _curSize += Binlog::writeHeader(_ss);
+}
+
+bool BinlogWriter::writeRepllogRaw(const ReplLogRawV2& repllog) {
+    _curSize += Binlog::writeRepllogRaw(_ss, repllog);
+    _curCnt++;
+    if (_curSize >= _maxSize || _curCnt >= _maxCnt) {
+        return true;
+    }
+
+    return false;
+}
+
+BinlogReader::BinlogReader(const std::string& s)
+    : _pos(0), _val(s) {
+}
+
+Expected<ReplLogRawV2> BinlogReader::next() {
+    if (_pos == 0) {
+        // first read
+        auto size = Binlog::decodeHeader(_val.data(), _val.size());
+        if (size > _val.size()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid binlog" };
+        }
+        
+        _pos = size;
+    }
+
+    if (_pos == _val.size()) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+    INVARIANT(_pos < _val.size());
+
+    auto ptr = _val.data();
+    auto totalSize = _val.size();
+    auto offset = _pos;
+
+    auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eKey.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eKey.status().toString() };
+    }
+    offset += eKey.value().second;
+
+    auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eValue.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eValue.status().toString() };
+    }
+    offset += eValue.value().second;
+
+    _pos = offset;
+    return ReplLogRawV2(eKey.value().first, eValue.value().first);
+}
+
+Expected<ReplLogV2> BinlogReader::nextV2() {
+    if (_pos == 0) {
+        // first read
+        auto size = Binlog::decodeHeader(_val.data(), _val.size());
+        if (size > _val.size()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid binlog" };
+        }
+
+        _pos = size;
+    }
+
+    if (_pos == _val.size()) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+    INVARIANT(_pos < _val.size());
+
+    auto ptr = _val.data();
+    auto totalSize = _val.size();
+    auto offset = _pos;
+
+    auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eKey.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eKey.status().toString() };
+    }
+    offset += eKey.value().second;
+
+    auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eValue.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eValue.status().toString() };
+    }
+    offset += eValue.value().second;
+
+    _pos = offset;
+
+    return ReplLogV2::decode(eKey.value().first, eValue.value().first);
+}
+
 ReplLogV2::ReplLogV2(ReplLogKeyV2&& key, ReplLogValueV2&& value,
     std::vector<ReplLogValueEntryV2>&& entrys)
         : _key(std::move(key)),

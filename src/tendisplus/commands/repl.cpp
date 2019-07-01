@@ -505,40 +505,24 @@ class ApplyBinlogsCommandV2 : public Command {
             return expdb.status();
         }
 
-        size_t offset = 0;
         size_t cnt = 0;
-        auto ptr = binlogs.c_str();
-        auto totalSize = binlogs.size();
-
-        offset += Binlog::decodeHeader(ptr, totalSize);
-        if (offset > totalSize) {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog header" };
-        }
-        while (offset < totalSize) {
-            // format: keySize|key|valueSize|value * binlogCnt
-            auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
-            if (!eKey.ok()) {
-                return{ ErrorCodes::ERR_PARSEOPT,
-                    "invalid binlog format" + eKey.status().toString() };
+        BinlogReader reader(binlogs);
+        while (true) {
+            auto eLog = reader.next();
+            if (eLog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            } else if (!eLog.ok()) {
+                return eLog.status();
             }
-            offset += eKey.value().second;
-
-            auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
-            if (!eValue.ok()) {
-                return{ ErrorCodes::ERR_PARSEOPT,
-                    "invalid binlog format" + eValue.status().toString() };
-            }
-            offset += eValue.value().second;
-
             Status s = replMgr->applyRepllogV2(sess, storeId,
-                eKey.value().first, eValue.value().first);
+                eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             if (!s.ok()) {
                 return s;
             }
             cnt++;
         }
 
-        if (offset != totalSize || cnt != binlogCnt) {
+        if (cnt != binlogCnt) {
             return{ ErrorCodes::ERR_PARSEOPT,
                     "invalid binlog size of binlog count" };
         }
@@ -556,51 +540,20 @@ class ApplyBinlogsCommandV2 : public Command {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog count" };
         }
 
-        size_t offset = 0;
-        auto ptr = binlogs.c_str();
-        auto totalSize = binlogs.size();
-
-        offset += Binlog::decodeHeader(ptr, totalSize);
-        if (offset > totalSize) {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog header" };
+        BinlogReader reader(binlogs);
+        auto eLog = reader.nextV2();
+        if (!eLog.ok()) {
+            return eLog.status();
         }
 
-        // format: keySize|key|valueSize|value * binlogCnt
-        auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
-        if (!eKey.ok()) {
-            return{ ErrorCodes::ERR_PARSEOPT,
-                "invalid binlog format" + eKey.status().toString() };
-        }
-        offset += eKey.value().second;
-
-        auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
-        if (!eValue.ok()) {
-            return{ ErrorCodes::ERR_PARSEOPT,
-                "invalid binlog format" + eValue.status().toString() };
-        }
-        offset += eValue.value().second;
-
-        if (offset != totalSize) {
-            return{ ErrorCodes::ERR_PARSEOPT,
-                "invalid binlog format size" };
+        if (reader.nextV2().status().code() != ErrorCodes::ERR_EXHAUST) {
+            return{ ErrorCodes::ERR_PARSEOPT, "too big flush binlog" };
         }
 
-        auto eLogKey = ReplLogKeyV2::decode(eKey.value().first);
-        if (!eLogKey.ok()) {
-            return{ ErrorCodes::ERR_PARSEOPT,
-                "invalid binlog format" + eLogKey.status().toString() };
-        }
-
-        auto elogValue = ReplLogValueV2::decode(eValue.value().first);
-        if (!elogValue.ok()) {
-            return{ ErrorCodes::ERR_PARSEOPT,
-               "invalid binlog format" + elogValue.status().toString() };
-        }
-
-        LOG(INFO) << "doing flush " << elogValue.value().getCmd();
+        LOG(INFO) << "doing flush " << eLog.value().getReplLogValue().getCmd();
 
         LocalSessionGuard sg(svr);
-        sg.getSession()->setArgs({ elogValue.value().getCmd() });
+        sg.getSession()->setArgs({ eLog.value().getReplLogValue().getCmd() });
 
         auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
             mgl::LockMode::LOCK_X);
@@ -610,14 +563,17 @@ class ApplyBinlogsCommandV2 : public Command {
         // fake the session to be not replonly!
         sg.getSession()->getCtx()->setReplOnly(false);
 
-        // set binlog time before flush, because the flush binlog is logical, not binary
-        expdb.value().store->setBinlogTime(elogValue.value().getTimestamp());
+        // set binlog time before flush,
+        // because the flush binlog is logical, not binary
+        expdb.value().store->setBinlogTime(
+                            eLog.value().getReplLogValue().getTimestamp());
         auto eflush = expdb.value().store->flush(sg.getSession(),
-                                    eLogKey.value().getBinlogId());
+                                    eLog.value().getReplLogKey().getBinlogId());
         if (!eflush.ok()) {
             return eflush.status();
         }
-        INVARIANT_D(eflush.value() == eLogKey.value().getBinlogId());
+        INVARIANT_D(eflush.value() ==
+                    eLog.value().getReplLogKey().getBinlogId());
 
         return{ ErrorCodes::ERR_OK, "" };
     }

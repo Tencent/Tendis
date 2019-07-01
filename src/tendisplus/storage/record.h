@@ -6,9 +6,11 @@
 #include <memory>
 #include <vector>
 #include <limits>
+#include <sstream>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -454,22 +456,6 @@ class ReplLogRawV2 {
     std::string _val;
 };
 
-enum class BinlogFlag {
-    NORMAL = 0,
-    FLUSH = 1,
-};
-
-class Binlog {
- public:
-    Binlog() = default;
-    static size_t writeHeader(std::stringstream& s);
-    static size_t writeRepllogRaw(std::stringstream& s, const ReplLogRawV2& repllog);
-    static size_t decodeHeader(const char* str, size_t size);
-
-    static constexpr size_t HEADERSIZE = 1;
-    static constexpr uint8_t VERSION = 2;
- private:
-};
 
 class ReplLogV2 {
  public:
@@ -497,6 +483,54 @@ class ReplLogV2 {
     ReplLogKeyV2 _key;
     ReplLogValueV2 _val;
     std::vector<ReplLogValueEntryV2> _entrys;
+};
+
+enum class BinlogFlag {
+    NORMAL = 0,
+    FLUSH = 1,
+};
+
+class Binlog {
+ public:
+    Binlog() = default;
+    static size_t writeHeader(std::stringstream& s);
+    static size_t writeRepllogRaw(std::stringstream& s, const ReplLogRawV2& repllog);
+    static size_t decodeHeader(const char* str, size_t size);
+
+    static constexpr size_t HEADERSIZE = 1;
+    static constexpr uint8_t VERSION = 2;
+    static constexpr uint8_t INVALID_VERSION = (uint8_t)-1;
+ private:
+};
+
+class BinlogWriter {
+ public:
+    BinlogWriter(size_t maxSize, uint32_t maxCount);
+    bool writeRepllogRaw(const ReplLogRawV2& repllog);
+
+    uint32_t getCount() const { return _curCnt; }
+    uint32_t getSize() const { return _curSize; }
+    BinlogFlag getFlag() const { return _flag; }
+    void setFlag(BinlogFlag flag) { _flag = flag; }
+    std::string getBinlogStr() { return _ss.str(); }
+
+ private:
+    size_t _curSize;
+    size_t _maxSize;
+    uint32_t _curCnt;
+    uint32_t _maxCnt;
+    BinlogFlag _flag;
+    std::stringstream _ss;
+};
+
+class BinlogReader {
+ public:
+    BinlogReader(const std::string& s);
+    Expected<ReplLogRawV2> next();
+    Expected<ReplLogV2> nextV2();
+ private:
+    size_t _pos;
+    mystring_view _val;
 };
 #endif
 
