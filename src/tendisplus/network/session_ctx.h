@@ -85,7 +85,7 @@ class SessionCtx {
     std::vector<ILock*> _locks;
     // multi key
     std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
-    std::vector<mystring_view> _argsBrief;
+    std::vector<std::string> _argsBrief;
 };
 
 }  // namespace tendisplus

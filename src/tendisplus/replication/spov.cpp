@@ -476,8 +476,6 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
 // if logKey == "", it means binlog_heartbeat
 Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         const std::string& logKey, const std::string& logValue) {
-    // NOTE(deyukong): donot lock store in IX/IS mode again
-    // the caller has duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         _cv.wait(lk,
@@ -525,9 +523,8 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
 
 Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue) {
-    // TODO(vinchen): should be called with lock held
     auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
-        mgl::LockMode::LOCK_NONE);
+        mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {
         return expdb.status();
     }

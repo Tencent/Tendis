@@ -58,4 +58,34 @@ TEST(String, Common) {
         EXPECT_EQ(ed2.value().first, orig);
     }
 }
+
+TEST(String, Split) {
+    {
+        auto v = stringSplit("set a b", " ");
+        std::vector <std::string> v2 = { "set", "a", "b" };
+        EXPECT_EQ(v, v2);
+    }
+    {
+        auto v = stringSplit("set a b ", " ");
+        std::vector <std::string> v2 = { "set", "a", "b" };
+        EXPECT_EQ(v, v2);
+    }
+    {
+        auto v = stringSplit("set", " ");
+        std::vector <std::string> v2 = { "set"};
+        EXPECT_EQ(v, v2);
+    }
+    {
+        auto v = stringSplit("set ", " ");
+        std::vector <std::string> v2 = { "set"};
+        EXPECT_EQ(v, v2);
+    }
+    {
+        auto v = stringSplit("", " ");
+        std::vector <std::string> v2 = {};
+        EXPECT_EQ(v, v2);
+    }
+
+}
+
 }  // namespace tendisplus

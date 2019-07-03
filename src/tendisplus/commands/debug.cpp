@@ -549,6 +549,7 @@ class ShowCommand: public Command {
         writer.StartArray();
         for (const auto& sess : sesses) {
             SessionCtx *ctx = sess->getCtx();
+            // TODO(vinchen): Does it has a better way?
             auto args = ctx->getArgsBrief();
             if (args.size() == 0 && !all) {
                 continue;
@@ -1455,7 +1456,7 @@ class FlushGeneric : public Command {
         : Command(name, sflags) {}
 
     Expected<int> getFlushCommandFlags(Session* sess) {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         if (args.size() > 1) {
             if (args.size() > 2 || toLower(args[1]) != "async") {
                 return {ErrorCodes::ERR_PARSEOPT, "" };
@@ -1518,7 +1519,7 @@ class FlushAllCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
 
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
@@ -1557,7 +1558,7 @@ class FlushdbCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
 
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
@@ -1601,7 +1602,7 @@ class FlushAllDiskCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
 
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {

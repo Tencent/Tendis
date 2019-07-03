@@ -499,12 +499,6 @@ class ApplyBinlogsCommandV2 : public Command {
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
-        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-            mgl::LockMode::LOCK_IX);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-
         size_t cnt = 0;
         BinlogReader reader(binlogs);
         while (true) {

@@ -1443,10 +1443,6 @@ public:
         return 1;
     }
 
-    bool sameWithRedis() const {
-        return false;
-    }
-
     Expected<RecordValue> newValueFromOld(
         Session* sess, const Expected<RecordValue>& oldValue) const {
         const std::string& val = sess->getArgs()[2];
@@ -1980,7 +1976,7 @@ public:
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         const std::string &src = args[1];
         const std::string &dst = args[2];
         bool samekey(false);
@@ -2397,7 +2393,7 @@ class BitFieldCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         std::queue<BitfieldOp> ops;
 
         bool readonly(1);

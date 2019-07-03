@@ -7,6 +7,8 @@
 #include <locale>
 #include <thread>
 #include <sstream>
+#include <utility>
+#include <vector>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -258,7 +260,7 @@ std::string lenStrEncode(const std::string& val) {
     return sizeStr.append(val);
 }
 
-// guarantee dest's size is enough 
+// guarantee dest's size is enough
 size_t lenStrEncode(char* dest, size_t destsize, const std::string& val) {
     size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest), destsize, val.size());
 
@@ -291,6 +293,25 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
     offset += keySize;
 
     return LenStrDecodeResult{ std::move(str), offset };
+}
+
+std::vector<std::string> stringSplit(const std::string& s,
+                            const std::string& delim) {
+    std::vector<std::string> elems;
+    size_t pos = 0;
+    size_t len = s.length();
+    size_t delim_len = delim.length();
+    if (delim_len == 0) return elems;
+    while (pos < len) {
+        int find_pos = s.find(delim, pos);
+        if (find_pos < 0) {
+            elems.push_back(s.substr(pos, len - pos));
+            break;
+        }
+        elems.push_back(s.substr(pos, find_pos - pos));
+        pos = find_pos + delim_len;
+    }
+    return elems;
 }
 
 }  // namespace tendisplus

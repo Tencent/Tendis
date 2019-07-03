@@ -40,6 +40,8 @@ size_t lenStrEncodeSize(const std::string& val);
 Expected<LenStrDecodeResult> lenStrDecode(const std::string& str);
 Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
 
+std::vector<std::string> stringSplit(const  std::string& s, const std::string& delim);
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER
