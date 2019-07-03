@@ -71,7 +71,7 @@ std::vector<mystring_view> SessionCtx::getArgsBrief() const {
 
 void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
     std::lock_guard<std::mutex> lk(_mutex);
-    INVARIANT_D(_argsBrief.size() == 0);
+    _argsBrief.clear();
     constexpr size_t MAX_SIZE = 8;
     for (size_t i = 0; i < std::min(v.size(), MAX_SIZE); ++i) {
         _argsBrief.push_back(v[i]);

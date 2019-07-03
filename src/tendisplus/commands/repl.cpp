@@ -499,6 +499,15 @@ class ApplyBinlogsCommandV2 : public Command {
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
+        // TODO(vinchen): should it remove?
+        //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        INVARIANT_D(sess->getCtx()->isReplOnly());
+
         size_t cnt = 0;
         BinlogReader reader(binlogs);
         while (true) {
