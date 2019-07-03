@@ -42,7 +42,7 @@ struct SetParams {
 };
 
 // TODO(deyukong): unittest of expire
-Expected<std::string> setGeneric(PStore store, Transaction *txn,
+Expected<std::string> setGeneric(Session *sess, PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             bool checkType, bool endTxn,
             const std::string& okReply, const std::string& abortReply) {
@@ -105,7 +105,13 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         if (eValue.ok()) {
             // TODO(vinchen): should del the key first
             if (eValue.value().getRecordType() != RecordType::RT_KV) {
-                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+                // return { ErrorCodes::ERR_WRONG_TYPE, "" };
+                auto s = Command::delKey(sess,
+                        key.getPrimaryKey(),
+                        RecordType::RT_DATA_META);
+                if (!s.ok()) {
+                    return s;
+                }
             }
         }
     }
@@ -222,7 +228,7 @@ class SetCommand: public Command {
         RecordValue rv(params.value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
-            auto result = setGeneric(kvstore, txn.get(), params.flags,
+            auto result = setGeneric(sess, kvstore, txn.get(), params.flags,
                       rk, rv, server->checkKeyTypeForSet(), true, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
@@ -233,7 +239,7 @@ class SetCommand: public Command {
             }
             txn = std::move(ptxn.value());
         }
-        return setGeneric(kvstore, txn.get(), params.flags,
+        return setGeneric(sess, kvstore, txn.get(), params.flags,
             rk, rv, server->checkKeyTypeForSet(), true, "", "");
     }
 } setCommand;
@@ -285,7 +291,8 @@ class SetexGeneralCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk,
@@ -400,7 +407,8 @@ class SetNxCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NX,
                                      rk,
@@ -891,7 +899,8 @@ class GetSetGeneral: public Command {
             if (!newValue.ok()) {
                 return newValue.status();
             }
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk, newValue.value(),
@@ -1753,7 +1762,8 @@ class BitopCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto setRes = setGeneric(kvstore,
+            auto setRes = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk,
@@ -1845,7 +1855,8 @@ class MSetGenericCommand: public Command {
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
-                auto result = setGeneric(kvstore,
+                auto result = setGeneric(sess,
+                                         kvstore,
                                          etxn.value(),
                                          _flags,
                                          rk,

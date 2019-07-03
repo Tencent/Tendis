@@ -399,6 +399,7 @@ class IterAllCommand: public Command {
             cursor->seek(unhex.value());
         }
 
+        std::unordered_map<std::string, uint64_t> lIdx;
         std::list<Record> result;
         while (true) {
             if (result.size() >= ebatchSize.value() + 1) {
@@ -438,28 +439,65 @@ class IterAllCommand: public Command {
         Command::fmtBulk(ss, nextCursor);
         Command::fmtMultiBulkLen(ss, result.size());
         for (const auto& o : result) {
-            Command::fmtMultiBulkLen(ss, 4);
+            Command::fmtMultiBulkLen(ss, 5);
             const auto& t = o.getRecordKey().getRecordType();
             const auto& vt = o.getRecordValue().getRecordType();
             Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(vt)));
             switch (t) {
                 case RecordType::RT_DATA_META:
                     INVARIANT(vt == RecordType::RT_KV);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, "");
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
                     break;
+
                 case RecordType::RT_HASH_ELE:
-                case RecordType::RT_LIST_ELE:
                 case RecordType::RT_SET_ELE:
                     INVARIANT(vt == t);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     Command::fmtBulk(ss, o.getRecordValue().getValue());
                     break;
+
+                case RecordType::RT_LIST_ELE:
+                {
+                    INVARIANT(vt == t);
+                    if (lIdx.count(o.getRecordKey().prefixPk()) < 1) {
+                        RecordKey metakey(o.getRecordKey().getChunkId(),
+                                o.getRecordKey().getDbId(),
+                                RecordType::RT_DATA_META,
+                                o.getRecordKey().getPrimaryKey(),
+                                "");
+                        auto expRv = kvstore->getKV(metakey, txn.get());
+                        if (!expRv.ok()) {
+                            return expRv.status();
+                        }
+                        auto expLm = ListMetaValue::decode(
+                                expRv.value().getValue());
+                        if (!expLm.ok()) {
+                            return expLm.status();
+                        }
+                        lIdx.emplace(std::make_pair(
+                                o.getRecordKey().prefixPk(),
+                                expLm.value().getHead()));
+                    }
+                    auto &head = lIdx[o.getRecordKey().prefixPk()];
+                    auto expIdx = tendisplus::stoul(o.getRecordKey().getSecondaryKey());
+                    if (!expIdx.ok()) {
+                        return expIdx.status();
+                    }
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
+                    Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                    Command::fmtBulk(ss, std::to_string(expIdx.value() - head));
+                    Command::fmtBulk(ss, o.getRecordValue().getValue());
+                    break;
+                }
                 case RecordType::RT_ZSET_H_ELE:
                 {
                     INVARIANT(vt == t);
+                    Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
                     auto d = tendisplus::doubleDecode(
@@ -895,6 +933,9 @@ class BinlogPosCommand: public Command {
         return Command::fmtLongLong(explog.value().getReplLogKey().getTxnId());
 #else 
         auto expBinlogid = RepllogCursorV2::getMaxBinlogId(txn.get());
+        if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
+            return Command::fmtZero();
+        }
         if (!expBinlogid.ok()) {
             return expBinlogid.status();
         }
