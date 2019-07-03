@@ -31,9 +31,9 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server,
     auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
     all_keys.emplace_back(list_keys);
 
-#ifdef _WIN32
+//#ifdef _WIN32
     work.flush();
-#endif
+//#endif
 
     auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 50);
     all_keys.emplace_back(hash_keys);
@@ -241,7 +241,7 @@ TEST(Repl, Common) {
             auto sess1 = makeSession(master, ctx1);
             WorkLoad work(master, sess1);
             work.init();
-            work.flush();
+            //work.flush();
 #endif
         });
 

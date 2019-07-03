@@ -265,7 +265,6 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     std::unique_ptr<RepllogCursorV2> cursor =
         txn->createRepllogCursorV2(binlogPos + 1);
 
-    size_t estimateSize = 0;
     uint64_t binlogId = binlogPos;
     BinlogWriter writer(suggestBytes, suggestBatch);
     while (true) {

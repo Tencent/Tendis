@@ -523,7 +523,7 @@ size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllo
     return size;
 }
 
-BinlogWriter::BinlogWriter(size_t maxSize, size_t maxCount)
+BinlogWriter::BinlogWriter(size_t maxSize, uint32_t maxCount)
     : _curSize(0), _maxSize(maxSize),
       _curCnt(0), _maxCnt(maxCount),
       _flag(BinlogFlag::NORMAL) {
