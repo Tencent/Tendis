@@ -64,7 +64,7 @@ void SessionCtx::removeLock(ILock *lock) {
     INVARIANT(0);
 }
 
-std::vector<mystring_view> SessionCtx::getArgsBrief() const {
+std::vector<std::string> SessionCtx::getArgsBrief() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _argsBrief;
 }
