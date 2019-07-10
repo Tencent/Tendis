@@ -43,7 +43,7 @@ class SessionCtx {
     void removeLock(ILock *lock);
 
     // return by value, only for stats
-    std::vector<mystring_view> getArgsBrief() const;
+    std::vector<std::string> getArgsBrief() const;
     void setArgsBrief(const std::vector<std::string>& v);
     void clearRequestCtx();
     Status commitAll(const std::string& cmd);

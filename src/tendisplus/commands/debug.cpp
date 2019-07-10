@@ -1519,8 +1519,6 @@ class FlushAllCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto& args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();
@@ -1558,8 +1556,6 @@ class FlushdbCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto& args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();
@@ -1602,8 +1598,6 @@ class FlushAllDiskCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto& args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();

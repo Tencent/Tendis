@@ -42,7 +42,7 @@ std::string Session::getCmdStr() const {
             } else {
                 ss << (arg.size() > 0 ? arg : "\"\"");
             }
-            if (i < _args.size() - 1) {
+            if (i <= _args.size() - 1) {
                 ss << " ";
             }
         }
