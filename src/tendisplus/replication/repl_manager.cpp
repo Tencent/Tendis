@@ -232,7 +232,8 @@ Status ReplManager::startup() {
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    recBinlogStat->firstBinlogId = Transaction::TXNID_UNINITED;
+                    // TODO(takenliu) fix the relative logic
+                    recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
                     _logRecycStatus.emplace_back(std::move(recBinlogStat));
                 } else {
@@ -459,7 +460,7 @@ void ReplManager::controlRoutine() {
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
             // TODO(takenliu): make recycLog work
-            //doSth = schedRecycLogInLock(now) || doSth;
+            doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {
             std::this_thread::yield();
@@ -473,6 +474,8 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
+    nextSched = nextSched + std::chrono::seconds(5); // make frequency be lowwer
+
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
@@ -584,7 +587,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         hasError = true;
         return;
     }
-    LOG(INFO) << "truncate binlog from:" << start
+    LOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
                  << " to end:" << newStart << " success";
     start = newStart;
 }

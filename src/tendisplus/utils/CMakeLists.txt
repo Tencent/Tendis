@@ -28,3 +28,5 @@ target_link_libraries(utils_common glog varint)
 add_library(test_util STATIC test_util.cpp)
 target_link_libraries(test_util utils_common server_params)
 
+add_library(param_manager STATIC param_manager.cpp)
+add_library(base64 STATIC base64.cpp)

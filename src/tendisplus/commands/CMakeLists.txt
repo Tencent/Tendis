@@ -1,5 +1,5 @@
 add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp zset.cpp scan.cpp pf.cpp dump.cpp sort.cpp)
-target_link_libraries(commands status skiplist network utils_common lock)
+target_link_libraries(commands status skiplist network utils_common lock base64)
 
 add_executable(commmand_test command_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)

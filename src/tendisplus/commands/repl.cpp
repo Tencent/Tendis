@@ -13,6 +13,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
@@ -586,6 +587,68 @@ class ApplyBinlogsCommandV2 : public Command {
         return Command::fmtOK();
     }
 } applyBinlogsV2Command;
+
+class RestoreBinlogCommandV2 : public Command {
+ public:
+    RestoreBinlogCommandV2()
+        :Command("restorebinlogv2", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restorebinlogv2 storeId key(binlogid) value([op key value]*) checksum
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (storeId >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+
+        std::string key = Base64::Decode(args[2].c_str(), args[2].size());
+        std::string value = Base64::Decode(args[3].c_str(), args[3].size());
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IX first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<uint64_t> ret =
+            replMgr->applySingleTxnV2(sess, storeId, key, value);
+        if (!ret.ok()) {
+            return ret.status();
+        }
+
+        return Command::fmtOK();
+    }
+} restoreBinlogV2Command;
 
 
 class BinlogHeartbeatCommand : public Command {
