@@ -452,7 +452,7 @@ void testCheckKeyType(std::shared_ptr<ServerEntry> svr) {
 
     sess.setArgs({ "set", "ss", "b"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(!expect.ok());
+    EXPECT_TRUE(expect.ok());
 
     sess.setArgs({ "set", "ss1", "b"});
     expect = Command::runSessionCmd(&sess);

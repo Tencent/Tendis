@@ -43,6 +43,8 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     myfile << "storage rocks\n";
     myfile << "rocks.blockcachemb 4096\n";
     myfile << "generallog on\n";
+    // TODO(vinchen): should it always be on?
+    myfile << "checkkeytypeforsetcmd on\n";
     if (storeCnt != 0) {
         myfile << "kvStoreCount "<< storeCnt << "\n";
     }
@@ -1801,10 +1803,15 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
     ss.str("");
     Command::fmtMultiBulkLen(ss, 4);
     Command::fmtNull(ss);
-    Command::fmtBulk(ss, "100");
+    Command::fmtBulk(ss, "1000");
     Command::fmtBulk(ss, "11");
     Command::fmtBulk(ss, "20");
     EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({ "type", "sa" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
 
     sess.setArgs({ "msetnx", "n1", "1", "n2", "2" });
     expect = Command::runSessionCmd(&sess);
@@ -1880,6 +1887,53 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({ "sadd", "testKV1", "abc" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({ "setnx", "testKV1", "1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtZero());
+    sess.setArgs({ "set", "testKV1", "1", "nx" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+    sess.setArgs({ "del", "testKV1", "testKV" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // set xx
+    sess.setArgs({ "set", "testKV", "1", "xx" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtNull());
+    sess.setArgs({ "set", "testKV", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({ "set", "testKV", "2", "xx" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({ "get", "testKV" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("2"));
+    sess.setArgs({ "sadd", "testKV1", "abc" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({ "set", "testKV1", "1", "xx" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOK());
+    sess.setArgs({ "get", "testKV1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("1"));
+    sess.setArgs({ "del", "testKV1", "testKV" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 
     // setex
     sess.setArgs({ "setex", "testKV", "1", "b" });
