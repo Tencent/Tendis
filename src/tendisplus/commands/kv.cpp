@@ -109,7 +109,7 @@ Expected<std::string> setGeneric(Session *sess, PStore store, Transaction *txn,
 
     if (!notExist && 
                 (needExpire || diffType || 
-                 !Command::noExpire() && val.getTtl() > 0)) {
+                 (!Command::noExpire() && val.getTtl() > 0))) {
         auto s = Command::delKey(sess,
             key.getPrimaryKey(),
             RecordType::RT_DATA_META);

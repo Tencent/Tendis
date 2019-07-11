@@ -487,8 +487,6 @@ void NetSession::processMultibulkBuffer() {
             // the optimization of ll >= REDIS_MBULK_BIG_ARG
             // is not ported from redis
             if (ll >= REDIS_MBULK_BIG_ARG) {
-                size_t qblen;
-
                 /* If we are going to read a large object from network
                 * try to make it likely that it will start at c->querybuf
                 * boundary so that we can optimize object creation
