@@ -493,7 +493,94 @@ class ApplyBinlogsCommandV2 : public Command {
         return 0;
     }
 
-    // applybinlogs storeId binlogs cnt checksum
+    static Status runNormal(Session *sess, uint32_t storeId,
+                const std::string& binlogs, size_t binlogCnt) {
+        auto svr = sess->getServerEntry();
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // TODO(vinchen): should it remove?
+        //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        INVARIANT_D(sess->getCtx()->isReplOnly());
+
+        size_t cnt = 0;
+        BinlogReader reader(binlogs);
+        while (true) {
+            auto eLog = reader.next();
+            if (eLog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            } else if (!eLog.ok()) {
+                return eLog.status();
+            }
+            Status s = replMgr->applyRepllogV2(sess, storeId,
+                eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
+            if (!s.ok()) {
+                return s;
+            }
+            cnt++;
+        }
+
+        if (cnt != binlogCnt) {
+            return{ ErrorCodes::ERR_PARSEOPT,
+                    "invalid binlog size of binlog count" };
+        }
+
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    static Status runFlush(Session *sess, uint32_t storeId,
+        const std::string& binlogs, size_t binlogCnt) {
+        auto svr = sess->getServerEntry();
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        if (binlogCnt != 1) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog count" };
+        }
+
+        BinlogReader reader(binlogs);
+        auto eLog = reader.nextV2();
+        if (!eLog.ok()) {
+            return eLog.status();
+        }
+
+        if (reader.nextV2().status().code() != ErrorCodes::ERR_EXHAUST) {
+            return{ ErrorCodes::ERR_PARSEOPT, "too big flush binlog" };
+        }
+
+        LOG(INFO) << "doing flush " << eLog.value().getReplLogValue().getCmd();
+
+        LocalSessionGuard sg(svr);
+        sg.getSession()->setArgs({ eLog.value().getReplLogValue().getCmd() });
+
+        auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
+            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        // fake the session to be not replonly!
+        sg.getSession()->getCtx()->setReplOnly(false);
+
+        // set binlog time before flush,
+        // because the flush binlog is logical, not binary
+        expdb.value().store->setBinlogTime(
+                            eLog.value().getReplLogValue().getTimestamp());
+        auto eflush = expdb.value().store->flush(sg.getSession(),
+                                    eLog.value().getReplLogKey().getBinlogId());
+        if (!eflush.ok()) {
+            return eflush.status();
+        }
+        INVARIANT_D(eflush.value() ==
+                    eLog.value().getReplLogKey().getBinlogId());
+
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+    // applybinlogsv2 storeId binlogs cnt flag
     // why is there no storeId ? storeId is contained in this
     // session in fact.
     // please refer to comments of ReplManager::registerIncrSync
@@ -520,69 +607,26 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         binlogCnt = exptCnt.value();
 
-        // TODO(vinchen): binlog checksum support in the future
-        // Now it is always 0
-        auto binlogChecksum = args[4];
-        if (binlogChecksum != "0") {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog checksum" };
+        auto eflag = ::tendisplus::stoul(args[4]);
+        if (!eflag.ok()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog flags" };
         }
-
-        auto replMgr = svr->getReplManager();
-        INVARIANT(replMgr != nullptr);
-
-        // LOCK_IX first
-        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-            mgl::LockMode::LOCK_IX);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-
-        size_t offset = 0;
-        size_t cnt = 0;
-        auto ptr = args[2].c_str();
-        auto totalSize = args[2].size();
-
-        offset += Binlog::decodeHeader(ptr, totalSize);
-        if (offset > totalSize) {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog header" };
-        }
-        while (offset < totalSize) {
-            // format: keySize|key|valueSize|value * binlogCnt
-
-            if (totalSize - offset < sizeof(uint32_t)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
-            }
-            uint32_t keySize = int32Decode(ptr + offset);
-            offset += sizeof(uint32_t);
-
-            if (totalSize - offset < keySize + sizeof(uint32_t)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
-            }
-            // TODO(vinchen): too more copy
-            std::string logKey(ptr + offset, keySize);
-            offset += keySize;
-
-            uint32_t valueSize = int32Decode(ptr + offset);
-            offset += sizeof(uint32_t);
-
-            if (totalSize - offset < valueSize) {
-                return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog format" };
-            }
-            std::string logValue(ptr + offset, valueSize);
-            offset += valueSize;
-
-            // TODO(vinchen): should one binlog one transaction?
-            Status s = replMgr->applyRepllogV2(sess, storeId, logKey, logValue);
+        switch ((BinlogFlag)eflag.value()) {
+        case BinlogFlag::NORMAL: {
+            auto s = runNormal(sess, storeId, args[2], binlogCnt);
             if (!s.ok()) {
                 return s;
             }
-            cnt++;
+            break;
         }
-
-        if (offset != totalSize || cnt != binlogCnt) {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog size of binlog count" };
+        case BinlogFlag::FLUSH: {
+            auto s = runFlush(sess, storeId, args[2], binlogCnt);
+            if (!s.ok()) {
+                return s;
+            }
+            break;
         }
-
+        }
         return Command::fmtOK();
     }
 } applyBinlogsV2Command;

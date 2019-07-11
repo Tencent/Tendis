@@ -411,12 +411,12 @@ proc start_server {options {code undefined}} {
         set dst "[dict get $slv host]:[dict get $slv port]"
 
         # check binary file existance
-        if {[file exists compare] == 0} {
-            error "can't find binary file: compare"
+        if {[file exists ./tests/compare] == 0} {
+            error "can't find binary file: ./tests/compare"
             kill_server $srv
         }
 
-        set retcode [catch {exec ./compare $src $dst} result]
+        set retcode [catch {exec ./tests/compare $src $dst} result]
         if {$retcode != 0} {
             kill_server $srv
             error $retcode $result

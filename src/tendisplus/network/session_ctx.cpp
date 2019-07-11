@@ -6,6 +6,7 @@
 
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -70,6 +71,7 @@ std::vector<std::string> SessionCtx::getArgsBrief() const {
 
 void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
     std::lock_guard<std::mutex> lk(_mutex);
+    _argsBrief.clear();
     constexpr size_t MAX_SIZE = 8;
     for (size_t i = 0; i < std::min(v.size(), MAX_SIZE); ++i) {
         _argsBrief.push_back(v[i]);

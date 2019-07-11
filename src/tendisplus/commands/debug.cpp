@@ -549,7 +549,8 @@ class ShowCommand: public Command {
         writer.StartArray();
         for (const auto& sess : sesses) {
             SessionCtx *ctx = sess->getCtx();
-            std::vector<std::string> args = ctx->getArgsBrief();
+            // TODO(vinchen): Does it has a better way?
+            auto args = ctx->getArgsBrief();
             if (args.size() == 0 && !all) {
                 continue;
             }
@@ -558,7 +559,7 @@ class ShowCommand: public Command {
             writer.Key("args");
             writer.StartArray();
             for (const auto& arg : args) {
-                writer.String(arg);
+                writer.String(arg.data(), arg.size());
             }
             writer.EndArray();
 
@@ -1455,7 +1456,7 @@ class FlushGeneric : public Command {
         : Command(name, sflags) {}
 
     Expected<int> getFlushCommandFlags(Session* sess) {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         if (args.size() > 1) {
             if (args.size() > 2 || toLower(args[1]) != "async") {
                 return {ErrorCodes::ERR_PARSEOPT, "" };
@@ -1478,27 +1479,18 @@ class FlushGeneric : public Command {
                 return expdb.status();
             }
 
-            // TODO(vinchen): how to translate it to slave
             auto store = expdb.value().store;
 
             // TODO(vinchen): handle STORE_NONE database in the future
-            INVARIANT(!store->isPaused() && store->isOpen());
-            INVARIANT(store->isRunning());
+            INVARIANT_D(!store->isPaused() && store->isOpen());
+            INVARIANT_D(store->isRunning());
 
-            auto s = store->stop();
-            if (!s.ok()) {
-                return s;
-            }
+            auto nextBinlogid = store->getNextBinlogSeq();
 
-            s = store->clear();
-            if (!s.ok()) {
-                return s;
-            }
+            auto eflush = store->flush(sess, nextBinlogid);
 
-            auto ret = store->restart(false);
-            if (!ret.ok()) {
-                return ret.status();
-            }
+            // it is the first txn and binlog, because of LOCK_X
+            INVARIANT_D(eflush.value() == nextBinlogid);
         }
         return{ ErrorCodes::ERR_OK, "" };
     }
@@ -1527,8 +1519,6 @@ class FlushAllCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();
@@ -1566,8 +1556,6 @@ class FlushdbCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();
@@ -1610,8 +1598,6 @@ class FlushAllDiskCommand : public FlushGeneric {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
-
         auto flags = getFlushCommandFlags(sess);
         if (!flags.ok()) {
             return flags.status();

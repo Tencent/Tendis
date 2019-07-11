@@ -139,7 +139,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     constexpr size_t suggestBytes = 16*1024*1024;
 
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"mastersendlog",
          std::to_string(storeId),
          client->getRemoteRepr(),
@@ -241,7 +241,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
 
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
     { "mastersendlog",
         std::to_string(storeId),
         client->getRemoteRepr(),
@@ -265,22 +265,27 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     std::unique_ptr<RepllogCursorV2> cursor =
         txn->createRepllogCursorV2(binlogPos + 1);
 
-    uint32_t cnt = 0;
-    size_t estimateSize = 0;
     uint64_t binlogId = binlogPos;
-
-    std::stringstream ss;
-    estimateSize += Binlog::writeHeader(ss);
+    BinlogWriter writer(suggestBytes, suggestBatch);
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
-            estimateSize += Binlog::writeRepllogRaw(ss, explog.value());
+            if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+                // flush binlog should be alone
+                if (writer.getCount() > 0)
+                    break;
+                
+                writer.setFlag(BinlogFlag::FLUSH);
+                LOG(INFO) << "send flush binlog to slave, store:" << storeId;
+            }
+
             binlogId = explog.value().getBinlogId();
-            INVARIANT_D(binlogId > binlogPos);
-            cnt += 1;
-            if (estimateSize >= suggestBytes || cnt >= suggestBatch) {
+            if (writer.writeRepllogRaw(explog.value()) ||
+                writer.getFlag() == BinlogFlag::FLUSH) {
+                // full  or flush
                 break;
             }
+
         } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
             // no more data
             break;
@@ -292,7 +297,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     }
 
     std::stringstream ss2;
-    if (cnt == 0) {
+    if (writer.getCount() == 0) {
         if (!needHeartBeart) {
             return binlogPos;
         }
@@ -305,10 +310,9 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         Command::fmtMultiBulkLen(ss2, 5);
         Command::fmtBulk(ss2, "applybinlogsv2");
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
-        Command::fmtBulk(ss2, ss.str());
-        Command::fmtBulk(ss2, std::to_string(cnt));
-        // TODO(vinchen): checksum is always 0 now
-        Command::fmtBulk(ss2, "0");
+        Command::fmtBulk(ss2, writer.getBinlogStr());
+        Command::fmtBulk(ss2, std::to_string(writer.getCount()));
+        Command::fmtBulk(ss2, std::to_string((uint32_t)writer.getFlag()));
     }
 
     std::string stringtoWrite = ss2.str();
@@ -343,10 +347,10 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         return{ ErrorCodes::ERR_NETWORK, "bad return string" };
     }
 
-    if (cnt == 0) {
+    if (writer.getCount() == 0) {
         return binlogPos;
     } else {
-        INVARIANT_D(binlogPos + cnt <= binlogId);
+        INVARIANT_D(binlogPos + writer.getCount() <= binlogId);
         return binlogId;
     }
 }
@@ -477,7 +481,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"masterfullsync",
          client->getRemoteRepr(),
          std::to_string(storeId)});

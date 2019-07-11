@@ -945,10 +945,6 @@ class LSetCommand: public Command {
         return 1;
     }
 
-    bool sameWithRedis() const {
-        return false;
-    }
-
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         const std::string& key = args[1];

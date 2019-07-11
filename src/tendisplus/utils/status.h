@@ -105,7 +105,13 @@ class Expected {
         }
     }
 
-    Expected(T t)  // NOLINT(runtime/explicit)
+    // reduce one move constructor call
+    // https://stackoverflow.com/questions/14531766/how-are-stdmove-template-parameters-deduced
+    Expected(const T& t)  // NOLINT(runtime/explicit)
+        :_data(t), _status(Status(ErrorCodes::ERR_OK, "")) {
+    }
+
+    Expected(T&& t)  // NOLINT(runtime/explicit)
         :_data(std::move(t)), _status(Status(ErrorCodes::ERR_OK, "")) {
     }
 

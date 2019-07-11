@@ -159,12 +159,14 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
 
+    // TODO(vinchen): here ther is a copy, it is a waste.
     sess->getCtx()->setArgsBrief(sess->getArgs());
     it->second->incrCallTimes();
     auto now = nsSinceEpoch();
     auto guard = MakeGuard([it, now, sess] {
         sess->getCtx()->clearRequestCtx();
         it->second->incrNanos(nsSinceEpoch() - now);
+        // TODO(takenliu): slow log
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
@@ -556,7 +558,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
         if (!eValue.ok()) {
-            LOG(INFO) << eValue.status().toString();
             // maybe ErrorCodes::ERR_NOTFOUND
             return eValue.status();
         }

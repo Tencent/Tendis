@@ -28,3 +28,6 @@ target_link_libraries(utils_common glog varint)
 add_library(test_util STATIC test_util.cpp)
 target_link_libraries(test_util utils_common server_params)
 
+add_executable(utils_common_test utils_common_test.cpp)
+target_link_libraries(utils_common_test utils_common gtest_main ${SYS_LIBS})
+

@@ -125,6 +125,7 @@ class Transaction {
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
 #else
+    virtual Status flushall() = 0;
     virtual std::unique_ptr<RepllogCursorV2>
         createRepllogCursorV2(uint64_t begin,
                              bool ignoreReadBarrier = false) = 0;
@@ -155,8 +156,13 @@ class Transaction {
     static constexpr uint64_t MIN_VALID_TXNID = 1;
     static constexpr uint64_t TXNID_UNINITED = 0;
 
+    static_assert(TXNID_UNINITED + 1 == MIN_VALID_TXNID,
+        "invalid TXNID_UNINITED");
+
+
     static constexpr uint32_t CHUNKID_UNINITED = 0xFFFFFFFF;
     static constexpr uint32_t CHUNKID_MULTI = 0xFFFFFFFE;
+    static constexpr uint32_t CHUNKID_FLUSH = 0xFFFFFFFD;
 };
 
 class BackupInfo {
@@ -275,7 +281,9 @@ class KVStore {
     virtual uint64_t getHighestBinlogId() const = 0;
 
     // return the greatest commitId
-    virtual Expected<uint64_t> restart(bool restore = false) = 0;
+    virtual Expected<uint64_t> restart(bool restore = false,
+                    uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID) = 0;
+    virtual Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) = 0;
 
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair

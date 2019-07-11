@@ -94,8 +94,11 @@ size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
         uint32_t dbid = genRand();
         uint32_t chunkid = genRand();
         auto type = randomType();
+        uint64_t this_ttl = ttl;
         if (type == RecordType::RT_KV) {
             kvCount++;
+        } else if (!isDataMetaType(type)) {
+            this_ttl = 0;
         }
         std::string pk;
         if (allDiff) {
@@ -104,10 +107,9 @@ size_t genData(RocksKVStore* kvstore, uint32_t count, uint64_t ttl,
             pk.append(randomStr(5, false));
         }
         auto sk = randomStr(5, true);
-        uint64_t cas = genRand()*genRand();
         auto val = randomStr(5, true);
         auto rk = RecordKey(chunkid, dbid, type, pk, sk);
-        auto rv = RecordValue(val, type, -1, ttl, cas);
+        auto rv = RecordValue(val, type, -1, this_ttl);
 
         auto eTxn1 = kvstore->createTransaction(nullptr);
         EXPECT_EQ(eTxn1.ok(), true);

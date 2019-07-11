@@ -172,7 +172,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
     while (_cur <= _end) {
         ReplLogKeyV2 key(_cur);
         auto keyStr = key.encode();
-        auto eval = _txn->getKV(key.encode());
+        auto eval = _txn->getKV(keyStr);
         if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
             _cur++;
             LOG(WARNING) << "binlogid " << _cur << " is not exists";
@@ -201,7 +201,7 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
     while (_cur <= _end) {
         ReplLogKeyV2 key(_cur);
         auto keyStr = key.encode();
-        auto eval = _txn->getKV(key.encode());
+        auto eval = _txn->getKV(keyStr);
         if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
             _cur++;
             LOG(WARNING) << "binlogid " << _cur << " is not exists";

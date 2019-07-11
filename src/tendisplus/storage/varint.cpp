@@ -32,6 +32,36 @@ std::vector<uint8_t> varintEncode(uint64_t val) {
     return result;
 }
 
+std::string varintEncodeStr(uint64_t val) {
+    uint8_t buf[16];
+    size_t size = varintEncodeBuf(&buf[0], sizeof(buf), val);
+    INVARIANT_D(size < sizeof(buf));
+    return std::string(reinterpret_cast<char*>(&buf[0]), size);
+}
+
+size_t varintEncodeBuf(uint8_t* buf, size_t bufsize, uint64_t val) {
+    size_t size = 0;
+    while (val >= 0x80) {
+        buf[size++] = (0x80 | (val & 0x7f));
+        val >>= 7;
+    }
+    // The last byte always < 0x80
+    buf[size++] = (uint8_t)val;
+
+    INVARIANT_D(size <= bufsize);
+    return size;
+}
+
+size_t varintEncodeSize(uint64_t val) {
+    size_t size = 0;
+    while (val >= 0x80) {
+        size++;
+        val >>= 7;
+    }
+    size++;
+    return size;
+}
+
 Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,
         size_t maxSize) {
     uint64_t ret = 0;

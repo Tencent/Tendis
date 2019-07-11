@@ -4,6 +4,9 @@
 #include <string>
 
 #include "tendisplus/utils/status.h"
+#ifndef _WIN32
+#include <experimental/string_view>
+#endif
 
 namespace tendisplus {
 
@@ -28,13 +31,29 @@ std::string& replaceAll(std::string& str,
     const std::string& new_value);
 
 uint64_t getCurThreadId();
-size_t ssAppendSizeAndString(std::stringstream& ss, const std::string& val);
+
+using LenStrDecodeResult = std::pair<std::string, size_t>;
+size_t lenStrEncode(std::stringstream& ss, const std::string& val);
+std::string lenStrEncode(const std::string& val);
+size_t lenStrEncode(char* dest, size_t destsize, const std::string& val);
+size_t lenStrEncodeSize(const std::string& val);
+Expected<LenStrDecodeResult> lenStrDecode(const std::string& str);
+Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
+
+std::vector<std::string> stringSplit(const  std::string& s, const std::string& delim);
 
 }  // namespace tendisplus
 
 #ifdef _MSC_VER
 #define strcasecmp stricmp
 #define strncasecmp  strnicmp 
+#endif
+
+#ifndef _WIN32
+using std::experimental::string_view;
+#define mystring_view string_view
+#else
+#define mystring_view std::string
 #endif
 
 #endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 
