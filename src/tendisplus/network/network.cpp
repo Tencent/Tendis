@@ -15,6 +15,7 @@ using asio::ip::tcp;
 constexpr ssize_t REDIS_IOBUF_LEN = (1024*16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
+constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024*64);
 
 std::string RequestMatrix::toString() const {
     std::stringstream ss;
@@ -242,14 +243,18 @@ int NetSession::getFd() {
 }
 
 std::string NetSession::getRemoteRepr() const {
-    if (_sock.is_open()) {
-        std::stringstream ss;
-        ss << _sock.remote_endpoint().address().to_string()
-            << ":" << _sock.remote_endpoint().port();
-        return ss.str();
+    try {
+        if (_sock.is_open()) {
+            std::stringstream ss;
+            ss << _sock.remote_endpoint().address().to_string()
+                << ":" << _sock.remote_endpoint().port();
+            return ss.str();
+        }
+        return "closed conn";
+    } catch (const std::exception& e) {
+        return e.what();
     }
-    return "closed conn";
-}
+ }
 
 std::string NetSession::getLocalRepr() const {
     if (_sock.is_open()) {
@@ -438,8 +443,16 @@ void NetSession::processMultibulkBuffer() {
         if (_bulkLen == -1) {
             newLine = strchr(_queryBuf.data()+pos, '\r');
             if (newLine == nullptr) {
-                if (_queryBufPos > REDIS_INLINE_MAX_SIZE) {
+                // NOTE(vinchen): For logical correctly, here it should minus pos.
+                // In fact, it is also a bug for redis.
+                // But because of the REDIS_MBULK_BIG_ARG optimization, it is not
+                // a problem in redis now.
+                if (_queryBufPos - pos > REDIS_INLINE_MAX_SIZE) {
                     ++_netMatrix->invalidPackets;
+                    LOG(ERROR) << "_multibulklen = " << _multibulklen
+                               << ", _queryBufPos = " << _queryBufPos
+                               << ", pos =" << pos;
+                    INVARIANT_D(0);
                     setRspAndClose("Protocol error: too big bulk count string");
                     return;
                 }
@@ -473,12 +486,23 @@ void NetSession::processMultibulkBuffer() {
             pos += newLine-(_queryBuf.data()+pos)+2;
             // the optimization of ll >= REDIS_MBULK_BIG_ARG
             // is not ported from redis
+            if (ll >= REDIS_MBULK_BIG_ARG) {
+                size_t qblen;
+
+                /* If we are going to read a large object from network
+                * try to make it likely that it will start at c->querybuf
+                * boundary so that we can optimize object creation
+                * avoiding a large copy of data. */
+                shiftQueryBuf(pos, -1);
+                pos = 0;
+            }
             _bulkLen = ll;
         }
         if (_queryBufPos - pos < _bulkLen + 2) {
             // not complete
             break;
         } else {
+            // TODO(vinchen): a optimization is not port from redis
             _args.push_back(std::string(_queryBuf.data() + pos, _bulkLen));
             pos += _bulkLen+2;
             _bulkLen = -1;

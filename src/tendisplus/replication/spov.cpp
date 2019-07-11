@@ -178,7 +178,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         return exists;
     }();
     if (!backupExists.ok() || backupExists.value()) {
-        LOG(FATAL) << "store:" << metaSnapshot.id << " backupDir exists";
+        LOG(ERROR) << "store:" << metaSnapshot.id << " backupDir exists:" << store->dftBackupDir();
+        return;
     }
 
     auto flist = bkInfo.value().getFileList();
