@@ -192,13 +192,14 @@ TEST(Repl, Common) {
     size_t i = 0;
     {
 #else
-    for(size_t i = 0; i<2; i++) {
+    for(size_t i = 0; i<9; i++) {
 #endif
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
                 destroyReplEnv();
                 destroyEnv("slave1");
                 destroyEnv("slave2");
+                std::this_thread::sleep_for(std::chrono::seconds(5));
                 });
 
         auto hosts = makeReplEnv(i);
@@ -245,7 +246,7 @@ TEST(Repl, Common) {
 #endif
         });
 
-        std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10));
+        std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
         auto slave2 = makeAnotherSlave("slave2", i, 2112);
 
         LOG(INFO) << "waiting thd1 to exited";
