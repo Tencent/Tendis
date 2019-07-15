@@ -23,6 +23,7 @@ class ServerParams {
     std::string requirepass;
     std::string masterauth;
     std::string pidFile;
+    
     bool versionIncrease;
     bool generalLog;
     // false: For command "set a b", it don't check the type of 
@@ -45,6 +46,8 @@ class ServerParams {
     bool noexpire;
     uint32_t maxBinlogKeepNum;
     uint32_t minBinlogKeepSec;
+
+    uint32_t maxClients;
 };
 }  // namespace tendisplus
 

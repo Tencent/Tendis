@@ -30,6 +30,7 @@ class NetworkMatrix {
 public:
     Atom<uint64_t> stickyPackets{0};
     Atom<uint64_t> connCreated{0};
+    Atom<uint64_t> connClients{0};
     Atom<uint64_t> connReleased{0};
     Atom<uint64_t> invalidPackets{0};
     NetworkMatrix operator -(const NetworkMatrix& right);
@@ -111,6 +112,9 @@ class NetSession: public Session {
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);
 
+    // network is ok, but client's msg is not ok, reply and close
+    void setRspAndClose(const std::string&);
+
     enum class State {
         Created,
         DrainReqNet,
@@ -147,9 +151,6 @@ class NetSession: public Session {
     // handle msg parsed from drainReqCallback
     void processReq();
 
-    // network is ok, but client's msg is not ok, reply and close
-    void setRspAndClose(const std::string&);
-
     // utils to shift parsed partial params from _queryBuf
     void shiftQueryBuf(ssize_t start, ssize_t end);
 
@@ -173,6 +174,7 @@ class NetSession: public Session {
     std::mutex _mutex;
     bool _isSendRunning;
     bool _isEnded;
+    bool _first;
     std::list<std::shared_ptr<SendBuffer>> _sendBuffer;
 
     std::shared_ptr<NetworkMatrix> _netMatrix;

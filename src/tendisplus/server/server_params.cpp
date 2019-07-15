@@ -43,6 +43,7 @@ std::string ServerParams::toString() const {
         << ",\ngenerallog:" << generalLog
         << ",\nchunkSize:" << chunkSize
         << ",\nkvStoreCount:" << kvStoreCount
+        << ",\nmaxClients:" << maxClients
         << std::endl;
     return ss.str();
 }
@@ -257,6 +258,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "minBinlogKeepSec" };
                 }
                 minBinlogKeepSec = std::stoi(tokens[1]);
+            } else if (tokens[0] == "maxclients") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid maxclients option"};
+                }
+                maxClients = std::stoi(tokens[1]);
             }
 
         }
@@ -296,6 +303,7 @@ ServerParams::ServerParams()
     noexpire = false;
     maxBinlogKeepNum = 1000000;
     minBinlogKeepSec = 0;
+    maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
 }
 
 

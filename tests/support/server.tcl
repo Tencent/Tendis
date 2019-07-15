@@ -262,7 +262,7 @@ proc start_server {options {code undefined}} {
     } else {
         exec ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
     }
-    exec ./build/bin/tendisplus $slave_cfg_file > $stdout 2> $stderr &
+    # exec ./build/bin/tendisplus $slave_cfg_file > $stdout 2> $stderr &
 
     # check that the server actually started
     # ugly but tries to be as fast as possible...
@@ -297,10 +297,10 @@ proc start_server {options {code undefined}} {
     }
 
     set pidfile2 [dict get $slave_cfg "pidfile"]
-    while {![info exists slave_pid]} {
-        set slave_pid [exec cat $pidfile2]
-        after 100
-    }
+    # while {![info exists slave_pid]} {
+        # set slave_pid [exec cat $pidfile2]
+        # after 100
+    # }
 
     # setup properties to be able to initialize a client object
     set host $::host
@@ -317,15 +317,15 @@ proc start_server {options {code undefined}} {
     dict set srv "stdout" $stdout
     dict set srv "stderr" $stderr
 
-    dict set slave "config_file" $slave_cfg_file
-    dict set slave "config" $slave_cfg
-    dict set slave "pid" $slave_pid
-    dict set slave "host" $host
-    dict set slave "port" $slave_port
-    dict set slave "stdout" $stdout
-    dict set slave "stderr" $stderr
+    # dict set slave "config_file" $slave_cfg_file
+    # dict set slave "config" $slave_cfg
+    # dict set slave "pid" $slave_pid
+    # dict set slave "host" $host
+    # dict set slave "port" $slave_port
+    # dict set slave "stdout" $stdout
+    # dict set slave "stderr" $stderr
 
-    dict set srv "slave" $slave
+    # dict set srv "slave" $slave
 
     # if a block of code is supplied, we wait for the server to become
     # available, create a client object and kill the server afterwards
@@ -347,11 +347,11 @@ proc start_server {options {code undefined}} {
         }
 
         # create a client of slave
-        set scli [redis $host $slave_port]
-        dict set slave "client" $scli
-        set args "slaveof $host $port"
-        puts "$slave_port $args"
-        $scli {*}$args
+        # set scli [redis $host $slave_port]
+        # dict set slave "client" $scli
+        # set args "slaveof $host $port"
+        # puts "$slave_port $args"
+        # $scli {*}$args
 
         # append the server to the stack
         lappend ::servers $srv

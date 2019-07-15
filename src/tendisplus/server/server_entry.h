@@ -46,7 +46,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void schedule(fn&& task) {
         _executor->schedule(std::forward<fn>(task));
     }
-    void addSession(std::shared_ptr<Session> sess);
+    bool addSession(std::shared_ptr<Session> sess);
 
     // NOTE(deyukong): be careful, currently, the callpath of
     // serverEntry::endSession is
@@ -102,6 +102,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
     void AddMonitor(Session* sess);
+    void setTMaxCli(uint64_t max);
+    uint32_t getMaxCli();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     inline uint64_t confirmTs(const std::string& name) const {
@@ -160,6 +162,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool _checkKeyTypeForSet;
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
+    uint32_t _maxClients;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
     mutable std::shared_timed_mutex _rwlock;
     std::map<std::string, uint64_t> _cfrmTs;

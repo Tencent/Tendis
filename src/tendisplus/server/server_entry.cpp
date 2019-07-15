@@ -41,7 +41,8 @@ ServerEntry::ServerEntry()
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
-         _dbNum(CONFIG_DEFAULT_DBNUM) {
+         _dbNum(CONFIG_DEFAULT_DBNUM),
+         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -53,6 +54,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
+    _maxClients= cfg->maxClients;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -302,24 +304,26 @@ bool ServerEntry::versionIncrease() const {
     return _versionIncrease;
 }
 
-void ServerEntry::addSession(std::shared_ptr<Session> sess) {
+bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->id()
             << " comes when stopping, ignore it";
-        return;
+        return false;
     }
+
     // TODO(deyukong): max conns
-
-
     // NOTE(deyukong): first driving force
     sess->start();
+
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
     DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
+    
+    return true;
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
@@ -765,6 +769,14 @@ Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t 
     }
 
     return {ErrorCodes::ERR_OK, ""};
+}
+
+void ServerEntry::setTMaxCli(uint64_t max) {
+    _maxClients = max;
+}
+
+uint32_t ServerEntry::getMaxCli() {
+    return _maxClients;
 }
 
 }  // namespace tendisplus
