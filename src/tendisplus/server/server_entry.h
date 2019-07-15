@@ -102,6 +102,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getTsEp() const;
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
+    inline uint64_t confirmTs() { return _cfrmTs; }
+    inline uint64_t confirmVer() { return _cfrmVersion; }
+    Status setTsVersion(uint64_t, uint64_t);
 
  private:
     ServerEntry();
@@ -145,6 +148,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
+    uint64_t _cfrmTs;
+    uint64_t _cfrmVersion;
 };
 }  // namespace tendisplus
 

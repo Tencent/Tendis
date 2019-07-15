@@ -61,6 +61,20 @@ class MainMeta {
     uint32_t chunkSize;
 };
 
+class VersionMeta {
+ public:
+    VersionMeta() : VersionMeta(0, 0) {}
+    VersionMeta(const VersionMeta&) = default;
+    VersionMeta(VersionMeta&&) = delete;
+    VersionMeta(uint64_t ts, uint64_t v)
+        : timestamp(ts), version(v) {
+    }
+    std::unique_ptr<VersionMeta> copy() const;
+
+    uint64_t timestamp;
+    uint64_t version;
+};
+
 class Catalog {
  public:
     Catalog(std::unique_ptr<KVStore> store,
@@ -75,6 +89,9 @@ class Catalog {
     Status setStoreMainMeta(const StoreMainMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
+
+    Expected<std::unique_ptr<VersionMeta>> getVersionMeta();
+    Status setVersionMeta(const VersionMeta& meta);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }
     uint32_t getChunkSize() const { return _chunkSize; }

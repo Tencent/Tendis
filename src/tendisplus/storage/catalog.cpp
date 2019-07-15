@@ -345,4 +345,74 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     return result;
 #endif
 }
+
+Expected<std::unique_ptr<VersionMeta>> Catalog::getVersionMeta() {
+    auto result = std::make_unique<VersionMeta>();
+    RecordKey rk(0, 0, RecordType::RT_META, "version_meta", "");
+
+    auto exptxn = _store->createTransaction(nullptr);
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+    auto expRv = _store->getKV(rk, exptxn.value().get());
+    if (!expRv.ok()) {
+        return expRv.status();
+    }
+    const auto& rv = expRv.value();
+    const auto& json = rv.getValue();
+
+    rapidjson::Document doc;
+    doc.Parse(json);
+    if (doc.HasParseError()) {
+        LOG(FATAL) << "parse version meta failed"
+                  << rapidjson::GetParseError_En(doc.GetParseError());
+    }
+
+  INVARIANT(doc.IsObject());
+
+  INVARIANT(doc.HasMember("timestamp"));
+  INVARIANT(doc["timestamp"].IsUint64());
+  result->timestamp = (uint64_t)doc["timestamp"].GetUint64();
+
+  INVARIANT(doc.HasMember("version"));
+  INVARIANT(doc["version"].IsUint64());
+  result->version = (uint64_t)(doc["version"].GetUint64());
+
+#ifdef _WIN32
+    return std::move(result);
+#else
+    return result;
+#endif
+}
+
+Status Catalog::setVersionMeta(const VersionMeta& meta) {
+    RecordKey rk(0, 0, RecordType::RT_META, "version_meta", "");
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+
+    writer.Key("timestamp");
+    writer.Uint64(meta.timestamp);
+
+    writer.Key("version");
+    writer.Uint64(meta.version);
+
+    writer.EndObject();
+
+    RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
+
+    auto exptxn = _store->createTransaction(nullptr);
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+
+    Record rd(std::move(rk), std::move(rv));
+    Status s = _store->setKV(rd, txn);
+    if (!s.ok()) {
+        return s;
+    }
+    return txn->commit().status();
+}
 }  // namespace tendisplus

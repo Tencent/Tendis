@@ -1437,7 +1437,7 @@ class ConfigCommand : public Command {
                     return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
                 }
 
-                if (toLower(args[3]) == "tendis_extended_protocol") {
+                if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
                 }
             }
@@ -1812,5 +1812,68 @@ class ResumeStoreCommand : public Command {
         return Command::fmtOK();
     }
 } resumeStoreCmd;
+
+class SyncVersionCommand: public Command {
+ public:
+    SyncVersionCommand()
+        :Command("syncversion", "a") {
+    }
+
+    ssize_t arity() const {
+      return 4;
+    }
+
+    int32_t firstkey() const {
+      return 0;
+    }
+
+    int32_t lastkey() const {
+      return 0;
+    }
+
+    int32_t keystep() const {
+      return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        if (args.size() != 4 || args[3] != "v1") {
+            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
+        }
+
+        if ((args[1] == "?") ^ (args[2] == "?")) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                      "only support both or none \'?\'"};
+        }
+
+        const auto server = sess->getServerEntry();
+        if (args[1] == "?" && args[2] == "?") {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
+            Command::fmtLongLong(ss,
+                static_cast<int64_t>(server->confirmTs()));
+            Command::fmtLongLong(ss,
+                static_cast<int64_t>(server->confirmVer()));
+            return ss.str();
+        }
+
+        auto eTs = tendisplus::stoull(args[1]);
+        if (!eTs.ok()) {
+            return eTs.status();
+        }
+        auto eVersion = tendisplus::stoull(args[2]);
+        if (!eVersion.ok()) {
+            return eVersion.status();
+        }
+
+        const auto& s =
+            server->setTsVersion(eTs.value(), eVersion.value());
+        if (!s.ok()) {
+            return s;
+        }
+
+        return Command::fmtOK();
+    }
+} syncVersionCmd;
 
 }  // namespace tendisplus

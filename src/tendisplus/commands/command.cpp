@@ -573,9 +573,9 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                 auto pCtx = sess->getCtx();
                 if (pCtx->getVersionEP() == UINT64_MAX) {
                     // isolate tendis cmd cannot modify value of tendis with cache.
-                    if (eValue.value().getVersionEP() != UINT64_MAX) {
-                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-                    }
+                    // if (eValue.value().getVersionEP() != UINT64_MAX) {
+                    //    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    //}
                 } else {
                     // any command can modify value with versionEP = -1
                     if (pCtx->getVersionEP() < eValue.value().getVersionEP() &&

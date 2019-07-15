@@ -40,7 +40,9 @@ ServerEntry::ServerEntry()
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
-         _dbNum(CONFIG_DEFAULT_DBNUM) {
+         _dbNum(CONFIG_DEFAULT_DBNUM),
+         _cfrmTs(0),
+         _cfrmVersion(0) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -164,6 +166,25 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode)));
     }
+
+    auto vm = _catalog->getVersionMeta();
+    if (vm.ok()) {
+        _cfrmTs = vm.value()->timestamp;
+        _cfrmVersion = vm.value()->version;
+    } else if (vm.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        auto pVm = std::make_unique<VersionMeta>();
+        Status s = _catalog->setVersionMeta(*pVm);
+        if (!s.ok()) {
+            LOG(FATAL) << "catalog setVersionMeta error:"
+                << s.toString();
+            return s;
+        }
+    } else {
+        LOG(FATAL) << "catalog getVersionMeta error:"
+            << vm.status().toString();
+        return vm.status();
+    }
+
     installStoresInLock(tmpStores);
     INVARIANT(getKVStoreCount() == kvStoreCount);
 
@@ -353,6 +374,7 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
             LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
         }
     }
+
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
     // NOTE(vinchen): process the ExtraProtocol of timestamp and version
@@ -665,6 +687,22 @@ uint64_t ServerEntry::getTsEp() const {
 
 void ServerEntry::setTsEp(uint64_t timestamp) {
     _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
+}
+
+Status ServerEntry::setTsVersion(uint64_t ts, uint64_t version) {
+  if (ts < _cfrmTs ||
+      version < _cfrmVersion) {
+      return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+  }
+  VersionMeta vMeta(ts,
+                    version);
+  Status s = _catalog->setVersionMeta(vMeta);
+  if (s.ok()) {
+      _cfrmTs = ts;
+      _cfrmVersion = version;
+  }
+
+  return s;
 }
 
 }  // namespace tendisplus
