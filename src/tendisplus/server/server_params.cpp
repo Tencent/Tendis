@@ -261,9 +261,27 @@ Status ServerParams::parseFile(const std::string& filename) {
             } else if (tokens[0] == "maxclients") {
                 if (tokens.size() != 2) {
                     return {ErrorCodes::ERR_PARSEOPT,
-                            "invalid maxclients option"};
+                            "invalid maxclients config"};
                 }
                 maxClients = std::stoi(tokens[1]);
+            } else if (tokens[0] == "slowlog") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog config"};
+                }
+                slowlogPath = tokens[1];
+            } else if (tokens[0] == "slowlog-log-slower-than") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog-log-slower-than config"};
+                }
+                slowlogLogSlowerThan = std::stoi(tokens[1]);
+            } else if (tokens[0] == "slowlog-max-len") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog-max-len config"};
+                }
+                slowlogMaxLen = std::stoi(tokens[1]);
             }
 
         }
@@ -287,7 +305,8 @@ ServerParams::ServerParams()
          rocksBlockcacheMB(4096),
          requirepass(""),
          masterauth(""),
-         pidFile("./tendisplus.pid") {
+         pidFile("./tendisplus.pid"),
+         slowlogPath("./slowlog") {
     scanCntIndexMgr = 1000;
     scanJobCntIndexMgr = 1;
     delCntIndexMgr = 10000;
@@ -304,6 +323,8 @@ ServerParams::ServerParams()
     maxBinlogKeepNum = 1000000;
     minBinlogKeepSec = 0;
     maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
+    slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
+    slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_MAX_LEN;
 }
 
 

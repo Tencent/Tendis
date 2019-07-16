@@ -42,7 +42,8 @@ ServerEntry::ServerEntry()
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
-         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS) {
+         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
+         _slowlogId(0) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -54,7 +55,10 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
-    _maxClients= cfg->maxClients;
+    _maxClients = cfg->maxClients;
+    _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
+    _slowlogMaxLen = cfg->slowlogMaxLen;
+    _slowlogPath = cfg->slowlogPath;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -259,6 +263,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _ftmcThd = std::make_unique<std::thread>([this] {
         ftmc();
     });
+
+    // init slowlog
+    // initSlowlog(cfg->slowLog);
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -771,12 +778,54 @@ Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t 
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void ServerEntry::setTMaxCli(uint64_t max) {
+void ServerEntry::setMaxCli(uint32_t max) {
     _maxClients = max;
 }
 
 uint32_t ServerEntry::getMaxCli() {
     return _maxClients;
+}
+
+
+// Status ServerEntry::initSlowlog(std::string logPath) {
+//     _slowLog.open(logPath);
+//     if (!_slowLog->is_open()) {
+//         std::stringstream ss;
+//         ss << "open:" << logPath << " failed";
+//         return {ErrorCodes::ERR_INTERNAL, ss.str()};
+//     }
+
+//     return {ErrorCodes::ERR_OK, ""};
+// }
+
+void ServerEntry::setSlowlogLogSlowerThan(uint64_t time) {
+    _slowlogLogSlowerThan = time;
+}
+
+uint64_t ServerEntry::getSlowlogLogSlowerThan() {
+    return _slowlogLogSlowerThan;
+}
+    
+uint64_t ServerEntry::getSlowlogMaxLen() {
+    return _slowlogMaxLen;
+}
+
+void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
+            const std::vector<std::string>& args) {
+    if(duration > _slowlogLogSlowerThan) {
+        _slowLog.open(_slowlogPath, std::ofstream::app);
+        _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
+        _slowLog << "#Time: " << time << "\n";
+        _slowLog << "#Query_time: " << duration << "\n";
+        for(size_t i = 0; i < args.size(); ++i) {
+            _slowLog << args[i] << " ";
+        }
+        _slowLog << "\n";
+        _slowLog << "#argc: " << args.size() << "\n";
+        _slowLog.flush();
+        _slowLog.close();
+        _slowlogId.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 }  // namespace tendisplus

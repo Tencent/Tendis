@@ -48,6 +48,9 @@ class ServerParams {
     uint32_t minBinlogKeepSec;
 
     uint32_t maxClients;
+    std::string slowlogPath;
+    uint32_t slowlogLogSlowerThan;
+    uint32_t slowlogMaxLen;
 };
 }  // namespace tendisplus
 

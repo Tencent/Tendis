@@ -70,6 +70,8 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit);
 #define CONFIG_DEFAULT_DBNUM     16
 #define CONFIG_DEFAULT_PROTO_MAX_BULK_LEN (512ll*1024*1024) /* Bulk request max size */
 #define CONFIG_DEFAULT_MAX_CLIENTS 10000
+#define CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN 10000
+#define CONFIG_DEFAULT_SLOWLOG_MAX_LEN 128
 
 int getCommandFlags(const char* sflags);
 struct redisCommand* getCommandFromTable(const char* cmd);
