@@ -104,7 +104,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     static void logError(const std::string& str, Session* sess = nullptr);
     inline uint64_t confirmTs() { return _cfrmTs; }
     inline uint64_t confirmVer() { return _cfrmVersion; }
-    Status setTsVersion(uint64_t, uint64_t);
+    Status setTsVersion(uint64_t ts, uint64_t version);
 
  private:
     ServerEntry();

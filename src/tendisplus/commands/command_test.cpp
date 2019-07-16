@@ -172,7 +172,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     sess.setArgs({ "config", "set", "session",
-                            "tendis_protocol_extend", "on" });
+                            "tendis_protocol_extend", "1" });
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 

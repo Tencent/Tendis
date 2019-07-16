@@ -374,7 +374,6 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
             LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
         }
     }
-
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
     // NOTE(vinchen): process the ExtraProtocol of timestamp and version
@@ -690,19 +689,15 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
 }
 
 Status ServerEntry::setTsVersion(uint64_t ts, uint64_t version) {
-  if (ts < _cfrmTs ||
-      version < _cfrmVersion) {
-      return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-  }
-  VersionMeta vMeta(ts,
-                    version);
-  Status s = _catalog->setVersionMeta(vMeta);
-  if (s.ok()) {
-      _cfrmTs = ts;
-      _cfrmVersion = version;
-  }
+    if ((_cfrmTs != UINT64_MAX && ts < _cfrmTs) ||
+        (_cfrmVersion != UINT64_MAX && version < _cfrmVersion)) {
+        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+    }
 
-  return s;
+    _cfrmTs = ts;
+    _cfrmVersion = version;
+
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 }  // namespace tendisplus

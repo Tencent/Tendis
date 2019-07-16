@@ -1866,12 +1866,42 @@ class SyncVersionCommand: public Command {
             return eVersion.status();
         }
 
-        const auto& s =
-            server->setTsVersion(eTs.value(), eVersion.value());
+        auto expdb = server->getSegmentMgr()->getDb(sess,
+                0, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        PStore store = expdb.value().store;
+        auto ptxn = store->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        auto txn = std::move(ptxn.value());
+
+        RecordKey rk(0, 0, RecordType::RT_META, "version_meta", "");
+        rapidjson::StringBuffer sb;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+        writer.StartObject();
+        writer.Key("timestamp");
+        writer.Uint64(eTs.value());
+        writer.Key("version");
+        writer.Uint64(eVersion.value());
+        writer.EndObject();
+
+        RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
+        Status s = store->setKV(rk, rv, txn.get());
         if (!s.ok()) {
             return s;
         }
-
+        s = txn->commit().status();
+        if (!s.ok()) {
+            return s;
+        }
+        s = server->setTsVersion(eTs.value(), eVersion.value());
+        if (!s.ok()) {
+            return s;
+        }
         return Command::fmtOK();
     }
 } syncVersionCmd;
