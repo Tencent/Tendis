@@ -636,84 +636,74 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     
-        sess.setArgs({ "sadd", "ss", "a"});
-        expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
+    sess.setArgs({ "sadd", "ss", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({ "set", "ss", "b"});
-        expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
+    sess.setArgs({ "set", "ss", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({ "set", "ss1", "b"});
-        expect = Command::runSessionCmd(&sess);
-        EXPECT_TRUE(expect.ok());
-    
+    sess.setArgs({ "set", "ss1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 
     sess.setArgs({ "config", "get", "slowlog-log-slower-than"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_EQ(Command::fmtLongLong(i), expect.value());
-
-    // sess.setArgs({ "config", "set", "maxclients", std::to_string(i)});
-    // expect = Command::runSessionCmd(&sess);
-    // EXPECT_TRUE(expect.ok());
-
-    // sess.setArgs({ "config", "get", "maxclients"});
-    // expect = Command::runSessionCmd(&sess);
-    // EXPECT_TRUE(expect.ok());
-    // EXPECT_EQ(Command::fmtLongLong(i), expect.value());
 }
 
 TEST(Command, common) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+   const auto guard = MakeGuard([] {
+       destroyEnv();
+   });
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
+   EXPECT_TRUE(setupEnv());
+   auto cfg = makeServerParam();
+   auto server = makeServerEntry(cfg);
 
-    testPf(server);
-    testList(server);
-    testKV(server);
+   testPf(server);
+   testList(server);
+   testKV(server);
 
-    // testSetRetry only works in TXN_OPT mode
-    // testSetRetry(server);
-    testType(server);
-    testHash1(server);
-    testHash2(server);
-    testSet(server);
-    // zadd/zrem/zrank/zscore
-    testZset(server);
-    // zcount
-    testZset2(server);
-    // zlexcount, zrange, zrangebylex, zrangebyscore
-    testZset3(server);
-    // zremrangebyrank, zremrangebylex, zremrangebyscore
-    testZset4(server);
+   // testSetRetry only works in TXN_OPT mode
+   // testSetRetry(server);
+   testType(server);
+   testHash1(server);
+   testHash2(server);
+   testSet(server);
+   // zadd/zrem/zrank/zscore
+   testZset(server);
+   // zcount
+   testZset2(server);
+   // zlexcount, zrange, zrangebylex, zrangebyscore
+   testZset3(server);
+   // zremrangebyrank, zremrangebylex, zremrangebyscore
+   testZset4(server);
 }
 
 TEST(Command, common_scan) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+   const auto guard = MakeGuard([] {
+       destroyEnv();
+   });
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
+   EXPECT_TRUE(setupEnv());
+   auto cfg = makeServerParam();
+   auto server = makeServerEntry(cfg);
 
-    testScan(server);
+   testScan(server);
 }
 
 TEST(Command, tendisex) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+   const auto guard = MakeGuard([] {
+       destroyEnv();
+   });
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    // need 420000
-    //cfg->chunkSize = 420000;
-    auto server = makeServerEntry(cfg);
+   EXPECT_TRUE(setupEnv());
+   auto cfg = makeServerParam();
+   // need 420000
+   //cfg->chunkSize = 420000;
+   auto server = makeServerEntry(cfg);
 
     testExtendProtocol(server);
     testSync(server);
@@ -721,29 +711,29 @@ TEST(Command, tendisex) {
 }
 
 TEST(Command, checkKeyTypeForSetKV) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+   const auto guard = MakeGuard([] {
+       destroyEnv();
+   });
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    cfg->checkKeyTypeForSet = true;
-    auto server = makeServerEntry(cfg);
+   EXPECT_TRUE(setupEnv());
+   auto cfg = makeServerParam();
+   cfg->checkKeyTypeForSet = true;
+   auto server = makeServerEntry(cfg);
 
-    testCheckKeyType(server);
-    testMset(server);
+   testCheckKeyType(server);
+   testMset(server);
 }
 
 TEST(Command, lockMulti) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+   const auto guard = MakeGuard([] {
+       destroyEnv();
+   });
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
+   EXPECT_TRUE(setupEnv());
+   auto cfg = makeServerParam();
+   auto server = makeServerEntry(cfg);
 
-    testLockMulti(server);
+   testLockMulti(server);
 
 }
 
@@ -757,20 +747,41 @@ TEST(Command, maxClients) {
     auto server = makeServerEntry(cfg);
 
     testMaxClients(server);
-
 }
 
 TEST(Command, slowlog) {
     const auto guard = MakeGuard([] {
-        // destroyEnv();
+        destroyEnv();
     });
+    
+    {
+        EXPECT_TRUE(setupEnv());
+        auto cfg = makeServerParam();
+        auto server = makeServerEntry(cfg);
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
-
-    testSlowLog(server);
-
+        testSlowLog(server);
+    }
+    
+    char line[100];
+    FILE *fp;
+    std::string cmd = "grep -Ev '^$|[#;]' ./slowlog";
+    const char *sysCommand = cmd.data();
+    if ((fp = popen(sysCommand, "r")) == NULL) {
+        std::cout << "error" << std::endl;
+        return;
+    }
+    
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "config set slowlog-log-slower-than 0 \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "sadd ss a \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "set ss b \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "set ss1 b \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "config get slowlog-log-slower-than \n");
+    pclose(fp);
 }
 
 /*

@@ -276,12 +276,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                             "invalid slowlog-log-slower-than config"};
                 }
                 slowlogLogSlowerThan = std::stoi(tokens[1]);
-            } else if (tokens[0] == "slowlog-max-len") {
+            } else if (tokens[0] == "slowlog-flush-interval") {
                 if (tokens.size() != 2) {
                     return {ErrorCodes::ERR_PARSEOPT,
-                            "invalid slowlog-max-len config"};
+                            "invalid slowlog-flush-interval config"};
                 }
-                slowlogMaxLen = std::stoi(tokens[1]);
+                slowlogFlushInterval = std::stoi(tokens[1]);
             }
 
         }
@@ -324,7 +324,7 @@ ServerParams::ServerParams()
     minBinlogKeepSec = 0;
     maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
     slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
-    slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_MAX_LEN;
+    slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
 }
 
 

@@ -175,7 +175,6 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
         auto duration = nsSinceEpoch() - now;
         it->second->incrNanos(duration);
         sess->getServerEntry()->slowlogPushEntryIfNeeded(now, duration, args);
-        // TODO(takenliu): slow log
     });
     auto v = it->second->run(sess);
     if (v.ok()) {

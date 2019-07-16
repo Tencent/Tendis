@@ -51,6 +51,7 @@ class ServerParams {
     std::string slowlogPath;
     uint32_t slowlogLogSlowerThan;
     uint32_t slowlogMaxLen;
+    uint32_t slowlogFlushInterval;
 };
 }  // namespace tendisplus
 

@@ -57,8 +57,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _dbNum = cfg->dbNum;
     _maxClients = cfg->maxClients;
     _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
-    _slowlogMaxLen = cfg->slowlogMaxLen;
-    _slowlogPath = cfg->slowlogPath;
+    _slowlogFlushInterval = cfg->slowlogFlushInterval;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -265,7 +264,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     });
 
     // init slowlog
-    // initSlowlog(cfg->slowLog);
+    initSlowlog(cfg->slowlogPath);
+
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -298,12 +298,10 @@ IndexManager* ServerEntry::getIndexMgr() {
 }
 
 const std::shared_ptr<std::string> ServerEntry::requirepass() const {
-    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
 }
 
 const std::shared_ptr<std::string> ServerEntry::masterauth() const {
-    std::lock_guard<std::mutex> lk(_mutex);
     return _masterauth;
 }
 
@@ -331,6 +329,11 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     _sessions[id] = std::move(sess);
     
     return true;
+}
+
+size_t ServerEntry::getSessionCount() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _sessions.size();
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
@@ -747,6 +750,7 @@ void ServerEntry::stop() {
     }
 
     _ftmcThd->join();
+    _slowLog.close();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
@@ -786,17 +790,16 @@ uint32_t ServerEntry::getMaxCli() {
     return _maxClients;
 }
 
+Status ServerEntry::initSlowlog(std::string logPath) {
+    _slowLog.open(logPath, std::ofstream::app);
+    if (!_slowLog.is_open()) {
+        std::stringstream ss;
+        ss << "open:" << logPath << " failed";
+        return {ErrorCodes::ERR_INTERNAL, ss.str()};
+    }
 
-// Status ServerEntry::initSlowlog(std::string logPath) {
-//     _slowLog.open(logPath);
-//     if (!_slowLog->is_open()) {
-//         std::stringstream ss;
-//         ss << "open:" << logPath << " failed";
-//         return {ErrorCodes::ERR_INTERNAL, ss.str()};
-//     }
-
-//     return {ErrorCodes::ERR_OK, ""};
-// }
+    return {ErrorCodes::ERR_OK, ""};
+}
 
 void ServerEntry::setSlowlogLogSlowerThan(uint64_t time) {
     _slowlogLogSlowerThan = time;
@@ -806,14 +809,9 @@ uint64_t ServerEntry::getSlowlogLogSlowerThan() {
     return _slowlogLogSlowerThan;
 }
     
-uint64_t ServerEntry::getSlowlogMaxLen() {
-    return _slowlogMaxLen;
-}
-
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
             const std::vector<std::string>& args) {
     if(duration > _slowlogLogSlowerThan) {
-        _slowLog.open(_slowlogPath, std::ofstream::app);
         _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
         _slowLog << "#Time: " << time << "\n";
         _slowLog << "#Query_time: " << duration << "\n";
@@ -821,9 +819,11 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
             _slowLog << args[i] << " ";
         }
         _slowLog << "\n";
-        _slowLog << "#argc: " << args.size() << "\n";
-        _slowLog.flush();
-        _slowLog.close();
+        _slowLog << "#argc: " << args.size() << "\n\n";
+        if ((_slowlogId.load(std::memory_order_relaxed)%_slowlogFlushInterval) == 0) {
+            _slowLog.flush();
+        }
+        
         _slowlogId.fetch_add(1, std::memory_order_relaxed);
     }
 }

@@ -59,6 +59,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     // Instead, you should call NetSession.cancel to close NetSession's
     // underlying socket and let itself trigger the whole path.
     void endSession(uint64_t connId);
+    size_t getSessionCount();
 
     Status cancelSession(uint64_t connId);
 
@@ -102,13 +103,10 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
     void AddMonitor(Session* sess);
-    void setTMaxCli(uint64_t max);
-    void setMaxCli(uint64_t max);
     void setMaxCli(uint32_t max);
     uint32_t getMaxCli();
     void setSlowlogLogSlowerThan(uint64_t time);
     uint64_t getSlowlogLogSlowerThan();
-    uint64_t getSlowlogMaxLen();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     inline uint64_t confirmTs(const std::string& name) const {
@@ -123,6 +121,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     }
     Status setTsVersion(const std::string& name, uint64_t ts, uint64_t version);
     void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, const std::vector<std::string>& args);
+    Status initSlowlog(std::string logPath);
 
  private:
     ServerEntry();
@@ -169,10 +168,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     uint32_t _maxClients;
-    std::string _slowlogPath;
     std::ofstream _slowLog;
     uint64_t _slowlogLogSlowerThan;
-    uint64_t _slowlogMaxLen;
+    uint32_t _slowlogFlushInterval;
     std::atomic<uint64_t> _slowlogId;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
     mutable std::shared_timed_mutex _rwlock;

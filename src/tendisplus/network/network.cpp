@@ -137,13 +137,8 @@ void NetworkAsio::doAccept() {
                   << ",connId:" << newConnId
                   << ",from:" << sess->getRemoteRepr()
                   << " created";
-        // TODO(jingjunli) increase multiple state to indicate addSession's state
         if (_server->addSession(std::move(sess))) {
             ++_netMatrix->connCreated;
-            ++_netMatrix->connClients;
-            LOG(INFO) << "connClients: " << _netMatrix->connClients.get();
-        } else {
-
         }
         
         doAccept();
@@ -541,7 +536,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
 
     if (_first && getServerEntry().get()) {
         uint32_t maxClients = getServerEntry()->getMaxCli();
-        if (_netMatrix->connClients.get() > maxClients) {
+        if (getServerEntry()->getSessionCount() > maxClients) {
             LOG(WARNING) << "-ERR max number of clients reached, clients: " << maxClients;
             setRspAndClose("-ERR max number of clients reached\r\n");
             return;
@@ -720,7 +715,6 @@ void NetSession::endSession() {
     }
     _isEnded = true;
     ++_netMatrix->connReleased;
-    --_netMatrix->connClients;
     LOG(INFO) << "net session, id:" << id()
                   << ",connId:" << _connId
                   << " destroyed";
