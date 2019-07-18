@@ -21,10 +21,14 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
     Status writeData(const std::string& data, std::chrono::seconds timeout);
 
     std::string getRemoteRepr() const {
-        if (_socket.is_open()) {
-            return _socket.remote_endpoint().address().to_string();
+        try {
+            if (_socket.is_open()) {
+                return _socket.remote_endpoint().address().to_string();
+            }
+            return "closed conn";
+        } catch (const std::exception& e) {
+            return e.what();
         }
-        return "closed conn";
     }
 
     std::string getLocalRepr() const {

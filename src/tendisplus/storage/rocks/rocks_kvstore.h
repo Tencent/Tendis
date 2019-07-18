@@ -55,6 +55,7 @@ class RocksTxn: public Transaction {
     Status applyBinlog(const std::list<ReplLog>& txnLog) final;
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
 #else
+    Status flushall() final;
     Status applyBinlog(const ReplLogValueEntryV2& logEntry) final;
     Status setBinlogKV(uint64_t binlogId,
                 const std::string& logKey,
@@ -214,7 +215,9 @@ class RocksKVStore: public KVStore {
 
     TxnMode getTxnMode() const;
 
-    Expected<uint64_t> restart(bool restore = false) final;
+    Expected<uint64_t> restart(bool restore = false,
+            uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID) final;
+    Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
     Expected<std::string> restoreBackup(

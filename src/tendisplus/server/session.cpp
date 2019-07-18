@@ -34,18 +34,26 @@ Session* Session::getCurSess() {
 
 std::string Session::getCmdStr() const {
     std::stringstream ss;
+    size_t i = 0;
     if (_args[0] == "applybinlogsv2") {
-        size_t i = 0;
         for (auto arg : _args) {
             if (i++ == 2) {
-                ss << "[" << arg.size() << "]" << " ";
+                ss << "[" << arg.size() << "]";
             } else {
-                ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+                ss << (arg.size() > 0 ? arg : "\"\"");
+            }
+            if (i <= _args.size() - 1) {
+                ss << " ";
             }
         }
     } else {
         for (auto arg : _args) {
-            ss << (arg.size() > 0 ? arg : "\"\"") << " ";
+            ss << (arg.size() > 0 ? arg : "\"\"");
+
+            if (i++ < _args.size() - 1) {
+                ss << " ";
+            }
+
         }
     }
     return ss.str();
@@ -83,6 +91,16 @@ LocalSession::LocalSession(std::shared_ptr<ServerEntry> svr)
 
 void LocalSession::start() {
     _ctx->setProcessPacketStart(nsSinceEpoch());
+}
+
+void LocalSession::setArgs(const std::vector<std::string>& args) {
+    _args = args;
+    _ctx->setArgsBrief(_args);
+}
+
+void LocalSession::setArgs(const std::string& cmd) {
+    _args = stringSplit(cmd, " ");
+    _ctx->setArgsBrief(_args);
 }
 
 Status LocalSession::cancel() {

@@ -42,10 +42,14 @@ struct SetParams {
 };
 
 // TODO(deyukong): unittest of expire
-Expected<std::string> setGeneric(PStore store, Transaction *txn,
+Expected<std::string> setGeneric(Session *sess, PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             bool checkType, bool endTxn,
             const std::string& okReply, const std::string& abortReply) {
+
+    bool diffType = false;
+    bool needExpire = false;
+    bool notExist = false;
     if ((flags & REDIS_SET_NX) || (flags & REDIS_SET_XX)
             || (flags & REDIS_SET_NXEX)) {
         Expected<RecordValue> eValue = store->getKV(key, txn);
@@ -56,37 +60,27 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
 
         uint64_t currentTs = 0;
         uint64_t targetTtl = 0;
+        checkType = false;
         if (eValue.ok()) {
             currentTs = msSinceEpoch();
             targetTtl = eValue.value().getTtl();
-            // TODO(vinchen): should del the key first(setxx),
-            // if not msetnx/setnx/setnxex
             if (eValue.value().getRecordType() != RecordType::RT_KV) {
-                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+                diffType = true;
             }
+        } else if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            notExist = true;
+        } else {
+            return eValue.status();
         }
-        bool needExpire = (!Command::noExpire() &&
+
+        needExpire = (!Command::noExpire() &&
                            targetTtl != 0
-                           && currentTs >= eValue.value().getTtl());
+                           && currentTs >= targetTtl);
         bool exists =
             (eValue.status().code() == ErrorCodes::ERR_OK) && (!needExpire);
         if ((flags & REDIS_SET_NX && exists) ||
                 (flags & REDIS_SET_XX && (!exists)) ||
                 (flags & REDIS_SET_NXEX && exists)) {
-            // we will early return, we should del the expired key
-            // if needed.
-            if (needExpire) {
-                Status status = store->delKV(key, txn);
-                if (!status.ok()) {
-                    return status;
-                }
-                if (endTxn) {
-                    Expected<uint64_t> exptCommit = txn->commit();
-                    if (!exptCommit.ok()) {
-                        return exptCommit.status();
-                    }
-                }
-            }
             return abortReply == "" ? Command::fmtNull() : abortReply;
         }
     }
@@ -103,10 +97,24 @@ Expected<std::string> setGeneric(PStore store, Transaction *txn,
         // only check the recordtype, not care about the ttl
         Expected<RecordValue> eValue = store->getKV(key, txn);
         if (eValue.ok()) {
-            // TODO(vinchen): should del the key first
             if (eValue.value().getRecordType() != RecordType::RT_KV) {
-                return { ErrorCodes::ERR_WRONG_TYPE, "" };
+                diffType = true;
             }
+        } else if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            notExist = true;
+        } else {
+            return eValue.status();
+        }
+    }
+
+    if (!notExist && 
+                (needExpire || diffType || 
+                 (!Command::noExpire() && val.getTtl() > 0))) {
+        auto s = Command::delKey(sess,
+            key.getPrimaryKey(),
+            RecordType::RT_DATA_META);
+        if (!s.ok() && s.code() != ErrorCodes::ERR_NOTFOUND) {
+            return s;
         }
     }
 
@@ -222,7 +230,7 @@ class SetCommand: public Command {
         RecordValue rv(params.value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
 
         for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
-            auto result = setGeneric(kvstore, txn.get(), params.flags,
+            auto result = setGeneric(sess, kvstore, txn.get(), params.flags,
                       rk, rv, server->checkKeyTypeForSet(), true, "", "");
             if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
                 return result;
@@ -233,7 +241,7 @@ class SetCommand: public Command {
             }
             txn = std::move(ptxn.value());
         }
-        return setGeneric(kvstore, txn.get(), params.flags,
+        return setGeneric(sess, kvstore, txn.get(), params.flags,
             rk, rv, server->checkKeyTypeForSet(), true, "", "");
     }
 } setCommand;
@@ -285,7 +293,8 @@ class SetexGeneralCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk,
@@ -400,7 +409,8 @@ class SetNxCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NX,
                                      rk,
@@ -891,7 +901,8 @@ class GetSetGeneral: public Command {
             if (!newValue.ok()) {
                 return newValue.status();
             }
-            auto result = setGeneric(kvstore,
+            auto result = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk, newValue.value(),
@@ -1434,10 +1445,6 @@ public:
         return 1;
     }
 
-    bool sameWithRedis() const {
-        return false;
-    }
-
     Expected<RecordValue> newValueFromOld(
         Session* sess, const Expected<RecordValue>& oldValue) const {
         const std::string& val = sess->getArgs()[2];
@@ -1753,7 +1760,8 @@ class BitopCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto setRes = setGeneric(kvstore,
+            auto setRes = setGeneric(sess,
+                                     kvstore,
                                      txn.get(),
                                      REDIS_SET_NO_FLAGS,
                                      rk,
@@ -1845,7 +1853,8 @@ class MSetGenericCommand: public Command {
                 }
 
                 // NOTE(vinchen): commit one by one is not corect
-                auto result = setGeneric(kvstore,
+                auto result = setGeneric(sess,
+                                         kvstore,
                                          etxn.value(),
                                          _flags,
                                          rk,
@@ -1969,7 +1978,7 @@ public:
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         const std::string &src = args[1];
         const std::string &dst = args[2];
         bool samekey(false);
@@ -2386,7 +2395,7 @@ class BitFieldCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        auto args = sess->getArgs();
+        auto& args = sess->getArgs();
         std::queue<BitfieldOp> ops;
 
         bool readonly(1);

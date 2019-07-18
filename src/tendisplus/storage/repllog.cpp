@@ -149,7 +149,7 @@ ReplLogValueEntryV2& ReplLogValueEntryV2::operator=(ReplLogValueEntryV2&& o) {
 }
 
 Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
-                size_t maxSize, size_t& decodeSize) {
+                size_t maxSize, size_t* decodeSize) {
     const uint8_t *valCstr = reinterpret_cast<const uint8_t*>(rawVal);
     if (maxSize <= sizeof(_op)) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
@@ -169,83 +169,59 @@ Expected<ReplLogValueEntryV2> ReplLogValueEntryV2::decode(const char* rawVal,
     uint64_t timestamp = expt.value().first;
 
     // key
-    expt = varintDecodeFwd(valCstr + offset, maxSize - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-
-    if (maxSize - offset < expt.value().first) {
+    auto eKey = lenStrDecode(rawVal + offset, maxSize - offset);
+    if (!eKey.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
-    auto key = std::string(reinterpret_cast<const char*>(rawVal) + offset,
-                expt.value().first);
-    offset += expt.value().first;
+    offset += eKey.value().second;
 
     // val
-    expt = varintDecodeFwd(valCstr + offset, maxSize - offset);
-    if (!expt.ok()) {
-        return expt.status();
-    }
-    offset += expt.value().second;
-
-    if (maxSize - offset < expt.value().first) {
+    auto eVal = lenStrDecode(rawVal + offset, maxSize - offset);
+    if (!eVal.ok()) {
         return{ ErrorCodes::ERR_DECODE, "invalid replvalueentry len" };
     }
-    auto val = std::string(reinterpret_cast<const char*>(rawVal) + offset,
-                    expt.value().first);
-    offset += expt.value().first;
+    offset += eVal.value().second;
 
     // output
-    decodeSize = offset;
+    *decodeSize = offset;
 
     return ReplLogValueEntryV2(static_cast<ReplOp>(op), timestamp,
-            std::move(key), std::move(val));
+            std::move(eKey.value().first), std::move(eVal.value().first));
 }
 
-size_t ReplLogValueEntryV2::maxSize() const {
-    return sizeof(uint8_t) + varintMaxSize(sizeof(_timestamp)) +
-        varintMaxSize(sizeof(_key.size())) +
-        varintMaxSize(sizeof(_val.size())) + _val.size() + _key.size();
+size_t ReplLogValueEntryV2::encodeSize() const {
+    return sizeof(uint8_t) + varintEncodeSize(_timestamp) +
+        lenStrEncodeSize(_key) + lenStrEncodeSize(_val);
 }
 
 size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
-    INVARIANT(destSize >= maxSize());
+    INVARIANT_D(destSize >= encodeSize());
 
     size_t offset = 0;
     // op
     dest[offset++] = static_cast<char>(_op);
 
     // ts
-    auto tsBytes = varintEncode(_timestamp);
-    memcpy(dest + offset, tsBytes.data(), tsBytes.size());
-    offset += tsBytes.size();
+    offset += varintEncodeBuf(dest + offset, destSize - offset, _timestamp);
 
     // key
-    auto keyBytes = varintEncode(_key.size());
-    memcpy(dest + offset, keyBytes.data(), keyBytes.size());
-    offset += keyBytes.size();
-    memcpy(dest + offset, _key.c_str(), _key.size());
-    offset += _key.size();
+    offset += lenStrEncode((char*)dest + offset, destSize - offset, _key);
 
     // val
-    auto valBytes = varintEncode(_val.size());
-    memcpy(dest + offset, valBytes.data(), valBytes.size());
-    offset += valBytes.size();
-    memcpy(dest + offset, _val.c_str(), _val.size());
-    offset += _val.size();
+    offset += lenStrEncode((char*)dest + offset, destSize - offset, _val);
+
+    INVARIANT_D(offset == encodeSize());
 
     return offset;
 }
 
 std::string ReplLogValueEntryV2::encode() const {
     std::string val;
-    val.resize(maxSize());
+    val.resize(encodeSize());
 
     size_t offset = encode((uint8_t*)(val.c_str()), val.size());
 
-    // resize to the exactly size
-    val.resize(offset);
+    INVARIANT_D(offset == encodeSize());
 
     return val;
 }
@@ -263,6 +239,7 @@ ReplLogValueV2::ReplLogValueV2()
     _txnId(Transaction::TXNID_UNINITED),
     _timestamp(0),
     _versionEp(0),
+    _cmdStr(""),
     _data(nullptr),
     _dataSize(0) {
 }
@@ -273,6 +250,7 @@ ReplLogValueV2::ReplLogValueV2(ReplLogValueV2&& o)
     _txnId(o._txnId),
     _timestamp(o._timestamp),
     _versionEp(o._versionEp),
+    _cmdStr(std::move(o._cmdStr)),
     _data(o._data),
     _dataSize(o._dataSize) {
     o._chunkId = 0;
@@ -280,17 +258,20 @@ ReplLogValueV2::ReplLogValueV2(ReplLogValueV2&& o)
     o._txnId = Transaction::TXNID_UNINITED;
     o._timestamp = 0;
     o._versionEp = 0;
+    o._cmdStr = "";
     o._data = nullptr;
     o._dataSize = 0;
 }
 
 ReplLogValueV2::ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint64_t timestamp, uint64_t versionEp,
+        const std::string& cmd,
         const uint8_t* data, size_t dataSize)
     :_chunkId(chunkId),
     _flag(flag),
     _txnId(txnid),
     _timestamp(timestamp),
     _versionEp(versionEp),
+    _cmdStr(cmd),
     _data(data),
     _dataSize(dataSize) {
 }
@@ -299,9 +280,15 @@ size_t ReplLogValueV2::fixedHeaderSize() {
     return ReplLogValueV2::FIXED_HEADER_SIZE;
 }
 
+size_t ReplLogValueV2::getHdrSize() const {
+    return ReplLogValueV2::fixedHeaderSize() +
+            varintEncodeSize(_cmdStr.size()) + _cmdStr.size();
+}
+
 std::string ReplLogValueV2::encodeHdr() const {
     std::string header;
-    header.resize(fixedHeaderSize());
+    size_t hdrSize = getHdrSize();
+    header.resize(hdrSize);
 
     size_t offset = 0;
 
@@ -325,7 +312,11 @@ std::string ReplLogValueV2::encodeHdr() const {
     size = int64Encode(&header[offset], _versionEp);
     offset += size;
 
-    INVARIANT(offset == fixedHeaderSize());
+    INVARIANT_D(offset == fixedHeaderSize());
+
+    size = lenStrEncode(&header[offset], hdrSize - offset, _cmdStr);
+    offset += size;
+    INVARIANT(offset == hdrSize);
 
     return header;
 }
@@ -335,23 +326,21 @@ std::string ReplLogValueV2::encode(
     std::string val = encodeHdr();
     size_t offset = val.size();
 
-    size_t maxSize = offset;
+    size_t allocSize = offset;
     for (auto v : vec) {
-        maxSize += v.maxSize();
+        allocSize += v.encodeSize();
     }
 
-    val.resize(maxSize);
+    val.resize(allocSize);
 
     for (auto v : vec) {
         uint8_t* desc = (uint8_t*)val.c_str() + offset;
-        size_t len = v.encode(desc, maxSize - offset);
+        size_t len = v.encode(desc, allocSize - offset);
         INVARIANT(len > 0);
         offset += len;
     }
 
-    INVARIANT(offset <= maxSize);
-
-    val.resize(offset);
+    INVARIANT(offset == allocSize);
 
     RecordValue tmpRv(std::move(val), RecordType::RT_BINLOG, -1);
 
@@ -412,9 +401,15 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const char* str, size_t size) {
     // versionEp
     versionEp = int64Decode(str + VERSIONEP_OFFSET);
 
+    auto eCmd = lenStrDecode(str + FIXED_HEADER_SIZE, size - FIXED_HEADER_SIZE);
+    if (!eCmd.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "ReplLogValueV2::decode() error:"  + eCmd.status().toString() };
+    }
+
     auto keyCstr = reinterpret_cast<const uint8_t*>(str);
 
-    return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, keyCstr, size);
+    return ReplLogValueV2(chunkid, flag, txnid, timestamp, versionEp, eCmd.value().first, keyCstr, size);
 }
 
 bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
@@ -422,7 +417,8 @@ bool ReplLogValueV2::isEqualHdr(const ReplLogValueV2& o) const {
         _flag == o._flag &&
         _txnId == o._txnId &&
         _timestamp == o._timestamp &&
-        _versionEp == o._versionEp;
+        _versionEp == o._versionEp &&
+        _cmdStr == o._cmdStr;
 }
 
 // std::string& ReplLogValueV2::updateTxnId(std::string& encodeStr,
@@ -504,12 +500,12 @@ uint64_t ReplLogRawV2::getTimestamp() {
 uint32_t ReplLogRawV2::getChunkId() {
     if (_val.size() < RecordValue::minSize() + ReplLogValueV2::fixedHeaderSize()) {
         INVARIANT_D(0);
-        return (uint32_t)-1;
+        return (uint32_t)Transaction::CHUNKID_UNINITED;
     }
     auto rvHdrSize = RecordValue::decodeHdrSizeNoMeta(_val);
     if (!rvHdrSize.ok()) {
          INVARIANT_D(0);
-        return (uint32_t)-1;
+        return (uint32_t)Transaction::CHUNKID_UNINITED;
     }
 
     return int32Decode(_val.c_str() +
@@ -539,10 +535,108 @@ size_t Binlog::decodeHeader(const char* str, size_t size) {
 size_t Binlog::writeRepllogRaw(std::stringstream& ss, const ReplLogRawV2& repllog) {
     size_t size = 0;
 
-    size += ssAppendSizeAndString(ss, repllog.getReplLogKey());
-    size += ssAppendSizeAndString(ss, repllog.getReplLogValue());
+    size += lenStrEncode(ss, repllog.getReplLogKey());
+    size += lenStrEncode(ss, repllog.getReplLogValue());
 
     return size;
+}
+
+BinlogWriter::BinlogWriter(size_t maxSize, uint32_t maxCount)
+    : _curSize(0), _maxSize(maxSize),
+      _curCnt(0), _maxCnt(maxCount),
+      _flag(BinlogFlag::NORMAL) {
+    _curSize += Binlog::writeHeader(_ss);
+}
+
+bool BinlogWriter::writeRepllogRaw(const ReplLogRawV2& repllog) {
+    _curSize += Binlog::writeRepllogRaw(_ss, repllog);
+    _curCnt++;
+    if (_curSize >= _maxSize || _curCnt >= _maxCnt) {
+        return true;
+    }
+
+    return false;
+}
+
+BinlogReader::BinlogReader(const std::string& s)
+    : _pos(0), _val(s) {
+}
+
+Expected<ReplLogRawV2> BinlogReader::next() {
+    if (_pos == 0) {
+        // first read
+        auto size = Binlog::decodeHeader(_val.data(), _val.size());
+        if (size > _val.size()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid binlog" };
+        }
+        
+        _pos = size;
+    }
+
+    if (_pos == _val.size()) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+    INVARIANT(_pos < _val.size());
+
+    auto ptr = _val.data();
+    auto totalSize = _val.size();
+    auto offset = _pos;
+
+    auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eKey.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eKey.status().toString() };
+    }
+    offset += eKey.value().second;
+
+    auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eValue.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eValue.status().toString() };
+    }
+    offset += eValue.value().second;
+
+    _pos = offset;
+    return ReplLogRawV2(eKey.value().first, eValue.value().first);
+}
+
+Expected<ReplLogV2> BinlogReader::nextV2() {
+    if (_pos == 0) {
+        // first read
+        auto size = Binlog::decodeHeader(_val.data(), _val.size());
+        if (size > _val.size()) {
+            return{ ErrorCodes::ERR_DECODE, "invalid binlog" };
+        }
+
+        _pos = size;
+    }
+
+    if (_pos == _val.size()) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+    INVARIANT(_pos < _val.size());
+
+    auto ptr = _val.data();
+    auto totalSize = _val.size();
+    auto offset = _pos;
+
+    auto eKey = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eKey.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eKey.status().toString() };
+    }
+    offset += eKey.value().second;
+
+    auto eValue = lenStrDecode(ptr + offset, totalSize - offset);
+    if (!eValue.ok()) {
+        return{ ErrorCodes::ERR_DECODE,
+            "invalid binlog format" + eValue.status().toString() };
+    }
+    offset += eValue.value().second;
+
+    _pos = offset;
+
+    return ReplLogV2::decode(eKey.value().first, eValue.value().first);
 }
 
 ReplLogV2::ReplLogV2(ReplLogKeyV2&& key, ReplLogValueV2&& value,
@@ -572,13 +666,13 @@ Expected<ReplLogV2> ReplLogV2::decode(const std::string& key,
 
     std::vector<ReplLogValueEntryV2> entrys;
 
-    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    size_t offset = v.value().getHdrSize();
     auto data = v.value().getData();
     size_t dataSize = v.value().getDataSize();
     while (offset < dataSize) {
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
-            dataSize - offset, size);
+            dataSize - offset, &size);
         INVARIANT(entry.ok());
         if (!entry.ok()) {
             return entry.status();

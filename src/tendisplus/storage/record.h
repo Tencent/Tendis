@@ -6,9 +6,11 @@
 #include <memory>
 #include <vector>
 #include <limits>
+#include <sstream>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -42,6 +44,8 @@ enum class RecordType {
 
 uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
+bool isDataMetaType(RecordType t);
+bool isKeyType(RecordType t);
 RecordType getRealKeyType(RecordType t);
 bool isRealEleType(RecordType keyType, RecordType valueType);
 
@@ -243,6 +247,7 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_NONE = 0,
     REPL_OP_SET = 1,
     REPL_OP_DEL = 2,
+    REPL_OP_STMT = 3,
 };
 
 #ifdef BINLOG_V1
@@ -369,10 +374,10 @@ class ReplLogValueEntryV2 {
     ReplOp getOp() const { return _op; }
 
     static Expected<ReplLogValueEntryV2> decode(const char* rawVal, size_t maxSize,
-        size_t& decodeSize);
+        size_t* decodeSize);
     std::string encode() const;
     size_t encode(uint8_t* dest, size_t destSize) const;
-    size_t maxSize() const;
+    size_t encodeSize() const;
     ReplLogValueEntryV2& operator=(ReplLogValueEntryV2&&);
     bool operator==(const ReplLogValueEntryV2&) const;
 
@@ -389,11 +394,14 @@ class ReplLogValueV2 {
     ReplLogValueV2(const ReplLogValueV2&) = delete;
     ReplLogValueV2(ReplLogValueV2&&);
     ReplLogValueV2(uint32_t chunkId, ReplFlag flag, uint64_t txnid, uint64_t timestamp, uint64_t versionEp,
+                const std::string& cmd,
                 const uint8_t* data, size_t dataSize);
     static Expected<ReplLogValueV2> decode(const std::string& rvStr);
     static Expected<ReplLogValueV2> decode(const char* str, size_t size);
-    // static std::string& updateTxnId(std::string& encodeStr, uint64_t newTxnId);
+    // not include cmdStr
     static size_t fixedHeaderSize();
+    // include cmdStr
+    size_t getHdrSize() const;
     std::string encodeHdr() const;
     std::string encode(const std::vector<ReplLogValueEntryV2>& vec) const;
     bool isEqualHdr(const ReplLogValueV2&) const;
@@ -405,6 +413,7 @@ class ReplLogValueV2 {
     uint64_t getTimestamp() const { return _timestamp; }
     uint64_t getVersionEp() const { return _versionEp; }
     Expected<std::vector<ReplLogValueEntryV2>> getLogList() const;
+    const std::string& getCmd() const { return _cmdStr; }
 
     static constexpr size_t CHUNKID_OFFSET = 0;
     static constexpr size_t FLAG_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
@@ -419,6 +428,7 @@ class ReplLogValueV2 {
     uint64_t _txnId;
     uint64_t _timestamp;
     uint64_t _versionEp;
+    std::string _cmdStr;
     // NOTE(vinchen) : take care about "_data", the caller should guarantee the
     // memory is ok;
     // printer to the RecordValue.getValue().c_str()
@@ -447,17 +457,6 @@ class ReplLogRawV2 {
     std::string _val;
 };
 
-class Binlog {
- public:
-    Binlog() = default;
-    static size_t writeHeader(std::stringstream& s);
-    static size_t writeRepllogRaw(std::stringstream& s, const ReplLogRawV2& repllog);
-    static size_t decodeHeader(const char* str, size_t size);
-
-    static constexpr size_t HEADERSIZE = 1;
-    static constexpr uint8_t VERSION = 2;
- private:
-};
 
 class ReplLogV2 {
  public:
@@ -485,6 +484,54 @@ class ReplLogV2 {
     ReplLogKeyV2 _key;
     ReplLogValueV2 _val;
     std::vector<ReplLogValueEntryV2> _entrys;
+};
+
+enum class BinlogFlag {
+    NORMAL = 0,
+    FLUSH = 1,
+};
+
+class Binlog {
+ public:
+    Binlog() = default;
+    static size_t writeHeader(std::stringstream& s);
+    static size_t writeRepllogRaw(std::stringstream& s, const ReplLogRawV2& repllog);
+    static size_t decodeHeader(const char* str, size_t size);
+
+    static constexpr size_t HEADERSIZE = 1;
+    static constexpr uint8_t VERSION = 2;
+    static constexpr uint8_t INVALID_VERSION = (uint8_t)-1;
+ private:
+};
+
+class BinlogWriter {
+ public:
+    BinlogWriter(size_t maxSize, uint32_t maxCount);
+    bool writeRepllogRaw(const ReplLogRawV2& repllog);
+
+    uint32_t getCount() const { return _curCnt; }
+    uint32_t getSize() const { return _curSize; }
+    BinlogFlag getFlag() const { return _flag; }
+    void setFlag(BinlogFlag flag) { _flag = flag; }
+    std::string getBinlogStr() { return _ss.str(); }
+
+ private:
+    size_t _curSize;
+    size_t _maxSize;
+    uint32_t _curCnt;
+    uint32_t _maxCnt;
+    BinlogFlag _flag;
+    std::stringstream _ss;
+};
+
+class BinlogReader {
+ public:
+    BinlogReader(const std::string& s);
+    Expected<ReplLogRawV2> next();
+    Expected<ReplLogV2> nextV2();
+ private:
+    size_t _pos;
+    mystring_view _val;
 };
 #endif
 

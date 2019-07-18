@@ -8,6 +8,11 @@ namespace tendisplus {
 void testVarint(uint64_t val, std::vector<uint8_t> bytes) {
     EXPECT_EQ(bytes, varintEncode(val));
 
+    auto str = varintEncodeStr(val);
+    EXPECT_EQ(str.size(), bytes.size());
+    EXPECT_EQ(memcmp((void*)str.c_str(), (void*)bytes.data(), str.size()), 0);
+    EXPECT_EQ(str.size(), varintEncodeSize(val));
+
     auto expt = varintDecodeFwd(bytes.data(), bytes.size());
     EXPECT_TRUE(expt.ok());
     EXPECT_EQ(expt.value().first, val);

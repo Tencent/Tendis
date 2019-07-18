@@ -498,7 +498,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         // _cv.notify_all();
     });
     LocalSessionGuard sg(_svr);
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"truncatelog",
          std::to_string(storeId),
          std::to_string(start),

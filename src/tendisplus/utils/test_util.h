@@ -70,6 +70,7 @@ class WorkLoad {
                           const char* key_suffix = NULL);
     void expireKeys(const AllKeys &keys, uint64_t ttl);
     void slaveof(const std::string& ip, uint32_t port);
+    void flush();
     void delKeys(const KeysWritten &keys);
     void setMaxKeyLen(uint32_t max_key_len);
     Expected<uint64_t> getIntResult(const std::vector<std::string>& args);

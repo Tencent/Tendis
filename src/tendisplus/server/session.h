@@ -57,6 +57,8 @@ class LocalSession: public Session {
     int getFd() final;
     std::string getRemote() const final;
     void setResponse(const std::string& s) final;
+    void setArgs(const std::vector<std::string>& args);
+    void setArgs(const std::string& cmd);
 
  private:
     std::vector<char> _respBuf;

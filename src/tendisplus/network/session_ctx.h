@@ -14,6 +14,7 @@
 #include "tendisplus/lock/mgl/lock_defines.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -89,7 +90,6 @@ class SessionCtx {
     // multi key
     std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
     std::vector<std::string> _argsBrief;
-    std::list<std::string> _delBigKeys;
 };
 
 }  // namespace tendisplus

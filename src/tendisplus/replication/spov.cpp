@@ -98,7 +98,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     LocalSessionGuard sg(_svr);
     // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
     // since it's on stack
-    sg.getSession()->getCtx()->setArgsBrief(
+    sg.getSession()->setArgs(
         {"slavefullsync", std::to_string(metaSnapshot.id)});
 
     // 1) stop store and clean it's directory
@@ -178,7 +178,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         return exists;
     }();
     if (!backupExists.ok() || backupExists.value()) {
-        LOG(FATAL) << "store:" << metaSnapshot.id << " backupDir exists";
+        LOG(ERROR) << "store:" << metaSnapshot.id << " backupDir exists:" << store->dftBackupDir();
+        return;
     }
 
     auto flist = bkInfo.value().getFileList();
@@ -476,8 +477,6 @@ Status ReplManager::applySingleTxn(uint32_t storeId, uint64_t txnId,
 // if logKey == "", it means binlog_heartbeat
 Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         const std::string& logKey, const std::string& logValue) {
-    // NOTE(deyukong): donot lock store in IX/IS mode again
-    // the caller has duty to do this thing.
     [this, storeId]() {
         std::unique_lock<std::mutex> lk(_mutex);
         _cv.wait(lk,
@@ -525,9 +524,8 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
 
 Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue) {
-    // TODO(vinchen): should be called with lock held
-    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
-        mgl::LockMode::LOCK_NONE);
+    auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
+        mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -552,13 +550,13 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId
     }
 
     uint64_t timestamp = 0;
-    size_t offset = ReplLogValueV2::fixedHeaderSize();
+    size_t offset = value.value().getHdrSize();
     auto data = value.value().getData();
     size_t dataSize = value.value().getDataSize();
     while (offset < dataSize) {
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
-                        dataSize - offset, size);
+                        dataSize - offset, &size);
         if (!entry.ok()) {
             return entry.status();
         }

@@ -69,18 +69,18 @@ Expected<bool> expireAfterNow(Session *sess,
         Status s;
 
         if (vt != RecordType::RT_KV) {
-            // delete old index entry
-            auto oldTTL = rv.getTtl();
-            if (oldTTL != 0) {
-                TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
-
-                s = txn->delKV(o_ictx.encode());
-                if (!s.ok()) {
-                    return s;
-                }
-            }
-
             if (!Command::noExpire()) {
+                // delete old index entry
+                auto oldTTL = rv.getTtl();
+                if (oldTTL != 0) {
+                    TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
+
+                    s = txn->delKV(o_ictx.encode());
+                    if (!s.ok()) {
+                        return s;
+                    }
+                }
+
                 // add new index entry
                 TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
                 s = txn->setKV(n_ictx.encode(),

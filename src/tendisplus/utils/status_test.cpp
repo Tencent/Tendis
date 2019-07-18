@@ -14,6 +14,52 @@ TEST(Status, Common) {
     EXPECT_EQ(s1.value(), "test");
 }
 
+
+size_t callCnt;
+size_t moveCallCnt;
+class Base {
+    public:
+        Base() { callCnt++; std::cout << "default constructor" << std::endl; }
+        ~Base() { std::cout << "destructor" << std::endl; }
+        Base(const Base& b) { callCnt++; std::cout << "copy constructor" << std::endl; }
+        Base(Base&& b) { moveCallCnt++; std::cout << "move constructor" << std::endl; }
+};
+
+Expected<Base> getBase() {
+    Base b;
+    return b;
+}
+
+static constexpr uint32_t abc = 10;
+Expected<uint32_t> getInt() {
+    return abc;
+}
+
+TEST(Status, Move) {
+    {
+        auto eb = getBase();
+        EXPECT_EQ(callCnt, 1);
+        EXPECT_EQ(moveCallCnt, 1);
+        callCnt = 0;
+        moveCallCnt = 0;
+    }
+
+    std::cout << "============" << std::endl;
+
+    {
+        auto eb2 = makeExpected<Base>();
+        EXPECT_EQ(callCnt, 1);
+        EXPECT_EQ(moveCallCnt, 1);
+        callCnt = 0;
+        moveCallCnt = 0;
+    }
+    std::cout << "============" << std::endl;
+
+    {
+        auto eb = getInt();
+    }
+}
+
 TEST(StatusWith, nonDefaultConstructible) {
     class A {
         A() = delete;

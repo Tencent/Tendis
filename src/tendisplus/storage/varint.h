@@ -13,6 +13,9 @@ using VarintDecodeResult = std::pair<uint64_t, size_t>;
 
 size_t varintMaxSize(size_t size);
 std::vector<uint8_t> varintEncode(uint64_t val);
+std::string varintEncodeStr(uint64_t val);
+size_t varintEncodeBuf(uint8_t* buf, size_t bufsize, uint64_t val);
+size_t varintEncodeSize(uint64_t val);
 
 Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,
         size_t maxSize);
