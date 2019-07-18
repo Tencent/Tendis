@@ -57,15 +57,113 @@ class BackupCommand: public Command {
             if (!store->isOpen()) {
                 continue;
             }
+            std::string dbdir = dir + "/" + std::to_string(i) + "/";
             Expected<BackupInfo> bkInfo = store->backup(
-                dir, KVStore::BackupMode::BACKUP_COPY);
+                dbdir, KVStore::BackupMode::BACKUP_COPY);
             if (!bkInfo.ok()) {
                 return bkInfo.status();
             }
         }
-        return {ErrorCodes::ERR_OK, ""};
+        return Command::fmtOK();
     }
 } bkupCmd;
+
+class RestoreBackupCommand : public Command {
+ public:
+    RestoreBackupCommand()
+        :Command("restorebackup", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restorebackup "all"|storeId dir
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        const std::string& dbid = sess->getArgs()[1];
+        const std::string& dir = sess->getArgs()[2];
+        if (dbid == "all") {
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                std::string storeDir = dir + "/" + std::to_string(i) + "/";
+                auto ret = restoreBackup(svr, sess, i, storeDir);
+                if (!ret.ok()) {
+                    return ret.status();
+                }
+            }
+        } else {
+            uint32_t storeId = atoi(dbid.c_str());
+            auto ret = restoreBackup(svr, sess, storeId, dir);
+            if (!ret.ok()) {
+                return ret.status();
+            }
+        }
+        return Command::fmtOK();
+    }
+
+ private:
+    Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
+        Session *sess, uint32_t storeId, const std::string& dir) {
+        // NOTE(deyukong): here we acquire IS lock
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS, true);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        auto store = std::move(expdb.value().store);
+        // if store is not open, skip it
+        if (!store->isOpen()) {
+            return {ErrorCodes::ERR_INTERNAL, "store not open"};
+        }
+
+        Status stopStatus = store->stop();
+        if (!stopStatus.ok()) {
+            // there may be uncanceled transactions binding with the store
+            LOG(WARNING) << "restoreBackup stop store:" << storeId
+                        << " failed:" << stopStatus.toString();
+            return {ErrorCodes::ERR_INTERNAL, "stop failed."};
+        }
+
+        // clear dir
+        INVARIANT(!store->isRunning());
+        Status clearStatus =  store->clear();
+        if (!clearStatus.ok()) {
+            LOG(FATAL) << "Unexpected store:" << storeId << " clear"
+                << " failed:" << clearStatus.toString();
+        }
+
+
+        // rocksdb will clear dir too.
+        Expected<std::string> ret = store->restoreBackup(
+            dir, KVStore::BackupMode::BACKUP_COPY);
+        if (!ret.ok()) {
+            return ret.status();
+        }
+
+        Expected<uint64_t> restartStatus = store->restart(false);
+        if (!restartStatus.ok()) {
+            LOG(FATAL) << "restoreBackup restart store:" << storeId
+                   << ",failed:" << restartStatus.status().toString();
+            return {ErrorCodes::ERR_INTERNAL, "restart failed."};
+        }
+
+        return Command::fmtOK();
+    }
+} restoreBackupCommand;
 
 class FullSyncCommand: public Command {
  public:

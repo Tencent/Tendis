@@ -79,6 +79,8 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
     try {
+        _ip = ip;
+        _port = port;
         asio::ip::address address = asio::ip::make_address(ip);
         auto ep = tcp::endpoint(address, port);
         std::error_code ec;

@@ -878,6 +878,9 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     fs->write(log.getReplLogValue().c_str(), valLen);
     written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);
 
+#ifdef TENDIS_DEBUG
+    fs->flush();
+#endif
     INVARIANT_D(fs->good());
 
     return written;
@@ -895,8 +898,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         result.newStart = start;
         return result;
     }
-
-    INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
+    // INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
+    INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
 
     auto cursor = txn->createRepllogCursorV2(start);
 
@@ -1267,7 +1270,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
             if (!filesystem::exists(dir)) {
                 return;
             }
-            filesystem::remove_all(dir);
+            // filesystem::remove_all(dir);
         } catch (const std::exception& ex) {
             LOG(FATAL) << "remove " << dir << " ex:" << ex.what();
         }
@@ -1352,6 +1355,44 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     return result;
 }
 
+Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir,
+    KVStore::BackupMode mode) {
+    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
+        // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
+        if (dir != dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT invalid dir"};
+        }
+        // TODO(takenliu) support CKPT restore.
+        return {ErrorCodes::ERR_INTERNAL, "havn't support."};
+    } else {
+        if (dir == dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_COPY invalid dir"};
+        }
+    }
+
+    if (mode == KVStore::BackupMode::BACKUP_COPY) {
+        rocksdb::BackupEngineReadOnly* backup_engine;
+        rocksdb::Status s = rocksdb::BackupEngineReadOnly::Open(
+            rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir),
+            &backup_engine);
+        if (!s.ok()) {
+            LOG(ERROR) << "BackupEngineReadOnly::Open failed."
+                << s.ToString() << " dir:" << dir;
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        std::unique_ptr<rocksdb::BackupEngineReadOnly> pBkEngine(backup_engine);
+        const std::string path = dbPath() + "/" + dbId();
+        s = pBkEngine->RestoreDBFromLatestBackup(path, path);
+        if (!s.ok()) {
+            LOG(ERROR) << "RestoreDBFromLatestBackup failed."
+                << s.ToString() << " dir:" << dir;
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        LOG(INFO) << "backup sucess.";
+    }
+    return std::string("ok");
+}
+
 Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning) {
@@ -1391,9 +1432,10 @@ Status RocksKVStore::assignBinlogIdIfNeeded(Transaction* txn) {
 void RocksKVStore::setNextBinlogSeq(uint64_t binlogId, Transaction* txn) {
     std::lock_guard<std::mutex> lk(_mutex);
     // TODO(takenliu) fix the relative logic
-    //INVARIANT_D(txn->isReplOnly());
+    // INVARIANT_D(txn->isReplOnly());
 
-    _nextBinlogSeq = binlogId;
+    _nextBinlogSeq = binlogId + 1;
+    _highestVisible = binlogId;
 
     txn->setBinlogId(binlogId);
     INVARIANT_D(_aliveBinlogs.find(binlogId) == _aliveBinlogs.end());

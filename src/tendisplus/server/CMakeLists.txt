@@ -31,6 +31,9 @@ else()
 	set_target_properties(repl_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
 
+add_executable(restore_test restore_test.cpp)
+target_link_libraries(restore_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
+target_link_libraries(restore_test index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
 
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})

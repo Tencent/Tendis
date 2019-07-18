@@ -474,7 +474,7 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    nextSched = nextSched + std::chrono::seconds(5); // make frequency be lowwer
+    nextSched = nextSched + std::chrono::seconds(1); // make frequency be lowwer
 
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
@@ -588,7 +588,9 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         return;
     }
     LOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
-                 << " to end:" << newStart << " success";
+        << " to end:" << newStart << " success."
+        << "addr:" << _svr->getNetwork()->getIp()
+        << ":" << _svr->getNetwork()->getPort();
     start = newStart;
 }
 

@@ -249,7 +249,8 @@ std::string randomKey(size_t maxlen) {
 KeysWritten WorkLoad::writeWork(RecordType type,
                                 uint32_t count,
                                 uint32_t maxlen,
-                                bool sharename) {
+                                bool sharename,
+                                const char* key_suffix) {
     uint32_t total = 0;
     KeysWritten keys;
 
@@ -257,6 +258,9 @@ KeysWritten WorkLoad::writeWork(RecordType type,
         std::string key = randomKey(32) + "_" + std::to_string(i);
         key.push_back('_');
         key.push_back(static_cast<char>(rt2Char(type)));
+        if (key_suffix != NULL) {
+            key += '_' + key_suffix;
+        }
 
         if (type == RecordType::RT_KV) {
             _session->setArgs({"set", key, std::to_string(i)});

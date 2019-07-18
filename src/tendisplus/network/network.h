@@ -62,6 +62,8 @@ class NetworkAsio {
     Status prepare(const std::string& ip, const uint16_t port);
     Status run();
     void stop();
+    std::string getIp() { return _ip;}
+    uint16_t getPort() { return _port;}
 
  private:
     // we envolve a single-thread accept, mutex is not needed.
@@ -76,6 +78,8 @@ class NetworkAsio {
     std::atomic<bool> _isRunning;
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<RequestMatrix> _reqMatrix;
+    std::string _ip;
+    uint16_t _port;
 };
 
 struct SendBuffer {

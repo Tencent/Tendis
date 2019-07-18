@@ -280,6 +280,8 @@ class KVStore {
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
     virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
+    virtual Expected<std::string> restoreBackup(const std::string& dir,
+        KVStore::BackupMode mode) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(

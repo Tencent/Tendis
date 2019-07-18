@@ -245,6 +245,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                 if (isOptionOn(tokens[1])) {
                     noexpire = true;
                 }
+            } else if (tokens[0] == "maxbinlogkeepnum") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "Invalid number of databases" };
+                }
+                maxBinlogKeepNum = std::stoi(tokens[1]);
             }
         }
     } catch (const std::exception& ex) {
@@ -281,6 +287,7 @@ ServerParams::ServerParams()
     protoMaxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
     dbNum = CONFIG_DEFAULT_DBNUM;
     noexpire = false;
+    maxBinlogKeepNum = 1000000;
 }
 
 

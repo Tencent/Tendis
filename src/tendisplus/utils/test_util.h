@@ -66,7 +66,8 @@ class WorkLoad {
 
     void init() { std::srand((uint32_t)msSinceEpoch()); }
     KeysWritten writeWork(RecordType, uint32_t count,
-                          uint32_t maxlen = 0, bool sharename = true);
+                          uint32_t maxlen = 0, bool sharename = true,
+                          const char* key_suffix = NULL);
     void expireKeys(const AllKeys &keys, uint64_t ttl);
     void slaveof(const std::string& ip, uint32_t port);
     void delKeys(const KeysWritten &keys);
