@@ -354,7 +354,7 @@ Expected<std::vector<ReplLogValueEntryV2>> ReplLogValueV2::getLogList() const {
     while (curSize < _dataSize) {
         size_t oneSize = 0;
         Expected<ReplLogValueEntryV2> logEntry =
-            ReplLogValueEntryV2::decode((const char*)_data + curSize, _dataSize - curSize, oneSize);
+            ReplLogValueEntryV2::decode((const char*)_data + curSize, _dataSize - curSize, &oneSize);
         if (!logEntry.ok()) {
             return {ErrorCodes::ERR_DECODE, "decode error."};
         }
