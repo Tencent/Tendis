@@ -149,7 +149,7 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos);
             cmd += " --end-datetime=" + std::to_string(end_ts);
-            cmd += "| ../../../redis-2.8.17/src/redis-cli -p 1112";
+            cmd += "| ../../../redis-2.8.17/src/redis-cli -p 1122";
             LOG(INFO) << cmd;
             int ret = system(cmd.c_str());
             EXPECT_EQ(ret, 0);
@@ -326,8 +326,8 @@ makeRestoreEnv(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv("master1"));
     EXPECT_TRUE(setupEnv("master2"));
 
-    auto cfg1 = makeServerParam(1111, storeCnt, "master1");
-    auto cfg2 = makeServerParam(1112, storeCnt, "master2");
+    auto cfg1 = makeServerParam(1121, storeCnt, "master1");
+    auto cfg2 = makeServerParam(1122, storeCnt, "master2");
     cfg1->maxBinlogKeepNum = 1;
     cfg2->maxBinlogKeepNum = 1;
 
@@ -374,12 +374,15 @@ TEST(Restore, Common) {
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
+        uint32_t deleteBinlogInterSec = 1; // 1s
+        uint32_t waitBinlogDumpSec = deleteBinlogInterSec + 2;
+
         uint32_t part1_num = std::rand() % recordSize;
         part1_num = part1_num == 0 ? 1 : part1_num;
         uint32_t part2_num = recordSize - part1_num;
         // add kv only
         auto partKeys2 = initKvData(master1, part1_num, "suffix21");
-        sleep(2);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         std::vector<uint32_t> m1_keynum1 = getKeyNum(master1);
         LOG(INFO) << ">>>>>> master1 initKvData 1st end;";
         uint64_t ts = msSinceEpoch();
@@ -387,32 +390,31 @@ TEST(Restore, Common) {
         sleep(1);  // wait ts changed
         // add kv only
         auto partKeys3 = initKvData(master1, part2_num, "suffix22");
-        sleep(2);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         std::vector<uint32_t> m1_keynum2 = getKeyNum(master1);
         LOG(INFO) << ">>>>>> master1 initKvData 2st end;";
-        sleep(2);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         restoreBinlog(master2, ts);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 1st end;";
-        sleep(2);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         std::vector<uint32_t> m2_keynum1 = getKeyNum(master2);
         // master1第二次写kv数据,对于写到的kvstore keynum会相等，没写到的会小1。
         checkNumAllowDiff(m1_keynum1, m2_keynum1, 1);  // check num only
         restoreBinlog(master2, UINT64_MAX);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 2st end;";
-        sleep(2);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         std::vector<uint32_t> m2_keynum2 = getKeyNum(master2);
         checkNumWithDiff(m1_keynum2, m2_keynum2, 1);  // check num only
-        sleep(2);
-
         compareAllowNotFound(master1, master2, 1);
         LOG(INFO) << ">>>>>> compareData 2st end;";
 
+        waitBinlogDumpSec = deleteBinlogInterSec + 15; // wait enough time.
         testAll(master1);
         addOneKeyEveryKvstore(master1, "restore_test_key1");
-        sleep(15);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         restoreBinlog(master2, UINT64_MAX);
         addOneKeyEveryKvstore(master2, "restore_test_key1");
-        sleep(15);  // wait binlog dump
+        sleep(waitBinlogDumpSec);
         compareData(master1, master2, false);  // compare data only
 
         LOG(INFO) << ">>>>>> test store count:" << i << " end;";

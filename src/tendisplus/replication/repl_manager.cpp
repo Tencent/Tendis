@@ -474,6 +474,7 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
+    // TODO(takenliu) make it in config, and make every schedule's min num bigger.
     nextSched = nextSched + std::chrono::seconds(1); // make frequency be lowwer
 
     bool hasError = false;

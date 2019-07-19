@@ -234,7 +234,7 @@ Expected<uint64_t> RocksTxn::commit() {
             return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
         }
     }
-    if (isReplOnly() && _binlogId != Transaction::TXNID_UNINITED) {
+    if (/*isReplOnly() && */_binlogId != Transaction::TXNID_UNINITED) {
         // NOTE(vinchen): for slave, binlog form master store directly
         binlogTxnId = _txnId;
     }
@@ -1337,7 +1337,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
             if (!filesystem::exists(dir)) {
                 return;
             }
-            // filesystem::remove_all(dir);
+            // filesystem::remove_all(dir); // takenliu:it's too dangerous, don't removeall
         } catch (const std::exception& ex) {
             LOG(FATAL) << "remove " << dir << " ex:" << ex.what();
         }
@@ -1455,7 +1455,7 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir,
                 << s.ToString() << " dir:" << dir;
             return {ErrorCodes::ERR_INTERNAL, s.ToString()};
         }
-        LOG(INFO) << "backup sucess.";
+        LOG(INFO) << "backup sucess. dbpath:" << path << " backup path:" << dir;
     }
     return std::string("ok");
 }
@@ -1509,12 +1509,10 @@ void RocksKVStore::setNextBinlogSeq(uint64_t binlogId, Transaction* txn) {
     // INVARIANT_D(txn->isReplOnly());
 
     _nextBinlogSeq = binlogId + 1;
-    _highestVisible = binlogId;
 
     txn->setBinlogId(binlogId);
     INVARIANT_D(_aliveBinlogs.find(binlogId) == _aliveBinlogs.end());
     _aliveBinlogs.insert({ binlogId, { false, txn->getTxnId() } });
-
     auto it = _aliveTxns.find(txn->getTxnId());
     INVARIANT_D(it != _aliveTxns.end() && !it->second.first);
 

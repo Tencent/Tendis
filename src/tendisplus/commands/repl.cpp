@@ -94,9 +94,9 @@ class RestoreBackupCommand : public Command {
     Expected<std::string> run(Session *sess) final {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        const std::string& dbid = sess->getArgs()[1];
+        const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
-        if (dbid == "all") {
+        if (kvstore == "all") {
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 std::string storeDir = dir + "/" + std::to_string(i) + "/";
                 auto ret = restoreBackup(svr, sess, i, storeDir);
@@ -105,7 +105,12 @@ class RestoreBackupCommand : public Command {
                 }
             }
         } else {
-            uint32_t storeId = atoi(dbid.c_str());
+            Expected<uint64_t> exptStoreId = ::tendisplus::stoul(kvstore.c_str());
+            if (!exptStoreId.ok()) {
+                return exptStoreId.status();
+            }
+            uint32_t storeId = (uint32_t)exptStoreId.value();
+
             auto ret = restoreBackup(svr, sess, storeId, dir);
             if (!ret.ok()) {
                 return ret.status();
@@ -117,9 +122,9 @@ class RestoreBackupCommand : public Command {
  private:
     Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
         Session *sess, uint32_t storeId, const std::string& dir) {
-        // NOTE(deyukong): here we acquire IS lock
+        // IX lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-            mgl::LockMode::LOCK_IS, true);
+            mgl::LockMode::LOCK_IX, true);
         if (!expdb.ok()) {
             return expdb.status();
         }
