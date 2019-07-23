@@ -787,6 +787,7 @@ class RestoreBinlogCommandV2 : public Command {
             return expdb.status();
         }
 
+        sess->getCtx()->setReplOnly(true);
         Expected<uint64_t> ret =
             replMgr->applySingleTxnV2(sess, storeId, key, value);
         if (!ret.ok()) {

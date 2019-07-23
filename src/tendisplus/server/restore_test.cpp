@@ -29,22 +29,27 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server,
 
     AllKeys all_keys;
 
-    auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
+    auto kv_keys = work.writeWork(RecordType::RT_KV, count,
+        0, true, key_suffix);
     all_keys.emplace_back(kv_keys);
 
-    auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 2, true, key_suffix);
+    auto list_keys = work.writeWork(RecordType::RT_LIST_META, count,
+        2, true, key_suffix);
     all_keys.emplace_back(list_keys);
 
-    auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 2, true, key_suffix);
+    auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count,
+        2, true, key_suffix);
     all_keys.emplace_back(hash_keys);
 
-    auto set_keys = work.writeWork(RecordType::RT_SET_META, count, 2, true, key_suffix);
+    auto set_keys = work.writeWork(RecordType::RT_SET_META, count,
+        2, true, key_suffix);
     all_keys.emplace_back(set_keys);
 
-    auto zset_keys = work.writeWork(RecordType::RT_ZSET_META, count, 2, true, key_suffix);
+    auto zset_keys = work.writeWork(RecordType::RT_ZSET_META, count,
+        2, true, key_suffix);
     all_keys.emplace_back(zset_keys);
 
-    return std::move(all_keys);
+    return all_keys;
 }
 
 AllKeys initKvData(const std::shared_ptr<ServerEntry>& server,
@@ -115,6 +120,20 @@ void restoreBackup(const std::shared_ptr<ServerEntry>& server) {
     EXPECT_TRUE(expect.ok());
 }
 
+void flushBinlog(const std::shared_ptr<ServerEntry>& server) {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto sess = makeSession(server, ctx);
+
+    for (size_t i = 0; i < server->getKVStoreCount(); i++) {
+        std::vector<std::string> args;
+        args.push_back("binlogflush");
+        args.push_back(std::to_string(i));
+        sess->setArgs(args);
+        auto expect = Command::runSessionCmd(sess.get());
+        EXPECT_TRUE(expect.ok());
+    }
+}
+
 void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
     uint64_t end_ts = UINT64_MAX) {
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
@@ -157,6 +176,41 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
     }
 }
 
+void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
+    for (size_t i = 0; i < server->getKVStoreCount(); i++) {
+        auto kvstore = server->getStores()[i];
+
+        while (true) {
+            auto ptxn = kvstore->createTransaction(nullptr);
+            EXPECT_TRUE(ptxn.ok());
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            uint64_t minBinlogId = 0;
+            auto expBinlogidMin = RepllogCursorV2::getMinBinlogId(txn.get());
+            if (expBinlogidMin.status().code() == ErrorCodes::ERR_EXHAUST) {
+                minBinlogId = 0;
+            } else {
+                EXPECT_TRUE(expBinlogidMin.ok());
+                minBinlogId = expBinlogidMin.value();
+            }
+
+            uint64_t maxBinlogId = 0;
+            auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(txn.get());
+            if (expBinlogidMax.status().code() == ErrorCodes::ERR_EXHAUST) {
+                maxBinlogId = 0;
+            } else {
+                EXPECT_TRUE(expBinlogidMin.ok());
+                maxBinlogId = expBinlogidMax.value();
+            }
+
+            // wait only one binlog left in rocksdb
+            if (minBinlogId == maxBinlogId) {
+                break;
+            } else {
+                usleep(10000);  // 10ms
+            }
+        }
+    }
+}
 void compareData(const std::shared_ptr<ServerEntry>& master,
     const std::shared_ptr<ServerEntry>& slave, bool com_binlog = true) {
     INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
@@ -181,7 +235,8 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!com_binlog && exptRcd1.value().getRecordKey().getRecordType() == RecordType::RT_BINLOG) {
+            if (!com_binlog && exptRcd1.value().getRecordKey().getRecordType()
+                == RecordType::RT_BINLOG) {
                 continue;
             }
             INVARIANT(exptRcd1.ok());
@@ -201,7 +256,8 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!com_binlog && exptRcd2.value().getRecordKey().getRecordType() == RecordType::RT_BINLOG) {
+            if (!com_binlog && exptRcd2.value().getRecordKey().getRecordType()
+                == RecordType::RT_BINLOG) {
                 continue;
             }
 
@@ -215,7 +271,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
 }
 
 void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
-    const std::shared_ptr<ServerEntry>& slave, uint32_t datakeyNotFoundNum) {
+    const std::shared_ptr<ServerEntry>& slave) {
     INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
 
     for (size_t i = 0; i < master->getKVStoreCount(); i++) {
@@ -262,16 +318,24 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
             INVARIANT(exptRcd2.ok());
             count2++;
         }
-        if (count1 != 0) {
-            EXPECT_EQ(count1, count2 + datakeyNotFoundNum);
-            EXPECT_EQ(notFoundNum, datakeyNotFoundNum + 1);
-        } else {
+        if (count1 == 0) {
             EXPECT_EQ(count1, count2);
+        } else {
+            if (count1 != count2) {
+                if (count1 == 2) {
+                    // master2 will dont has datakey and binlogkey.
+                    EXPECT_EQ(count2, 0);
+                } else {
+                    // master2 datakey num will be one less, binlogkey num be the same.
+                    EXPECT_EQ(count1, count2 + 1);
+                }
+                // the last datakey and the binlogkey will cant found.
+                EXPECT_EQ(notFoundNum, 2);
+            }
         }
         LOG(INFO) << "compare data: store " << i
             << " count1:" << count1 << " count2:" << count2
-            << " notFoundNum:" << notFoundNum
-            << " datakeyNotFoundNum:" << datakeyNotFoundNum;
+            << " notFoundNum:" << notFoundNum;
     }
 }
 
@@ -300,23 +364,14 @@ std::vector<uint32_t> getKeyNum(const std::shared_ptr<ServerEntry>& master) {
 }
 
 void checkNumAllowDiff(std::vector<uint32_t> nums1,
-    std::vector<uint32_t> nums2, int diff) {
+    std::vector<uint32_t> nums2) {
     EXPECT_EQ(nums1.size(), nums2.size());
     for (size_t i = 0; i < nums1.size(); ++i) {
+        // if 2nd time not add, num will be equal
         if (nums1[i] != nums2[i]) {
-            EXPECT_EQ(nums1[i], nums2[i] + diff);
-        }
-    }
-}
-
-void checkNumWithDiff(std::vector<uint32_t> nums1,
-    std::vector<uint32_t> nums2, int diff) {
-    EXPECT_EQ(nums1.size(), nums2.size());
-    for (size_t i = 0; i < nums1.size(); ++i) {
-        if (nums1[i] == 0) {
-            EXPECT_EQ(nums1[i], nums2[i]);
-        } else {
-            EXPECT_EQ(nums1[i], nums2[i] + diff);
+            // master has one datakey less.
+            // if only store one key, master2 has no datakey and binlogkey, so be 2 num less.
+            EXPECT_TRUE(nums1[i] == nums2[i] + 1 || nums1[i] == nums2[i] + 2);
         }
     }
 }
@@ -344,7 +399,7 @@ makeRestoreEnv(uint32_t storeCnt) {
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
-size_t recordSize = 3;
+size_t recordSize = 30;
 #endif
 
 TEST(Restore, Common) {
@@ -352,13 +407,14 @@ TEST(Restore, Common) {
     size_t i = 1;
     {
 #else
-    for (size_t i = 1; i < 2; i++) {
+    for (size_t i = 0; i < 9; i++) {
 #endif
         LOG(INFO) << ">>>>>> test store count:" << i;
 
         const auto guard = MakeGuard([] {
                 destroyEnv("master1");
                 destroyEnv("master2");
+                std::this_thread::sleep_for(std::chrono::seconds(1));
                 });
 
         auto hosts = makeRestoreEnv(i);
@@ -374,15 +430,13 @@ TEST(Restore, Common) {
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
-        uint32_t deleteBinlogInterSec = 1; // 1s
-        uint32_t waitBinlogDumpSec = deleteBinlogInterSec + 2;
 
         uint32_t part1_num = std::rand() % recordSize;
         part1_num = part1_num == 0 ? 1 : part1_num;
         uint32_t part2_num = recordSize - part1_num;
         // add kv only
         auto partKeys2 = initKvData(master1, part1_num, "suffix21");
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master1);
         std::vector<uint32_t> m1_keynum1 = getKeyNum(master1);
         LOG(INFO) << ">>>>>> master1 initKvData 1st end;";
         uint64_t ts = msSinceEpoch();
@@ -390,33 +444,40 @@ TEST(Restore, Common) {
         sleep(1);  // wait ts changed
         // add kv only
         auto partKeys3 = initKvData(master1, part2_num, "suffix22");
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master1);
         std::vector<uint32_t> m1_keynum2 = getKeyNum(master1);
         LOG(INFO) << ">>>>>> master1 initKvData 2st end;";
-        sleep(waitBinlogDumpSec);
+        // waitBinlogDump(master1);
+        flushBinlog(master1);
         restoreBinlog(master2, ts);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 1st end;";
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master2);
         std::vector<uint32_t> m2_keynum1 = getKeyNum(master2);
-        // master1第二次写kv数据,对于写到的kvstore keynum会相等，没写到的会小1。
-        checkNumAllowDiff(m1_keynum1, m2_keynum1, 1);  // check num only
+        // if a kvstore write some key in the second time,
+        // the keynum will equal, otherwise the keynum will be one less
+        checkNumAllowDiff(m1_keynum1, m2_keynum1);  // check num only
+        flushBinlog(master1);
         restoreBinlog(master2, UINT64_MAX);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 2st end;";
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master2);
         std::vector<uint32_t> m2_keynum2 = getKeyNum(master2);
-        checkNumWithDiff(m1_keynum2, m2_keynum2, 1);  // check num only
-        compareAllowNotFound(master1, master2, 1);
+        checkNumAllowDiff(m1_keynum2, m2_keynum2);  // check num only
+        compareAllowNotFound(master1, master2);
         LOG(INFO) << ">>>>>> compareData 2st end;";
 
-        waitBinlogDumpSec = deleteBinlogInterSec + 15; // wait enough time.
         testAll(master1);
         addOneKeyEveryKvstore(master1, "restore_test_key1");
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master1);
+        flushBinlog(master1);
         restoreBinlog(master2, UINT64_MAX);
         addOneKeyEveryKvstore(master2, "restore_test_key1");
-        sleep(waitBinlogDumpSec);
+        waitBinlogDump(master2);
         compareData(master1, master2, false);  // compare data only
 
+        master1->stop();
+        master2->stop();
+        ASSERT_EQ(master1.use_count(), 1);
+        ASSERT_EQ(master2.use_count(), 1);
         LOG(INFO) << ">>>>>> test store count:" << i << " end;";
     }
 }

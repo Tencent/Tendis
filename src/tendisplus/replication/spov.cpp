@@ -178,7 +178,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         return exists;
     }();
     if (!backupExists.ok() || backupExists.value()) {
-        LOG(ERROR) << "store:" << metaSnapshot.id << " backupDir exists:" << store->dftBackupDir();
+        LOG(ERROR) << "store:" << metaSnapshot.id
+            << " backupDir exists:" << store->dftBackupDir();
         return;
     }
 
@@ -274,7 +275,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS) <= SCLOCK::now()) {
+        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS)
+            <= SCLOCK::now()) {
             return true;
         }
         return false;
@@ -510,8 +512,7 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue);
         if (!binlog.ok()) {
             return binlog.status();
-        }
-        else {
+        } else {
             std::lock_guard<std::mutex> lk(_mutex);
             // NOTE(vinchen): store the binlogId without changeReplState()
             // If it's shutdown, we can get the largest binlogId from rocksdb.
@@ -711,14 +712,15 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
 }
 
 void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
-                uint64_t ts) {
+                uint64_t ts, bool flushFile) {
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->fileSize += written;
     if (v->fileSize >= ReplManager::BINLOGSIZE
         || v->fileCreateTime +
         std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
-        <= SCLOCK::now()) {
+        <= SCLOCK::now()
+        || flushFile) {
         if (v->fs) {
             v->fs->close();
             v->fs.reset();
@@ -728,6 +730,8 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
         }
     }
 }
+
+
 #endif
 
 }  // namespace tendisplus

@@ -13,6 +13,7 @@
 #include <vector>
 #include <set>
 #include <list>
+#include <map>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -942,9 +943,109 @@ class BinlogPosCommand: public Command {
         }
 
         return Command::fmtLongLong(expBinlogid.value());
-#endif // 
+#endif //
     }
 } binlogPosCommand;
+
+class BinlogStartCommand: public Command {
+ public:
+    BinlogStartCommand()
+        :Command("binlogstart", "a") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+
+        auto server = sess->getServerEntry();
+        if (storeId.value() >= server->getKVStoreCount()) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+        }
+
+        auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
+                    mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        auto expBinlogid = RepllogCursorV2::getMinBinlogId(txn.get());
+        if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
+            return Command::fmtZero();
+        }
+        if (!expBinlogid.ok()) {
+            return expBinlogid.status();
+        }
+
+        return Command::fmtLongLong(expBinlogid.value());
+    }
+} binlogStartCommand;
+
+class BinlogFlushCommand: public Command {
+ public:
+    BinlogFlushCommand()
+        :Command("binlogflush", "a") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+        if (!storeId.ok()) {
+            return storeId.status();
+        }
+
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        if (storeId.value() >= server->getKVStoreCount()) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+        }
+
+        auto replMgr = server->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        replMgr->flushCurBinlogFs(storeId.value());
+        return Command::fmtOK();
+    }
+} binlogFlushCommand;
 
 class DebugCommand: public Command {
  public:

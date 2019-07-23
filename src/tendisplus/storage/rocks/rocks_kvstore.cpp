@@ -234,7 +234,7 @@ Expected<uint64_t> RocksTxn::commit() {
             return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
         }
     }
-    if (/*isReplOnly() && */_binlogId != Transaction::TXNID_UNINITED) {
+    if (isReplOnly() && _binlogId != Transaction::TXNID_UNINITED) {
         // NOTE(vinchen): for slave, binlog form master store directly
         binlogTxnId = _txnId;
     }
@@ -481,10 +481,9 @@ Status RocksTxn::flushall() {
 }
 
 Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
-    // TODO(takenliu) fix the relative logic
-    /*if (!_replOnly) {
+    if (!_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
-    }*/
+    }
     switch (logEntry.getOp()) {
     case ReplOp::REPL_OP_SET: {
         // TODO(vinchen): RecordKey::validate()
@@ -514,10 +513,9 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
 
 Status RocksTxn::setBinlogKV(uint64_t binlogId,
     const std::string& logKey, const std::string& logValue) {
-    // TODO(takenliu) fix the relative logic
-    /*if (!_replOnly) {
+    if (!_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
-    }*/
+    }
 
     // NOTE(vinchen): Because the (logKey, logValue) from the master store in
     // slave's rocksdb directly, we should change the _nextBinlogSeq.
@@ -909,11 +907,7 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     fs->write(log.getReplLogValue().c_str(), valLen);
     written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);
 
-#ifdef TENDIS_DEBUG
-    fs->flush();
-#endif
     INVARIANT_D(fs->good());
-
     return written;
 }
 
@@ -1505,8 +1499,7 @@ Status RocksKVStore::assignBinlogIdIfNeeded(Transaction* txn) {
 
 void RocksKVStore::setNextBinlogSeq(uint64_t binlogId, Transaction* txn) {
     std::lock_guard<std::mutex> lk(_mutex);
-    // TODO(takenliu) fix the relative logic
-    // INVARIANT_D(txn->isReplOnly());
+    INVARIANT_D(txn->isReplOnly());
 
     _nextBinlogSeq = binlogId + 1;
 

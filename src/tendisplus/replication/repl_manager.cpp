@@ -221,13 +221,11 @@ Status ReplManager::startup() {
             if (explog.ok()) {
                 const auto& rlk = explog.value().getReplLogKey();
                 recBinlogStat->firstBinlogId = rlk.getTxnId();
-                _logRecycStatus.emplace_back(std::move(recBinlogStat));
 #else
             auto explog = RepllogCursorV2::getMinBinlog(txn.get());
             if (explog.ok()) {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
                 recBinlogStat->timestamp = explog.value().getTimestamp();
-                _logRecycStatus.emplace_back(std::move(recBinlogStat));
 #endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -235,19 +233,19 @@ Status ReplManager::startup() {
                     // TODO(takenliu) fix the relative logic
                     recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
-                    _logRecycStatus.emplace_back(std::move(recBinlogStat));
                 } else {
                     return explog.status();
                 }
             }
-            LOG(INFO) << "store:" << i
-                << ",_firstBinlogId:"
-                << _logRecycStatus.back()->firstBinlogId
-                << ",_timestamp:"
-                << _logRecycStatus.back()->timestamp;
-        } else {
-            _logRecycStatus.emplace_back(std::move(recBinlogStat));
         }
+        _logRecycStatus.emplace_back(std::move(recBinlogStat));
+        LOG(INFO) << "store:" << i
+             << ",_firstBinlogId:"
+             << _logRecycStatus.back()->firstBinlogId
+             << ",_timestamp:"
+             << _logRecycStatus.back()->timestamp;
+
+        _logRecycleMutex.emplace_back(std::make_unique<std::mutex>());
     }
 
     INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
@@ -559,27 +557,31 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     }
     uint64_t newStart = toDel.value().first;
 #else
-    std::ofstream* fs = nullptr;
-    if (saveLogs) {
-        fs = getCurBinlogFs(storeId);
-        if (!fs) {
-            LOG(ERROR) << "getCurBinlogFs() store;" << storeId
-                << "failed:";
+    uint64_t newStart = 0;
+    {
+        std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+        std::ofstream* fs = nullptr;
+        if (saveLogs) {
+            fs = getCurBinlogFs(storeId);
+            if (!fs) {
+                LOG(ERROR) << "getCurBinlogFs() store;" << storeId
+                    << "failed:";
+                hasError = true;
+                return;
+            }
+        }
+
+        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
+        if (!s.ok()) {
+            LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
+                << "failed:" << s.status().toString();
             hasError = true;
             return;
         }
+        updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
+        // TODO(vinchen): stat for binlog deleted
+        newStart = s.value().newStart;
     }
-
-    auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
-    if (!s.ok()) {
-        LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
-            << "failed:" << s.status().toString();
-        hasError = true;
-        return;
-    }
-    updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
-    // TODO(vinchen): stat for binlog deleted
-    uint64_t newStart = s.value().newStart;
 #endif
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {
@@ -593,6 +595,11 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         << "addr:" << _svr->getNetwork()->getIp()
         << ":" << _svr->getNetwork()->getPort();
     start = newStart;
+}
+
+void ReplManager::flushCurBinlogFs(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+    updateCurBinlogFs(storeId, 0, 0, true);
 }
 
 // changeReplSource should be called with LOCK_X held
