@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <numeric>
 #include <string>
 #include <utility>
 #include "tendisplus/commands/dump.h"
@@ -169,6 +170,74 @@ class DumpCommand: public Command {
         return Command::fmtBulk(output);
     }
 } dumpCommand;
+
+class DumpXCommand: public Command {
+ public:
+    DumpXCommand()
+        :Command("dumpx", "r") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+    int32_t lastkey() const {
+        return -1;
+    }
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        auto server = sess->getServerEntry();
+        std::vector<int> index(args.size() - 1);
+        std::iota(index.begin(), index.end(), 1);
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(
+                sess, args, index, Command::RdLock());
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+        std::stringstream ss;
+        std::vector<std::unique_ptr<std::string>> bufferlist;
+        bufferlist.reserve(2 * (args.size() - 1));
+        size_t cnt(0);
+        for (const auto& i : index) {
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            auto exps = getSerializer(sess, args[i]);
+            if (!exps.ok()) {
+                if (exps.status().code() != ErrorCodes::ERR_EXPIRED ||
+                    exps.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                    return exps.status();
+                }
+            }
+
+            auto expBuf = exps.value()->dump();
+            if (!expBuf.ok()) {
+                return expBuf.status();
+            }
+            bufferlist.emplace_back(std::make_unique<std::string>(
+                    args[i]));
+            bufferlist.emplace_back(std::make_unique<std::string>(
+                    expBuf.value().begin() + exps.value()->_begin,
+                    expBuf.value().begin() + exps.value()->_end));
+            cnt++;
+        }
+        Command::fmtMultiBulkLen(ss, 2 * cnt + 1);
+        Command::fmtBulk(ss, "RESTOREX");
+        INVARIANT(bufferlist.size() == 2 * cnt);
+        for (size_t i = 0; i < 2 * cnt; i++) {
+            Command::fmtBulk(ss, *bufferlist[i]);
+        }
+        return ss.str();
+    }
+} dumpxCommand;
 
 // derived classes, each of them should handle the dump of different object.
 class KvSerializer: public Serializer {

@@ -51,7 +51,7 @@ class Command {
     // precheck returns command name
     static Expected<std::string> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
-
+    static bool isAdminCmd(const std::string& cmd);
     // static bool isKeyLocked(Session *sess,
     //                         uint32_t storeId,
     //                         const std::string& encodedKey);

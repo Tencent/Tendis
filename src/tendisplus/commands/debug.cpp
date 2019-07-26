@@ -1906,4 +1906,40 @@ class SyncVersionCommand: public Command {
     }
 } syncVersionCmd;
 
+class StoreCommand: public Command {
+ public:
+    StoreCommand()
+        :Command("store", "a") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        auto server = sess->getServerEntry();
+        if (toLower(args[1]) == "getack") {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
+            Command::fmtBulk(ss, "ack-revision");
+            Command::fmtBulk(ss, std::to_string(server->confirmVer()));
+            return ss.str();
+        }
+        return {ErrorCodes::ERR_PARSEOPT, "Unknown sub-command"};
+    }
+} storeCmd;
+
 }  // namespace tendisplus

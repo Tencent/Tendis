@@ -377,12 +377,12 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
     // NOTE(vinchen): process the ExtraProtocol of timestamp and version
-    auto s = sess->processExtendProtocol();
+    /*auto s = sess->processExtendProtocol();
     if (!s.ok()) {
         sess->setResponse(
             redis_port::errorReply(s.toString()));
         return true;
-    }
+    }*/
 
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
