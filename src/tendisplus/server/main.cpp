@@ -65,9 +65,11 @@ int main(int argc, char *argv[]) {
     auto params = std::make_shared<tendisplus::ServerParams>();
     auto s = params->parseFile(argv[1]);
     if (!s.ok()) {
-        LOG(FATAL) << "parse config failed:" << s.toString();
+        std::cout << "parse config failed:" << s.toString();
+        //LOG(FATAL) << "parse config failed:" << s.toString();
     } else {
-        LOG(INFO) << "start server with cfg:" << params->toString();
+        std::cout << "start server with cfg:" << params->toString();
+        //LOG(INFO) << "start server with cfg:" << params->toString();
     }
 
     INVARIANT(sizeof(double) == 8);
