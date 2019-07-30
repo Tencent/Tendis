@@ -2627,4 +2627,70 @@ class BitFieldCommand: public Command {
     }
 } bitfieldCommand;
 
+class RevisionCommand: public Command {
+ public:
+    RevisionCommand()
+        :Command("revision", "wa") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        const auto& key = args[1];
+
+        auto expvs = tendisplus::stoul(args[2]);
+        if (!expvs.ok()) {
+            return expvs.status();
+        }
+
+        auto expdb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
+                sess, key, mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        Expected<RecordValue> exprv =
+                Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+        if (!exprv.ok()) {
+            return exprv.status();
+        }
+
+        RecordKey rk(expdb.value().chunkId,
+                sess->getCtx()->getDbId(),
+                RecordType::RT_DATA_META,
+                key, "");
+        auto rv = std::move(exprv.value());
+        rv.setVersionEP(expvs.value());
+
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction(sess);
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        auto s = kvstore->setKV(rk, rv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+
+        auto expCmt = txn->commit();
+        if (!expCmt.ok()) {
+            return expCmt.status();
+        }
+        return Command::fmtOK();
+    }
+} revisionCmd;
+
 }  // namespace tendisplus

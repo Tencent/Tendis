@@ -385,6 +385,45 @@ Expected<std::unique_ptr<VersionMeta>> Catalog::getVersionMeta() {
 #endif
 }
 
+Expected<std::unique_ptr<VersionMeta>> Catalog::getVersionMeta(PStore store, std::string name) {
+    auto result = std::make_unique<VersionMeta>();
+    std::stringstream pkss;
+    pkss << name << "_meta";
+    RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+    auto ptxn = store->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    auto expRv = store->getKV(rk, ptxn.value().get());
+    if (!expRv.ok()) {
+        return expRv.status();
+    }
+    const auto& rv = expRv.value();
+    const auto& json = rv.getValue();
+
+    rapidjson::Document doc;
+    doc.Parse(json);
+    if (doc.HasParseError()) {
+        LOG(FATAL) << "parse version meta failed"
+                   << rapidjson::GetParseError_En(doc.GetParseError());
+    }
+    INVARIANT(doc.IsObject());
+
+    INVARIANT(doc.HasMember("timestamp"));
+    INVARIANT(doc["timestamp"].IsUint64());
+    result->timestamp = (uint64_t)doc["timestamp"].GetUint64();
+
+    INVARIANT(doc.HasMember("version"));
+    INVARIANT(doc["version"].IsUint64());
+    result->version = (uint64_t)(doc["version"].GetUint64());
+
+    #ifdef _WIN32
+        return std::move(result);
+    #else
+        return result;
+    #endif
+}
+
 Status Catalog::setVersionMeta(const VersionMeta& meta) {
     RecordKey rk(0, 0, RecordType::RT_META, "version_meta", "");
     rapidjson::StringBuffer sb;

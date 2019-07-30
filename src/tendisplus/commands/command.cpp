@@ -585,7 +585,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                     //}
                 } else {
                     // any command can modify value with versionEP = -1
-                    if (pCtx->getVersionEP() < eValue.value().getVersionEP() &&
+                    if (pCtx->getVersionEP() <= eValue.value().getVersionEP() &&
                         eValue.value().getVersionEP() != UINT64_MAX) {
                         return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
                     }

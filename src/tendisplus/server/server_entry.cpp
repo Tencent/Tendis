@@ -4,6 +4,7 @@
 #include <chrono>
 #include <string>
 #include <list>
+#include <mutex>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -40,9 +41,7 @@ ServerEntry::ServerEntry()
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
-         _dbNum(CONFIG_DEFAULT_DBNUM),
-         _cfrmTs(0),
-         _cfrmVersion(0) {
+         _dbNum(CONFIG_DEFAULT_DBNUM) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -167,7 +166,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode)));
     }
 
-    auto vm = _catalog->getVersionMeta();
+    /*auto vm = _catalog-> getVersionMeta();
     if (vm.ok()) {
         _cfrmTs = vm.value()->timestamp;
         _cfrmVersion = vm.value()->version;
@@ -183,7 +182,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         LOG(FATAL) << "catalog getVersionMeta error:"
             << vm.status().toString();
         return vm.status();
-    }
+    }*/
 
     installStoresInLock(tmpStores);
     INVARIANT(getKVStoreCount() == kvStoreCount);
@@ -688,14 +687,16 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
     _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
 }
 
-Status ServerEntry::setTsVersion(uint64_t ts, uint64_t version) {
-    if ((_cfrmTs != UINT64_MAX && ts < _cfrmTs) ||
-        (_cfrmVersion != UINT64_MAX && version < _cfrmVersion)) {
-        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t version) {
+    if (confirmTs(name) == 0 && confirmVer(name) == 0) {
+        std::lock_guard<std::shared_timed_mutex> lock(_rwlock);
+        _cfrmTs[name] = ts;
+        _cfrmVersion[name] = version;
+    } else {
+        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
+        _cfrmTs[name] = ts;
+        _cfrmVersion[name] = version;
     }
-
-    _cfrmTs = ts;
-    _cfrmVersion = version;
 
     return {ErrorCodes::ERR_OK, ""};
 }

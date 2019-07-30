@@ -1820,7 +1820,7 @@ class SyncVersionCommand: public Command {
     }
 
     ssize_t arity() const {
-      return 4;
+      return 5;
     }
 
     int32_t firstkey() const {
@@ -1837,31 +1837,49 @@ class SyncVersionCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
-        if (args.size() != 4 || args[3] != "v1") {
-            return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
+        if (args[4] != "v1") {
+            return {ErrorCodes::ERR_PARSEOPT, ""};
         }
 
-        if ((args[1] == "?") ^ (args[2] == "?")) {
+        if ((args[2] == "?") ^ (args[3] == "?")) {
             return {ErrorCodes::ERR_PARSEOPT,
                       "only support both or none \'?\'"};
         }
 
+        const auto& name = args[1];
         const auto server = sess->getServerEntry();
-        if (args[1] == "?" && args[2] == "?") {
+        if (args[2] == "?" && args[3] == "?") {
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, 2);
-            Command::fmtLongLong(ss,
-                static_cast<int64_t>(server->confirmTs()));
-            Command::fmtLongLong(ss,
-                static_cast<int64_t>(server->confirmVer()));
+            auto ts = server->confirmTs(name);
+            auto ver = server->confirmVer(name);
+            if (ts == 0 && ver == 0) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                        0, mgl::LockMode::LOCK_IX);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
+                auto expvm = server->getCatalog()->getVersionMeta(
+                        store, name);
+                if (!expvm.ok()) {
+                    return expvm.status();
+                }
+                server->setTsVersion(name,
+                        expvm.value()->timestamp, expvm.value()->version);
+                ts = expvm.value()->timestamp;
+                ver = expvm.value()->version;
+            }
+            Command::fmtLongLong(ss, static_cast<int64_t>(ts));
+            Command::fmtLongLong(ss, static_cast<int64_t>(ver));
             return ss.str();
         }
 
-        auto eTs = tendisplus::stoull(args[1]);
+        auto eTs = tendisplus::stoull(args[2]);
         if (!eTs.ok()) {
             return eTs.status();
         }
-        auto eVersion = tendisplus::stoull(args[2]);
+        auto eVersion = tendisplus::stoull(args[3]);
         if (!eVersion.ok()) {
             return eVersion.status();
         }
@@ -1879,7 +1897,9 @@ class SyncVersionCommand: public Command {
         }
         auto txn = std::move(ptxn.value());
 
-        RecordKey rk(0, 0, RecordType::RT_META, "version_meta", "");
+        std::stringstream pkss;
+        pkss << name << "_meta";
+        RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
         rapidjson::StringBuffer sb;
         rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
         writer.StartObject();
@@ -1898,7 +1918,7 @@ class SyncVersionCommand: public Command {
         if (!s.ok()) {
             return s;
         }
-        s = server->setTsVersion(eTs.value(), eVersion.value());
+        s = server->setTsVersion(name, eTs.value(), eVersion.value());
         if (!s.ok()) {
             return s;
         }
@@ -1932,10 +1952,11 @@ class StoreCommand: public Command {
         const auto& args = sess->getArgs();
         auto server = sess->getServerEntry();
         if (toLower(args[1]) == "getack") {
+            const auto& name = args[2];
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, 2);
             Command::fmtBulk(ss, "ack-revision");
-            Command::fmtBulk(ss, std::to_string(server->confirmVer()));
+            Command::fmtBulk(ss, std::to_string(server->confirmVer(name)));
             return ss.str();
         }
         return {ErrorCodes::ERR_PARSEOPT, "Unknown sub-command"};

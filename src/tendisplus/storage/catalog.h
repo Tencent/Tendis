@@ -91,6 +91,7 @@ class Catalog {
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
 
     Expected<std::unique_ptr<VersionMeta>> getVersionMeta();
+    Expected<std::unique_ptr<VersionMeta>> getVersionMeta(PStore store, std::string name);
     Status setVersionMeta(const VersionMeta& meta);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }

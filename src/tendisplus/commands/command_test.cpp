@@ -183,7 +183,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(sess.getServerEntry()->getTsEp(), 100);
 
-    sess.setArgs({ "sadd", "ss", "b", "101", "100", "v1" });
+    sess.setArgs({ "sadd", "ss", "b", "101", "101", "v1" });
     s = sess.processExtendProtocol();
     EXPECT_TRUE(s.ok());
     expect = Command::runSessionCmd(&sess);
@@ -196,7 +196,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(sess.getServerEntry()->getTsEp(), 101);
 
     std::stringstream ss1;
-    sess.setArgs({"smembers", "ss", "102", "100", "v1"});
+    sess.setArgs({"smembers", "ss", "102", "102", "v1"});
     s = sess.processExtendProtocol();
     EXPECT_TRUE(s.ok());
     expect = Command::runSessionCmd(&sess);
@@ -233,7 +233,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        sess.setArgs({"hget", "hash", "key1", "102", "102", "v1"});
+        sess.setArgs({"hget", "hash", "key1", "103", "103", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -250,7 +250,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
-        sess.setArgs({"hget", "hash", "key1", "103", "103", "v1"});
+        sess.setArgs({"hget", "hash", "key1", "104", "104", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -287,13 +287,13 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({"zadd", "zset1", "6", "bar", "99", "99", "v1"});
+        sess.setArgs({"zadd", "zset1", "6", "bar", "100", "100", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(!expect.ok());
 
-        sess.setArgs({"zrange", "zset1", "0", "-1", "100", "100", "v1"});
+        sess.setArgs({"zrange", "zset1", "0", "-1", "101", "101", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -309,7 +309,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({"zrange", "zset1", "0", "-1", "101", "101", "v1"});
+        sess.setArgs({"zrange", "zset1", "0", "-1", "102", "102", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -332,7 +332,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({"zrange", "zset1", "0", "-1", "102", "102", "v1"});
+        sess.setArgs({"zrange", "zset1", "0", "-1", "103", "103", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -362,7 +362,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({"lrange", "list1", "0", "-1", "101", "101", "v1"});
+        sess.setArgs({"lrange", "list1", "0", "-1", "102", "102", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -385,7 +385,7 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         expect = Command::runSessionCmd(&sess);
         EXPECT_TRUE(expect.ok());
 
-        sess.setArgs({"lrange", "list1", "0", "-1", "102", "102", "v1"});
+        sess.setArgs({"lrange", "list1", "0", "-1", "103", "103", "v1"});
         s = sess.processExtendProtocol();
         EXPECT_TRUE(s.ok());
         expect = Command::runSessionCmd(&sess);
@@ -512,43 +512,26 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
     asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-    auto* catalog = svr->getCatalog();
-    catalog->setVersionMeta(VersionMeta());
-    sess.setArgs({"syncversion", "?", "100", "v1"});
+    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_FALSE(expect.ok());
 
-    sess.setArgs({"syncversion", "?", "?", "v1"});
+    sess.setArgs({"syncversion", "unittest", "100", "100", "v1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
+    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
     std::stringstream ss1;
-    fmtSyncVerRes(ss1, 0, 0);
-    EXPECT_EQ(ss1.str(), expect.value());
-
-    sess.setArgs({"syncversion", "100", "100", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-
-    sess.setArgs({"syncversion", "?", "?", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
     fmtSyncVerRes(ss1, 100, 100);
     EXPECT_EQ(ss1.str(), expect.value());
 
-    sess.setArgs({"syncversion", "102", "99", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_FALSE(expect.ok());
-
-    sess.setArgs({"syncversion", "99", "102", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_FALSE(expect.ok());
-
-    sess.setArgs({"syncversion", "105", "102", "v1"});
+   sess.setArgs({"syncversion", "unittest", "105", "102", "v1"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
-    sess.setArgs({"syncversion", "?", "?", "v1"});
+    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
     expect = Command::runSessionCmd(&sess);
     fmtSyncVerRes(ss1, 105, 102);
     EXPECT_EQ(ss1.str(), expect.value());
