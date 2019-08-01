@@ -55,11 +55,14 @@ template <typename T>
 size_t easyCopy(T *dest, const std::string &buf, size_t *pos);
 
 class Serializer {
-public:
-    explicit Serializer(Session *sess, const std::string& key, DumpType type);
+ public:
+    explicit Serializer(Session *sess,
+            const std::string& key,
+            DumpType type,
+            RecordValue&& rv);
     Serializer(Serializer&& rhs) = default;
     virtual ~Serializer() = default;
-    Expected<std::vector<byte>> dump();
+    Expected<std::vector<byte>> dump(bool prefixVer = false);
     virtual Expected<size_t> dumpObject(std::vector<byte>& buf) = 0;
     // virtual Expected<std::vector<byte>> restore() = 0;
 
@@ -72,11 +75,12 @@ public:
 
     size_t _begin, _end;
 
-protected:
+ protected:
     Session *_sess;
     std::string _key;
     DumpType _type;
     size_t _pos;
+    RecordValue _rv;
 };
 Expected<std::unique_ptr<Serializer>>
 getSerializer(Session *sess, const std::string& key);
