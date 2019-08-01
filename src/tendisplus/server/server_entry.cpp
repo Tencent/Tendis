@@ -4,6 +4,7 @@
 #include <chrono>
 #include <string>
 #include <list>
+#include <mutex>
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -164,6 +165,25 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode)));
     }
+
+    /*auto vm = _catalog-> getVersionMeta();
+    if (vm.ok()) {
+        _cfrmTs = vm.value()->timestamp;
+        _cfrmVersion = vm.value()->version;
+    } else if (vm.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        auto pVm = std::make_unique<VersionMeta>();
+        Status s = _catalog->setVersionMeta(*pVm);
+        if (!s.ok()) {
+            LOG(FATAL) << "catalog setVersionMeta error:"
+                << s.toString();
+            return s;
+        }
+    } else {
+        LOG(FATAL) << "catalog getVersionMeta error:"
+            << vm.status().toString();
+        return vm.status();
+    }*/
+
     installStoresInLock(tmpStores);
     INVARIANT(getKVStoreCount() == kvStoreCount);
 
@@ -356,12 +376,12 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
     // NOTE(vinchen): process the ExtraProtocol of timestamp and version
-    auto s = sess->processExtendProtocol();
+    /*auto s = sess->processExtendProtocol();
     if (!s.ok()) {
         sess->setResponse(
             redis_port::errorReply(s.toString()));
         return true;
-    }
+    }*/
 
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
@@ -665,6 +685,20 @@ uint64_t ServerEntry::getTsEp() const {
 
 void ServerEntry::setTsEp(uint64_t timestamp) {
     _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
+}
+
+Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t version) {
+    if (confirmTs(name) == 0 && confirmVer(name) == 0) {
+        std::lock_guard<std::shared_timed_mutex> lock(_rwlock);
+        _cfrmTs[name] = ts;
+        _cfrmVersion[name] = version;
+    } else {
+        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
+        _cfrmTs[name] = ts;
+        _cfrmVersion[name] = version;
+    }
+
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 }  // namespace tendisplus

@@ -8,6 +8,7 @@
 #include <string>
 #include <list>
 #include <set>
+#include <shared_mutex>
 
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
@@ -102,6 +103,17 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getTsEp() const;
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
+    inline uint64_t confirmTs(const std::string& name) const {
+        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
+        auto it = _cfrmTs.find(name);
+        return it == _cfrmTs.end() ? 0 : it->second;
+    }
+    inline uint64_t confirmVer(const std::string& name) const {
+        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
+        auto it = _cfrmVersion.find(name);
+        return it == _cfrmVersion.end() ? 0 : it->second;
+    }
+    Status setTsVersion(const std::string& name, uint64_t ts, uint64_t version);
 
  private:
     ServerEntry();
@@ -145,6 +157,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
+    mutable std::shared_timed_mutex _rwlock;
+    std::map<std::string, uint64_t> _cfrmTs;
+    std::map<std::string, uint64_t> _cfrmVersion;
 };
 }  // namespace tendisplus
 

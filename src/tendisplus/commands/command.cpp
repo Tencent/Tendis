@@ -5,6 +5,7 @@
 #include <list>
 #include <limits>
 #include <vector>
+#include <unordered_set>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
@@ -121,6 +122,12 @@ Expected<std::string> Command::precheck(Session *sess) {
         std::stringstream ss;
         ss << "unknown command '" << args[0] << "'";
         return {ErrorCodes::ERR_PARSEPKT, ss.str()};
+    }
+    if (!isAdminCmd(commandName)) {
+        auto s = sess->processExtendProtocol();
+        if (!s.ok()) {
+            return s;
+        }
     }
     ssize_t arity = it->second->arity();
     if ((arity > 0 && arity != ssize_t(args.size()))
@@ -573,12 +580,12 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                 auto pCtx = sess->getCtx();
                 if (pCtx->getVersionEP() == UINT64_MAX) {
                     // isolate tendis cmd cannot modify value of tendis with cache.
-                    if (eValue.value().getVersionEP() != UINT64_MAX) {
-                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-                    }
+                    // if (eValue.value().getVersionEP() != UINT64_MAX) {
+                    //    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+                    //}
                 } else {
                     // any command can modify value with versionEP = -1
-                    if (pCtx->getVersionEP() < eValue.value().getVersionEP() &&
+                    if (pCtx->getVersionEP() <= eValue.value().getVersionEP() &&
                         eValue.value().getVersionEP() != UINT64_MAX) {
                         return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
                     }
@@ -733,6 +740,22 @@ std::vector<int> Command::getKeysFromCommand(
     }
 
     return keyindex;
+}
+
+bool Command::isAdminCmd(const std::string& cmd) {
+    static const auto sAdmin = []() {
+        std::unordered_set<std::string> tmp;
+        for (auto iter = commandMap().begin();
+            iter != commandMap().end();
+            iter++) {
+            if (iter->second->isAdmin()) {
+                tmp.emplace(iter->first);
+            }
+        }
+        return tmp;
+    }();
+
+    return sAdmin.count(cmd);
 }
 
 }  // namespace tendisplus

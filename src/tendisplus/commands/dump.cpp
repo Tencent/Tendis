@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <numeric>
 #include <string>
 #include <utility>
 #include "tendisplus/commands/dump.h"
@@ -170,6 +171,74 @@ class DumpCommand: public Command {
     }
 } dumpCommand;
 
+class DumpXCommand: public Command {
+ public:
+    DumpXCommand()
+        :Command("dumpx", "r") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+    int32_t lastkey() const {
+        return -1;
+    }
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        auto server = sess->getServerEntry();
+        std::vector<int> index(args.size() - 1);
+        std::iota(index.begin(), index.end(), 1);
+        auto locklist = server->getSegmentMgr()->getAllKeysLocked(
+                sess, args, index, Command::RdLock());
+        if (!locklist.ok()) {
+            return locklist.status();
+        }
+        std::stringstream ss;
+        std::vector<std::unique_ptr<std::string>> bufferlist;
+        bufferlist.reserve(2 * (args.size() - 1));
+        size_t cnt(0);
+        for (const auto& i : index) {
+            auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            auto exps = getSerializer(sess, args[i]);
+            if (!exps.ok()) {
+                if (exps.status().code() != ErrorCodes::ERR_EXPIRED ||
+                    exps.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                    return exps.status();
+                }
+            }
+
+            auto expBuf = exps.value()->dump();
+            if (!expBuf.ok()) {
+                return expBuf.status();
+            }
+            bufferlist.emplace_back(std::make_unique<std::string>(
+                    args[i]));
+            bufferlist.emplace_back(std::make_unique<std::string>(
+                    expBuf.value().begin() + exps.value()->_begin,
+                    expBuf.value().begin() + exps.value()->_end));
+            cnt++;
+        }
+        Command::fmtMultiBulkLen(ss, 2 * cnt + 1);
+        Command::fmtBulk(ss, "RESTOREX");
+        INVARIANT(bufferlist.size() == 2 * cnt);
+        for (size_t i = 0; i < 2 * cnt; i++) {
+            Command::fmtBulk(ss, *bufferlist[i]);
+        }
+        return ss.str();
+    }
+} dumpxCommand;
+
 // derived classes, each of them should handle the dump of different object.
 class KvSerializer: public Serializer {
  public:
@@ -191,6 +260,49 @@ class KvSerializer: public Serializer {
 };
 
 class ListSerializer: public Serializer {
+ private:
+    Expected<uint32_t> formatZiplist(std::vector<byte>& payload,
+            size_t& pos,
+            std::vector<std::string>& zl,
+            uint32_t byteSz) {
+        std::vector<byte> ziplist;
+        ziplist.reserve(byteSz);
+        size_t tmpPos(0);
+        size_t zlInitPos(0);
+        tmpPos += 8;
+        uint32_t zlbytes(10);
+        uint64_t prevlen(0);
+        uint16_t zllen = zl.size();
+        easyCopy(&ziplist, &tmpPos, zllen);
+        for (size_t i = 0; i < zl.size(); i++) {
+            size_t written(0);
+            if (prevlen > 254) {
+                written += easyCopy(&ziplist, &tmpPos,
+                        static_cast<unsigned char>(0xfe));
+                written += easyCopy(&ziplist, &tmpPos, prevlen);
+            } else {
+                written += easyCopy(&ziplist, &tmpPos,
+                        static_cast<unsigned char>(prevlen));
+            }
+            written += saveString(&ziplist, &tmpPos, zl[i]);
+
+            prevlen = written;
+            zlbytes += written;
+        }
+        zlbytes += easyCopy(&ziplist, &tmpPos,
+                static_cast<unsigned char>(0xff));
+        uint32_t zltail(zlbytes - 1 - prevlen);
+        easyCopy(&ziplist, &zlInitPos, zlbytes);
+        easyCopy(&ziplist, &zlInitPos, zltail);
+
+        size_t written(0);
+        auto wr = Serializer::saveLen(&payload, &pos, ziplist.size());
+        INVARIANT(wr.value() > 0);
+        written += wr.value();
+        written += easyCopy(&payload, &pos, ziplist.data(), ziplist.size());
+        return written;
+    }
+
  public:
     explicit ListSerializer(Session *sess,
                             const std::string& key,
@@ -201,10 +313,6 @@ class ListSerializer: public Serializer {
 
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
         size_t qlbytes(0);
-        auto expwr = saveLen(&payload, &_pos, 1);
-        if (!expwr.ok()) {
-            return expwr.status();
-        }
         size_t notAligned = _pos;
         size_t qlEnd = notAligned + 9;
 
@@ -239,16 +347,13 @@ class ListSerializer: public Serializer {
 
         /* in this loop we should emulate to build a quicklist(or to say, many ziplists)
          * then compress it using lzf(not implemented), or just write raw to buffer, both can work.*/
-        size_t zlInitPos(_pos);
-        _pos += 8;
-        // TODO(comboqiu) : support more than one ziplist
         if (len > UINT16_MAX) {
             return { ErrorCodes::ERR_INTERNAL, "Currently not support" };
         }
-        uint32_t zlbytes(10), zltail(0);
-        uint64_t prevlen(0);
-        uint16_t zllen = len;
-        easyCopy(&payload, &_pos, zllen);
+
+        uint32_t byteSz(0);
+        std::vector<std::string> ziplist;
+        size_t zlCnt(0);
         for (size_t i = head; i != tail; i++) {
             RecordKey nodeKey(expdb.value().chunkId, _sess->getCtx()->getDbId(),
                     RecordType::RT_LIST_ELE, _key, std::to_string(i));
@@ -256,43 +361,33 @@ class ListSerializer: public Serializer {
             if (!expNodeVal.ok()) {
                 return expNodeVal.status();
             }
-            RecordValue nodeVal = std::move(expNodeVal.value());
-            size_t written(0);
-            // prevlen
-            if (prevlen > 254) {
-                written += easyCopy(&payload, &_pos,
-                        static_cast<unsigned char>(0xfe));
-                written += easyCopy(&payload, &_pos, prevlen);
-            } else {
-                written += easyCopy(&payload, &_pos,
-                        static_cast<unsigned char>(prevlen));
+            byteSz += expNodeVal.value().getValue().size();
+            ziplist.emplace_back(std::move(expNodeVal.value().getValue()));
+            if (byteSz > ZLBYTE_LIMIT || i == tail - 1) {
+                ++zlCnt;
+                auto ezlBytes = formatZiplist(payload, _pos,
+                        ziplist, byteSz);
+                if (!ezlBytes.ok()) {
+                    return ezlBytes.status();
+                }
+                qlbytes += ezlBytes.value();
+                ziplist.clear();
+                byteSz = 0;
             }
-
-            written += saveString(&payload, &_pos, nodeVal.getValue());
-            prevlen = written;
-            zlbytes += written;
         }
-        zlbytes += easyCopy(&payload, &_pos,
-                static_cast<unsigned char>(0xff));
-        zltail = zlbytes - 1 - prevlen;
-        easyCopy(&payload, &zlInitPos, zlbytes);
-        easyCopy(&payload, &zlInitPos, zltail);
 
-        qlbytes += zlbytes;
-        auto expQlUsed = saveLen(&payload, &notAligned, qlbytes);
+       auto expQlUsed = saveLen(&payload, &notAligned, zlCnt);
         if (!expQlUsed.ok()) {
             return expQlUsed.status();
         }
         if (expQlUsed.value() < 9) {
-            auto offset = notAligned;
             std::copy_backward(payload.begin(),
-                    payload.begin() + offset,
+                    payload.begin() + notAligned,
                     payload.begin() + qlEnd);
         }
         _begin = 9 - expQlUsed.value();
         _end = payload.size() - _begin;
-
-        return zlbytes + expwr.value();
+        return qlbytes + expQlUsed.value();
     }
 
  private:

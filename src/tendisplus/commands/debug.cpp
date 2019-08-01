@@ -1437,7 +1437,7 @@ class ConfigCommand : public Command {
                     return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
                 }
 
-                if (toLower(args[3]) == "tendis_extended_protocol") {
+                if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
                 }
             }
@@ -1812,5 +1812,155 @@ class ResumeStoreCommand : public Command {
         return Command::fmtOK();
     }
 } resumeStoreCmd;
+
+class SyncVersionCommand: public Command {
+ public:
+    SyncVersionCommand()
+        :Command("syncversion", "a") {
+    }
+
+    ssize_t arity() const {
+      return 5;
+    }
+
+    int32_t firstkey() const {
+      return 0;
+    }
+
+    int32_t lastkey() const {
+      return 0;
+    }
+
+    int32_t keystep() const {
+      return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        if (args[4] != "v1") {
+            return {ErrorCodes::ERR_PARSEOPT, ""};
+        }
+
+        if ((args[2] == "?") ^ (args[3] == "?")) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                      "only support both or none \'?\'"};
+        }
+
+        const auto& name = args[1];
+        const auto server = sess->getServerEntry();
+        if (args[2] == "?" && args[3] == "?") {
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
+            auto ts = server->confirmTs(name);
+            auto ver = server->confirmVer(name);
+            if (ts == 0 && ver == 0) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                        0, mgl::LockMode::LOCK_IX);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
+                auto expvm = server->getCatalog()->getVersionMeta(
+                        store, name);
+                if (!expvm.ok()) {
+                    return expvm.status();
+                }
+                server->setTsVersion(name,
+                        expvm.value()->timestamp, expvm.value()->version);
+                ts = expvm.value()->timestamp;
+                ver = expvm.value()->version;
+            }
+            Command::fmtLongLong(ss, static_cast<int64_t>(ts));
+            Command::fmtLongLong(ss, static_cast<int64_t>(ver));
+            return ss.str();
+        }
+
+        auto eTs = tendisplus::stoull(args[2]);
+        if (!eTs.ok()) {
+            return eTs.status();
+        }
+        auto eVersion = tendisplus::stoull(args[3]);
+        if (!eVersion.ok()) {
+            return eVersion.status();
+        }
+
+        auto expdb = server->getSegmentMgr()->getDb(sess,
+                0, mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        PStore store = expdb.value().store;
+        auto ptxn = store->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        auto txn = std::move(ptxn.value());
+
+        std::stringstream pkss;
+        pkss << name << "_meta";
+        RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+        rapidjson::StringBuffer sb;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+        writer.StartObject();
+        writer.Key("timestamp");
+        writer.Uint64(eTs.value());
+        writer.Key("version");
+        writer.Uint64(eVersion.value());
+        writer.EndObject();
+
+        RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
+        Status s = store->setKV(rk, rv, txn.get());
+        if (!s.ok()) {
+            return s;
+        }
+        s = txn->commit().status();
+        if (!s.ok()) {
+            return s;
+        }
+        s = server->setTsVersion(name, eTs.value(), eVersion.value());
+        if (!s.ok()) {
+            return s;
+        }
+        return Command::fmtOK();
+    }
+} syncVersionCmd;
+
+class StoreCommand: public Command {
+ public:
+    StoreCommand()
+        :Command("store", "a") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        auto server = sess->getServerEntry();
+        if (toLower(args[1]) == "getack") {
+            const auto& name = args[2];
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
+            Command::fmtBulk(ss, "ack-revision");
+            Command::fmtBulk(ss, std::to_string(server->confirmVer(name)));
+            return ss.str();
+        }
+        return {ErrorCodes::ERR_PARSEOPT, "Unknown sub-command"};
+    }
+} storeCmd;
 
 }  // namespace tendisplus
