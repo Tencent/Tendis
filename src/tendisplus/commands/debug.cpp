@@ -359,7 +359,7 @@ class IterAllCommand: public Command {
     }
 
     // @input iterall storeId start_record_hex batchSize
-    // @output next_record_hex + listof(type key subkey value)
+    // @output next_record_hex + listof(type dbid key subkey value)
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
         Expected<uint64_t> estoreId = ::tendisplus::stoul(args[1]);
@@ -1027,22 +1027,30 @@ class BinlogFlushCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const std::vector<std::string>& args = sess->getArgs();
-        Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
-        if (!storeId.ok()) {
-            return storeId.status();
-        }
-
         auto server = sess->getServerEntry();
         INVARIANT(server != nullptr);
-        if (storeId.value() >= server->getKVStoreCount()) {
-            return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
-        }
 
         auto replMgr = server->getReplManager();
         INVARIANT(replMgr != nullptr);
-
-        replMgr->flushCurBinlogFs(storeId.value());
+        const std::string& kvstore = sess->getArgs()[1];
+        if (kvstore == "all") {
+            for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+                // TODO(takenliu) updateCurBinlogFs should return result
+                replMgr->flushCurBinlogFs(i);
+            }
+        } else {
+            Expected<uint64_t> exptStoreId = ::tendisplus::stoul(kvstore.c_str());
+            if (!exptStoreId.ok()) {
+                return exptStoreId.status();
+            }
+            uint32_t storeId = (uint32_t)exptStoreId.value();
+            if (storeId >= server->getKVStoreCount()) {
+                LOG(ERROR) << "binlogflush err storeId:" << storeId;
+                return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+            }
+            replMgr->flushCurBinlogFs(storeId);
+        }
+        LOG(INFO) << "binlogflush succ:" << kvstore;
         return Command::fmtOK();
     }
 } binlogFlushCommand;
@@ -1913,5 +1921,80 @@ class ResumeStoreCommand : public Command {
         return Command::fmtOK();
     }
 } resumeStoreCmd;
+
+// only used for test. set key to a fixed storeid
+class setInStoreCommand: public Command {
+ public:
+    setInStoreCommand()
+        :Command("setinstore", "wm") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+        if (args.size() < 3) {
+            return {ErrorCodes::ERR_PARSEPKT, "invalid set params"};
+        }
+
+        Expected<uint64_t> eid = ::tendisplus::stoul(args[1]);
+        if (!eid.ok()) {
+            return eid.status();
+        }
+        uint64_t storeid = eid.value();
+        auto key = args[2];
+        auto value = args[3];
+
+        auto server = sess->getServerEntry();
+        if (storeid >= server->getKVStoreCount()) {
+            return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
+        }
+        auto kvstore = server->getStores()[storeid];
+        auto ptxn = kvstore->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        // need get the chunkId, otherwise can't find the key by "GET" command.
+        auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        auto chunkId = expdb.value().chunkId;
+
+        LOG(INFO) << "setInStoreCommand storeid:" << storeid << " key:" << key << " val:" << value << " chunkId:" << chunkId;
+        Status s = kvstore->setKV(
+            Record(
+                RecordKey(chunkId, sess->getCtx()->getDbId(), RecordType::RT_KV, key, ""),
+                RecordValue(value, RecordType::RT_KV, -1)),
+            txn.get());
+        if (!s.ok()) {
+            LOG(ERROR) << "setInStoreCommand failed:" << s.toString();
+            return s;
+        }
+
+        Expected<uint64_t> exptCommitId = txn->commit();
+        if (!exptCommitId.ok()) {
+            LOG(ERROR) << "setInStoreCommand failed:" << exptCommitId.status().toString();
+            return exptCommitId.status();
+        }
+        return Command::fmtOK();
+    }
+} setInStoreCommand;
 
 }  // namespace tendisplus

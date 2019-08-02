@@ -436,7 +436,8 @@ void ReplManager::controlRoutine() {
             }
             doSth = true;
             // TODO(vinchen): check if any connected slaves or REPL_ONLY?
-            bool saveLogs = (_pushStatus[i].size() == 0);
+            //bool saveLogs = (_pushStatus[i].size() == 0);
+            bool saveLogs = true;
             _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
             uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;

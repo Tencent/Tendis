@@ -215,6 +215,8 @@ Expected<uint64_t> RocksTxn::commit() {
         uint16_t oriFlag = static_cast<uint16_t>(ReplFlag::REPL_GROUP_START)
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
+        DLOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << " binlogid:" << _binlogId;
+
         ReplLogKeyV2 key(_binlogId);
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,
             _replLogValues.back().getTimestamp(),
@@ -913,23 +915,20 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
 
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t end, Transaction *txn, std::ofstream *fs) {
-    // not precise, but fast (gap >= getBinlogCnt())
-    uint64_t gap = getHighestBinlogId() - start + 1;
+    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
+        << " getHighestBinlogId:" << getHighestBinlogId()
+        << " start:"<<start <<" end:"<< end;
     TruncateBinlogResult result;
     uint64_t ts = 0;
     uint64_t written = 0;
     uint64_t deleten = 0;
-    if (gap < _maxKeepLogs) {
-        result.newStart = start;
-        return result;
-    }
     // INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
     INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
 
     auto cursor = txn->createRepllogCursorV2(start);
 
     // TODO(deyukong): put 1000 into configuration.
-    uint64_t cnt = std::min((uint64_t)1000, gap - _maxKeepLogs);
+    uint64_t max_cnt = 1000;
     uint64_t size = 0;
     uint64_t nextStart = start;
     while (true) {
@@ -942,7 +941,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         }
         nextStart = explog.value().getBinlogId();
         if (nextStart > end ||
-            size >= cnt) {
+            size >= max_cnt ||
+            getHighestBinlogId() - nextStart <= (_maxKeepLogs - 1)) {
             break;
         }
 
@@ -954,6 +954,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         }
 
         // TODO(vinchen): compactrange or compactfilter should be better
+        DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId();
         auto s = txn->delBinlog(explog.value());
         if (!s.ok()) {
             // NOTE(vinchen): if error here, binlog would be wrong because
@@ -1632,6 +1633,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
                 if (i->second.second != Transaction::TXNID_UNINITED) {
                     _highestVisible = i->first;
+                    DLOG(INFO) << "markCommittedInLock dbid:" << dbId()
+                        << " _highestVisible:"<< _highestVisible;
                     INVARIANT_D(_highestVisible <= _nextBinlogSeq);
                 }
                 i = _aliveBinlogs.erase(i);
@@ -1666,6 +1669,7 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction *txn) {
+    //DLOG(INFO) << "setKV storeid:"<< this->dbId() <<"key:" << key.getPrimaryKey() << " skey:" << key.getSecondaryKey() << " value:" << value.getValue();
     return txn->setKV(key.encode(), value.encode());
 }
 

@@ -525,6 +525,7 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
 
 Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue) {
+    // TODO(takenliu) should use LOCK_X ?
     auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
         mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {

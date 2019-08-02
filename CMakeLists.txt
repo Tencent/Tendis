@@ -7,6 +7,8 @@ project (TENDIS_PLUS)
 
 message("TODO(vinchen): only in debug mode, remove it when release")
 add_definitions(-DTENDIS_DEBUG)
+#set(CMAKE_BUILD_TYPE RelWithDebInfo)
+set(CMAKE_BUILD_TYPE Debug)
 
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})

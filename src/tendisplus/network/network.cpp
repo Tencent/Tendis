@@ -230,6 +230,10 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
         _sock.set_option(asio::socket_base::keep_alive(true));
         // TODO(deyukong): keep-alive params
     }
+
+    LOG(INFO) << "net session, id:" << id()
+        << ",connId:" << _connId
+        << " createad";
 }
 
 void NetSession::setState(State s) {

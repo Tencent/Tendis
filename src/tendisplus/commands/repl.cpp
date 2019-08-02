@@ -605,6 +605,7 @@ class ApplyBinlogsCommandV2 : public Command {
 
         // TODO(vinchen): should it remove?
         //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
+        // TODO(takenliu) should use LOCK_X ?
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
         if (!expdb.ok()) {
@@ -662,6 +663,7 @@ class ApplyBinlogsCommandV2 : public Command {
         LocalSessionGuard sg(svr);
         sg.getSession()->setArgs({ eLog.value().getReplLogValue().getCmd() });
 
+        // TODO(takenliu) should use LOCK_IX ?
         auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
             mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
@@ -781,6 +783,7 @@ class RestoreBinlogCommandV2 : public Command {
         INVARIANT(replMgr != nullptr);
 
         // LOCK_IX first
+        // TODO(takenliu) should use LOCK_X ?
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
         if (!expdb.ok()) {

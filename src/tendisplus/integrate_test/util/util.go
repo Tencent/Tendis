@@ -119,7 +119,7 @@ func (s *RedisServer) Destroy() {
     os.RemoveAll(s.Path)
 }
 
-func (s *RedisServer) Setup(valgrind bool) error {
+func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
     log.Debugf("mkdir " + s.Path)
 	os.MkdirAll(s.Path, os.ModePerm)
 	os.MkdirAll(s.Path+"/db", os.ModePerm)
@@ -134,6 +134,12 @@ func (s *RedisServer) Setup(valgrind bool) error {
 	cfg = cfg + fmt.Sprintf("dumpdir %s/dump\n", s.Path)
 	cfg = cfg + "rocks.blockcachemb 4096\n"
 	cfg = cfg + fmt.Sprintf("pidfile %s/tendisplus.pid\n", s.Path)
+    if cfgArgs != nil {
+        for arg := range *cfgArgs {
+             cfg = cfg + fmt.Sprintf("%s %s\n",arg, (*cfgArgs)[arg])
+        }
+    }
+
 	if err := ioutil.WriteFile(cfgFilePath, []byte(cfg), 0600); err != nil {
 		return err
 	}

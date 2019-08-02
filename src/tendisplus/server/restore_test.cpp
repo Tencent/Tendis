@@ -162,9 +162,9 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
             continue;
         }
         std::sort(loglist.begin(), loglist.end());
-        for (size_t i = 0; i < loglist.size(); ++i) {
+        for (size_t j = 0; j < loglist.size(); ++j) {
             std::string cmd = "./binlog_tool";
-            cmd += " --logfile=" + loglist[i];
+            cmd += " --logfile=" + loglist[j];
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos);
             cmd += " --end-datetime=" + std::to_string(end_ts);
@@ -399,7 +399,7 @@ makeRestoreEnv(uint32_t storeCnt) {
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
-size_t recordSize = 30;
+size_t recordSize = 300;
 #endif
 
 TEST(Restore, Common) {

@@ -423,11 +423,13 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     // (not in the same critical area with the modification to _pushStatus),
     // but it does not harm correctness.
     // A strict check may be too complicated to read.
-    if (firstPos > binlogPos) {
+    // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
+    if (firstPos > (binlogPos + 1)) {
         std::stringstream ss;
         ss << "-ERR invalid binlogPos, firstPos:" << firstPos
             << ",binlogPos:" << binlogPos;
         client->writeLine(ss.str(), std::chrono::seconds(1));
+        LOG(ERROR) << ss.str();
         return;
     }
     client->writeLine("+OK", std::chrono::seconds(1));
@@ -450,7 +452,8 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
              binlogPos,
              client = std::move(client)]() mutable {
         std::lock_guard<std::mutex> lk(_mutex);
-        if (_logRecycStatus[storeId]->firstBinlogId > binlogPos) {
+        // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
+        if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos+1)) {
             return false;
         }
         uint64_t clientId = _clientIdGen.fetch_add(1);

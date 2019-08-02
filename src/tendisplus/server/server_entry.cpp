@@ -308,7 +308,7 @@ Status ServerEntry::cancelSession(uint64_t connId) {
     }
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
-        return {ErrorCodes::ERR_NOTFOUND, "session not found"};
+        return {ErrorCodes::ERR_NOTFOUND, "session not found:" + std::to_string(connId)};
     }
     return it->second->cancel();
 }
