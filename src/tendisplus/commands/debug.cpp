@@ -1922,6 +1922,7 @@ class ResumeStoreCommand : public Command {
     }
 } resumeStoreCmd;
 
+#ifdef TENDIS_DEBUG
 // only used for test. set key to a fixed storeid
 class setInStoreCommand: public Command {
  public:
@@ -1996,5 +1997,6 @@ class setInStoreCommand: public Command {
         return Command::fmtOK();
     }
 } setInStoreCommand;
+#endif
 
 }  // namespace tendisplus

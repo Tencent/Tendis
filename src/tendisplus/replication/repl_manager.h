@@ -170,6 +170,7 @@ class ReplManager {
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
+    // TODO(takenliu):optimize the _mutex and _logRecycleMutex logic. it's not gracefull now.
     std::vector<std::unique_ptr<std::mutex>> _logRecycleMutex;
 
     // master's pov, workerpool of pushing full backup

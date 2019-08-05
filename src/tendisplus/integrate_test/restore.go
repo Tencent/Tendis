@@ -104,7 +104,7 @@ func restoreBackup(m *util.RedisServer) {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
 
-    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test").Str(); err != nil {
+    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", "force").Str(); err != nil {
         log.Fatalf("do restorebackup failed:%v", err)
     } else if r != "OK" {
         log.Fatalf("do restorebackup error:%s", r)

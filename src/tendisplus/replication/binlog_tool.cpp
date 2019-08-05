@@ -180,7 +180,7 @@ void usage() {
     std::cerr << "binlog_tool --logfile=binlog.log --mode=text|base64"
         << " --start-datetime=1111 --end-datetime=22222"
         << " --start-position=333333 --end-position=55555"
-        << " --keys=1,2,4,5,6,7,8,9" << std::endl;
+        << /*" --keys=1,2,4,5,6,7,8,9" <<*/ std::endl;
 }
 
 int main(int argc, char** argv) {

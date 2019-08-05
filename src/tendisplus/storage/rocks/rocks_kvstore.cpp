@@ -715,8 +715,24 @@ bool RocksKVStore::isPaused() const {
 bool RocksKVStore::isEmpty() const {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    // TODO(vinchen)
-    return false;
+    auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        return false;
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    auto baseCursor = txn->createCursor();
+    baseCursor->seekToLast();
+
+    Expected<std::string> expKey = baseCursor->key();
+    if (expKey.ok()) {
+        return false;
+    } else if (expKey.status().code() == ErrorCodes::ERR_EXHAUST) {
+        return true;
+    } else {
+        LOG(ERROR) << "baseCursor key failed:" << expKey.status().toString();
+        return false;
+    }
 }
 
 Status RocksKVStore::pause() {

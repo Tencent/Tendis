@@ -115,6 +115,7 @@ void restoreBackup(const std::shared_ptr<ServerEntry>& server) {
     args.push_back("restorebackup");
     args.push_back("all");
     args.push_back("./back_test");
+    args.push_back("force");
     sess->setArgs(args);
     auto expect = Command::runSessionCmd(sess.get());
     EXPECT_TRUE(expect.ok());
@@ -426,7 +427,6 @@ TEST(Restore, Common) {
         backup(master1);
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
-        // compareData(highest1, highest2);
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 

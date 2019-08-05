@@ -600,6 +600,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
 
 void ReplManager::flushCurBinlogFs(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+    // TODO(takenliu):let truncateBinlogV2 return quickly.
     updateCurBinlogFs(storeId, 0, 0, true);
 }
 

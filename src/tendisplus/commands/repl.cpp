@@ -75,7 +75,7 @@ class RestoreBackupCommand : public Command {
     }
 
     ssize_t arity() const {
-        return 3;
+        return 4;
     }
 
     int32_t firstkey() const {
@@ -90,13 +90,19 @@ class RestoreBackupCommand : public Command {
         return 0;
     }
 
-    // restorebackup "all"|storeId dir
+    // restorebackup "all"|storeId dir force|noforce
     Expected<std::string> run(Session *sess) final {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
+        bool isForce = sess->getArgs()[3] == "force";
         if (kvstore == "all") {
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                if (!isForce && !isEmpty(svr, sess, i)) {
+                    return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+                }
+            }
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 std::string storeDir = dir + "/" + std::to_string(i) + "/";
                 auto ret = restoreBackup(svr, sess, i, storeDir);
@@ -110,7 +116,9 @@ class RestoreBackupCommand : public Command {
                 return exptStoreId.status();
             }
             uint32_t storeId = (uint32_t)exptStoreId.value();
-
+            if (!isForce && !isEmpty(svr, sess, storeId)) {
+                return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+            }
             auto ret = restoreBackup(svr, sess, storeId, dir);
             if (!ret.ok()) {
                 return ret.status();
@@ -120,11 +128,22 @@ class RestoreBackupCommand : public Command {
     }
 
  private:
+    bool isEmpty(std::shared_ptr<ServerEntry> svr, Session *sess, uint32_t storeId){
+         // IS lock
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS, true);
+        if (!expdb.ok()) {
+            return false;
+        }
+        auto store = std::move(expdb.value().store);
+        return store->isEmpty();
+    }
+
     Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
         Session *sess, uint32_t storeId, const std::string& dir) {
-        // IX lock
+        // X lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-            mgl::LockMode::LOCK_IX, true);
+            mgl::LockMode::LOCK_X, true);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -605,7 +624,6 @@ class ApplyBinlogsCommandV2 : public Command {
 
         // TODO(vinchen): should it remove?
         //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
-        // TODO(takenliu) should use LOCK_X ?
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
         if (!expdb.ok()) {
@@ -663,7 +681,6 @@ class ApplyBinlogsCommandV2 : public Command {
         LocalSessionGuard sg(svr);
         sg.getSession()->setArgs({ eLog.value().getReplLogValue().getCmd() });
 
-        // TODO(takenliu) should use LOCK_IX ?
         auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
             mgl::LockMode::LOCK_X);
         if (!expdb.ok()) {
@@ -783,7 +800,6 @@ class RestoreBinlogCommandV2 : public Command {
         INVARIANT(replMgr != nullptr);
 
         // LOCK_IX first
-        // TODO(takenliu) should use LOCK_X ?
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
         if (!expdb.ok()) {
