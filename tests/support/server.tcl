@@ -256,8 +256,8 @@ proc start_server {options {code undefined}} {
     set stderr [format "%s/%s" [dict get $config "dir"] "stderr"]
     
     if {$::valgrind} {
-        #exec valgrind --suppressions=src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
-        exec valgrind --log-file=./valgrind.log --show-reachable=no --show-possibly-lost=no --leak-check=full --show-leak-kinds=all --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
+        exec valgrind --suppressions=src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
+        #exec valgrind --log-file=./valgrind.log --show-reachable=no --show-possibly-lost=no --leak-check=full --show-leak-kinds=all --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
     } else {
         exec ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
     }

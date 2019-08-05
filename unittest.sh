@@ -17,7 +17,7 @@ dir=build/bin
 ./$dir/skiplist_test
 ./$dir/varint_test
 ./$dir/server_params_test
-./$dir/commmand_test
+./$dir/command_test
 ./$dir/demangle_unittest
 ./$dir/stl_logging_unittest
 ./$dir/network_test

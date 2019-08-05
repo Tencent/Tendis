@@ -15,8 +15,8 @@ namespace tendisplus {
 
 using byte = unsigned char;
 
-// static const uint16_t RDB_VERSION = 8;
-static const uint16_t RDB_VERSION = 9;    // for test only
+static const uint16_t RDB_VERSION = 8;
+// static const uint16_t RDB_VERSION = 9;    // for test only
 
 static const uint8_t RDB_6BITLEN = 0;
 static const uint8_t RDB_14BITLEN = 1;
@@ -32,6 +32,7 @@ enum class DumpType: uint8_t {
 };
 
 // utility
+constexpr uint32_t ZLBYTE_LIMIT = 4096;
 
 // this `extern` is a little weird here i think..
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
