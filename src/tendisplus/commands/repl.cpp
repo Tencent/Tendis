@@ -13,6 +13,7 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
@@ -56,15 +57,137 @@ class BackupCommand: public Command {
             if (!store->isOpen()) {
                 continue;
             }
+            std::string dbdir = dir + "/" + std::to_string(i) + "/";
             Expected<BackupInfo> bkInfo = store->backup(
-                dir, KVStore::BackupMode::BACKUP_COPY);
+                dbdir, KVStore::BackupMode::BACKUP_COPY);
             if (!bkInfo.ok()) {
                 return bkInfo.status();
             }
         }
-        return {ErrorCodes::ERR_OK, ""};
+        return Command::fmtOK();
     }
 } bkupCmd;
+
+class RestoreBackupCommand : public Command {
+ public:
+    RestoreBackupCommand()
+        :Command("restorebackup", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restorebackup "all"|storeId dir force|noforce
+    Expected<std::string> run(Session *sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        const std::string& kvstore = sess->getArgs()[1];
+        const std::string& dir = sess->getArgs()[2];
+        bool isForce = sess->getArgs()[3] == "force";
+        if (kvstore == "all") {
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                if (!isForce && !isEmpty(svr, sess, i)) {
+                    return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+                }
+            }
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                std::string storeDir = dir + "/" + std::to_string(i) + "/";
+                auto ret = restoreBackup(svr, sess, i, storeDir);
+                if (!ret.ok()) {
+                    return ret.status();
+                }
+            }
+        } else {
+            Expected<uint64_t> exptStoreId = ::tendisplus::stoul(kvstore.c_str());
+            if (!exptStoreId.ok()) {
+                return exptStoreId.status();
+            }
+            uint32_t storeId = (uint32_t)exptStoreId.value();
+            if (!isForce && !isEmpty(svr, sess, storeId)) {
+                return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+            }
+            auto ret = restoreBackup(svr, sess, storeId, dir);
+            if (!ret.ok()) {
+                return ret.status();
+            }
+        }
+        return Command::fmtOK();
+    }
+
+ private:
+    bool isEmpty(std::shared_ptr<ServerEntry> svr, Session *sess, uint32_t storeId){
+         // IS lock
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IS, true);
+        if (!expdb.ok()) {
+            return false;
+        }
+        auto store = std::move(expdb.value().store);
+        return store->isEmpty();
+    }
+
+    Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
+        Session *sess, uint32_t storeId, const std::string& dir) {
+        // X lock
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_X, true);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        auto store = std::move(expdb.value().store);
+        // if store is not open, skip it
+        if (!store->isOpen()) {
+            return {ErrorCodes::ERR_INTERNAL, "store not open"};
+        }
+
+        Status stopStatus = store->stop();
+        if (!stopStatus.ok()) {
+            // there may be uncanceled transactions binding with the store
+            LOG(WARNING) << "restoreBackup stop store:" << storeId
+                        << " failed:" << stopStatus.toString();
+            return {ErrorCodes::ERR_INTERNAL, "stop failed."};
+        }
+
+        // clear dir
+        INVARIANT(!store->isRunning());
+        Status clearStatus =  store->clear();
+        if (!clearStatus.ok()) {
+            LOG(FATAL) << "Unexpected store:" << storeId << " clear"
+                << " failed:" << clearStatus.toString();
+        }
+
+
+        // rocksdb will clear dir too.
+        Expected<std::string> ret = store->restoreBackup(
+            dir, KVStore::BackupMode::BACKUP_COPY);
+        if (!ret.ok()) {
+            return ret.status();
+        }
+
+        Expected<uint64_t> restartStatus = store->restart(false);
+        if (!restartStatus.ok()) {
+            LOG(FATAL) << "restoreBackup restart store:" << storeId
+                   << ",failed:" << restartStatus.status().toString();
+            return {ErrorCodes::ERR_INTERNAL, "restart failed."};
+        }
+
+        return Command::fmtOK();
+    }
+} restoreBackupCommand;
 
 class FullSyncCommand: public Command {
  public:
@@ -630,6 +753,69 @@ class ApplyBinlogsCommandV2 : public Command {
         return Command::fmtOK();
     }
 } applyBinlogsV2Command;
+
+class RestoreBinlogCommandV2 : public Command {
+ public:
+    RestoreBinlogCommandV2()
+        :Command("restorebinlogv2", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restorebinlogv2 storeId key(binlogid) value([op key value]*) checksum
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (storeId >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+
+        std::string key = Base64::Decode(args[2].c_str(), args[2].size());
+        std::string value = Base64::Decode(args[3].c_str(), args[3].size());
+
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        // LOCK_IX first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+            mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        sess->getCtx()->setReplOnly(true);
+        Expected<uint64_t> ret =
+            replMgr->applySingleTxnV2(sess, storeId, key, value);
+        if (!ret.ok()) {
+            return ret.status();
+        }
+
+        return Command::fmtOK();
+    }
+} restoreBinlogV2Command;
 
 
 class BinlogHeartbeatCommand : public Command {

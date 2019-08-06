@@ -111,6 +111,7 @@ class ReplManager {
     Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
         const std::string& logKey, const std::string& logValue);
 #endif
+    void flushCurBinlogFs(uint32_t storeId);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
     static constexpr size_t INCR_POOL_SIZE = 12;
     static constexpr size_t MAX_FULL_PARAL = 4;
@@ -131,9 +132,11 @@ class ReplManager {
             uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
 #else
     Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
-        uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos, bool needHeartBeart);
+        uint32_t storeId, uint32_t dstStoreId,
+        uint64_t binlogPos, bool needHeartBeart);
     std::ofstream* getCurBinlogFs(uint32_t storeid);
-    void updateCurBinlogFs(uint32_t storeId, uint64_t written, uint64_t ts);
+    void updateCurBinlogFs(uint32_t storeId, uint64_t written,
+        uint64_t ts, bool flushFile = false);
 #endif
 
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
@@ -167,7 +170,8 @@ class ReplManager {
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
-
+    // TODO(takenliu):optimize the _mutex and _logRecycleMutex logic. it's not gracefull now.
+    std::vector<std::unique_ptr<std::mutex>> _logRecycleMutex;
 
     // master's pov, workerpool of pushing full backup
     std::unique_ptr<WorkerPool> _fullPusher;

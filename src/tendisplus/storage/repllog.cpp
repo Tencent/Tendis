@@ -347,6 +347,24 @@ std::string ReplLogValueV2::encode(
     return tmpRv.encode();
 }
 
+Expected<std::vector<ReplLogValueEntryV2>> ReplLogValueV2::getLogList() const {
+    std::vector<ReplLogValueEntryV2> result;
+
+    size_t curSize = FIXED_HEADER_SIZE;
+    while (curSize < _dataSize) {
+        size_t oneSize = 0;
+        Expected<ReplLogValueEntryV2> logEntry =
+            ReplLogValueEntryV2::decode((const char*)_data + curSize, _dataSize - curSize, &oneSize);
+        if (!logEntry.ok()) {
+            return {ErrorCodes::ERR_DECODE, "decode error."};
+        }
+        curSize += oneSize;
+        result.push_back(logEntry.value());
+    }
+
+    return result;
+}
+
 Expected<ReplLogValueV2> ReplLogValueV2::decode(const std::string& s) {
     auto type = RecordValue::decodeType(s.c_str(), s.size());
     if (type != RecordType::RT_BINLOG) {

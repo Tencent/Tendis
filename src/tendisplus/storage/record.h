@@ -412,6 +412,7 @@ class ReplLogValueV2 {
     uint32_t getChunkId() const { return _chunkId; }
     uint64_t getTimestamp() const { return _timestamp; }
     uint64_t getVersionEp() const { return _versionEp; }
+    Expected<std::vector<ReplLogValueEntryV2>> getLogList() const;
     const std::string& getCmd() const { return _cmdStr; }
 
     static constexpr size_t CHUNKID_OFFSET = 0;

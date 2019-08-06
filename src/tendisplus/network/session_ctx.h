@@ -62,6 +62,9 @@ class SessionCtx {
 
     bool isLockedByMe(const std::string& key, mgl::LockMode mode);
 
+    uint32_t getIsMonitor() const;
+    void setIsMonitor(bool in);
+
     static constexpr uint64_t VERSIONEP_UNINITED = -1;
     static constexpr uint64_t TSEP_UNINITED = -1;
  private:
@@ -78,6 +81,7 @@ class SessionCtx {
     bool _replOnly;
     Session* _session;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
+    bool _isMonitor;
 
     mutable std::mutex _mutex;
 

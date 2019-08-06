@@ -43,6 +43,7 @@ class ServerParams {
     uint32_t dbNum;
 
     bool noexpire;
+    uint32_t maxBinlogKeepNum;
 };
 }  // namespace tendisplus
 

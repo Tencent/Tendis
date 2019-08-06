@@ -101,6 +101,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getKVStoreCount() const;
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
+    void AddMonitor(Session* sess);
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     inline uint64_t confirmTs(const std::string& name) const {
@@ -118,6 +119,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  private:
     ServerEntry();
     void ftmc();
+    void replyMonitors(Session* sess);
+    void DelMonitorNoLock(uint64_t connId);
+
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
     // _isRunning = false && _isStopped = true -> stop complete
@@ -160,6 +164,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     mutable std::shared_timed_mutex _rwlock;
     std::map<std::string, uint64_t> _cfrmTs;
     std::map<std::string, uint64_t> _cfrmVersion;
+    std::list<std::shared_ptr<Session>> _monitors;
 };
 }  // namespace tendisplus
 

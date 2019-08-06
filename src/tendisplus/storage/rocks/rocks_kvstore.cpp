@@ -215,6 +215,8 @@ Expected<uint64_t> RocksTxn::commit() {
         uint16_t oriFlag = static_cast<uint16_t>(ReplFlag::REPL_GROUP_START)
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
+        DLOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << " binlogid:" << _binlogId;
+
         ReplLogKeyV2 key(_binlogId);
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,
             _replLogValues.back().getTimestamp(),
@@ -713,8 +715,24 @@ bool RocksKVStore::isPaused() const {
 bool RocksKVStore::isEmpty() const {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    // TODO(vinchen)
-    return false;
+    auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        return false;
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+    auto baseCursor = txn->createCursor();
+    baseCursor->seekToLast();
+
+    Expected<std::string> expKey = baseCursor->key();
+    if (expKey.ok()) {
+        return false;
+    } else if (expKey.status().code() == ErrorCodes::ERR_EXHAUST) {
+        return true;
+    } else {
+        LOG(ERROR) << "baseCursor key failed:" << expKey.status().toString();
+        return false;
+    }
 }
 
 Status RocksKVStore::pause() {
@@ -908,29 +926,25 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);
 
     INVARIANT_D(fs->good());
-
     return written;
 }
 
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t end, Transaction *txn, std::ofstream *fs) {
-    // not precise, but fast (gap >= getBinlogCnt())
-    uint64_t gap = getHighestBinlogId() - start + 1;
+    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
+        << " getHighestBinlogId:" << getHighestBinlogId()
+        << " start:"<<start <<" end:"<< end;
     TruncateBinlogResult result;
     uint64_t ts = 0;
     uint64_t written = 0;
     uint64_t deleten = 0;
-    if (gap < _maxKeepLogs) {
-        result.newStart = start;
-        return result;
-    }
-
-    INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
+    // INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
+    INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
 
     auto cursor = txn->createRepllogCursorV2(start);
 
     // TODO(deyukong): put 1000 into configuration.
-    uint64_t cnt = std::min((uint64_t)1000, gap - _maxKeepLogs);
+    uint64_t max_cnt = 1000;
     uint64_t size = 0;
     uint64_t nextStart = start;
     while (true) {
@@ -943,7 +957,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         }
         nextStart = explog.value().getBinlogId();
         if (nextStart > end ||
-            size >= cnt) {
+            size >= max_cnt ||
+            getHighestBinlogId() - nextStart <= (_maxKeepLogs - 1)) {
             break;
         }
 
@@ -955,6 +970,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         }
 
         // TODO(vinchen): compactrange or compactfilter should be better
+        DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId();
         auto s = txn->delBinlog(explog.value());
         if (!s.ok()) {
             // NOTE(vinchen): if error here, binlog would be wrong because
@@ -1332,7 +1348,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
             if (!filesystem::exists(dir)) {
                 return;
             }
-            filesystem::remove_all(dir);
+            // filesystem::remove_all(dir); // takenliu:it's too dangerous, don't removeall
         } catch (const std::exception& ex) {
             LOG(FATAL) << "remove " << dir << " ex:" << ex.what();
         }
@@ -1417,6 +1433,44 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     return result;
 }
 
+Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir,
+    KVStore::BackupMode mode) {
+    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
+        // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
+        if (dir != dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT invalid dir"};
+        }
+        // TODO(takenliu) support CKPT restore.
+        return {ErrorCodes::ERR_INTERNAL, "havn't support."};
+    } else {
+        if (dir == dftBackupDir()) {
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_COPY invalid dir"};
+        }
+    }
+
+    if (mode == KVStore::BackupMode::BACKUP_COPY) {
+        rocksdb::BackupEngineReadOnly* backup_engine;
+        rocksdb::Status s = rocksdb::BackupEngineReadOnly::Open(
+            rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir),
+            &backup_engine);
+        if (!s.ok()) {
+            LOG(ERROR) << "BackupEngineReadOnly::Open failed."
+                << s.ToString() << " dir:" << dir;
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        std::unique_ptr<rocksdb::BackupEngineReadOnly> pBkEngine(backup_engine);
+        const std::string path = dbPath() + "/" + dbId();
+        s = pBkEngine->RestoreDBFromLatestBackup(path, path);
+        if (!s.ok()) {
+            LOG(ERROR) << "RestoreDBFromLatestBackup failed."
+                << s.ToString() << " dir:" << dir;
+            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        }
+        LOG(INFO) << "backup sucess. dbpath:" << path << " backup path:" << dir;
+    }
+    return std::string("ok");
+}
+
 Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning) {
@@ -1464,12 +1518,11 @@ void RocksKVStore::setNextBinlogSeq(uint64_t binlogId, Transaction* txn) {
     std::lock_guard<std::mutex> lk(_mutex);
     INVARIANT_D(txn->isReplOnly());
 
-    _nextBinlogSeq = binlogId;
+    _nextBinlogSeq = binlogId + 1;
 
     txn->setBinlogId(binlogId);
     INVARIANT_D(_aliveBinlogs.find(binlogId) == _aliveBinlogs.end());
     _aliveBinlogs.insert({ binlogId, { false, txn->getTxnId() } });
-
     auto it = _aliveTxns.find(txn->getTxnId());
     INVARIANT_D(it != _aliveTxns.end() && !it->second.first);
 
@@ -1596,6 +1649,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
                 if (i->second.second != Transaction::TXNID_UNINITED) {
                     _highestVisible = i->first;
+                    DLOG(INFO) << "markCommittedInLock dbid:" << dbId()
+                        << " _highestVisible:"<< _highestVisible;
                     INVARIANT_D(_highestVisible <= _nextBinlogSeq);
                 }
                 i = _aliveBinlogs.erase(i);
@@ -1630,6 +1685,7 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction *txn) {
+    //DLOG(INFO) << "setKV storeid:"<< this->dbId() <<"key:" << key.getPrimaryKey() << " skey:" << key.getSecondaryKey() << " value:" << value.getValue();
     return txn->setKV(key.encode(), value.encode());
 }
 

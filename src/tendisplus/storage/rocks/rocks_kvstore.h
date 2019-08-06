@@ -220,6 +220,9 @@ class RocksKVStore: public KVStore {
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
+    Expected<std::string> restoreBackup(
+        const std::string& dir, KVStore::BackupMode mode) final;
+
     Status releaseBackup() final;
 
     void appendJSONStat(

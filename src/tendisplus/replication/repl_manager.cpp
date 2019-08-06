@@ -221,32 +221,31 @@ Status ReplManager::startup() {
             if (explog.ok()) {
                 const auto& rlk = explog.value().getReplLogKey();
                 recBinlogStat->firstBinlogId = rlk.getTxnId();
-                _logRecycStatus.emplace_back(std::move(recBinlogStat));
 #else
             auto explog = RepllogCursorV2::getMinBinlog(txn.get());
             if (explog.ok()) {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
                 recBinlogStat->timestamp = explog.value().getTimestamp();
-                _logRecycStatus.emplace_back(std::move(recBinlogStat));
 #endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    recBinlogStat->firstBinlogId = Transaction::TXNID_UNINITED;
+                    // TODO(takenliu) fix the relative logic
+                    recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
-                    _logRecycStatus.emplace_back(std::move(recBinlogStat));
                 } else {
                     return explog.status();
                 }
             }
-            LOG(INFO) << "store:" << i
-                << ",_firstBinlogId:"
-                << _logRecycStatus.back()->firstBinlogId
-                << ",_timestamp:"
-                << _logRecycStatus.back()->timestamp;
-        } else {
-            _logRecycStatus.emplace_back(std::move(recBinlogStat));
         }
+        _logRecycStatus.emplace_back(std::move(recBinlogStat));
+        LOG(INFO) << "store:" << i
+             << ",_firstBinlogId:"
+             << _logRecycStatus.back()->firstBinlogId
+             << ",_timestamp:"
+             << _logRecycStatus.back()->timestamp;
+
+        _logRecycleMutex.emplace_back(std::make_unique<std::mutex>());
     }
 
     INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
@@ -437,7 +436,8 @@ void ReplManager::controlRoutine() {
             }
             doSth = true;
             // TODO(vinchen): check if any connected slaves or REPL_ONLY?
-            bool saveLogs = (_pushStatus[i].size() == 0);
+            //bool saveLogs = (_pushStatus[i].size() == 0);
+            bool saveLogs = true;
             _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
             uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;
@@ -459,7 +459,7 @@ void ReplManager::controlRoutine() {
             doSth = schedSlaveInLock(now);
             doSth = schedMasterInLock(now) || doSth;
             // TODO(takenliu): make recycLog work
-            //doSth = schedRecycLogInLock(now) || doSth;
+            doSth = schedRecycLogInLock(now) || doSth;
         }
         if (doSth) {
             std::this_thread::yield();
@@ -473,6 +473,9 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
+    // TODO(takenliu) make it in config, and make every schedule's min num bigger.
+    nextSched = nextSched + std::chrono::seconds(1); // make frequency be lowwer
+
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
@@ -555,27 +558,31 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
     }
     uint64_t newStart = toDel.value().first;
 #else
-    std::ofstream* fs = nullptr;
-    if (saveLogs) {
-        fs = getCurBinlogFs(storeId);
-        if (!fs) {
-            LOG(ERROR) << "getCurBinlogFs() store;" << storeId
-                << "failed:";
+    uint64_t newStart = 0;
+    {
+        std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+        std::ofstream* fs = nullptr;
+        if (saveLogs) {
+            fs = getCurBinlogFs(storeId);
+            if (!fs) {
+                LOG(ERROR) << "getCurBinlogFs() store;" << storeId
+                    << "failed:";
+                hasError = true;
+                return;
+            }
+        }
+
+        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
+        if (!s.ok()) {
+            LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
+                << "failed:" << s.status().toString();
             hasError = true;
             return;
         }
+        updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
+        // TODO(vinchen): stat for binlog deleted
+        newStart = s.value().newStart;
     }
-
-    auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
-    if (!s.ok()) {
-        LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
-            << "failed:" << s.status().toString();
-        hasError = true;
-        return;
-    }
-    updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
-    // TODO(vinchen): stat for binlog deleted
-    uint64_t newStart = s.value().newStart;
 #endif
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {
@@ -584,9 +591,17 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         hasError = true;
         return;
     }
-    LOG(INFO) << "truncate binlog from:" << start
-                 << " to end:" << newStart << " success";
+    LOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
+        << " to end:" << newStart << " success."
+        << "addr:" << _svr->getNetwork()->getIp()
+        << ":" << _svr->getNetwork()->getPort();
     start = newStart;
+}
+
+void ReplManager::flushCurBinlogFs(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+    // TODO(takenliu):let truncateBinlogV2 return quickly.
+    updateCurBinlogFs(storeId, 0, 0, true);
 }
 
 // changeReplSource should be called with LOCK_X held
