@@ -45,8 +45,11 @@ size_t easyCopy(T *dest, const std::string &buf, size_t *pos) {
 
 // dump
 // Base class
-Serializer::Serializer(Session *sess, const std::string& key, DumpType type)
-        : _sess(sess), _key(key), _type(type), _pos(0) {
+Serializer::Serializer(Session *sess,
+        const std::string& key,
+        DumpType type,
+        RecordValue&& rv)
+        : _sess(sess), _key(key), _type(type), _pos(0), _rv(rv) {
 }
 
 Expected<size_t> Serializer::saveObjectType(
@@ -92,9 +95,12 @@ size_t Serializer::saveString(std::vector<byte> *payload,
     return written;
 }
 
-Expected<std::vector<byte>> Serializer::dump() {
+Expected<std::vector<byte>> Serializer::dump(bool prefixVer) {
     std::vector<byte> payload;
 
+    if (prefixVer) {
+        Serializer::saveLen(&payload, &_pos, _rv.getVersionEP());
+    }
     Serializer::saveObjectType(&payload, &_pos, _type);
     INVARIANT(_pos);
 
@@ -218,7 +224,7 @@ class DumpXCommand: public Command {
                 }
             }
 
-            auto expBuf = exps.value()->dump();
+            auto expBuf = exps.value()->dump(true);
             if (!expBuf.ok()) {
                 return expBuf.status();
             }
@@ -245,8 +251,9 @@ class KvSerializer: public Serializer {
     explicit KvSerializer(Session *sess,
                           const std::string& key,
                           RecordValue&& rv)
-        :Serializer(sess, key, DumpType::RDB_TYPE_STRING),
-        _rv(std::forward<RecordValue>(rv)) {
+        :Serializer(sess, key,
+                DumpType::RDB_TYPE_STRING,
+                std::forward<RecordValue>(rv)) {
     }
 
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
@@ -254,9 +261,6 @@ class KvSerializer: public Serializer {
         _begin = 0;
         return _pos - _begin;
     }
-
- private:
-    RecordValue _rv;
 };
 
 class ListSerializer: public Serializer {
@@ -307,8 +311,9 @@ class ListSerializer: public Serializer {
     explicit ListSerializer(Session *sess,
                             const std::string& key,
                             RecordValue&& rv)
-        :Serializer(sess, key, DumpType::RDB_TYPE_QUICKLIST),
-        _rv(std::forward<RecordValue>(rv)) {
+        :Serializer(sess, key,
+                DumpType::RDB_TYPE_QUICKLIST,
+                std::forward<RecordValue>(rv)) {
     }
 
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
@@ -389,9 +394,6 @@ class ListSerializer: public Serializer {
         _end = payload.size() - _begin;
         return qlbytes + expQlUsed.value();
     }
-
- private:
-    RecordValue _rv;
 };
 
 class SetSerializer: public Serializer {
@@ -399,8 +401,9 @@ class SetSerializer: public Serializer {
     explicit SetSerializer(Session *sess,
                            const std::string &key,
                            RecordValue&& rv)
-        :Serializer(sess, key, DumpType::RDB_TYPE_SET),
-        _rv(std::move(rv)) {
+        :Serializer(sess, key,
+                DumpType::RDB_TYPE_SET,
+                std::forward<RecordValue>(rv)) {
     }
 
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
@@ -452,9 +455,6 @@ class SetSerializer: public Serializer {
         _begin = 0;
         return _pos - _begin;
     }
-
- private:
-    RecordValue _rv;
 };
 
 class ZsetSerializer: public Serializer {
@@ -462,8 +462,9 @@ class ZsetSerializer: public Serializer {
     explicit ZsetSerializer(Session *sess,
                             const std::string& key,
                             RecordValue&& rv)
-        :Serializer(sess, key, DumpType::RDB_TYPE_ZSET),
-        _rv(std::move(rv)) {
+        :Serializer(sess, key,
+                DumpType::RDB_TYPE_ZSET,
+                std::forward<RecordValue>(rv)) {
     }
 
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
@@ -507,9 +508,6 @@ class ZsetSerializer: public Serializer {
         _begin = 0;
         return _pos - _begin;
     }
-
- private:
-    RecordValue _rv;
 };
 
 class HashSerializer: public Serializer {
@@ -517,8 +515,9 @@ class HashSerializer: public Serializer {
     explicit HashSerializer(Session *sess,
                             const std::string &key,
                             RecordValue&& rv)
-        :Serializer(sess, key, DumpType::RDB_TYPE_HASH),
-        _rv(std::forward<RecordValue>(rv)) {
+        :Serializer(sess, key,
+                DumpType::RDB_TYPE_HASH,
+                std::forward<RecordValue>(rv)) {
     }
 
     Expected<size_t> dumpObject(std::vector<byte> &payload) {
@@ -572,9 +571,6 @@ class HashSerializer: public Serializer {
         _begin = 0;
         return _pos - _begin;
     }
-
- private:
-    RecordValue _rv;
 };
 
 // outlier function
@@ -773,6 +769,33 @@ class RestoreCommand: public Command {
         return res;
     }
 } restoreCommand;
+
+class RestoreXCommand: public Command {
+ public:
+    RestoreXCommand()
+        :Command("restorex", "wm") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return -1;
+    }
+
+    int32_t keystep() const {
+        return 2;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtOK();
+    }
+} restorexCmd;
 
 class KvDeserializer: public Deserializer {
  public:
