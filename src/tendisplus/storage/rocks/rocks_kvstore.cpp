@@ -944,7 +944,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     auto cursor = txn->createRepllogCursorV2(start);
 
     // TODO(deyukong): put 1000 into configuration.
-    uint64_t max_cnt = 1000;
+    uint64_t max_cnt = 50000;
     uint64_t size = 0;
     uint64_t nextStart = start;
     while (true) {

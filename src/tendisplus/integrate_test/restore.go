@@ -24,6 +24,8 @@ var (
     m2port     = flag.Int("master2port", 61004, "master2 port")
     num1     = flag.Int("num1", 1000, "first add data nums")
     num2     = flag.Int("num2", 1000, "first add data nums")
+    shutdown    = flag.Int("shutdown", 1, "whether shutdown the dir")
+    clear    = flag.Int("clear", 1, "whether clear the dir")
     kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 )
 
@@ -39,13 +41,13 @@ func addData(port int, num int, prefixkey string) {
     log.Infof("addData begin.port:%d", port)
 
     // "set,incr,lpush,lpop,sadd,spop,hset,mset"
-    cmd := exec.Command("/data/home/takenliu/git/redis-for-cloud/src/redis-benchmark", "-p", strconv.Itoa(port), "-c", "1", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey, "-t", "set,incr,lpush,lpop,sadd,spop,hset")
+    cmd := exec.Command("./redis-benchmark", "-p", strconv.Itoa(port), "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey, "-t", "set,incr,lpush,sadd,hset")
     _, err := cmd.Output()
     //fmt.Print(string(output))
     if err != nil {
         fmt.Print(err)
     }
-    log.Infof("addData sucess.port:%d", port)
+    log.Infof("addData sucess.port:%d num:%d", port, num)
 }
 
 func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
@@ -95,7 +97,7 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
         log.Fatalf("do slaveof error:%s", r)
         return
     }
-    log.Infof("slaveof sucess,port:%d" , m.Port)
+    log.Infof("slaveof sucess,mport:%d sport:%d" , m.Port, s.Port)
 }
 
 func restoreBackup(m *util.RedisServer) {
@@ -218,47 +220,60 @@ func pipeRun(commands []*exec.Cmd) {
 }
 
 func restoreBinlog(m1 *util.RedisServer, m2 *util.RedisServer, kvstorecount int) {
+    var channel chan int = make(chan int)
+    for i := 0; i < kvstorecount; i++ {
+        go restoreBinlogInCoroutine(m1, m2, i, channel)
+    }
+    for i := 0; i < kvstorecount; i++ {
+        <- channel
+    }
+    log.Infof("restoreBinlog sucess,port:%d" , m2.Port)
+}
+
+func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeId int, channel chan int) {
     cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m2.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m2.Port, err)
     }
 
-    for i := 0; i < kvstorecount; i++ {
-        var binlogPos int
-        if r, err := cli.Cmd("binlogpos", i).Int(); err != nil {
-            log.Fatalf("do restoreBinlog %d failed:%v", i, err)
-        }else {
-            //log.Infof("binlogpos store:%d binlogmax:%d" , i, r)
-            binlogPos = r
-        }
- 
-        subpath := m1.Path + "/dump/" + strconv.Itoa(i) + "/";
-        files, _ := filepath.Glob(subpath + "binlog*.log")
-        if len(files) <= 0 {
-            continue;
-        }
-        sort.Strings(files)
-
-        var endTs uint64 = math.MaxUint64
-        for j := 0; j < len(files); j++ {
-            var commands []*exec.Cmd
-            commands = append(commands, exec.Command("./binlog_tool",
-                "--logfile=" + files[j],
-                "--mode=base64",
-                "--start-position=" + strconv.Itoa(binlogPos),
-                "--end-datetime=" + strconv.FormatUint(endTs, 10),
-                ))
-            commands = append(commands, exec.Command("../../../../../git/redis-2.8.17/src/redis-cli",
-                "-p", strconv.Itoa(m2.Port)))
-            pipeRun(commands)
-
-            log.Infof("restoreBinlog sucess store:%d binlogPos:%d file:%s" , i, binlogPos, path.Base(files[j]))
-        }
+    var binlogPos int
+    if r, err := cli.Cmd("binlogpos", storeId).Int(); err != nil {
+        log.Fatalf("do restoreBinlog %d failed:%v", storeId, err)
+    }else {
+        //log.Infof("binlogpos store:%d binlogmax:%d" , storeId, r)
+        binlogPos = r
     }
-    log.Infof("restoreBinlog sucess,port:%d" , m2.Port)
+ 
+    subpath := m1.Path + "/dump/" + strconv.Itoa(storeId) + "/";
+    files, _ := filepath.Glob(subpath + "binlog*.log")
+    if len(files) <= 0 {
+        return;
+    }
+    sort.Strings(files)
+
+    var endTs uint64 = math.MaxUint64
+    for j := 0; j < len(files); j++ {
+        var commands []*exec.Cmd
+        commands = append(commands, exec.Command("./binlog_tool",
+            "--logfile=" + files[j],
+            "--mode=base64",
+            "--start-position=" + strconv.Itoa(binlogPos),
+            "--end-datetime=" + strconv.FormatUint(endTs, 10),
+            ))
+        commands = append(commands, exec.Command("./redis-cli",
+            "-p", strconv.Itoa(m2.Port)))
+        pipeRun(commands)
+
+        log.Infof("restoreBinlog sucess store:%d binlogPos:%d file:%s" , storeId, binlogPos, path.Base(files[j]))
+    }
+    log.Infof("restoreBinlog sucess,port:%d storeid:%d" , m2.Port, storeId)
+    channel <- 0
 }
 
 func shutdownServer(m *util.RedisServer) {
+    if (*shutdown <= 0) {
+        return;
+    }
     cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
@@ -269,16 +284,22 @@ func shutdownServer(m *util.RedisServer) {
     } else if r != "OK" {
         log.Fatalf("do shutdown error:%s", r)
     }
-
-    m.Destroy();
+    if (*clear > 0) {
+        m.Destroy();
+    }
     log.Infof("shutdownServer server,port:%d", m.Port)
 }
 
+func compareInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, channel chan int) {
+    compare(m1, m2)
+    channel <- 0
+}
+
 func compare(m1 *util.RedisServer, m2 *util.RedisServer) {
-    cmd := exec.Command("../misc/compare_instances", fmt.Sprintf("127.0.0.1:%d", m1.Port), fmt.Sprintf("127.0.0.1:%d", m2.Port))
+    cmd := exec.Command("./compare_instances", fmt.Sprintf("127.0.0.1:%d", m1.Port), fmt.Sprintf("127.0.0.1:%d", m2.Port))
     cmd.Stderr = os.Stderr
     output, err := cmd.Output()
-    fmt.Print("Command output:", string(output))
+    fmt.Print("Command output:\n", string(output))
     if err != nil {
         fmt.Println("Command err:", err)
         log.Infof("compare failed.")
@@ -323,12 +344,17 @@ func testRestore(m1_port int, s1_port int, s2_port int, m2_port int, kvstorecoun
     addData(m1_port, *num1, "aa")
     backup(&m1)
     restoreBackup(&m2)
-    compare(&m1, &m2)
 
     waitCatchup(&m1, &s1, kvstorecount)
     waitCatchup(&m1, &s2, kvstorecount)
-    compare(&m1, &s1)
-    compare(&m1, &s2)
+
+    var channel chan int = make(chan int)
+    go compareInCoroutine(&m1, &m2, channel)
+    go compareInCoroutine(&m1, &s1, channel)
+    go compareInCoroutine(&m1, &s2, channel)
+    <- channel
+    <- channel
+    <- channel
 
     addData(m1_port,*num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)
@@ -337,10 +363,10 @@ func testRestore(m1_port int, s1_port int, s2_port int, m2_port int, kvstorecoun
     restoreBinlog(&m1, &m2, kvstorecount)
     addOnekeyEveryStore(&m2, kvstorecount)
     compare(&m1, &m2)
-    
-    shutdownServer(&m1);
-    shutdownServer(&s1);
+
     shutdownServer(&s2);
+    shutdownServer(&s1);
+    shutdownServer(&m1);
     shutdownServer(&m2);
 }
 
