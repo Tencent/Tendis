@@ -2149,4 +2149,31 @@ class StoreCommand: public Command {
     }
 } storeCmd;
 
+class EvictCommand: public Command {
+ public:
+    EvictCommand()
+        :Command("evict", "w") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtOK();
+    }
+} evictCmd;
+
 }  // namespace tendisplus
