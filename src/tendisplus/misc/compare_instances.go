@@ -64,7 +64,7 @@ func process(storeId int, backend string, frontend string, channel chan int) {
             log.Fatalf("auth %s failed", backend)
         }
     }
-	batch := 10
+	batch := 1000
 	cnt := 0
 
 	iter := "0"

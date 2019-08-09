@@ -75,7 +75,7 @@ class RestoreBackupCommand : public Command {
     }
 
     ssize_t arity() const {
-        return 4;
+        return -3;
     }
 
     int32_t firstkey() const {
@@ -90,13 +90,17 @@ class RestoreBackupCommand : public Command {
         return 0;
     }
 
-    // restorebackup "all"|storeId dir force|noforce
+    // restorebackup "all"|storeId dir
+    // restorebackup "all"|storeId dir force
     Expected<std::string> run(Session *sess) final {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
-        bool isForce = sess->getArgs()[3] == "force";
+        bool isForce = false;
+        if (sess->getArgs().size() >= 4) {
+            isForce = sess->getArgs()[3] == "force";
+        }
         if (kvstore == "all") {
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 if (!isForce && !isEmpty(svr, sess, i)) {
@@ -1021,5 +1025,53 @@ class SlaveofCommand: public Command {
         return 0;
     }
 } slaveofCommand;
+
+class ReplStatusCommand: public Command {
+ public:
+    ReplStatusCommand()
+        :Command("replstatus", "a") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto catalog = svr->getCatalog();
+        INVARIANT(catalog != nullptr);
+        Expected<std::unique_ptr<StoreMeta>> meta = catalog->getStoreMeta(storeId);
+        if (!meta.ok()) {
+            return meta.status();
+        }
+        return Command::fmtLongLong((uint8_t)meta.value().get()->replState);
+    }
+} replStatusCommand;
 
 }  // namespace tendisplus

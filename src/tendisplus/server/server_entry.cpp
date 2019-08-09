@@ -318,6 +318,7 @@ void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
+    LOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
 }
 
@@ -330,6 +331,7 @@ Status ServerEntry::cancelSession(uint64_t connId) {
     if (it == _sessions.end()) {
         return {ErrorCodes::ERR_NOTFOUND, "session not found:" + std::to_string(connId)};
     }
+    LOG(INFO) << "ServerEntry cancelSession id:" << connId << " addr:" << it->second->getRemote();
     return it->second->cancel();
 }
 
@@ -347,6 +349,7 @@ void ServerEntry::endSession(uint64_t connId) {
     if (pCtx->getIsMonitor()) {
         DelMonitorNoLock(connId);
     }
+    LOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
     _sessions.erase(it);
 }
 
