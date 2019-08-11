@@ -23,7 +23,6 @@ class ServerParams {
     std::string requirepass;
     std::string masterauth;
     std::string pidFile;
-    
     bool versionIncrease;
     bool generalLog;
     // false: For command "set a b", it don't check the type of 

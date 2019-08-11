@@ -320,14 +320,12 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     // TODO(deyukong): max conns
     // NOTE(deyukong): first driving force
     sess->start();
-
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
     DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
-    
     return true;
 }
 

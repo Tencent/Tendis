@@ -654,56 +654,56 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
 }
 
 TEST(Command, common) {
-   const auto guard = MakeGuard([] {
-       destroyEnv();
-   });
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
-   EXPECT_TRUE(setupEnv());
-   auto cfg = makeServerParam();
-   auto server = makeServerEntry(cfg);
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
-   testPf(server);
-   testList(server);
-   testKV(server);
+    testPf(server);
+    testList(server);
+    testKV(server);
 
-   // testSetRetry only works in TXN_OPT mode
-   // testSetRetry(server);
-   testType(server);
-   testHash1(server);
-   testHash2(server);
-   testSet(server);
-   // zadd/zrem/zrank/zscore
-   testZset(server);
-   // zcount
-   testZset2(server);
-   // zlexcount, zrange, zrangebylex, zrangebyscore
-   testZset3(server);
-   // zremrangebyrank, zremrangebylex, zremrangebyscore
-   testZset4(server);
+    // testSetRetry only works in TXN_OPT mode
+    // testSetRetry(server);
+    testType(server);
+    testHash1(server);
+    testHash2(server);
+    testSet(server);
+    // zadd/zrem/zrank/zscore
+    testZset(server);
+    // zcount
+    testZset2(server);
+    // zlexcount, zrange, zrangebylex, zrangebyscore
+    testZset3(server);
+    // zremrangebyrank, zremrangebylex, zremrangebyscore
+    testZset4(server);
 }
 
 TEST(Command, common_scan) {
-   const auto guard = MakeGuard([] {
-       destroyEnv();
-   });
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
-   EXPECT_TRUE(setupEnv());
-   auto cfg = makeServerParam();
-   auto server = makeServerEntry(cfg);
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
-   testScan(server);
+    testScan(server);
 }
 
 TEST(Command, tendisex) {
-   const auto guard = MakeGuard([] {
-       destroyEnv();
-   });
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
-   EXPECT_TRUE(setupEnv());
-   auto cfg = makeServerParam();
-   // need 420000
-   //cfg->chunkSize = 420000;
-   auto server = makeServerEntry(cfg);
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    // need 420000
+    //cfg->chunkSize = 420000;
+    auto server = makeServerEntry(cfg);
 
     testExtendProtocol(server);
     testSync(server);
@@ -711,29 +711,29 @@ TEST(Command, tendisex) {
 }
 
 TEST(Command, checkKeyTypeForSetKV) {
-   const auto guard = MakeGuard([] {
-       destroyEnv();
-   });
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
-   EXPECT_TRUE(setupEnv());
-   auto cfg = makeServerParam();
-   cfg->checkKeyTypeForSet = true;
-   auto server = makeServerEntry(cfg);
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    cfg->checkKeyTypeForSet = true;
+    auto server = makeServerEntry(cfg);
 
-   testCheckKeyType(server);
-   testMset(server);
+    testCheckKeyType(server);
+    testMset(server);
 }
 
 TEST(Command, lockMulti) {
-   const auto guard = MakeGuard([] {
-       destroyEnv();
-   });
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
 
-   EXPECT_TRUE(setupEnv());
-   auto cfg = makeServerParam();
-   auto server = makeServerEntry(cfg);
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
 
-   testLockMulti(server);
+    testLockMulti(server);
 
 }
 

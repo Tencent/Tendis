@@ -415,13 +415,17 @@ proc start_server {options {code undefined}} {
             error "can't find binary file: ./tests/compare"
         }
 
-        set retcode [catch {exec ./tests/compare -addr1 $src -addr2 $dst} result]
-        if {$retcode != 0} {
-            kill_server $srv
-            error $retcode $result
-        } else {
-            puts "\[[colorstr green ok]\]: COMPARE $result"
+        set break [string compare "limits" [lindex $tags 0] || string compare "auth" [lindex $tags 0]]
+        if {$break != 0} {
+            set retcode [catch {exec ./tests/compare $src $dst} result]
+            if {$retcode != 0} {
+                kill_server $srv
+                error $retcode $result
+            } else {
+                puts "\[[colorstr green ok]\]: COMPARE $result"
+            }
         }
+        
         kill_server $srv
     } else {
         set ::tags [lrange $::tags 0 end-[llength $tags]]

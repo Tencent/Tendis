@@ -2102,7 +2102,6 @@ class SyncVersionCommand: public Command {
             return eTs.status();
         }
         auto eVersion = tendisplus::stoull(args[3]);
-
         if (!eVersion.ok()) {
             return eVersion.status();
         }
@@ -2174,7 +2173,6 @@ class StoreCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         auto server = sess->getServerEntry();
-
         if (toLower(args[1]) == "getack") {
             const auto& name = args[2];
             std::stringstream ss;
