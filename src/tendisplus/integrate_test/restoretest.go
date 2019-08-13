@@ -7,13 +7,13 @@ import (
     "strconv"
 )
 
-func testRestore(m1_port int, s1_port int, s2_port int, m2_port int, kvstorecount int) {
+func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int) {
     m1 := util.RedisServer{}
     m2 := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-    m1.Init(m1_port, pwd, "m1_")
-    m2.Init(m2_port, pwd, "m2_")
+    m1.Init(m1_ip, m1_port, pwd, "m1_")
+    m2.Init(m2_ip, m2_port, pwd, "s1_")
 
     cfgArgs := make(map[string]string)
     cfgArgs["maxBinlogKeepNum"] = "1"
@@ -26,11 +26,11 @@ func testRestore(m1_port int, s1_port int, s2_port int, m2_port int, kvstorecoun
         log.Fatalf("setup master2 failed:%v", err)
     }
 
-    addData(m1_port, *num1, "aa")
+    addData(&m1, *num1, "aa")
     backup(&m1)
     restoreBackup(&m2)
 
-    addData(m1_port,*num2, "bb")
+    addData(&m1, *num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)
     waitDumpBinlog(&m1, kvstorecount)
     flushBinlog(&m1)
@@ -45,5 +45,5 @@ func testRestore(m1_port int, s1_port int, s2_port int, m2_port int, kvstorecoun
 func main(){
     flag.Parse()
     //rand.Seed(time.Now().UTC().UnixNano())
-    testRestore(*m1port, *s1port, *s2port, *m2port, *kvstorecount)
+    testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount)
 }
