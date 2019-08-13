@@ -34,3 +34,9 @@ add_library(base64 STATIC base64.cpp)
 add_executable(utils_common_test utils_common_test.cpp)
 target_link_libraries(utils_common_test utils_common gtest_main ${SYS_LIBS})
 
+add_executable(base64_test base64_test.cpp)
+target_link_libraries(base64_test base64 gtest_main ${SYS_LIBS})
+
+add_executable(param_manager_test param_manager_test.cpp)
+target_link_libraries(param_manager_test param_manager gtest_main ${SYS_LIBS})
+
