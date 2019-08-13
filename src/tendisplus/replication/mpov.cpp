@@ -492,7 +492,7 @@ void ReplManager::supplyFullSyncRoutine(
               << ",storeId:" << storeId
               << ",begins fullsync";
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
-                storeId, mgl::LockMode::LOCK_IS);
+                storeId, mgl::LockMode::LOCK_S);
     if (!expdb.ok()) {
         std::stringstream ss;
         ss << "-ERR store " << storeId << " error: "
@@ -519,7 +519,8 @@ void ReplManager::supplyFullSyncRoutine(
         return;
     } else {
         LOG(INFO) << "storeId:" << storeId
-                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns";
+                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns"
+                  << ",pos:" << bkInfo.value().getBinlogPos();
     }
 
     auto guard = MakeGuard([this, store, storeId]() {

@@ -16,6 +16,7 @@ import (
 type RedisServer struct {
 	Port int
 	Path string
+	Ip string
 }
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -110,7 +111,8 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	}
 }
 
-func (s *RedisServer) Init(port int, pwd string, path string) {
+func (s *RedisServer) Init(ip string, port int, pwd string, path string) {
+	s.Ip = ip
 	s.Port = port
 	s.Path = pwd + "/" + path + RandStrAlpha(6)
 }

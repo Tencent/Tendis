@@ -82,14 +82,14 @@ void LockSchedCtx::schedPendingLocks() {
     }
 }
 
-void LockSchedCtx::unlock(MGLock *core) {
+bool LockSchedCtx::unlock(MGLock *core) {
     auto mode = core->getMode();
     if (core->getStatus() == LockRes::LOCKRES_OK) {
         _runningList.erase(core->getLockIter());
         decRunningRef(mode);
         core->releaseLockResult();
         if (_runningModes != 0) {
-            return;
+            return false;
         }
         INVARIANT(_runningList.size() == 0);
         schedPendingLocks();
@@ -103,6 +103,7 @@ void LockSchedCtx::unlock(MGLock *core) {
     } else {
         INVARIANT(0);
     }
+    return _pendingList.empty() && _runningList.empty();
 }
 
 void LockSchedCtx::incrPendingRef(LockMode mode) {
@@ -174,7 +175,10 @@ void MGLockMgr::unlock(MGLock *core) {
 
     auto iter = shard.map.find(core->getTarget());
     INVARIANT(iter != shard.map.end());
-    iter->second.unlock(core);
+    bool empty = iter->second.unlock(core);
+    if(empty) {
+        shard.map.erase(iter);
+    }
     return;
 }
 

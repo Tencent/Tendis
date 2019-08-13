@@ -22,10 +22,17 @@ var (
     s1port     = flag.Int("slave1port", 61002, "slave1 port")
     s2port     = flag.Int("slave2port", 61003, "slave2 port")
     m2port     = flag.Int("master2port", 61004, "master2 port")
+
+    m1ip = flag.String("master1ip", "127.0.0.1", "master1 ip")
+    s1ip = flag.String("slave1ip", "127.0.0.1", "slave1 ip")
+    s2ip = flag.String("slave2ip", "127.0.0.1", "slave2 ip")
+    m2ip = flag.String("master2ip", "127.0.0.1", "master2 ip")
+
     num1     = flag.Int("num1", 100, "first add data nums")
     num2     = flag.Int("num2", 100, "first add data nums")
-    shutdown    = flag.Int("shutdown", 1, "whether shutdown the dir")
+    shutdown = flag.Int("shutdown", 1, "whether shutdown the dir")
     clear    = flag.Int("clear", 1, "whether clear the dir")
+    startup  = flag.Int("startup", 1, "whether startup")
     kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 )
 
@@ -37,26 +44,27 @@ func getCurrentDirectory() string {
     return strings.Replace(dir, "\\", "/", -1)
 }
 
-func addDataInCoroutine(port int, num int, prefixkey string, channel chan int) {
-    addData(port, num, prefixkey)
+func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel chan int) {
+    addData(m, num, prefixkey)
     channel <- 0
 }
 
-func addData(port int, num int, prefixkey string) {
-    log.Infof("addData begin.port:%d", port)
+func addData(m *util.RedisServer, num int, prefixkey string) {
+    log.Infof("addData begin. %s:%d", m.Ip, m.Port)
 
     // "set,incr,lpush,lpop,sadd,spop,hset,mset"
-    cmd := exec.Command("./redis-benchmark", "-p", strconv.Itoa(port), "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey, "-t", "set,incr,lpush,sadd,hset")
+    cmd := exec.Command("./redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
+        "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey, "-t", "set,incr,lpush,sadd,hset")
     _, err := cmd.Output()
     //fmt.Print(string(output))
     if err != nil {
         fmt.Print(err)
     }
-    log.Infof("addData sucess.port:%d num:%d", port, num)
+    log.Infof("addData sucess. %s:%d num:%d", m.Ip, m.Port, num)
 }
 
 func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -72,7 +80,7 @@ func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
 }
 
 func backup(m *util.RedisServer) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -90,12 +98,12 @@ func backup(m *util.RedisServer) {
 }
 
 func slaveof(m *util.RedisServer, s *util.RedisServer) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", s.Ip, s.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", s.Port, err)
     }
 
-    if r, err := cli.Cmd("slaveof", "127.0.0.1", strconv.Itoa(m.Port)).Str(); err != nil {
+    if r, err := cli.Cmd("slaveof", m.Ip, strconv.Itoa(m.Port)).Str(); err != nil {
         log.Fatalf("do slaveof failed:%v", err)
         return
     } else if r != "OK" {
@@ -106,7 +114,7 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
 }
 
 func restoreBackup(m *util.RedisServer) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -126,7 +134,7 @@ func waitFullsyncInCoroutine(s *util.RedisServer, kvstorecount int, channel chan
 
 func waitFullsync(s *util.RedisServer, kvstorecount int) {
     log.Infof("waitFullsync begin.sport:%d", s.Port)
-    cli2, err2 := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
+    cli2, err2 := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", s.Ip, s.Port), 10*time.Second)
     if err2 != nil {
         log.Fatalf("can't connect to %d: %v", s.Port, err2)
     }
@@ -157,11 +165,11 @@ func waitCatchupInCoroutine(m *util.RedisServer, s *util.RedisServer, kvstorecou
 
 func waitCatchup(m *util.RedisServer, s *util.RedisServer, kvstorecount int) {
     log.Infof("waitCatchup begin.mport:%d sport:%d", m.Port, s.Port)
-    cli1, err1 := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli1, err1 := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err1 != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err1)
     }
-    cli2, err2 := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port), 10*time.Second)
+    cli2, err2 := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", s.Ip, s.Port), 10*time.Second)
     if err2 != nil {
         log.Fatalf("can't connect to %d: %v", s.Port, err2)
     }
@@ -213,7 +221,7 @@ func waitCatchup(m *util.RedisServer, s *util.RedisServer, kvstorecount int) {
 }
 
 func waitDumpBinlog(m *util.RedisServer, kvstorecount int) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -245,7 +253,7 @@ func waitDumpBinlog(m *util.RedisServer, kvstorecount int) {
 }
 
 func flushBinlog(m *util.RedisServer) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -292,7 +300,7 @@ func restoreBinlog(m1 *util.RedisServer, m2 *util.RedisServer, kvstorecount int)
 }
 
 func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeId int, channel chan int) {
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m2.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m2.Ip, m2.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m2.Port, err)
     }
@@ -335,7 +343,7 @@ func shutdownServer(m *util.RedisServer, shutdown int, clear int) {
     if (shutdown <= 0) {
         return;
     }
-    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", m.Port), 10*time.Second)
+    cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {
         log.Fatalf("can't connect to %d: %v", m.Port, err)
     }
@@ -357,7 +365,7 @@ func compareInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, channel chan
 }
 
 func compare(m1 *util.RedisServer, m2 *util.RedisServer) {
-    cmd := exec.Command("./compare_instances", fmt.Sprintf("127.0.0.1:%d", m1.Port), fmt.Sprintf("127.0.0.1:%d", m2.Port))
+    cmd := exec.Command("./compare_instances", fmt.Sprintf("%s:%d", m1.Ip, m1.Port), fmt.Sprintf("%s:%d", m2.Ip, m2.Port))
     cmd.Stderr = os.Stderr
     output, err := cmd.Output()
     fmt.Print("Command output:\n", string(output))
