@@ -48,7 +48,9 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
     <- channel
 
     waitCatchup(&m1, &s1, kvstorecount)
-    compare(&m1, &s1)
+    if *iscompare == 1 {
+        compare(&m1, &s1)
+    }
 
     shutdownServer(&m1, *shutdown, *clear);
     shutdownServer(&s1, *shutdown, *clear);

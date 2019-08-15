@@ -33,6 +33,7 @@ var (
     shutdown = flag.Int("shutdown", 1, "whether shutdown the dir")
     clear    = flag.Int("clear", 1, "whether clear the dir")
     startup  = flag.Int("startup", 1, "whether startup")
+    iscompare = flag.Int("compare", 1, "whether compare")
     kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 )
 

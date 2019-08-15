@@ -929,6 +929,51 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     return written;
 }
 
+Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
+    auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        LOG(ERROR) << "deleteBinlog create txn failed:"
+                   << ptxn.status().toString();
+        return false;
+    }
+    auto txn = std::move(ptxn.value());
+
+    LOG(INFO) << "deleteBinlog begin, dbid:" << dbId()
+        << " start:" << start;
+
+    auto cursor = txn->createRepllogCursorV2(start);
+
+    uint64_t count = 0;
+    uint64_t end = 0;
+    while (true) {
+        auto explog = cursor->next();
+        if (!explog.ok()) {
+            if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            return explog.status();
+        }
+        count++;
+        end = explog.value().getBinlogId();
+
+        DLOG(INFO) <<"deleteBinlog dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId();
+        auto s = txn->delBinlog(explog.value());
+        if (!s.ok()) {
+            LOG(ERROR) << "delbinlog error:" << s.toString();
+            return s;
+        }
+    }
+    auto commitStat = txn->commit();
+    if (!commitStat.ok()) {
+        LOG(ERROR) << "deleteBinlog store:" << dbId()
+                    << "commit failed:" << commitStat.status().toString();
+        return false;
+    }
+    LOG(INFO) << "deleteBinlog success, dbid:" << dbId()
+        << " start:" << start << " end:" << end << " count:" << count;
+    return true;
+}
+
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t end, Transaction *txn, std::ofstream *fs) {
     DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
@@ -947,6 +992,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t max_cnt = 50000;
     uint64_t size = 0;
     uint64_t nextStart = start;
+    uint64_t cur_ts = msSinceEpoch();
     while (true) {
         auto explog = cursor->next();
         if (!explog.ok()) {
@@ -961,8 +1007,11 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
             getHighestBinlogId() - nextStart <= (_maxKeepLogs - 1)) {
             break;
         }
-
         ts = explog.value().getTimestamp();
+        if (_minKeepLogMs != 0 && ts >= cur_ts - _minKeepLogMs) {
+            break;
+        }
+
         size++;
         if (fs) {
             // save binlog
@@ -970,7 +1019,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         }
 
         // TODO(vinchen): compactrange or compactfilter should be better
-        DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId();
+        DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId()
+            << " time:" << (cur_ts - ts)/1000 << " sec ago.";
         auto s = txn->delBinlog(explog.value());
         if (!s.ok()) {
             // NOTE(vinchen): if error here, binlog would be wrong because
@@ -1121,12 +1171,16 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
     return txn->commit();
 }
 
-Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
+Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, uint64_t maxBinlogid) {
+  bool needDeleteBinlog = false;
+  uint64_t maxCommitId = 0;
+  {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_isRunning) {
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
-
+    LOG(INFO) << "RocksKVStore::restart id:"<< dbId() << " restore:" << restore
+        << " nextBinlogid:" << nextBinlogid << " maxBinlogid:" << maxBinlogid;
     INVARIANT_D(nextBinlogid != Transaction::TXNID_UNINITED);
 
     // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
@@ -1189,11 +1243,14 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
         // txnDbOptions.default_lock_timeout 1sec
         // txnDbOptions.write_policy WRITE_COMMITTED
         rocksdb::Options dbOpts = options();
+        LOG(INFO) << "rocksdb Open,id:"<< dbId() << " dbname:" << dbname;
         auto status = rocksdb::TransactionDB::Open(
             dbOpts, txnDbOptions, dbname, &tmpDb);
         if (!status.ok()) {
+            LOG(INFO) << "rocksdb Open error,id:"<< dbId() << " dbname:" << dbname;
             return {ErrorCodes::ERR_INTERNAL, status.ToString()};
         }
+        LOG(INFO) << "rocksdb Open sucess,id:"<< dbId() << " dbname:" << dbname;
         rocksdb::ReadOptions readOpts;
         iter.reset(tmpDb->GetBaseDB()->NewIterator(readOpts));
         _pesdb.reset(tmpDb);
@@ -1206,7 +1263,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
 
-    uint64_t maxCommitId = nextBinlogid - 1;
+    maxCommitId = nextBinlogid - 1;
     INVARIANT_D(nextBinlogid > maxCommitId);
 #ifdef BINLOG_V1
     if (expRcd.ok()) {
@@ -1255,6 +1312,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
                 _nextTxnSeq = maxCommitId + 1;
                 _nextBinlogSeq = _nextTxnSeq;
                 _highestVisible = maxCommitId;
+                needDeleteBinlog = true;
             }
         } else {
             _nextTxnSeq = nextBinlogid;
@@ -1277,6 +1335,28 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid) {
 #endif
 
     _isRunning = true;
+  }
+  {
+    if (needDeleteBinlog)
+    {
+        if (maxBinlogid != Transaction::TXNID_UNINITED)
+        {
+            Expected<bool> ret = deleteBinlog(maxBinlogid + 1);
+            if (!ret.ok()) {
+                return ret.status();
+            }
+            LOG(INFO) << "store:" << dbId()
+                << " nextSeq change from:" << _nextTxnSeq
+                << " to:" << maxBinlogid + 1;
+            maxCommitId = maxBinlogid;
+
+            std::lock_guard<std::mutex> lk(_mutex);
+            _nextTxnSeq = maxCommitId + 1;
+            _nextBinlogSeq = _nextTxnSeq;
+            _highestVisible = maxCommitId;
+        }
+    }
+  }
     return maxCommitId;
 }
 
@@ -1303,7 +1383,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _highestVisible(Transaction::TXNID_UNINITED),
          _logOb(nullptr),
          // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
-         _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)) {
+         _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)),
+         _minKeepLogMs(cfg->minBinlogKeepSec * 1000) {
     if (cfg->noexpire) {
         _enableFilter = false;
     }

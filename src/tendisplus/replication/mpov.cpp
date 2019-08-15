@@ -492,7 +492,7 @@ void ReplManager::supplyFullSyncRoutine(
               << ",storeId:" << storeId
               << ",begins fullsync";
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
-                storeId, mgl::LockMode::LOCK_S);
+                storeId, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
         std::stringstream ss;
         ss << "-ERR store " << storeId << " error: "
