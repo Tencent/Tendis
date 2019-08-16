@@ -9,6 +9,8 @@
 #include <random>
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/time.h"
+#include "tendisplus/utils/param_manager.h"
+#include "tendisplus/utils/base64.h"
 #include "gtest/gtest.h"
 #include "unistd.h"
 
@@ -86,6 +88,39 @@ TEST(String, Split) {
         EXPECT_EQ(v, v2);
     }
 
+}
+
+TEST(Base64, common) {
+    std::string data = "aa";
+    std::string encode = Base64::Encode((unsigned char*)data.c_str(), data.size());
+    std::string decode = Base64::Decode(encode.c_str(), encode.size());
+    EXPECT_EQ(data, decode);
+
+    data = "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM2222222222222222222222222222222222";
+    encode = Base64::Encode((unsigned char*)data.c_str(), data.size());
+    decode = Base64::Decode(encode.c_str(), encode.size());
+    EXPECT_EQ(data, decode);
+
+    data = "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM22222222222222222222222222222222 \
+        ------------------------------****************************************************** \
+        ########################################zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    encode = Base64::Encode((unsigned char*)data.c_str(), data.size());
+    decode = Base64::Decode(encode.c_str(), encode.size());
+    EXPECT_EQ(data, decode);
+}
+
+TEST(ParamManager, common) {
+    ParamManager pm;
+    const char* argv[] = {"--skey1=value",
+        "--ikey1=123"};
+    pm.init(2, (char**)argv);
+    EXPECT_EQ(pm.getString("skey1"), "value");
+    EXPECT_EQ(pm.getString("skey2"), "");
+    EXPECT_EQ(pm.getString("skey3", "a"), "a");
+
+    EXPECT_EQ(pm.getUint64("ikey1"), 123);
+    EXPECT_EQ(pm.getUint64("ikey2"), 0);
+    EXPECT_EQ(pm.getUint64("ikey3", 1), 1);
 }
 
 }  // namespace tendisplus
