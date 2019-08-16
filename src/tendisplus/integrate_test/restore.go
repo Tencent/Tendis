@@ -4,7 +4,6 @@ import (
     "flag"
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
-    "time"
     "strconv"
 )
 
@@ -22,46 +21,67 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     m2.Init(m2_ip, m2_port, pwd, "m2_")
 
     cfgArgs := make(map[string]string)
-    cfgArgs["maxBinlogKeepNum"] = "1"
     cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
 
+    cfgArgs["maxbinlogkeepnum"] = "10000"
+    cfgArgs["minbinlogkeepsec"] = "60"
     if err := m1.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master1 failed:%v", err)
     }
+
+    cfgArgs["maxbinlogkeepnum"] = "10000"
+    cfgArgs["minbinlogkeepsec"] = "60"
     if err := s1.Setup(false, &cfgArgs); err != nil {
+        cfgArgs["maxbinlogkeepnum"] = "1"
+        cfgArgs["minbinlogkeepsec"] = "0"
         log.Fatalf("setup slave1 failed:%v", err)
     }
+
+    cfgArgs["maxbinlogkeepnum"] = "1"
+    cfgArgs["minbinlogkeepsec"] = "0"
     if err := s2.Setup(false, &cfgArgs); err != nil {
+        cfgArgs["maxbinlogkeepnum"] = "1"
+        cfgArgs["minbinlogkeepsec"] = "0"
         log.Fatalf("setup slave2 failed:%v", err)
     }
+
+    cfgArgs["maxbinlogkeepnum"] = "10000"
+    cfgArgs["minbinlogkeepsec"] = "3600"
     if err := m2.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master2 failed:%v", err)
     }
 
     slaveof(&m1, &s1)
+    waitFullsync(&s1, kvstorecount)
+
     slaveof(&s1, &s2)
-    time.Sleep(5000*1000000) // 5s, wait slaveof success
+    waitFullsync(&s2, kvstorecount)
 
     addData(&m1, *num1, "aa")
-    backup(&m1)
-    restoreBackup(&m2)
 
     waitCatchup(&m1, &s1, kvstorecount)
-    waitCatchup(&m1, &s2, kvstorecount)
+    waitCatchup(&s1, &s2, kvstorecount)
+
+    backup(&s2)
+    restoreBackup(&m2)
 
     var channel chan int = make(chan int)
-    go compareInCoroutine(&m1, &m2, channel)
     go compareInCoroutine(&m1, &s1, channel)
     go compareInCoroutine(&m1, &s2, channel)
+    go compareInCoroutine(&m1, &m2, channel)
     <- channel
     <- channel
     <- channel
 
     addData(&m1, *num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)
-    waitDumpBinlog(&m1, kvstorecount)
-    flushBinlog(&m1)
-    restoreBinlog(&m1, &m2, kvstorecount)
+
+    waitCatchup(&m1, &s1, kvstorecount)
+    waitCatchup(&s1, &s2, kvstorecount)
+
+    waitDumpBinlog(&s2, kvstorecount)
+    flushBinlog(&s2)
+    restoreBinlog(&s2, &m2, kvstorecount)
     addOnekeyEveryStore(&m2, kvstorecount)
     compare(&m1, &m2)
 

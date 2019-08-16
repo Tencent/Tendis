@@ -1387,6 +1387,7 @@ class InfoCommand: public Command {
         } else {
             section = sess->getArgs()[1];
         }
+        section = toLower(section);
         auto server = sess->getServerEntry();
         uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
 
