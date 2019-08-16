@@ -27,23 +27,25 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
         //cfgArgs["maxBinlogKeepNum"] = strconv.Itoa(1)
         cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
         cfgArgs["rocks.blockcachemb"] = strconv.Itoa(1024)
+        cfgArgs["requirepass"] = "tendis+test"
     
         if err := m1.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup master1 failed:%v", err)
         }
+        cfgArgs["masterauth"] = "tendis+test"
         if err := s1.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup slave1 failed:%v", err)
         }
     }
 
-    addData(&m1, *num1, "aa")
+    addData(&m1, *num1, *keyprefix1)
     slaveof(&m1, &s1)
     //waitFullsync(&s1, kvstorecount)
     //waitCatchup(&m1, &s1, kvstorecount)
 
     var channel chan int = make(chan int)
     go waitFullsyncAndCatchup(&m1, &s1, kvstorecount, channel)
-    go addDataInCoroutine(&m1, *num2, "bb", channel)
+    go addDataInCoroutine(&m1, *num2, *keyprefix2, channel)
     <- channel
     <- channel
 
