@@ -184,24 +184,24 @@ class DumpXCommand: public Command {
     }
 
     ssize_t arity() const {
-        return -2;
+        return -3;
     }
 
     int32_t firstkey() const {
-        return 1;
+        return 2;
     }
     int32_t lastkey() const {
         return -1;
     }
     int32_t keystep() const {
-        return 1;
+        return 2;
     }
 
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         auto server = sess->getServerEntry();
-        std::vector<int> index(args.size() - 1);
-        std::iota(index.begin(), index.end(), 1);
+        std::vector<int> index((args.size() - 1)/2);
+        std::generate(index.begin(), index.end(), [n=0]() mutable { return n+=2; });
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(
                 sess, args, index, Command::RdLock());
         if (!locklist.ok()) {
@@ -209,9 +209,18 @@ class DumpXCommand: public Command {
         }
         std::stringstream ss;
         std::vector<std::unique_ptr<std::string>> bufferlist;
-        bufferlist.reserve(2 * (args.size() - 1));
+        INVARIANT(!((args.size() - 1) % 2));
+        bufferlist.reserve(3 * (args.size() - 1) / 2);
         size_t cnt(0);
         for (const auto& i : index) {
+            auto expDbid = tendisplus::stoul(args[i-1]);
+            if (!expDbid.ok()) {
+                return expDbid.status();
+            }
+            auto dbid = static_cast<uint32_t>(expDbid.value());
+            if (sess->getCtx()->getDbId() != dbid) {
+                sess->getCtx()->setDbId(dbid);
+            }
             auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
             if (!expdb.ok()) {
                 return expdb.status();
@@ -228,6 +237,7 @@ class DumpXCommand: public Command {
             if (!expBuf.ok()) {
                 return expBuf.status();
             }
+            bufferlist.emplace_back(std::make_unique<std::string>(args[i-1]));
             bufferlist.emplace_back(std::make_unique<std::string>(
                     args[i]));
             bufferlist.emplace_back(std::make_unique<std::string>(
@@ -235,10 +245,10 @@ class DumpXCommand: public Command {
                     expBuf.value().begin() + exps.value()->_end));
             cnt++;
         }
-        Command::fmtMultiBulkLen(ss, 2 * cnt + 1);
+        Command::fmtMultiBulkLen(ss, 3 * cnt + 1);
         Command::fmtBulk(ss, "RESTOREX");
-        INVARIANT(bufferlist.size() == 2 * cnt);
-        for (size_t i = 0; i < 2 * cnt; i++) {
+        INVARIANT(bufferlist.size() == 3 * cnt);
+        for (size_t i = 0; i < 3 * cnt; i++) {
             Command::fmtBulk(ss, *bufferlist[i]);
         }
         return ss.str();
@@ -777,11 +787,11 @@ class RestoreXCommand: public Command {
     }
 
     ssize_t arity() const {
-        return -3;
+        return -4;
     }
 
     int32_t firstkey() const {
-        return 1;
+        return 2;
     }
 
     int32_t lastkey() const {
@@ -789,7 +799,7 @@ class RestoreXCommand: public Command {
     }
 
     int32_t keystep() const {
-        return 2;
+        return 3;
     }
 
     Expected<std::string> run(Session *sess) final {

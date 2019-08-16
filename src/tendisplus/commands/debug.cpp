@@ -1671,9 +1671,9 @@ class FlushdbCommand : public FlushGeneric {
         }
 
         // TODO(vinchen): only support db 0
-        if (sess->getCtx()->getDbId() != 0) {
-            return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
-        }
+        //if (sess->getCtx()->getDbId() != 0) {
+        //    return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
+        //}
 
         auto s = runGeneric(sess, flags.value());
         if (!s.ok()) {
@@ -2175,5 +2175,32 @@ class EvictCommand: public Command {
         return Command::fmtOK();
     }
 } evictCmd;
+
+class PublishCommand: public Command {
+ public:
+    PublishCommand()
+        :Command("publish", "pltF") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtOK();
+    }
+} publishCmd;
 
 }  // namespace tendisplus
