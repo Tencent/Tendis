@@ -169,7 +169,7 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos);
             cmd += " --end-datetime=" + std::to_string(end_ts);
-            cmd += "| ../../../redis-2.8.17/src/redis-cli -p 1122";
+            cmd += "| ./redis-cli -p 1122";
             LOG(INFO) << cmd;
             int ret = system(cmd.c_str());
             EXPECT_EQ(ret, 0);
@@ -400,7 +400,7 @@ makeRestoreEnv(uint32_t storeCnt) {
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
-size_t recordSize = 300;
+size_t recordSize = 100;
 #endif
 
 TEST(Restore, Common) {
@@ -408,7 +408,7 @@ TEST(Restore, Common) {
     size_t i = 1;
     {
 #else
-    for (size_t i = 0; i < 9; i++) {
+    for (size_t i = 0; i < 2; i++) {
 #endif
         LOG(INFO) << ">>>>>> test store count:" << i;
 

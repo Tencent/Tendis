@@ -21,7 +21,7 @@ class LockSchedCtx {
     LockSchedCtx();
     LockSchedCtx(LockSchedCtx&&) = default;
     void lock(MGLock* core);
-    void unlock(MGLock* core);
+    bool unlock(MGLock* core);
  private:
     void schedPendingLocks();
     void incrPendingRef(LockMode mode);

@@ -22,14 +22,11 @@ else()
 	add_library(rt STATIC dummy.cpp)
 endif()
 
-add_library(utils_common STATIC status.cpp redis_port.cpp hyperloglog.cpp time.cpp string.cpp ${STD})
+add_library(utils_common STATIC status.cpp redis_port.cpp hyperloglog.cpp time.cpp string.cpp base64.cpp param_manager.cpp ${STD})
 target_link_libraries(utils_common glog varint)
 
 add_library(test_util STATIC test_util.cpp)
 target_link_libraries(test_util utils_common server_params)
-
-add_library(param_manager STATIC param_manager.cpp)
-add_library(base64 STATIC base64.cpp)
 
 add_executable(utils_common_test utils_common_test.cpp)
 target_link_libraries(utils_common_test utils_common gtest_main ${SYS_LIBS})

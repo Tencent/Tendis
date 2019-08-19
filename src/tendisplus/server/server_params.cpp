@@ -251,7 +251,14 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "Invalid number of databases" };
                 }
                 maxBinlogKeepNum = std::stoi(tokens[1]);
+            } else if (tokens[0] == "minbinlogkeepsec") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "minBinlogKeepSec" };
+                }
+                minBinlogKeepSec = std::stoi(tokens[1]);
             }
+
         }
     } catch (const std::exception& ex) {
         std::stringstream ss;
@@ -288,6 +295,7 @@ ServerParams::ServerParams()
     dbNum = CONFIG_DEFAULT_DBNUM;
     noexpire = false;
     maxBinlogKeepNum = 1000000;
+    minBinlogKeepSec = 0;
 }
 
 

@@ -216,7 +216,8 @@ class RocksKVStore: public KVStore {
     TxnMode getTxnMode() const;
 
     Expected<uint64_t> restart(bool restore = false,
-            uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID) final;
+            uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID,
+            uint64_t maxBinlogid = Transaction::TXNID_UNINITED) final;
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
@@ -243,6 +244,7 @@ class RocksKVStore: public KVStore {
     void addUnCommitedTxnInLock(uint64_t txnId);
     void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::Options options();
+    Expected<bool> deleteBinlog(uint64_t start);
     mutable std::mutex _mutex;
 
     bool _isRunning;
@@ -303,6 +305,7 @@ class RocksKVStore: public KVStore {
     // occupy txnIds, and in each txnId, there are more sub operations.
     // So, _maxKeepLogs is not named precisely.
     const uint64_t _maxKeepLogs;
+    const uint64_t _minKeepLogMs;
 };
 
 }  // namespace tendisplus

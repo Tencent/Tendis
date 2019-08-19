@@ -243,7 +243,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     client->writeLine("+OK", std::chrono::seconds(1));
 
     // 5) restart store, change to stready-syncing mode
-    Expected<uint64_t> restartStatus = store->restart(true);
+    Expected<uint64_t> restartStatus = store->restart(true, Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
                    << ",failed:" << restartStatus.status().toString();

@@ -1387,6 +1387,7 @@ class InfoCommand: public Command {
         } else {
             section = sess->getArgs()[1];
         }
+        section = toLower(section);
         auto server = sess->getServerEntry();
         uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
 
@@ -1403,6 +1404,7 @@ class InfoCommand: public Command {
             }
 #endif
             ss << "# Server\r\n"
+                << "redis_version:4.0.10-Tendisx-v0.0.1\r\n"
 #ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"        // NOLINT
 #endif

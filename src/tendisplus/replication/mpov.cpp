@@ -519,7 +519,8 @@ void ReplManager::supplyFullSyncRoutine(
         return;
     } else {
         LOG(INFO) << "storeId:" << storeId
-                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns";
+                  << ",backup cost:" << (nsSinceEpoch() - currTime) << "ns"
+                  << ",pos:" << bkInfo.value().getBinlogPos();
     }
 
     auto guard = MakeGuard([this, store, storeId]() {
