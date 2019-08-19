@@ -18,6 +18,8 @@
 
 namespace tendisplus {
 
+#define InMulti (1 << 0)
+
 // storeLock state pair
 using SLSP = std::tuple<uint32_t, std::string, mgl::LockMode>;
 
@@ -54,7 +56,7 @@ class SessionCtx {
     uint64_t getTsEP() const { return _timestamp; }
     uint64_t getVersionEP() const { return _version; }
     bool isEp() const { return _extendProtocol; }
-    bool isReplOnly() const{ return _replOnly; }
+    bool isReplOnly() const { return _replOnly; }
     void setReplOnly(bool v) { _replOnly = v; }
 
     void setKeylock(const std::string& key, mgl::LockMode mode);
@@ -65,8 +67,20 @@ class SessionCtx {
     uint32_t getIsMonitor() const;
     void setIsMonitor(bool in);
 
+    inline bool isInMulti() const { return (_flags & InMulti); }
+    inline void setMulti() {
+        _flags |= InMulti;
+        _txnVersion = _version;
+    }
+    inline void resetMulti() {
+        _flags &= ~InMulti;
+        _txnVersion = -1;
+    }
+    bool verifyVersion(uint64_t keyVersion);
+
     static constexpr uint64_t VERSIONEP_UNINITED = -1;
     static constexpr uint64_t TSEP_UNINITED = -1;
+
  private:
     // not protected by mutex
     bool _authed;
@@ -77,11 +91,13 @@ class SessionCtx {
     uint64_t _processPacketStart;
     uint64_t _timestamp;
     uint64_t _version;
+    uint64_t _txnVersion;
     bool _extendProtocol;
     bool _replOnly;
     Session* _session;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
     bool _isMonitor;
+    uint32_t _flags;
 
     mutable std::mutex _mutex;
 

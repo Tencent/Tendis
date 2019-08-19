@@ -19,6 +19,7 @@ SessionCtx::SessionCtx(Session* sess)
      _processPacketStart(0),
      _timestamp(TSEP_UNINITED),
      _version(VERSIONEP_UNINITED),
+     _txnVersion(-1),
      _extendProtocol(false),
      _replOnly(false),
      _session(sess),
@@ -188,6 +189,32 @@ bool SessionCtx::isLockedByMe(const std::string &key, mgl::LockMode mode) {
         return true;
     }
     return false;
+}
+
+bool SessionCtx::verifyVersion(uint64_t keyVersion) {
+    if (isInMulti()) {
+        if (_txnVersion != _version) {
+            // we use only one version inside the entire txn.
+            return false;
+        }
+        // now we have _txnVersion eq to _version
+        return !(_txnVersion < keyVersion &&
+                 keyVersion != UINT64_MAX);
+    }
+
+    if (_version == UINT64_MAX) {
+        // isolate tendis cmd cannot modify value of tendis with cache.
+        // if (eValue.value().getVersionEP() != UINT64_MAX) {
+        //    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+        //}
+    } else {
+        // any command can modify value with versionEP = -1
+        if (_version <= keyVersion &&
+            keyVersion != UINT64_MAX) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace tendisplus
