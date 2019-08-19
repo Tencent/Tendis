@@ -578,6 +578,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
             }
             if (hasVersion) {
                 auto pCtx = sess->getCtx();
+                /*
                 if (pCtx->getVersionEP() == UINT64_MAX) {
                     // isolate tendis cmd cannot modify value of tendis with cache.
                     // if (eValue.value().getVersionEP() != UINT64_MAX) {
@@ -589,6 +590,10 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                         eValue.value().getVersionEP() != UINT64_MAX) {
                         return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
                     }
+                }
+                 */
+                if (!pCtx->verifyVersion(eValue.value().getVersionEP())) {
+                    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
                 }
             }
             return eValue.value();

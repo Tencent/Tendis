@@ -1502,6 +1502,8 @@ class ObjectCommand: public Command {
                 return Command::fmtLongLong(0);
             } else if (args[1] == "freq") {
                 return Command::fmtLongLong(0);
+            } else if (args[1] == "revision") {
+                return Command::fmtLongLong(rv.value().getVersionEP());
             }
         }
         return{ ErrorCodes::ERR_PARSEOPT,
@@ -2050,13 +2052,17 @@ class SyncVersionCommand: public Command {
                 PStore store = expdb.value().store;
                 auto expvm = server->getCatalog()->getVersionMeta(
                         store, name);
-                if (!expvm.ok()) {
+                if (expvm.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                    server->setTsVersion(name, -1, -1);
+                    ts = ver = -1;
+                } else if (!expvm.ok()) {
                     return expvm.status();
+                } else {
+                    server->setTsVersion(name,
+                                         expvm.value()->timestamp, expvm.value()->version);
+                    ts = expvm.value()->timestamp;
+                    ver = expvm.value()->version;
                 }
-                server->setTsVersion(name,
-                        expvm.value()->timestamp, expvm.value()->version);
-                ts = expvm.value()->timestamp;
-                ver = expvm.value()->version;
             }
             Command::fmtLongLong(ss, static_cast<int64_t>(ts));
             Command::fmtLongLong(ss, static_cast<int64_t>(ver));
@@ -2204,5 +2210,75 @@ class PublishCommand: public Command {
         return Command::fmtOK();
     }
 } publishCmd;
+
+class multiCommand: public Command {
+ public:
+    multiCommand()
+        :Command("multi", "sF") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto pCtx = sess->getCtx();
+        if (pCtx->isInMulti()) {
+            return { ErrorCodes::ERR_PARSEPKT, "MULTI calls can not be nested" };
+        }
+        pCtx->setMulti();
+        // maybe set txnVersion to multi's version.
+        return Command::fmtOK();
+    }
+} multiCmd;
+
+class execCommand: public Command {
+ public:
+    execCommand()
+        :Command("exec", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        auto pCtx = sess->getCtx();
+        if (!pCtx->isInMulti()) {
+            return { ErrorCodes::ERR_PARSEPKT, "EXEC without MULTI" };
+        }
+        // check version ?
+        if (!pCtx->verifyVersion(pCtx->getVersionEP())) {
+            return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
+        }
+        pCtx->resetMulti();
+        // TODO(comboqiu): return value should include multiBulkLen and sub command results
+        return Command::fmtOK();
+    }
+} execCmd;
 
 }  // namespace tendisplus

@@ -514,7 +514,7 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
 
     sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
     auto expect = Command::runSessionCmd(&sess);
-    EXPECT_FALSE(expect.ok());
+    EXPECT_TRUE(expect.ok());
 
     sess.setArgs({"syncversion", "unittest", "100", "100", "v1"});
     expect = Command::runSessionCmd(&sess);
@@ -535,6 +535,81 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     fmtSyncVerRes(ss1, 105, 102);
     EXPECT_EQ(ss1.str(), expect.value());
+}
+
+void testMulti(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"config", "set", "session", "tendis_protocol_extend", "1"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"hset", "multitest", "initkey", "initval", "1", "1", "v1"});
+    auto s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    // Command with version equal to key is not allowed to perform.
+    sess.setArgs({"hset", "multitest", "dupver", "dupver", "1", "1", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
+    sess.setArgs({"multi", "2", "2", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // Out multi/exec doesn't behaviour like what redis does.
+    // each command between multi and exec will be executed immediately.
+    sess.setArgs({"hset", "multitest", "multi1", "multi1", "2", "2", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"hset", "multitest", "multi2", "multi2", "2", "2", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"hset", "multitest", "multi3", "multi3", "2", "2", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // Exec will just return ok, no array reply.
+    sess.setArgs({"exec", "2", "2", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"multi", "3", "3", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"hset", "multitest", "multi4", "multi4", "3", "3", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    // version check: exec with version not same as txn will fail.
+    sess.setArgs({"exec", "4", "4", "v1"});
+    s = sess.processExtendProtocol();
+    EXPECT_TRUE(s.ok());
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+
 }
 
 TEST(Command, common) {
@@ -591,6 +666,7 @@ TEST(Command, tendisex) {
 
     testExtendProtocol(server);
     testSync(server);
+    testMulti(server);
 }
 
 TEST(Command, checkKeyTypeForSetKV) {
