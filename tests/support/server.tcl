@@ -137,6 +137,7 @@ proc wait_for_binlog_ready {mcli scli} {
                 error $::errorInfo
             }
             after 1000
+            puts "store $i get master_pos $master_pos slave_pos $slave_pos not equal"
         }
         puts "store $i get master_pos $master_pos slave_pos $slave_pos"
     }

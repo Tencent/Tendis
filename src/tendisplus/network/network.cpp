@@ -15,7 +15,7 @@ using asio::ip::tcp;
 constexpr ssize_t REDIS_IOBUF_LEN = (1024*16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024*1024*1024);
 constexpr ssize_t REDIS_INLINE_MAX_SIZE = (1024*64);
-constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024*64);
+constexpr ssize_t REDIS_MBULK_BIG_ARG = (1024*32);
 
 std::string RequestMatrix::toString() const {
     std::stringstream ss;

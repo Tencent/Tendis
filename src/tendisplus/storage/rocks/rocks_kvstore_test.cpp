@@ -161,8 +161,8 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
 TEST(RocksKVStore, BinlogRightMost) {
     auto cfg = genParams();
 
-    filesystem::remove_all("./log");
-    filesystem::remove_all("./db");
+    //filesystem::remove_all("./log");
+    //filesystem::remove_all("./db");
 
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
