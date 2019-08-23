@@ -405,18 +405,16 @@ proc start_server {options {code undefined}} {
             error $err
         }
 
-        # compare master and slave
+       # compare -addr1 {tendis ip:port} -addr2 {redis ip:port} cause only tendis support iterall.
         set slv [dict get $srv slave]
         set src "[dict get $srv host]:[dict get $srv port]"
         set dst "[dict get $slv host]:[dict get $slv port]"
-
-        # check binary file existance
         if {[file exists ./tests/compare] == 0} {
-            error "can't find binary file: ./tests/compare"
             kill_server $srv
+            error "can't find binary file: ./tests/compare"
         }
 
-        set retcode [catch {exec ./tests/compare $src $dst} result]
+        set retcode [catch {exec ./tests/compare -addr1 $src -addr2 $dst} result]
         if {$retcode != 0} {
             kill_server $srv
             error $retcode $result

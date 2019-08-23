@@ -53,6 +53,7 @@ bool isRealEleType(RecordType keyType, RecordType valueType) {
         case RecordType::RT_ZSET_S_ELE:
         case RecordType::RT_BINLOG:
         case RecordType::RT_TTL_INDEX:
+        case RecordType::RT_META:       // For ts/revision
             return false;
 
         default:
