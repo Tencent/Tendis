@@ -591,7 +591,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         hasError = true;
         return;
     }
-    LOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
+    DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
         << " to end:" << newStart << " success."
         << "addr:" << _svr->getNetwork()->getIp()
         << ":" << _svr->getNetwork()->getPort();
