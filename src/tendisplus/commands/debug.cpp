@@ -1582,6 +1582,9 @@ class FlushGeneric : public Command {
 
     Status runGeneric(Session* sess, int flags) {
         auto server = sess->getServerEntry();
+        auto replMgr = server->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
                                 mgl::LockMode::LOCK_X);
@@ -1604,6 +1607,8 @@ class FlushGeneric : public Command {
 
             // it is the first txn and binlog, because of LOCK_X
             INVARIANT_D(eflush.value() == nextBinlogid);
+
+            replMgr->onFlush(i, eflush.value());
         }
         return{ ErrorCodes::ERR_OK, "" };
     }

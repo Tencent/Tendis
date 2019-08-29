@@ -201,6 +201,7 @@ Status ReplManager::startup() {
                 false,
                 tp,
                 Transaction::TXNID_UNINITED,
+                Transaction::TXNID_UNINITED,
                 fileSeq,
                 0,
                 tp,
@@ -226,6 +227,7 @@ Status ReplManager::startup() {
             if (explog.ok()) {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
                 recBinlogStat->timestamp = explog.value().getTimestamp();
+                recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
 #endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -233,6 +235,7 @@ Status ReplManager::startup() {
                     // TODO(takenliu) fix the relative logic
                     recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
+                    recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
                 } else {
                     return explog.status();
                 }
@@ -470,6 +473,14 @@ void ReplManager::controlRoutine() {
     LOG(INFO) << "repl controller exits";
 }
 
+void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto& v = _logRecycStatus[storeId];
+    v->lastFlushBinlogId = binlogid;
+    LOG(INFO) << "ReplManager::onFlush, storeId:" << storeId
+        << " binlogid:" << binlogid;
+}
+
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
@@ -493,6 +504,7 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         } else {
             v->firstBinlogId = start;
         }
+        DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
 
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();

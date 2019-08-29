@@ -164,12 +164,12 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
         }
         std::sort(loglist.begin(), loglist.end());
         for (size_t j = 0; j < loglist.size(); ++j) {
-            std::string cmd = "./binlog_tool";
+            std::string cmd = "./build/bin/binlog_tool";
             cmd += " --logfile=" + loglist[j];
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos);
             cmd += " --end-datetime=" + std::to_string(end_ts);
-            cmd += "| ./redis-cli -p 1122";
+            cmd += "| ./bin/redis-cli -p 1122";
             LOG(INFO) << cmd;
             int ret = system(cmd.c_str());
             EXPECT_EQ(ret, 0);

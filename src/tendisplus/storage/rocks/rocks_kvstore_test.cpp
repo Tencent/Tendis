@@ -637,15 +637,10 @@ TEST(RocksKVStore, Backup) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
     }
 
-    // backup failed, it should clean the remaining files,
-    // and set the backup state to false
+    // backup failed, set the backup state to false
     Expected<BackupInfo> expBk1 = kvstore->backup(
         kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
     EXPECT_FALSE(expBk1.ok());
-
-    Expected<BackupInfo> expBk2 = kvstore->backup(
-        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
-    EXPECT_TRUE(expBk2.ok());
 
     s = kvstore->stop();
     EXPECT_TRUE(s.ok());
