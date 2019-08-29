@@ -705,6 +705,7 @@ class ApplyBinlogsCommandV2 : public Command {
         INVARIANT_D(eflush.value() ==
                     eLog.value().getReplLogKey().getBinlogId());
 
+        replMgr->onFlush(storeId, eflush.value());
         return{ ErrorCodes::ERR_OK, "" };
     }
     // applybinlogsv2 storeId binlogs cnt flag

@@ -414,20 +414,27 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         return;
     }
 
-    uint64_t firstPos = [this, storeId]() {
+    uint64_t firstPos = 0;
+    uint64_t lastFlushBinlogId = 0;
+    {
         std::lock_guard<std::mutex> lk(_mutex);
-        return _logRecycStatus[storeId]->firstBinlogId;
-    }();
+        firstPos = _logRecycStatus[storeId]->firstBinlogId;
+        lastFlushBinlogId = _logRecycStatus[storeId]->lastFlushBinlogId;
+    }
 
     // NOTE(deyukong): this check is not precise
     // (not in the same critical area with the modification to _pushStatus),
     // but it does not harm correctness.
     // A strict check may be too complicated to read.
-    // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
-    if (firstPos > (binlogPos + 1)) {
+    // NOTE(takenliu): 1.recycleBinlog use firstPos, and incrSync use binlogPos+1
+    //     2. slave do command slaveof master, master do flushall and truncateBinlogV2,
+    //        slave send binlogpos will smaller than master.
+    if (firstPos > (binlogPos + 1) && firstPos != lastFlushBinlogId) {
         std::stringstream ss;
-        ss << "-ERR invalid binlogPos, firstPos:" << firstPos
-            << ",binlogPos:" << binlogPos;
+        ss << "-ERR invalid binlogPos,storeId:" << storeId
+            << ",firstPos:" << firstPos
+            << ",binlogPos:" << binlogPos
+            << ",lastFlushBinlogId:" << lastFlushBinlogId;
         client->writeLine(ss.str(), std::chrono::seconds(1));
         LOG(ERROR) << ss.str();
         return;
@@ -453,7 +460,14 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
              client = std::move(client)]() mutable {
         std::lock_guard<std::mutex> lk(_mutex);
         // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
-        if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos+1)) {
+        if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos+1) &&
+            _logRecycStatus[storeId]->firstBinlogId != _logRecycStatus[storeId]->lastFlushBinlogId) {
+            std::stringstream ss;
+            ss << "-ERR invalid binlogPos,storeId:" << storeId
+                << ",firstPos:" << _logRecycStatus[storeId]->firstBinlogId
+                << ",binlogPos:" << binlogPos
+                << ",lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
+            LOG(ERROR) << ss.str();
             return false;
         }
         uint64_t clientId = _clientIdGen.fetch_add(1);

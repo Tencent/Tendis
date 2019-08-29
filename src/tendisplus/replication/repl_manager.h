@@ -45,6 +45,7 @@ struct RecycleBinlogStatus {
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
     uint64_t firstBinlogId;
+    uint64_t lastFlushBinlogId;
     uint32_t fileSeq;
 	// the timestamp of last binlog in prev file or the first binlog in cur file
     uint64_t timestamp;
@@ -115,6 +116,7 @@ class ReplManager {
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
     static constexpr size_t INCR_POOL_SIZE = 12;
     static constexpr size_t MAX_FULL_PARAL = 4;
+    void onFlush(uint32_t storeId, uint64_t binlogid);
 
  protected:
     void controlRoutine();
