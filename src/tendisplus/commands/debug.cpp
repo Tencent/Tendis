@@ -402,6 +402,7 @@ class IterAllCommand: public Command {
 
         std::unordered_map<std::string, uint64_t> lIdx;
         std::list<Record> result;
+        uint64_t currentTs = msSinceEpoch();
         while (true) {
             if (result.size() >= ebatchSize.value() + 1) {
                 break;
@@ -424,6 +425,12 @@ class IterAllCommand: public Command {
 
             auto valueType = exptRcd.value().getRecordValue().getRecordType();
             if (!isRealEleType(keyType, valueType)) {
+                continue;
+            }
+            uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
+            if (!Command::noExpire()
+                && 0 != targetTtl
+                && currentTs > targetTtl) {
                 continue;
             }
             result.emplace_back(std::move(exptRcd.value()));
