@@ -9,6 +9,7 @@
 #include <sstream>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -114,7 +115,12 @@ Expected<double> stod(const std::string& s) {
     double result;
     try {
         size_t pos = 0;
-        result = std::stod(s, &pos);
+        /* TODO(comboqiu): Check all sto* command's overflow threshold
+         *  e.g.: strtod(stdlib)  */
+        // result = std::stod(s, &pos);
+        char *end;
+        result = std::strtod(s.c_str(), &end);
+        pos = end - s.c_str();
         if (s.size() == 0 ||
             isspace(s[0]) ||
             pos != s.size() ||
