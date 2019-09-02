@@ -538,6 +538,10 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
 }
 
 void testMulti(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioCtx;
+    asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    
     sess.setArgs({"config", "set", "session", "tendis_protocol_extend", "1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -753,7 +757,15 @@ TEST(Command, slowlog) {
     const auto guard = MakeGuard([] {
         destroyEnv();
     });
-    
+    char line[100];
+    FILE *fp;
+    std::string clear = "echo "" > ./slowlog";
+    const char *clearCommand = clear.data();
+    if ((fp = popen(clearCommand, "r")) == NULL) {
+        std::cout << "error" << std::endl;
+        return;
+    }
+
     {
         EXPECT_TRUE(setupEnv());
         auto cfg = makeServerParam();
@@ -762,8 +774,7 @@ TEST(Command, slowlog) {
         testSlowLog(server);
     }
     
-    char line[100];
-    FILE *fp;
+    
     std::string cmd = "grep -Ev '^$|[#;]' ./slowlog";
     const char *sysCommand = cmd.data();
     if ((fp = popen(sysCommand, "r")) == NULL) {
