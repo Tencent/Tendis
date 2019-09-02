@@ -93,6 +93,7 @@ Expected<bool> expireAfterNow(Session *sess,
 
         // update
         rv.setTtl(expireAt);
+        rv.setVersionEP(pCtx->getVersionEP());
         s = kvstore->setKV(rk, rv, txn.get());
         if (!s.ok()) {
             return s;
