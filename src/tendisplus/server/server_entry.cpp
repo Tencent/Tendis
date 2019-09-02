@@ -810,6 +810,7 @@ uint64_t ServerEntry::getSlowlogLogSlowerThan() {
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
             const std::vector<std::string>& args) {
     if(duration > _slowlogLogSlowerThan) {
+        std::unique_lock<std::mutex> lk(_mutex);
         _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
         _slowLog << "#Time: " << time << "\n";
         _slowLog << "#Query_time: " << duration << "\n";
