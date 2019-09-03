@@ -59,7 +59,7 @@ class NetworkAsio {
         asio::ip::tcp::socket, size_t readBuf);
     Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>);
 
-    Status prepare(const std::string& ip, const uint16_t port);
+    Status prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum);
     Status run();
     void stop();
     std::string getIp() { return _ip;}
@@ -80,6 +80,7 @@ class NetworkAsio {
     std::shared_ptr<RequestMatrix> _reqMatrix;
     std::string _ip;
     uint16_t _port;
+    uint32_t _netIoThreadNum;
 };
 
 struct SendBuffer {

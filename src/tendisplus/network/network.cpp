@@ -78,10 +78,11 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
         _rwCtx, std::move(socket), readBuf));
 }
 
-Status NetworkAsio::prepare(const std::string& ip, const uint16_t port) {
+Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum) {
     try {
         _ip = ip;
         _port = port;
+        _netIoThreadNum = netIoThreadNum;
         asio::ip::address address = asio::ip::make_address(ip);
         auto ep = tcp::endpoint(address, port);
         std::error_code ec;
@@ -179,7 +180,12 @@ Status NetworkAsio::run() {
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    for (size_t i = 0; i < std::max(size_t(4), cpuNum/4); ++i) {
+    uint32_t threadnum = std::max(size_t(4), cpuNum/8);
+    if (_netIoThreadNum != 0) {
+        threadnum = _netIoThreadNum;
+    }
+    LOG(INFO) << "NetworkAsio::run netIO thread num:" << threadnum << " _netIoThreadNum:" << _netIoThreadNum;
+    for (size_t i = 0; i < threadnum; ++i) {
         std::thread thd([this] {
             // TODO(deyukong): set threadname for debug/profile
             while (_isRunning.load(std::memory_order_relaxed)) {

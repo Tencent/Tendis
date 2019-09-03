@@ -145,7 +145,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // kvstore init
     auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, false);
     std::vector<PStore> tmpStores;
     tmpStores.reserve(kvStoreCount);
     for (size_t i = 0; i < kvStoreCount; ++i) {
@@ -214,7 +214,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    Status s = _executor->startup(std::max(size_t(4), cpuNum/2));
+    uint32_t threadnum = std::max(size_t(4), cpuNum);
+    if (cfg->executorThreadNum != 0) {
+        threadnum = cfg->executorThreadNum;
+    }
+    LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
+        << " executorThreadNum:" << cfg->executorThreadNum;
+    Status s = _executor->startup(threadnum);
     if (!s.ok()) {
         return s;
     }
@@ -223,7 +229,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
                                              _reqMatrix);
-    s = _network->prepare(cfg->bindIp, cfg->port);
+    s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
         return s;
     }
