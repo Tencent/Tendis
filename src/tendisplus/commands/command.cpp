@@ -170,10 +170,11 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     sess->getCtx()->setArgsBrief(sess->getArgs());
     it->second->incrCallTimes();
     auto now = nsSinceEpoch();
-    auto guard = MakeGuard([it, now, sess] {
+    auto guard = MakeGuard([it, now, sess, args] {
         sess->getCtx()->clearRequestCtx();
-        it->second->incrNanos(nsSinceEpoch() - now);
-        // TODO(takenliu): slow log
+        auto duration = nsSinceEpoch() - now;
+        it->second->incrNanos(duration);
+        sess->getServerEntry()->slowlogPushEntryIfNeeded(now, duration, args);
     });
     auto v = it->second->run(sess);
     if (v.ok()) {

@@ -1548,11 +1548,14 @@ class ConfigCommand : public Command {
         // TODO(vinchen): support it later
         auto& args = sess->getArgs();
 
-        if (args.size() != 4 && args.size() != 5) {
+        if (args.size() < 3 || args.size() > 5) {
             return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
         }
-        if (toLower(args[1]) == "set") {
-            if (toLower(args[2]) == "session") {
+        auto operation = toLower(args[1]);
+        auto configName = toLower(args[2]);
+
+        if (operation == "set") {
+            if (configName == "session") {
                 if (args.size() != 5) {
                     return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
                 }
@@ -1560,6 +1563,26 @@ class ConfigCommand : public Command {
                 if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
                 }
+            } else if (configName == "maxclients") {
+                auto maxCli = ::tendisplus::stoll(args[3]);
+                if (!maxCli.ok()) {
+                    return{ ErrorCodes::ERR_PARSEOPT, "invalid max clients" };
+                }
+                sess->getServerEntry()->setMaxCli(maxCli.value());
+            } else if (configName == "slowlog-log-slower-than") {
+                auto slower = ::tendisplus::stoll(args[3]);
+                if (!slower.ok()) {
+                    return{ ErrorCodes::ERR_PARSEOPT, "invalid slowlog-log-slower-than" };
+                }
+                sess->getServerEntry()->setSlowlogLogSlowerThan(slower.value());
+            }
+        } else if (operation == "get") {
+            if (configName == "maxclients") {
+                uint32_t maxCli = sess->getServerEntry()->getMaxCli();
+                return fmtLongLong(maxCli);
+            } else if (configName == "slowlog-log-slower-than") {
+                uint32_t slower = sess->getServerEntry()->getSlowlogLogSlowerThan();
+                return fmtLongLong(slower);
             }
         }
 

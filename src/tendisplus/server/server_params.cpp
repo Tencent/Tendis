@@ -43,6 +43,7 @@ std::string ServerParams::toString() const {
         << ",\ngenerallog:" << generalLog
         << ",\nchunkSize:" << chunkSize
         << ",\nkvStoreCount:" << kvStoreCount
+        << ",\nmaxClients:" << maxClients
         << std::endl;
     return ss.str();
 }
@@ -257,6 +258,30 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "minBinlogKeepSec" };
                 }
                 minBinlogKeepSec = std::stoi(tokens[1]);
+            } else if (tokens[0] == "maxclients") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid maxclients config"};
+                }
+                maxClients = std::stoi(tokens[1]);
+            } else if (tokens[0] == "slowlog") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog config"};
+                }
+                slowlogPath = tokens[1];
+            } else if (tokens[0] == "slowlog-log-slower-than") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog-log-slower-than config"};
+                }
+                slowlogLogSlowerThan = std::stoi(tokens[1]);
+            } else if (tokens[0] == "slowlog-flush-interval") {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "invalid slowlog-flush-interval config"};
+                }
+                slowlogFlushInterval = std::stoi(tokens[1]);
             }
 
         }
@@ -280,7 +305,8 @@ ServerParams::ServerParams()
          rocksBlockcacheMB(4096),
          requirepass(""),
          masterauth(""),
-         pidFile("./tendisplus.pid") {
+         pidFile("./tendisplus.pid"),
+         slowlogPath("./slowlog") {
     scanCntIndexMgr = 1000;
     scanJobCntIndexMgr = 1;
     delCntIndexMgr = 10000;
@@ -296,6 +322,9 @@ ServerParams::ServerParams()
     noexpire = false;
     maxBinlogKeepNum = 1000000;
     minBinlogKeepSec = 0;
+    maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
+    slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
+    slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
 }
 
 

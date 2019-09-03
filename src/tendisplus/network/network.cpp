@@ -137,8 +137,10 @@ void NetworkAsio::doAccept() {
                   << ",connId:" << newConnId
                   << ",from:" << sess->getRemoteRepr()
                   << " created";
-        _server->addSession(std::move(sess));
-        ++_netMatrix->connCreated;
+        if (_server->addSession(std::move(sess))) {
+            ++_netMatrix->connCreated;
+        }
+        
         doAccept();
     };
     _acceptor->async_accept(*_rwCtx, std::move(cb));
@@ -234,6 +236,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     LOG(INFO) << "net session, id:" << id()
         << ",connId:" << _connId
         << " createad";
+    _first = true;
 }
 
 void NetSession::setState(State s) {
@@ -531,6 +534,16 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         return;
     }
 
+    if (_first && getServerEntry().get()) {
+        uint32_t maxClients = getServerEntry()->getMaxCli();
+        if (getServerEntry()->getSessionCount() > maxClients) {
+            LOG(WARNING) << "-ERR max number of clients reached, clients: " << maxClients;
+            setRspAndClose("-ERR max number of clients reached\r\n");
+            return;
+        }
+        _first = false;
+    }
+ 
     State curr = _state.load(std::memory_order_relaxed);
     INVARIANT(curr == State::DrainReqBuf || curr == State::DrainReqNet);
 

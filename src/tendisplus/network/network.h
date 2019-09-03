@@ -173,6 +173,7 @@ class NetSession: public Session {
     std::mutex _mutex;
     bool _isSendRunning;
     bool _isEnded;
+    bool _first;
     std::list<std::shared_ptr<SendBuffer>> _sendBuffer;
 
     std::shared_ptr<NetworkMatrix> _netMatrix;

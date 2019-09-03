@@ -45,6 +45,12 @@ class ServerParams {
     bool noexpire;
     uint32_t maxBinlogKeepNum;
     uint32_t minBinlogKeepSec;
+
+    uint32_t maxClients;
+    std::string slowlogPath;
+    uint32_t slowlogLogSlowerThan;
+    uint32_t slowlogMaxLen;
+    uint32_t slowlogFlushInterval;
 };
 }  // namespace tendisplus
 

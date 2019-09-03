@@ -43,6 +43,7 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     myfile << "storage rocks\n";
     myfile << "rocks.blockcachemb 4096\n";
     myfile << "generallog on\n";
+    myfile << "slowlogFlushInterval 1\n";
     // TODO(vinchen): should it always be on?
     myfile << "checkkeytypeforsetcmd on\n";
     if (storeCnt != 0) {
@@ -225,6 +226,8 @@ std::shared_ptr<ServerEntry> makeServerEntry(
 
     auto tmpMGLockMgr = std::make_unique <mgl::MGLockMgr>();
     server->installMGLockMgrInLock(std::move(tmpMGLockMgr));
+
+    server->initSlowlog(cfg->slowlogPath);
 
     return server;
 }

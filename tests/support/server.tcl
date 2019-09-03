@@ -220,6 +220,13 @@ proc start_server {options {code undefined}} {
     set fp [open $config_file w+]
     set fp2 [open $slave_cfg_file w+]
     set slave_cfg {}
+    set break 0
+    if {[string compare "limits" [lindex $tags 0]]} {
+        set break 1
+    } 
+    if {[string compare "auth" [lindex $tags 0]]} {
+        set break 1
+    }
     foreach directive [dict keys $config] {
         puts -nonewline $fp "$directive "
         puts $fp [dict get $config $directive]
@@ -346,13 +353,15 @@ proc start_server {options {code undefined}} {
             after 10
         }
 
-        # create a client of slave
-        set scli [redis $host $slave_port]
-        dict set slave "client" $scli
-        set args "slaveof $host $port"
-        puts "$slave_port $args"
-        $scli {*}$args
-
+        if {$break == 0} {
+             # create a client of slave
+            set scli [redis $host $slave_port]
+            dict set slave "client" $scli
+            set args "slaveof $host $port"
+            puts "$slave_port $args"
+            $scli {*}$args
+        }
+       
         # append the server to the stack
         lappend ::servers $srv
 
@@ -392,36 +401,39 @@ proc start_server {options {code undefined}} {
 
         set ::tags [lrange $::tags 0 end-[llength $tags]]
 
-        # execute keys command to expire expired keys
-        if {[catch {for {set i 0} {$i < 16} {incr i} {
-            $mcli select $i
-            $mcli keys *
-        }} err]} {
-            kill_server $srv
-            error $err
-        }
-        # wait for slave applying binlog
-        if {[catch {wait_for_binlog_ready $mcli $scli} err]} {
-            kill_server $srv
-            error $err
-        }
+        if {$break == 0} {
+            # execute keys command to expire expired keys
+            if {[catch {for {set i 0} {$i < 16} {incr i} {
+                $mcli select $i
+                $mcli keys *
+            }} err]} {
+                kill_server $srv
+                error $err
+            }
 
-       # compare -addr1 {tendis ip:port} -addr2 {redis ip:port} cause only tendis support iterall.
-        set slv [dict get $srv slave]
-        set src "[dict get $srv host]:[dict get $srv port]"
-        set dst "[dict get $slv host]:[dict get $slv port]"
-        if {[file exists ./tests/compare] == 0} {
-            kill_server $srv
-            error "can't find binary file: ./tests/compare"
-        }
+            # wait for slave applying binlog
+            if {[catch {wait_for_binlog_ready $mcli $scli} err]} {
+                kill_server $srv
+                error $err
+            }
 
-        set retcode [catch {exec ./tests/compare -addr1 $src -addr2 $dst} result]
-        if {$retcode != 0} {
-            kill_server $srv
-            error $retcode $result
-        } else {
-            puts "\[[colorstr green ok]\]: COMPARE $result"
+            # compare -addr1 {tendis ip:port} -addr2 {redis ip:port} cause only tendis support iterall.
+            set slv [dict get $srv slave]
+            set src "[dict get $srv host]:[dict get $srv port]"
+            set dst "[dict get $slv host]:[dict get $slv port]"
+            if {[file exists ./tests/compare] == 0} {
+                kill_server $srv
+                error "can't find binary file: ./tests/compare"
+            }
+            set retcode [catch {exec ./tests/compare $src $dst} result]
+            if {$retcode != 0} {
+                kill_server $srv
+                error $retcode $result
+            } else {
+                puts "\[[colorstr green ok]\]: COMPARE $result"
+            }
         }
+        
         kill_server $srv
     } else {
         set ::tags [lrange $::tags 0 end-[llength $tags]]

@@ -538,10 +538,10 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
 }
 
 void testMulti(std::shared_ptr<ServerEntry> svr) {
-    asio::io_context ioContext;
-    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    asio::io_context ioCtx;
+    asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
-
+    
     sess.setArgs({"config", "set", "session", "tendis_protocol_extend", "1"});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -609,7 +609,52 @@ void testMulti(std::shared_ptr<ServerEntry> svr) {
     EXPECT_TRUE(s.ok());
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(!expect.ok());
+}
 
+void testMaxClients(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    uint32_t i = 30;
+    sess.setArgs({ "config", "get", "maxclients"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(10000), expect.value());
+
+    sess.setArgs({ "config", "set", "maxclients", std::to_string(i)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "config", "get", "maxclients"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtLongLong(i), expect.value());
+}
+
+void testSlowLog(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    uint32_t i = 0;
+    sess.setArgs({ "config", "set", "slowlog-log-slower-than",  std::to_string(i)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    
+    sess.setArgs({ "sadd", "ss", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "set", "ss", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "set", "ss1", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "config", "get", "slowlog-log-slower-than"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(i), expect.value());
 }
 
 TEST(Command, common) {
@@ -694,6 +739,60 @@ TEST(Command, lockMulti) {
 
     testLockMulti(server);
 
+}
+
+TEST(Command, maxClients) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testMaxClients(server);
+}
+
+TEST(Command, slowlog) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+    char line[100];
+    FILE *fp;
+    std::string clear = "echo "" > ./slowlog";
+    const char *clearCommand = clear.data();
+    if ((fp = popen(clearCommand, "r")) == NULL) {
+        std::cout << "error" << std::endl;
+        return;
+    }
+
+    {
+        EXPECT_TRUE(setupEnv());
+        auto cfg = makeServerParam();
+        auto server = makeServerEntry(cfg);
+
+        testSlowLog(server);
+    }
+    
+    
+    std::string cmd = "grep -Ev '^$|[#;]' ./slowlog";
+    const char *sysCommand = cmd.data();
+    if ((fp = popen(sysCommand, "r")) == NULL) {
+        std::cout << "error" << std::endl;
+        return;
+    }
+    
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "config set slowlog-log-slower-than 0 \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "sadd ss a \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "set ss b \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "set ss1 b \n");
+    fgets(line, sizeof(line)-1, fp);
+    EXPECT_STRCASEEQ(line, "config get slowlog-log-slower-than \n");
+    pclose(fp);
 }
 
 /*

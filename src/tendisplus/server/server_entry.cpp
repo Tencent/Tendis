@@ -41,7 +41,9 @@ ServerEntry::ServerEntry()
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
-         _dbNum(CONFIG_DEFAULT_DBNUM) {
+         _dbNum(CONFIG_DEFAULT_DBNUM),
+         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
+         _slowlogId(0) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -53,6 +55,9 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
+    _maxClients = cfg->maxClients;
+    _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
+    _slowlogFlushInterval = cfg->slowlogFlushInterval;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -257,6 +262,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _ftmcThd = std::make_unique<std::thread>([this] {
         ftmc();
     });
+
+    // init slowlog
+    initSlowlog(cfg->slowlogPath);
+
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -289,12 +298,10 @@ IndexManager* ServerEntry::getIndexMgr() {
 }
 
 const std::shared_ptr<std::string> ServerEntry::requirepass() const {
-    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
 }
 
 const std::shared_ptr<std::string> ServerEntry::masterauth() const {
-    std::lock_guard<std::mutex> lk(_mutex);
     return _masterauth;
 }
 
@@ -302,16 +309,15 @@ bool ServerEntry::versionIncrease() const {
     return _versionIncrease;
 }
 
-void ServerEntry::addSession(std::shared_ptr<Session> sess) {
+bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->id()
             << " comes when stopping, ignore it";
-        return;
+        return false;
     }
+
     // TODO(deyukong): max conns
-
-
     // NOTE(deyukong): first driving force
     sess->start();
     uint64_t id = sess->id();
@@ -320,6 +326,12 @@ void ServerEntry::addSession(std::shared_ptr<Session> sess) {
     }
     DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
+    return true;
+}
+
+size_t ServerEntry::getSessionCount() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _sessions.size();
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
@@ -736,6 +748,7 @@ void ServerEntry::stop() {
     }
 
     _ftmcThd->join();
+    _slowLog.close();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
@@ -765,6 +778,53 @@ Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t 
     }
 
     return {ErrorCodes::ERR_OK, ""};
+}
+
+void ServerEntry::setMaxCli(uint32_t max) {
+    _maxClients = max;
+}
+
+uint32_t ServerEntry::getMaxCli() {
+    return _maxClients;
+}
+
+Status ServerEntry::initSlowlog(std::string logPath) {
+    _slowLog.open(logPath, std::ofstream::app);
+    if (!_slowLog.is_open()) {
+        std::stringstream ss;
+        ss << "open:" << logPath << " failed";
+        return {ErrorCodes::ERR_INTERNAL, ss.str()};
+    }
+
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+void ServerEntry::setSlowlogLogSlowerThan(uint64_t time) {
+    _slowlogLogSlowerThan = time;
+}
+
+uint64_t ServerEntry::getSlowlogLogSlowerThan() {
+    return _slowlogLogSlowerThan;
+}
+    
+void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
+            const std::vector<std::string>& args) {
+    if(duration > _slowlogLogSlowerThan) {
+        std::unique_lock<std::mutex> lk(_mutex);
+        _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
+        _slowLog << "#Time: " << time << "\n";
+        _slowLog << "#Query_time: " << duration << "\n";
+        for(size_t i = 0; i < args.size(); ++i) {
+            _slowLog << args[i] << " ";
+        }
+        _slowLog << "\n";
+        _slowLog << "#argc: " << args.size() << "\n\n";
+        if ((_slowlogId.load(std::memory_order_relaxed)%_slowlogFlushInterval) == 0) {
+            _slowLog.flush();
+        }
+        
+        _slowlogId.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 }  // namespace tendisplus

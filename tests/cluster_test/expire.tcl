@@ -162,7 +162,8 @@ start_server {tags {"expire"}} {
         list $size1 $size2
     } {3 0}
 
-    #test {Redis should lazy expire keys} {
+    #TODO(jingjunli): should change expire strategy
+    # test {Redis should lazy expire keys} {
     #    r flushdb
     #    r debug set-active-expire 0
     #    r psetex key1 500 a
@@ -178,7 +179,7 @@ start_server {tags {"expire"}} {
     #    set size3 [r dbsize]
     #    r debug set-active-expire 1
     #    list $size1 $size2 $size3
-    #} {3 3 0}
+    # } {3 3 0}
 
     test {EXPIRE should not resurrect keys (issue #1026)} {
         r debug set-active-expire 0
@@ -200,6 +201,10 @@ start_server {tags {"expire"}} {
         r set foo b
         lsort [r keys *]
     } {a e foo s t}
+
+    test {DELETE expired keys} {
+        r del a
+    }
 
     test {EXPIRE with empty string as TTL should report an error} {
         r set foo bar
