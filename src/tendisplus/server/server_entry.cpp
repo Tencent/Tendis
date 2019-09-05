@@ -24,7 +24,6 @@ ServerEntry::ServerEntry()
          _isShutdowned(false),
          _startupTime(nsSinceEpoch()),
          _network(nullptr),
-         _executor(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
          _indexMgr(nullptr),
@@ -43,7 +42,8 @@ ServerEntry::ServerEntry()
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
          _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
-         _slowlogId(0) {
+         _slowlogId(0),
+         _scheduleNum(0) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -209,7 +209,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
     // request executePool
-    _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
@@ -220,19 +219,27 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
-    Status s = _executor->startup(threadnum);
-    if (!s.ok()) {
-        return s;
+    for (uint32_t i = 0; i < threadnum; ++i) {
+        auto pm = std::make_shared<PoolMatrix>();
+        auto executor = std::make_unique<WorkerPool>("req-exec", pm);
+        Status s = executor->startup(1);
+        if (!s.ok()) {
+            return s;
+        }
+        _executorList.push_back(std::move(executor));
     }
 
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
                                              _reqMatrix);
-    s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
+    Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
         return s;
     }
+
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
 
     // replication
     // replication relys on blocking-client
@@ -260,9 +267,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         LOG(WARNING) << "ready to accept connections at "
             << cfg->bindIp << ":" << cfg->port;
     }
-
-    _isRunning.store(true, std::memory_order_relaxed);
-    _isStopped.store(false, std::memory_order_relaxed);
 
     // server stats monitor
     _ftmcThd = std::make_unique<std::thread>([this] {
@@ -316,7 +320,7 @@ bool ServerEntry::versionIncrease() const {
 }
 
 bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<std::shared_timed_mutex> writeLock(_sessionMapRwlock);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->id()
             << " comes when stopping, ignore it";
@@ -336,28 +340,29 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
 }
 
 size_t ServerEntry::getSessionCount() {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
     return _sessions.size();
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
-    std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         return {ErrorCodes::ERR_BUSY, "server is shutting down"};
     }
+    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
         return {ErrorCodes::ERR_NOTFOUND, "session not found:" + std::to_string(connId)};
     }
     LOG(INFO) << "ServerEntry cancelSession id:" << connId << " addr:" << it->second->getRemote();
+    // TODO(takenliu) check cancel() whether is thread safe.
     return it->second->cancel();
 }
 
 void ServerEntry::endSession(uint64_t connId) {
-    std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         return;
     }
+    std::lock_guard<std::shared_timed_mutex> writeLock(_sessionMapRwlock);
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
         LOG(FATAL) << "destroy conn:" << connId << ",not exists";
@@ -365,6 +370,8 @@ void ServerEntry::endSession(uint64_t connId) {
     SessionCtx* pCtx = it->second->getCtx();
     INVARIANT(pCtx != nullptr);
     if (pCtx->getIsMonitor()) {
+        // NOTE(takenliu): be carefull for two mutex
+        std::lock_guard<std::mutex> lk(_mutex);
         DelMonitorNoLock(connId);
     }
     DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
@@ -372,7 +379,7 @@ void ServerEntry::endSession(uint64_t connId) {
 }
 
 std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
     uint64_t start = nsSinceEpoch();
     std::list<std::shared_ptr<Session>> sesses;
     for (const auto& kv : _sessions) {
@@ -441,10 +448,10 @@ void ServerEntry::replyMonitors(Session* sess) {
 bool ServerEntry::processRequest(uint64_t sessionId) {
     Session *sess = nullptr;
     {
-        std::lock_guard<std::mutex> lk(_mutex);
         if (!_isRunning.load(std::memory_order_relaxed)) {
             return false;
         }
+        std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
         auto it = _sessions.find(sessionId);
         if (it == _sessions.end()) {
             LOG(FATAL) << "session id:" << sessionId << ",invalid state";
@@ -717,16 +724,20 @@ void ServerEntry::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _eventCV.notify_all();
     _network->stop();
-    _executor->stop();
+    for (executor : _executorList) {
+        executor->stop();
+    }
     _replMgr->stop();
     _indexMgr->stop();
     _sessions.clear();
-
+    // takenliu check stop() don't need lock
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
         _network.reset();
-        _executor.reset();
+        for (executor : _executorList) {
+            executor.reset();
+        }
         _replMgr.reset();
         _indexMgr.reset();
         _pessimisticMgr.reset();

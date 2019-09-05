@@ -68,10 +68,13 @@ class NetworkAsio {
  private:
     // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
+    std::shared_ptr<asio::io_context> getRwCtx();
+    std::shared_ptr<asio::io_context> getRwCtx(asio::ip::tcp::socket& socket);
+
     std::atomic<uint64_t> _connCreated;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
-    std::shared_ptr<asio::io_context> _rwCtx;
+    std::vector<std::shared_ptr<asio::io_context>> _rwCtxList;
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
     std::unique_ptr<std::thread> _acceptThd;
     std::vector<std::thread> _rwThreads;

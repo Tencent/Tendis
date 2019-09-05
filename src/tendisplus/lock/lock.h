@@ -30,6 +30,7 @@ class ILock {
     Session* _sess;
 };
 
+// TODO(takenliu) : delete StoresLock
 class StoresLock: public ILock {
  public:
     explicit StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);

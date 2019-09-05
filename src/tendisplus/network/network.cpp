@@ -57,7 +57,6 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
     :_connCreated(0),
      _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
-     _rwCtx(std::make_shared<asio::io_context>()),
      _acceptor(nullptr),
      _acceptThd(nullptr),
      _isRunning(false),
@@ -65,17 +64,41 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
      _reqMatrix(reqMatrix) {
 }
 
+std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
+    if (_rwCtxList.size() != _rwThreads.size() || _rwCtxList.size() == 0) {
+        return NULL;
+    }
+    int rand = std::rand();
+    int index = rand % _rwThreads.size();
+    return _rwCtxList[index];
+}
+
+std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(asio::ip::tcp::socket& socket){
+    for (rwCtx : _rwCtxList) {
+        if (&(socket.get_io_context()) == &(*rwCtx)) {
+            return rwCtx;
+        }
+    }
+    if (&(socket.get_io_context()) == &(*_acceptCtx)) {
+        LOG(WARNING) << "NetworkAsio getRwCtx equal _acceptCtx";
+    }
+    LOG(WARNING) << "NetworkAsio getRwCtx return NULL";
+    return NULL;
+}
+
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
         size_t readBuf) {
-    INVARIANT(_rwCtx != nullptr);
-    return std::move(std::make_unique<BlockingTcpClient>(_rwCtx, readBuf));
+    auto rwCtx = getRwCtx();
+    INVARIANT(rwCtx != nullptr);
+    return std::move(std::make_unique<BlockingTcpClient>(rwCtx, readBuf));
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
         asio::ip::tcp::socket socket, size_t readBuf) {
-    INVARIANT(_rwCtx != nullptr);
+    auto rwCtx = getRwCtx(socket);
+    INVARIANT(rwCtx != nullptr);
     return std::move(std::make_unique<BlockingTcpClient>(
-        _rwCtx, std::move(socket), readBuf));
+        rwCtx, std::move(socket), readBuf));
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum) {
@@ -144,14 +167,18 @@ void NetworkAsio::doAccept() {
         
         doAccept();
     };
-    _acceptor->async_accept(*_rwCtx, std::move(cb));
+    int index = _connCreated % _rwCtxList.size();
+    auto rwCtx = _rwCtxList[index];
+    _acceptor->async_accept(*rwCtx, std::move(cb));
 }
 
 void NetworkAsio::stop() {
     LOG(INFO) << "network-asio begin stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _acceptCtx->stop();
-    _rwCtx->stop();
+    for (auto rwCtx : _rwCtxList) {
+        rwCtx->stop();
+    }
     _acceptThd->join();
     for (auto& v : _rwThreads) {
         v.join();
@@ -186,13 +213,16 @@ Status NetworkAsio::run() {
     }
     LOG(INFO) << "NetworkAsio::run netIO thread num:" << threadnum << " _netIoThreadNum:" << _netIoThreadNum;
     for (size_t i = 0; i < threadnum; ++i) {
-        std::thread thd([this] {
+        _rwCtxList.push_back(std::make_shared<asio::io_context>());
+    }
+    for (size_t i = 0; i < threadnum; ++i) {
+        std::thread thd([this, i] {
             // TODO(deyukong): set threadname for debug/profile
             while (_isRunning.load(std::memory_order_relaxed)) {
                 // if no workguard, the run() returns immediately if no tasks
-                asio::io_context::work work(*_rwCtx);
+                asio::io_context::work work(*(_rwCtxList[i]));
                 try {
-                    _rwCtx->run();
+                    _rwCtxList[i]->run();
                 } catch (const std::exception& ex) {
                     LOG(FATAL) << "read/write thd failed:" << ex.what();
                 } catch (...) {
