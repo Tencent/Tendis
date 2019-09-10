@@ -237,10 +237,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    // NOTE(takenliu):_isRunning will be used, set it earlier.
-    _isRunning.store(true, std::memory_order_relaxed);
-    _isStopped.store(false, std::memory_order_relaxed);
-
     // replication
     // replication relys on blocking-client
     // must startup after network prepares ok
@@ -267,6 +263,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         LOG(WARNING) << "ready to accept connections at "
             << cfg->bindIp << ":" << cfg->port;
     }
+
+    _isRunning.store(true, std::memory_order_relaxed);
+    _isStopped.store(false, std::memory_order_relaxed);
 
     // server stats monitor
     _ftmcThd = std::make_unique<std::thread>([this] {
@@ -715,7 +714,7 @@ void ServerEntry::stop() {
     _replMgr->stop();
     _indexMgr->stop();
     _sessions.clear();
-    // takenliu check stop() don't need lock
+
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
