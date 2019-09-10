@@ -213,15 +213,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    uint32_t threadnum = std::max(size_t(4), cpuNum);
+    uint32_t threadnum = std::max(size_t(4), cpuNum/2);
     if (cfg->executorThreadNum != 0) {
         threadnum = cfg->executorThreadNum;
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
     for (uint32_t i = 0; i < threadnum; ++i) {
-        auto pm = std::make_shared<PoolMatrix>();
-        auto executor = std::make_unique<WorkerPool>("req-exec", pm);
+        auto executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
         Status s = executor->startup(1);
         if (!s.ok()) {
             return s;
@@ -238,6 +237,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    // NOTE(takenliu):_isRunning will be used, set it earlier.
     _isRunning.store(true, std::memory_order_relaxed);
     _isStopped.store(false, std::memory_order_relaxed);
 
@@ -320,7 +320,7 @@ bool ServerEntry::versionIncrease() const {
 }
 
 bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
-    std::lock_guard<std::shared_timed_mutex> writeLock(_sessionMapRwlock);
+    std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         LOG(WARNING) << "session:" << sess->id()
             << " comes when stopping, ignore it";
@@ -340,29 +340,28 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
 }
 
 size_t ServerEntry::getSessionCount() {
-    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
+    std::lock_guard<std::mutex> lk(_mutex);
     return _sessions.size();
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
+    std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         return {ErrorCodes::ERR_BUSY, "server is shutting down"};
     }
-    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
         return {ErrorCodes::ERR_NOTFOUND, "session not found:" + std::to_string(connId)};
     }
     LOG(INFO) << "ServerEntry cancelSession id:" << connId << " addr:" << it->second->getRemote();
-    // TODO(takenliu) check cancel() whether is thread safe.
     return it->second->cancel();
 }
 
 void ServerEntry::endSession(uint64_t connId) {
+    std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
         return;
     }
-    std::lock_guard<std::shared_timed_mutex> writeLock(_sessionMapRwlock);
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
         LOG(FATAL) << "destroy conn:" << connId << ",not exists";
@@ -370,8 +369,6 @@ void ServerEntry::endSession(uint64_t connId) {
     SessionCtx* pCtx = it->second->getCtx();
     INVARIANT(pCtx != nullptr);
     if (pCtx->getIsMonitor()) {
-        // NOTE(takenliu): be carefull for two mutex
-        std::lock_guard<std::mutex> lk(_mutex);
         DelMonitorNoLock(connId);
     }
     DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
@@ -379,7 +376,7 @@ void ServerEntry::endSession(uint64_t connId) {
 }
 
 std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
-    std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
+    std::lock_guard<std::mutex> lk(_mutex);
     uint64_t start = nsSinceEpoch();
     std::list<std::shared_ptr<Session>> sesses;
     for (const auto& kv : _sessions) {
@@ -445,21 +442,9 @@ void ServerEntry::replyMonitors(Session* sess) {
     }
 }
 
-bool ServerEntry::processRequest(uint64_t sessionId) {
-    Session *sess = nullptr;
-    {
-        if (!_isRunning.load(std::memory_order_relaxed)) {
-            return false;
-        }
-        std::shared_lock<std::shared_timed_mutex> readLock(_sessionMapRwlock);
-        auto it = _sessions.find(sessionId);
-        if (it == _sessions.end()) {
-            LOG(FATAL) << "session id:" << sessionId << ",invalid state";
-        }
-        sess = it->second.get();
-        if (sess == nullptr) {
-            LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
-        }
+bool ServerEntry::processRequest(Session *sess) {
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+        return false;
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
@@ -481,7 +466,7 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
     replyMonitors(sess);
 
     if (expCmdName.value() == "fullsync") {
-        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -490,7 +475,7 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
         return false;
     } else if (expCmdName.value() == "incrsync") {
-        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();

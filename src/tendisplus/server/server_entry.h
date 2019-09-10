@@ -69,7 +69,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::list<std::shared_ptr<Session>> getAllSessions() const;
 
     // returns true if NetSession should continue schedule
-    bool processRequest(uint64_t connId);
+    bool processRequest(Session *sess);
 
     void installStoresInLock(const std::vector<PStore>&);
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
@@ -145,7 +145,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
     std::map<uint64_t, std::shared_ptr<Session>> _sessions;
-    mutable std::shared_timed_mutex _sessionMapRwlock;
     std::vector<std::unique_ptr<WorkerPool>> _executorList;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;

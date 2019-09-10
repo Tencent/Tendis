@@ -207,7 +207,7 @@ Status NetworkAsio::run() {
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    uint32_t threadnum = std::max(size_t(4), cpuNum/8);
+    uint32_t threadnum = std::max(size_t(4), cpuNum/4);
     if (_netIoThreadNum != 0) {
         threadnum = _netIoThreadNum;
     }
@@ -682,7 +682,7 @@ void NetSession::processReq() {
     bool continueSched = true;
     if (_args.size()) {
         _ctx->setProcessPacketStart(nsSinceEpoch());
-        continueSched = _server->processRequest(id());
+        continueSched = _server->processRequest((Session*)this);
         _reqMatrix->processed += 1;
         _reqMatrix->processCost +=
                 nsSinceEpoch() - _ctx->getProcessPacketStart();

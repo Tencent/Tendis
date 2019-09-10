@@ -46,10 +46,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -L /data/home/takenliu/git/tendisplus/src/thirdparty/jemalloc-5.2.0/lib -ljemalloc")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /data/home/takenliu/git/tendisplus/src/thirdparty/jemalloc-5.2.0/lib/libjemalloc.a -lpthread -lrt -ldl")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ,-Bstatic -L /data/home/takenliu/git/tendisplus/src/thirdparty/jemalloc-5.2.0/lib -ljemalloc,")
-
 if(CMAKE_COMPILER_IS_GNUCC)
     #option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
