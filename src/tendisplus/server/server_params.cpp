@@ -282,8 +282,19 @@ Status ServerParams::parseFile(const std::string& filename) {
                             "invalid slowlog-flush-interval config"};
                 }
                 slowlogFlushInterval = std::stoi(tokens[1]);
+            } else if (tokens[0] == "netiothreadnum") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "netIoThreadNum" };
+                }
+                netIoThreadNum = std::stoi(tokens[1]);
+            } else if (tokens[0] == "executorthreadnum") {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "executorThreadNum" };
+                }
+                executorThreadNum = std::stoi(tokens[1]);
             }
-
         }
     } catch (const std::exception& ex) {
         std::stringstream ss;
@@ -325,6 +336,8 @@ ServerParams::ServerParams()
     maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
     slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
     slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
+    netIoThreadNum = 0;
+    executorThreadNum = 0;
 }
 
 

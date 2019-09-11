@@ -57,6 +57,7 @@ mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
     return parentMode;
 }
 
+
 StoresLock::StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr)
         :ILock(nullptr, new mgl::MGLock(mgr), sess) {
     // a duration of 49 days. If lock still not acquired, fail it
@@ -67,7 +68,10 @@ StoresLock::StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr)
 
 StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
                      Session *sess, mgl::MGLockMgr* mgr)
-        :ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
+        // NOTE(takenliu) : all request need get StoresLock, its a big cpu waste.
+        //     then, you should not use StoresLock, you should process with every StoreLock.
+        //:ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
+        :ILock(NULL,
                                 new mgl::MGLock(mgr), sess),
          _storeId(storeId) {
     std::string target = "store_" + std::to_string(storeId);

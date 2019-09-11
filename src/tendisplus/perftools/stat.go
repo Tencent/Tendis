@@ -121,6 +121,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("dial host %s failed:%v", host, err)
 	}
+    if *passwd != "" {
+        if v, err := client.Cmd("AUTH", *passwd).Str(); err != nil || v != "OK" {
+            log.Fatalf("auth failed.")
+        }
+    }
+
 
 	var oldInfo *DebugInfo = nil
 	info := &DebugInfo{}

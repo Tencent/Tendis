@@ -59,7 +59,7 @@ class NetworkAsio {
         asio::ip::tcp::socket, size_t readBuf);
     Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>);
 
-    Status prepare(const std::string& ip, const uint16_t port);
+    Status prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum);
     Status run();
     void stop();
     std::string getIp() { return _ip;}
@@ -68,10 +68,13 @@ class NetworkAsio {
  private:
     // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
+    std::shared_ptr<asio::io_context> getRwCtx();
+    std::shared_ptr<asio::io_context> getRwCtx(asio::ip::tcp::socket& socket);
+
     std::atomic<uint64_t> _connCreated;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<asio::io_context> _acceptCtx;
-    std::shared_ptr<asio::io_context> _rwCtx;
+    std::vector<std::shared_ptr<asio::io_context>> _rwCtxList;
     std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
     std::unique_ptr<std::thread> _acceptThd;
     std::vector<std::thread> _rwThreads;
@@ -80,6 +83,7 @@ class NetworkAsio {
     std::shared_ptr<RequestMatrix> _reqMatrix;
     std::string _ip;
     uint16_t _port;
+    uint32_t _netIoThreadNum;
 };
 
 struct SendBuffer {

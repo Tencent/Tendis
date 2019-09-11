@@ -279,7 +279,7 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
     writer.String("1");
 
     writer.Key("kvStoreCount");
-    writer.Uint64(static_cast<uint8_t>(meta.kvStoreCount));
+    writer.Uint64(static_cast<uint32_t>(meta.kvStoreCount));
 
     writer.Key("chunkSize");
     writer.Uint64(meta.chunkSize);
@@ -290,6 +290,7 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
 
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
+        LOG(ERROR) << "Catalog::setMainMeta failed:" << exptxn.status().toString() << " " << sb.GetString();
         return exptxn.status();
     }
 
@@ -298,8 +299,10 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
     Record rd(std::move(rk), std::move(rv));
     Status s = _store->setKV(rd, txn);
     if (!s.ok()) {
+        LOG(ERROR) << "Catalog::setMainMeta failed:" << s.toString() << " " << sb.GetString();
         return s;
     }
+    LOG(INFO) << "Catalog::setMainMeta sucess:" << sb.GetString();
     return txn->commit().status();
 }
 
@@ -321,6 +324,8 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     }
     RecordValue rv = exprv.value();
     const std::string& json = rv.getValue();
+
+    LOG(INFO) << "Catalog::getMainMeta succ," << json;
 
     rapidjson::Document doc;
     doc.Parse(json);
@@ -401,6 +406,7 @@ Expected<std::unique_ptr<VersionMeta>> Catalog::getVersionMeta(PStore store, std
     const auto& rv = expRv.value();
     const auto& json = rv.getValue();
 
+    LOG(INFO) << "Catalog::getVersionMeta succ," << json;
     rapidjson::Document doc;
     doc.Parse(json);
     if (doc.HasParseError()) {
@@ -439,9 +445,9 @@ Status Catalog::setVersionMeta(const VersionMeta& meta) {
     writer.EndObject();
 
     RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
-
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
+        LOG(ERROR) << "Catalog::setVersionMeta failed:" << exptxn.status().toString() << " " << sb.GetString();
         return exptxn.status();
     }
 
@@ -450,8 +456,10 @@ Status Catalog::setVersionMeta(const VersionMeta& meta) {
     Record rd(std::move(rk), std::move(rv));
     Status s = _store->setKV(rd, txn);
     if (!s.ok()) {
+        LOG(ERROR) << "Catalog::setVersionMeta failed:" << s.toString() << " " << sb.GetString();
         return s;
     }
+    LOG(INFO) << "Catalog::setVersionMeta succ," << sb.GetString();
     return txn->commit().status();
 }
 }  // namespace tendisplus

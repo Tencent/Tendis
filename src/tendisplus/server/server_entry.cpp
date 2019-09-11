@@ -24,7 +24,6 @@ ServerEntry::ServerEntry()
          _isShutdowned(false),
          _startupTime(nsSinceEpoch()),
          _network(nullptr),
-         _executor(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
          _indexMgr(nullptr),
@@ -43,7 +42,8 @@ ServerEntry::ServerEntry()
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
          _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
-         _slowlogId(0) {
+         _slowlogId(0),
+         _scheduleNum(0) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -145,7 +145,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // kvstore init
     auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6);
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, false);
     std::vector<PStore> tmpStores;
     tmpStores.reserve(kvStoreCount);
     for (size_t i = 0; i < kvStoreCount; ++i) {
@@ -209,21 +209,30 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
     // request executePool
-    _executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
-    Status s = _executor->startup(std::max(size_t(4), cpuNum/2));
-    if (!s.ok()) {
-        return s;
+    uint32_t threadnum = std::max(size_t(4), cpuNum/2);
+    if (cfg->executorThreadNum != 0) {
+        threadnum = cfg->executorThreadNum;
+    }
+    LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
+        << " executorThreadNum:" << cfg->executorThreadNum;
+    for (uint32_t i = 0; i < threadnum; ++i) {
+        auto executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
+        Status s = executor->startup(1);
+        if (!s.ok()) {
+            return s;
+        }
+        _executorList.push_back(std::move(executor));
     }
 
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
                                              _reqMatrix);
-    s = _network->prepare(cfg->bindIp, cfg->port);
+    Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
         return s;
     }
@@ -432,21 +441,9 @@ void ServerEntry::replyMonitors(Session* sess) {
     }
 }
 
-bool ServerEntry::processRequest(uint64_t sessionId) {
-    Session *sess = nullptr;
-    {
-        std::lock_guard<std::mutex> lk(_mutex);
-        if (!_isRunning.load(std::memory_order_relaxed)) {
-            return false;
-        }
-        auto it = _sessions.find(sessionId);
-        if (it == _sessions.end()) {
-            LOG(FATAL) << "session id:" << sessionId << ",invalid state";
-        }
-        sess = it->second.get();
-        if (sess == nullptr) {
-            LOG(FATAL) << "session id:" << sessionId << ",null in servermap";
-        }
+bool ServerEntry::processRequest(Session *sess) {
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+        return false;
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
@@ -468,7 +465,7 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
     replyMonitors(sess);
 
     if (expCmdName.value() == "fullsync") {
-        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -477,7 +474,7 @@ bool ServerEntry::processRequest(uint64_t sessionId) {
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
         return false;
     } else if (expCmdName.value() == "incrsync") {
-        LOG(WARNING) << "[master] session id:" << sessionId << " socket borrowed";
+        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
@@ -711,7 +708,9 @@ void ServerEntry::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _eventCV.notify_all();
     _network->stop();
-    _executor->stop();
+    for (executor : _executorList) {
+        executor->stop();
+    }
     _replMgr->stop();
     _indexMgr->stop();
     _sessions.clear();
@@ -720,7 +719,9 @@ void ServerEntry::stop() {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
         _network.reset();
-        _executor.reset();
+        for (executor : _executorList) {
+            executor.reset();
+        }
         _replMgr.reset();
         _indexMgr.reset();
         _pessimisticMgr.reset();

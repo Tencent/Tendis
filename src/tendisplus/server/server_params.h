@@ -51,6 +51,8 @@ class ServerParams {
     uint32_t slowlogLogSlowerThan;
     uint32_t slowlogMaxLen;
     uint32_t slowlogFlushInterval;
+    uint32_t netIoThreadNum;
+    uint32_t executorThreadNum;
 };
 }  // namespace tendisplus
 

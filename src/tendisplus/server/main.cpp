@@ -24,7 +24,7 @@ std::shared_ptr<ServerEntry> getGlobalServer() {
 static void shutdown(int sigNum) {
     LOG(INFO) << "signal:" << sigNum << " caught, begin shutdown server";
     INVARIANT(tendisplus::gServer != nullptr);
-    tendisplus::gServer->stop();
+    tendisplus::gServer->handleShutdownCmd();
 }
 
 static void waitForExit() {

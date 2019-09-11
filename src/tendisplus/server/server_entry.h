@@ -10,6 +10,7 @@
 #include <set>
 #include <shared_mutex>
 
+#include "glog/logging.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/worker_pool.h"
 #include "tendisplus/server/server_params.h"
@@ -44,7 +45,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getStartupTimeNs() const;
     template <typename fn>
     void schedule(fn&& task) {
-        _executor->schedule(std::forward<fn>(task));
+        _scheduleNum.fetch_add(1, std::memory_order_relaxed);
+        int32_t index = _scheduleNum.load(std::memory_order_relaxed) % _executorList.size();
+        _executorList[index]->schedule(std::forward<fn>(task));
     }
     bool addSession(std::shared_ptr<Session> sess);
 
@@ -66,7 +69,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::list<std::shared_ptr<Session>> getAllSessions() const;
 
     // returns true if NetSession should continue schedule
-    bool processRequest(uint64_t connId);
+    bool processRequest(Session *sess);
 
     void installStoresInLock(const std::vector<PStore>&);
     void installSegMgrInLock(std::unique_ptr<SegmentMgr>);
@@ -142,7 +145,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::condition_variable _eventCV;
     std::unique_ptr<NetworkAsio> _network;
     std::map<uint64_t, std::shared_ptr<Session>> _sessions;
-    std::unique_ptr<WorkerPool> _executor;
+    std::vector<std::unique_ptr<WorkerPool>> _executorList;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
     std::unique_ptr<IndexManager> _indexMgr;
@@ -177,6 +180,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::map<std::string, uint64_t> _cfrmTs;
     std::map<std::string, uint64_t> _cfrmVersion;
     std::list<std::shared_ptr<Session>> _monitors;
+    std::atomic<uint64_t> _scheduleNum;
 };
 }  // namespace tendisplus
 

@@ -38,6 +38,8 @@ var (
     auth = flag.String("auth", "tendis+test", "password")
     keyprefix1 = flag.String("keyprefix1", "aa", "keyprefix1")
     keyprefix2 = flag.String("keyprefix2", "bb", "keyprefix2")
+    // "set,incr,lpush,lpop,sadd,spop,hset,mset"
+    benchtype = flag.String("benchtype", "set,incr,lpush,sadd,hset", "benchmark data type")
 )
 
 func getCurrentDirectory() string {
@@ -56,10 +58,9 @@ func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel 
 func addData(m *util.RedisServer, num int, prefixkey string) {
     log.Infof("addData begin. %s:%d", m.Ip, m.Port)
 
-    // "set,incr,lpush,lpop,sadd,spop,hset,mset"
     cmd := exec.Command("./redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
         "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey,
-        "-t", "set,incr,lpush,sadd,hset", "-a", *auth)
+        "-t", *benchtype, "-a", *auth)
     _, err := cmd.Output()
     //fmt.Print(string(output))
     if err != nil {

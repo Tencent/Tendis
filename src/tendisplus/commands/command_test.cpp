@@ -759,7 +759,7 @@ TEST(Command, slowlog) {
     });
     char line[100];
     FILE *fp;
-    std::string clear = "echo "" > ./slowlog";
+    std::string clear = "echo "" > ./slowlogtest";
     const char *clearCommand = clear.data();
     if ((fp = popen(clearCommand, "r")) == NULL) {
         std::cout << "error" << std::endl;
@@ -769,13 +769,14 @@ TEST(Command, slowlog) {
     {
         EXPECT_TRUE(setupEnv());
         auto cfg = makeServerParam();
+        cfg->slowlogPath = "slowlogtest";
         auto server = makeServerEntry(cfg);
 
         testSlowLog(server);
     }
     
     
-    std::string cmd = "grep -Ev '^$|[#;]' ./slowlog";
+    std::string cmd = "grep -Ev '^$|[#;]' ./slowlogtest";
     const char *sysCommand = cmd.data();
     if ((fp = popen(sysCommand, "r")) == NULL) {
         std::cout << "error" << std::endl;
