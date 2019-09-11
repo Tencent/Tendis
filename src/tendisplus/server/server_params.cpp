@@ -48,6 +48,14 @@ std::string ServerParams::toString() const {
     return ss.str();
 }
 
+bool ServerParams::caseEqual(const std::string& l, const std::string& r) {
+#ifdef _WIN32
+    return stricmp(l.cStr(), r.cStr()) == 0;
+#else
+    return strcasecmp(l.c_str(), r.c_str()) == 0;
+#endif
+}
+
 Status ServerParams::parseFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -294,6 +302,109 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "executorThreadNum" };
                 }
                 executorThreadNum = std::stoi(tokens[1]);
+
+            } else if (caseEqual(tokens[0] , "binlogRateLimitMB")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "binlogRateLimitMB" };
+                }
+                binlogRateLimitMB = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogSize1")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogSize1" };
+                }
+                timeoutSecBinlogSize1 = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogSize2")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogSize2" };
+                }
+                timeoutSecBinlogSize2 = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogSize3")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogSize3" };
+                }
+                timeoutSecBinlogSize3 = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogFileList")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogFileList" };
+                }
+                timeoutSecBinlogFileList = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogFilename")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogFilename" };
+                }
+                timeoutSecBinlogFilename = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogBatch")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogBatch" };
+                }
+                timeoutSecBinlogBatch = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "timeoutSecBinlogWaitRsp")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "timeoutSecBinlogWaitRsp" };
+                }
+                timeoutSecBinlogWaitRsp = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "incrPushThreadnum")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "incrPushThreadnum" };
+                }
+                incrPushThreadnum = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "fullPushThreadnum")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "fullPushThreadnum" };
+                }
+                fullPushThreadnum = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "fullReceiveThreadnum")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "fullReceiveThreadnum" };
+                }
+                fullReceiveThreadnum = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "logRecycleThreadnum")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "logRecycleThreadnum" };
+                }
+                logRecycleThreadnum = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "truncateBinlogIntervalMs")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "truncateBinlogIntervalMs" };
+                }
+                truncateBinlogIntervalMs = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "truncateBinlogNum")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "truncateBinlogNum" };
+                }
+                truncateBinlogNum = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "binlogFileSizeMB")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "binlogFileSizeMB" };
+                }
+                binlogFileSizeMB = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "binlogFileSecs")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "binlogFileSecs" };
+                }
+                binlogFileSecs = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "binlogHeartbeatSecs")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "binlogHeartbeatSecs" };
+                }
+                binlogHeartbeatSecs = std::stoi(tokens[1]);
             }
         }
     } catch (const std::exception& ex) {
@@ -338,6 +449,24 @@ ServerParams::ServerParams()
     slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
     netIoThreadNum = 0;
     executorThreadNum = 0;
+
+    binlogRateLimitMB = 64;
+    timeoutSecBinlogSize1 = 2;
+    timeoutSecBinlogSize2 = 10;
+    timeoutSecBinlogSize3 = 100;
+    timeoutSecBinlogFileList = 1000;
+    timeoutSecBinlogFilename = 10;
+    timeoutSecBinlogBatch = 100;
+    timeoutSecBinlogWaitRsp = 10;
+    incrPushThreadnum = 12;
+    fullPushThreadnum = 4;
+    fullReceiveThreadnum = 4;
+    logRecycleThreadnum = 12;
+    truncateBinlogIntervalMs = 1000;
+    truncateBinlogNum = 50000;
+    binlogFileSizeMB = 64;
+    binlogFileSecs = 20*60;
+    binlogHeartbeatSecs = 60;
 }
 
 

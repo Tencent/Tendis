@@ -201,6 +201,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
         }
         std::string fullFileName = store->dftBackupDir() + "/" + s.value();
+        LOG(INFO) << "fullsync file:" << fullFileName << " transfer begin";
+
         filesystem::path fileDir =
                 filesystem::path(fullFileName).remove_filename();
         if (!filesystem::exists(fileDir)) {
@@ -213,8 +215,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             return;
         }
         size_t remain = flist.at(s.value());
+        size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
         while (remain) {
-            size_t batchSize = std::min(remain, FILEBATCH);
+            size_t batchSize = std::min(remain, fileBatch);
             remain -= batchSize;
             Expected<std::string> exptData =
                 client->read(batchSize, std::chrono::seconds(100));
@@ -275,7 +278,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS)
+        if (lastSyncTime + std::chrono::seconds(_cfg->binlogHeartbeatSecs)
             <= SCLOCK::now()) {
             return true;
         }
@@ -662,9 +665,9 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         std::unique_lock<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
         v->fileSize += written;
-        if (v->fileSize >= ReplManager::BINLOGSIZE
+        if (v->fileSize >= _cfg->binlogFileSizeMB*1024*1024
          || v->fileCreateTime +
-             std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+             std::chrono::seconds(_cfg->binlogFileSecs)
                             <= SCLOCK::now()) {
             v->fs->close();
             v->fs.reset();
@@ -717,9 +720,9 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->fileSize += written;
-    if (v->fileSize >= ReplManager::BINLOGSIZE
+    if (v->fileSize >= _cfg->binlogFileSizeMB*1024*1024
         || v->fileCreateTime +
-        std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+        std::chrono::seconds(_cfg->binlogFileSecs)
         <= SCLOCK::now()
         || flushFile) {
         if (v->fs) {

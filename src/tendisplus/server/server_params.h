@@ -53,6 +53,27 @@ class ServerParams {
     uint32_t slowlogFlushInterval;
     uint32_t netIoThreadNum;
     uint32_t executorThreadNum;
+
+    uint32_t binlogRateLimitMB;
+    uint32_t timeoutSecBinlogSize1; // 2
+    uint32_t timeoutSecBinlogSize2; // 10
+    uint32_t timeoutSecBinlogSize3; // 10000
+    uint32_t timeoutSecBinlogFileList; // 1000
+    uint32_t timeoutSecBinlogFilename; // 10
+    uint32_t timeoutSecBinlogBatch; // 100
+    uint32_t timeoutSecBinlogWaitRsp; // 10
+    uint32_t incrPushThreadnum;
+    uint32_t fullPushThreadnum;
+    uint32_t fullReceiveThreadnum;
+    uint32_t logRecycleThreadnum;
+    uint32_t truncateBinlogIntervalMs;
+    uint32_t truncateBinlogNum;
+    uint32_t binlogFileSizeMB;
+    uint32_t binlogFileSecs;
+    uint32_t binlogHeartbeatSecs;
+
+private:
+    bool caseEqual(const std::string& l, const std::string& r);
 };
 }  // namespace tendisplus
 

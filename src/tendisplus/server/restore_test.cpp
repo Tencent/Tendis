@@ -20,6 +20,12 @@
 
 namespace tendisplus {
 
+std::string master1_dir = "restoretest_master1";
+std::string master2_dir = "restoretest_master2";
+uint32_t master1_port = 1121;
+uint32_t master2_port = 1122;
+
+
 AllKeys initData(std::shared_ptr<ServerEntry>& server,
                 uint32_t count, const char* key_suffix) {
     auto ctx1 = std::make_shared<asio::io_context>();
@@ -141,7 +147,7 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
         auto kvstore = server->getStores()[i];
         uint64_t binglogPos = kvstore->getHighestBinlogId();
 
-        std::string subpath = "./master1/dump/" + std::to_string(i) + "/";
+        std::string subpath = "./" + master1_dir + "/dump/" + std::to_string(i) + "/";
         std::vector<std::string> loglist;
         for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
             const filesystem::path& path = p.path();
@@ -169,7 +175,7 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos);
             cmd += " --end-datetime=" + std::to_string(end_ts);
-            cmd += "| ./bin/redis-cli -p 1122";
+            cmd += "| ./bin/redis-cli -p " + std::to_string(master2_port);
             LOG(INFO) << cmd;
             int ret = system(cmd.c_str());
             EXPECT_EQ(ret, 0);
@@ -379,11 +385,11 @@ void checkNumAllowDiff(std::vector<uint32_t> nums1,
 
 std::pair<std::shared_ptr<ServerEntry>, std::shared_ptr<ServerEntry>>
 makeRestoreEnv(uint32_t storeCnt) {
-    EXPECT_TRUE(setupEnv("master1"));
-    EXPECT_TRUE(setupEnv("master2"));
+    EXPECT_TRUE(setupEnv(master1_dir));
+    EXPECT_TRUE(setupEnv(master2_dir));
 
-    auto cfg1 = makeServerParam(1121, storeCnt, "master1");
-    auto cfg2 = makeServerParam(1122, storeCnt, "master2");
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
     cfg1->maxBinlogKeepNum = 1;
     cfg2->maxBinlogKeepNum = 1;
 
@@ -413,8 +419,8 @@ TEST(Restore, Common) {
         LOG(INFO) << ">>>>>> test store count:" << i;
 
         const auto guard = MakeGuard([] {
-                destroyEnv("master1");
-                destroyEnv("master2");
+                destroyEnv(master1_dir);
+                destroyEnv(master2_dir);
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 });
 

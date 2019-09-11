@@ -16,6 +16,15 @@
 
 namespace tendisplus {
 
+std::string master_dir = "repltest_master";
+std::string slave_dir = "repltest_slave";
+std::string slave1_dir = "repltest_slave1";
+std::string slave2_dir = "repltest_slave2";
+uint32_t master_port = 1111;
+uint32_t slave_port = 1112;
+uint32_t slave1_port = 2111;
+uint32_t slave2_port = 2112;
+
 AllKeys initData(std::shared_ptr<ServerEntry>& server,
                 uint32_t count) {
     auto ctx1 = std::make_shared<asio::io_context>();
@@ -133,10 +142,11 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
 
 std::pair<std::shared_ptr<ServerEntry>, std::shared_ptr<ServerEntry>> 
 makeReplEnv(uint32_t storeCnt) {
-    EXPECT_TRUE(setupReplEnv());
+    EXPECT_TRUE(setupEnv(master_dir));
+    EXPECT_TRUE(setupEnv(slave_dir));
 
-    auto cfg1 = makeServerParam(1111, storeCnt, "master");
-    auto cfg2 = makeServerParam(1112, storeCnt, "slave");
+    auto cfg1 = makeServerParam(master_port, storeCnt, master_dir);
+    auto cfg2 = makeServerParam(slave_port, storeCnt, slave_dir);
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -151,7 +161,7 @@ makeReplEnv(uint32_t storeCnt) {
 
         WorkLoad work(slave, session);
         work.init();
-        work.slaveof("127.0.0.1", 1111);
+        work.slaveof("127.0.0.1", master_port);
     }
 
     return std::make_pair(master, slave);
@@ -159,8 +169,8 @@ makeReplEnv(uint32_t storeCnt) {
 
 std::shared_ptr<ServerEntry>
 makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
-    INVARIANT(name != "master" && name != "slave");
-	INVARIANT(port != 1111 && port != 1112);
+    INVARIANT(name != master_dir && name != slave_dir);
+	INVARIANT(port != master_port && port != slave_port);
     EXPECT_TRUE(setupEnv(name));
 
     auto cfg1 = makeServerParam(port, storeCnt, name);
@@ -175,7 +185,7 @@ makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
 
         WorkLoad work(slave, session);
         work.init();
-        work.slaveof("127.0.0.1", 1111);
+        work.slaveof("127.0.0.1", master_port);
     }
 
     return slave;
@@ -197,8 +207,8 @@ TEST(Repl, Common) {
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
                 destroyReplEnv();
-                destroyEnv("slave1");
-                destroyEnv("slave2");
+                destroyEnv(slave1_dir);
+                destroyEnv(slave2_dir);
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 });
 
@@ -220,7 +230,7 @@ TEST(Repl, Common) {
         waitSlaveCatchup(master, slave);
         compareData(master, slave);
 
-        auto slave1 = makeAnotherSlave("slave1", i, 2111);
+        auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port);
 
         // delete all the keys
         for (auto k : allKeys) {
@@ -247,7 +257,7 @@ TEST(Repl, Common) {
         });
 
         std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
-        auto slave2 = makeAnotherSlave("slave2", i, 2112);
+        auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port);
 
         LOG(INFO) << "waiting thd1 to exited";
         thd1.join();

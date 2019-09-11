@@ -988,8 +988,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
 
     auto cursor = txn->createRepllogCursorV2(start);
 
-    // TODO(deyukong): put 1000 into configuration.
-    uint64_t max_cnt = 50000;
+    uint64_t max_cnt = _cfg->truncateBinlogNum;
     uint64_t size = 0;
     uint64_t nextStart = start;
     uint64_t cur_ts = msSinceEpoch();
@@ -1368,6 +1367,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
             TxnMode txnMode,
             uint64_t maxKeepLogs)
         :KVStore(id, cfg->dbPath),
+         _cfg(cfg),
          _isRunning(false),
          _isPaused(false),
          _hasBackup(false),
@@ -1385,12 +1385,12 @@ RocksKVStore::RocksKVStore(const std::string& id,
          // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
          _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)),
          _minKeepLogMs(cfg->minBinlogKeepSec * 1000) {
-    if (cfg->noexpire) {
+    if (_cfg->noexpire) {
         _enableFilter = false;
     }
     Expected<uint64_t> s = restart(false);
     if (!s.ok()) {
-        LOG(FATAL) << "opendb:" << cfg->dbPath << "/" << id
+        LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
                     << ", failed info:" << s.status().toString();
     }
 }
