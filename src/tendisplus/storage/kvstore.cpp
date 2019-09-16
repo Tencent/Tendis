@@ -175,7 +175,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
         auto eval = _txn->getKV(keyStr);
         if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
             _cur++;
-            LOG(WARNING) << "binlogid " << _cur << " is not exists";
+            DLOG(WARNING) << "binlogid " << _cur << " is not exists";
 
             continue;
         } else if (!eval.ok()) {
