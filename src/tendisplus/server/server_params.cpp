@@ -405,6 +405,28 @@ Status ServerParams::parseFile(const std::string& filename) {
                         "binlogHeartbeatSecs" };
                 }
                 binlogHeartbeatSecs = std::stoi(tokens[1]);
+            } else if (caseEqual(tokens[0] , "strictCapacityLimit")) {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "strictCapacityLimit"};
+                }
+                if (isOptionOn(tokens[1])) {
+                    strictCapacityLimit = true;
+                }
+            } else if (caseEqual(tokens[0] , "cacheIndexFilterblocks")) {
+                if (tokens.size() != 2) {
+                    return {ErrorCodes::ERR_PARSEOPT,
+                            "cacheIndexFilterblocks"};
+                }
+                if (isOptionOn(tokens[1])) {
+                    cacheIndexFilterblocks = true;
+                }
+            } else if (caseEqual(tokens[0] , "maxOpenFiles")) {
+                if (tokens.size() != 2) {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "maxOpenFiles" };
+                }
+                maxOpenFiles = std::stoi(tokens[1]);
             }
         }
     } catch (const std::exception& ex) {
@@ -458,7 +480,7 @@ ServerParams::ServerParams()
     timeoutSecBinlogFilename = 10;
     timeoutSecBinlogBatch = 100;
     timeoutSecBinlogWaitRsp = 10;
-    incrPushThreadnum = 12;
+    incrPushThreadnum = 50;
     fullPushThreadnum = 4;
     fullReceiveThreadnum = 4;
     logRecycleThreadnum = 12;
@@ -467,6 +489,11 @@ ServerParams::ServerParams()
     binlogFileSizeMB = 64;
     binlogFileSecs = 20*60;
     binlogHeartbeatSecs = 60;
+
+    strictCapacityLimit = false;
+    cacheIndexFilterblocks = false;
+    maxOpenFiles = -1;
+
 }
 
 

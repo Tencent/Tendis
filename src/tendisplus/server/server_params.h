@@ -72,6 +72,9 @@ class ServerParams {
     uint32_t binlogFileSecs;
     uint32_t binlogHeartbeatSecs;
 
+    bool strictCapacityLimit;
+    bool cacheIndexFilterblocks;
+    int32_t maxOpenFiles;
 private:
     bool caseEqual(const std::string& l, const std::string& r);
 };

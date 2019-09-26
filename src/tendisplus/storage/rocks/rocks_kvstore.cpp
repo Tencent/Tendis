@@ -658,7 +658,7 @@ rocksdb::Options RocksKVStore::options() {
     table_options.block_size = 16 * 1024;  // 16KB
     table_options.format_version = 2;
     // let index and filters pining in mem forever
-    table_options.cache_index_and_filter_blocks = false;
+    table_options.cache_index_and_filter_blocks = _cfg->cacheIndexFilterblocks;
     options.table_factory.reset(
         rocksdb::NewBlockBasedTableFactory(table_options));
     options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
@@ -673,7 +673,7 @@ rocksdb::Options RocksKVStore::options() {
     // level_1 max size: 512MB, in fact, things are more complex
     // since we set level_compaction_dynamic_level_bytes = true
     options.max_bytes_for_level_base = 512 * 1024 * 1024;  // 512 MB
-    options.max_open_files = -1;
+    options.max_open_files = _cfg->maxOpenFiles;
     // if we have no 'empty reads', we can disable bottom
     // level's bloomfilters
     options.optimize_filters_for_hits = false;
@@ -984,8 +984,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t written = 0;
     uint64_t deleten = 0;
     // INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
-    INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
-
+    // INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
+#ifdef TENDIS_DEBUG
+    Expected<uint64_t> minBinlogid = RepllogCursorV2::getMinBinlogId(txn);
+    if (minBinlogid.status().code() != ErrorCodes::ERR_EXHAUST) {
+        INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
+    }
+#endif
     auto cursor = txn->createRepllogCursorV2(start);
 
     uint64_t max_cnt = _cfg->truncateBinlogNum;
