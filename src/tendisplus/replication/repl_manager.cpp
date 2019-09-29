@@ -357,7 +357,7 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
     if (*masterauth != "") {
         std::stringstream ss;
         ss << "AUTH " << *masterauth;
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
         Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(WARNING) << "fullSync auth error:" << s.status().toString();

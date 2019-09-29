@@ -84,7 +84,37 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    initLog(params);
+    FLAGS_minloglevel = 0;
+    if (params->logLevel == "debug" || params->logLevel == "verbose") {
+        FLAGS_v = 1;
+    } else {
+        FLAGS_v = 0;
+    }
+
+    if (params->logDir != "") {
+        FLAGS_log_dir = params->logDir;
+        std::cout << "glog dir:" << FLAGS_log_dir << std::endl;
+        if (!tendisplus::filesystem::exists(FLAGS_log_dir)) {
+            std::error_code ec;
+            if (!tendisplus::filesystem::create_directories(
+                                    FLAGS_log_dir, ec)) {
+                LOG(WARNING) << " create log path failed: " << ec.message();
+            }
+        }
+    }
+
+    FLAGS_logbufsecs = 1;
+    ::google::InitGoogleLogging("tendisplus");
+#ifndef _WIN32
+    ::google::InstallFailureSignalHandler();
+    ::google::InstallFailureWriter([](const char *data, int size) {
+        LOG(ERROR) << "Failure:" << std::string(data, size);
+        google::FlushLogFiles(google::INFO);
+        google::FlushLogFiles(google::WARNING);
+        google::FlushLogFiles(google::ERROR);
+        google::FlushLogFiles(google::FATAL);
+    });
+#endif
 
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>(params);
     s = tendisplus::gServer->startup(params);

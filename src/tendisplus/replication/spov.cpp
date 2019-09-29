@@ -30,7 +30,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
                                const StoreMeta& metaSnapshot) {
     std::stringstream ss;
     ss << "FULLSYNC " << metaSnapshot.syncFromId;
-    Status s = client->writeLine(ss.str(), std::chrono::seconds(1));
+    Status s = client->writeLine(ss.str());
     if (!s.ok()) {
         LOG(WARNING) << "fullSync master failed:" << s.toString();
         return s;
@@ -232,7 +232,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                             << " failed:" << strerror(errno);
                 return;
             }
-            Status s = client->writeLine("+OK", std::chrono::seconds(1));
+            Status s = client->writeLine("+OK");
             if (!s.ok()) {
                 LOG(ERROR) << "write file:" << fullFileName
                            << " reply failed:" << s.toString();
@@ -243,7 +243,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
-    client->writeLine("+OK", std::chrono::seconds(1));
+    client->writeLine("+OK");
 
     // 5) restart store, change to stready-syncing mode
     Expected<uint64_t> restartStatus = store->restart(true, Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
@@ -304,7 +304,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     ss << "INCRSYNC " << metaSnapshot.syncFromId
         << ' ' << metaSnapshot.id
         << ' ' << metaSnapshot.binlogId;
-    client->writeLine(ss.str(), std::chrono::seconds(1));
+    client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
@@ -317,7 +317,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         return;
     }
 
-    Status pongStatus  = client->writeLine("+PONG", std::chrono::seconds(1));
+    Status pongStatus  = client->writeLine("+PONG");
     if (!pongStatus.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
                 << " write pong failed:" << pongStatus.toString();

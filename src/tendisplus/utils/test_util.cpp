@@ -57,8 +57,6 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     LOG(INFO) << "params:" << endl << cfg->showAll();
     EXPECT_EQ(s.ok(), true);
 
-    initLog(cfg);
-
     return cfg;
 }
 

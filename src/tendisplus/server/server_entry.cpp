@@ -231,7 +231,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
-                                             _reqMatrix);
+                                             _reqMatrix, cfg);
     Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
         return s;

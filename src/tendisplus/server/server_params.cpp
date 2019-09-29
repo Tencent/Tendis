@@ -74,12 +74,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS(executorThreadNum);
 
     REGISTER_VARS(binlogRateLimitMB);
-    REGISTER_VARS(timeoutSecBinlogSize1);
-    REGISTER_VARS(timeoutSecBinlogSize2);
-    REGISTER_VARS(timeoutSecBinlogSize3);
-    REGISTER_VARS(timeoutSecBinlogFileList);
-    REGISTER_VARS(timeoutSecBinlogFilename);
-    REGISTER_VARS(timeoutSecBinlogBatch);
+    REGISTER_VARS(netBatchSize);
+    REGISTER_VARS(netBatchTimeoutSec);
     REGISTER_VARS(timeoutSecBinlogWaitRsp);
     REGISTER_VARS(incrPushThreadnum);
     REGISTER_VARS(fullPushThreadnum);

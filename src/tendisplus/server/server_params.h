@@ -178,12 +178,8 @@ public:
     uint32_t executorThreadNum = 0;
 
     uint32_t binlogRateLimitMB = 64;
-    uint32_t timeoutSecBinlogSize1 = 2;
-    uint32_t timeoutSecBinlogSize2 = 10;
-    uint32_t timeoutSecBinlogSize3 = 100;
-    uint32_t timeoutSecBinlogFileList = 1000;
-    uint32_t timeoutSecBinlogFilename = 10;
-    uint32_t timeoutSecBinlogBatch = 100;
+    uint32_t netBatchSize = 1024*1024;
+    uint32_t netBatchTimeoutSec = 10;
     uint32_t timeoutSecBinlogWaitRsp = 10;
     uint32_t incrPushThreadnum = 50;
     uint32_t fullPushThreadnum = 4;

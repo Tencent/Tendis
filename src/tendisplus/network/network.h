@@ -11,6 +11,7 @@
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/atomic_utility.h"
 #include "gtest/gtest.h"
@@ -49,7 +50,8 @@ class NetworkAsio {
  public:
     NetworkAsio(std::shared_ptr<ServerEntry> server,
             std::shared_ptr<NetworkMatrix> netMatrix,
-            std::shared_ptr<RequestMatrix> reqMatrix);
+            std::shared_ptr<RequestMatrix> reqMatrix,
+            std::shared_ptr<ServerParams> cfg);
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
 
@@ -84,6 +86,7 @@ class NetworkAsio {
     std::string _ip;
     uint16_t _port;
     uint32_t _netIoThreadNum;
+    std::shared_ptr<ServerParams> _cfg;
 };
 
 struct SendBuffer {
