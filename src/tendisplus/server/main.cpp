@@ -9,6 +9,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/log.h"
 #include "glog/logging.h"
 
 namespace tendisplus {
@@ -68,7 +69,7 @@ int main(int argc, char *argv[]) {
         std::cout << "parse config failed:" << s.toString();
         //LOG(FATAL) << "parse config failed:" << s.toString();
     } else {
-        std::cout << "start server with cfg:" << params->toString();
+        std::cout << "start server with cfg:" << params->showAll();
         //LOG(INFO) << "start server with cfg:" << params->toString();
     }
 
@@ -83,40 +84,8 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    // Log messages at or above this level. Again, the numbers of severity
-    // levels INFO, WARNING, ERROR, and FATAL are 0, 1, 2, and 3,
-    // respectively. refer to http://rpg.ifi.uzh.ch/docs/glog.html
-    FLAGS_minloglevel = 0;
-    if (params->logLevel == "debug" || params->logLevel == "verbose") {
-        FLAGS_v = 1;
-    } else {
-        FLAGS_v = 0;
-    }
+    initLog(params);
 
-    if (params->logDir != "") {
-        FLAGS_log_dir = params->logDir;
-        std::cout << FLAGS_log_dir << std::endl;
-        if (!tendisplus::filesystem::exists(FLAGS_log_dir)) {
-            std::error_code ec;
-            if (!tendisplus::filesystem::create_directories(
-                                    FLAGS_log_dir, ec)) {
-                LOG(WARNING) << " create log path failed: " << ec.message();
-            }
-        }
-    }
-
-    FLAGS_logbufsecs = 1;
-    ::google::InitGoogleLogging("tendisplus");
-#ifndef _WIN32
-    ::google::InstallFailureSignalHandler();
-    ::google::InstallFailureWriter([](const char *data, int size) {
-        LOG(ERROR) << "Failure:" << std::string(data, size);
-        google::FlushLogFiles(google::INFO);
-        google::FlushLogFiles(google::WARNING);
-        google::FlushLogFiles(google::ERROR);
-        google::FlushLogFiles(google::FATAL);
-    });
-#endif
     tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>(params);
     s = tendisplus::gServer->startup(params);
     if (!s.ok()) {

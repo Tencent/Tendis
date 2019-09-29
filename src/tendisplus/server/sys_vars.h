@@ -4,17 +4,28 @@
 #include <iostream>
 #include <string>
 #include <map>
-#include <assert.h>
 #include <stdlib.h>
 #include <atomic>
 #include "tendisplus/utils/status.h"
-#include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 using namespace std;
 
 typedef void (*funptr) ();
+
+char to_lower(char c)
+{
+    return tolower(c);
+}
+std::string toLower(std::string s) {
+    std::string result = s;
+    std::transform(result.begin(),
+        result.end(),
+        result.begin(),
+        to_lower);
+    return result;
+}
 
 class BaseVar {
 public:
@@ -121,18 +132,23 @@ private:
     }
 };
 
+map<string, BaseVar*> gMapServerParams;
+
 class ServerParams{
 public:
     ServerParams();
     ~ServerParams();
 
-    Status parseFile(const std::string& filename);
+    bool parseFile(const std::string& filename, string& errinfo);
     bool registerOnupdate(string name, funptr ptr);
     string showAll();
     bool setVar(string name, string value, string* errinfo);
-private:
-    map<string, BaseVar*> gMapServerParams;
 
+public:
+    int logSize = 0;
+    float score = 2.0;
+    uint32_t score2 = 2;
+    bool open = false;
 public:
     std::string bindIp = "127.0.0.1";
     uint16_t port = 8903;

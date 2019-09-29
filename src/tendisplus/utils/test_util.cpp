@@ -16,6 +16,7 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/log.h"
 
 namespace tendisplus {
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
@@ -43,7 +44,7 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     myfile << "storage rocks\n";
     myfile << "rocks.blockcachemb 4096\n";
     myfile << "generallog on\n";
-    myfile << "slowlogFlushInterval 1\n";
+    myfile << "slowlog-flush-interval 1\n";
     // TODO(vinchen): should it always be on?
     myfile << "checkkeytypeforsetcmd on\n";
     if (storeCnt != 0) {
@@ -53,7 +54,11 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
 
     auto cfg = std::make_shared<ServerParams>();
     auto s = cfg->parseFile("test.cfg");
+    LOG(INFO) << "params:" << endl << cfg->showAll();
     EXPECT_EQ(s.ok(), true);
+
+    initLog(cfg);
+
     return cfg;
 }
 

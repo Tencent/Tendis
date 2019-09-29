@@ -23,7 +23,8 @@ SessionCtx::SessionCtx(Session* sess)
      _extendProtocol(false),
      _replOnly(false),
      _session(sess),
-     _isMonitor(false) {
+     _isMonitor(false),
+     _flags(0) {
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {

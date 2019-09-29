@@ -7,6 +7,11 @@
 
 namespace tendisplus {
 
+int paramUpdateValue = 0;
+void paramOnUpdate() {
+    paramUpdateValue  = 1;
+};
+
 TEST(ServerParams, Common) {
     std::ofstream myfile;
     myfile.open("a.cfg");
@@ -25,6 +30,18 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(cfg->port, 8903);
     EXPECT_EQ(cfg->logLevel, "debug");
     EXPECT_EQ(cfg->logDir, "./");
+
+    EXPECT_EQ(cfg->setVar("binlogRateLimitMB", "100", NULL), true);
+    EXPECT_EQ(cfg->binlogRateLimitMB, 100);
+    EXPECT_EQ(cfg->setVar("binlogratelimitmb", "200", NULL), true);
+    EXPECT_EQ(cfg->binlogRateLimitMB, 200);
+    EXPECT_EQ(cfg->setVar("noargs", "abc", NULL), false);
+
+    EXPECT_EQ(cfg->registerOnupdate("noargs", paramOnUpdate), false);
+    EXPECT_EQ(cfg->registerOnupdate("chunkSize", paramOnUpdate), true);
+    EXPECT_EQ(cfg->setVar("chunkSize", "300", NULL), true);
+    EXPECT_EQ(cfg->chunkSize, 300);
+    EXPECT_EQ(paramUpdateValue, 1);
 }
 
 }  // namespace tendisplus
