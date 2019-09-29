@@ -30,7 +30,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
                                const StoreMeta& metaSnapshot) {
     std::stringstream ss;
     ss << "FULLSYNC " << metaSnapshot.syncFromId;
-    Status s = client->writeLine(ss.str(), std::chrono::seconds(1));
+    Status s = client->writeLine(ss.str());
     if (!s.ok()) {
         LOG(WARNING) << "fullSync master failed:" << s.toString();
         return s;
@@ -201,6 +201,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             LOG(FATAL) << "BUG: fullsync " << s.value() << " invalid file";
         }
         std::string fullFileName = store->dftBackupDir() + "/" + s.value();
+        LOG(INFO) << "fullsync file:" << fullFileName << " transfer begin";
+
         filesystem::path fileDir =
                 filesystem::path(fullFileName).remove_filename();
         if (!filesystem::exists(fileDir)) {
@@ -213,8 +215,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             return;
         }
         size_t remain = flist.at(s.value());
+        size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
         while (remain) {
-            size_t batchSize = std::min(remain, FILEBATCH);
+            size_t batchSize = std::min(remain, fileBatch);
             remain -= batchSize;
             Expected<std::string> exptData =
                 client->read(batchSize, std::chrono::seconds(100));
@@ -229,7 +232,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                             << " failed:" << strerror(errno);
                 return;
             }
-            Status s = client->writeLine("+OK", std::chrono::seconds(1));
+            Status s = client->writeLine("+OK");
             if (!s.ok()) {
                 LOG(ERROR) << "write file:" << fullFileName
                            << " reply failed:" << s.toString();
@@ -240,7 +243,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
-    client->writeLine("+OK", std::chrono::seconds(1));
+    client->writeLine("+OK");
 
     // 5) restart store, change to stready-syncing mode
     Expected<uint64_t> restartStatus = store->restart(true, Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
@@ -275,7 +278,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(BINLOGHEARTBEATSECS)
+        if (lastSyncTime + std::chrono::seconds(_cfg->binlogHeartbeatSecs)
             <= SCLOCK::now()) {
             return true;
         }
@@ -301,7 +304,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     ss << "INCRSYNC " << metaSnapshot.syncFromId
         << ' ' << metaSnapshot.id
         << ' ' << metaSnapshot.binlogId;
-    client->writeLine(ss.str(), std::chrono::seconds(1));
+    client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
@@ -314,7 +317,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         return;
     }
 
-    Status pongStatus  = client->writeLine("+PONG", std::chrono::seconds(1));
+    Status pongStatus  = client->writeLine("+PONG");
     if (!pongStatus.ok()) {
         LOG(WARNING) << "store:" << metaSnapshot.id
                 << " write pong failed:" << pongStatus.toString();
@@ -662,9 +665,9 @@ Status ReplManager::saveBinlogs(uint32_t storeId,
         std::unique_lock<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
         v->fileSize += written;
-        if (v->fileSize >= ReplManager::BINLOGSIZE
+        if (v->fileSize >= _cfg->binlogFileSizeMB*1024*1024
          || v->fileCreateTime +
-             std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+             std::chrono::seconds(_cfg->binlogFileSecs)
                             <= SCLOCK::now()) {
             v->fs->close();
             v->fs.reset();
@@ -717,9 +720,9 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->fileSize += written;
-    if (v->fileSize >= ReplManager::BINLOGSIZE
+    if (v->fileSize >= _cfg->binlogFileSizeMB*1024*1024
         || v->fileCreateTime +
-        std::chrono::seconds(ReplManager::BINLOGSYNCSECS)
+        std::chrono::seconds(_cfg->binlogFileSecs)
         <= SCLOCK::now()
         || flushFile) {
         if (v->fs) {

@@ -13,12 +13,16 @@ namespace tendisplus {
 
 BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
                 asio::ip::tcp::socket socket,
-                size_t maxBufSize)
+                size_t maxBufSize,
+                uint32_t netBatchSize,
+                uint32_t netBatchTimeoutSec)
         :_inited(true),
          _notified(false),
          _ctx(ctx),
          _socket(std::move(socket)),
-         _inputBuf(maxBufSize) {
+         _inputBuf(maxBufSize),
+         _netBatchSize(netBatchSize),
+         _netBatchTimeoutSec(netBatchTimeoutSec) {
     if (&(_socket.get_io_context()) != &(*ctx)) {
         LOG(FATAL) << " cannot transfer socket between ioctx";
     }
@@ -30,12 +34,18 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
 }
 
 BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
-                size_t maxBufSize)
+                size_t maxBufSize,
+                uint32_t netBatchSize,
+                uint32_t netBatchTimeoutSec)
+
         :_inited(false),
          _notified(false),
          _ctx(ctx),
          _socket(*_ctx),
-         _inputBuf(maxBufSize) {
+         _inputBuf(maxBufSize),
+         _netBatchSize(netBatchSize),
+         _netBatchTimeoutSec(netBatchTimeoutSec) {
+
 }
 
 void BlockingTcpClient::closeSocket() {
@@ -168,11 +178,25 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
     return result;
 }
 
-Status BlockingTcpClient::writeData(const std::string& data,
+Status BlockingTcpClient::writeData(const std::string& data) {
+    uint32_t cur_size = 0;
+    uint32_t total_size = data.size();
+    while(cur_size < total_size) {
+        uint32_t send_size = std::min(total_size - cur_size, _netBatchSize);
+        auto s = writeOneBatch(data.c_str() + cur_size, send_size, std::chrono::seconds(_netBatchTimeoutSec));
+        if (!s.ok()) {
+            return s;
+        }
+        cur_size += send_size;
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+Status BlockingTcpClient::writeOneBatch(const char* data, uint32_t size,
         std::chrono::seconds timeout) {
     _notified = false;
     auto self(shared_from_this());
-    asio::async_write(_socket, asio::buffer(data),
+    asio::async_write(_socket, asio::buffer(data, size),
         [this, self](const asio::error_code& oec, size_t) {
             std::unique_lock<std::mutex> lk(_mutex);
             _ec = oec;
@@ -194,11 +218,10 @@ Status BlockingTcpClient::writeData(const std::string& data,
     }
 }
 
-Status BlockingTcpClient::writeLine(const std::string& line,
-        std::chrono::seconds timeout) {
+Status BlockingTcpClient::writeLine(const std::string& line) {
     std::string line1 = line;
     line1.append("\r\n");
-    return writeData(line1, timeout);
+    return writeData(line1);
 }
 
 asio::ip::tcp::socket BlockingTcpClient::borrowConn() {

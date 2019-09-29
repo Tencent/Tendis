@@ -26,9 +26,10 @@ namespace tendisplus {
 
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
                           const std::shared_ptr<ServerParams> cfg)
-    :_isRunning(false),
+    :_cfg(cfg),
+     _isRunning(false),
      _svr(svr),
-     _rateLimiter(std::make_unique<RateLimiter>(64*1024*1024)),
+     _rateLimiter(std::make_unique<RateLimiter>(cfg->binlogRateLimitMB*1024*1024)),
      _incrPaused(false),
      _clientIdGen(0),
      _dumpPath(cfg->dumpPath),
@@ -88,29 +89,22 @@ Status ReplManager::startup() {
         }
     }
 
-    // TODO(deyukong): configure
-    size_t cpuNum = std::thread::hardware_concurrency();
-    if (cpuNum == 0) {
-        return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
-    }
-
     _incrPusher = std::make_unique<WorkerPool>(
             "repl-minc", _incrPushMatrix);
-    Status s = _incrPusher->startup(INCR_POOL_SIZE);
+    Status s = _incrPusher->startup(_cfg->incrPushThreadnum);
     if (!s.ok()) {
         return s;
     }
-
     _fullPusher = std::make_unique<WorkerPool>(
             "repl-mfull", _fullPushMatrix);
-    s = _fullPusher->startup(MAX_FULL_PARAL);
+    s = _fullPusher->startup(_cfg->fullPushThreadnum);
     if (!s.ok()) {
         return s;
     }
 
     _fullReceiver = std::make_unique<WorkerPool>(
             "repl-sfull", _fullReceiveMatrix);
-    s = _fullReceiver->startup(MAX_FULL_PARAL);
+    s = _fullReceiver->startup(_cfg->fullReceiveThreadnum);
     if (!s.ok()) {
         return s;
     }
@@ -124,7 +118,7 @@ Status ReplManager::startup() {
 
     _logRecycler = std::make_unique<WorkerPool>(
             "log-recyc", _logRecycleMatrix);
-    s = _logRecycler->startup(INCR_POOL_SIZE);
+    s = _logRecycler->startup(_cfg->logRecycleThreadnum);
     if (!s.ok()) {
         return s;
     }
@@ -363,7 +357,7 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
     if (*masterauth != "") {
         std::stringstream ss;
         ss << "AUTH " << *masterauth;
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
         Expected<std::string> s = client->readLine(std::chrono::seconds(10));
         if (!s.ok()) {
             LOG(WARNING) << "fullSync auth error:" << s.status().toString();
@@ -484,8 +478,7 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    // TODO(takenliu) make it in config, and make every schedule's min num bigger.
-    nextSched = nextSched + std::chrono::seconds(1); // make frequency be lowwer
+    nextSched = nextSched + std::chrono::milliseconds(_cfg->truncateBinlogIntervalMs);
 
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {

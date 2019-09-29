@@ -114,8 +114,6 @@ class ReplManager {
 #endif
     void flushCurBinlogFs(uint32_t storeId);
     void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&) const;
-    static constexpr size_t INCR_POOL_SIZE = 12;
-    static constexpr size_t MAX_FULL_PARAL = 4;
     void onFlush(uint32_t storeId, uint64_t binlogid);
 
  protected:
@@ -156,6 +154,7 @@ class ReplManager {
     Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
 #endif
 
+    const std::shared_ptr<ServerParams> _cfg;
     mutable std::mutex _mutex;
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
@@ -207,12 +206,6 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
     std::shared_ptr<PoolMatrix> _logRecycleMatrix;
-
-    // TODO(takenliu): configable
-    static constexpr size_t FILEBATCH = size_t(6ULL*1024*1024);
-    static constexpr size_t BINLOGSIZE = 1024 * 1024 * 64;
-    static constexpr size_t BINLOGSYNCSECS = 20 * 60;
-    static constexpr size_t BINLOGHEARTBEATSECS = 60;
 };
 
 }  // namespace tendisplus

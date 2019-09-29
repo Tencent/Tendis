@@ -53,7 +53,8 @@ NetworkMatrix NetworkMatrix::operator-(const NetworkMatrix& right) {
 
 NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          std::shared_ptr<NetworkMatrix> netMatrix,
-                         std::shared_ptr<RequestMatrix> reqMatrix)
+                         std::shared_ptr<RequestMatrix> reqMatrix,
+                         std::shared_ptr<ServerParams> cfg)
     :_connCreated(0),
      _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
@@ -61,7 +62,8 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
      _acceptThd(nullptr),
      _isRunning(false),
      _netMatrix(netMatrix),
-     _reqMatrix(reqMatrix) {
+     _reqMatrix(reqMatrix),
+     _cfg(cfg) {
 }
 
 std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
@@ -90,7 +92,7 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
         size_t readBuf) {
     auto rwCtx = getRwCtx();
     INVARIANT(rwCtx != nullptr);
-    return std::move(std::make_unique<BlockingTcpClient>(rwCtx, readBuf));
+    return std::move(std::make_unique<BlockingTcpClient>(rwCtx, readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec));
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
@@ -98,7 +100,7 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
     auto rwCtx = getRwCtx(socket);
     INVARIANT(rwCtx != nullptr);
     return std::move(std::make_unique<BlockingTcpClient>(
-        rwCtx, std::move(socket), readBuf));
+        rwCtx, std::move(socket), readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec));
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum) {

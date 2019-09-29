@@ -161,7 +161,7 @@ class RocksKVStore: public KVStore {
         bool enableRepllog = true,
         KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
         TxnMode txnMode = TxnMode::TXN_PES,
-        uint64_t maxKeepLogs = 1000000);  // TODO(vinchen): configurable
+        uint64_t maxKeepLogs = 1000000);
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
@@ -247,6 +247,7 @@ class RocksKVStore: public KVStore {
     Expected<bool> deleteBinlog(uint64_t start);
     mutable std::mutex _mutex;
 
+    const std::shared_ptr<ServerParams> _cfg;
     bool _isRunning;
     // _isPaused = true, it means that the rocksdb can't do any
     // get/set operations. But the rocksdb is running. It can be

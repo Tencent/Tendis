@@ -219,15 +219,14 @@ TEST(BlockingTcpClient, Common) {
         ioCtx1->run();
     });
 
-    auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx1, 128);
+    auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx1, 128, 1024*1024, 10);
     Status s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
 
     s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_FALSE(s.ok());
     EXPECT_EQ(s.toString(), "-ERR:1,msg:already inited sock\r\n");
-    s = cli1->writeLine("hello world\r\n hello world1\r\n trailing",
-        std::chrono::seconds(1));
+    s = cli1->writeLine("hello world\r\n hello world1\r\n trailing");
     EXPECT_TRUE(s.ok());
     Expected<std::string> exps = cli1->readLine(std::chrono::seconds(3));
     EXPECT_TRUE(exps.ok());
@@ -247,17 +246,17 @@ TEST(BlockingTcpClient, Common) {
     EXPECT_EQ(exps.value(), "trailing\r\n");
     EXPECT_EQ(cli1->getReadBufSize(), size_t(0));
 
-    s = cli1->writeLine("hello world", std::chrono::seconds(1));
+    s = cli1->writeLine("hello world");
     // timeout
 
     exps = cli1->readLine(std::chrono::seconds(1));
     EXPECT_FALSE(exps.ok()) << exps.value();
 
     // more than max buf size
-    auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4);
+    auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4, 1024*1024, 10);
     s = cli2->connect("127.0.0.1", 54321, std::chrono::seconds(1));
     EXPECT_TRUE(s.ok());
-    s = cli2->writeLine("hello world", std::chrono::seconds(1));
+    s = cli2->writeLine("hello world");
     exps = cli2->readLine(std::chrono::seconds(3));
     EXPECT_FALSE(exps.ok());
     ioCtx->stop();

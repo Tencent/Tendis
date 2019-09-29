@@ -37,15 +37,18 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
     // NOTE(deyukong): this judge is not precise
     // even it's not full at this time, it can be full during schedule.
     if (isFullSupplierFull()) {
-        client->writeLine("-ERR workerpool full", std::chrono::seconds(1));
+        LOG(WARNING) << "ReplManager::supplyFullSync fullPusher isFull.";
+        client->writeLine("-ERR workerpool full");
         return;
     }
 
     auto expStoreId = tendisplus::stoul(storeIdArg);
     if (!expStoreId.ok()) {
-        client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
+        LOG(ERROR) << "ReplManager::supplyFullSync storeIdArg error:" << storeIdArg;
+        client->writeLine("-ERR invalid storeId");
         return;
     }
+    LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg;
     uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
     _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
         supplyFullSyncRoutine(std::move(client), storeId);
@@ -100,7 +103,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
             masterSendBinlog(client, storeId, dstStoreId, binlogPos);
 #else
     // for safe : -5
-    if (lastSend + std::chrono::seconds(BINLOGHEARTBEATSECS - 5)
+    if (lastSend + std::chrono::seconds(_cfg->binlogHeartbeatSecs - 5)
                 < SCLOCK::now()) {
         needHeartbeat = true;
     }
@@ -211,7 +214,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     } else if (stringtoWrite.size() > 1024*1024*10) {
         secs = 4;
     }
-    Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
+    Status s = client->writeData(stringtoWrite);
     if (!s.ok()) {
         return s;
     }
@@ -316,16 +319,8 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
     }
 
     std::string stringtoWrite = ss2.str();
-    uint32_t secs = 1;
-    if (stringtoWrite.size() > 1024 * 1024) {
-        secs = 2;
-    } else if (stringtoWrite.size() > 1024 * 1024 * 10) {
-        secs = 10;
-    } else {
-        // TODO(takenliu): make configable, one big value is better
-        secs = 100;
-    }
-    Status s = client->writeData(stringtoWrite, std::chrono::seconds(secs));
+
+    Status s = client->writeData(stringtoWrite);
     if (!s.ok()) {
         LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
             << " writeData failed:" << s.toString()
@@ -333,6 +328,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
         return s;
     }
 
+    uint32_t secs = _cfg->timeoutSecBinlogWaitRsp;
     // TODO(vinchen): NO NEED TO READ OK?
     Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
@@ -385,21 +381,20 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     } catch (const std::exception& ex) {
         std::stringstream ss;
         ss << "-ERR parse opts failed:" << ex.what();
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
         return;
     }
 
     if (storeId >= _svr->getKVStoreCount() ||
             dstStoreId >= _svr->getKVStoreCount()) {
-        client->writeLine("-ERR invalid storeId", std::chrono::seconds(1));
+        client->writeLine("-ERR invalid storeId");
         return;
     }
 
     // NOTE(vinchen): In the cluster view, storeID of source and dest must be
     // same.
     if (storeId != dstStoreId) {
-        client->writeLine("-ERR source storeId is different from dstStoreId ",
-                    std::chrono::seconds(1));
+        client->writeLine("-ERR source storeId is different from dstStoreId ");
         return;
     }
 
@@ -410,7 +405,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::stringstream ss;
         ss << "-ERR store " << storeId << " error: "
             << expdb.status().toString();
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
         return;
     }
 
@@ -435,11 +430,11 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             << ",firstPos:" << firstPos
             << ",binlogPos:" << binlogPos
             << ",lastFlushBinlogId:" << lastFlushBinlogId;
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
         LOG(ERROR) << ss.str();
         return;
     }
-    client->writeLine("+OK", std::chrono::seconds(1));
+    client->writeLine("+OK");
     Expected<std::string> exptPong = client->readLine(std::chrono::seconds(1));
     if (!exptPong.ok()) {
         LOG(WARNING) << "slave incrsync handshake failed:"
@@ -511,14 +506,16 @@ void ReplManager::supplyFullSyncRoutine(
         std::stringstream ss;
         ss << "-ERR store " << storeId << " error: "
             << expdb.status().toString();
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
+        LOG(ERROR) << "getDb failed:" << expdb.status().toString();
         return;
     }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
     if (!store->isRunning()) {
-        client->writeLine("-ERR store is not running", std::chrono::seconds(1));
+        client->writeLine("-ERR store is not running");
+        LOG(ERROR) << "store is not running.";
         return;
     }
 
@@ -529,7 +526,8 @@ void ReplManager::supplyFullSyncRoutine(
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
-        client->writeLine(ss.str(), std::chrono::seconds(1));
+        client->writeLine(ss.str());
+        LOG(ERROR) << "backup failed:" << bkInfo.status().toString();
         return;
     } else {
         LOG(INFO) << "storeId:" << storeId
@@ -547,13 +545,13 @@ void ReplManager::supplyFullSyncRoutine(
 
     // send binlogPos
     Status s = client->writeLine(
-            std::to_string(bkInfo.value().getBinlogPos()),
-            std::chrono::seconds(10));
+            std::to_string(bkInfo.value().getBinlogPos()));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send binlogpos failed:" << s.toString();
         return;
     }
+    LOG(INFO) << "fullsync " << storeId << " send binlogPos success:" << bkInfo.value().getBinlogPos();
 
     // send fileList
     rapidjson::StringBuffer sb;
@@ -564,22 +562,26 @@ void ReplManager::supplyFullSyncRoutine(
         writer.Uint64(kv.second);
     }
     writer.EndObject();
-    s = client->writeLine(sb.GetString(), std::chrono::seconds(1000));
+    uint32_t secs = 10;
+    s = client->writeLine(sb.GetString()); // NOTE(takenliu):change timeout 1000s to 10s
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send filelist failed:" << s.toString();
         return;
     }
+    LOG(INFO) << "fullsync " << storeId << " send fileList success:" << sb.GetString();
 
     std::string readBuf;
-    readBuf.reserve(FILEBATCH);  // 20MB
+    size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
+    readBuf.reserve(fileBatch);
     for (auto& fileInfo : bkInfo.value().getFileList()) {
-        s = client->writeLine(fileInfo.first, std::chrono::seconds(10));
+        s = client->writeLine(fileInfo.first);
         if (!s.ok()) {
             LOG(ERROR) << "write fname:" << fileInfo.first
                         << " to client failed:" << s.toString();
             return;
         }
+        LOG(INFO) << "fulsync send filename success:" << fileInfo.first;
         std::string fname = store->dftBackupDir() + "/" + fileInfo.first;
         auto myfile = std::ifstream(fname, std::ios::binary);
         if (!myfile.is_open()) {
@@ -588,7 +590,7 @@ void ReplManager::supplyFullSyncRoutine(
         }
         size_t remain = fileInfo.second;
         while (remain) {
-            size_t batchSize = std::min(remain, FILEBATCH);
+            size_t batchSize = std::min(remain, fileBatch);
             _rateLimiter->Request(batchSize);
             readBuf.resize(batchSize);
             remain -= batchSize;
@@ -598,12 +600,13 @@ void ReplManager::supplyFullSyncRoutine(
                             << " failed with err:" << strerror(errno);
                 return;
             }
-            s = client->writeData(readBuf, std::chrono::seconds(100));
+            s = client->writeData(readBuf);
             if (!s.ok()) {
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
                 return;
             }
-            auto rpl = client->readLine(std::chrono::seconds(10));
+            secs = _cfg->timeoutSecBinlogWaitRsp; // 10
+            auto rpl = client->readLine(std::chrono::seconds(secs));
             if (!rpl.ok() || rpl.value() != "+OK") {
                 LOG(ERROR) << "send client:" << client->getRemoteRepr()
                            << "file:" << fileInfo.first
@@ -613,8 +616,10 @@ void ReplManager::supplyFullSyncRoutine(
                 return;
             }
         }
+        LOG(INFO) << "fulsync send file success:" << fname;
     }
-    Expected<std::string> reply = client->readLine(std::chrono::seconds(1));
+    secs = _cfg->timeoutSecBinlogWaitRsp; // 10
+    Expected<std::string> reply = client->readLine(std::chrono::seconds(secs));
     if (!reply.ok()) {
         LOG(ERROR) << "fullsync done read "
                    << client->getRemoteRepr() << " reply failed:"

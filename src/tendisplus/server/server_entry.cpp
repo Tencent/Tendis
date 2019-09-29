@@ -145,7 +145,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // kvstore init
     auto blockCache =
-        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, false);
+        rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, cfg->strictCapacityLimit);
     std::vector<PStore> tmpStores;
     tmpStores.reserve(kvStoreCount);
     for (size_t i = 0; i < kvStoreCount; ++i) {
@@ -231,7 +231,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
-                                             _reqMatrix);
+                                             _reqMatrix, cfg);
     Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
         return s;
