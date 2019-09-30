@@ -7,32 +7,39 @@
 #include <fstream>
 #include <sstream>
 
-#include "glog/logging.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/server/server_params.h"
 
 namespace tendisplus {
 using namespace std;
 
-
-#define REGISTER_VARS(var) REGISTER_VARS2(#var, var)
-
-#define REGISTER_VARS2(str, var) \
+#define REGISTER_VARS_FULL(str, var, fun) \
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
-        gMapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, NULL))); \
+        gMapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, fun))); \
     else if (typeid(var) == typeid(float)) \
-        gMapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, NULL))); \
+        gMapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, fun))); \
     else if (typeid(var) == typeid(string)) \
-        gMapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, NULL))); \
+        gMapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, fun))); \
     else if (typeid(var) == typeid(bool)) \
-        gMapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, NULL))); \
+        gMapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, fun))); \
     else assert(false); // NOTE(takenliu): if other type is needed, change here.
+
+#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL)
+#define REGISTER_VARS2(str, var) REGISTER_VARS_FULL(str, var, NULL)
+
+bool logLevelParamCheck(string& v) {
+    v = toLower(v);
+    if(v == "debug" || v == "verbose" || v == "notice" || v =="warning") {
+        return true;
+    }
+    return false;
+};
 
 ServerParams::ServerParams() {
     REGISTER_VARS2("bind", bindIp);
     REGISTER_VARS(port);
-    REGISTER_VARS(logLevel); //todo check
+    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck);
     REGISTER_VARS(logDir);
 
     REGISTER_VARS2("storage", storageEngine);

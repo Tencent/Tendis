@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <atomic>
+#include "glog/logging.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -15,17 +16,18 @@ namespace tendisplus {
 using namespace std;
 
 typedef void (*funptr) ();
+typedef bool (*checkfunptr) (string&);
 
 class BaseVar {
 public:
-    BaseVar(string s, void* v, funptr ptr) {
+    BaseVar(string s, void* v, checkfunptr ptr) {
         if (v == NULL) {
             assert(false);
             return;
         }
         name = s;
         value = v;
-        Onupdate = ptr;
+        checkFun = ptr;
     };
     virtual ~BaseVar(){};
     virtual bool set(string value) = 0;
@@ -34,18 +36,24 @@ public:
         Onupdate = f;
     }
 protected:
-    virtual bool check() = 0;
+    virtual bool check(string& value) {
+        if (checkFun != NULL) {
+            return checkFun(value);
+        }
+        return true;
+    };
 
-    string name;
-    void* value;
-    funptr Onupdate;
+    string name = "";
+    void* value = NULL;
+    funptr Onupdate = NULL;
+    checkfunptr checkFun = NULL;
 };
 
 class StringVar : public BaseVar {
 public:
-    StringVar(string name, void* v, funptr ptr) : BaseVar(name, v, ptr){};
+    StringVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
     bool set(string v) {
-        if(!check()) return false;
+        if(!check(v)) return false;
 
         *(string*)value = v;
 
@@ -55,18 +63,22 @@ public:
     virtual string show(){
         return "  " + name + ": \"" + *(string*)value + "\"";
     };
-private:
-    bool check() { return true; };
 };
 
 // support:int, uint32_t
 class IntVar : public BaseVar {
 public:
-    IntVar(string name, void* v, funptr ptr) : BaseVar(name, v, ptr){};
+    IntVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
     bool set(string v) {
-        if(!check()) return false;
+        if(!check(v)) return false;
 
-        *(int*)value = atoi(v.c_str());
+        try {
+            *(int*)value = std::stoi(v);
+        }
+        catch (...) {
+            LOG(ERROR) << "IntVar stoi err:" << v;
+            return false;
+        }
 
         if (Onupdate != NULL) Onupdate();
         return true;
@@ -74,33 +86,32 @@ public:
     virtual string show(){
         return "  " + name + ": " + std::to_string(*(int*)value);
     };
-private:
-    bool check() { return true; };
 };
 
 class FloatVar : public BaseVar {
 public:
-    FloatVar(string name, void* v, funptr ptr) : BaseVar(name, v, ptr){};
+    FloatVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
     bool set(string v) {
-        if(!check()) return false;
-
-        *(float*)value = atof(v.c_str());
-
+        if(!check(v)) return false;
+        try {
+            *(float*)value = std::stof(v);
+        } catch (...) {
+            LOG(ERROR) << "FloatVar stof err:" << v;
+            return false;
+        }
         if (Onupdate != NULL) Onupdate();
         return true;
     }
     virtual string show(){
         return "  " + name + ": " + std::to_string(*(float*)value);
     };
-private:
-    bool check() { return true; };
 };
 
 class BoolVar : public BaseVar {
 public:
-    BoolVar(string name, void* v, funptr ptr) : BaseVar(name, v, ptr){};
+    BoolVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
     bool set(string v) {
-        if(!check()) return false;
+        if(!check(v)) return false;
 
         *(bool*)value = isOptionOn(v);
 
@@ -111,7 +122,6 @@ public:
         return "  " + name + ": " + std::to_string(*(bool*)value);
     };
 private:
-    bool check() { return true; };
     bool isOptionOn(const std::string& s) {
         auto x = toLower(s);
         if (x == "on" || x == "1" || x == "true") {
@@ -130,6 +140,9 @@ public:
     bool registerOnupdate(string name, funptr ptr);
     string showAll();
     bool setVar(string name, string value, string* errinfo);
+    uint32_t paramsNum() {
+        return gMapServerParams.size();
+    }
 private:
     map<string, BaseVar*> gMapServerParams;
 
