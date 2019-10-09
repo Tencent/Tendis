@@ -492,10 +492,11 @@ class RPopLPushCommand: public Command {
             // because key1 has be pop() by etxn.
             // Otherwise if rv2 = Command::expireKeyIfNeeded(), it would get the old value.
             auto rv2 = kvstore1->getKV(metaRk1, etxn.value());
-            if (!rv2.ok()) {
-                INVARIANT(0);
-                return Command::fmtNull();
-            }
+            // Only means that former pop has removed this meta key.
+            // if (!rv2.ok()) {
+                // INVARIANT(0);
+                // return Command::fmtNull();
+            // }
 
             for (uint32_t i = 0; i < RETRY_CNT; ++i) {
                 auto s = genericPush(sess,

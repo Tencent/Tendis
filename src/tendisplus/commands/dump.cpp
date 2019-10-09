@@ -727,16 +727,20 @@ class RestoreCommand: public Command {
         const std::string &key = args[1];
         const std::string &sttl = args[2];
         const std::string &payload = args[3];
+        bool replace(false);
 
-        // TODO(comboqiu): parse additional args
         {
             for (size_t i = 4; i < args.size(); i++) {
-                if (::strcasecmp(args[i].c_str(), "replace")) {
+                if (!::strcasecmp(args[i].c_str(), "replace")) {
+                    replace = true;
+                } else {
                     return {ErrorCodes::ERR_PARSEOPT, ""};
                 }
             }
         }
 
+        auto lock = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(sess,
+                args, {1}, mgl::LockMode::LOCK_X);
         // check if key exists
         Expected<RecordValue> rv =
                 Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
@@ -745,7 +749,14 @@ class RestoreCommand: public Command {
             if (!rv.ok()) {
                 return rv.status();
             }
-            return Command::fmtBusyKey();
+            if (replace) {
+                Status s = delKey(sess, key, RecordType::RT_DATA_META);
+                if (!s.ok()) {
+                    return s;
+                }
+            } else {
+                return Command::fmtBusyKey();
+            }
         }
 
         Expected<int64_t> expttl = tendisplus::stoll(sttl);
