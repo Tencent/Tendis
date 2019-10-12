@@ -43,7 +43,8 @@ ServerEntry::ServerEntry()
          _dbNum(CONFIG_DEFAULT_DBNUM),
          _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
          _slowlogId(0),
-         _scheduleNum(0) {
+         _scheduleNum(0),
+         _cfg(nullptr) {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -58,6 +59,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _maxClients = cfg->maxClients;
     _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
     _slowlogFlushInterval = cfg->slowlogFlushInterval;
+    _cfg = cfg;
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -500,7 +502,7 @@ bool ServerEntry::processRequest(Session *sess) {
     return true;
 }
 
-void ServerEntry::appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>& w,
+void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>& w,
                                  const std::set<std::string>& sections) const {
     if (sections.find("network") != sections.end()) {
         w.Key("network");

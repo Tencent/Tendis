@@ -227,7 +227,7 @@ class RocksKVStore: public KVStore {
     Status releaseBackup() final;
 
     void appendJSONStat(
-            rapidjson::Writer<rapidjson::StringBuffer>&) const final;
+            rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const final;
 
     // if binlogTxnId == Transaction::TXNID_UNINITED, it mean rollback
     void markCommitted(uint64_t txnId, uint64_t binlogTxnId);

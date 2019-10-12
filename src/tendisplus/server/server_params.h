@@ -143,8 +143,12 @@ public:
     uint32_t paramsNum() {
         return gMapServerParams.size();
     }
+    string getConfFile() {
+        return confFile;
+    }
 private:
     map<string, BaseVar*> gMapServerParams;
+    std::string confFile = "";
 
 public:
     std::string bindIp = "127.0.0.1";

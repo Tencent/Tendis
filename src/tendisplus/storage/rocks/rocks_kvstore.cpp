@@ -8,6 +8,7 @@
 #include <limits>
 #include <algorithm>
 #include "glog/logging.h"
+#include "rapidjson/prettywriter.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/utilities/backupable_db.h"
@@ -25,6 +26,8 @@
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
+
+#define ROCKSDB_NUM_LEVELS 7
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
         :Cursor(),
@@ -681,14 +684,12 @@ rocksdb::Options RocksKVStore::options() {
     // options.compaction_filter_factory.reset(
     //     new PrefixDeletingCompactionFilterFactory(this));
     options.enable_thread_tracking = true;
-    options.compression_per_level.resize(7);
+    options.compression_per_level.resize(ROCKSDB_NUM_LEVELS);
     options.compression_per_level[0] = rocksdb::kNoCompression;
     options.compression_per_level[1] = rocksdb::kNoCompression;
-    options.compression_per_level[2] = rocksdb::kSnappyCompression;
-    options.compression_per_level[3] = rocksdb::kSnappyCompression;
-    options.compression_per_level[4] = rocksdb::kSnappyCompression;
-    options.compression_per_level[5] = rocksdb::kSnappyCompression;
-    options.compression_per_level[6] = rocksdb::kSnappyCompression;
+    for (int i = 2; i < ROCKSDB_NUM_LEVELS; ++i) {
+        options.compression_per_level[i] = rocksdb::kSnappyCompression;
+    }
     options.statistics = _stats;
     options.create_if_missing = true;
 
@@ -1795,8 +1796,8 @@ Status RocksKVStore::delKV(const RecordKey& key,
 }
 
 void RocksKVStore::appendJSONStat(
-            rapidjson::Writer<rapidjson::StringBuffer>& w) const {
-    static const std::map<std::string, std::string> properties = {
+            rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
+    static std::map<std::string, std::string> properties = {
         {"rocksdb.num-immutable-mem-table", "num_immutable_mem_table"},
         {"rocksdb.mem-table-flush-pending", "mem_table_flush_pending"},
         {"rocksdb.compaction-pending", "compaction_pending"},
@@ -1829,7 +1830,9 @@ void RocksKVStore::appendJSONStat(
         {"rocksdb.num-running-flushes", "num_running_flushses"},
         {"rocksdb.actual-delayed-write-rate", "actual_delayed_write_rate"},
         {"rocksdb.is-write-stopped", "is_write_stopped"},
+        {"rocksdb.num-immutable-mem-table-flushed", "num-immutable-mem-table-flushed"},
     };
+
     w.Key("id");
     w.String(dbId().c_str());
     w.Key("is_running");
@@ -1885,6 +1888,36 @@ void RocksKVStore::appendJSONStat(
             }
             w.Key(kv.second.c_str());
             w.Uint64(tmp);
+        }
+
+        static std::map<std::string, std::string> stringProperties = {
+            {"rocksdb.stats", "stats"},
+            {"rocksdb.sstables", "sstables"},
+            {"rocksdb.cfstats", "cfstats"},
+            {"rocksdb.cfstats-no-file-histogram", "cfstats-no-file-histogram"},
+            {"rocksdb.cf-file-histogram", "cf-file-histogram"},
+            {"rocksdb.dbstats", "dbstats"},
+            {"rocksdb.levelstats", "levelstats"},
+            {"rocksdb.aggregated-table-properties", "aggregated-table-properties"},
+            {"rocksdb.num-files-at-level0", "num-files-at-level0"},
+            //{"rocksdb.estimate-oldest-key-time", "estimate-oldest-key-time"},
+        };
+        for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
+            stringProperties["rocksdb.num-files-at-level" + std::to_string(i)] = "num_files_at_level" + std::to_string(i);
+            stringProperties["rocksdb.compression-ratio-at-level" + std::to_string(i)] = "compression-ratio-at-level" + std::to_string(i);
+            stringProperties["rocksdb.aggregated-table-properties-at-level" + std::to_string(i)] = "aggregated-table-properties-at-level" + std::to_string(i);
+        }
+
+        for (const auto& kv : stringProperties) {
+            string tmp;
+            bool ok = getBaseDB()->GetProperty(kv.first, &tmp);
+            if (!ok) {
+                LOG(WARNING) << "db:" << dbId()
+                    << " getProperity:" << kv.first << " failed";
+                continue;
+            }
+            w.Key(kv.second.c_str());
+            w.String(tmp);
         }
     }
     w.EndObject();
