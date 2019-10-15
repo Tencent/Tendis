@@ -147,6 +147,12 @@ class RocksKVCursor: public Cursor {
     std::unique_ptr<rocksdb::Iterator> _it;
 };
 
+typedef struct sstMetaData {
+    uint64_t size = 0;
+    uint64_t num_entries = 0; 
+    uint64_t num_deletions = 0;
+} sstMetaData;
+
 class RocksKVStore: public KVStore {
  public:
     enum class TxnMode {

@@ -38,6 +38,7 @@ class RecordKey;
 class RecordValue;
 enum class RecordType;
 
+#define ROCKSDB_NUM_LEVELS 7
 
 using PStore = std::shared_ptr<KVStore>;
 

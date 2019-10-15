@@ -1174,8 +1174,8 @@ class DebugCommand: public Command {
         if (sections.find("request") != sections.end()) {
             serverSections.insert("request");
         }
-        svr->appendJSONStat(writer, serverSections);
 
+        svr->appendJSONStat(writer, serverSections);
         if (sections.find("perf") != sections.end()) {
             writer.Key("perf_context");
             writer.StartObject();
@@ -1469,12 +1469,12 @@ private:
                 << "gcc_version:0.0.0\r\n"
 #endif
                 << "process_id:" << getpid() << "\r\n"
-                << "run_id:" << "TODO(takenliu)" << "\r\n"
+                //<< "run_id:" << "" << "\r\n" // TODO(takenliu)
                 << "tcp_port:" << server->getNetwork()->getPort() << "\r\n"
                 << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
                 << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n"
-                << "hz:" << "TODO(takenliu)" << "\r\n"
-                << "lru_clock:" << "TODO(takenliu)" << "\r\n"
+                //<< "hz:" << "" << "\r\n" // TODO(takenliu)
+                //<< "lru_clock:" << "" << "\r\n" // TODO(takenliu)
                 << "config_file:" << server->getParams()->getConfFile() << "\r\n";
             result << ss.str();
         }

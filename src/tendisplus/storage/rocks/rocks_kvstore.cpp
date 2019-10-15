@@ -27,7 +27,6 @@
 
 namespace tendisplus {
 
-#define ROCKSDB_NUM_LEVELS 7
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
         :Cursor(),
@@ -1919,6 +1918,37 @@ void RocksKVStore::appendJSONStat(
             w.Key(kv.second.c_str());
             w.String(tmp);
         }
+
+
+        sstMetaData level_summary[ROCKSDB_NUM_LEVELS];
+        std::vector<rocksdb::LiveFileMetaData> metadata;
+        getBaseDB()->GetLiveFilesMetaData(&metadata);
+        for (size_t i = 0; i < metadata.size(); ++i) {
+            int level = metadata[i].level;
+            sstMetaData& meta = level_summary[level];
+
+            meta.size += metadata[i].size;
+            meta.num_entries += metadata[i].num_entries;
+            meta.num_deletions += metadata[i].num_deletions;
+        }
+
+        w.Key("RocksDB Level stats");
+        w.StartObject();
+        for (size_t i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
+            w.Key("level_" + std::to_string(i));
+            w.StartObject();
+
+            w.Key("size");
+            w.Uint64(level_summary[i].size);
+            w.Key("num_entries");
+            w.Uint64(level_summary[i].num_entries);
+            w.Key("num_deletions");
+            w.Uint64(level_summary[i].num_deletions);
+
+            w.EndObject();
+        }
+        w.EndObject();
+
     }
     w.EndObject();
 }
