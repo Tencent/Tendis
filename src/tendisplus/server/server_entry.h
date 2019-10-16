@@ -32,6 +32,11 @@ class Catalog;
 class ReplManager;
 class IndexManager;
 
+#define TENDISPLUS_VERSION "4.0.10-Tendisx-v0.0.1"
+#define REDIS_GIT_SHA1 "00000000"
+#define REDIS_GIT_DIRTY "0"
+#define REDIS_BUILD_ID "TENCENT64site-1562728800"
+
 class ServerEntry;
 std::shared_ptr<ServerEntry> getGlobalServer();
 
@@ -48,6 +53,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         _scheduleNum.fetch_add(1, std::memory_order_relaxed);
         int32_t index = _scheduleNum.load(std::memory_order_relaxed) % _executorList.size();
         _executorList[index]->schedule(std::forward<fn>(task));
+    }
+    const std::shared_ptr<ServerParams>& getParams(){
+        return _cfg;
     }
     bool addSession(std::shared_ptr<Session> sess);
 
@@ -96,7 +104,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     const std::vector<PStore>& getStores() const { return _kvstores; }
 
     void toggleFtmc(bool enable);
-    void appendJSONStat(rapidjson::Writer<rapidjson::StringBuffer>&,
+    void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&,
                         const std::set<std::string>& sections) const;
     void logGeneral(Session *sess);
     void handleShutdownCmd();
@@ -181,6 +189,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::map<std::string, uint64_t> _cfrmVersion;
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;
+    std::shared_ptr<ServerParams> _cfg;
 };
 }  // namespace tendisplus
 

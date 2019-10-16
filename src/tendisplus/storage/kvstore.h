@@ -13,6 +13,7 @@
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
+#include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
@@ -37,6 +38,7 @@ class RecordKey;
 class RecordValue;
 enum class RecordType;
 
+#define ROCKSDB_NUM_LEVELS 7
 
 using PStore = std::shared_ptr<KVStore>;
 
@@ -294,7 +296,7 @@ class KVStore {
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(
-        rapidjson::Writer<rapidjson::StringBuffer>&) const = 0;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const = 0;
 
     uint64_t getBinlogTime();
     void setBinlogTime(uint64_t timestamp);

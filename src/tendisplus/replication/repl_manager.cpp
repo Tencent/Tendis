@@ -690,7 +690,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
 }
 
 void ReplManager::appendJSONStat(
-        rapidjson::Writer<rapidjson::StringBuffer>& w) const {
+        rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     std::lock_guard<std::mutex> lk(_mutex);
     INVARIANT(_pushStatus.size() == _svr->getKVStoreCount());
     INVARIANT(_syncStatus.size() == _svr->getKVStoreCount());

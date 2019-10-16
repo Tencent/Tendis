@@ -14,10 +14,12 @@
 #include <set>
 #include <list>
 #include <map>
+#include <sys/resource.h>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
+#include "rocksdb/perf_context.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
@@ -1095,8 +1097,9 @@ class DebugCommand: public Command {
             sections.insert("network");
             sections.insert("request");
             sections.insert("req_pool");
+            sections.insert("perf");
         } else {
-            for (size_t i = 2; i < args.size(); ++i) {
+            for (size_t i = 1; i < args.size(); ++i) {
                 sections.insert(args[i]);
             }
         }
@@ -1171,7 +1174,29 @@ class DebugCommand: public Command {
         if (sections.find("request") != sections.end()) {
             serverSections.insert("request");
         }
+
         svr->appendJSONStat(writer, serverSections);
+        if (sections.find("perf") != sections.end()) {
+            writer.Key("perf_context");
+            writer.StartObject();
+
+            rocksdb::PerfContext* perf_context = rocksdb::get_perf_context();
+            string allKeyValue = perf_context->ToString();
+            auto v = stringSplit(allKeyValue, ",");
+            for (auto one : v) {
+                auto key_value = stringSplit(one, "=");
+                if (key_value.size() != 2) {
+                    continue;
+                }
+                sdstrim(key_value[0], " ");
+                sdstrim(key_value[1], " ");
+                writer.Key(key_value[0]);
+                writer.Uint64(std::stoul(key_value[1]));
+            }
+
+            writer.EndObject();
+        }
+
         writer.EndObject();
         return Command::fmtBulk(std::string(sb.GetString()));
     }
@@ -1395,12 +1420,29 @@ class InfoCommand: public Command {
             section = sess->getArgs()[1];
         }
         section = toLower(section);
-        auto server = sess->getServerEntry();
-        uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
 
         bool allsections = (section == "all");
         bool defsections = (section == "default");
+
+        infoServer(allsections, defsections, section, sess, result);
+        infoClients(allsections, defsections, section, sess, result);
+        infoMemory(allsections, defsections, section, sess, result);
+        infoPersistence(allsections, defsections, section, sess, result);
+        infoStats(allsections, defsections, section, sess, result);
+        infoReplication(allsections, defsections, section, sess, result);
+        infoCPU(allsections, defsections, section, sess, result);
+        infoCommandStats(allsections, defsections, section, sess, result);
+        infoKeyspace(allsections, defsections, section, sess, result);
+
+        return  Command::fmtBulk(result.str());
+    }
+
+private:
+    void infoServer(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "server") {
+            auto server = sess->getServerEntry();
+            uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
+
             std::stringstream ss;
             static int call_uname = 1;
 #ifndef _WIN32
@@ -1411,7 +1453,11 @@ class InfoCommand: public Command {
             }
 #endif
             ss << "# Server\r\n"
-                << "redis_version:4.0.10-Tendisx-v0.0.1\r\n"
+                << "redis_version:" << TENDISPLUS_VERSION << "\r\n"
+                << "redis_git_sha1:" << REDIS_GIT_SHA1 << "\r\n"
+                << "redis_git_dirty:" << REDIS_GIT_DIRTY << "\r\n"
+                << "redis_build_id:" << REDIS_BUILD_ID << "\r\n"
+                << "redis_mode:" << "standalone" << "\r\n"
 #ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"        // NOLINT
 #endif
@@ -1423,18 +1469,109 @@ class InfoCommand: public Command {
                 << "gcc_version:0.0.0\r\n"
 #endif
                 << "process_id:" << getpid() << "\r\n"
+                //<< "run_id:" << "" << "\r\n" // TODO(takenliu)
+                << "tcp_port:" << server->getNetwork()->getPort() << "\r\n"
                 << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
-                << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n";
+                << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n"
+                //<< "hz:" << "" << "\r\n" // TODO(takenliu)
+                //<< "lru_clock:" << "" << "\r\n" // TODO(takenliu)
+                << "config_file:" << server->getParams()->getConfFile() << "\r\n";
             result << ss.str();
         }
+
+    }
+
+    void infoClients(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "clients") {
+            auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Clients\r\n"
                 << "connected_clients:"
-                << server->getAllSessions().size() << "\r\n";
+                << server->getSessionCount() << "\r\n";
             result << ss.str();
         }
-        return  Command::fmtBulk(result.str());
+    }
+
+    void infoMemory(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "memory") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Memory\r\n";
+            result << ss.str();
+        }
+
+    }
+
+    void infoPersistence(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "persistence") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Persistence\r\n";
+            result << ss.str();
+        }
+
+    }
+
+    void infoStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "stats") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Stats\r\n";
+            result << ss.str();
+        }
+
+    }
+
+    void infoReplication(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "replication") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Replication\r\n";
+            result << ss.str();
+        }
+
+    }
+
+    void infoCPU(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "cpu") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+
+            struct rusage self_ru, c_ru;
+            getrusage(RUSAGE_SELF, &self_ru);
+            getrusage(RUSAGE_CHILDREN, &c_ru);
+
+            ss << std::fixed << std::setprecision(2);
+            ss << "# CPU\r\n"
+               << "used_cpu_sys:"
+               << self_ru.ru_stime.tv_sec+(float)self_ru.ru_stime.tv_usec/1000000 << "\r\n"
+               << "used_cpu_user:"
+               << self_ru.ru_utime.tv_sec+(float)self_ru.ru_utime.tv_usec/1000000 << "\r\n"
+               << "used_cpu_sys_children:"
+               << c_ru.ru_stime.tv_sec+(float)c_ru.ru_stime.tv_usec/1000000 << "\r\n"
+               << "used_cpu_user_children:"
+               << c_ru.ru_utime.tv_sec+(float)c_ru.ru_utime.tv_usec/1000000 << "\r\n";
+            result << ss.str();
+        }
+    }
+
+    void infoCommandStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || section == "commandstats") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# CommandStats\r\n";
+            result << ss.str();
+        }
+    }
+
+    void infoKeyspace(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "keyspace") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Keyspace\r\n";
+            result << ss.str();
+        }
+
     }
 } infoCmd;
 

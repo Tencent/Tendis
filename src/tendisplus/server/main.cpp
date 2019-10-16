@@ -9,7 +9,6 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
-#include "tendisplus/utils/log.h"
 #include "glog/logging.h"
 
 namespace tendisplus {

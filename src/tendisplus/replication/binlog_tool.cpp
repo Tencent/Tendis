@@ -66,7 +66,8 @@ class BinlogScanner{
                 << " binlogid:" << logkey.value().getBinlogId()
                 << " txnid:" << logValue.value().getTxnId()
                 << " chunkid:" << logValue.value().getChunkId()
-                << " ts:" << logValue.value().getTimestamp() << endl;
+                << " ts:" << logValue.value().getTimestamp()
+                << " cmdstr:" << logValue.value().getCmd() << endl;
             Expected<std::vector<ReplLogValueEntryV2>> logList =
                 logValue.value().getLogList();
             if (!logList.ok()) {

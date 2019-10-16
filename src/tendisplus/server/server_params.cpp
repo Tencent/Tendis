@@ -157,6 +157,7 @@ Status ServerParams::parseFile(const std::string& filename) {
         LOG(ERROR) << "invalid " << tokens[0] << " config: " << ex.what() << " line:" << line;
         return {ErrorCodes::ERR_PARSEOPT, ""};
     }
+    confFile = filename;
     return {ErrorCodes::ERR_OK, ""};
 }
 

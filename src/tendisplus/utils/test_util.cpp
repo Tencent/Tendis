@@ -16,7 +16,6 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/string.h"
-#include "tendisplus/utils/log.h"
 
 namespace tendisplus {
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
