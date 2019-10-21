@@ -54,7 +54,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         int32_t index = _scheduleNum.load(std::memory_order_relaxed) % _executorList.size();
         _executorList[index]->schedule(std::forward<fn>(task));
     }
-    const std::shared_ptr<ServerParams>& getParams(){
+    std::shared_ptr<ServerParams>& getParams(){
         return _cfg;
     }
     bool addSession(std::shared_ptr<Session> sess);
@@ -94,8 +94,12 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     mgl::MGLockMgr* getMGLockMgr();
     IndexManager* getIndexMgr();
 
-    const std::shared_ptr<std::string> requirepass() const;
-    const std::shared_ptr<std::string> masterauth() const;
+    // TODO(takenliu) : args exist at two places, has better way?
+    std::string requirepass() const;
+    std::string masterauth() const;
+    void setRequirepass(const std::string& v);
+    void setMasterauth(const std::string& v);
+
     bool versionIncrease() const;
     bool checkKeyTypeForSet() const { return _checkKeyTypeForSet; }
     uint32_t protoMaxBulkLen() const { return _protoMaxBulkLen; }
@@ -171,14 +175,13 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     // NOTE(deyukong):
     // return string's reference have race conditions if changed during
     // runtime. return by value is quite costive.
-    std::shared_ptr<std::string> _requirepass;
-    std::shared_ptr<std::string> _masterauth;
+    std::string _requirepass;
+    std::string _masterauth;
     bool _versionIncrease;
     bool _generalLog;
     bool _checkKeyTypeForSet;
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
-    uint32_t _maxClients;
     std::ofstream _slowLog;
     uint64_t _slowlogLogSlowerThan;
     uint32_t _slowlogFlushInterval;

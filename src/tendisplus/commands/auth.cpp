@@ -90,13 +90,13 @@ class AuthCommand: public Command {
             return params.status();
         }
 
-        std::shared_ptr<std::string> requirePass =
+        std::string requirePass =
                 sess->getServerEntry()->requirepass();
-        if (*requirePass == "") {
+        if (requirePass == "") {
             return {ErrorCodes::ERR_AUTH,
                 "Client sent AUTH, but no password is set"};
         }
-        if (*requirePass != params.value()) {
+        if (requirePass != params.value()) {
             return {ErrorCodes::ERR_AUTH, "invalid password"};
         }
 

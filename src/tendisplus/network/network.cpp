@@ -573,7 +573,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     }
 
     if (_first && getServerEntry().get()) {
-        uint32_t maxClients = getServerEntry()->getMaxCli();
+        uint32_t maxClients = getServerEntry()->getParams()->maxClients;
         if (getServerEntry()->getSessionCount() > maxClients) {
             LOG(WARNING) << "-ERR max number of clients reached, clients: " << maxClients;
             setRspAndClose("-ERR max number of clients reached\r\n");

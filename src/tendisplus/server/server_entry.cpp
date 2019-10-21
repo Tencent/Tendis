@@ -34,14 +34,13 @@ ServerEntry::ServerEntry()
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _reqMatrix(std::make_shared<RequestMatrix>()),
          _ftmcThd(nullptr),
-         _requirepass(nullptr),
-         _masterauth(nullptr),
+         _requirepass(""),
+         _masterauth(""),
          _versionIncrease(true),
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
-         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
          _slowlogId(0),
          _scheduleNum(0),
          _cfg(nullptr) {
@@ -49,14 +48,13 @@ ServerEntry::ServerEntry()
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     : ServerEntry() {
-    _requirepass = std::make_shared<std::string>(cfg->requirepass);
-    _masterauth = std::make_shared<std::string>(cfg->masterauth);
+    _requirepass = cfg->requirepass;
+    _masterauth = cfg->masterauth;
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
-    _maxClients = cfg->maxClients;
     _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
     _slowlogFlushInterval = cfg->slowlogFlushInterval;
     _cfg = cfg;
@@ -308,12 +306,24 @@ IndexManager* ServerEntry::getIndexMgr() {
     return _indexMgr.get();
 }
 
-const std::shared_ptr<std::string> ServerEntry::requirepass() const {
+std::string ServerEntry::requirepass() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
 }
 
-const std::shared_ptr<std::string> ServerEntry::masterauth() const {
+void ServerEntry::setRequirepass(const string& v) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _requirepass = v;
+}
+
+std::string ServerEntry::masterauth() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _masterauth;
+}
+
+void ServerEntry::setMasterauth(const string& v) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _masterauth = v;
 }
 
 bool ServerEntry::versionIncrease() const {
@@ -781,14 +791,6 @@ Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t 
     }
 
     return {ErrorCodes::ERR_OK, ""};
-}
-
-void ServerEntry::setMaxCli(uint32_t max) {
-    _maxClients = max;
-}
-
-uint32_t ServerEntry::getMaxCli() {
-    return _maxClients;
 }
 
 Status ServerEntry::initSlowlog(std::string logPath) {

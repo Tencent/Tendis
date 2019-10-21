@@ -628,6 +628,14 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(Command::fmtLongLong(i), expect.value());
+
+    sess.setArgs({ "config", "set", "masterauth", "testauth"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    sess.setArgs({ "config", "get", "masterauth"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(":testauth\r\n", expect.value());
 }
 
 void testSlowLog(std::shared_ptr<ServerEntry> svr) {
