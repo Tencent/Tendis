@@ -1064,6 +1064,32 @@ class BinlogFlushCommand: public Command {
     }
 } binlogFlushCommand;
 
+class DebugCommand: public Command {
+ public:
+    DebugCommand()
+        :Command("debug", "a") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtBulk("");
+    }
+} debugCommand;
+
 class StatCommand: public Command {
  public:
     StatCommand()
@@ -1704,6 +1730,8 @@ class ConfigCommand : public Command {
                 sess->getServerEntry()->setRequirepass(args[3]);
             } else if (configName == "masterauth") {
                 sess->getServerEntry()->setMasterauth(args[3]);
+            } else if (configName == "appendonly") {
+                // NOTE(takenliu): donothing, for tests/*.tcl
             } else {
                 string errinfo;
                 bool force = false;

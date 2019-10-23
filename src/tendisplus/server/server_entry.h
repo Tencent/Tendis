@@ -120,8 +120,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void AddMonitor(Session* sess);
     void setMaxCli(uint32_t max);
     uint32_t getMaxCli();
-    void setSlowlogLogSlowerThan(uint64_t time);
-    uint64_t getSlowlogLogSlowerThan();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     inline uint64_t confirmTs(const std::string& name) const {
@@ -183,8 +181,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::ofstream _slowLog;
-    uint64_t _slowlogLogSlowerThan;
-    uint32_t _slowlogFlushInterval;
     std::atomic<uint64_t> _slowlogId;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
     mutable std::shared_timed_mutex _rwlock;

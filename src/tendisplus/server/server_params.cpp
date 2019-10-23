@@ -47,8 +47,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("dir", dbPath);
     REGISTER_VARS_DIFF_NAME("dumpdir", dumpPath);
     REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
-    REGISTER_VARS_ALLOW_DYNAMIC_SET(requirepass);
-    REGISTER_VARS_ALLOW_DYNAMIC_SET(masterauth);
+    REGISTER_VARS(requirepass);
+    REGISTER_VARS(masterauth);
     REGISTER_VARS(pidFile);
     REGISTER_VARS_DIFF_NAME("version-increase", versionIncrease);
     REGISTER_VARS(generalLog);
@@ -70,14 +70,14 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
     REGISTER_VARS(noexpire);
-    REGISTER_VARS(maxBinlogKeepNum);
-    REGISTER_VARS(minBinlogKeepSec);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(maxBinlogKeepNum);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
 
     REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
     REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);
     REGISTER_VARS_FULL("slowlog-log-slower-than", slowlogLogSlowerThan, NULL, true);
     //REGISTER_VARS(slowlogMaxLen);
-    REGISTER_VARS_DIFF_NAME("slowlog-flush-interval", slowlogFlushInterval);
+    REGISTER_VARS_FULL("slowlog-flush-interval", slowlogFlushInterval, NULL, true);
     REGISTER_VARS(netIoThreadNum);
     REGISTER_VARS(executorThreadNum);
 
@@ -89,8 +89,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS(fullPushThreadnum);
     REGISTER_VARS(fullReceiveThreadnum);
     REGISTER_VARS(logRecycleThreadnum);
-    REGISTER_VARS(truncateBinlogIntervalMs);
-    REGISTER_VARS(truncateBinlogNum);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogIntervalMs);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
     REGISTER_VARS(binlogHeartbeatSecs);
@@ -181,6 +181,9 @@ bool ServerParams::setVar(string name, string value, string* errinfo, bool force
         if (errinfo != NULL)
             *errinfo = "not found arg:" + name;
         return false;
+    }
+    if (!force) {
+        LOG(INFO) << "ServerParams setVar dynamic," << name << " : " << value;
     }
     return iter->second->setVar(value, errinfo, force);
 }

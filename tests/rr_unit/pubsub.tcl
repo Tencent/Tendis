@@ -376,7 +376,7 @@ start_server {tags {"pubsub"}} {
         # r set foo bar
         # set zset-load-startup-threshhold to a small value to make sure
         # zset resides in memory
-        r config set zset-load-startup-threshhold 1
+        #r config set zset-load-startup-threshhold 1
         r zadd foo 1 bar
         r zadd foo 1 coo
         r config set maxmemory 1

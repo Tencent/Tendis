@@ -840,14 +840,14 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
     uint64_t keepBinlog = 1;
+    cfg->maxBinlogKeepNum = keepBinlog;
     auto kvstore = std::make_unique<RocksKVStore>(
         "0",
         cfg,
         blockCache,
         true,
         KVStore::StoreMode::READ_WRITE,
-        RocksKVStore::TxnMode::TXN_PES,
-        keepBinlog /* max keep logs */);
+        RocksKVStore::TxnMode::TXN_PES);
 
     LocalSessionGuard sg(nullptr);
     uint64_t firstBinlog = 1;

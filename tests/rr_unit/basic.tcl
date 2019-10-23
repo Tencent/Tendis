@@ -48,7 +48,7 @@ start_server {tags {"basic"}} {
     } {foo_a foo_b foo_c key_x key_y key_z}
 
     test {DBSIZE} {
-        r config set zset-load-startup-threshhold 0
+        #r config set zset-load-startup-threshhold 0
         r debug reload
         r dbsize
     } {6}

@@ -92,6 +92,7 @@ TEST(ServerParams, Include) {
     EXPECT_EQ(cfg->logLevel, "debug");
     EXPECT_EQ(cfg->logDir, "./");
     EXPECT_EQ(cfg->chunkSize, 200);
+    EXPECT_EQ(cfg->getConfFile(), "gtest_serverparams_include1.cfg");
 }
 
 TEST(ServerParams, IncludeRecycle) {
@@ -133,8 +134,8 @@ TEST(ServerParams, DynamicSet) {
     EXPECT_EQ(cfg->setVar("port", "8904", &errinfo, false), false);
     EXPECT_EQ(cfg->port, 8903);
     EXPECT_EQ(errinfo, "not allow dynamic set");
-    EXPECT_EQ(cfg->setVar("masterauth", "pw", NULL, false), true);
-    EXPECT_EQ(cfg->masterauth, "pw");
+    EXPECT_EQ(cfg->setVar("maxBinlogKeepNum", "100", NULL, false), true);
+    EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
 }
 
 TEST(ServerParams, DefaultValue) {
