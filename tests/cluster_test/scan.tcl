@@ -1,4 +1,5 @@
 start_server {tags {"scan"}} {
+  if 0 {
     test "SCAN basic" {
         r flushdb
         r debug populate 1000
@@ -16,7 +17,8 @@ start_server {tags {"scan"}} {
         set keys [lsort -unique $keys]
         assert_equal 1000 [llength $keys]
     }
-
+  }
+  if 0 {
     test "SCAN COUNT" {
         r flushdb
         r debug populate 1000
@@ -34,7 +36,9 @@ start_server {tags {"scan"}} {
         set keys [lsort -unique $keys]
         assert_equal 1000 [llength $keys]
     }
+  }
 
+  if 0 {
     test "SCAN MATCH" {
         r flushdb
         r debug populate 1000
@@ -52,7 +56,9 @@ start_server {tags {"scan"}} {
         set keys [lsort -unique $keys]
         assert_equal 100 [llength $keys]
     }
+  }
 
+  if 0 {
     foreach enc {intset hashtable} {
         test "SSCAN with encoding $enc" {
             # Create the Set
@@ -86,7 +92,9 @@ start_server {tags {"scan"}} {
             assert_equal 100 [llength $keys]
         }
     }
+  }
 
+  if 0 {
     foreach enc {ziplist hashtable} {
         test "HSCAN with encoding $enc" {
             # Create the Hash
@@ -126,7 +134,9 @@ start_server {tags {"scan"}} {
             assert_equal $count [llength $keys2]
         }
     }
+  }
 
+  if 0 {
     foreach enc {ziplist skiplist} {
         test "ZSCAN with encoding $enc" {
             # Create the Sorted Set
@@ -166,7 +176,9 @@ start_server {tags {"scan"}} {
             assert_equal $count [llength $keys2]
         }
     }
+  }
 
+  if 0 {
     test "SCAN guarantees check under write load" {
         r flushdb
         r debug populate 100
@@ -195,6 +207,7 @@ start_server {tags {"scan"}} {
         set keys2 [lsort -unique $keys2]
         assert_equal 100 [llength $keys2]
     }
+  }
 
     test "SSCAN with integer encoded object (issue #1345)" {
         set objects {1 a}
