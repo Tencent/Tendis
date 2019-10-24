@@ -48,16 +48,94 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(cfg->setVar("logLevel", "nothavelevel", NULL), false);
     EXPECT_EQ(cfg->logLevel, "warning");
 
+    EXPECT_EQ(cfg->setVar("logDir", "\"./\"", NULL), true);
+    EXPECT_EQ(cfg->logDir, "./");
+    EXPECT_EQ(cfg->setVar("logDir", "\"./", NULL), true);
+    EXPECT_EQ(cfg->logDir, "\"./");
+
     EXPECT_EQ(cfg->setVar("kvStoreCount", "12abc", NULL), true);
     EXPECT_EQ(cfg->kvStoreCount, 12);
     EXPECT_EQ(cfg->setVar("kvStoreCount", "aa12abc", NULL), false);
 
     float testFloat;
-    FloatVar testFloatVar("testFloatVar", &testFloat, NULL);
-    EXPECT_EQ(testFloatVar.set("1.5"), true);
+    FloatVar testFloatVar("testFloatVar", &testFloat, NULL, true);
+    EXPECT_EQ(testFloatVar.setVar("1.5"), true);
     EXPECT_EQ(testFloat, 1.5);
-    EXPECT_EQ(testFloatVar.set("abc2.5abc"), false);
+    EXPECT_EQ(testFloatVar.setVar("abc2.5abc"), false);
     EXPECT_EQ(testFloat, 1.5);
+}
+
+TEST(ServerParams, Include) {
+    std::ofstream myfile;
+
+    myfile.open("gtest_serverparams_include1.cfg");
+    myfile << "bind 127.0.0.1\n";
+    myfile << "port 8903\n";
+    myfile << "include gtest_serverparams_include2.cfg\n";
+    myfile << "loglevel debug\n";
+    myfile << "logdir ./\n";
+    myfile.close();
+
+    myfile.open("gtest_serverparams_include2.cfg");
+    myfile << "chunkSize 200\n";
+    myfile.close();
+
+    const auto guard = MakeGuard([] {
+        remove("gtest_serverparams_include1.cfg");
+        remove("gtest_serverparams_include2.cfg");
+    });
+    auto cfg = std::make_unique<ServerParams>();
+    auto s = cfg->parseFile("gtest_serverparams_include1.cfg");
+    EXPECT_EQ(s.ok(), true) << s.toString();
+    EXPECT_EQ(cfg->bindIp, "127.0.0.1");
+    EXPECT_EQ(cfg->port, 8903);
+    EXPECT_EQ(cfg->logLevel, "debug");
+    EXPECT_EQ(cfg->logDir, "./");
+    EXPECT_EQ(cfg->chunkSize, 200);
+    EXPECT_EQ(cfg->getConfFile(), "gtest_serverparams_include1.cfg");
+}
+
+TEST(ServerParams, IncludeRecycle) {
+    std::ofstream myfile;
+
+    myfile.open("gtest_serverparams_includerecycle1.cfg");
+    myfile << "include gtest_serverparams_includerecycle2.cfg\n";
+    myfile.close();
+
+    myfile.open("gtest_serverparams_includerecycle2.cfg");
+    myfile << "include gtest_serverparams_includerecycle1.cfg\n";
+    myfile.close();
+
+    const auto guard = MakeGuard([] {
+        remove("gtest_serverparams_includerecycle1.cfg");
+        remove("gtest_serverparams_includerecycle2.cfg");
+    });
+    auto cfg = std::make_unique<ServerParams>();
+    auto s = cfg->parseFile("gtest_serverparams_includerecycle1.cfg");
+    EXPECT_EQ(s.ok(), false ) << s.toString();
+    EXPECT_EQ(s.toString(), "-ERR include has recycle!\r\n");
+}
+
+TEST(ServerParams, DynamicSet) {
+    std::ofstream myfile;
+    myfile.open("gtest_serverparams_dynamicset.cfg");
+    myfile << "port 8903\n";
+    myfile << "masterauth testpw\n";
+    myfile.close();
+
+    const auto guard = MakeGuard([] {
+        remove("gtest_serverparams_dynamicset.cfg");
+    });
+    auto cfg = std::make_unique<ServerParams>();
+    auto s = cfg->parseFile("gtest_serverparams_dynamicset.cfg");
+    EXPECT_EQ(s.ok(), true) << s.toString();
+
+    string errinfo;
+    EXPECT_EQ(cfg->setVar("port", "8904", &errinfo, false), false);
+    EXPECT_EQ(cfg->port, 8903);
+    EXPECT_EQ(errinfo, "not allow dynamic set");
+    EXPECT_EQ(cfg->setVar("maxBinlogKeepNum", "100", NULL, false), true);
+    EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
 }
 
 TEST(ServerParams, DefaultValue) {

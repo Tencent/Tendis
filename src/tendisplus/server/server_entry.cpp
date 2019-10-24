@@ -34,14 +34,13 @@ ServerEntry::ServerEntry()
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _reqMatrix(std::make_shared<RequestMatrix>()),
          _ftmcThd(nullptr),
-         _requirepass(nullptr),
-         _masterauth(nullptr),
+         _requirepass(""),
+         _masterauth(""),
          _versionIncrease(true),
          _generalLog(false),
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
-         _maxClients(CONFIG_DEFAULT_MAX_CLIENTS),
          _slowlogId(0),
          _scheduleNum(0),
          _cfg(nullptr) {
@@ -49,16 +48,13 @@ ServerEntry::ServerEntry()
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     : ServerEntry() {
-    _requirepass = std::make_shared<std::string>(cfg->requirepass);
-    _masterauth = std::make_shared<std::string>(cfg->masterauth);
+    _requirepass = cfg->requirepass;
+    _masterauth = cfg->masterauth;
     _versionIncrease = cfg->versionIncrease;
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
-    _maxClients = cfg->maxClients;
-    _slowlogLogSlowerThan = cfg->slowlogLogSlowerThan;
-    _slowlogFlushInterval = cfg->slowlogFlushInterval;
     _cfg = cfg;
 }
 
@@ -140,8 +136,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
             new RocksKVStore(CATALOG_NAME, cfg, nullptr, false,
-                KVStore::StoreMode::READ_WRITE, RocksKVStore::TxnMode::TXN_PES,
-                cfg->maxBinlogKeepNum))),
+                KVStore::StoreMode::READ_WRITE, RocksKVStore::TxnMode::TXN_PES))),
           kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
@@ -173,7 +168,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode,
-                RocksKVStore::TxnMode::TXN_PES, cfg->maxBinlogKeepNum)));
+                RocksKVStore::TxnMode::TXN_PES)));
     }
 
     /*auto vm = _catalog-> getVersionMeta();
@@ -308,12 +303,24 @@ IndexManager* ServerEntry::getIndexMgr() {
     return _indexMgr.get();
 }
 
-const std::shared_ptr<std::string> ServerEntry::requirepass() const {
+std::string ServerEntry::requirepass() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _requirepass;
 }
 
-const std::shared_ptr<std::string> ServerEntry::masterauth() const {
+void ServerEntry::setRequirepass(const string& v) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _requirepass = v;
+}
+
+std::string ServerEntry::masterauth() const {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _masterauth;
+}
+
+void ServerEntry::setMasterauth(const string& v) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _masterauth = v;
 }
 
 bool ServerEntry::versionIncrease() const {
@@ -783,14 +790,6 @@ Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t 
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void ServerEntry::setMaxCli(uint32_t max) {
-    _maxClients = max;
-}
-
-uint32_t ServerEntry::getMaxCli() {
-    return _maxClients;
-}
-
 Status ServerEntry::initSlowlog(std::string logPath) {
     _slowLog.open(logPath, std::ofstream::app);
     if (!_slowLog.is_open()) {
@@ -802,17 +801,9 @@ Status ServerEntry::initSlowlog(std::string logPath) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void ServerEntry::setSlowlogLogSlowerThan(uint64_t time) {
-    _slowlogLogSlowerThan = time;
-}
-
-uint64_t ServerEntry::getSlowlogLogSlowerThan() {
-    return _slowlogLogSlowerThan;
-}
-    
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
             const std::vector<std::string>& args) {
-    if(duration > _slowlogLogSlowerThan) {
+    if(duration > _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
         _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
         _slowLog << "#Time: " << time << "\n";
@@ -822,7 +813,7 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
         }
         _slowLog << "\n";
         _slowLog << "#argc: " << args.size() << "\n\n";
-        if ((_slowlogId.load(std::memory_order_relaxed)%_slowlogFlushInterval) == 0) {
+        if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {
             _slowLog.flush();
         }
         

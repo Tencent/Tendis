@@ -832,8 +832,9 @@ Expected<std::pair<uint64_t, std::list<ReplLog>>>
 RocksKVStore::getTruncateLog(uint64_t start, uint64_t end,
                              Transaction *txn) {
     // NOTE(deyukong): precheck non-io operations to reduce io
+    uint64_t maxKeepLogs = std::max((uint64_t)1, _cfg->maxBinlogKeepNum);
     uint64_t gap = getHighestBinlogId() - start;
-    if (gap < _maxKeepLogs) {
+    if (gap < maxKeepLogs) {
         return std::pair<uint64_t, std::list<ReplLog>>(start, {});
     }
 
@@ -858,7 +859,7 @@ RocksKVStore::getTruncateLog(uint64_t start, uint64_t end,
     start = explog.value().getReplLogKey().getTxnId();
 
     // TODO(deyukong): put 10000 into configuration.
-    uint64_t cnt = std::min((uint64_t)10000, gap - _maxKeepLogs);
+    uint64_t cnt = std::min((uint64_t)10000, gap - maxKeepLogs);
     std::list<ReplLog> toDelete;
     toDelete.push_back(std::move(explog.value()));
     uint64_t nowTxnId = start;
@@ -1006,13 +1007,21 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
             return explog.status();
         }
         nextStart = explog.value().getBinlogId();
+
+        // NOTE(deyukong): currently, we cant get the exact log count by
+        // _highestVisible - startLogId, because "readonly" txns also
+        // occupy txnIds, and in each txnId, there are more sub operations.
+        // So, maxKeepLogs is not named precisely.
+        // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
+        uint64_t maxKeepLogs = std::max((uint32_t)1, _cfg->maxBinlogKeepNum);
         if (nextStart > end ||
             size >= max_cnt ||
-            getHighestBinlogId() - nextStart <= (_maxKeepLogs - 1)) {
+            getHighestBinlogId() - nextStart <= (maxKeepLogs - 1)) {
             break;
         }
         ts = explog.value().getTimestamp();
-        if (_minKeepLogMs != 0 && ts >= cur_ts - _minKeepLogMs) {
+        uint64_t minKeepLogMs = _cfg->minBinlogKeepSec * 1000;
+        if (minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
             break;
         }
 
@@ -1369,8 +1378,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
             std::shared_ptr<rocksdb::Cache> blockCache,
             bool enableRepllog,
             KVStore::StoreMode mode,
-            TxnMode txnMode,
-            uint64_t maxKeepLogs)
+            TxnMode txnMode)
         :KVStore(id, cfg->dbPath),
          _cfg(cfg),
          _isRunning(false),
@@ -1386,10 +1394,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
          _blockCache(blockCache),
          _nextTxnSeq(0),
          _highestVisible(Transaction::TXNID_UNINITED),
-         _logOb(nullptr),
-         // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
-         _maxKeepLogs(std::max((uint64_t)1, maxKeepLogs)),
-         _minKeepLogMs(cfg->minBinlogKeepSec * 1000) {
+         _logOb(nullptr)
+         {
     if (_cfg->noexpire) {
         _enableFilter = false;
     }

@@ -13,20 +13,21 @@
 namespace tendisplus {
 using namespace std;
 
-#define REGISTER_VARS_FULL(str, var, fun) \
+#define REGISTER_VARS_FULL(str, var, fun, allowDynamicSet) \
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
-        gMapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, fun))); \
+        _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, fun, allowDynamicSet))); \
     else if (typeid(var) == typeid(float)) \
-        gMapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, fun))); \
+        _mapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, fun, allowDynamicSet))); \
     else if (typeid(var) == typeid(string)) \
-        gMapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, fun))); \
+        _mapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, fun, allowDynamicSet))); \
     else if (typeid(var) == typeid(bool)) \
-        gMapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, fun))); \
+        _mapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, fun, allowDynamicSet))); \
     else assert(false); // NOTE(takenliu): if other type is needed, change here.
 
-#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL)
-#define REGISTER_VARS2(str, var) REGISTER_VARS_FULL(str, var, NULL)
+#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, false)
+#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, false)
+#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, true)
 
 bool logLevelParamCheck(string& v) {
     v = toLower(v);
@@ -37,24 +38,24 @@ bool logLevelParamCheck(string& v) {
 };
 
 ServerParams::ServerParams() {
-    REGISTER_VARS2("bind", bindIp);
+    REGISTER_VARS_DIFF_NAME("bind", bindIp);
     REGISTER_VARS(port);
-    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck);
+    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, false);
     REGISTER_VARS(logDir);
 
-    REGISTER_VARS2("storage", storageEngine);
-    REGISTER_VARS2("dir", dbPath);
-    REGISTER_VARS2("dumpdir", dumpPath);
-    REGISTER_VARS2("rocks.blockcachemb", rocksBlockcacheMB);
+    REGISTER_VARS_DIFF_NAME("storage", storageEngine);
+    REGISTER_VARS_DIFF_NAME("dir", dbPath);
+    REGISTER_VARS_DIFF_NAME("dumpdir", dumpPath);
+    REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
     REGISTER_VARS(requirepass);
     REGISTER_VARS(masterauth);
     REGISTER_VARS(pidFile);
-    REGISTER_VARS2("version-increase", versionIncrease);
+    REGISTER_VARS_DIFF_NAME("version-increase", versionIncrease);
     REGISTER_VARS(generalLog);
     // false: For command "set a b", it don't check the type of 
     // "a" and update it directly. It can make set() faster. 
     // Default false. Redis layer can guarantee that it's safe
-    REGISTER_VARS2("checkkeytypeforsetcmd", checkKeyTypeForSet);
+    REGISTER_VARS_DIFF_NAME("checkkeytypeforsetcmd", checkKeyTypeForSet);
 
     REGISTER_VARS(chunkSize);
     REGISTER_VARS(kvStoreCount);
@@ -65,18 +66,18 @@ ServerParams::ServerParams() {
     REGISTER_VARS(delJobCntIndexMgr);
     REGISTER_VARS(pauseTimeIndexMgr);
 
-    REGISTER_VARS2("proto-max-bulk-len", protoMaxBulkLen);
-    REGISTER_VARS2("databases", dbNum);
+    REGISTER_VARS_DIFF_NAME("proto-max-bulk-len", protoMaxBulkLen);
+    REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
     REGISTER_VARS(noexpire);
-    REGISTER_VARS(maxBinlogKeepNum);
-    REGISTER_VARS(minBinlogKeepSec);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(maxBinlogKeepNum);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
 
-    REGISTER_VARS(maxClients);
-    REGISTER_VARS2("slowlog", slowlogPath);
-    REGISTER_VARS2("slowlog-log-slower-than", slowlogLogSlowerThan);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
+    REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);
+    REGISTER_VARS_FULL("slowlog-log-slower-than", slowlogLogSlowerThan, NULL, true);
     //REGISTER_VARS(slowlogMaxLen);
-    REGISTER_VARS2("slowlog-flush-interval", slowlogFlushInterval);
+    REGISTER_VARS_FULL("slowlog-flush-interval", slowlogFlushInterval, NULL, true);
     REGISTER_VARS(netIoThreadNum);
     REGISTER_VARS(executorThreadNum);
 
@@ -88,8 +89,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS(fullPushThreadnum);
     REGISTER_VARS(fullReceiveThreadnum);
     REGISTER_VARS(logRecycleThreadnum);
-    REGISTER_VARS(truncateBinlogIntervalMs);
-    REGISTER_VARS(truncateBinlogNum);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogIntervalMs);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
     REGISTER_VARS(binlogHeartbeatSecs);
@@ -100,7 +101,7 @@ ServerParams::ServerParams() {
 };
 
 ServerParams::~ServerParams() {
-    for (auto iter : gMapServerParams) {
+    for (auto iter : _mapServerParams) {
         delete iter.second;
     }
 }
@@ -127,6 +128,7 @@ Status ServerParams::parseFile(const std::string& filename) {
         LOG(ERROR) << "open file:" << filename << " failed";
         return {ErrorCodes::ERR_PARSEOPT, ""};
     }
+    _setConfFile.insert(filename);
     std::vector<std::string> tokens;
     std::string line;
     try {
@@ -144,7 +146,19 @@ Status ServerParams::parseFile(const std::string& filename) {
             }
 
             if (tokens.size() == 2) {
-                if (!setVar(tokens[0], tokens[1], NULL)) {
+                if (toLower(tokens[0]) == "include") {
+                    if (_setConfFile.find(tokens[1]) != _setConfFile.end()) {
+                        LOG(ERROR) << "parseFile failed, include has recycle: " << tokens[1];
+                        return {ErrorCodes::ERR_PARSEOPT, "include has recycle!"};
+                    }
+                    LOG(INFO) << "parseFile include file: " << tokens[1];
+                    auto ret = parseFile(tokens[1]);
+                    if (!ret.ok()) {
+                        LOG(ERROR) << "parseFile include file failed: " << tokens[1];
+                        return ret;
+                    }
+                }
+                else if (!setVar(tokens[0], tokens[1], NULL)) {
                     LOG(ERROR) << "err arg:" << tokens[0] << " " << tokens[1];
                     // return {ErrorCodes::ERR_PARSEOPT, ""}; // TODO(takenliu): return error
                 }
@@ -157,24 +171,27 @@ Status ServerParams::parseFile(const std::string& filename) {
         LOG(ERROR) << "invalid " << tokens[0] << " config: " << ex.what() << " line:" << line;
         return {ErrorCodes::ERR_PARSEOPT, ""};
     }
-    confFile = filename;
+    _confFile = filename;
     return {ErrorCodes::ERR_OK, ""};
 }
 
-bool ServerParams::setVar(string name, string value, string* errinfo) {
-    auto iter = gMapServerParams.find(toLower(name));
-    if (iter == gMapServerParams.end()){
+bool ServerParams::setVar(string name, string value, string* errinfo, bool force) {
+    auto iter = _mapServerParams.find(toLower(name));
+    if (iter == _mapServerParams.end()){
         if (errinfo != NULL)
             *errinfo = "not found arg:" + name;
         return false;
     }
-    return iter->second->set(value);
+    if (!force) {
+        LOG(INFO) << "ServerParams setVar dynamic," << name << " : " << value;
+    }
+    return iter->second->setVar(value, errinfo, force);
 }
 
 
 bool ServerParams::registerOnupdate(string name, funptr ptr){
-    auto iter = gMapServerParams.find(toLower(name));
-    if (iter == gMapServerParams.end()){
+    auto iter = _mapServerParams.find(toLower(name));
+    if (iter == _mapServerParams.end()){
         return false;
     }
     iter->second->setUpdate(ptr);
@@ -183,11 +200,20 @@ bool ServerParams::registerOnupdate(string name, funptr ptr){
 
 string ServerParams::showAll() {
     string ret;
-    for (auto iter : gMapServerParams) {
-        ret += iter.second->show() + "\n";
+    for (auto iter : _mapServerParams) {
+        ret += "  " + iter.second->getName() + ":"+ iter.second->show() + "\n";
     }
     ret.resize(ret.size() - 1);
     return ret;
+}
+
+bool ServerParams::showVar(const string& key, string& info) {
+    auto iter = _mapServerParams.find(key);
+    if (iter == _mapServerParams.end()) {
+        return false;
+    }
+    info = iter->second->show();
+    return true;
 }
 }  // namespace tendisplus
 

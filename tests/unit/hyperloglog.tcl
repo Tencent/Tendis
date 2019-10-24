@@ -41,7 +41,7 @@ start_server {tags {"hll"}} {
 
     test {HyperLogLogs are promote from sparse to dense} {
         r del hll
-        r config set hll-sparse-max-bytes 3000
+        #r config set hll-sparse-max-bytes 3000
         set n 0
         while {$n < 100000} {
             set elements {}

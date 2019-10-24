@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <set>
 #include <assert.h>
 #include <stdlib.h>
 #include <atomic>
@@ -20,7 +21,7 @@ typedef bool (*checkfunptr) (string&);
 
 class BaseVar {
 public:
-    BaseVar(string s, void* v, checkfunptr ptr) {
+    BaseVar(string s, void* v, checkfunptr ptr, bool allowDS) {
         if (v == NULL) {
             assert(false);
             return;
@@ -28,14 +29,28 @@ public:
         name = s;
         value = v;
         checkFun = ptr;
+        allowDynamicSet = allowDS;
     };
     virtual ~BaseVar(){};
-    virtual bool set(string value) = 0;
+    bool setVar(string value, string* errinfo = NULL, bool force = true) {
+        if (!allowDynamicSet && !force) {
+            if (errinfo != NULL) {
+                *errinfo = "not allow dynamic set";
+            }
+            return false;
+        }
+        return set(value);
+    }
     virtual string show() = 0;
     void setUpdate(funptr f){
         Onupdate = f;
     }
+
+    string getName(){
+        return name;
+    }
 protected:
+    virtual bool set(string value) = 0;
     virtual bool check(string& value) {
         if (checkFun != NULL) {
             return checkFun(value);
@@ -47,12 +62,19 @@ protected:
     void* value = NULL;
     funptr Onupdate = NULL;
     checkfunptr checkFun = NULL;
+    bool allowDynamicSet = false;
 };
 
 class StringVar : public BaseVar {
 public:
-    StringVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
+    StringVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
+    virtual string show(){
+        return "\"" + *(string*)value + "\"";
+    };
+
+private:
     bool set(string v) {
+        preProcess(v);
         if(!check(v)) return false;
 
         *(string*)value = v;
@@ -60,15 +82,25 @@ public:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
-    virtual string show(){
-        return "  " + name + ": \"" + *(string*)value + "\"";
-    };
+    void preProcess(string& v) {
+        if (v.size()<2) {
+            return;
+        }
+        if (v[0] == '\"' && v[v.size()-1] == '\"') {
+            v = v.substr(1, v.size()-2);
+        }
+    }
 };
 
 // support:int, uint32_t
 class IntVar : public BaseVar {
 public:
-    IntVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
+    IntVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
+    virtual string show(){
+        return std::to_string(*(int*)value);
+    };
+
+private:
     bool set(string v) {
         if(!check(v)) return false;
 
@@ -83,14 +115,17 @@ public:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
-    virtual string show(){
-        return "  " + name + ": " + std::to_string(*(int*)value);
-    };
+
 };
 
 class FloatVar : public BaseVar {
 public:
-    FloatVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
+    FloatVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
+    virtual string show(){
+        return std::to_string(*(float*)value);
+    };
+
+private:
     bool set(string v) {
         if(!check(v)) return false;
         try {
@@ -102,14 +137,16 @@ public:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
-    virtual string show(){
-        return "  " + name + ": " + std::to_string(*(float*)value);
-    };
 };
 
 class BoolVar : public BaseVar {
 public:
-    BoolVar(string name, void* v, checkfunptr ptr) : BaseVar(name, v, ptr){};
+    BoolVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
+    virtual string show(){
+        return std::to_string(*(bool*)value);
+    };
+
+private:
     bool set(string v) {
         if(!check(v)) return false;
 
@@ -118,10 +155,7 @@ public:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
-    virtual string show(){
-        return "  " + name + ": " + std::to_string(*(bool*)value);
-    };
-private:
+
     bool isOptionOn(const std::string& s) {
         auto x = toLower(s);
         if (x == "on" || x == "1" || x == "true") {
@@ -139,16 +173,18 @@ public:
     Status parseFile(const std::string& filename);
     bool registerOnupdate(string name, funptr ptr);
     string showAll();
-    bool setVar(string name, string value, string* errinfo);
+    bool showVar(const string& key, string& info);
+    bool setVar(string name, string value, string* errinfo, bool force = true);
     uint32_t paramsNum() {
-        return gMapServerParams.size();
+        return _mapServerParams.size();
     }
     string getConfFile() {
-        return confFile;
+        return _confFile;
     }
 private:
-    map<string, BaseVar*> gMapServerParams;
-    std::string confFile = "";
+    map<string, BaseVar*> _mapServerParams;
+    std::string _confFile = "";
+    std::set<std::string> _setConfFile;
 
 public:
     std::string bindIp = "127.0.0.1";

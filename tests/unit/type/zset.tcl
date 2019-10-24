@@ -8,11 +8,11 @@ start_server {tags {"zset"}} {
 
     proc basics {encoding} {
         if {$encoding == "ziplist"} {
-            r config set zset-max-ziplist-entries 128
-            r config set zset-max-ziplist-value 64
+            #r config set zset-max-ziplist-entries 128
+            #r config set zset-max-ziplist-value 64
         } elseif {$encoding == "skiplist"} {
-            r config set zset-max-ziplist-entries 0
-            r config set zset-max-ziplist-value 0
+            #r config set zset-max-ziplist-entries 0
+            #r config set zset-max-ziplist-value 0
         } else {
             puts "Unknown sorted set encoding"
             exit
@@ -613,12 +613,12 @@ start_server {tags {"zset"}} {
     proc stressers {encoding} {
         if {$encoding == "ziplist"} {
             # Little extra to allow proper fuzzing in the sorting stresser
-            r config set zset-max-ziplist-entries 256
-            r config set zset-max-ziplist-value 64
+            #r config set zset-max-ziplist-entries 256
+            #r config set zset-max-ziplist-value 64
             set elements 128
         } elseif {$encoding == "skiplist"} {
-            r config set zset-max-ziplist-entries 0
-            r config set zset-max-ziplist-value 0
+            #r config set zset-max-ziplist-entries 0
+            #r config set zset-max-ziplist-value 0
             if {$::accurate} {set elements 1000} else {set elements 100}
         } else {
             puts "Unknown sorted set encoding"

@@ -1085,6 +1085,32 @@ class DebugCommand: public Command {
     int32_t keystep() const {
         return 0;
     }
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtBulk("");
+    }
+} debugCommand;
+
+class StatCommand: public Command {
+ public:
+    StatCommand()
+        :Command("stat", "a") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
 
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
@@ -1200,7 +1226,7 @@ class DebugCommand: public Command {
         writer.EndObject();
         return Command::fmtBulk(std::string(sb.GetString()));
     }
-} debugCommand;
+} statCommand;
 
 class ShutdownCommand: public Command {
  public:
@@ -1662,7 +1688,7 @@ class ConfigCommand : public Command {
     }
 
     ssize_t arity() const {
-        return -4;
+        return -3;
     }
 
     int32_t firstkey() const {
@@ -1700,27 +1726,34 @@ class ConfigCommand : public Command {
                 if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
                 }
-            } else if (configName == "maxclients") {
-                auto maxCli = ::tendisplus::stoll(args[3]);
-                if (!maxCli.ok()) {
-                    return{ ErrorCodes::ERR_PARSEOPT, "invalid max clients" };
+            } else if (configName == "requirepass") {
+                sess->getServerEntry()->setRequirepass(args[3]);
+            } else if (configName == "masterauth") {
+                sess->getServerEntry()->setMasterauth(args[3]);
+            } else if (configName == "appendonly") {
+                // NOTE(takenliu): donothing, for tests/*.tcl
+            } else {
+                string errinfo;
+                bool force = false;
+                if (!sess->getServerEntry()->getParams()->setVar(configName, args[3], &errinfo, force)) {
+                    return{ ErrorCodes::ERR_PARSEOPT, errinfo};
                 }
-                sess->getServerEntry()->setMaxCli(maxCli.value());
-            } else if (configName == "slowlog-log-slower-than") {
-                auto slower = ::tendisplus::stoll(args[3]);
-                if (!slower.ok()) {
-                    return{ ErrorCodes::ERR_PARSEOPT, "invalid slowlog-log-slower-than" };
-                }
-                sess->getServerEntry()->setSlowlogLogSlowerThan(slower.value());
             }
         } else if (operation == "get") {
-            if (configName == "maxclients") {
-                uint32_t maxCli = sess->getServerEntry()->getMaxCli();
-                return fmtLongLong(maxCli);
-            } else if (configName == "slowlog-log-slower-than") {
-                uint32_t slower = sess->getServerEntry()->getSlowlogLogSlowerThan();
-                return fmtLongLong(slower);
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
+            //return Command::fmtLongLong(10000);
+
+            string info;
+            if (configName == "requirepass") {
+                info = sess->getServerEntry()->requirepass();
+            } else if (configName == "masterauth") {
+                info = sess->getServerEntry()->masterauth();
+            } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
+                return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
+            }
+            return ":" + info + "\r\n";
         }
 
         return Command::fmtOK();

@@ -148,7 +148,7 @@ Expected<std::string> Command::precheck(Session *sess) {
     SessionCtx *pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
     bool authed = pCtx->authed();
-    if (!authed && *server->requirepass() != ""
+    if (!authed && server->requirepass() != ""
             && it->second->getName() != "auth") {
         return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
     }
