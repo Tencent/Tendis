@@ -135,6 +135,12 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status setTsVersion(const std::string& name, uint64_t ts, uint64_t version);
     void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, const std::vector<std::string>& args);
     Status initSlowlog(std::string logPath);
+    void resetSlowlogNum() {
+        _slowlogId = 0;
+    }
+    uint64_t getSlowlogNum() {
+        return _slowlogId.load(std::memory_order_relaxed);
+    }
 
  private:
     ServerEntry();

@@ -2486,4 +2486,44 @@ class execCommand: public Command {
     }
 } execCmd;
 
+class slowlogCommand: public Command {
+ public:
+    slowlogCommand()
+        :Command("slowlog", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        const auto server = sess->getServerEntry();
+        if (toLower(args[1]) == "len") {
+            std::stringstream ss;
+            uint64_t num = server->getSlowlogNum();
+            Command::fmtLongLong(ss, static_cast<uint64_t>(num));
+            return ss.str();
+        } else if (toLower(args[1]) == "reset") {
+            server->resetSlowlogNum();
+            return Command::fmtOK();
+        } else {
+            return { ErrorCodes::ERR_PARSEPKT, "unkown args" };
+        }
+    }
+} slowlogCmd;
+
 }  // namespace tendisplus
