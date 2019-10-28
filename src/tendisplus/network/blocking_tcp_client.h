@@ -34,6 +34,17 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
         }
     }
 
+    uint16_t getRemotePort() const {
+        try {
+            if (_socket.is_open()) {
+                return _socket.remote_endpoint().port();
+            }
+            return 0;
+        } catch (const std::exception& e) {
+            return 0;
+        }
+    }
+
     std::string getLocalRepr() const {
         if (_socket.is_open()) {
             return _socket.local_endpoint().address().to_string();

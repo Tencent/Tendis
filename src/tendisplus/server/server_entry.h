@@ -110,6 +110,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void toggleFtmc(bool enable);
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&,
                         const std::set<std::string>& sections) const;
+    void getStatInfo(std::stringstream& ss) const;
     void logGeneral(Session *sess);
     void handleShutdownCmd();
     Status setStoreMode(PStore store, KVStore::StoreMode mode);
@@ -140,6 +141,17 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     }
     uint64_t getSlowlogNum() {
         return _slowlogId.load(std::memory_order_relaxed);
+    }
+    void onBackupEnd() {
+        std::lock_guard<std::mutex> lk(_mutex);
+        _lastBackupTime = sinceEpoch();
+        _backupTimes.fetch_add(1, std::memory_order_relaxed);
+    }
+    uint64_t getLastBackupTime() {
+        return _lastBackupTime;
+    }
+    uint64_t getBackupTimes() {
+        return _backupTimes.load(std::memory_order_relaxed);
     }
 
  private:
@@ -195,6 +207,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;
     std::shared_ptr<ServerParams> _cfg;
+    std::atomic<uint64_t> _lastBackupTime;
+    std::atomic<uint64_t> _backupTimes;
 };
 }  // namespace tendisplus
 

@@ -40,4 +40,10 @@ std::string timePointRepr(const SCLOCK::time_point& tp) {
     return ss.str();
 }
 
+uint64_t nsSinceEpoch(const SCLOCK::time_point& tp) {
+    using SYSCLOCK = std::chrono::system_clock;
+    auto t = SYSCLOCK::now() + std::chrono::duration_cast<SYSCLOCK::duration>(tp - SCLOCK::now());
+    return t.time_since_epoch().count();
+}
+
 }  // namespace tendisplus

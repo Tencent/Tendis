@@ -114,6 +114,7 @@ class ReplManager {
 #endif
     void flushCurBinlogFs(uint32_t storeId);
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
+    void getReplInfo(std::stringstream& ss, bool show_all) const;
     void onFlush(uint32_t storeId, uint64_t binlogid);
 
  protected:

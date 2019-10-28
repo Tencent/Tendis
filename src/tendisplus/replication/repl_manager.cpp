@@ -689,6 +689,80 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
     }
 }
 
+void ReplManager::getReplInfo(std::stringstream& ss, bool show_all) const {
+    uint64_t min_last_sync_time = std::numeric_limits<uint64_t>::max();
+    stringstream ss_masterinfo;
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+        uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime)/1000000; // ms
+        uint64_t now = nsSinceEpoch()/1000000; // ms
+        // only display the min store.
+        if (last_sync_time < min_last_sync_time || show_all) {
+            min_last_sync_time = last_sync_time;
+            if (!show_all) {
+                ss_masterinfo.clear();
+                ss_masterinfo.str("");
+            }
+
+            ss_masterinfo << "store" << i << "_master:";
+            ss_masterinfo << "ip=" << _syncMeta[i]->syncFromHost;
+            ss_masterinfo << ",port=" << _syncMeta[i]->syncFromPort;
+            ss_masterinfo << ",sync_from_id=" << _syncMeta[i]->syncFromId;
+            ss_masterinfo << ",binlog_id=" << _syncMeta[i]->binlogId;
+            ss_masterinfo << ",repl_state=" << std::to_string(uint8_t(_syncMeta[i]->replState));
+
+            ss_masterinfo << ",last_sync_time=" << last_sync_time;
+            ss_masterinfo << ",sync_time_lag=" << now - last_sync_time;
+
+            ss_masterinfo << "\r\n";
+        }
+    }
+    ss << ss_masterinfo.str();
+
+    int64_t max_binlog_lag = std::numeric_limits<int64_t>::min();
+    stringstream ss_slaveinfo;
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+        auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
+                            mgl::LockMode::LOCK_NONE, true);
+        if (!expdb.ok()) {
+            return ;
+        }
+        uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
+ 
+        int clientnum = 0;
+        std::lock_guard<std::mutex> lk(_mutex);
+        for (auto iter = _pushStatus[i].begin(); iter != _pushStatus[i].end(); ++iter) {
+            int64_t binlog_lag = highestBinlogid - iter->second->binlogPos;
+            if (binlog_lag > max_binlog_lag || show_all) {
+                max_binlog_lag = binlog_lag;
+                if (!show_all) {
+                    ss_slaveinfo.clear();
+                    ss_slaveinfo.str("");
+                }
+
+                ss_slaveinfo << "store" << i << "_slave" << clientnum << ":";
+                ss_slaveinfo << "clientid=" << iter->second->clientId;
+                ss_slaveinfo << ",is_running=" << iter->second->isRunning;
+                ss_slaveinfo << ",dest_store_id=" << iter->second->dstStoreId;
+                ss_slaveinfo << ",binlog_pos=" << iter->second->binlogPos;
+                ss_slaveinfo << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
+                string remoteAddr;
+                uint16_t remotePort = 0;
+                if (iter->second->client != nullptr) {
+                    remoteAddr=iter->second->client->getRemoteRepr();
+                    remotePort =iter->second->client->getRemotePort();
+                } else {
+                    remoteAddr="???";
+                }
+                ss_slaveinfo << ",remote_host=" << remoteAddr;
+                ss_slaveinfo << ",remote_port=" << remotePort;
+                ss_slaveinfo << "\r\n";
+            }
+            clientnum++;
+        }
+    }
+    ss << ss_slaveinfo.str();
+}
+
 void ReplManager::appendJSONStat(
         rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     std::lock_guard<std::mutex> lk(_mutex);

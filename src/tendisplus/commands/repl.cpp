@@ -64,6 +64,7 @@ class BackupCommand: public Command {
                 return bkInfo.status();
             }
         }
+        svr->onBackupEnd();
         return Command::fmtOK();
     }
 } bkupCmd;
