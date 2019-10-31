@@ -45,7 +45,10 @@ ServerEntry::ServerEntry()
          _scheduleNum(0),
          _cfg(nullptr),
          _lastBackupTime(0),
-         _backupTimes(0) {
+         _backupTimes(0),
+         _lastBackupFailedTime(0),
+         _backupFailedTimes(0),
+         _lastBackupFailedErr("") {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -821,10 +824,6 @@ Status ServerEntry::initSlowlog(std::string logPath) {
 
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
             const std::vector<std::string>& args) {
-    if (args.size() >= 1 && (toLower(args[0]) == "slowlog"
-        || toLower(args[0]) == "config")) {
-        return;
-    }
     if(duration > _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
         _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";

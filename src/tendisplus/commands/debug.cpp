@@ -1612,6 +1612,11 @@ private:
             ss << "# Backup\r\n";
             ss << "backup-count:" << server->getBackupTimes() << "\r\n";
             ss << "last-backup-time:" << server->getLastBackupTime() << "\r\n";
+            if (server->getBackupFailedTimes() > 0) {
+                ss << "backup-failed-count:" << server->getBackupFailedTimes() << "\r\n";
+                ss << "last-backup-failed-time:" << server->getLastBackupFailedTime() << "\r\n";
+                ss << "last-backup-failed-reason:" << server->getLastBackupFailedErr() << "\r\n";
+            }
             ss << "\r\n";
             result << ss.str();
         }
@@ -2543,5 +2548,53 @@ class slowlogCommand: public Command {
         }
     }
 } slowlogCmd;
+
+class resetCommand: public Command {
+ public:
+    resetCommand()
+        :Command("reset", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        const auto server = sess->getServerEntry();
+        if (toLower(args[1]) == "unseencommands") {
+            LOG(INFO) << "reset unseencommands";
+            std::lock_guard<std::mutex> lk(Command::_mutex);
+            for (const auto& kv : _unSeenCmds) {
+                LOG(INFO) << "unseencommand:" << kv.first << " call-times:" << kv.second;
+            }
+            _unSeenCmds.clear();
+
+            return Command::fmtOK();
+        } else if (toLower(args[1]) == "commandsstat") {
+            LOG(INFO) << "reset commandsstat";
+            for (const auto& kv : commandMap()) {
+                LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
+                kv.second->resetStatInfo();
+            }
+            return Command::fmtOK();
+        } else {
+            return { ErrorCodes::ERR_PARSEPKT, "unkown args" };
+        }
+    }
+} resetCmd;
 
 }  // namespace tendisplus

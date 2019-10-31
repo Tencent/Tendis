@@ -143,15 +143,30 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         return _slowlogId.load(std::memory_order_relaxed);
     }
     void onBackupEnd() {
-        std::lock_guard<std::mutex> lk(_mutex);
-        _lastBackupTime = sinceEpoch();
+        _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
         _backupTimes.fetch_add(1, std::memory_order_relaxed);
     }
+    void onBackupEndFailed(uint32_t storeid, const string& errinfo) {
+        _lastBackupFailedTime.store(sinceEpoch(), std::memory_order_relaxed);
+        _backupFailedTimes.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lk(_mutex);
+        _lastBackupFailedErr = "storeid " + std::to_string(storeid) + ",err:" + errinfo;
+    }
     uint64_t getLastBackupTime() {
-        return _lastBackupTime;
+        return _lastBackupTime.load(std::memory_order_relaxed);
     }
     uint64_t getBackupTimes() {
         return _backupTimes.load(std::memory_order_relaxed);
+    }
+    uint64_t getLastBackupFailedTime() {
+        return _lastBackupFailedTime.load(std::memory_order_relaxed);
+    }
+    uint64_t getBackupFailedTimes() {
+        return _backupFailedTimes.load(std::memory_order_relaxed);
+    }
+    string getLastBackupFailedErr() {
+        std::lock_guard<std::mutex> lk(_mutex);
+        return _lastBackupFailedErr;
     }
 
  private:
@@ -209,6 +224,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<ServerParams> _cfg;
     std::atomic<uint64_t> _lastBackupTime;
     std::atomic<uint64_t> _backupTimes;
+    std::atomic<uint64_t> _lastBackupFailedTime;
+    std::atomic<uint64_t> _backupFailedTimes;
+    string _lastBackupFailedErr;
 };
 }  // namespace tendisplus
 

@@ -61,6 +61,7 @@ class BackupCommand: public Command {
             Expected<BackupInfo> bkInfo = store->backup(
                 dbdir, KVStore::BackupMode::BACKUP_COPY);
             if (!bkInfo.ok()) {
+                svr->onBackupEndFailed(i, bkInfo.status().toString());
                 return bkInfo.status();
             }
         }

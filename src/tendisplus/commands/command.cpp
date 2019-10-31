@@ -48,6 +48,11 @@ void Command::incrNanos(uint64_t v) {
     _totalNanoSecs.fetch_add(v, std::memory_order_relaxed);
 }
 
+void Command::resetStatInfo() {
+    _callTimes = 0;
+    _totalNanoSecs = 0;
+}
+
 uint64_t Command::getCallTimes() const {
     return _callTimes.load(std::memory_order_relaxed);
 }
@@ -116,6 +121,9 @@ Expected<std::string> Command::precheck(Session *sess) {
             if (_unSeenCmds.find(commandName) == _unSeenCmds.end()) {
                 if (_unSeenCmds.size() < _maxUnseenCmdNum) {
                     _unSeenCmds[commandName] = 1;
+                } else {
+                    LOG(ERROR) << "Command::precheck _unSeenCmds is full:" << _maxUnseenCmdNum
+                        << ", unseenCmd:" << args[0];
                 }
             } else {
                 _unSeenCmds[commandName] += 1;

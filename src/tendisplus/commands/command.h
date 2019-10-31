@@ -37,6 +37,7 @@ class Command {
     void incrNanos(uint64_t);
     uint64_t getCallTimes() const;
     uint64_t getNanos() const;
+    void resetStatInfo();
     bool isReadOnly() const;
     bool isMultiKey() const;
     bool isWriteable() const;
