@@ -1778,7 +1778,7 @@ class ConfigCommand : public Command {
             } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
                 return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
             }
-            return ":" + info + "\r\n";
+            return Command::fmtBulk(info);
         } else if (operation == "resetstat") {
             bool reset_all = false;
             string configName = "";
