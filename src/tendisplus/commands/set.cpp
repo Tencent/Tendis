@@ -82,6 +82,10 @@ Expected<std::string> genericSAdd(Session *sess,
     SetMetaValue sm;
     uint64_t ttl = 0;
 
+    if (args.size() <= 2) {
+        return Command::fmtZero();
+    }
+
     if (rv.ok()) {
         ttl = rv.value().getTtl();
         Expected<SetMetaValue> exptSm =
@@ -1113,9 +1117,6 @@ class SintergenericCommand: public Command {
         for (auto& v : result) {
             newKeys.push_back(std::move(v));
         }
-        if (newKeys.size() == 2) {
-            return Command::fmtZero();
-        }
 
         auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
         if (!expdb.ok()) {
@@ -1406,9 +1407,6 @@ class SuniongenericCommand: public Command {
         std::vector<std::string> newKeys(2);
         for (const auto& v : result) {
             newKeys.push_back(std::move(v));
-        }
-        if (newKeys.size() == 2) {
-            return Command::fmtZero();
         }
 
         auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);;
