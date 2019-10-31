@@ -1711,7 +1711,7 @@ class ConfigCommand : public Command {
     }
 
     ssize_t arity() const {
-        return -3;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -1734,13 +1734,14 @@ class ConfigCommand : public Command {
         // TODO(vinchen): support it later
         auto& args = sess->getArgs();
 
-        if (args.size() < 3 || args.size() > 5) {
-            return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
-        }
         auto operation = toLower(args[1]);
-        auto configName = toLower(args[2]);
 
         if (operation == "set") {
+            if (args.size() < 3 || args.size() > 5) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            auto configName = toLower(args[2]);
             if (configName == "session") {
                 if (args.size() != 5) {
                     return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
@@ -1768,6 +1769,7 @@ class ConfigCommand : public Command {
             }
             //return Command::fmtLongLong(10000);
 
+            auto configName = toLower(args[2]);
             string info;
             if (configName == "requirepass") {
                 info = sess->getServerEntry()->requirepass();
@@ -1777,6 +1779,33 @@ class ConfigCommand : public Command {
                 return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
             }
             return ":" + info + "\r\n";
+        } else if (operation == "resetstat") {
+            bool reset_all = false;
+            string configName = "";
+            if (args.size() == 2) {
+                reset_all = true;
+            } else if (args.size() == 3) {
+                configName = toLower(args[2]);
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            if (reset_all || configName == "unseencommands") {
+                LOG(INFO) << "reset unseencommands";
+                std::lock_guard<std::mutex> lk(Command::_mutex);
+                for (const auto& kv : _unSeenCmds) {
+                    LOG(INFO) << "unseencommand:" << kv.first << " call-times:" << kv.second;
+                }
+                _unSeenCmds.clear();
+            }
+            if (reset_all || configName == "commandsstat") {
+                LOG(INFO) << "reset commandsstat";
+                for (const auto& kv : commandMap()) {
+                    LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
+                    kv.second->resetStatInfo();
+                }
+            }
+            return Command::fmtOK();
         }
 
         return Command::fmtOK();
@@ -2548,53 +2577,5 @@ class slowlogCommand: public Command {
         }
     }
 } slowlogCmd;
-
-class resetCommand: public Command {
- public:
-    resetCommand()
-        :Command("reset", "sM") {
-    }
-
-    ssize_t arity() const {
-        return 2;
-    }
-
-    int32_t firstkey() const {
-        return 0;
-    }
-
-    int32_t lastkey() const {
-        return 0;
-    }
-
-    int32_t keystep() const {
-        return 0;
-    }
-
-    Expected<std::string> run(Session *sess) final {
-        const auto& args = sess->getArgs();
-
-        const auto server = sess->getServerEntry();
-        if (toLower(args[1]) == "unseencommands") {
-            LOG(INFO) << "reset unseencommands";
-            std::lock_guard<std::mutex> lk(Command::_mutex);
-            for (const auto& kv : _unSeenCmds) {
-                LOG(INFO) << "unseencommand:" << kv.first << " call-times:" << kv.second;
-            }
-            _unSeenCmds.clear();
-
-            return Command::fmtOK();
-        } else if (toLower(args[1]) == "commandsstat") {
-            LOG(INFO) << "reset commandsstat";
-            for (const auto& kv : commandMap()) {
-                LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
-                kv.second->resetStatInfo();
-            }
-            return Command::fmtOK();
-        } else {
-            return { ErrorCodes::ERR_PARSEPKT, "unkown args" };
-        }
-    }
-} resetCmd;
 
 }  // namespace tendisplus
