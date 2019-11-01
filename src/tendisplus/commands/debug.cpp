@@ -1090,10 +1090,10 @@ class DebugCommand: public Command {
     }
 } debugCommand;
 
-class StatCommand: public Command {
+class tendisstatCommand: public Command {
  public:
-    StatCommand()
-        :Command("stat", "a") {
+    tendisstatCommand()
+        :Command("tendisstat", "a") {
     }
 
     ssize_t arity() const {
@@ -1118,8 +1118,6 @@ class StatCommand: public Command {
         if (args.size() == 1) {
             sections.insert("stores");
             sections.insert("repl");
-            sections.insert("commands");
-            sections.insert("unseen_commands");
             sections.insert("network");
             sections.insert("request");
             sections.insert("req_pool");
@@ -1165,30 +1163,6 @@ class StatCommand: public Command {
             replMgr->appendJSONStat(writer);
             writer.EndObject();
         }
-        if (sections.find("unseen_commands") != sections.end()) {
-            writer.Key("unseen_commands");
-            writer.StartObject();
-            std::lock_guard<std::mutex> lk(Command::_mutex);
-            for (const auto& kv : _unSeenCmds) {
-                writer.Key(kv.first);
-                writer.Uint64(kv.second);
-            }
-            writer.EndObject();
-        }
-        if (sections.find("commands") != sections.end()) {
-            writer.Key("commands");
-            writer.StartObject();
-            for (const auto& kv : commandMap()) {
-                writer.Key(kv.first);
-                writer.StartObject();
-                writer.Key("call_times");
-                writer.Uint64(kv.second->getCallTimes());
-                writer.Key("total_nanos");
-                writer.Uint64(kv.second->getNanos());
-                writer.EndObject();
-            }
-            writer.EndObject();
-        }
 
         std::set<std::string> serverSections;
         if (sections.find("network") != sections.end()) {
@@ -1226,7 +1200,7 @@ class StatCommand: public Command {
         writer.EndObject();
         return Command::fmtBulk(std::string(sb.GetString()));
     }
-} statCommand;
+} tendisstatCommand;
 
 class ShutdownCommand: public Command {
  public:
@@ -1459,6 +1433,7 @@ class InfoCommand: public Command {
         infoCPU(allsections, defsections, section, sess, result);
         infoCommandStats(allsections, defsections, section, sess, result);
         infoKeyspace(allsections, defsections, section, sess, result);
+        infoBackup(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
@@ -1502,6 +1477,7 @@ private:
                 //<< "hz:" << "" << "\r\n" // TODO(takenliu)
                 //<< "lru_clock:" << "" << "\r\n" // TODO(takenliu)
                 << "config_file:" << server->getParams()->getConfFile() << "\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
 
@@ -1514,6 +1490,7 @@ private:
             ss << "# Clients\r\n"
                 << "connected_clients:"
                 << server->getSessionCount() << "\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
     }
@@ -1523,6 +1500,7 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Memory\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
 
@@ -1533,6 +1511,7 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Persistence\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
 
@@ -1543,6 +1522,8 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Stats\r\n";
+            server->getStatInfo(ss);
+            ss << "\r\n";
             result << ss.str();
         }
 
@@ -1551,8 +1532,15 @@ private:
     void infoReplication(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "replication") {
             auto server = sess->getServerEntry();
+            auto replMgr = server->getReplManager();
+            bool show_all = false;
+            if (sess->getArgs().size()>=3 && toLower(sess->getArgs()[1]) == "replication" && toLower(sess->getArgs()[2]) == "all") {
+                show_all = true;
+            }
             std::stringstream ss;
             ss << "# Replication\r\n";
+            replMgr->getReplInfo(ss, show_all);
+            ss << "\r\n";
             result << ss.str();
         }
 
@@ -1577,6 +1565,7 @@ private:
                << c_ru.ru_stime.tv_sec+(float)c_ru.ru_stime.tv_usec/1000000 << "\r\n"
                << "used_cpu_user_children:"
                << c_ru.ru_utime.tv_sec+(float)c_ru.ru_utime.tv_usec/1000000 << "\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
     }
@@ -1586,6 +1575,22 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# CommandStats\r\n";
+            for (const auto& kv : commandMap()) {
+                ss << "cmdstat_" << kv.first << ":calls=" << kv.second->getCallTimes()
+                    << ",usec=" << kv.second->getNanos() / 1000 << "\r\n"; // usec:microsecond
+            }
+            uint32_t unseenCmdNum = 0;
+            uint64_t unseenCmdCalls = 0;
+            {
+                std::lock_guard<std::mutex> lk(Command::_mutex);
+                unseenCmdNum = _unSeenCmds.size();
+                for (const auto& kv : _unSeenCmds) {
+                    unseenCmdCalls += kv.second;
+                }
+            }
+            ss << "cmdstat_unseen:calls=" << unseenCmdCalls
+                << ",num=" << unseenCmdNum << "\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
     }
@@ -1595,10 +1600,28 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Keyspace\r\n";
+            ss << "\r\n";
             result << ss.str();
         }
-
     }
+
+    void infoBackup(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+        if (allsections || defsections || section == "backup") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            ss << "# Backup\r\n";
+            ss << "backup-count:" << server->getBackupTimes() << "\r\n";
+            ss << "last-backup-time:" << server->getLastBackupTime() << "\r\n";
+            if (server->getBackupFailedTimes() > 0) {
+                ss << "backup-failed-count:" << server->getBackupFailedTimes() << "\r\n";
+                ss << "last-backup-failed-time:" << server->getLastBackupFailedTime() << "\r\n";
+                ss << "last-backup-failed-reason:" << server->getLastBackupFailedErr() << "\r\n";
+            }
+            ss << "\r\n";
+            result << ss.str();
+        }
+    }
+
 } infoCmd;
 
 class ObjectCommand: public Command {
@@ -1688,7 +1711,7 @@ class ConfigCommand : public Command {
     }
 
     ssize_t arity() const {
-        return -3;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -1711,13 +1734,14 @@ class ConfigCommand : public Command {
         // TODO(vinchen): support it later
         auto& args = sess->getArgs();
 
-        if (args.size() < 3 || args.size() > 5) {
-            return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
-        }
         auto operation = toLower(args[1]);
-        auto configName = toLower(args[2]);
 
         if (operation == "set") {
+            if (args.size() < 3 || args.size() > 5) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            auto configName = toLower(args[2]);
             if (configName == "session") {
                 if (args.size() != 5) {
                     return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
@@ -1745,6 +1769,7 @@ class ConfigCommand : public Command {
             }
             //return Command::fmtLongLong(10000);
 
+            auto configName = toLower(args[2]);
             string info;
             if (configName == "requirepass") {
                 info = sess->getServerEntry()->requirepass();
@@ -1753,7 +1778,34 @@ class ConfigCommand : public Command {
             } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
                 return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
             }
-            return ":" + info + "\r\n";
+            return Command::fmtBulk(info);
+        } else if (operation == "resetstat") {
+            bool reset_all = false;
+            string configName = "";
+            if (args.size() == 2) {
+                reset_all = true;
+            } else if (args.size() == 3) {
+                configName = toLower(args[2]);
+            } else {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            if (reset_all || configName == "unseencommands") {
+                LOG(INFO) << "reset unseencommands";
+                std::lock_guard<std::mutex> lk(Command::_mutex);
+                for (const auto& kv : _unSeenCmds) {
+                    LOG(INFO) << "unseencommand:" << kv.first << " call-times:" << kv.second;
+                }
+                _unSeenCmds.clear();
+            }
+            if (reset_all || configName == "commandsstat") {
+                LOG(INFO) << "reset commandsstat";
+                for (const auto& kv : commandMap()) {
+                    LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
+                    kv.second->resetStatInfo();
+                }
+            }
+            return Command::fmtOK();
         }
 
         return Command::fmtOK();
@@ -2485,5 +2537,45 @@ class execCommand: public Command {
         return Command::fmtOK();
     }
 } execCmd;
+
+class slowlogCommand: public Command {
+ public:
+    slowlogCommand()
+        :Command("slowlog", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto& args = sess->getArgs();
+
+        const auto server = sess->getServerEntry();
+        if (toLower(args[1]) == "len") {
+            std::stringstream ss;
+            uint64_t num = server->getSlowlogNum();
+            Command::fmtLongLong(ss, static_cast<uint64_t>(num));
+            return ss.str();
+        } else if (toLower(args[1]) == "reset") {
+            server->resetSlowlogNum();
+            return Command::fmtOK();
+        } else {
+            return { ErrorCodes::ERR_PARSEPKT, "unkown args" };
+        }
+    }
+} slowlogCmd;
 
 }  // namespace tendisplus

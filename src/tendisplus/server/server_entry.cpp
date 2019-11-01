@@ -43,7 +43,12 @@ ServerEntry::ServerEntry()
          _dbNum(CONFIG_DEFAULT_DBNUM),
          _slowlogId(0),
          _scheduleNum(0),
-         _cfg(nullptr) {
+         _cfg(nullptr),
+         _lastBackupTime(0),
+         _backupTimes(0),
+         _lastBackupFailedTime(0),
+         _backupFailedTimes(0),
+         _lastBackupFailedErr("") {
 }
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -507,6 +512,22 @@ bool ServerEntry::processRequest(Session *sess) {
     }
     sess->setResponse(expect.value());
     return true;
+}
+
+void ServerEntry::getStatInfo(std::stringstream& ss) const{
+    ss << "sticky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
+    ss << "conn_created:" << _netMatrix->connCreated.get() << "\r\n";
+    ss << "conn_released:" << _netMatrix->connReleased.get() << "\r\n";
+    ss << "invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
+
+    ss << "processed:" << _reqMatrix->processed.get() << "\r\n";
+    ss << "process_cost:" << _reqMatrix->processCost.get() << "\r\n";
+    ss << "send_packet_cost:" << _reqMatrix->sendPacketCost.get() << "\r\n";
+
+    ss << "in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
+    ss << "executed:" << _poolMatrix->executed.get() << "\r\n";
+    ss << "queue_time:" << _poolMatrix->queueTime.get() << "\r\n";
+    ss << "execute_time:" << _poolMatrix->executeTime.get() << "\r\n";
 }
 
 void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>& w,

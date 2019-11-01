@@ -37,6 +37,7 @@ class Command {
     void incrNanos(uint64_t);
     uint64_t getCallTimes() const;
     uint64_t getNanos() const;
+    void resetStatInfo();
     bool isReadOnly() const;
     bool isMultiKey() const;
     bool isWriteable() const;
@@ -98,6 +99,7 @@ class Command {
  protected:
     static std::mutex _mutex;
     // protected by mutex
+    const static uint32_t _maxUnseenCmdNum = 10000;
     static std::map<std::string, uint64_t> _unSeenCmds;
 
     static bool _noexpire;
