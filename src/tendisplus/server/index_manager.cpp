@@ -18,7 +18,7 @@
 
 namespace tendisplus {
 
-  IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
+IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
                              std::shared_ptr<ServerParams> cfg)
         : _isRunning(false),
         _svr(svr),

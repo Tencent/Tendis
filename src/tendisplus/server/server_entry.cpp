@@ -15,6 +15,8 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/string.h"
 
+
+
 namespace tendisplus {
 
 ServerStat::ServerStat() {
@@ -213,6 +215,7 @@ ServerEntry::ServerEntry()
          _indexMgr(nullptr),
          _pessimisticMgr(nullptr),
          _mgLockMgr(nullptr),
+         _clusterMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -243,6 +246,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
+    _enableCluster = cfg->enableCluster;
     _dbNum = cfg->dbNum;
     _cfg = cfg;
 }
@@ -280,6 +284,7 @@ void ServerEntry::installSegMgrInLock(std::unique_ptr<SegmentMgr> o) {
 void ServerEntry::installCatalog(std::unique_ptr<Catalog> o) {
     _catalog = std::move(o);
 }
+
 
 Catalog* ServerEntry::getCatalog() {
     return _catalog.get();
@@ -346,6 +351,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
           kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
+
     // kvstore init
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, cfg->rocksStrictCapacityLimit);
@@ -377,28 +383,21 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                 RocksKVStore::TxnMode::TXN_PES)));
     }
 
-    /*auto vm = _catalog-> getVersionMeta();
-    if (vm.ok()) {
-        _cfrmTs = vm.value()->timestamp;
-        _cfrmVersion = vm.value()->version;
-    } else if (vm.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        auto pVm = std::make_unique<VersionMeta>();
-        Status s = _catalog->setVersionMeta(*pVm);
-        if (!s.ok()) {
-            LOG(FATAL) << "catalog setVersionMeta error:"
-                << s.toString();
-            return s;
-        }
-    } else {
-        LOG(FATAL) << "catalog getVersionMeta error:"
-            << vm.status().toString();
-        return vm.status();
-    }*/
-
     installStoresInLock(tmpStores);
     INVARIANT_D(getKVStoreCount() == kvStoreCount);
+    LOG(INFO)<<"enable cluster flag is" << _enableCluster;
+    
+    //cluster init 
+    if(_enableCluster) {
+        _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());    
 
-    // segment mgr
+        Status s = _clusterMgr->startup();
+        if (!s.ok()) {
+            LOG(WARNING) << "start up cluster manager failed!";
+        return s;
+        }
+    }     
+
     auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
         new SegmentMgrFnvHash64(_kvstores, chunkSize));
     installSegMgrInLock(std::move(tmpSegMgr));
@@ -530,6 +529,10 @@ mgl::MGLockMgr* ServerEntry::getMGLockMgr() {
 
 IndexManager* ServerEntry::getIndexMgr() {
     return _indexMgr.get();
+}
+
+ClusterManager* ServerEntry::getClusterMgr() {
+    return _clusterMgr.get();
 }
 
 std::string ServerEntry::requirepass() const {
@@ -1202,3 +1205,6 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
 }
 
 }  // namespace tendisplus
+
+
+

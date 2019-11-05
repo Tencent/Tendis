@@ -45,6 +45,9 @@ std::vector<std::string> stringSplit(const  std::string& s, const std::string& d
 std::string trim(const std::string& str);
 
 #define strDelete(str, c) (str).erase(std::remove((str).begin(), (str).end(), (c)), (str).end())
+
+std::string  getUUid(const int len);
+unsigned char random_char();
 }  // namespace tendisplus
 
 #ifdef _MSC_VER

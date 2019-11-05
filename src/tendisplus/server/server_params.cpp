@@ -95,6 +95,7 @@ ServerParams::ServerParams() {
     // "a" and update it directly. It can make set() faster. 
     // Default false. Redis layer can guarantee that it's safe
     REGISTER_VARS_DIFF_NAME("checkkeytypeforsetcmd", checkKeyTypeForSet);
+    REGISTER_VARS_DIFF_NAME("clustermode", enableCluster);
 
     REGISTER_VARS(chunkSize);
     REGISTER_VARS(kvStoreCount);

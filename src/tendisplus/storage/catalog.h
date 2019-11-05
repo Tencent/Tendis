@@ -12,6 +12,11 @@ namespace tendisplus {
 enum class ReplState: std::uint8_t;
 enum class MigrateReceiveState;
 
+enum class ConnectState: std::uint8_t {
+    CONNECTED = 0,
+    DISCONNECTED = 1,  // initialsync, transfer whole db
+};
+
 // for MSVC, it must be class , but not struct
 // repl meta
 class StoreMeta {
@@ -84,6 +89,59 @@ class MainMeta {
     uint32_t chunkSize;
 };
 
+//cluster meta
+ /* Regular config lines have at least eight fields */
+// master node: 66478bda726ae6ba4e8fb55034d8e5e5804223ff 127.0.0.1 6381 master - 0 1496130037660 2 connected 10923-16383 0-5999
+// slave node ：6fb7dfdb6188a9fe53c48ea32d541724f36434e9 127.0.0.1 6383 slave 8f285670923d4f1c599ecc93367c95a30fb8bf34 0 1496130040668 4 connected
+class ClusterMeta{
+ public:
+    ClusterMeta();
+    ClusterMeta(const std::string& nodeName_);
+    ClusterMeta(const ClusterMeta&) = default;
+    ClusterMeta(ClusterMeta&&) = delete;
+    //[name]  [ip] [port]   [flag(master、myself、salve)]    [(-or master id)]      
+    // [ping send UNIX time]    [pong receive unix time]   [-config epoch]   [connectState]    [slot]
+    ClusterMeta(const std::string& nodeName_, const std::string& ip_, 
+            uint16_t port_, const std::string& nodeFlag_, 
+            const std::string& masterName_, uint64_t pingTime_,
+            uint64_t pongTime_, uint16_t configEpoch_,
+            ConnectState ConnectState_, const std::vector<std::string>& slots_);
+
+    std::unique_ptr<ClusterMeta> copy() const; 
+    
+    std::string nodeName;
+    std::string ip;
+    uint16_t port;
+    std::string nodeFlag;
+    std::string masterName;
+    uint64_t pingTime;
+    uint64_t pongTime;
+    uint16_t configEpoch;
+    ConnectState connectState;
+    std::vector<std::string> slots;
+    
+    static std::string& getClusterPrefix();
+    static const std::string clusterPrefix ;
+};
+
+
+
+// epoch meta , just use current epoch 
+class EpochMeta {
+ public:
+    EpochMeta() : EpochMeta(0, 0) {};
+    EpochMeta(const EpochMeta&) = default;
+    EpochMeta(EpochMeta&&) = delete;
+    
+    EpochMeta(uint32_t bigEpoch, uint32_t voteEpoch_)
+        : currentEpoch(bigEpoch), lastVoteEpoch(voteEpoch_) {}
+    std::unique_ptr<EpochMeta> copy() const;
+    
+    uint32_t currentEpoch;
+    uint32_t lastVoteEpoch;
+};
+
+// store meta
 class Catalog {
  public:
     Catalog(std::unique_ptr<KVStore> store,
@@ -99,7 +157,14 @@ class Catalog {
     Status stop();
     // main meta for each store
     Expected<std::unique_ptr<StoreMainMeta>> getStoreMainMeta(uint32_t idx);
-    Status setStoreMainMeta(const StoreMainMeta& meta);
+    Status setStoreMainMeta(const StoreMainMeta& meta);  
+    //cluster meta  
+    Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(const string& nodeName);
+    Expected<vector<std::unique_ptr<ClusterMeta>>> getClusterMeta();
+    Status setClusterMeta(const ClusterMeta& meta);
+    //epoch meta
+    Expected<std::unique_ptr<EpochMeta>> getEpochMeta();
+    Status setEpochMeta(const EpochMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
 

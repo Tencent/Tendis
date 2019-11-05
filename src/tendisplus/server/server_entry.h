@@ -22,6 +22,8 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/server/cluster_manager.h"
+
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;
 #define SLOWLOG_ENTRY_MAX_STRING 128;
@@ -36,6 +38,7 @@ class Catalog;
 class ReplManager;
 class MigrateManager;
 class IndexManager;
+class ClusterManager;
 
 /* Instantaneous metrics tracking. */
 #define STATS_METRIC_SAMPLES 16     /* Number of samples per metric. */
@@ -167,6 +170,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installCatalog(std::unique_ptr<Catalog>);
     void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
     void installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
+  //  void installClusterNode(const string::name, uint8_t flag);
+ 
 
     void stop();
     void waitStopComplete();
@@ -177,6 +182,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     PessimisticMgr* getPessimisticMgr();
     mgl::MGLockMgr* getMGLockMgr();
     IndexManager* getIndexMgr();
+    ClusterManager* getClusterMgr();
 
     // TODO(takenliu) : args exist at two places, has better way?
     std::string requirepass() const;
@@ -294,6 +300,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status deleteChunk(uint32_t chunkid) {
         return {ErrorCodes::ERR_OK, ""};
     }
+    void updateClusterFromMeta();
+
  private:
     ServerEntry();
     void serverCron();
@@ -320,6 +328,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<IndexManager> _indexMgr;
     std::unique_ptr<PessimisticMgr> _pessimisticMgr;
     std::unique_ptr<mgl::MGLockMgr> _mgLockMgr;
+    std::unique_ptr<ClusterManager> _clusterMgr;
 
     std::vector<PStore> _kvstores;
     std::unique_ptr<Catalog> _catalog;
@@ -329,6 +338,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<RequestMatrix> _reqMatrix;
     std::unique_ptr<std::thread> _cronThd;
 
+    std::string _myselfName;
+    bool _enableCluster;
     // NOTE(deyukong):
     // return string's reference have race conditions if changed during
     // runtime. return by value is quite costive.
@@ -340,6 +351,13 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
+    mutable std::shared_timed_mutex _rwlock;
+    std::map<std::string, uint64_t> _cfrmTs;
+    std::map<std::string, uint64_t> _cfrmVersion;
+    //cluster test
+    std::map<std::string, std::string> _nodeName;
+    std::map<std::string, std::string> _ip;
+
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;
     std::shared_ptr<ServerParams> _cfg;
@@ -356,3 +374,4 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_SERVER_SERVER_ENTRY_H_
+

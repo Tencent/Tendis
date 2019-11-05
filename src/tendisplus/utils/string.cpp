@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 #include <cstdlib>
+#include <random>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -334,6 +335,25 @@ std::vector<std::string> stringSplit(const std::string& s,
         pos = find_pos + delim_len;
     }
     return elems;
+}
+
+unsigned char random_char() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
+    return static_cast<unsigned char>(dis(gen));
+}
+
+std::string getUUid(const int len) {
+    std::stringstream ss;
+    for (auto i = 0; i < len; i++) {
+        const auto rc = random_char();
+        std::stringstream hexstream;
+        hexstream << std::hex << int(rc);
+        auto hex = hexstream.str();
+        ss << (hex.length() < 2 ? '0' + hex : hex);
+    }
+    return ss.str();
 }
 
 }  // namespace tendisplus

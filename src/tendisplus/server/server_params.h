@@ -301,6 +301,7 @@ public:
     uint32_t migrateClearThreadnum = 4;
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t migrateCheckThreadnum = 2;
+    bool enableCluster = false;
 };
 }  // namespace tendisplus
 
