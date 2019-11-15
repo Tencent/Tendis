@@ -1500,10 +1500,45 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Memory\r\n";
+
+            string used_memory;
+            string used_memory_human;
+            string used_memory_rss;
+            string used_memory_peak;
+
+            ifstream file;
+            file.open("/proc/self/status");
+            if (file.is_open()) {
+                string strline;
+                while (getline(file, strline)) {
+                    auto v = stringSplit(strline, ":");
+                    if (v.size() != 2) {
+                        continue;
+                    }
+                    if (v[0] == "VmSize") {
+                        used_memory = trim(v[1]);
+                    }
+                    else if (v[0] == "VmRSS") {
+                        used_memory_rss = trim(v[1]);
+                    }
+                    else if (v[0] == "VmHWM") {
+                        used_memory_human = trim(v[1]);
+                    }
+                    else if (v[0] == "VmPeak") {
+                        used_memory_peak = trim(v[1]);
+                    }
+                }
+            }
+            ss << "used_memory:" << used_memory << "\r\n";
+            ss << "used_memory_human:" << used_memory_human << "\r\n";
+            ss << "used_memory_rss:" << used_memory_rss << "\r\n";
+            ss << "used_memory_peak:" << used_memory_peak << "\r\n";
+            ss << "used_memory_peak_human:" << "-1" << "\r\n";
+            ss << "used_memory_lua:" << "-1" << "\r\n";
+
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     void infoPersistence(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {

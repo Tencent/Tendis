@@ -231,6 +231,22 @@ void sdstrim(std::string &s, const char *cset) {
     sdsrtrim(s, cset);
 }
 
+std::string trim_left(const std::string& str) {
+  const std::string pattern = " \f\n\r\t\v";
+  auto iter = str.find_first_not_of(pattern);
+  return str.substr(iter == std::string::npos ? 0 : iter);
+}
+
+std::string trim_right(const std::string& str) {
+  const std::string pattern = " \f\n\r\t\v";
+  auto iter = str.find_last_not_of(pattern);
+  return str.substr(0, iter == std::string::npos ? 0 : iter + 1);
+}
+
+std::string trim(const std::string& str) {
+  return trim_left(trim_right(str));
+}
+
 std::string& replaceAll(std::string& str,
                             const std::string& old_value,
                             const std::string& new_value) {
