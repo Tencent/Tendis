@@ -140,7 +140,7 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t
 }
 
 Expected<uint64_t> NetworkAsio::client2Session(
-                std::shared_ptr<BlockingTcpClient> c) {
+                std::shared_ptr<BlockingTcpClient> c, bool migrateOnly) {
     if (c->getReadBufSize() > 0) {
         return {ErrorCodes::ERR_NETWORK,
             "client still have buf unread, cannot transfer to a session"};
@@ -154,6 +154,7 @@ Expected<uint64_t> NetworkAsio::client2Session(
         << ",from:" << sess->getRemoteRepr()
         << " client2Session";
     sess->getCtx()->setAuthed();
+    sess->getCtx()->setMigrateOnly(migrateOnly);
     _server->addSession(sess);
     ++_netMatrix->connCreated;
     return sess->id();

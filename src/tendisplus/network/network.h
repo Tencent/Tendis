@@ -62,7 +62,7 @@ class NetworkAsio {
     std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf);
     std::unique_ptr<BlockingTcpClient> createBlockingClient(
         asio::ip::tcp::socket, size_t readBuf);
-    Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>);
+    Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>, bool migrateOnly = false);
 
     Status prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum);
     Status run();

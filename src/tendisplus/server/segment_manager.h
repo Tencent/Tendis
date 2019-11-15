@@ -17,6 +17,7 @@ struct DbWithLock {
     uint32_t chunkId;
     PStore store;
     std::unique_ptr<StoreLock> dbLock;
+    std::unique_ptr<ChunkLock> chunkLock;
     std::unique_ptr<KeyLock> keyLock;
 };
 

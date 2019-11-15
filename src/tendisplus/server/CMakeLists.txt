@@ -2,7 +2,7 @@ add_library(session session.cpp)
 target_link_libraries(session status glog)
 
 add_library(server server_entry.cpp)
-target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager index_mgr pessimistic server_params)
+target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate index_mgr pessimistic server_params)
 
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)
@@ -39,6 +39,10 @@ else()
 	target_link_libraries(restore_test commands index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
 	set_target_properties(restore_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
+
+add_executable(migrate_test migrate_test.cpp)
+target_link_libraries(migrate_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
+target_link_libraries(migrate_test index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
 
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})

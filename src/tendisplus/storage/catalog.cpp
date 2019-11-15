@@ -32,6 +32,30 @@ std::unique_ptr<StoreMeta> StoreMeta::copy() const {
         new StoreMeta(*this)));
 }
 
+
+
+ChunkMeta::ChunkMeta()
+    :ChunkMeta(0, "", 0, -1, 0, MigrateReceiveState::NONE) {
+}
+
+ChunkMeta::ChunkMeta(uint32_t id_, const std::string& syncFromHost_,
+                uint16_t syncFromPort_, int32_t syncFromId_,
+                uint64_t binlogId_, MigrateReceiveState migrateState_)
+    :id(id_),
+     syncFromHost(syncFromHost_),
+     syncFromPort(syncFromPort_),
+     syncFromId(syncFromId_),
+     binlogId(binlogId_),
+     migrateState(migrateState_) {
+}
+
+std::unique_ptr<ChunkMeta> ChunkMeta::copy() const {
+    return std::move(std::unique_ptr<ChunkMeta>(
+        new ChunkMeta(*this)));
+}
+
+
+
 std::unique_ptr<StoreMainMeta> StoreMainMeta::copy() const {
     return std::move(std::unique_ptr<StoreMainMeta>(
         new StoreMainMeta(*this)));

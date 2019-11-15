@@ -26,7 +26,7 @@ class BackgroundErrorListener;
 
 class RocksTxn: public Transaction {
  public:
-    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
         std::shared_ptr<BinlogObserver> logob,
         Session* sess,
         uint64_t binlogId = Transaction::TXNID_UNINITED,
@@ -62,6 +62,8 @@ class RocksTxn: public Transaction {
     Status setBinlogKV(uint64_t binlogId,
                 const std::string& logKey,
                 const std::string& logValue) final;
+    Status setBinlogKV(const std::string& logKey,
+                const std::string& logValue) final;
     Status delBinlog(const ReplLogRawV2& log) final;
     uint64_t getBinlogId() const final;
     void setBinlogId(uint64_t binlogId) final;
@@ -75,6 +77,8 @@ class RocksTxn: public Transaction {
     const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
         return _txn;
     }
+    void setMigrateOnly(bool v) { _migrateOnly = v; }
+    bool isMigrateOnly() { return _migrateOnly; }
 
  protected:
     virtual void ensureTxn() {}
@@ -100,6 +104,7 @@ class RocksTxn: public Transaction {
     bool _done;
 
     bool _replOnly;
+    bool _migrateOnly;
 
     std::shared_ptr<BinlogObserver> _logOb;
     Session * _session;
@@ -116,7 +121,7 @@ class RocksTxn: public Transaction {
 // Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public RocksTxn {
  public:
-    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
         std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
@@ -128,7 +133,7 @@ class RocksOptTxn: public RocksTxn {
 
 class RocksPesTxn: public RocksTxn {
  public:
-    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
         std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksPesTxn(const RocksPesTxn&) = delete;
     RocksPesTxn(RocksPesTxn&&) = delete;

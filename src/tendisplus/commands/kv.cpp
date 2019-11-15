@@ -209,6 +209,7 @@ class SetCommand: public Command {
         if (!expdb.ok()) {
             return expdb.status();
         }
+        //LOG(INFO) << "takenliutest:" << expdb.value().chunkId << " " << expdb.value().dbId;
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction(sess);
         if (!ptxn.ok()) {

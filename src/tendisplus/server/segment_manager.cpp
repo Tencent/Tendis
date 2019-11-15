@@ -205,7 +205,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
         sess->getCtx()->setReplOnly(true);
     }
-    return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
+    return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr, nullptr};
 }
 
 }  // namespace tendisplus

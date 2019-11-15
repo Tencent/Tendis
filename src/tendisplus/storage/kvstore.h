@@ -137,6 +137,8 @@ class Transaction {
     virtual Status setBinlogKV(uint64_t binlogId,
                     const std::string& logKey,
                     const std::string& logValue) = 0;
+    virtual Status setBinlogKV(const std::string& logKey,
+                    const std::string& logValue) = 0;
     virtual Status delBinlog(const ReplLogRawV2& log) = 0;
     virtual uint64_t getBinlogId() const = 0;
     virtual void setBinlogId(uint64_t binlogId) = 0;

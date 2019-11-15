@@ -17,6 +17,7 @@
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/storage/pessimistic.h"
 #include "tendisplus/replication/repl_manager.h"
+#include "tendisplus/cluster/migrate_manager.h"
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
@@ -33,6 +34,7 @@ class PoolMatrix;
 class RequestMatrix;
 class Catalog;
 class ReplManager;
+class MigrateManager;
 class IndexManager;
 
 /* Instantaneous metrics tracking. */
@@ -169,7 +171,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void stop();
     void waitStopComplete();
     SegmentMgr* getSegmentMgr() const;
-    ReplManager* getReplManager();;
+    ReplManager* getReplManager();
+    MigrateManager* getMigrateManager();
     NetworkAsio* getNetwork();
     PessimisticMgr* getPessimisticMgr();
     mgl::MGLockMgr* getMGLockMgr();
@@ -245,6 +248,52 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
+    // TODO: finish it
+    uint32_t getStoreid(uint32_t chunkid) {
+        if (getKVStoreCount() == 1) {
+            return 0;
+        }
+        if (chunkid == 15495) { // "a"
+            return 5;
+        } else if (chunkid == 3300) { // "b"
+            return 0;
+        }
+        return chunkid;
+    }
+    std::vector<uint32_t> getChunkList(uint32_t storeid) {
+        std::vector<uint32_t> result;
+        if (getKVStoreCount() == 1) {
+            result.push_back(15495);
+            result.push_back(3300);
+            return result;
+        }
+        if (storeid == 5) {
+            result.push_back(15495);
+        } else if (storeid == 0) {
+            result.push_back(3300);
+        } else {
+            result.push_back(storeid);
+        }
+        return result;
+    }
+    bool isContainChunk(uint32_t chunkid) {
+        return true;
+    }
+    Status lockChunk(uint32_t chunkid, string mode) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    Status updateChunkInfo(uint32_t chunkid, string mode) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    Status gossipBroadcast(uint32_t chunkid, string ip, uint32_t port) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    Status unlockChunk(uint32_t chunkid, string mode) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    Status deleteChunk(uint32_t chunkid) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
  private:
     ServerEntry();
     void serverCron();
@@ -267,6 +316,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::vector<std::unique_ptr<WorkerPool>> _executorList;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
+    std::unique_ptr<MigrateManager> _migrateMgr;
     std::unique_ptr<IndexManager> _indexMgr;
     std::unique_ptr<PessimisticMgr> _pessimisticMgr;
     std::unique_ptr<mgl::MGLockMgr> _mgLockMgr;

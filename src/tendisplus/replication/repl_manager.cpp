@@ -435,22 +435,21 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
 }
 
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
-                    const StoreMeta& metaSnapshot,
-                    uint64_t timeoutMs) {
+        const string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr) {
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(_svr->getNetwork()->createBlockingClient(64*1024*1024));
+        std::move(svr->getNetwork()->createBlockingClient(64*1024*1024));
     Status s = client->connect(
-        metaSnapshot.syncFromHost,
-        metaSnapshot.syncFromPort,
-        std::chrono::milliseconds(timeoutMs));
+        ip,
+        port,
+        std::chrono::seconds(3));
     if (!s.ok()) {
-        LOG(WARNING) << "connect " << metaSnapshot.syncFromHost
-            << ":" << metaSnapshot.syncFromPort << " failed:"
-            << s.toString() << " storeid:" << metaSnapshot.id;
+        LOG(WARNING) << "connect " << ip
+            << ":" << port << " failed:"
+            << s.toString();
         return nullptr;
     }
 
-    std::string masterauth = _svr->masterauth();
+    std::string masterauth = svr->masterauth();
     if (masterauth != "") {
         std::stringstream ss;
         ss << "AUTH " << masterauth;

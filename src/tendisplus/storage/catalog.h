@@ -5,10 +5,12 @@
 #include <string>
 
 #include "tendisplus/replication/repl_manager.h"
+#include "tendisplus/cluster/migrate_manager.h"
 
 namespace tendisplus {
 
 enum class ReplState: std::uint8_t;
+enum class MigrateReceiveState;
 
 // for MSVC, it must be class , but not struct
 // repl meta
@@ -31,6 +33,26 @@ class StoreMeta {
     uint64_t binlogId;
     ReplState replState;
     string replErr;
+};
+
+class ChunkMeta {
+ public:
+    ChunkMeta();
+    ChunkMeta(const ChunkMeta&) = default;
+    ChunkMeta(ChunkMeta&&) = delete;
+    ChunkMeta(uint32_t id_, const std::string& syncFromHost_,
+            uint16_t syncFromPort_, int32_t syncFromId_,
+            uint64_t binlogId_, MigrateReceiveState migrateState_);
+    std::unique_ptr<ChunkMeta> copy() const;
+
+    uint32_t id;
+    std::string syncFromHost;
+    uint16_t syncFromPort;
+    int32_t syncFromId;  // the storeid of master
+    // the binlog has been applied, but it's unreliable in the
+    // catalog. KVStore->getHighestBinlogId() should been more reliable.
+    uint64_t binlogId;
+    MigrateReceiveState migrateState;
 };
 
 // store meta
@@ -70,6 +92,10 @@ class Catalog {
     // repl meta for each store
     Expected<std::unique_ptr<StoreMeta>> getStoreMeta(uint32_t idx);
     Status setStoreMeta(const StoreMeta& meta);
+
+    Expected<std::unique_ptr<ChunkMeta>> getChunkMeta(uint32_t idx);
+    Status setChunkMeta(const ChunkMeta& meta);
+
     Status stop();
     // main meta for each store
     Expected<std::unique_ptr<StoreMainMeta>> getStoreMainMeta(uint32_t idx);

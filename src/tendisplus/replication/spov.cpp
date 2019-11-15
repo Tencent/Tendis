@@ -130,7 +130,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
     // 2) require a blocking-client
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+        std::move(createClient(metaSnapshot.syncFromHost, metaSnapshot.syncFromPort, _svr));
     if (client == nullptr) {
         LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id << " with: "
                     << metaSnapshot.syncFromHost << ":"
@@ -318,7 +318,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
 
 
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+        std::move(createClient(metaSnapshot.syncFromHost, metaSnapshot.syncFromPort, _svr));
     if (client == nullptr) {
         errStr = errPrefix + "reconn master failed";
         return;
@@ -554,7 +554,7 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         // binlog_heartbeat
         // do nothing
     } else {
-        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue);
+        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue, _svr);
         if (!binlog.ok()) {
             return binlog.status();
         } else {
@@ -567,83 +567,6 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-
-Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId,
-    const std::string& logKey, const std::string& logValue) {
-    auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
-        mgl::LockMode::LOCK_IX);
-    if (!expdb.ok()) {
-        return expdb.status();
-    }
-    auto store = std::move(expdb.value().store);
-    INVARIANT(store != nullptr);
-    auto ptxn = store->createTransaction(sess);
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
-    auto key = ReplLogKeyV2::decode(logKey);
-    if (!key.ok()) {
-        return key.status();
-    }
-    auto binlogId = key.value().getBinlogId();
-
-    if (binlogId <= store->getHighestBinlogId()) {
-        string err = "binlogId:" + to_string(binlogId)
-            + " can't be smaller than highestBinlogId:" + to_string(store->getHighestBinlogId());
-        LOG(ERROR) << err;
-        return {ErrorCodes::ERR_MANUAL, err};
-    }
-
-    auto value = ReplLogValueV2::decode(logValue);
-    if (!value.ok()) {
-        return value.status();
-    }
-
-    uint64_t timestamp = 0;
-    size_t offset = value.value().getHdrSize();
-    auto data = value.value().getData();
-    size_t dataSize = value.value().getDataSize();
-    while (offset < dataSize) {
-        size_t size = 0;
-        auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
-                        dataSize - offset, &size);
-        if (!entry.ok()) {
-            return entry.status();
-        }
-        offset += size;
-
-        timestamp = entry.value().getTimestamp();
-
-        auto s = txn->applyBinlog(entry.value());
-        if (!s.ok()) {
-            return s;
-        }
-    }
-
-    if (offset != dataSize) {
-        return { ErrorCodes::ERR_INTERNAL, "bad binlog" };
-    }
-
-    // store the binlog directly, same as master
-    auto s = txn->setBinlogKV(binlogId, logKey, logValue);
-    if (!s.ok()) {
-        return s;
-    }
-
-    Expected<uint64_t> expCmit = txn->commit();
-    if (!expCmit.ok()) {
-        return expCmit.status();
-    }
-
-    // NOTE(vinchen): store the binlog time spov when txn commited.
-    // only need to set the last timestamp
-    store->setBinlogTime(timestamp);
-
-    return binlogId;
-}
 #endif
 
 #ifdef BINLOG_V1

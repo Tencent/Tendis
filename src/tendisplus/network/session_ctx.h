@@ -23,7 +23,7 @@ namespace tendisplus {
 #define InMulti (1 << 0)
 
 // storeLock state pair
-using SLSP = std::tuple<uint32_t, std::string, mgl::LockMode>;
+using SLSP = std::tuple<uint32_t, uint32_t, std::string, mgl::LockMode>;
 
 class ILock;
 class SessionCtx {
@@ -51,7 +51,7 @@ class SessionCtx {
     void setProcessPacketStart(uint64_t);
     uint64_t getProcessPacketStart() const;
 
-    void setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode);
+    void setWaitLock(uint32_t storeId, uint32_t chunkId, const std::string& key, mgl::LockMode mode);
     SLSP getWaitlock() const;
     std::list<SLSP> getLockStates() const;
 
@@ -77,6 +77,8 @@ class SessionCtx {
     bool isEp() const { return _extendProtocol; }
     bool isReplOnly() const { return _replOnly; }
     void setReplOnly(bool v) { _replOnly = v; }
+    bool isMigrateOnly() const { return _migrateOnly; }
+    void setMigrateOnly(bool v) { _migrateOnly = v; }
 
     void setKeylock(const std::string& key, mgl::LockMode mode);
     void unsetKeylock(const std::string& key);
@@ -105,6 +107,7 @@ class SessionCtx {
     bool _authed;
     uint32_t _dbId;
     uint32_t _waitlockStore;
+    uint32_t _waitlockChunk;
     mgl::LockMode _waitlockMode;
     std::string _waitlockKey;
     uint64_t _processPacketStart;
@@ -115,6 +118,7 @@ class SessionCtx {
     uint64_t _txnVersion;
     bool _extendProtocol;
     bool _replOnly;
+    bool _migrateOnly;
     Session* _session;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
     bool _isMonitor;

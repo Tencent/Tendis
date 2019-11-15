@@ -104,7 +104,7 @@ Expected<std::string> RocksKVCursor::key() {
     return _it->key().ToString();
 }
 
-RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
+RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, bool migrateOnly,
                    std::shared_ptr<tendisplus::BinlogObserver> ob,
                    Session* sess,
                    uint64_t binlogId, uint32_t chunkId)
@@ -115,6 +115,7 @@ RocksTxn::RocksTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
          _store(store),
          _done(false),
          _replOnly(replOnly),
+         _migrateOnly(migrateOnly),
          _logOb(ob),
          _session(sess) {
 }
@@ -523,7 +524,7 @@ Status RocksTxn::flushall() {
 }
 
 Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
-    if (!_replOnly) {
+    if (!_migrateOnly && !_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
     }
     RESET_PERFCONTEXT();
@@ -575,6 +576,14 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     return{ ErrorCodes::ERR_OK, "" };
 }
 
+Status RocksTxn::setBinlogKV(const std::string& logKey, const std::string& logValue) {
+    auto s = _txn->Put(logKey, logValue);
+    if (!s.ok()) {
+        return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
+    }
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 Status RocksTxn::delBinlog(const ReplLogRawV2& log) {
     RESET_PERFCONTEXT();
     auto s = _txn->Delete(log.getReplLogKey());
@@ -618,9 +627,9 @@ RocksTxn::~RocksTxn() {
     _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
 }
 
-RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
+RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly, bool migrateOnly,
             std::shared_ptr<tendisplus::BinlogObserver> ob, Session* sess)
-    :RocksTxn(store, txnId, replOnly, ob, sess) {
+    :RocksTxn(store, txnId, replOnly, migrateOnly, ob, sess) {
     // NOTE(deyukong): the rocks-layer's snapshot should be opened in
     // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
     // or, we are not able to guarantee the oplog order is the same as the
@@ -661,9 +670,9 @@ void RocksOptTxn::ensureTxn() {
     INVARIANT(_txn != nullptr);
 }
 
-RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
+RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
             std::shared_ptr<BinlogObserver> ob, Session* sess)
-    :RocksTxn(store, txnId, replOnly, ob, sess) {
+    :RocksTxn(store, txnId, replOnly, migrateOnly, ob, sess) {
     // NOTE(deyukong): the rocks-layer's snapshot should be opened in
     // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
     // or, we are not able to guarantee the oplog order is the same as the
@@ -1911,19 +1920,22 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(Session* 
     }
     uint64_t txnId = _nextTxnSeq++;
     bool replOnly = (_mode == KVStore::StoreMode::REPLICATE_ONLY);
+    bool migrateOnly = false;
 #ifndef NO_VERSIONEP
     if (sess) {
         // NOTE(vinchen): In some cases, it should do some writes in a
         // replonly KVStore, such as "flushalldisk"
         replOnly = sess->getCtx()->isReplOnly();
+        migrateOnly = sess->getCtx()->isMigrateOnly();
     }
 #endif
     std::unique_ptr<Transaction> ret = nullptr;
+
     // TODO(vinchen): should new RocksTxn out of mutex?
     if (_txnMode == TxnMode::TXN_OPT) {
-        ret.reset(new RocksOptTxn(this, txnId, replOnly, _logOb, sess));
+        ret.reset(new RocksOptTxn(this, txnId, replOnly, migrateOnly, _logOb, sess));
     } else {
-        ret.reset(new RocksPesTxn(this, txnId, replOnly, _logOb, sess));
+        ret.reset(new RocksPesTxn(this, txnId, replOnly, migrateOnly, _logOb, sess));
     }
     addUnCommitedTxnInLock(txnId);
     return std::move(ret);

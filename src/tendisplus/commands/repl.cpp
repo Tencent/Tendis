@@ -662,7 +662,7 @@ class ApplyBinlogsCommandV2 : public Command {
     }
 
     ssize_t arity() const {
-        return 5;
+        return 6;
     }
 
     int32_t firstkey() const {
@@ -678,18 +678,22 @@ class ApplyBinlogsCommandV2 : public Command {
     }
 
     static Status runNormal(Session *sess, uint32_t storeId,
-                const std::string& binlogs, size_t binlogCnt) {
+                const std::string& binlogs, size_t binlogCnt,
+                uint32_t chunkid) {
         auto svr = sess->getServerEntry();
         auto replMgr = svr->getReplManager();
+        auto migrateMgr = svr->getMigrateManager();
         INVARIANT(replMgr != nullptr);
-
+        // TODO(vinchen): should it remove?
         //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
         if (!expdb.ok()) {
             return expdb.status();
         }
-        INVARIANT_D(sess->getCtx()->isReplOnly());
+        if (chunkid == Transaction::CHUNKID_UNINITED) {
+            INVARIANT_D(sess->getCtx()->isReplOnly());
+        }
 
         size_t cnt = 0;
         BinlogReader reader(binlogs);
@@ -700,8 +704,15 @@ class ApplyBinlogsCommandV2 : public Command {
             } else if (!eLog.ok()) {
                 return eLog.status();
             }
-            Status s = replMgr->applyRepllogV2(sess, storeId,
-                eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
+            Status s;
+            //LOG(INFO) << "takenliutest: applyBinlog " << chunkid;
+            if (chunkid == Transaction::CHUNKID_UNINITED) {
+                s = replMgr->applyRepllogV2(sess, storeId,
+                    eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
+            } else {
+                s = migrateMgr->applyRepllog(sess, storeId, chunkid,
+                    eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
+            }
             if (!s.ok()) {
                 return s;
             }
@@ -770,7 +781,6 @@ class ApplyBinlogsCommandV2 : public Command {
     // please refer to comments of ReplManager::registerIncrSync
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
-
         uint32_t storeId;
         Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
         if (!exptStoreId.ok()) {
@@ -791,13 +801,20 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         binlogCnt = exptCnt.value();
 
+        uint32_t chunkid;
+        auto exptChunkid = ::tendisplus::stoul(args[5]);
+        if (!exptChunkid.ok()) {
+            return exptChunkid.status();
+        }
+        chunkid = exptChunkid.value();
+
         auto eflag = ::tendisplus::stoul(args[4]);
         if (!eflag.ok()) {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog flags" };
         }
         switch ((BinlogFlag)eflag.value()) {
         case BinlogFlag::NORMAL: {
-            auto s = runNormal(sess, storeId, args[2], binlogCnt);
+            auto s = runNormal(sess, storeId, args[2], binlogCnt, chunkid);
             if (!s.ok()) {
                 return s;
             }
@@ -857,9 +874,6 @@ class RestoreBinlogCommandV2 : public Command {
         std::string key = Base64::Decode(args[2].c_str(), args[2].size());
         std::string value = Base64::Decode(args[3].c_str(), args[3].size());
 
-        auto replMgr = svr->getReplManager();
-        INVARIANT(replMgr != nullptr);
-
         // LOCK_IX first
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);
@@ -869,7 +883,7 @@ class RestoreBinlogCommandV2 : public Command {
 
         sess->getCtx()->setReplOnly(true);
         Expected<uint64_t> ret =
-            replMgr->applySingleTxnV2(sess, storeId, key, value);
+            applySingleTxnV2(sess, storeId, key, value, svr);
         if (!ret.ok()) {
             return ret.status();
         }

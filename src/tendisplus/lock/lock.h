@@ -21,6 +21,7 @@ class ILock {
     mgl::LockMode getMode() const;
     mgl::LockRes getLockResult() const;
     virtual uint32_t getStoreId() const;
+    virtual uint32_t getChunkId() const;
     virtual std::string getKey() const;
 
  protected:
@@ -57,6 +58,18 @@ class StoreLock: public ILock {
     uint32_t _storeId;
 };
 
+class ChunkLock: public ILock {
+public:
+    ChunkLock(uint32_t chunkId, uint32_t storeId, mgl::LockMode mode,
+              Session* sess, mgl::MGLockMgr* mgr);
+    uint32_t getStoreId() const final;
+    uint32_t getChunkId() const final;
+    virtual ~ChunkLock() = default;
+
+private:
+    uint32_t _chunkId;
+};
+
 class KeyLock: public ILock {
  public:
     static Expected<std::unique_ptr<KeyLock>> AquireKeyLock(uint32_t storeId, const std::string& key,
@@ -66,6 +79,7 @@ class KeyLock: public ILock {
             mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
             uint64_t lockTimeoutMs = 3600000);
     uint32_t getStoreId() const final;
+    uint32_t getChunkId() const final;
     std::string getKey() const final;
     // remove lock from session before that lock has really been unlocked in its parent's destructor.
     virtual ~KeyLock();

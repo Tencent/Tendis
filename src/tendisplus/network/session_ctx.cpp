@@ -14,6 +14,7 @@ SessionCtx::SessionCtx(Session* sess)
     :_authed(false),
      _dbId(0),
      _waitlockStore(0),
+     _waitlockChunk(0),
      _waitlockMode(mgl::LockMode::LOCK_NONE),
      _waitlockKey(""),
      _processPacketStart(0),
@@ -24,6 +25,7 @@ SessionCtx::SessionCtx(Session* sess)
      _txnVersion(-1),
      _extendProtocol(false),
      _replOnly(false),
+     _migrateOnly(false),
      _session(sess),
      _isMonitor(false),
      _flags(0) {
@@ -147,15 +149,16 @@ Status SessionCtx::rollbackAll() {
     return s;
 }
 
-void SessionCtx::setWaitLock(uint32_t storeId, const std::string& key, mgl::LockMode mode) {
+void SessionCtx::setWaitLock(uint32_t storeId, uint32_t chunkId, const std::string& key, mgl::LockMode mode) {
     _waitlockStore = storeId;
+    _waitlockChunk = chunkId;
     _waitlockMode = mode;
     _waitlockKey = key;
 }
 
 SLSP SessionCtx::getWaitlock() const {
-    return std::tuple<uint32_t, std::string, mgl::LockMode>(
-            _waitlockStore, _waitlockKey, _waitlockMode);
+    return std::tuple<uint32_t, uint32_t, std::string, mgl::LockMode>(
+            _waitlockStore, _waitlockChunk, _waitlockKey, _waitlockMode);
 }
 
 std::list<SLSP> SessionCtx::getLockStates() const {
@@ -163,7 +166,7 @@ std::list<SLSP> SessionCtx::getLockStates() const {
     std::list<SLSP> result;
     for (auto& lk : _locks) {
         result.push_back(
-            SLSP(lk->getStoreId(), lk->getKey(), lk->getMode()));
+            SLSP(lk->getStoreId(), lk->getChunkId(), lk->getKey(), lk->getMode()));
     }
     return result;
 }

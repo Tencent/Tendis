@@ -295,6 +295,12 @@ public:
     bool rocksFlushLogAtTrxCommit = false;
     bool level0Compress = false;
     bool level1Compress = false;
+    bool levelCompactionDynamicLevelBytes = true;
+
+    uint32_t migrateSenderThreadnum = 4;
+    uint32_t migrateClearThreadnum = 4;
+    uint32_t migrateReceiveThreadnum = 4;
+    uint32_t migrateCheckThreadnum = 2;
 };
 }  // namespace tendisplus
 

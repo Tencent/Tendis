@@ -41,6 +41,10 @@ uint32_t ILock::getStoreId() const {
     return 0;
 }
 
+uint32_t ILock::getChunkId() const {
+    return 0;
+}
+
 std::string ILock::getKey() const {
     return "";
 }
@@ -93,11 +97,11 @@ StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
          _storeId(storeId) {
     std::string target = "store_" + std::to_string(storeId);
     if (_sess) {
-        _sess->getCtx()->setWaitLock(storeId, "", mode);
+        _sess->getCtx()->setWaitLock(storeId, 0, "", mode);
     }
     _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
     if (_sess) {
-        _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
+        _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
     }
 }
@@ -106,13 +110,40 @@ uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
-Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId,
+ChunkLock::ChunkLock(uint32_t chunkId, uint32_t storeId, mgl::LockMode mode,
+                     Session *sess, mgl::MGLockMgr* mgr)
+        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr),
+               new mgl::MGLock(mgr), sess),
+         _chunkId(chunkId) {
+    std::string target = "chunk_" + std::to_string(chunkId);
+    // a duration of 49 days. If lock still not acquired, fail it
+    uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(storeId, chunkId, "", mode);
+    }
+    auto lockResult = _mgl->lock(target, mode, timeoutMs);
+    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    if (_sess) {
+        _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
+        _sess->getCtx()->addLock(this);
+    }
+}
+
+uint32_t ChunkLock::getStoreId() const {
+    return _parent->getStoreId();
+}
+
+uint32_t ChunkLock::getChunkId() const {
+    return _chunkId;
+}
+
+Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId, uint32_t chunkId,
         const std::string &key, mgl::LockMode mode,
         Session *sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs) {
     if (sess->getCtx()->isLockedByMe(key, mode)) {
         return std::unique_ptr<KeyLock>(nullptr);
     } else {
-        auto lock = std::make_unique<KeyLock>(storeId, key, mode, sess, mgr, lockTimeoutMs);
+        auto lock = std::make_unique<KeyLock>(storeId, chunkid, key, mode, sess, mgr, lockTimeoutMs);
         if (lock->getLockResult() == mgl::LockRes::LOCKRES_OK) {
             return lock;
         } else if (lock->getLockResult() == mgl::LockRes::LOCKRES_TIMEOUT) {
@@ -124,18 +155,18 @@ Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId,
     }
 }
 
-KeyLock::KeyLock(uint32_t storeId, const std::string& key,
+KeyLock::KeyLock(uint32_t storeId, uint32_t chunkId, const std::string& key,
     mgl::LockMode mode, Session *sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs)
-        :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr, lockTimeoutMs),
+        :ILock(new ChunkLock(storeId, chunkId, getParentMode(mode), nullptr, mgr),
                             new mgl::MGLock(mgr), sess),
          _key(key) {
     std::string target = "key_" + key;
     if (_sess) {
-        _sess->getCtx()->setWaitLock(storeId, key, mode);
+        _sess->getCtx()->setWaitLock(storeId, chunkId, key, mode);
     }
     _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
     if (_sess) {
-        _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
+        _sess->getCtx()->setWaitLock(0, 0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
         _sess->getCtx()->setKeylock(key, mode);
     }
@@ -149,6 +180,10 @@ KeyLock::~KeyLock() {
 
 uint32_t KeyLock::getStoreId() const {
     return _parent->getStoreId();
+}
+
+uint32_t KeyLock::getChunkId() const {
+    return _parent->getChunkId();
 }
 
 std::string KeyLock::getKey() const {

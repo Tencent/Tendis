@@ -209,6 +209,7 @@ ServerEntry::ServerEntry()
          _network(nullptr),
          _segmentMgr(nullptr),
          _replMgr(nullptr),
+         _migrateMgr(nullptr),
          _indexMgr(nullptr),
          _pessimisticMgr(nullptr),
          _mgLockMgr(nullptr),
@@ -458,6 +459,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
+    _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
+    s = _migrateMgr->startup();
+    if (!s.ok()) {
+        LOG(WARNING) << "start up cluster manager failed!";
+        return s;
+    }
+
     if (!cfg->noexpire) {
         _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
         s = _indexMgr->startup();
@@ -502,6 +510,10 @@ NetworkAsio* ServerEntry::getNetwork() {
 
 ReplManager* ServerEntry::getReplManager() {
     return _replMgr.get();
+}
+
+MigrateManager* ServerEntry::getMigrateManager() {
+    return _migrateMgr.get();
 }
 
 SegmentMgr* ServerEntry::getSegmentMgr() const {
@@ -734,6 +746,15 @@ bool ServerEntry::processRequest(Session *sess) {
             ++_serverStat.syncPartialErr;
         }
         return false;
+    } else if (expCmdName.value() == "readymigrate") {
+        LOG(WARNING) << "[source] session id:" << sess->id() << " socket borrowed";
+        NetSession *ns = dynamic_cast<NetSession*>(sess);
+        INVARIANT(ns != nullptr);
+        std::vector<std::string> args = ns->getArgs();
+        // we have called precheck, it should have 2 args
+        INVARIANT(args.size() == 3);
+        _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2]);
+        return false;
     } else if (expCmdName.value() == "quit") {
         LOG(INFO) << "quit command";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
@@ -960,6 +981,16 @@ Status ServerEntry::destroyStore(Session *sess,
         return status;
     }
 
+    auto chunkList = getChunkList(storeId);
+    for (auto iter = chunkList.begin(); iter != chunkList.end(); ++iter) {
+        status = _migrateMgr->stopChunk(*iter);
+        if (!status.ok()) {
+            LOG(ERROR) << "migrateMgr stopChunk :" << storeId
+                   << " failed:" << status.toString();
+            return status;
+        }
+    }
+
     if (_indexMgr) {
         status = _indexMgr->stopStore(storeId);
         if (!status.ok()) {
@@ -1094,6 +1125,7 @@ void ServerEntry::stop() {
         executor->stop();
     }
     _replMgr->stop();
+    _migrateMgr->stop();
     if (_indexMgr) 
         _indexMgr->stop();
     _sessions.clear();
@@ -1106,6 +1138,7 @@ void ServerEntry::stop() {
             executor.reset();
         }
         _replMgr.reset();
+        _migrateMgr.reset();
         if (_indexMgr) 
             _indexMgr.reset();
         _pessimisticMgr.reset();

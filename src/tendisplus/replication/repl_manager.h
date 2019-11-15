@@ -17,6 +17,7 @@
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/utils/rate_limiter.h"
+#include "tendisplus/replication/repl_util.h"
 
 namespace tendisplus {
 
@@ -112,7 +113,6 @@ enum class ReplState: std::uint8_t {
 class ServerEntry;
 class StoreMeta;
 
-
 class ReplManager {
  public:
     explicit ReplManager(std::shared_ptr<ServerEntry> svr, 
@@ -143,8 +143,6 @@ class ReplManager {
 #else
     Status applyRepllogV2(Session* sess, uint32_t storeId,
             const std::string& logKey, const std::string& logValue);
-    Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
-        const std::string& logKey, const std::string& logValue);
 #endif
     void flushCurBinlogFs(uint32_t storeId);
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
@@ -160,8 +158,6 @@ class ReplManager {
             uint32_t storeId, const string& slave_listen_ip, uint16_t slave_listen_port);
     bool isFullSupplierFull() const;
 
-    std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
-        uint64_t timeoutMs = 1000);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 
@@ -170,9 +166,7 @@ class ReplManager {
     Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
             uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
 #else
-    Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
-        uint32_t storeId, uint32_t dstStoreId,
-        uint64_t binlogPos, bool needHeartBeart);
+
     std::ofstream* getCurBinlogFs(uint32_t storeid);
     void updateCurBinlogFs(uint32_t storeId, uint64_t written,
         uint64_t ts, bool changeNewFile = false);
