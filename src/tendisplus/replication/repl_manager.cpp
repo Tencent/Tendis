@@ -703,6 +703,9 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
     string master_link_status = "up";
     int64_t master_last_io_seconds_ago = 0;
     int32_t master_sync_in_progress = 0;
+    int32_t slave_repl_offset = -1;
+    int32_t slave_priority = -1;
+    int32_t slave_read_only = 1;
 
     std::lock_guard<std::mutex> lk(_mutex);
     uint64_t now = nsSinceEpoch()/1000000; // ms
@@ -722,9 +725,6 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
         }
     }
 
-    int32_t slave_repl_offset = -1;
-    int32_t slave_priority = -1;
-    int32_t slave_read_only = 1;
     int32_t connected_slaves = 0;
 
     stringstream ss_slaveinfo;
@@ -753,8 +753,6 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
         ss << "master_link_status:" << master_link_status << "\r\n";
         ss << "master_last_io_seconds_ago:" << master_last_io_seconds_ago << "\r\n";
         ss << "master_sync_in_progress:" << master_sync_in_progress << "\r\n";
-    }
-    if (connected_slaves > 0) {
         ss << "slave_repl_offset:" << slave_repl_offset << "\r\n";
         ss << "slave_priority:" << slave_priority << "\r\n";
         ss << "slave_read_only:" << slave_read_only << "\r\n";
@@ -762,6 +760,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
 }
 
 void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const {
+    show_all = false; // takenliu: only one
     uint64_t min_last_sync_time = std::numeric_limits<uint64_t>::max();
     stringstream ss_masterinfo;
     std::lock_guard<std::mutex> lk(_mutex);
@@ -776,7 +775,8 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
                 ss_masterinfo.str("");
             }
 
-            ss_masterinfo << "store" << i << "_master:";
+            // ss_masterinfo << "store" << i << "_master:";
+            ss_masterinfo << "master:";
             ss_masterinfo << "ip=" << _syncMeta[i]->syncFromHost;
             ss_masterinfo << ",port=" << _syncMeta[i]->syncFromPort;
             ss_masterinfo << ",sync_from_id=" << _syncMeta[i]->syncFromId;
@@ -811,7 +811,8 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
                     ss_slaveinfo.str("");
                 }
 
-                ss_slaveinfo << "store" << i << "_slave" << clientnum << ":";
+                // ss_slaveinfo << "store" << i << "_slave" << clientnum << ":";
+                ss_slaveinfo << "slave" << clientnum << ":";
                 ss_slaveinfo << "clientid=" << iter->second->clientId;
                 ss_slaveinfo << ",is_running=" << iter->second->isRunning;
                 ss_slaveinfo << ",dest_store_id=" << iter->second->dstStoreId;
