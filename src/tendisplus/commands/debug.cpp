@@ -1495,15 +1495,86 @@ private:
         }
     }
 
+    int64_t getIntSize(string& str) {
+        if (str.size() <= 2) {
+            LOG(ERROR) << "getIntSize failed:" << str;
+            return -1;
+        }
+        string value = str.substr(0, str.size() - 2);
+        string unit = str.substr(str.size() - 2, 2);
+        Expected<int64_t> size = ::tendisplus::stoll(value);
+        if (!size.ok()) {
+            LOG(ERROR) << "getIntSize failed:" << str;
+            return -1;
+        }
+        if (unit == "kB") {
+            return size.value() * 1024;
+        }
+        else if (unit == "mB") {
+            return size.value() * 1024 * 1024;
+        }
+        else if (unit == "gB") {
+            return size.value() * 1024 * 1024 * 1024;
+        }
+        LOG(ERROR) << "getIntSize failed:" << str;
+        return -1;
+    }
+
     void infoMemory(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "memory") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Memory\r\n";
+
+            string used_memory_vir_human;
+            string used_memory_vir_peak_human;
+            string used_memory_rss_human;
+            string used_memory_rss_peak_human;
+
+            ifstream file;
+            file.open("/proc/self/status");
+            if (file.is_open()) {
+                string strline;
+                while (getline(file, strline)) {
+                    auto v = stringSplit(strline, ":");
+                    if (v.size() != 2) {
+                        continue;
+                    }
+                    if (v[0] == "VmSize") { // virtual memory
+                        used_memory_vir_human = trim(v[1]);
+                        strDelete(used_memory_vir_human, ' ');
+                    }
+                    else if (v[0] == "VmPeak") { // peak of virtual memory
+                        used_memory_vir_peak_human = trim(v[1]);
+                        strDelete(used_memory_vir_peak_human, ' ');
+                    }
+                    else if (v[0] == "VmRSS") { // physic memory
+                        used_memory_rss_human = trim(v[1]);
+                        strDelete(used_memory_rss_human, ' ');
+                    }
+                    else if (v[0] == "VmHWM") { // peak of physic memory
+                        used_memory_rss_peak_human = trim(v[1]);
+                        strDelete(used_memory_rss_peak_human, ' ');
+                    }
+                }
+            }
+            ss << "used_memory:" << -1 << "\r\n";
+            ss << "used_memory_human:" << -1 << "\r\n";
+            ss << "used_memory_rss:" << getIntSize(used_memory_rss_human) << "\r\n";
+            ss << "used_memory_rss_human:" << used_memory_rss_human << "\r\n";
+            ss << "used_memory_peak:" << -1 << "\r\n";
+            ss << "used_memory_peak_human:" << "-1" << "\r\n";
+            ss << "total_system_memory:" << "-1" << "\r\n";
+            ss << "total_system_memory_human:" << "-1" << "\r\n";
+            ss << "used_memory_lua:" << "-1" << "\r\n";
+            ss << "used_memory_vir:" << getIntSize(used_memory_vir_human) << "\r\n";
+            ss << "used_memory_vir_human:" << used_memory_vir_human << "\r\n";
+            ss << "used_memory_vir_peak_human:" << used_memory_vir_peak_human << "\r\n";
+            ss << "used_memory_rss_peak_human:" << used_memory_rss_peak_human << "\r\n";
+
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     void infoPersistence(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
@@ -1511,6 +1582,22 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Persistence\r\n";
+
+            ss << "loading:" << -1 << "\r\n";
+            ss << "rdb_changes_since_last_save:" << -1 << "\r\n";
+            ss << "rdb_bgsave_in_progress:" << -1 << "\r\n";
+            ss << "rdb_last_save_time:" << -1 << "\r\n";
+            ss << "rdb_last_bgsave_status:" << -1 << "\r\n";
+            ss << "rdb_last_bgsave_time_sec:" << -1 << "\r\n";
+            ss << "rdb_current_bgsave_time_sec:" << -1 << "\r\n";
+            ss << "aof_enabled:" << -1 << "\r\n";
+            ss << "aof_rewrite_in_progress:" << -1 << "\r\n";
+            ss << "aof_rewrite_scheduled:" << -1 << "\r\n";
+            ss << "aof_last_rewrite_time_sec:" << -1 << "\r\n";
+            ss << "aof_current_rewrite_time_sec:" << -1 << "\r\n";
+            ss << "aof_last_bgrewrite_status:" << -1 << "\r\n";
+            ss << "aof_last_write_status:" << -1 << "\r\n";
+
             ss << "\r\n";
             result << ss.str();
         }
@@ -1600,6 +1687,9 @@ private:
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Keyspace\r\n";
+
+            ss << "db0:keys=0,expires=0,avg_ttl=0\r\n";
+
             ss << "\r\n";
             result << ss.str();
         }

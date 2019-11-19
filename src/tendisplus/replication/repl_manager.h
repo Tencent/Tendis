@@ -154,6 +154,8 @@ class ReplManager {
 #ifdef BINLOG_V1
     Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
 #endif
+    void getReplInfoSimple(std::stringstream& ss, bool show_all) const;
+    void getReplInfoDetail(std::stringstream& ss, bool show_all) const;
 
     const std::shared_ptr<ServerParams> _cfg;
     mutable std::mutex _mutex;

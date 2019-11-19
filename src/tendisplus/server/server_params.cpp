@@ -106,22 +106,6 @@ ServerParams::~ServerParams() {
     }
 }
 
-static std::string trim_left(const std::string& str) {
-  const std::string pattern = " \f\n\r\t\v";
-  auto iter = str.find_first_not_of(pattern);
-  return str.substr(iter == string::npos ? 0 : iter);
-}
-
-static std::string trim_right(const std::string& str) {
-  const std::string pattern = " \f\n\r\t\v";
-  auto iter = str.find_last_not_of(pattern);
-  return str.substr(0, iter == string::npos ? 0 : iter + 1);
-}
-
-static std::string trim(const std::string& str) {
-  return trim_left(trim_right(str));
-}
-
 Status ServerParams::parseFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {

@@ -690,8 +690,80 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
 }
 
 void ReplManager::getReplInfo(std::stringstream& ss, bool show_all) const {
+    getReplInfoSimple(ss, show_all);
+    getReplInfoDetail(ss, show_all);
+}
+
+void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const {
+    // NOTE(takenliu), only consider slaveof all rockskvstores.
+    string role = "master";
+    int32_t master_repl_offset = 0;
+    string master_host = "";
+    int16_t master_port = 0;
+    string master_link_status = "up";
+    int64_t master_last_io_seconds_ago = 0;
+    int32_t master_sync_in_progress = 0;
+    int32_t slave_repl_offset = -1;
+    int32_t slave_priority = -1;
+    int32_t slave_read_only = 1;
+
+    std::lock_guard<std::mutex> lk(_mutex);
+    uint64_t now = nsSinceEpoch()/1000000; // ms
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+        int64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime)/1000000; // ms
+
+        if (_syncMeta[i]->syncFromHost != "") {
+            role = "slave";
+            master_host = _syncMeta[i]->syncFromHost;
+            master_port = _syncMeta[i]->syncFromPort;
+            // todo: master_link_status
+            int64_t sec_ago = (now - last_sync_time) / 1000; // sec
+            if (master_last_io_seconds_ago < sec_ago) {
+                master_last_io_seconds_ago = sec_ago;
+            }
+            // todo: master_sync_in_progress
+        }
+    }
+
+    int32_t connected_slaves = 0;
+
+    stringstream ss_slaveinfo;
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+        auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
+                            mgl::LockMode::LOCK_NONE, true);
+        if (!expdb.ok()) {
+            return ;
+        }
+        connected_slaves = _pushStatus[i].size();
+
+        uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
+        for (auto iter = _pushStatus[i].begin(); iter != _pushStatus[i].end(); ++iter) {
+            int64_t binlog_lag = highestBinlogid - iter->second->binlogPos;
+            if (binlog_lag > slave_repl_offset) {
+                slave_repl_offset = binlog_lag;
+            }
+        }
+    }
+    ss << "role:" << role << "\r\n";
+    ss << "master_repl_offset:" << master_repl_offset << "\r\n";
+    ss << "connected_slaves:" << connected_slaves << "\r\n";
+    if (role == "slave") {
+        ss << "master_host:" << master_host << "\r\n";
+        ss << "master_port:" << master_port << "\r\n";
+        ss << "master_link_status:" << master_link_status << "\r\n";
+        ss << "master_last_io_seconds_ago:" << master_last_io_seconds_ago << "\r\n";
+        ss << "master_sync_in_progress:" << master_sync_in_progress << "\r\n";
+        ss << "slave_repl_offset:" << slave_repl_offset << "\r\n";
+        ss << "slave_priority:" << slave_priority << "\r\n";
+        ss << "slave_read_only:" << slave_read_only << "\r\n";
+    }
+}
+
+void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const {
+    show_all = false; // takenliu: only one
     uint64_t min_last_sync_time = std::numeric_limits<uint64_t>::max();
     stringstream ss_masterinfo;
+    std::lock_guard<std::mutex> lk(_mutex);
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime)/1000000; // ms
         uint64_t now = nsSinceEpoch()/1000000; // ms
@@ -703,7 +775,8 @@ void ReplManager::getReplInfo(std::stringstream& ss, bool show_all) const {
                 ss_masterinfo.str("");
             }
 
-            ss_masterinfo << "store" << i << "_master:";
+            // ss_masterinfo << "store" << i << "_master:";
+            ss_masterinfo << "master:";
             ss_masterinfo << "ip=" << _syncMeta[i]->syncFromHost;
             ss_masterinfo << ",port=" << _syncMeta[i]->syncFromPort;
             ss_masterinfo << ",sync_from_id=" << _syncMeta[i]->syncFromId;
@@ -729,7 +802,6 @@ void ReplManager::getReplInfo(std::stringstream& ss, bool show_all) const {
         uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
  
         int clientnum = 0;
-        std::lock_guard<std::mutex> lk(_mutex);
         for (auto iter = _pushStatus[i].begin(); iter != _pushStatus[i].end(); ++iter) {
             int64_t binlog_lag = highestBinlogid - iter->second->binlogPos;
             if (binlog_lag > max_binlog_lag || show_all) {
@@ -739,7 +811,8 @@ void ReplManager::getReplInfo(std::stringstream& ss, bool show_all) const {
                     ss_slaveinfo.str("");
                 }
 
-                ss_slaveinfo << "store" << i << "_slave" << clientnum << ":";
+                // ss_slaveinfo << "store" << i << "_slave" << clientnum << ":";
+                ss_slaveinfo << "slave" << clientnum << ":";
                 ss_slaveinfo << "clientid=" << iter->second->clientId;
                 ss_slaveinfo << ",is_running=" << iter->second->isRunning;
                 ss_slaveinfo << ",dest_store_id=" << iter->second->dstStoreId;

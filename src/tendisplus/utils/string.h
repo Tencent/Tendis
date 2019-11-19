@@ -42,6 +42,9 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
 
 std::vector<std::string> stringSplit(const  std::string& s, const std::string& delim);
 
+std::string trim(const std::string& str);
+
+#define strDelete(str, c) (str).erase(std::remove((str).begin(), (str).end(), (c)), (str).end())
 }  // namespace tendisplus
 
 #ifdef _MSC_VER
