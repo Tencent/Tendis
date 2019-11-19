@@ -1,6 +1,7 @@
 #ifndef _WIN32
 #include <sys/time.h>
 #include <sys/utsname.h>
+#include <sys/resource.h>
 #endif
 
 #include <string>
@@ -14,7 +15,6 @@
 #include <set>
 #include <list>
 #include <map>
-#include <sys/resource.h>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -1634,6 +1634,7 @@ private:
     }
 
     void infoCPU(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+#ifndef _WIN32
         if (allsections || defsections || section == "cpu") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1655,6 +1656,7 @@ private:
             ss << "\r\n";
             result << ss.str();
         }
+#endif
     }
 
     void infoCommandStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {

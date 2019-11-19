@@ -440,7 +440,7 @@ void ServerEntry::replyMonitors(Session* sess) {
     info += std::to_string(timestamp/1000000) + "." + std::to_string(timestamp%1000000);
     info += " [" + std::to_string(dbId) + " " + sess->getRemote() + "] ";
     const auto& args = sess->getArgs();
-    for (uint i = 0; i < args.size(); ++i) {
+    for (uint32_t i = 0; i < args.size(); ++i) {
         info += "\"" + args[i] + "\"";
         if (i != (args.size() -1)) {
             info += " ";
@@ -738,7 +738,7 @@ void ServerEntry::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _eventCV.notify_all();
     _network->stop();
-    for (executor : _executorList) {
+    for (auto& executor : _executorList) {
         executor->stop();
     }
     _replMgr->stop();
@@ -749,7 +749,7 @@ void ServerEntry::stop() {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
         _network.reset();
-        for (executor : _executorList) {
+        for (auto& executor : _executorList) {
             executor.reset();
         }
         _replMgr.reset();
