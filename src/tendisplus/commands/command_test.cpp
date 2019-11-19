@@ -761,6 +761,7 @@ TEST(Command, maxClients) {
     testMaxClients(server);
 }
 
+#ifndef _WIN32
 TEST(Command, slowlog) {
     const auto guard = MakeGuard([] {
         destroyEnv();
@@ -803,6 +804,7 @@ TEST(Command, slowlog) {
     EXPECT_STRCASEEQ(line, "config get slowlog-log-slower-than \n");
     pclose(fp);
 }
+#endif // !
 
 /*
 TEST(Command, keys) {

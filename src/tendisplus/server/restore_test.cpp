@@ -163,7 +163,7 @@ void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
                 continue;
             }
             LOG(INFO) << "binlog file:" << p.path();
-            loglist.push_back(p.path());
+            loglist.push_back(p.path().u8string());
         }
         if (loglist.size() <= 0) {
             continue;
@@ -213,7 +213,7 @@ void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
             if (minBinlogId == maxBinlogId) {
                 break;
             } else {
-                usleep(10000);  // 10ms
+                std::this_thread::sleep_for(10ms);
             }
         }
     }

@@ -76,7 +76,7 @@ std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
 }
 
 std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(asio::ip::tcp::socket& socket){
-    for (rwCtx : _rwCtxList) {
+    for (auto& rwCtx : _rwCtxList) {
         if (&(socket.get_io_context()) == &(*rwCtx)) {
             return rwCtx;
         }
