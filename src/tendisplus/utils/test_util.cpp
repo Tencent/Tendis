@@ -415,11 +415,26 @@ void WorkLoad::delKeys(const KeysWritten& keys) {
     }
 }
 
+void WorkLoad::clusterMeet(const std::string& ip, uint32_t port, uint32_t cport) {
+    if (cport != 0) {
+        _session->setArgs({ "cluster", "meet", ip, std::to_string(port), std::to_string(cport) });
+    } else {
+        _session->setArgs({ "cluster", "meet", ip, std::to_string(port)});
+    }
+
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
 int genRand() {
     int grand = 0;
     uint32_t ms = (uint32_t)nsSinceEpoch();
     grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
     return grand;
+}
+
+std::string randomIp() {
+    return "192.168.1.1";
 }
 
 std::string randomStr(size_t s, bool maybeEmpty) {

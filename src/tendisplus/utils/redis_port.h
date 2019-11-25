@@ -175,6 +175,15 @@ struct hllhdr {
 #define HLL_RAW 255 /* Only used internally, never exposed. */
 #define HLL_MAX_ENCODING 1
 
+/* Log levels */
+#define LL_DEBUG 0
+#define LL_VERBOSE 1
+#define LL_NOTICE 2
+#define LL_WARNING 3
+#define LL_RAW (1<<10) /* Modifier to log without timestamp */
+#define CONFIG_DEFAULT_VERBOSITY LL_NOTICE
+
+void serverLog(int level, const char *fmt, ...);
 
 /* Store the value of the register at position 'regnum' into variable 'target'.
 * 'p' is an array of unsigned bytes. */

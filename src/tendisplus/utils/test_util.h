@@ -38,6 +38,7 @@ bool setupReplEnv();
 void destroyReplEnv();
 
 int genRand();
+std::string randomIp();
 std::string randomStr(size_t s, bool maybeEmpty);
 
 void testExpire1(std::shared_ptr<ServerEntry> svr);
@@ -73,6 +74,7 @@ class WorkLoad {
     void slaveof(const std::string& ip, uint32_t port);
     void flush();
     void delKeys(const KeysWritten &keys);
+    void clusterMeet(const std::string& ip, uint32_t port, const uint32_t cport = 0);
     void setMaxKeyLen(uint32_t max_key_len);
     Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
     std::string getStringResult(const std::vector<std::string>& args);

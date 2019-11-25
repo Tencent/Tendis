@@ -302,6 +302,9 @@ public:
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t migrateCheckThreadnum = 2;
     bool enableCluster = false;
+    //uint32_t clusterNodeTimeout = 150000;
+    // TODO(vinchen): for test
+    uint32_t clusterNodeTimeout = 150000000;
 };
 }  // namespace tendisplus
 

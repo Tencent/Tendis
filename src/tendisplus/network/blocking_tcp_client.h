@@ -41,7 +41,8 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
             }
             return 0;
         } catch (const std::exception& e) {
-            return 0;
+            LOG(ERROR) << "BlockingTcpClient::getRemotePort() exception : " << e.what();
+            return -1;
         }
     }
 

@@ -56,6 +56,15 @@ endif()
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})
 
+add_executable(cluster_test cluster_test.cpp)
+if(CMAKE_COMPILER_IS_GNUCC)
+	target_link_libraries(cluster_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
+	target_link_libraries(cluster_test cluster_mgr status utils_common test_util server network gtest_main ${SYS_LIBS})
+else()
+	target_link_libraries(cluster_test commands cluster_mgr status utils_common test_util server network gtest_main ${SYS_LIBS})
+	set_target_properties(cluster_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
+endif()
+
 add_executable(tendisplus main.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)
 	# command uses global variables to self-regist, linking flag whole-archive is required.

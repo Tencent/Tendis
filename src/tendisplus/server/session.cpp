@@ -12,10 +12,11 @@ std::atomic<uint64_t> Session::_aliveCnt(0);
 
 thread_local Session* curSession = nullptr;
 
-Session::Session(std::shared_ptr<ServerEntry> svr)
+Session::Session(std::shared_ptr<ServerEntry> svr, Type type)
         :_args(std::vector<std::string>()),
          _server(svr),
          _ctx(std::make_unique<SessionCtx>(this)),
+         _type(type),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
@@ -30,6 +31,14 @@ void Session::setCurSess(Session* sess) {
 
 Session* Session::getCurSess() {
     return curSession;
+}
+
+std::string Session::getTypeStr() const {
+    static std::string ts[] = { "Net", "Local", "Cluster" };
+
+    INVARIANT_D((int32_t)_type <= 2);
+
+    return ts[(int32_t)_type];
 }
 
 std::string Session::getCmdStr() const {
@@ -53,7 +62,6 @@ std::string Session::getCmdStr() const {
             if (i++ < _args.size() - 1) {
                 ss << " ";
             }
-
         }
     }
     return ss.str();
@@ -86,7 +94,7 @@ SessionCtx *Session::getCtx() const {
 }
 
 LocalSession::LocalSession(std::shared_ptr<ServerEntry> svr)
-        :Session(svr) {
+        :Session(svr, Type::LOCAL) {
 }
 
 void LocalSession::start() {

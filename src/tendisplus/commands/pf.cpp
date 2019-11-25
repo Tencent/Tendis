@@ -625,6 +625,7 @@ class PfMergeCommand : public Command {
                 pCtx->getVersionEP(), ttl);
 
         Status s = kvstore->setKV(rk, value, txn.get());
+
         if (!s.ok()) {
             return s;
         }

@@ -7,6 +7,8 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/storage/varint.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 
@@ -81,7 +83,7 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
      _name(name) {
 }
 
-std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
+std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx() {
     if (_rwCtxList.size() != _rwThreads.size() || _rwCtxList.size() == 0) {
         return NULL;
     }
@@ -90,7 +92,7 @@ std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
     return _rwCtxList[index];
 }
 
-std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(asio::ip::tcp::socket& socket){
+std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(asio::ip::tcp::socket& socket) {
     for (auto& rwCtx : _rwCtxList) {
         if (&(socket.get_io_context()) == &(*rwCtx)) {
             return rwCtx;
@@ -160,6 +162,27 @@ Expected<uint64_t> NetworkAsio::client2Session(
     return sess->id();
 }
 
+Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
+    std::shared_ptr<BlockingTcpClient> c) {
+    if (c->getReadBufSize() > 0) {
+        return{ ErrorCodes::ERR_NETWORK,
+            "client still have buf unread, cannot transfer to a session" };
+    }
+    uint64_t connId = _connCreated.fetch_add(1, std::memory_order_relaxed);
+    auto sess = std::make_shared<ClusterSession>(
+        _server, std::move(c->borrowConn()),
+        connId, true, _netMatrix, _reqMatrix);
+    LOG(INFO) << "new cluster session, id:" << sess->id()
+        << ",connId:" << connId
+        << ",from:" << sess->getRemoteRepr()
+        << " client2ClusterSession";
+    sess->getCtx()->setAuthed();
+    _server->addSession(sess);
+    ++_netMatrix->connCreated;
+    return sess;
+}
+
+template <typename T>
 void NetworkAsio::doAccept() {
     auto cb = [this](const std::error_code& ec, tcp::socket socket) {
         if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -173,18 +196,19 @@ void NetworkAsio::doAccept() {
 
         uint64_t newConnId =
                     _connCreated.fetch_add(1, std::memory_order_relaxed);
-        auto sess = std::make_shared<NetSession>(
+        auto sess = std::make_shared<T>(
                     _server, std::move(socket),
                     newConnId, true, _netMatrix, _reqMatrix);
         DLOG(INFO) << "new net session, id:" << sess->id()
                   << ",connId:" << newConnId
                   << ",from:" << sess->getRemoteRepr()
                   << " created";
+        // TODO(wayenchen): check whether clusterSession should add to ServerEntry::_sessions.
         if (_server->addSession(std::move(sess))) {
             ++_netMatrix->connCreated;
         }
-        
-        doAccept();
+
+        doAccept<T>();
     };
     int index = _connCreated % _rwCtxList.size();
     auto rwCtx = _rwCtxList[index];
@@ -257,11 +281,15 @@ Status NetworkAsio::startThread() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status NetworkAsio::run() {
+Status NetworkAsio::run(bool forGossip) {
     // TODO(deyukong): acceptor needs no explicitly listen.
     // but only through listen can we configure backlog.
     // _acceptor->listen(BACKLOG);
-    doAccept();
+    if (!forGossip) {
+        doAccept<NetSession>();
+    } else {
+        doAccept<ClusterSession>();
+    }
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -270,8 +298,9 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
                        uint64_t connid,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,
-                       std::shared_ptr<RequestMatrix> reqMatrix)
-        :Session(server),
+                       std::shared_ptr<RequestMatrix> reqMatrix,
+                       Session::Type type)
+        :Session(server, type),
          _connId(connid),
          _closeAfterRsp(false),
          _state(State::Created),
@@ -308,6 +337,51 @@ std::string NetSession::getRemote() const {
     return getRemoteRepr();
 }
 
+Expected<std::string> NetSession::getRemoteIp() const {
+    try {
+        if (_sock.is_open()) {
+            return _sock.remote_endpoint().address().to_string();
+        }
+        return { ErrorCodes::ERR_NETWORK, "the session is closed" };
+    } catch (const std::exception& e) {
+        return { ErrorCodes::ERR_NETWORK, e.what() };
+    }
+}
+
+Expected<uint32_t> NetSession::getRemotePort() const {
+    try {
+        if (_sock.is_open()) {
+            return _sock.remote_endpoint().port();
+        }
+        return { ErrorCodes::ERR_NETWORK, "the session is closed" };
+    } catch (const std::exception& e) {
+        return { ErrorCodes::ERR_NETWORK, e.what() };
+    }
+}
+
+
+Expected<std::string> NetSession::getLocalIp() const {
+    try {
+        if (_sock.is_open()) {
+            return _sock.local_endpoint().address().to_string();
+        }
+        return { ErrorCodes::ERR_NETWORK, "the session is closed" };
+    } catch (const std::exception& e) {
+        return { ErrorCodes::ERR_NETWORK, e.what() };
+    }
+}
+
+Expected<uint32_t> NetSession::getLocalPort() const {
+    try {
+        if (_sock.is_open()) {
+            return _sock.local_endpoint().port();
+        }
+        return { ErrorCodes::ERR_NETWORK, "the session is closed" };
+    } catch (const std::exception& e) {
+        return { ErrorCodes::ERR_NETWORK, e.what() };
+    }
+}
+
 int NetSession::getFd() {
     return _sock.native_handle();
 }
@@ -324,7 +398,7 @@ std::string NetSession::getRemoteRepr() const {
     } catch (const std::exception& e) {
         return e.what();
     }
- }
+}
 
 std::string NetSession::getLocalRepr() const {
     if (_sock.is_open()) {
@@ -607,6 +681,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         _server->getServerStat().netInputBytes += actualLen;
     }
 
+    // TODO(wayenchen): include clusterSession?
     if (_first && getServerEntry().get()) {
         uint32_t maxClients = getServerEntry()->getParams()->maxClients;
         if (getServerEntry()->getSessionCount() > maxClients) {
@@ -618,7 +693,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         }
         _first = false;
     }
- 
+
     State curr = _state.load(std::memory_order_relaxed);
     INVARIANT(curr == State::DrainReqBuf || curr == State::DrainReqNet);
 
@@ -721,7 +796,7 @@ void NetSession::processReq() {
     bool continueSched = true;
     if (_args.size()) {
         _ctx->setProcessPacketStart(nsSinceEpoch());
-        continueSched = _server->processRequest((Session*)this);
+        continueSched = _server->processRequest(reinterpret_cast<Session*>(this));
         _reqMatrix->processed += 1;
         _reqMatrix->processCost +=
                 nsSinceEpoch() - _ctx->getProcessPacketStart();
@@ -815,6 +890,7 @@ void NetSession::stepState() {
             drainReqNet();
             return;
         case State::DrainReqBuf:
+            INVARIANT_D(_type != Session::Type::CLUSTER);
             drainReqBuf();
             return;
         case State::Process:
@@ -825,5 +901,7 @@ void NetSession::stepState() {
                 << int32_t(currState);
     }
 }
+
+
 
 }  // namespace tendisplus

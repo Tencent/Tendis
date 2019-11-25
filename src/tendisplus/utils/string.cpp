@@ -264,7 +264,7 @@ uint64_t getCurThreadId() {
     // TODO(vinchen): the performance is?
     oss << std::this_thread::get_id();
     std::string stid = oss.str();
-    unsigned long long tid = std::stoull(stid);
+    uint64_t tid = std::stoull(stid);
 
     return tid;
 }

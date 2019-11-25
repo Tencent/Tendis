@@ -18,7 +18,7 @@
 
 namespace tendisplus {
 
-IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
+  IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
                              std::shared_ptr<ServerParams> cfg)
         : _isRunning(false),
         _svr(svr),
@@ -183,7 +183,7 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
       if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
           return 0;
       }
-     
+
       _delJobCnt[storeId]++;
       uint32_t deletes = 0;
 

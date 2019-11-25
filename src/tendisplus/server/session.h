@@ -16,10 +16,13 @@ class SessionCtx;
 
 class Session: public std::enable_shared_from_this<Session> {
  public:
-    explicit Session(std::shared_ptr<ServerEntry> svr);
+    enum class Type {
+        NET = 0, LOCAL = 1, CLUSTER = 2,
+    };
+
+    explicit Session(std::shared_ptr<ServerEntry> svr, Type type);
     virtual ~Session();
     uint64_t id() const;
-
     virtual Status setResponse(const std::string& s) = 0;
     const std::vector<std::string>& getArgs() const;
     Status processExtendProtocol();
@@ -29,10 +32,20 @@ class Session: public std::enable_shared_from_this<Session> {
 
     virtual void start() = 0;
     virtual Status cancel() = 0;
-    virtual int getFd() = 0;
+    virtual int getFd() = 0 ;
     virtual std::string getRemote() const = 0;
+
+
+    virtual Expected<std::string> getRemoteIp() const { return{ ErrorCodes::ERR_NETWORK, "" }; }
+    virtual Expected<uint32_t> getRemotePort() const { return {ErrorCodes::ERR_NETWORK, ""}; }
+
+    virtual Expected<std::string> getLocalIp() const { return {ErrorCodes::ERR_NETWORK, ""}; }
+    virtual Expected<uint32_t> getLocalPort() const { return {ErrorCodes::ERR_NETWORK, ""}; }
+
     std::string getName() const;
     void setName(const std::string&);
+    Type getType() const { return _type; }
+    std::string getTypeStr() const;
     static Session* getCurSess();
     static void setCurSess(Session* sess);
 
@@ -40,6 +53,7 @@ class Session: public std::enable_shared_from_this<Session> {
     std::vector<std::string> _args;
     std::shared_ptr<ServerEntry> _server;
     std::unique_ptr<SessionCtx> _ctx;
+    Type _type;
 
  private:
     mutable std::mutex _baseMutex;

@@ -300,6 +300,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status deleteChunk(uint32_t chunkid) {
         return {ErrorCodes::ERR_OK, ""};
     }
+    bool isClusterEnabled() const { return _enableCluster; }
     void updateClusterFromMeta();
 
  private:

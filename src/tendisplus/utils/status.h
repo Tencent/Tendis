@@ -34,6 +34,7 @@ enum class ErrorCodes {
     ERR_STORE_NOT_OPEN,
     ERR_LOCK_TIMEOUT,
     ERR_UNKNOWN,
+    ERR_CLUSTER,
     
     // error from redis
     ERR_AUTH = 100,

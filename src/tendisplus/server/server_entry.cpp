@@ -351,7 +351,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
           kvStoreCount, chunkSize);
     installCatalog(std::move(catalog));
 
-
     // kvstore init
     auto blockCache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, cfg->rocksStrictCapacityLimit);
@@ -387,17 +386,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     INVARIANT_D(getKVStoreCount() == kvStoreCount);
     LOG(INFO)<<"enable cluster flag is" << _enableCluster;
     
-    //cluster init 
-    if(_enableCluster) {
-        _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());    
-
-        Status s = _clusterMgr->startup();
-        if (!s.ok()) {
-            LOG(WARNING) << "start up cluster manager failed!";
-        return s;
-        }
-    }     
-
     auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
         new SegmentMgrFnvHash64(_kvstores, chunkSize));
     installSegMgrInLock(std::move(tmpSegMgr));
@@ -482,6 +470,17 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     } else {
         LOG(WARNING) << "ready to accept connections at "
             << cfg->bindIp << ":" << cfg->port;
+    }
+
+    // cluster init
+    if (_enableCluster) {
+        _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
+
+        Status s = _clusterMgr->startup();
+        if (!s.ok()) {
+            LOG(WARNING) << "start up cluster manager failed!";
+        return s;
+        }
     }
 
     _isRunning.store(true, std::memory_order_relaxed);
@@ -574,7 +573,8 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
         INVARIANT_D(0);
         LOG(ERROR) << "add session:" << id << ",session id already exists";
     }
-    // DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
+    DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote()
+        << " type:" << sess->getTypeStr();
     _sessions[id] = std::move(sess);
     return true;
 }
@@ -625,7 +625,8 @@ void ServerEntry::endSession(uint64_t connId) {
     if (pCtx->getIsMonitor()) {
         DelMonitorNoLock(connId);
     }
-    // DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
+    DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote()
+        << " type:" << it->second->getTypeStr();
     _sessions.erase(it);
 }
 

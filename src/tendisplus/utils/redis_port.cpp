@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <string.h>
 #include <math.h>
+#include <stdarg.h>
 #include <sstream>
 #include <utility>
 
@@ -1309,6 +1310,37 @@ class dummyClass {
 };
 
 static dummyClass dummy;
+
+/* Like serverLogRaw() but with printf-alike support. This is the function that
+* is used across the code. The raw version is only used in order to dump
+* the INFO output on crash. */
+void serverLog(int level, const char *fmt, ...) {
+    va_list ap;
+    char msg[1024];
+
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+
+    switch (level) {
+    case LL_DEBUG:
+        DLOG(INFO) << msg;
+        break;
+    case LL_WARNING:
+        LOG(WARNING) << msg;
+        break;
+    case LL_NOTICE:
+        LOG(ERROR) << msg;
+        break;
+    case LL_VERBOSE:
+        LOG(INFO) << msg;
+        break;
+    default:
+        INVARIANT_D(0);
+        LOG(ERROR) << msg;
+        break;
+    }
+}
 
 }  // namespace redis_port
 }  // namespace tendisplus

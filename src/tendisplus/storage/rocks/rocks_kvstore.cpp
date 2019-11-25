@@ -1237,9 +1237,9 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
 
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t end, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) {
-    DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-        << " getHighestBinlogId:" << getHighestBinlogId()
-        << " start:" << start <<" end:" << end;
+    //DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
+    //    << " getHighestBinlogId:" << getHighestBinlogId()
+    //    << " start:"<<start <<" end:"<< end;
     TruncateBinlogResult result;
     int ret = 0;
     uint64_t ts = 0;

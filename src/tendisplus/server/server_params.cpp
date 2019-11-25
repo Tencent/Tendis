@@ -1,11 +1,12 @@
+#include <stdlib.h>
 #include <iostream>
 #include <string>
-#include <stdlib.h>
 #include <typeinfo>
 #include <algorithm>
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
@@ -43,7 +44,7 @@ bool logLevelParamCheck(const string& val) {
         return true;
     }
     return false;
-};
+}
 
 bool compressTypeParamCheck(const string& val) {
     auto v = toLower(val);
@@ -91,11 +92,10 @@ ServerParams::ServerParams() {
     REGISTER_VARS(pidFile);
     REGISTER_VARS_DIFF_NAME("version-increase", versionIncrease);
     REGISTER_VARS(generalLog);
-    // false: For command "set a b", it don't check the type of 
-    // "a" and update it directly. It can make set() faster. 
+    // false: For command "set a b", it don't check the type of
+    // "a" and update it directly. It can make set() faster.
     // Default false. Redis layer can guarantee that it's safe
     REGISTER_VARS_DIFF_NAME("checkkeytypeforsetcmd", checkKeyTypeForSet);
-    REGISTER_VARS_DIFF_NAME("clustermode", enableCluster);
 
     REGISTER_VARS(chunkSize);
     REGISTER_VARS(kvStoreCount);
@@ -154,6 +154,9 @@ ServerParams::ServerParams() {
     REGISTER_VARS(migrateClearThreadnum);
     REGISTER_VARS(migrateReceiveThreadnum);
     REGISTER_VARS(migrateCheckThreadnum);
+
+    REGISTER_VARS_DIFF_NAME("clustermode", enableCluster);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster_node_timeout", clusterNodeTimeout);
 };
 
 ServerParams::~ServerParams() {
@@ -250,7 +253,7 @@ bool ServerParams::setVar(const string& name, const string& value, string* errin
 
 bool ServerParams::registerOnupdate(const string& name, funptr ptr){
     auto iter = _mapServerParams.find(toLower(name));
-    if (iter == _mapServerParams.end()){
+    if (iter == _mapServerParams.end()) {
         return false;
     }
     iter->second->setUpdate(ptr);

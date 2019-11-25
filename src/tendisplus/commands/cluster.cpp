@@ -1,12 +1,26 @@
+
 #ifndef _WIN32
 #include <sys/time.h>
 #include <sys/utsname.h>
 #endif
 
 #include <string>
+#include <utility>
+#include <memory>
+#include <algorithm>
+#include <cctype>
+#include <vector>
+#include <clocale>
+#include <map>
+#include <list>
 #include "glog/logging.h"
-#include "tendisplus/commands/command.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/commands/command.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/base64.h"
+#include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
 
@@ -68,6 +82,48 @@ class ClusterCommand: public Command {
                 return Command::fmtErr(s.toString());
             }
         }
+		
+		if (!svr->isClusterEnabled()) {
+            return { ErrorCodes::ERR_CLUSTER,
+                    "This instance has cluster support disabled" };
+        }
+
+        const auto& clusterState = svr->getClusterMgr()->getClusterState();
+        auto& args = sess->getArgs();
+        const std::string arg1 = toLower(args[1]);
+        auto argSize = sess->getArgs().size();
+        if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
+            /* CLUSTER MEET <ip> <port> [cport] */
+            uint64_t port, cport;
+
+            auto& host = args[2];
+            auto eport = ::tendisplus::stoul(args[3]);
+            if (!eport.ok()) {
+                return{ ErrorCodes::ERR_CLUSTER,
+                        "Invalid TCP base port specified " + args[3] };
+            }
+            port = eport.value();
+
+            if (argSize == 5) {
+                auto ecport = ::tendisplus::stoul(args[4]);
+                if (!ecport.ok()) {
+                    return{ ErrorCodes::ERR_CLUSTER,
+                            "Invalid TCP bus port specified " + args[4] };
+                }
+                cport = ecport.value();
+            } else {
+                cport = port + CLUSTER_PORT_INCR;
+            }
+
+            clusterState->clusterStartHandshake(host,
+                            port, cport);
+
+            return{ ErrorCodes::ERR_OK, "" };
+        }
+
+        return{ ErrorCodes::ERR_CLUSTER,
+                "Invalid cluster command " + args[1] };
+		
         return Command::fmtOK();
     }
 } clusterCmd;
