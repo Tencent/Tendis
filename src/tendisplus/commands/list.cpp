@@ -1006,6 +1006,20 @@ class LSetCommand: public Command {
             if (!s.ok()) {
                 return s;
             }
+            // update meta key's revision
+            RecordKey metaRk(expdb.value().chunkId, pCtx->getDbId(),
+                    RecordType::RT_LIST_META, key, "");
+            s = kvstore->setKV(metaRk,
+                    RecordValue(lm.encode(),
+                            RecordType::RT_LIST_META,
+                            sess->getCtx()->getVersionEP(),
+                            rv.value().getTtl(),
+                            rv),
+                    txn.get());
+            if (!s.ok()) {
+                return s;
+            }
+
             Expected<uint64_t> expCmt = txn->commit();
             if (expCmt.ok()) {
                 return Command::fmtOK();
