@@ -20,8 +20,25 @@ static const uint16_t RDB_VERSION = 8;
 
 static const uint8_t RDB_6BITLEN = 0;
 static const uint8_t RDB_14BITLEN = 1;
+static const uint8_t RDB_ENCVAL = 3;
 static const uint8_t RDB_32BITLEN = 0x80;  // 10000000
 static const uint8_t RDB_64BITLEN = 0x81;  // 10000001
+
+static const uint8_t RDB_ENC_INT8 = 0;
+static const uint8_t RDB_ENC_INT16 = 1;
+static const uint8_t RDB_ENC_INT32 = 2;
+static const uint8_t RDB_ENC_LZF = 3;
+
+static const uint8_t ZIP_STR_MASK = 0xc0;
+static const uint8_t ZIP_INT_16B = 0xc0 | 0 << 4;
+static const uint8_t ZIP_INT_32B = 0xc0 | 1 << 4;
+static const uint8_t ZIP_INT_64B = 0xc0 | 2 << 4;
+static const uint8_t ZIP_INT_24B = 0xc0 | 3 << 4;
+static const uint8_t ZIP_INT_8B = 0xfe;
+
+static const uint8_t ZIP_INT_IMM_MASK = 0x0f;
+static const uint8_t ZIP_INT_IMM_MIN = 0xf1;
+static const uint8_t ZIP_INT_IMM_MAX = 0xfd;
 
 enum class DumpType: uint8_t {
     RDB_TYPE_STRING = 0,
@@ -97,8 +114,12 @@ class Deserializer {
     static Status preCheck(const std::string &payload);
     static Expected<DumpType> loadObjectType(
             const std::string &payload, size_t &&pos);
-    static Expected<size_t> loadLen(const std::string &payload, size_t *pos);
+    static Expected<size_t> loadLen(const std::string &payload, size_t *pos, bool *isencoded = nullptr);
     static std::string loadString(const std::string &payload, size_t *pos);
+    static Expected<int64_t> loadIntegerString(
+            const std::string &payload, size_t *pos, uint8_t encType);
+    static Expected<std::string> loadLzfString(
+            const std::string &payload, size_t *pos);
 
  protected:
     Session *_sess;
