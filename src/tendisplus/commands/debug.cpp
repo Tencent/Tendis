@@ -185,12 +185,16 @@ class DbsizeCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
+        auto server = sess->getServerEntry();
+        if (!server->getParams()->openDbsize) { // default close Dbsize command.
+            return Command::fmtLongLong(0);
+        }
+
         int64_t size = 0;
         auto currentDbid = sess->getCtx()->getDbId();
         auto ts = msSinceEpoch();
 
         // TODO(vinchen): should use a faster way
-        auto server = sess->getServerEntry();
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,

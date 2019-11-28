@@ -98,6 +98,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS(strictCapacityLimit);
     REGISTER_VARS(cacheIndexFilterblocks);
     REGISTER_VARS(maxOpenFiles);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(openDbsize);
 };
 
 ServerParams::~ServerParams() {
