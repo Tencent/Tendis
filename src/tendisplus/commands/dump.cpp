@@ -6,6 +6,7 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 template <typename T>
@@ -640,12 +641,23 @@ Expected<DumpType> Deserializer::loadObjectType(
 
 Expected<size_t> Deserializer::loadLen(
         const std::string &payload,
-        size_t *pos) {
+        size_t *pos,
+        bool *isencoded) {
     byte buf[2];
     size_t ret;
     INVARIANT(easyCopy(&buf[0], payload, pos) == 1);
     uint8_t encType = static_cast<uint8_t>((buf[0]&0xC0) >> 6);
-    if (encType == RDB_6BITLEN) {
+    if (isencoded) {
+        *isencoded = false;
+    }
+    /* Support ENCODING_INT and lzf(compressed) */
+    if (encType == RDB_ENCVAL) {
+        ret = buf[0] & 0x3F;
+        if (isencoded) {
+            *isencoded = true;
+        }
+        LOG(INFO) << "return encType " << (int)ret;
+    } else if (encType == RDB_6BITLEN) {
         ret = buf[0] & 0x3F;
     } else if (encType == RDB_14BITLEN) {
         INVARIANT(easyCopy(&buf[1], payload, pos) == 1);
@@ -665,13 +677,109 @@ Expected<size_t> Deserializer::loadLen(
 }
 
 std::string Deserializer::loadString(const std::string &payload, size_t *pos) {
-    auto expLen = Deserializer::loadLen(payload, pos);
+    bool isencoded(false);
+    auto expLen = Deserializer::loadLen(payload, pos, &isencoded);
     if (!expLen.ok()) {
         return std::string("");
     }
     size_t len = expLen.value();
+    if (isencoded) {
+        LOG(INFO) << "is encoded";
+        switch (static_cast<uint8_t>(len)) {
+            case RDB_ENC_INT8:
+            case RDB_ENC_INT16:
+            case RDB_ENC_INT32: {
+                /* transfer integer to string */
+                auto eVal = loadIntegerString(payload, pos, len);
+                if (!eVal.ok()) {
+                    return std::string();
+                }
+                return std::to_string(eVal.value());
+                break;
+            }
+            case RDB_ENC_LZF: {
+                LOG(INFO) << "is encoded LZF";
+                auto expLzf = loadLzfString(payload, pos);
+                if (!expLzf.ok()) {
+                    return std::string();
+                }
+                return expLzf.value();
+                break;
+            }
+            default:
+                LOG(INFO) << "Unknown encoding " << (int)len;
+        }
+    }
+
     *pos += len;
+    if (payload.begin() + *pos > payload.end()) {
+        LOG(INFO) << "pos over limit";
+        return std::string("");
+    }
     return std::string(payload.begin() + *pos - len, payload.begin() + *pos);
+}
+
+Expected<int64_t> Deserializer::loadIntegerString(
+        const std::string &payload,
+        size_t *pos,
+        uint8_t encType) {
+    int64_t val;
+
+    switch (encType) {
+        case RDB_ENC_INT8: {
+            int8_t enc;
+            easyCopy(&enc, payload, pos);
+            val = static_cast<int64_t>(enc);
+            break;
+        }
+        case RDB_ENC_INT16: {
+            int16_t enc;
+            easyCopy(&enc, payload, pos);
+            val = static_cast<int64_t>(enc);
+            break;
+        }
+        case RDB_ENC_INT32: {
+            int32_t enc;
+            easyCopy(&enc, payload, pos);
+            val = static_cast<int64_t>(enc);
+            break;
+        }
+        default:
+            LOG(ERROR) << "Unknown ENCODING_INT type " << encType;
+            return { ErrorCodes::ERR_PARSEPKT,
+                     "Unknown RDB integer encoding type" };
+    }
+    return val;
+}
+
+Expected<std::string> Deserializer::loadLzfString(
+        const std::string &payload,
+        size_t *pos) {
+    auto expClen = loadLen(payload, pos);
+    if (!expClen.ok()) {
+        return expClen.status();
+    }
+    LOG(INFO) << "load clen " << expClen.value();
+    auto expLen = loadLen(payload, pos);
+    if (!expLen.ok()) {
+        return expLen.status();
+    }
+    LOG(INFO) << "load len " << expLen.value();
+    const auto lzfEnd = payload.begin() + *pos + expClen.value();
+    if (lzfEnd > payload.cend()) {
+        return {ErrorCodes::ERR_PARSEOPT, "Wrong lzf buffer length"};
+    }
+    std::string lzfBuf(payload.begin() + *pos, lzfEnd);
+    *pos += expClen.value();
+    std::vector<char>outBuf(expLen.value(), '\0');
+
+    if (redis_port::lzf_decompress(lzfBuf.c_str(), lzfBuf.size(),
+            outBuf.data(), outBuf.size()) == 0) {
+        LOG(INFO) << "Invalid LZF";
+        return {ErrorCodes::ERR_PARSEPKT, "Invalid LZF compressed string"};
+    }
+
+    return std::string(outBuf.begin(), outBuf.end());
 }
 
 class RestoreCommand: public Command {
@@ -1092,7 +1200,7 @@ class HashDeserializer: public Deserializer {
 };
 
 class ListDeserializer: public Deserializer {
-    std::vector<std::string> deserializeZiplist(
+    Expected<std::vector<std::string>> deserializeZiplist(
             const std::string &payload, size_t *pos) {
         uint32_t zlbytes(0), zltail(0);
         uint16_t zllen(0);
@@ -1109,7 +1217,61 @@ class ListDeserializer: public Deserializer {
             } else {
                 *pos += 1;
             }
-            std::string val = loadString(payload, pos);
+            std::string val;
+            const unsigned char& encoding = payload.at(*(pos));
+            if (static_cast<uint8_t>(encoding) < ZIP_STR_MASK) {
+                val = loadString(payload, pos);
+            } else {
+                (*pos)++;
+                switch (encoding) {
+                    case ZIP_INT_8B: {
+                        int8_t intEntry;
+                        easyCopy(&intEntry, payload, pos);
+                        val = std::to_string(intEntry);
+                        break;
+                    }
+                    case ZIP_INT_16B: {
+                        int16_t intEntry;
+                        easyCopy(&intEntry, payload, pos);
+                        val = std::to_string(intEntry);
+                        break;
+                    }
+                    case ZIP_INT_24B: {
+                        uint8_t data[3];
+                        int32_t intEntry;
+                        for (int i = 0; i < 3; i++) {
+                            easyCopy(&data[i], payload, pos);
+                        }
+                        // Read sequence: low addr -> high addr, so data[2] gets left shift
+                        intEntry = (data[2] << 16) | (data[1] << 8) | (data[0]);
+                        val = std::to_string(intEntry);
+                        break;
+                    }
+                    case ZIP_INT_32B: {
+                        int32_t intEntry;
+                        easyCopy(&intEntry, payload, pos);
+                        val = std::to_string(intEntry);
+                        break;
+                    }
+                    case ZIP_INT_64B: {
+                        int64_t intEntry;
+                        easyCopy(&intEntry, payload, pos);
+                        val = std::to_string(intEntry);
+                    }
+                    default: {
+                        if (encoding >= ZIP_INT_IMM_MIN &&
+                            encoding <= ZIP_INT_IMM_MAX) {
+                            uint8_t intEntry;
+                            intEntry = (encoding & ZIP_INT_IMM_MASK) - 1;
+                            val = std::to_string(intEntry);
+                        } else {
+                            LOG(INFO) << "Invalid integer encoding " << static_cast<uint8_t>(encoding);
+                            return {ErrorCodes::ERR_PARSEPKT, "Invalid integer encoding"};
+                        }
+                        break;
+                    }
+                }
+            }
             prevlen = val.size();
             zl.push_back(std::move(val));
         }
@@ -1153,12 +1315,14 @@ class ListDeserializer: public Deserializer {
         uint64_t head = lm.getHead();
         uint64_t tail = lm.getTail();
         while (qlLen--) {
-            auto expLen = loadLen(_payload, &_pos);
-            if (!expLen.ok()) {
-                return expLen.status();
+            auto zlist = loadString(_payload, &_pos);
+            size_t pos = 0;
+            auto expZl = deserializeZiplist(zlist, &pos);
+            if (!expZl.ok()) {
+                LOG(ERROR) << "Restore list failed, " << expZl.status().toString();
+                return expZl.status();
             }
-
-            std::vector<std::string> zl = deserializeZiplist(_payload, &_pos);
+            const auto& zl = expZl.value();
             uint64_t idx;
             for (auto iter = zl.begin(); iter != zl.end(); iter++) {
                 idx = tail++;

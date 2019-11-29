@@ -328,13 +328,13 @@ std::string ReplLogValueV2::encode(
     size_t offset = val.size();
 
     size_t allocSize = offset;
-    for (auto v : vec) {
+    for (const auto& v : vec) {
         allocSize += v.encodeSize();
     }
 
     val.resize(allocSize);
 
-    for (auto v : vec) {
+    for (const auto& v : vec) {
         uint8_t* desc = (uint8_t*)val.c_str() + offset;
         size_t len = v.encode(desc, allocSize - offset);
         INVARIANT(len > 0);

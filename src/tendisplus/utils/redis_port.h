@@ -257,6 +257,9 @@ int hllSparseToDense(struct hllhdr* oldhdr, size_t oldSize,
 int hllUpdateByRawHpll(struct hllhdr* hdr, size_t * hdrSize, size_t hdrMaxSize,
     struct hllhdr* hdrRaw);
 
+unsigned int
+lzf_decompress (const void *const in_data,  unsigned int in_len,
+                void             *out_data, unsigned int out_len);
 }  // namespace redis_port
 }  // namespace tendisplus
 
