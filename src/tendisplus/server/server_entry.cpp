@@ -410,7 +410,13 @@ void ServerEntry::AddMonitor(Session* sess) {
             return;
         }
     }
-    _monitors.push_back(std::shared_ptr<Session>(sess));
+    auto it = _sessions.find(sess->id());
+    if (it == _sessions.end()) {
+        LOG(ERROR) << "AddMonitor session not found:" << sess->id();
+        return;
+    }
+
+    _monitors.push_back(it->second);
 }
 
 void ServerEntry::DelMonitorNoLock(uint64_t connId) {

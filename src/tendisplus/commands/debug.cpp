@@ -2098,16 +2098,14 @@ class MonitorCommand : public Command {
         return 0;
     }
 
-    bool sameWithRedis() const {
-        return false;
-    }
-
     Expected<std::string> run(Session *sess) final {
-        auto vv = dynamic_cast<NetSession*>(sess);
-        INVARIANT(vv != nullptr);
-        // TODO(vinchen): support it later
-        vv->setCloseAfterRsp();
-        return{ ErrorCodes::ERR_INTERNAL, "monitor not supported yet" };
+        SessionCtx* pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        pCtx->setIsMonitor(true);
+
+        sess->getServerEntry()->AddMonitor(sess);
+
+        return Command::fmtOK();
     }
 } monitorCmd;
 
