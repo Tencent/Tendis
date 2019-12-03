@@ -23,6 +23,11 @@ Session::Session(std::shared_ptr<ServerEntry> svr, Type type)
 
 Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
+#ifdef TENDIS_DEBUG
+    if (_type == Type::CLUSTER) {
+        DLOG(INFO) << "cluster session " << id() << " is destroyed.";
+    }
+#endif
 }
 
 void Session::setCurSess(Session* sess) {
@@ -139,7 +144,6 @@ LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
 
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
-    // DLOG(INFO) << "local session, id:" << _sess->id() << " destroyed";
     if (svr.get()) {
         svr->endSession(_sess->id());
     }

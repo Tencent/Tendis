@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstdlib>
 #include <random>
+#include <bitset>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -316,6 +317,22 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
     offset += keySize;
 
     return LenStrDecodeResult{ std::move(str), offset };
+}
+
+template <size_t size>
+std::string bitsetEncode(const std::bitset<size>& bitmap) {
+    // TODO(wayenche)
+    return "";
+}
+
+template <size_t size>
+Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
+    return { ErrorCodes::ERR_DECODE, "" };
+}
+
+template <size_t size>
+uint32_t bitsetEncodeSize(const std::bitset<size>& bitmap) {
+    return 0;
 }
 
 std::vector<std::string> stringSplit(const std::string& s,

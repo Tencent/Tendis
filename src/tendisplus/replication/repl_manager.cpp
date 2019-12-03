@@ -593,7 +593,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         } else if (start != Transaction::MIN_VALID_TXNID) {
             v->firstBinlogId = start;
         }
-        DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
+        //DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
 
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();

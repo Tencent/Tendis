@@ -83,6 +83,16 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
      _name(name) {
 }
 
+#ifdef _WIN32
+void NetworkAsio::releaseForWin() {
+    _server.reset();
+    _cfg.reset();
+    _netMatrix.reset();
+    _reqMatrix.reset();
+}
+
+#endif
+
 std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx() {
     if (_rwCtxList.size() != _rwThreads.size() || _rwCtxList.size() == 0) {
         return NULL;
@@ -328,6 +338,13 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
         << " createad";
     _first = true;
 }
+
+// NOTE(vinchen): It is useless,
+// because NetSession is always in serverEntry::_sessions[],
+// it can't be destructed.
+//NetSession::~NetSession() {
+//    endSession();
+//}
 
 void NetSession::setState(State s) {
     _state.store(s, std::memory_order_relaxed);

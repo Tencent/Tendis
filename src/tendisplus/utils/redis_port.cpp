@@ -1314,7 +1314,7 @@ static dummyClass dummy;
 /* Like serverLogRaw() but with printf-alike support. This is the function that
 * is used across the code. The raw version is only used in order to dump
 * the INFO output on crash. */
-void serverLog(int level, const char *fmt, ...) {
+void serverLogOld(int level, const char *fmt, ...) {
     va_list ap;
     char msg[1024];
 

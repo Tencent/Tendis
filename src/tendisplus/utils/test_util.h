@@ -16,6 +16,12 @@
 // disable one test if needed
 #define TEST_NO(a, b) void Test_no_##a##_##b()
 
+#ifdef _WIN32
+#define MYTEST TEST_NO
+#else
+#define MYTEST TEST
+#endif
+
 namespace tendisplus {
 
 using TestServer = std::shared_ptr<ServerEntry>;

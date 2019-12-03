@@ -115,8 +115,10 @@ class ClusterCommand: public Command {
                 cport = port + CLUSTER_PORT_INCR;
             }
 
-            clusterState->clusterStartHandshake(host,
-                            port, cport);
+            if (!clusterState->clusterStartHandshake(host, port, cport)) {
+                return{ ErrorCodes::ERR_CLUSTER,
+                    "Invalid node address specified: " + host + std::to_string(port) };
+            }
 
             return{ ErrorCodes::ERR_OK, "" };
         }

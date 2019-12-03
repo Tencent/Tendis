@@ -183,7 +183,43 @@ struct hllhdr {
 #define LL_RAW (1<<10) /* Modifier to log without timestamp */
 #define CONFIG_DEFAULT_VERBOSITY LL_NOTICE
 
-void serverLog(int level, const char *fmt, ...);
+void serverLogOld(int level, const char *fmt, ...);
+
+#define serverLogNew(level, fmt, ...) do {\
+    char msg[1024]; \
+    snprintf(msg, sizeof(msg), fmt, ##__VA_ARGS__); \
+    switch (level) {\
+    case LL_DEBUG:\
+        DLOG(INFO) << msg;\
+        break;\
+    case LL_WARNING:\
+        LOG(WARNING) << msg;\
+        break;\
+    case LL_NOTICE:\
+        LOG(ERROR) << msg;\
+        break;\
+    case LL_VERBOSE:\
+        LOG(INFO) << msg;\
+        break;\
+    default:\
+        INVARIANT_D(0);\
+        LOG(ERROR) << msg;\
+        break;\
+    }\
+} while (0)\
+
+#define serverLogNoDebug(level, fmt, ...) do {\
+    if (level != LL_DEBUG) { \
+        serverLogNew(level, fmt, ##__VA_ARGS__); \
+    }\
+} while(0)\
+
+#ifdef TENDIS_DEBUG
+#define serverLog serverLogNew
+#else
+#define serverLog serverLogNoDebug
+#endif
+
 
 /* Store the value of the register at position 'regnum' into variable 'target'.
 * 'p' is an array of unsigned bytes. */

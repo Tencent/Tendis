@@ -35,6 +35,8 @@ else()
 	set_target_properties(repl_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
 
+
+
 add_executable(restore_test restore_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)
 	target_link_libraries(restore_test -Wl,--whole-archive commands -Wl,--no-whole-archive)

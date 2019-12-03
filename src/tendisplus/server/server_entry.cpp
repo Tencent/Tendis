@@ -573,8 +573,12 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
         INVARIANT_D(0);
         LOG(ERROR) << "add session:" << id << ",session id already exists";
     }
-    DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote()
-        << " type:" << sess->getTypeStr();
+#ifdef TENDIS_DEBUG
+    if (sess->getType() != Session::Type::LOCAL) {
+        DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote()
+            << " type:" << sess->getTypeStr();
+    }
+#endif
     _sessions[id] = std::move(sess);
     return true;
 }
@@ -625,8 +629,12 @@ void ServerEntry::endSession(uint64_t connId) {
     if (pCtx->getIsMonitor()) {
         DelMonitorNoLock(connId);
     }
-    DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote()
-        << " type:" << it->second->getTypeStr();
+#ifdef TENDIS_DEBUG
+    if (it->second->getType() != Session::Type::LOCAL) {
+        DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote()
+            << " type:" << it->second->getTypeStr();
+    }
+#endif
     _sessions.erase(it);
 }
 
@@ -1132,12 +1140,17 @@ void ServerEntry::stop() {
     _migrateMgr->stop();
     if (_indexMgr) 
         _indexMgr->stop();
+    _clusterMgr->stop();
     _sessions.clear();
 
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
+#ifdef _WIN32
+        _network->releaseForWin();
+#else
         _network.reset();
+#endif
         for (auto& executor : _executorList) {
             executor.reset();
         }
@@ -1148,6 +1161,7 @@ void ServerEntry::stop() {
         _pessimisticMgr.reset();
         _mgLockMgr.reset();
         _segmentMgr.reset();
+        _clusterMgr.reset();
     }
 
     // stop the rocksdb

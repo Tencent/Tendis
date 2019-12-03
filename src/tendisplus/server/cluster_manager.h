@@ -20,11 +20,28 @@ enum class ClusterHealth: std::uint8_t {
     CLUSTER_OK = 1,
 };
 
-
 #define CLUSTER_SLOTS 16384
 
 #define CLUSTER_NAMELEN 40    /* sha1 hex length */
 #define CLUSTER_PORT_INCR 10000 /* Cluster port = baseport + PORT_INCR */
+
+
+/* The following defines are amount of time, sometimes expressed as
+* multiplicators of the node timeout value (when ending with MULT). */
+#define CLUSTER_DEFAULT_NODE_TIMEOUT 15000
+#define CLUSTER_DEFAULT_SLAVE_VALIDITY 10 /* Slave max data age factor. */
+#define CLUSTER_DEFAULT_REQUIRE_FULL_COVERAGE 1
+#define CLUSTER_DEFAULT_SLAVE_NO_FAILOVER 0 /* Failover by default. */
+#define CLUSTER_FAIL_REPORT_VALIDITY_MULT 2 /* Fail report validity. */
+#define CLUSTER_FAIL_UNDO_TIME_MULT 2 /* Undo fail if master is back. */
+#define CLUSTER_FAIL_UNDO_TIME_ADD 10 /* Some additional time. */
+#define CLUSTER_FAILOVER_DELAY 5 /* Seconds */
+#define CLUSTER_DEFAULT_MIGRATION_BARRIER 1
+#define CLUSTER_MF_TIMEOUT 5000 /* Milliseconds to do a manual failover. */
+#define CLUSTER_MF_PAUSE_MULT 2 /* Master pause manual failover mult. */
+#define CLUSTER_SLAVE_MIGRATION_DELAY 5000 /* Delay for slave migration. */
+
+
 
 // TODO(wayenchen)
 #define CLUSTERMSG_MIN_LEN 100
@@ -91,9 +108,12 @@ class ClusterSession;
 class ClusterState;
 class ClusterMsg;
 
+using myMutex = std::recursive_mutex;
+
 class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     friend class ClusterState;
  public:
+
     ClusterNode(const std::string& name, const uint16_t flags,
                         std::shared_ptr<ClusterState> cstate,
                         const std::string& host = "",
@@ -103,6 +123,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
  
     ClusterNode(const ClusterNode&) = delete;
     ClusterNode(ClusterNode&&) = delete;
+    bool operator==(const ClusterNode& other) const;
 
     void prepareToFree();
 
@@ -117,7 +138,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void setNodeCport(uint64_t cport);
 
     //std::vector<std::shared_ptr<ClusterNode>> getSlaves() const { return _slaves; }
-    //std::bitset<CLUSTER_SLOTS> getSlots() const { return _mySlots; }
+    const std::bitset<CLUSTER_SLOTS>& getSlots() const { return _mySlots; }
+    uint32_t getSlavesCount() const { return _slaves.size(); }
 
     std::string getNodeIp() const {return _nodeIp;}
     void setNodeIp(const std::string& name);
@@ -134,14 +156,13 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint32_t getNonFailingSlavesCount() const;
     uint32_t failureReportsCount();
 
-    void markAsFailingIfNeeded();
+    void markAsFailing();
 
     std::shared_ptr<ClusterNode> getMaster() const { return _slaveOf; }
-    void setMaster(const std::shared_ptr<ClusterNode>& master);
-    bool updateAddressIfNeeded(ClusterSession* sess, const ClusterMsg& msg);
+    void setMaster(std::shared_ptr<ClusterNode> master);
     void setAsMaster();
 
-    bool changeToSlaveIfNeeded();
+    bool clearNodeFailureIfNeeded(uint32_t timeout);
 
     bool nodeIsMaster() const;
     bool nodeIsSlave() const;
@@ -154,13 +175,13 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     bool nodeIsMyself() const;
 
-    const std::shared_ptr<ClusterSession> getSession() const {
-        return _nodeSession;
-    }
-
-    void setSession(const std::shared_ptr<ClusterSession>& sess);
+    std::shared_ptr<ClusterSession> getSession() const;
+    void setSession(std::shared_ptr<ClusterSession> sess);
+    void freeClusterSession();
 
     bool getSlotBit(uint32_t slot) const;
+
+    static std::string representClusterNodeFlags(uint32_t flags);
 
  protected:
     Status addSlot(uint32_t slot);
@@ -170,17 +191,16 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint32_t delAllSlotsNoLock();
 
  public:
-    Status addSlave(std::shared_ptr<ClusterNode> slave);
-    Status removeSlave(std::shared_ptr<ClusterNode> slave);
+    bool addSlave(std::shared_ptr<ClusterNode> slave);
+    bool removeSlave(std::shared_ptr<ClusterNode> slave);
 
  private:
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
     std::string _nodeName;
     uint64_t _configEpoch;
     std::string _nodeIp;  /* Latest known IP address of this node */
     uint64_t _nodePort;  /* Latest known clients port of this node */
     uint64_t _nodeCport;  /* Latest known cluster port of this node. */
-    std::shared_ptr<ClusterState> _clusterState;
     std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node */
     void cleanupFailureReportsNoLock();
 
@@ -190,7 +210,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint16_t _flags;
     std::bitset<CLUSTER_SLOTS> _mySlots;  /* slots handled by this node */
     uint16_t _numSlots;
-    uint16_t _numSlaves;
 
     std::vector<std::shared_ptr<ClusterNode>> _slaves;
     std::shared_ptr<ClusterNode> _slaveOf;
@@ -206,6 +225,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 };
 
 using CNodePtr = std::shared_ptr<ClusterNode>;
+
+
 
 class ClusterMsgHeader;
 class ClusterMsgData;
@@ -228,16 +249,19 @@ class ClusterMsg{
            UPDATE = 7,        /* Another node slots configuration */
            MFSTART = 8,       /* Pause clients for manual failover */
     };
-    static constexpr uint32_t CLUSTERMSG_TYPE_COUNT = 9;
-    static constexpr uint32_t CLUSTER_PROTO_VER = 1;
+    static constexpr uint16_t CLUSTERMSG_TYPE_COUNT = 9;
+    static constexpr uint16_t CLUSTER_PROTO_VER = 1;
 
     static std::string clusterGetMessageTypeString(Type type);
 
     ClusterMsg(const ClusterMsg::Type type,
-        const std::shared_ptr<ClusterState> cstate,
-        const std::shared_ptr<ServerEntry> svr);
+            const std::shared_ptr<ClusterState> cstate,
+            const std::shared_ptr<ServerEntry> svr,
+            CNodePtr node = nullptr);
 
-    ClusterMsg(const std::shared_ptr<ClusterMsgHeader>& header,
+    ClusterMsg(const std::string& sig,
+            const uint32_t totlen, const ClusterMsg::Type type,
+            const std::shared_ptr<ClusterMsgHeader>& header,
             const std::shared_ptr<ClusterMsgData>& data);
 
     ClusterMsg(const ClusterMsg&) = default;
@@ -246,19 +270,26 @@ class ClusterMsg{
     bool clusterNodeIsInGossipSection(const CNodePtr& node) const;
     void clusterAddGossipEntry(const CNodePtr& node);
 
-    void setEntryCount(uint32_t count);
-    uint32_t getEntryCount() const;
+    void setEntryCount(uint16_t count);
+    uint16_t getEntryCount() const;
 
     bool isMaster() const;
 
     // void clusterSetGossipEntry(int i, clusterNode *n)
-    std::string msgEncode() const;
+    std::string msgEncode() ;
     static Expected<ClusterMsg> msgDecode(const std::string& key);
 
     std::shared_ptr<ClusterMsgHeader> getHeader() const { return _header; }
     std::shared_ptr<ClusterMsgData> getData() const  { return _msgData; }
 
+    uint32_t  getTotlen() const { return _totlen; }
+    ClusterMsg::Type getType() const { return _type; }
+    void setTotlen(uint32_t totlen);
+
  private:
+    std::string _sig;
+    uint32_t _totlen;
+    ClusterMsg::Type _type;
     std::shared_ptr<ClusterMsgHeader> _header;
     std::shared_ptr<ClusterMsgData> _msgData;
 };
@@ -266,17 +297,14 @@ class ClusterMsg{
 /* Message flags better specify the packet content or are used to
 * provide some information about the node state. */
 #define CLUSTERMSG_FLAG0_PAUSED (1<<0) /* Master paused for manual failover. */
-#define CLUSTERMSG_FLAG0_FORCEACK (1<<1) /* Give ACK to AUTH_REQUEST even if
-master is up. */
+#define CLUSTERMSG_FLAG0_FORCEACK (1<<1) /* Give ACK to AUTH_REQUEST even if master is up. */
 
+using headerPair = std::pair<Expected<ClusterMsgHeader>, size_t>;    
 class ClusterMsgHeader{
  public:
-    ClusterMsgHeader(const ClusterMsg::Type type,
-            const std::shared_ptr<ClusterState> cstate,
+    ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
             const std::shared_ptr<ServerEntry> svr);
-    ClusterMsgHeader(const std::string& sig, const uint32_t totlen,
-                const uint16_t port ,
-                const ClusterMsg::Type type, const uint16_t count,
+    ClusterMsgHeader(const uint16_t port , const uint16_t count,
                 const uint64_t currentEpoch, const uint64_t configEpoch,
                 const uint64_t offset , const std::string& sender,
                 const std::bitset<CLUSTER_SLOTS>& slots,
@@ -284,21 +312,17 @@ class ClusterMsgHeader{
                 const uint16_t cport, const uint16_t flags, 
                 const ClusterHealth state);
 
-    ClusterMsgHeader(const ClusterMsgHeader&) = delete;
+    ClusterMsgHeader(const ClusterMsgHeader&) = default;
     ClusterMsgHeader(ClusterMsgHeader&&);
 
     static constexpr const char* CLUSTER_NODE_NULL_NAME = "0000000000000000000000000000000000000000";
 
-  // std::string _mflags; /* Message flags: CLUSTERMSG_FLAG[012]_... */
-    static size_t getHeaderSize();
+    size_t getHeaderSize() const;
     std::string headEncode() const;
     static Expected<ClusterMsgHeader> headDecode(const std::string& key);
 
-    std::string _sig;
-    uint32_t _totlen;
     uint16_t _ver;
     uint16_t _port;    /* TCP base port number.*/
-    ClusterMsg::Type _type;    /* Message type */
     uint16_t _count;
     uint64_t _currentEpoch;
     uint64_t _configEpoch;
@@ -312,6 +336,7 @@ class ClusterMsgHeader{
     uint16_t _flags;      /* Sender node flags */
     ClusterHealth _state; /* Cluster state from the POV of the sender */
     unsigned char _mflags[3]; /* Message flags: CLUSTERMSG_FLAG[012]_... */
+
 };
 
 
@@ -343,13 +368,12 @@ class ClusterMsgDataUpdate: public ClusterMsgData {
     ClusterMsgDataUpdate(ClusterMsgDataUpdate&&) = default;
     virtual ~ClusterMsgDataUpdate() {}
 
-    static size_t getDataSize();
     std::string dataEncode() const override;
     static Expected<ClusterMsgDataUpdate>  dataDecode(const std::string& key);
 
     uint64_t getConfigEpoch() const { return _configEpoch; }
     std::string getNodeName() const { return  _nodeName; }
-    std::bitset<CLUSTER_SLOTS> getSlots()  const { return  _slots; }
+    const std::bitset<CLUSTER_SLOTS>& getSlots()  const { return  _slots; }
 
 private:
     uint64_t _configEpoch;
@@ -374,14 +398,16 @@ public:
     virtual ~ClusterSession() = default;
 
     Status clusterProcessPacket();
-    Status clusterProcessGossipSection(const ClusterMsg& msg);
     Status clusterReadHandler();
-    Status clusterSendMessage(const ClusterMsg& msg);
-    Status clusterSendUpdate(CNodePtr node);
-
-    Status clusterSendPing(ClusterMsg::Type type);
+    Status clusterSendMessage(ClusterMsg& msg);
 
     void setNode(const CNodePtr& node);
+    CNodePtr getNode() const { return _node; }
+    std::string nodeIp2String(const std::string& announcedIp) const;
+
+    std::shared_ptr<ClusterSession> shared_from_this(void) {
+        return std::dynamic_pointer_cast<ClusterSession>(Session::shared_from_this());
+    }
 
 private:
     // read data from socket
@@ -390,7 +416,6 @@ private:
 
     // handle msg parsed from drainReqCallback
     virtual void processReq();
-    std::string nodeIp2String(const std::string& announcedIp) const;
 
     uint64_t _pkgSize;
     CNodePtr _node;
@@ -416,6 +441,9 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void clusterDelNode(CNodePtr node, bool save = false);
     void clusterRenameNode(CNodePtr node, const std::string& newname, bool save = false);
     void clusterSaveNodes();
+    bool clusterSetNodeAsMaster(CNodePtr node);
+    bool clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave);
+    bool clusterNodeAddSlave(CNodePtr master, CNodePtr slave);
 
     void clusterBlacklistAddNode(CNodePtr node);
     bool clusterBlacklistExists(const std::string& nodeid) const;
@@ -428,17 +456,21 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterDelNodeSlots(CNodePtr node);
     void clusterCloseAllSlots();
 
+    bool clusterNodeAddFailureReport(CNodePtr faling, CNodePtr sender);
+    void clusterNodeCleanupFailureReports(CNodePtr node);
+    bool clusterNodeDelFailureReport(CNodePtr node, CNodePtr sender);
+    uint32_t clusterNodeFailureReportsCount(CNodePtr node);
+    bool markAsFailingIfNeeded(CNodePtr node);
 
     //Status setSlot(CNodePtr n, uint32_t slot);
     //void setSlotBelong(CNodePtr n, const uint32_t slot);
     CNodePtr getNodeBySlot(uint32_t slot) const;
-    bool clusterHandshakeInProgress(const std::string& host, uint32_t port, uint32_t cport);
-    bool clusterStartHandshake(const std::string& host, uint32_t port, uint32_t cport);
-    Status clusterUpdateSlotsConfigWith(CNodePtr sender,
-        uint64_t senderConfigEpoch, const std::bitset<CLUSTER_SLOTS>& slots);
-    Status clusterHandleConfigEpochCollision(CNodePtr sender);
 
-    void clusterSendFail(const std::string& nodename);
+    void clusterUpdateSlotsConfigWith(CNodePtr sender,
+        uint64_t senderConfigEpoch, const std::bitset<CLUSTER_SLOTS>& slots);
+    void clusterHandleConfigEpochCollision(CNodePtr sender);
+
+    void clusterSendFail(CNodePtr node);
     void clusterBroadcastMessage(const ClusterMsg& msg);
 
     // if update == true, _currentEpoch should be updated
@@ -447,7 +479,20 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     const std::unordered_map<std::string, CNodePtr> getNodesList() const;
     uint32_t getNodeCount() const;
     bool setMfMasterOffsetIfNecessary(const CNodePtr& node);
+    bool updateAddressIfNeeded(CNodePtr node, std::shared_ptr<ClusterSession> sess, const ClusterMsg& msg);
     ClusterHealth getClusterState() const { return _state; }
+
+    Status clusterProcessPacket(std::shared_ptr<ClusterSession> sess, const ClusterMsg& msg);
+    bool clusterProcessGossipSection(std::shared_ptr<ClusterSession> sess, const ClusterMsg& msg);
+    Status clusterSendUpdate(std::shared_ptr<ClusterSession> sess, CNodePtr node);
+    Status clusterSendPing(std::shared_ptr<ClusterSession> sess, ClusterMsg::Type type);
+    bool clusterStartHandshake(const std::string& host, uint32_t port, uint32_t cport);
+    bool clusterHandshakeInProgress(const std::string& host, uint32_t port, uint32_t cport);
+
+    void clusterUpdateMyselfFlags();
+    void cronRestoreSessionIfNeeded();
+    void cronPingSomeNodes();
+    void cronCheckFailState();
 
     // TODO(wayenchen)
     // Status clusterReadMeta();
@@ -457,7 +502,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // Status setStateFail();
     // void clusterUpdateState();
  private:
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
     std::shared_ptr<ServerEntry> _server;
@@ -484,7 +529,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     mstime_t _failoverAuthTime;
     uint16_t _failoverAuthCount;    /* Number of votes received so far. */
     uint16_t _failoverAuthSent;     /* True if we already asked for votes. */
-    uint16_t _failoverAuthRank;     /* This slave rank for current auth request. */
+    uint16_t _failoverAuthRank;
     uint64_t _failoverAuthEpoch; /* Epoch of the current election. */
     uint8_t _cantFailoverReason;   /* Why a slave is currently not able to failover*/
 
@@ -508,7 +553,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 };
 
 
-
 class ClusterGossip;
 class ClusterMsgDataGossip: public ClusterMsgData {
  public:
@@ -519,14 +563,13 @@ class ClusterMsgDataGossip: public ClusterMsgData {
 
     virtual ~ClusterMsgDataGossip() = default;
     virtual std::string dataEncode() const override;
-  //  std::shared_ptr<ClusterMsgData>
-  //          dataDecode(const std::string& key) override;
+
     static Expected<ClusterMsgDataGossip> dataDecode(const std::string& key,
             uint16_t count);
 
     bool clusterNodeIsInGossipSection(const CNodePtr& node) const override;
     void addGossipEntry(const CNodePtr& node) override;
-
+    Status addGossipMsg(const ClusterGossip& msg);
     const std::vector<ClusterGossip>& getGossipList() const  { return _gossipMsg; }
 
 private:
@@ -574,6 +617,7 @@ class ClusterManager {
     ClusterManager(ClusterManager&&) = delete;
 
     Status startup();
+    void stop();
     Status initNetWork();
     Status initMetaData();
     void installClusterNode(std::shared_ptr<ClusterNode>);
@@ -583,11 +627,8 @@ class ClusterManager {
 
     NetworkAsio* getClusterNetwork() const;
     std::shared_ptr<ClusterState> getClusterState() const;
-    // void stop();
     // Status run();
-    // bool isRunning();
-    // Status clusterSendPing(uint16_t type);
-    // Status clusterSendUpdate();
+    bool isRunning() const;
  protected:
     void controlRoutine();
 
@@ -600,9 +641,6 @@ class ClusterManager {
     std::unique_ptr<NetworkAsio> _clusterNetwork;
 
     uint16_t _megPoolSize;
-    // encode
-
-    // decode
 
     // controller
     std::unique_ptr<std::thread> _controller;

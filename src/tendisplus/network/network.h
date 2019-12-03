@@ -73,6 +73,9 @@ class NetworkAsio {
     void stop();
     std::string getIp() { return _ip;}
     uint16_t getPort() { return _port;}
+#ifdef _WIN32
+    void releaseForWin();
+#endif
 
  private:
     Status startThread();
@@ -133,6 +136,9 @@ class NetSession: public Session {
     virtual Expected<std::string> getLocalIp() const;
     virtual Expected<uint32_t> getLocalPort() const;
 
+    // close session, and the socket(by raii)
+    virtual void endSession();
+
     const std::vector<std::string>& getArgs() const;
     void setArgs(const std::vector<std::string>&);
 
@@ -157,9 +163,6 @@ class NetSession: public Session {
     // send data to tcpbuff
     virtual void drainRsp(std::shared_ptr<SendBuffer>);
     virtual void drainRspCallback(const std::error_code& ec, size_t actualLen, std::shared_ptr<SendBuffer> buf);
-
-    // close session, and the socket(by raii)
-    virtual void endSession();
 
     // handle msg parsed from drainReqCallback
     virtual void processReq();
