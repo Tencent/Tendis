@@ -54,7 +54,7 @@ void BlockingTcpClient::closeSocket() {
 }
 
 Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
-        std::chrono::seconds timeout) {
+        std::chrono::milliseconds timeout) {
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_inited) {

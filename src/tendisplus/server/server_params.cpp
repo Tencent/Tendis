@@ -93,12 +93,12 @@ ServerParams::ServerParams() {
     REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
-    REGISTER_VARS(binlogHeartbeatSecs);
 
     REGISTER_VARS(strictCapacityLimit);
     REGISTER_VARS(cacheIndexFilterblocks);
     REGISTER_VARS(maxOpenFiles);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(openDbsize);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(openKeys);
 };
 
 ServerParams::~ServerParams() {

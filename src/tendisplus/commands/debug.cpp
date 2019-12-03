@@ -55,6 +55,11 @@ class KeysCommand: public Command {
     }
 
     Expected<std::string> run(Session* sess) final {
+        auto server = sess->getServerEntry();
+        if (!server->getParams()->openKeys) { // default close Keys command.
+            return{ ErrorCodes::ERR_COMMAND_CLOSED, "" };
+        }
+
         const std::vector<std::string>& args = sess->getArgs();
         auto pattern = args[1];
         bool allkeys = false;
@@ -85,7 +90,6 @@ class KeysCommand: public Command {
         auto ts = msSinceEpoch();
 
         // TODO(vinchen): should use a faster way
-        auto server = sess->getServerEntry();
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -187,7 +191,7 @@ class DbsizeCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         auto server = sess->getServerEntry();
         if (!server->getParams()->openDbsize) { // default close Dbsize command.
-            return Command::fmtLongLong(0);
+            return{ ErrorCodes::ERR_COMMAND_CLOSED, "" };
         }
 
         int64_t size = 0;
@@ -2103,7 +2107,7 @@ class MonitorCommand : public Command {
         INVARIANT(pCtx != nullptr);
         pCtx->setIsMonitor(true);
 
-        sess->getServerEntry()->AddMonitor(sess);
+        sess->getServerEntry()->AddMonitor(sess->id());
 
         return Command::fmtOK();
     }

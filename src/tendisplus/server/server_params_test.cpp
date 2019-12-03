@@ -189,6 +189,16 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->incrPushThreadnum, 50);
     EXPECT_EQ(cfg->fullPushThreadnum, 4);
     EXPECT_EQ(cfg->fullReceiveThreadnum, 4);
+    EXPECT_EQ(cfg->logRecycleThreadnum, 12);
+    EXPECT_EQ(cfg->truncateBinlogIntervalMs, 1000);
+    EXPECT_EQ(cfg->truncateBinlogNum, 50000);
+    EXPECT_EQ(cfg->binlogFileSizeMB, 64);
+    EXPECT_EQ(cfg->binlogFileSecs, 20*60);
+
+    EXPECT_EQ(cfg->strictCapacityLimit, false);
+    EXPECT_EQ(cfg->cacheIndexFilterblocks, false);
+    EXPECT_EQ(cfg->maxOpenFiles, -1);
     EXPECT_EQ(cfg->openDbsize, false);
+    EXPECT_EQ(cfg->openKeys, false);
 }
 }  // namespace tendisplus

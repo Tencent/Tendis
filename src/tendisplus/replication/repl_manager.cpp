@@ -37,7 +37,8 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
      _incrPushMatrix(std::make_shared<PoolMatrix>()),
      _fullReceiveMatrix(std::make_shared<PoolMatrix>()),
      _incrCheckMatrix(std::make_shared<PoolMatrix>()),
-     _logRecycleMatrix(std::make_shared<PoolMatrix>()) {
+     _logRecycleMatrix(std::make_shared<PoolMatrix>()),
+     _connectMasterTimeoutMs(1000) {
 }
 
 Status ReplManager::stopStore(uint32_t storeId) {
@@ -339,17 +340,18 @@ void ReplManager::changeReplState(const StoreMeta& storeMeta,
 }
 
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
-                    const StoreMeta& metaSnapshot) {
+                    const StoreMeta& metaSnapshot,
+                    uint64_t timeoutMs) {
     std::shared_ptr<BlockingTcpClient> client =
         std::move(_svr->getNetwork()->createBlockingClient(64*1024*1024));
     Status s = client->connect(
         metaSnapshot.syncFromHost,
         metaSnapshot.syncFromPort,
-        std::chrono::seconds(3));
+        std::chrono::milliseconds(timeoutMs));
     if (!s.ok()) {
         LOG(WARNING) << "connect " << metaSnapshot.syncFromHost
             << ":" << metaSnapshot.syncFromPort << " failed:"
-            << s.toString();
+            << s.toString() << " storeid:" << metaSnapshot.id;
         return nullptr;
     }
 
@@ -520,6 +522,12 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         return;
     }
     auto kvstore = std::move(expdb.value().store);
+    if (!kvstore->isRunning()) {
+        LOG(WARNING) << "dont need do recycleBinlog, kvstore is not running:" << storeId;
+        nextSched = SCLOCK::now() + std::chrono::seconds(1);
+        return;
+    }
+
     auto ptxn = kvstore->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
         LOG(ERROR) << "recycleBinlog create txn failed:"
@@ -612,11 +620,18 @@ void ReplManager::flushCurBinlogFs(uint32_t storeId) {
 // changeReplSource should be called with LOCK_X held
 Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
+    uint64_t oldTimeout = _connectMasterTimeoutMs;
+    if (ip != "") {
+        _connectMasterTimeoutMs = 1000;
+    } else {
+        _connectMasterTimeoutMs = 1;
+    }
+
     LOG(INFO) << "wait for store:" << storeId << " to yield work";
     std::unique_lock<std::mutex> lk(_mutex);
     // NOTE(deyukong): we must wait for the target to stop before change meta,
     // or the meta may be rewrited
-    if (!_cv.wait_for(lk, std::chrono::seconds(1),
+    if (!_cv.wait_for(lk, std::chrono::milliseconds(oldTimeout + 2000),
             [this, storeId] { return !_syncStatus[storeId]->isRunning; })) {
         return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
     }
@@ -640,6 +655,7 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
             return {ErrorCodes::ERR_BUSY,
                     "explicit set sync source empty before change it"};
         }
+        _connectMasterTimeoutMs = 1000;
 
         Status s = _svr->setStoreMode(kvstore,
                         KVStore::StoreMode::REPLICATE_ONLY);
@@ -664,6 +680,8 @@ Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
         LOG(INFO) << "change store:" << storeId
                   << " syncSrc:" << newMeta->syncFromHost
                   << " to no one";
+        _connectMasterTimeoutMs = 1;
+
         Status closeStatus =
             _svr->cancelSession(_syncStatus[storeId]->sessionId);
         if (!closeStatus.ok()) {

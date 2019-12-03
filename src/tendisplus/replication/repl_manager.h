@@ -22,6 +22,9 @@ namespace tendisplus {
 
 using SCLOCK = std::chrono::steady_clock;
 
+const uint32_t gBinlogHeartbeatSecs = 1;
+const uint32_t gBinlogHeartbeatTimeout = 10;
+
 // slave's pov, sync status
 struct SPovStatus {
     bool isRunning;
@@ -123,7 +126,8 @@ class ReplManager {
             uint32_t storeId);
     bool isFullSupplierFull() const;
 
-    std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&);
+    std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
+        uint64_t timeoutMs = 1000);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 
@@ -209,6 +213,7 @@ class ReplManager {
     std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
     std::shared_ptr<PoolMatrix> _incrCheckMatrix;
     std::shared_ptr<PoolMatrix> _logRecycleMatrix;
+    uint64_t _connectMasterTimeoutMs;
 };
 
 }  // namespace tendisplus

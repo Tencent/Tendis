@@ -47,6 +47,7 @@ enum class ErrorCodes {
     ERR_NO_KEY,
     ERR_OUT_OF_RANGE,
     ERR_WRONG_VERSION_EP,
+    ERR_COMMAND_CLOSED,
 };
 
 class Status {

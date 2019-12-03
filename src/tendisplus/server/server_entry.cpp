@@ -403,16 +403,16 @@ std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
     return sesses;
 }
 
-void ServerEntry::AddMonitor(Session* sess) {
+void ServerEntry::AddMonitor(uint64_t sessId) {
     std::lock_guard<std::mutex> lk(_mutex);
     for (const auto& monSess : _monitors) {
-        if (monSess->id() == sess->id()) {
+        if (monSess->id() == sessId) {
             return;
         }
     }
-    auto it = _sessions.find(sess->id());
+    auto it = _sessions.find(sessId);
     if (it == _sessions.end()) {
-        LOG(ERROR) << "AddMonitor session not found:" << sess->id();
+        LOG(ERROR) << "AddMonitor session not found:" << sessId;
         return;
     }
 

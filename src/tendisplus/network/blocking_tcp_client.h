@@ -16,7 +16,7 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
         asio::ip::tcp::socket, size_t maxBufSize,
         uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10);
     Status connect(const std::string& host, uint16_t port,
-        std::chrono::seconds timeout);
+        std::chrono::milliseconds timeout);
     Expected<std::string> readLine(std::chrono::seconds timeout);
     Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
     Status writeLine(const std::string& line);
