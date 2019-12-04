@@ -100,8 +100,6 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "-ERR index out of range\r\n";
     case ErrorCodes::ERR_WRONG_VERSION_EP:
         return "-WRONGVERSION\r\n";
-    case ErrorCodes::ERR_COMMAND_CLOSED:
-        return "-ERR command is closed, you can open it first\r\n";
     default:
         break;
     }
