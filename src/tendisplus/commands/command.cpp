@@ -88,6 +88,53 @@ void Command::setNoExpire(bool cfg) {
     }
 }
 
+void Command::changeCommand(const string& changeCmdList, string mode) {
+    LOG(INFO) << "changeCommand begin,mode:" << mode << " list:" << changeCmdList;
+    std::stringstream ssAll(changeCmdList);
+    string one;
+    while (std::getline(ssAll, one, ',')) {
+        std::vector<std::string> kv;
+        std::stringstream ssOne(one);
+        string temp;
+        while(std::getline(ssOne, temp, ' ')) {
+            kv.push_back(temp);
+        }
+        if(kv.size() == 0) {
+            continue;
+        }
+        if(kv.size() != 2) {
+            LOG(FATAL) << "changeCommand error rename:" << one;
+            continue;
+        }
+        string& oldname = kv[0];
+        string& newname = kv[1];
+        if (mode == "rename") {
+            if (commandMap().find(oldname) == commandMap().end()){
+                LOG(FATAL) << "changeCommand error mode:" << mode << " oldname not exist:" << one;
+                continue;
+            }
+            if (commandMap().find(newname) != commandMap().end()){
+                LOG(FATAL) << "changeCommand error mode:" << mode << " newname allready exist:" << one;
+                continue;
+            }
+            commandMap()[newname] = commandMap()[oldname];
+            commandMap().erase(oldname);
+            LOG(INFO) << "changeCommand ok mode:" << mode << " cmd:" << one;
+        } else if (mode == "mapping") {
+            if (commandMap().find(oldname) == commandMap().end()){
+                LOG(FATAL) << "changeCommand error mode:" << mode << " oldname not exist:" << one;
+                continue;
+            }
+            if (commandMap().find(newname) == commandMap().end()){
+                LOG(FATAL) << "changeCommand error mode:" << mode << " newname not exist:" << one;
+                continue;
+            }
+            commandMap()[oldname] = commandMap()[newname];
+            LOG(INFO) << "changeCommand ok mode:" << mode << " cmd:" << one;
+        }
+    }
+}
+
 bool Command::isMultiKey() const {
     return lastkey() != firstkey() && firstkey() != 0;
 }

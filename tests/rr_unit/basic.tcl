@@ -475,7 +475,7 @@ start_server {tags {"basic"}} {
     } {-1}
 
     test {DEL all keys again (DB 0)} {
-        foreach key [r keys *] {
+        foreach key [r keys * 30000] {
             r del $key
         }
         r dbsize

@@ -246,8 +246,7 @@ public:
     bool strictCapacityLimit = false;
     bool cacheIndexFilterblocks = false;
     int32_t maxOpenFiles = -1;
-    bool openDbsize = false;
-    bool openKeys = false;
+    int32_t keysDefaultLimit = 100;
 };
 }  // namespace tendisplus
 

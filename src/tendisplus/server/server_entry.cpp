@@ -125,7 +125,8 @@ uint32_t ServerEntry::getKVStoreCount() const {
     INVARIANT_D(_kvstores.size() == _catalog->getKVStoreCount());
     return _catalog->getKVStoreCount();
 }
-
+extern string gRenameCmdList;
+extern string gMappingCmdList;
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     std::lock_guard<std::mutex> lk(_mutex);
 
@@ -136,6 +137,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // set command config
     Command::setNoExpire(cfg->noexpire);
+    Command::changeCommand(gRenameCmdList, "rename");
+    Command::changeCommand(gMappingCmdList, "mapping");
 
     // catalog init
     auto catalog = std::make_unique<Catalog>(
