@@ -804,6 +804,49 @@ TEST(Command, slowlog) {
     pclose(fp);
 }
 
+void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "set" });
+    auto expect = Command::precheck(&sess);
+    EXPECT_EQ(Command::fmtErr("unknown command 'set'"), expect.status().toString());
+
+    sess.setArgs({ "set_rename", "a", "1" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtOK(), expect.value());
+
+    sess.setArgs({ "dbsize" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtLongLong(0), expect.value());
+
+    sess.setArgs({ "keys" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 0);
+    EXPECT_EQ(ss.str(), expect.value());
+}
+
+extern string gRenameCmdList;
+extern string gMappingCmdList;
+TEST(Command, renameCommand) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+    gRenameCmdList += ",set set_rename";
+    gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
+    Command::changeCommand(gRenameCmdList, "rename");
+    Command::changeCommand(gMappingCmdList, "mapping");
+
+    testRenameCommand(server);
+}
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {
