@@ -141,7 +141,7 @@ func main() {
 
 	nextTime := time.Now().Add(1 * time.Second)
 	for {
-		v, err := client.Cmd("DEBUG").Str()
+		v, err := client.Cmd("tendisstat").Str()
 		if err != nil {
 			log.Fatalf("send debug cmd failed:%v", err)
 		}

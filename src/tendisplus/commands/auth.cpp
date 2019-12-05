@@ -108,36 +108,4 @@ class AuthCommand: public Command {
     }
 } authCommand;
 
-class MonitorCommand: public Command {
- public:
-    MonitorCommand()
-        :Command("monitor", "r") {
-    }
-
-    ssize_t arity() const {
-        return 1;
-    }
-
-    int32_t firstkey() const {
-        return 0;
-    }
-
-    int32_t lastkey() const {
-        return 0;
-    }
-
-    int32_t keystep() const {
-        return 0;
-    }
-
-    Expected<std::string> run(Session *sess) final {
-        SessionCtx* pCtx = sess->getCtx();
-        INVARIANT(pCtx != nullptr);
-        pCtx->setIsMonitor(true);
-
-        sess->getServerEntry()->AddMonitor(sess);
-
-        return Command::fmtOK();
-    }
-} monitorCommand;
 }  // namespace tendisplus

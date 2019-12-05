@@ -47,6 +47,7 @@ class Command {
     // should use lock upgrade in the future.
     static mgl::LockMode RdLock();
     static void setNoExpire(bool cfg);
+    static void changeCommand(const string& renameCmdList, string mode);
     int getFlags() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name

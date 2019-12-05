@@ -13,6 +13,9 @@
 namespace tendisplus {
 using namespace std;
 
+string gRenameCmdList = "";
+string gMappingCmdList = "";
+
 #define REGISTER_VARS_FULL(str, var, fun, allowDynamicSet) \
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
@@ -93,11 +96,11 @@ ServerParams::ServerParams() {
     REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
-    REGISTER_VARS(binlogHeartbeatSecs);
 
     REGISTER_VARS(strictCapacityLimit);
     REGISTER_VARS(cacheIndexFilterblocks);
     REGISTER_VARS(maxOpenFiles);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
 };
 
 ServerParams::~ServerParams() {
@@ -129,7 +132,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                 tokens.emplace_back(tmp);
             }
 
-            if (tokens.size() == 2) {
+            if (tokens.size() == 3 && toLower(tokens[0]) == "rename-command") {
+                gRenameCmdList += "," + tokens[1] + " " + tokens[2];
+            } else if (tokens.size() == 3 && toLower(tokens[0]) == "mapping-command") {
+                gMappingCmdList += "," + tokens[1] + " " + tokens[2];
+            }
+            else if (tokens.size() == 2) {
                 if (toLower(tokens[0]) == "include") {
                     if (_setConfFile.find(tokens[1]) != _setConfFile.end()) {
                         LOG(ERROR) << "parseFile failed, include has recycle: " << tokens[1];

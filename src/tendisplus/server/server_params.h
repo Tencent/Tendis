@@ -242,11 +242,11 @@ public:
     uint32_t truncateBinlogNum = 50000;
     uint32_t binlogFileSizeMB = 64;
     uint32_t binlogFileSecs = 20*60;
-    uint32_t binlogHeartbeatSecs = 60;
 
     bool strictCapacityLimit = false;
     bool cacheIndexFilterblocks = false;
     int32_t maxOpenFiles = -1;
+    int32_t keysDefaultLimit = 100;
 };
 }  // namespace tendisplus
 

@@ -102,8 +102,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     Expected<uint64_t> newPos =
             masterSendBinlog(client, storeId, dstStoreId, binlogPos);
 #else
-    // for safe : -5
-    if (lastSend + std::chrono::seconds(_cfg->binlogHeartbeatSecs - 5)
+    if (lastSend + std::chrono::seconds(gBinlogHeartbeatSecs)
                 < SCLOCK::now()) {
         needHeartbeat = true;
     }

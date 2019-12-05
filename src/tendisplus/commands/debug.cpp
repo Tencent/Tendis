@@ -55,6 +55,8 @@ class KeysCommand: public Command {
     }
 
     Expected<std::string> run(Session* sess) final {
+        auto server = sess->getServerEntry();
+
         const std::vector<std::string>& args = sess->getArgs();
         auto pattern = args[1];
         bool allkeys = false;
@@ -64,7 +66,7 @@ class KeysCommand: public Command {
         }
 
         // TODO(comboqiu): 30000
-        int32_t limit = 30000;
+        int32_t limit = server->getParams()->keysDefaultLimit;
         if (args.size() > 3) {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
         }
@@ -78,14 +80,13 @@ class KeysCommand: public Command {
         }
 
         // TODO(vinchen): too big
-        if (limit < 0 || limit > 30000) {
-            return{ ErrorCodes::ERR_PARSEOPT, "keys size limit to be 10000" };
+        if (limit < 0) {
+            return{ ErrorCodes::ERR_PARSEOPT, "limit should >=0" };
         }
 
         auto ts = msSinceEpoch();
 
         // TODO(vinchen): should use a faster way
-        auto server = sess->getServerEntry();
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -185,12 +186,13 @@ class DbsizeCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
+        auto server = sess->getServerEntry();
+
         int64_t size = 0;
         auto currentDbid = sess->getCtx()->getDbId();
         auto ts = msSinceEpoch();
 
         // TODO(vinchen): should use a faster way
-        auto server = sess->getServerEntry();
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -2096,16 +2098,14 @@ class MonitorCommand : public Command {
         return 0;
     }
 
-    bool sameWithRedis() const {
-        return false;
-    }
-
     Expected<std::string> run(Session *sess) final {
-        auto vv = dynamic_cast<NetSession*>(sess);
-        INVARIANT(vv != nullptr);
-        // TODO(vinchen): support it later
-        vv->setCloseAfterRsp();
-        return{ ErrorCodes::ERR_INTERNAL, "monitor not supported yet" };
+        SessionCtx* pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+        pCtx->setIsMonitor(true);
+
+        sess->getServerEntry()->AddMonitor(sess->id());
+
+        return Command::fmtOK();
     }
 } monitorCmd;
 
@@ -2669,5 +2669,117 @@ class slowlogCommand: public Command {
         }
     }
 } slowlogCmd;
+
+class EmptyIntCommand: public Command {
+public:
+    EmptyIntCommand()
+            :Command("emptyint", "rF") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtLongLong(0);
+    }
+} emptyintCmd;
+
+class EmptyOKCommand: public Command {
+public:
+    EmptyOKCommand()
+            :Command("emptyok", "rF") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        return Command::fmtOK();
+    }
+} emptyokCmd;
+
+class EmptyBulkCommand: public Command {
+public:
+    EmptyBulkCommand()
+            :Command("emptybulk", "rF") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::stringstream ss;
+        Command::fmtBulk(ss, "");
+        return ss.str();
+    }
+} emptyBulkCmd;
+
+class EmptyMultiBulkCommand: public Command {
+public:
+    EmptyMultiBulkCommand()
+            :Command("emptymultibulk", "rF") {
+    }
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 0);
+        return ss.str();
+    }
+} emptyMultiBulkCmd;
 
 }  // namespace tendisplus

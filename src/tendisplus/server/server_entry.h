@@ -118,7 +118,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getKVStoreCount() const;
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
-    void AddMonitor(Session* sess);
+    void AddMonitor(uint64_t sessId);
     void setMaxCli(uint32_t max);
     uint32_t getMaxCli();
     static void logWarning(const std::string& str, Session* sess = nullptr);

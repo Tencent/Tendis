@@ -128,9 +128,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
     // 2) require a blocking-client
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(createClient(metaSnapshot));
+        std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
     if (client == nullptr) {
-        LOG(WARNING) << "startFullSync with: "
+        LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id << " with: "
                     << metaSnapshot.syncFromHost << ":"
                     << metaSnapshot.syncFromPort
                     << " failed, no valid client";
@@ -278,7 +278,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         if (sessionId == std::numeric_limits<uint64_t>::max()) {
             return true;
         }
-        if (lastSyncTime + std::chrono::seconds(_cfg->binlogHeartbeatSecs)
+        if (lastSyncTime + std::chrono::seconds(gBinlogHeartbeatTimeout)
             <= SCLOCK::now()) {
             return true;
         }
@@ -294,7 +294,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
                 << "," << metaSnapshot.syncFromId;
 
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(createClient(metaSnapshot));
+        std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
     if (client == nullptr) {
         LOG(WARNING) << "store:" << metaSnapshot.id << " reconn master failed";
         return;
