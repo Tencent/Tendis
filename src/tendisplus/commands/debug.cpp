@@ -2668,6 +2668,47 @@ class slowlogCommand: public Command {
     }
 } slowlogCmd;
 
+class reshapeCommand: public Command {
+public:
+    reshapeCommand()
+            :Command("reshape", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto server = sess->getServerEntry();
+        std::list<std::string> result;
+        for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+            auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                                                        mgl::LockMode::LOCK_IX);
+            if (!expdb.ok()) {
+                if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+                    continue;
+                }
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
+            kvstore->fullcompact();
+        }
+        return { ErrorCodes::ERR_OK, "" };
+    }
+} reshapeCmd;
+
 class EmptyIntCommand: public Command {
 public:
     EmptyIntCommand()

@@ -239,6 +239,7 @@ class KVStore {
     virtual Status setKV(const std::string& key, const std::string& val,
                          Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+    virtual void fullcompact() = 0;
 #ifdef BINLOG_V1
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
                                Transaction* txn) = 0;

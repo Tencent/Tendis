@@ -702,6 +702,10 @@ rocksdb::Options RocksKVStore::options() {
     return options;
 }
 
+void RocksKVStore::fullcompact() {
+
+}
+
 bool RocksKVStore::isRunning() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _isRunning;
