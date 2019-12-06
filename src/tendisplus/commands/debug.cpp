@@ -15,6 +15,8 @@
 #include <set>
 #include <list>
 #include <map>
+#include <thread>
+#include <chrono>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -2781,5 +2783,57 @@ public:
         return ss.str();
     }
 } emptyMultiBulkCmd;
+
+class TendisadminCommand: public Command {
+public:
+  TendisadminCommand()
+    :Command("tendisadmin", "lat") {
+  }
+
+  ssize_t arity() const {
+    return -2;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto& args = sess->getArgs();
+
+    auto operation = toLower(args[1]);
+
+    if (operation == "sleep") {
+      if (args.size() < 3 || args.size() > 4) {
+        return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+      }
+
+      auto time = tendisplus::stoull(args[2]);
+      if (!time.ok()) {
+        return time.status();
+      }
+
+      std::list<std::unique_ptr<DbWithLock>> result;
+      const auto server = sess->getServerEntry();
+      for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+        auto expdb = server->getSegmentMgr()->getDb(sess,
+          i, mgl::LockMode::LOCK_X);
+        result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
+      }
+
+      std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+    }
+
+    return Command::fmtOK();
+  }
+} tendisadminCmd;
 
 }  // namespace tendisplus
