@@ -120,6 +120,7 @@ Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t
     } catch (std::exception& e) {
         return {ErrorCodes::ERR_NETWORK, e.what()};
     }
+    startThread();
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -188,7 +189,8 @@ void NetworkAsio::stop() {
     LOG(INFO) << "network-asio stops complete...";
 }
 
-Status NetworkAsio::run() {
+
+Status NetworkAsio::startThread() {
     _isRunning.store(true, std::memory_order_relaxed);
     _acceptThd = std::make_unique<std::thread>([this] {
         // TODO(deyukong): set threadname for debug/profile
@@ -234,7 +236,10 @@ Status NetworkAsio::run() {
         });
         _rwThreads.emplace_back(std::move(thd));
     }
+    return {ErrorCodes::ERR_OK, ""};
+}
 
+Status NetworkAsio::run() {
     // TODO(deyukong): acceptor needs no explicitly listen.
     // but only through listen can we configure backlog.
     // _acceptor->listen(BACKLOG);
