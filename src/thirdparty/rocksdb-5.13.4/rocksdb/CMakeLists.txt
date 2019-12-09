@@ -44,7 +44,7 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules/")
 
-option(WITH_JEMALLOC "build with JeMalloc" OFF)
+option(WITH_JEMALLOC "build with JeMalloc" ON)
 option(WITH_SNAPPY "build with SNAPPY" ON)
 option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
@@ -61,7 +61,9 @@ else()
     set(WITH_JEMALLOC ON)
   else()
     if(WITH_JEMALLOC)
-      find_package(JeMalloc REQUIRED)
+      # find_package(JeMalloc REQUIRED)
+      set(JEMALLOC_INCLUDE_DIR ${JEMALLOC_ROOT_DIR}/include)
+      set(JEMALLOC_LIBRARIES ${JEMALLOC_ROOT_DIR}/lib)
       add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
       include_directories(${JEMALLOC_INCLUDE_DIR})
     endif()
@@ -690,6 +692,9 @@ else()
   add_library(${ROCKSDB_SHARED_LIB} SHARED ${SOURCES})
   target_link_libraries(${ROCKSDB_SHARED_LIB}
     ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
+  if(WITH_JEMALLOC)
+    target_link_libraries(${ROCKSDB_SHARED_LIB} jemalloc_SHARED)
+  endif()
   set_target_properties(${ROCKSDB_SHARED_LIB} PROPERTIES
                         LINKER_LANGUAGE CXX
                         VERSION ${ROCKSDB_VERSION}
@@ -705,9 +710,14 @@ if(WITH_LIBRADOS)
   list(APPEND THIRDPARTY_LIBS rados)
 endif()
 
+# Rocksdb do have a WITH_JEMALLOC option, but it doesn't really use it ??
+
 add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES})
 target_link_libraries(${ROCKSDB_STATIC_LIB}
   ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
+if(WITH_JEMALLOC)
+    target_link_libraries(${ROCKSDB_STATIC_LIB} jemalloc)
+endif()
 
 if(WIN32)
   add_library(${ROCKSDB_IMPORT_LIB} SHARED ${SOURCES})

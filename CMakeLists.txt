@@ -47,10 +47,32 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 if(CMAKE_COMPILER_IS_GNUCC)
-    #option(ENABLE_JEMALLOC "enable jemalloc" ON)
+	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	if(ENABLE_JEMALLOC)
+		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
+		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
+
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
+				COMMAND ./configure --with-lg-quantum=3 --with-jemalloc-prefix=je_ --enable-cc-silence
+				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
+		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a" "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
+				COMMAND ${CMAKE_MAKE_PROGRAM}
+				DEPENDS "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
+				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
+				COMMENT "Making external library jemalloc")
+		add_custom_target(build_jemalloc
+				DEPENDS "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a")
+
+		add_library(jemalloc_SHARED SHARED IMPORTED)
+		add_library(jemalloc STATIC IMPORTED)
+		set_target_properties(jemalloc PROPERTIES IMPORTED_LOCATION "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a")
+		set_target_properties(jemalloc_SHARED PROPERTIES IMPORTED_LOCATION "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so")
+
 		list(APPEND SYS_LIBS jemalloc)
+		add_dependencies(jemalloc build_jemalloc)
+		add_dependencies(jemalloc_SHARED build_jemalloc)
 	endif()
 
 	# thirdparty code
