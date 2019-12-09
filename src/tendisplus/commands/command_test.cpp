@@ -832,23 +832,46 @@ void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(ss.str(), expect.value());
 }
 
-extern string gRenameCmdList;
-extern string gMappingCmdList;
-TEST(Command, renameCommand) {
-    const auto guard = MakeGuard([] {
-        destroyEnv();
-    });
+void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+  NetSession sess2(svr, std::move(socket2), 1, false, nullptr, nullptr);
 
-    EXPECT_TRUE(setupEnv());
-    auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
-    gRenameCmdList += ",set set_rename";
-    gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
-    Command::changeCommand(gRenameCmdList, "rename");
-    Command::changeCommand(gMappingCmdList, "mapping");
+  int i = 4;
+  std::thread thd1([&sess2, &i]() {
+    uint32_t now = msSinceEpoch();
+    sess2.setArgs({ "tendisadmin", "sleep", std::to_string(i) });
+    auto expect = Command::runSessionCmd(&sess2);
+    auto val = expect.value();
+    EXPECT_TRUE(expect.ok());
+    uint32_t end = msSinceEpoch();
+    EXPECT_TRUE(end - now > (unsigned) (i - 1) * 1000);
+  });
 
-    testRenameCommand(server);
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  sess.setArgs({ "set", "a", "b" });
+  uint32_t now = msSinceEpoch();
+  auto expect = Command::runSessionCmd(&sess);
+
+  EXPECT_TRUE(expect.ok());
+  uint32_t end = msSinceEpoch();
+  EXPECT_TRUE(end - now > (unsigned) (i - 2) * 1000);
+  thd1.join();
 }
+
+TEST(Command, TendisadminCommand) {
+  const auto guard = MakeGuard([] {
+    destroyEnv();
+  });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testTendisadminSleep(server);
+}
+
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {
@@ -893,5 +916,27 @@ TEST(Command, keys) {
     EXPECT_EQ(expect.value(), ss.str());
 }
 */
+
+// Note: renameCommand may change command's name or behavior, so put it in the end
+extern string gRenameCmdList;
+extern string gMappingCmdList;
+TEST(Command, renameCommand) {
+  const auto guard = MakeGuard([] {
+    destroyEnv();
+  });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+  gRenameCmdList += ",set set_rename";
+  gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
+  Command::changeCommand(gRenameCmdList, "rename");
+  Command::changeCommand(gMappingCmdList, "mapping");
+
+  testRenameCommand(server);
+
+  gRenameCmdList = "";
+  gMappingCmdList = "";
+}
 
 }  // namespace tendisplus
