@@ -247,6 +247,12 @@ public:
     bool cacheIndexFilterblocks = false;
     int32_t maxOpenFiles = -1;
     int32_t keysDefaultLimit = 100;
+
+    uint32_t writeBufferSize = 64 * 1024 * 1024;  // 64MB
+    uint32_t targetFileSizeBase = 64 * 1024 * 1024;  // 64MB
+    uint32_t maxBytesForLevelBase = 512 * 1024 * 1024;  // 512 MB
+
+    bool levelCompactionDynamicLevelBytes = true;
 };
 }  // namespace tendisplus
 

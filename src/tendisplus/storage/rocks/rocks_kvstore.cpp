@@ -663,18 +663,18 @@ rocksdb::Options RocksKVStore::options() {
     table_options.cache_index_and_filter_blocks = _cfg->cacheIndexFilterblocks;
     options.table_factory.reset(
         rocksdb::NewBlockBasedTableFactory(table_options));
-    options.write_buffer_size = 64 * 1024 * 1024;  // 64MB
+    options.write_buffer_size = _cfg->writeBufferSize;
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
     options.max_write_buffer_number = 4;
     options.max_write_buffer_number_to_maintain = 1;
     options.max_background_compactions = 8;
     options.max_background_flushes = 2;
-    options.target_file_size_base = 64 * 1024 * 1024;  // 64MB
-    options.level_compaction_dynamic_level_bytes = true;
+    options.target_file_size_base = _cfg->targetFileSizeBase;
+    options.level_compaction_dynamic_level_bytes = _cfg->levelCompactionDynamicLevelBytes;
     // level_1 max size: 512MB, in fact, things are more complex
     // since we set level_compaction_dynamic_level_bytes = true
-    options.max_bytes_for_level_base = 512 * 1024 * 1024;  // 512 MB
+    options.max_bytes_for_level_base = _cfg->maxBytesForLevelBase;
     options.max_open_files = _cfg->maxOpenFiles;
     // if we have no 'empty reads', we can disable bottom
     // level's bloomfilters
@@ -703,7 +703,11 @@ rocksdb::Options RocksKVStore::options() {
 }
 
 void RocksKVStore::fullcompact() {
-
+    rocksdb::CompactRangeOptions op;
+    rocksdb::Slice begin("a");
+    rocksdb::Slice end("z");
+    //getBaseDB()->CompactRange(op, &begin, &end);
+    getBaseDB()->CompactRange(op, NULL, NULL);
 }
 
 bool RocksKVStore::isRunning() const {

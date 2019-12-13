@@ -2675,7 +2675,7 @@ public:
     }
 
     ssize_t arity() const {
-        return 1;
+        return -1;
     }
 
     int32_t firstkey() const {
@@ -2692,20 +2692,38 @@ public:
 
     Expected<std::string> run(Session *sess) final {
         const auto server = sess->getServerEntry();
-        std::list<std::string> result;
-        for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
-            auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                                                        mgl::LockMode::LOCK_IX);
+        const auto& args = sess->getArgs();
+        if (args.size() == 2) {
+            auto expStoreId = tendisplus::stoull(args[1]);
+            if (!expStoreId.ok()) {
+                return expStoreId.status();
+            }
+            uint64_t storeid = expStoreId.value();
+            auto expdb = server->getSegmentMgr()->getDb(sess, storeid,
+                    mgl::LockMode::LOCK_IX);//?
             if (!expdb.ok()) {
                 if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
-                    continue;
+                    return {ErrorCodes::ERR_STORE_NOT_OPEN, ""};
                 }
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
             kvstore->fullcompact();
+        } else {
+            for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                        mgl::LockMode::LOCK_IX);//?
+                if (!expdb.ok()) {
+                    if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
+                        continue;
+                    }
+                    return expdb.status();
+                }
+                PStore kvstore = expdb.value().store;
+                kvstore->fullcompact();
+            }
         }
-        return { ErrorCodes::ERR_OK, "" };
+        return Command::fmtOK();
     }
 } reshapeCmd;
 
