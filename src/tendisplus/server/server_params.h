@@ -234,10 +234,10 @@ public:
     uint32_t netBatchSize = 1024*1024;
     uint32_t netBatchTimeoutSec = 10;
     uint32_t timeoutSecBinlogWaitRsp = 10;
-    uint32_t incrPushThreadnum = 50;
+    uint32_t incrPushThreadnum = 4;
     uint32_t fullPushThreadnum = 4;
     uint32_t fullReceiveThreadnum = 4;
-    uint32_t logRecycleThreadnum = 12;
+    uint32_t logRecycleThreadnum = 4;
     uint32_t truncateBinlogIntervalMs = 1000;
     uint32_t truncateBinlogNum = 50000;
     uint32_t binlogFileSizeMB = 64;
