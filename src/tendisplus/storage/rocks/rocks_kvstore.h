@@ -243,7 +243,6 @@ class RocksKVStore: public KVStore {
 
     // NOTE(deyukong): this api is only for debug
     std::set<uint64_t> getUncommittedTxns() const;
-    virtual void fullcompact();
  private:
     rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);

@@ -702,14 +702,6 @@ rocksdb::Options RocksKVStore::options() {
     return options;
 }
 
-void RocksKVStore::fullcompact() {
-    rocksdb::CompactRangeOptions op;
-    rocksdb::Slice begin("a");
-    rocksdb::Slice end("z");
-    //getBaseDB()->CompactRange(op, &begin, &end);
-    getBaseDB()->CompactRange(op, NULL, NULL);
-}
-
 bool RocksKVStore::isRunning() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _isRunning;
