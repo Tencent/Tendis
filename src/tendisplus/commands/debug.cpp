@@ -2708,7 +2708,10 @@ public:
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
-            kvstore->fullCompact();
+            auto status = kvstore->fullCompact();
+            if (!status.ok()) {
+                return status;
+            }
         } else {
             for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -2720,7 +2723,11 @@ public:
                     return expdb.status();
                 }
                 PStore kvstore = expdb.value().store;
-                kvstore->fullCompact();
+                auto status = kvstore->fullCompact();
+                if (!status.ok()) {
+                    return status;
+                }
+
             }
         }
         return Command::fmtOK();
