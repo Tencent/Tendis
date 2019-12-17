@@ -687,6 +687,9 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
         ts = _logRecycStatus[storeId]->timestamp;
     }
     if (fs == nullptr) {
+        if (ts == 0) {
+            ts = _svr->getStartupTimeNs() / 1000000;
+        }
         char fname[256], tbuf[256];
         memset(fname, 0, 128);
         memset(tbuf, 0, 128);

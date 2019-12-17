@@ -141,7 +141,7 @@ TEST(ServerParams, DynamicSet) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 48);
+    EXPECT_EQ(cfg->paramsNum(), 52);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -186,10 +186,10 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->netBatchSize, 1024*1024);
     EXPECT_EQ(cfg->netBatchTimeoutSec, 10);
     EXPECT_EQ(cfg->timeoutSecBinlogWaitRsp, 10);
-    EXPECT_EQ(cfg->incrPushThreadnum, 50);
+    EXPECT_EQ(cfg->incrPushThreadnum, 4);
     EXPECT_EQ(cfg->fullPushThreadnum, 4);
     EXPECT_EQ(cfg->fullReceiveThreadnum, 4);
-    EXPECT_EQ(cfg->logRecycleThreadnum, 12);
+    EXPECT_EQ(cfg->logRecycleThreadnum, 4);
     EXPECT_EQ(cfg->truncateBinlogIntervalMs, 1000);
     EXPECT_EQ(cfg->truncateBinlogNum, 50000);
     EXPECT_EQ(cfg->binlogFileSizeMB, 64);

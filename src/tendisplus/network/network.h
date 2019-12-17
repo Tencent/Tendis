@@ -68,6 +68,7 @@ class NetworkAsio {
     uint16_t getPort() { return _port;}
 
  private:
+    Status startThread();
     // we envolve a single-thread accept, mutex is not needed.
     void doAccept();
     std::shared_ptr<asio::io_context> getRwCtx();

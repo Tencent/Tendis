@@ -234,10 +234,10 @@ public:
     uint32_t netBatchSize = 1024*1024;
     uint32_t netBatchTimeoutSec = 10;
     uint32_t timeoutSecBinlogWaitRsp = 10;
-    uint32_t incrPushThreadnum = 50;
+    uint32_t incrPushThreadnum = 4;
     uint32_t fullPushThreadnum = 4;
     uint32_t fullReceiveThreadnum = 4;
-    uint32_t logRecycleThreadnum = 12;
+    uint32_t logRecycleThreadnum = 4;
     uint32_t truncateBinlogIntervalMs = 1000;
     uint32_t truncateBinlogNum = 50000;
     uint32_t binlogFileSizeMB = 64;
@@ -247,6 +247,12 @@ public:
     bool cacheIndexFilterblocks = false;
     int32_t maxOpenFiles = -1;
     int32_t keysDefaultLimit = 100;
+
+    uint32_t writeBufferSize = 64 * 1024 * 1024;  // 64MB
+    uint32_t targetFileSizeBase = 64 * 1024 * 1024;  // 64MB
+    uint32_t maxBytesForLevelBase = 512 * 1024 * 1024;  // 512 MB
+
+    bool levelCompactionDynamicLevelBytes = true;
 };
 }  // namespace tendisplus
 

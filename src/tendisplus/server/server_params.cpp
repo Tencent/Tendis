@@ -101,6 +101,11 @@ ServerParams::ServerParams() {
     REGISTER_VARS(cacheIndexFilterblocks);
     REGISTER_VARS(maxOpenFiles);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
+
+    REGISTER_VARS(writeBufferSize);
+    REGISTER_VARS(targetFileSizeBase);
+    REGISTER_VARS(maxBytesForLevelBase);
+    REGISTER_VARS(levelCompactionDynamicLevelBytes);
 };
 
 ServerParams::~ServerParams() {
