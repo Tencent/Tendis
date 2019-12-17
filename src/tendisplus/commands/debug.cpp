@@ -2700,7 +2700,7 @@ public:
             }
             uint64_t storeid = expStoreId.value();
             auto expdb = server->getSegmentMgr()->getDb(sess, storeid,
-                    mgl::LockMode::LOCK_IX);//?
+                    mgl::LockMode::LOCK_IS);
             if (!expdb.ok()) {
                 if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
                     return {ErrorCodes::ERR_STORE_NOT_OPEN, ""};
@@ -2715,7 +2715,7 @@ public:
         } else {
             for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                        mgl::LockMode::LOCK_IX);//?
+                        mgl::LockMode::LOCK_IS);
                 if (!expdb.ok()) {
                     if (expdb.status().code() == ErrorCodes::ERR_STORE_NOT_OPEN) {
                         continue;
