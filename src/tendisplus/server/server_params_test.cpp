@@ -141,7 +141,7 @@ TEST(ServerParams, DynamicSet) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 48);
+    EXPECT_EQ(cfg->paramsNum(), 52);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
