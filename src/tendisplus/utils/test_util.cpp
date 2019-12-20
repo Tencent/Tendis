@@ -426,6 +426,14 @@ void WorkLoad::clusterMeet(const std::string& ip, uint32_t port, uint32_t cport)
     EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::clusterNodes() {
+    _session->setArgs({ "cluster", "nodes");
+    
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
+
 int genRand() {
     int grand = 0;
     uint32_t ms = (uint32_t)nsSinceEpoch();

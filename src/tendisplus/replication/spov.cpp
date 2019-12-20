@@ -97,7 +97,7 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
 void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
 
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
     // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
     // since it's on stack
     sg.getSession()->setArgs(

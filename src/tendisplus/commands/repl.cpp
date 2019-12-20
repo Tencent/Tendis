@@ -113,7 +113,7 @@ class RestoreBackupCommand : public Command {
     // restorebackup "all"|storeId dir
     // restorebackup "all"|storeId dir force
     Expected<std::string> run(Session *sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
@@ -167,7 +167,7 @@ class RestoreBackupCommand : public Command {
     }
 
  private:
-    bool isEmpty(std::shared_ptr<ServerEntry> svr, Session *sess, uint32_t storeId){
+    bool isEmpty(ServerEntry* svr, Session *sess, uint32_t storeId){
          // IS lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IS, true);
@@ -178,7 +178,7 @@ class RestoreBackupCommand : public Command {
         return store->isEmpty();
     }
 
-    Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
+    Expected<std::string> restoreBackup(ServerEntry* svr,
         Session *sess, uint32_t storeId, const std::string& dir) {
         // X lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
@@ -307,7 +307,7 @@ class ToggleIncrSyncCommand: public Command {
             return state.status();
         }
         LOG(INFO) << "toggle incrsync state to:" << state.value();
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
@@ -958,7 +958,7 @@ class SlaveofCommand: public Command {
     }
 
     Expected<std::string> runSlaveofSomeOne(Session* sess) {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
         auto replMgr = svr->getReplManager();
@@ -1022,7 +1022,7 @@ class SlaveofCommand: public Command {
     }
 
     Expected<std::string> runSlaveofNoOne(Session* sess) {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
         auto replMgr = svr->getReplManager();

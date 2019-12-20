@@ -98,29 +98,31 @@ class ClusterMeta{
  public:
     ClusterMeta();
     ClusterMeta(const std::string& nodeName_);
+    ClusterMeta(const std::string& nodeName_, const std::string& ip_,
+                uint64_t port_, uint64_t cport_, uint16_t nodeFlag_,
+                const std::string& masterName_, uint64_t pingTime_,
+                uint64_t pongTime_, uint64_t configEpoch_,
+                ConnectState ConnectState_, const std::vector<uint16_t>& slots_);
+
     ClusterMeta(const ClusterMeta&) = default;
     ClusterMeta(ClusterMeta&&) = delete;
     // [name]  [ip] [port]   [flag(master、myself、salve)]    [(-or master id)]
     // [ping send UNIX time]    [pong receive unix time]   [-config epoch]   [connectState]    [slot]
-    ClusterMeta(const std::string& nodeName_, const std::string& ip_,
-            uint16_t port_, uint16_t cport_, uint64_t nodeFlag_,
-            const std::string& masterName_, uint64_t pingTime_,
-            uint64_t pongTime_, uint16_t configEpoch_,
-            ConnectState ConnectState_, const std::vector<std::string>& slots_);
+
 
     std::unique_ptr<ClusterMeta> copy() const;
 
     std::string nodeName;
     std::string ip;
-    uint16_t port;
-    uint16_t cport;
+    uint64_t port;
+    uint64_t cport;
     uint64_t nodeFlag;
     std::string masterName;
     uint64_t pingTime;
     uint64_t pongTime;
-    uint16_t configEpoch;
+    uint64_t configEpoch;
     ConnectState connectState;
-    std::vector<std::string> slots;
+    std::vector<uint16_t> slots;
 
     static std::string& getClusterPrefix();
     static constexpr const char* CLUSTER_PREFIX = "store_cluster_";
@@ -133,12 +135,12 @@ class EpochMeta {
     EpochMeta(const EpochMeta&) = default;
     EpochMeta(EpochMeta&&) = delete;
 
-    EpochMeta(uint32_t bigEpoch, uint32_t voteEpoch_)
+    EpochMeta(uint64_t bigEpoch, uint64_t voteEpoch_)
         : currentEpoch(bigEpoch), lastVoteEpoch(voteEpoch_) {}
     std::unique_ptr<EpochMeta> copy() const;
 
-    uint32_t currentEpoch;
-    uint32_t lastVoteEpoch;
+    uint64_t currentEpoch;
+    uint64_t lastVoteEpoch;
 };
 
 // store meta

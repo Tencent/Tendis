@@ -85,7 +85,7 @@ namespace tendisplus {
       });
 
       _scanJobCnt[storeId]++;
-      LocalSessionGuard sg(_svr);
+      LocalSessionGuard sg(_svr.get());
       auto expd = _svr->getSegmentMgr()->getDb(sg.getSession(),
                                                storeId,
                                                mgl::LockMode::LOCK_IS,
@@ -198,7 +198,7 @@ namespace tendisplus {
               index = _expiredKeys[storeId].front();
           }
 
-          LocalSessionGuard sg(_svr);
+          LocalSessionGuard sg(_svr.get());
           auto sess = sg.getSession();
           sess->getCtx()->setAuthed();
           sess->getCtx()->setDbId(index.getDbId());

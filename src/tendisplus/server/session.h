@@ -20,14 +20,15 @@ class Session: public std::enable_shared_from_this<Session> {
         NET = 0, LOCAL = 1, CLUSTER = 2,
     };
 
-    explicit Session(std::shared_ptr<ServerEntry> svr, Type type);
+    Session(std::shared_ptr<ServerEntry> svr, Type type);
+    Session(ServerEntry* svr, Type type);
     virtual ~Session();
     uint64_t id() const;
     virtual Status setResponse(const std::string& s) = 0;
     const std::vector<std::string>& getArgs() const;
     Status processExtendProtocol();
     SessionCtx *getCtx() const;
-    std::shared_ptr<ServerEntry> getServerEntry() const;
+    ServerEntry* getServerEntry() const;
     std::string getCmdStr() const;
 
     virtual void start() = 0;
@@ -51,7 +52,7 @@ class Session: public std::enable_shared_from_this<Session> {
 
  protected:
     std::vector<std::string> _args;
-    std::shared_ptr<ServerEntry> _server;
+    ServerEntry*             _server;
     std::unique_ptr<SessionCtx> _ctx;
     Type _type;
 
@@ -66,6 +67,7 @@ class Session: public std::enable_shared_from_this<Session> {
 class LocalSession: public Session {
  public:
     explicit LocalSession(std::shared_ptr<ServerEntry> svr);
+    explicit LocalSession(ServerEntry* svr);
     void start() final;
     Status cancel() final;
     int getFd() final;
@@ -80,7 +82,7 @@ class LocalSession: public Session {
 
 class LocalSessionGuard {
  public:
-    explicit LocalSessionGuard(std::shared_ptr<ServerEntry> svr);
+    explicit LocalSessionGuard(ServerEntry* svr);
     LocalSession* getSession();
     ~LocalSessionGuard();
 

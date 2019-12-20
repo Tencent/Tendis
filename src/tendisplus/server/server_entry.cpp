@@ -1133,6 +1133,7 @@ void ServerEntry::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _eventCV.notify_all();
     _network->stop();
+    _clusterMgr->stop();
     for (auto& executor : _executorList) {
         executor->stop();
     }

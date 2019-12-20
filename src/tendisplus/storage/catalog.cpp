@@ -12,6 +12,14 @@
 
 namespace tendisplus {
 
+ConnectState int2ConnectState(const uint8_t t) {
+    if (t == 1) {
+        return ConnectState::DISCONNECTED;
+    } else {
+        return ConnectState::CONNECTED;
+    }
+}
+
 StoreMeta::StoreMeta()
     :StoreMeta(0, "", 0, -1, 0, ReplState::REPL_NONE) {
 }
@@ -66,10 +74,6 @@ std::unique_ptr<MainMeta> MainMeta::copy() const {
         new MainMeta(*this)));
 }
 
-
-const std::string ClusterMeta::clusterPrefix = "store_cluster";
-
-
 //server first start in cluster mode
 //c1780cb48b3398452e3fd8b162b60246213e3379 127.0.0.1 0 myself,master - 0 0 0 connected
 ClusterMeta::ClusterMeta()
@@ -96,11 +100,11 @@ ClusterMeta::ClusterMeta()
     //get clustermeta , if not exit ,create uuid
 }
 */
-ClusterMeta::ClusterMeta(const std::string& nodeName_, const std::string& ip_, 
-                uint16_t port_, const std::string& nodeFlag_, 
+ClusterMeta::ClusterMeta(const std::string& nodeName_, const std::string& ip_,
+                uint64_t port_, uint64_t cport_, uint16_t nodeFlag_,
                 const std::string& masterName_, uint64_t pingTime_,
-                uint64_t pongTime_, uint16_t configEpoch_,
-                ConnectState ConnectState_, const std::vector<std::string>& slots_)
+                uint64_t pongTime_, uint64_t configEpoch_,
+                ConnectState ConnectState_, const std::vector<uint16_t>& slots_)
     :nodeName(nodeName_),
      ip(ip_),
      port(port_),
@@ -488,8 +492,8 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
 
     writer.Key("slots");
     writer.StartArray();
-    for(auto &v : meta.slots)
-        writer.String(v);
+    for (auto &v : meta.slots)
+        writer.Uint64(v);
     writer.EndArray();
 
     writer.EndObject();
@@ -577,13 +581,17 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
 
         INVARIANT(doc.HasMember("port"));
         INVARIANT(doc["port"].IsUint64());
-        result->port= static_cast<uint16_t>(
-        doc["port"].GetUint64());
+        result->port = static_cast<uint64_t>(doc["port"].GetUint64());
+
+        INVARIANT(doc.HasMember("cport"));
+        INVARIANT(doc["cport"].IsUint64());
+        result->cport = static_cast<uint64_t>(doc["cport"].GetUint64());
 
         INVARIANT(doc.HasMember("nodeFlag"));
-        INVARIANT(doc["nodeFlag"].IsString());
-        result->nodeFlag = doc["nodeFlag"].GetString();      
-            
+        INVARIANT(doc["nodeFlag"].IsUint64());
+        result->nodeFlag = static_cast<uint16_t>(
+                doc["port"].GetUint64());
+
         INVARIANT(doc.HasMember("masterName"));
         INVARIANT(doc["masterName"].IsString());
         result->masterName = doc["masterName"].GetString();
@@ -591,21 +599,23 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         INVARIANT(doc.HasMember("pingTime"));
         INVARIANT(doc["pingTime"].IsUint64());
         result->pingTime = static_cast<uint64_t>(
-        doc["pingTime"].GetUint64());
+                doc["pingTime"].GetUint64());
 
         INVARIANT(doc.HasMember("pongTime"));
         INVARIANT(doc["pongTime"].IsUint64());
-        result->pingTime = static_cast<uint64_t>(
-        doc["pongTime"].GetUint64());
-    
+        result->pongTime = static_cast<uint64_t>(
+                doc["pongTime"].GetUint64());
+
         INVARIANT(doc.HasMember("configEpoch"));
         INVARIANT(doc["configEpoch"].IsUint64());
-        result->configEpoch = static_cast<uint16_t>(
-        doc["configEpoch"].GetUint64());
-  
+        result->configEpoch = static_cast<uint64_t>(
+                doc["configEpoch"].GetUint64());
+
         INVARIANT(doc.HasMember("connectState"));
         INVARIANT(doc["connectState"].IsUint64());
-        result->connectState = static_cast<ConnectState>(doc["connectState"].GetUint64());
+        
+        uint16_t s = static_cast<uint8_t>(doc["connectState"].GetUint64());
+        result->connectState = int2ConnectState(s);
 
         INVARIANT(doc.HasMember("slots"));
         INVARIANT(doc["slots"].IsArray());
@@ -615,7 +625,8 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++)
         {
             const rapidjson::Value& object = slotArray[i];
-            result->slots.push_back(std::move(object.GetString()));
+            auto element= static_cast<uint16_t>(object.GetUint64());
+            result->slots.push_back(element);
         }
         
         LOG(INFO)<<"Get ClusterMeta Node name is" << result->nodeName << "ip address is " << result->ip << "node Flag is" << result->nodeFlag;
@@ -678,12 +689,16 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
 
     INVARIANT(doc.HasMember("port"));
     INVARIANT(doc["port"].IsUint64());
-    result->port= static_cast<uint16_t>(
-        doc["port"].GetUint64());
+    result->port = static_cast<uint64_t>(doc["port"].GetUint64());
+
+    INVARIANT(doc.HasMember("cport"));
+    INVARIANT(doc["cport"].IsUint64());
+    result->cport = static_cast<uint64_t>(doc["cport"].GetUint64());
 
     INVARIANT(doc.HasMember("nodeFlag"));
-    INVARIANT(doc["nodeFlag"].IsString());
-    result->nodeFlag = doc["nodeFlag"].GetString();
+    INVARIANT(doc["nodeFlag"].IsUint64());
+    result->nodeFlag = static_cast<uint16_t>(
+            doc["port"].GetUint64());
 
     INVARIANT(doc.HasMember("masterName"));
     INVARIANT(doc["masterName"].IsString());
@@ -692,21 +707,22 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
     INVARIANT(doc.HasMember("pingTime"));
     INVARIANT(doc["pingTime"].IsUint64());
     result->pingTime = static_cast<uint64_t>(
-        doc["pingTime"].GetUint64());
+            doc["pingTime"].GetUint64());
 
     INVARIANT(doc.HasMember("pongTime"));
     INVARIANT(doc["pongTime"].IsUint64());
-    result->pingTime = static_cast<uint64_t>(
-        doc["pongTime"].GetUint64());
-    
+    result->pongTime = static_cast<uint64_t>(
+            doc["pongTime"].GetUint64());
+
     INVARIANT(doc.HasMember("configEpoch"));
     INVARIANT(doc["configEpoch"].IsUint64());
-    result->configEpoch = static_cast<uint16_t>(
-        doc["configEpoch"].GetUint64());
+    result->configEpoch = static_cast<uint64_t>(
+            doc["configEpoch"].GetUint64());
 
     INVARIANT(doc.HasMember("connectState"));
     INVARIANT(doc["connectState"].IsUint64());
-    result->connectState = static_cast<ConnectState>(doc["connectState"].GetUint64());
+    result->connectState = static_cast<ConnectState>(
+            doc["connectState"].GetUint64());
 
     INVARIANT(doc.HasMember("slots"));
     INVARIANT(doc["slots"].IsArray());
@@ -716,15 +732,12 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
     for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++)
     {
         const rapidjson::Value& object = slotArray[i];
-        result->slots.push_back(std::move(object.GetString()));
+        auto element = static_cast<uint16_t>(object.GetUint64());
+        result->slots.push_back(element);
     }
-    LOG(INFO)<<"Get ClusterMeta Node name is" << result->nodeName << "ip address is " << result->ip << "node Flag is" << result->nodeFlag;
-#ifdef _WIN32
-    return std::move(result);
-#else
+
+    LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName << "ip address is " << result->ip << "node Flag is" << result->nodeFlag;
     return result;
-#endif    
-    
 }
 
 
@@ -740,10 +753,10 @@ Status Catalog::setEpochMeta(const EpochMeta& meta) {
     writer.String("1");
 
     writer.Key("currentEpoch");
-    writer.Uint64(static_cast<uint32_t>(meta.currentEpoch));
+    writer.Uint64(meta.currentEpoch);
 
     writer.Key("lastVoteEpoch");
-    writer.Uint64(static_cast<uint32_t>(meta.lastVoteEpoch));
+    writer.Uint64(meta.lastVoteEpoch);
 
     writer.EndObject();
 
@@ -751,7 +764,8 @@ Status Catalog::setEpochMeta(const EpochMeta& meta) {
 
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
-        LOG(ERROR) << "Catalog::setEpochMeta failed:" << exptxn.status().toString() << " " << sb.GetString();
+        LOG(ERROR) << "Catalog::setEpochMeta failed:" <<
+            exptxn.status().toString() << " " << sb.GetString();
         return exptxn.status();
     }
 
@@ -760,7 +774,8 @@ Status Catalog::setEpochMeta(const EpochMeta& meta) {
     Record rd(std::move(rk), std::move(rv));
     Status s = _store->setKV(rd, txn);
     if (!s.ok()) {
-        LOG(ERROR) << "Catalog::setEpochMeta failed:" << s.toString() << " " << sb.GetString();
+        LOG(ERROR) << "Catalog::setEpochMeta failed:" <<
+            s.toString() << " " << sb.GetString();
         return s;
     }
     LOG(INFO) << "Catalog::setEpochMeta sucess:" << sb.GetString();
@@ -799,17 +814,16 @@ Expected<std::unique_ptr<EpochMeta>> Catalog::getEpochMeta() {
 
     INVARIANT(doc.HasMember("currentEpoch"));
     INVARIANT(doc["currentEpoch"].IsUint64());
-    result->currentEpoch = (uint32_t)doc["currentEpoch"].GetUint64();
+    result->currentEpoch = static_cast<uint64_t>(
+            doc["currentEpoch"].GetUint64());
 
     INVARIANT(doc.HasMember("lastVoteEpoch"));
     INVARIANT(doc["lastVoteEpoch"].IsUint64());
-    result->lastVoteEpoch = (uint32_t)doc["lastVoteEpoch"].GetUint64();
     
-#ifdef _WIN32
-    return std::move(result);
-#else
+    result->lastVoteEpoch = static_cast<uint64_t>(
+            doc["lastVoteEpoch"].GetUint64());
+
     return result;
-#endif
 }
 
 }  // namespace tendisplus

@@ -158,7 +158,7 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
     constexpr uint32_t suggestBatch = 64;
     constexpr size_t suggestBytes = 16*1024*1024;
 
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
     sg.getSession()->setArgs(
         {"mastersendlog",
          std::to_string(storeId),
@@ -306,7 +306,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         return false;
     }
 
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
         storeId, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {

@@ -11,7 +11,6 @@
 #include <vector>
 #include <cstdlib>
 #include <random>
-#include <bitset>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -287,11 +286,11 @@ std::string lenStrEncode(const std::string& val) {
 // guarantee dest's size is enough
 size_t lenStrEncode(char* dest, size_t destsize, const std::string& val) {
     size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest), destsize, val.size());
-
+          
     INVARIANT_D(destsize >= size + val.size());
     memcpy(dest + size, val.c_str(), val.size());
     return size + val.size();
-}
+}  
 
 size_t lenStrEncodeSize(const std::string& val) {
     return varintEncodeSize(val.size()) + val.size();
@@ -319,21 +318,6 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
     return LenStrDecodeResult{ std::move(str), offset };
 }
 
-template <size_t size>
-std::string bitsetEncode(const std::bitset<size>& bitmap) {
-    // TODO(wayenche)
-    return "";
-}
-
-template <size_t size>
-Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
-    return { ErrorCodes::ERR_DECODE, "" };
-}
-
-template <size_t size>
-uint32_t bitsetEncodeSize(const std::bitset<size>& bitmap) {
-    return 0;
-}
 
 std::vector<std::string> stringSplit(const std::string& s,
                             const std::string& delim) {
@@ -372,5 +356,9 @@ std::string getUUid(const int len) {
     }
     return ss.str();
 }
+
+//Expected<std::bitset<size>> bitsetDecode(const std::string& str , const uint32_t length) {
+
+    
 
 }  // namespace tendisplus

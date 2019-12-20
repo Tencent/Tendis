@@ -643,7 +643,7 @@ void NetSession::processMultibulkBuffer() {
             ok = redis_port::string2ll(newStart, newLine - newStart, &ll);
 
             uint32_t maxBulkLen = CONFIG_DEFAULT_PROTO_MAX_BULK_LEN;
-            if (getServerEntry().get()) {
+            if (getServerEntry()) {
                 maxBulkLen = getServerEntry()->protoMaxBulkLen();
             }
             if (!ok || ll < 0 || ll > maxBulkLen) {
@@ -699,7 +699,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     }
 
     // TODO(wayenchen): include clusterSession?
-    if (_first && getServerEntry().get()) {
+    if (_first && getServerEntry()) {
         uint32_t maxClients = getServerEntry()->getParams()->maxClients;
         if (getServerEntry()->getSessionCount() > maxClients) {
             ++_server->getServerStat().rejectedConn;

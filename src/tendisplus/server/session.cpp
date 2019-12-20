@@ -14,15 +14,26 @@ thread_local Session* curSession = nullptr;
 
 Session::Session(std::shared_ptr<ServerEntry> svr, Type type)
         :_args(std::vector<std::string>()),
-         _server(svr),
+         _server(svr.get()),
          _ctx(std::make_unique<SessionCtx>(this)),
          _type(type),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
 
+Session::Session(ServerEntry* svr, Type type)
+    :_args(std::vector<std::string>()),
+    _server(svr),
+    _ctx(std::make_unique<SessionCtx>(this)),
+    _type(type),
+    _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
+    _aliveCnt.fetch_add(1, std::memory_order_relaxed);
+}
+
 Session::~Session() {
     _aliveCnt.fetch_sub(1, std::memory_order_relaxed);
+    //LOG(INFO) << id() << " " <<  _server->getParams()->port <<  " aaaaaaaaa session("
+    //    << getTypeStr() << ")"<< " is destroyed.";
 #ifdef TENDIS_DEBUG
     if (_type == Type::CLUSTER) {
         DLOG(INFO) << "cluster session " << id() << " is destroyed.";
@@ -90,7 +101,7 @@ const std::vector<std::string>& Session::getArgs() const {
     return _args;
 }
 
-std::shared_ptr<ServerEntry> Session::getServerEntry() const {
+ServerEntry* Session::getServerEntry() const {
     return _server;
 }
 
@@ -100,6 +111,10 @@ SessionCtx *Session::getCtx() const {
 
 LocalSession::LocalSession(std::shared_ptr<ServerEntry> svr)
         :Session(svr, Type::LOCAL) {
+}
+
+LocalSession::LocalSession(ServerEntry* svr)
+    : Session(svr, Type::LOCAL) {
 }
 
 void LocalSession::start() {
@@ -135,16 +150,16 @@ Status LocalSession::setResponse(const std::string& s) {
     return { ErrorCodes::ERR_OK, "" };
 }
 
-LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {
+LocalSessionGuard::LocalSessionGuard(ServerEntry* svr) {
     _sess = std::make_shared<LocalSession>(svr);
-    if (svr.get()) {
+    if (svr) {
         svr->addSession(_sess);
     }
 }
 
 LocalSessionGuard::~LocalSessionGuard() {
     auto svr = _sess->getServerEntry();
-    if (svr.get()) {
+    if (svr) {
         svr->endSession(_sess->id());
     }
 }

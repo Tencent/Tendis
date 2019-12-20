@@ -820,7 +820,7 @@ class ToggleFtmcCommand: public Command {
         } else {
             return {ErrorCodes::ERR_PARSEOPT, "invalid toggleftmc para"};
         }
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         svr->toggleFtmc(enable);
         return Command::fmtOK();
@@ -1461,7 +1461,7 @@ class tendisstatCommand: public Command {
                 sections.insert(args[i]);
             }
         }
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         SegmentMgr *segMgr = svr->getSegmentMgr();
         INVARIANT(segMgr != nullptr);
@@ -1869,7 +1869,6 @@ class InfoCommand: public Command {
     static void infoMemory(bool allsections, bool defsections,
         const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "memory") {
-            auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Memory\r\n";
 
@@ -1930,7 +1929,6 @@ class InfoCommand: public Command {
 
     static void infoPersistence(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "persistence") {
-            auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Persistence\r\n";
 
@@ -1980,7 +1978,6 @@ class InfoCommand: public Command {
     static void infoCPU(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
 #ifndef _WIN32
         if (allsections || defsections || section == "cpu") {
-            auto server = sess->getServerEntry();
             std::stringstream ss;
 
             struct rusage self_ru, c_ru;
@@ -2005,7 +2002,6 @@ class InfoCommand: public Command {
 
     static void infoCommandStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || section == "commandstats") {
-            auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# CommandStats\r\n";
             for (const auto& kv : commandMap()) {
@@ -2038,7 +2034,6 @@ class InfoCommand: public Command {
 
     static void infoKeyspace(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "keyspace") {
-            auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# Keyspace\r\n";
 

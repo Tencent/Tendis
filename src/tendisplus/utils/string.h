@@ -2,8 +2,11 @@
 #define SRC_TENDISPLUS_UTILS_STRING_H_
 
 #include <string>
-
+#include <bitset>
+#include <iostream>
+#include <vector>
 #include "tendisplus/utils/status.h"
+#include "tendisplus/storage/varint.h"
 #ifndef _WIN32
 #include <experimental/string_view>
 #endif
@@ -42,12 +45,175 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
 
 std::vector<std::string> stringSplit(const  std::string& s, const std::string& delim);
 
+
 std::string trim(const std::string& str);
 
 #define strDelete(str, c) (str).erase(std::remove((str).begin(), (str).end(), (c)), (str).end())
 
 std::string  getUUid(const int len);
 unsigned char random_char();
+
+template <typename T>
+void CopyUint(std::vector<uint8_t> *buf, T element) {
+    for (size_t i = 0; i < sizeof(element); ++i) {
+        buf->emplace_back((element>>((sizeof(element)-i-1)*8))&0xff);
+    }
+}
+
+
+
+template <size_t size>
+std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
+        // TODO(wayenche)
+    size_t idx = 0;
+    std::vector<uint16_t> slotBuff(1,0);
+    while ( idx < bitmap.size() ) {
+        if ( bitmap.test(idx) ) {
+            uint16_t pageLen = 0;
+            slotBuff.push_back(static_cast<uint16_t >(idx));
+            while ( idx < bitmap.size() && bitmap.test(idx) ) {
+                pageLen++;
+                idx++;
+            }
+            slotBuff.push_back(pageLen);
+        } else {
+            idx++;
+        }
+    }
+        // the length after encode
+    slotBuff[0]  =  (slotBuff.size())* sizeof(uint16_t);
+    return  slotBuff;
+}
+
+//slot description  use it
+template <size_t size>
+std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
+    size_t idx = 0;
+    std::string slotStr = " ";
+    while (idx < bitmap.size()) {
+        if (bitmap.test(idx)) {
+            size_t pos = idx;
+            size_t pageLen = 0;
+
+            while (idx < bitmap.size() && bitmap.test(idx)) {
+                pageLen++;
+                idx++;
+            }
+            std::stringstream tempStream;
+            if(pageLen > 0) {
+                tempStream << pos <<"-"<<pos + pageLen;
+            } else {
+                tempStream << pos ;
+            }
+            slotStr += tempStream.str() + " ";
+        } else {
+            idx++;
+        }
+    }
+   // slotStr.erase(slotStr.end());
+    return slotStr;
+}
+
+template <size_t size>
+uint32_t bitsetEncodeSize(const std::bitset<size>& bitmap) {
+    size_t idx = 0;
+    std::vector<uint16_t> slotBuff(1,0);
+    while ( idx < bitmap.size() ) {
+        if ( bitmap.test(idx) ) {
+            uint16_t pageLen = 0;
+            slotBuff.push_back(static_cast<uint16_t >(idx));
+            while ( idx < bitmap.size() && bitmap.test(idx) ) {
+                pageLen++;
+                idx++;
+            }
+            slotBuff.push_back(pageLen);
+        } else {
+            idx++;
+        }
+    }
+    // the length after encode
+    uint32_t mapSize =  (slotBuff.size())* sizeof(uint16_t);
+    return  mapSize;
+}
+
+template <size_t size>
+Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
+    std::bitset<size> bitmap;
+    size_t offset = 0;
+    while ( offset < str.size() ) {
+        auto pos = int16Decode(str.c_str()+offset);
+        offset += sizeof(pos);
+        auto pageLength = int16Decode(str.c_str()+offset);
+        offset += sizeof(pageLength);
+        auto len = static_cast<size_t>(pos+pageLength);
+        if ( len >= size ) {
+            return { ErrorCodes::ERR_DECODE, "bitset error length" };
+        }
+        for (size_t j = pos; j < pos+pageLength; j++) {
+            bitmap.set(j);
+        }
+    }
+    return bitmap;
+}
+
+//decode from vector<int>
+template <size_t size>
+Expected<std::bitset<size>> bitsetIntDecode(const std::vector<uint16_t> vec) {
+    std::bitset<size> bitmap;
+    size_t offset = 0;
+    while ( offset < vec.size() ) {
+        auto pos = vec[offset];
+        auto pageLength = vec[offset+1];
+        offset += 2;
+        auto len = static_cast<size_t>(pos+pageLength);
+        if ( len >= size ) {
+            return { ErrorCodes::ERR_DECODE, "bitset error length" };
+        }
+        for (size_t j = pos; j < pos+pageLength; j++) {
+            bitmap.set(j);
+        }
+    }
+    return bitmap;
+}
+
+//slot description  use it
+template <size_t size>
+Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
+    std::bitset<size> bitmap;
+    std::vector<std::string> vec = stringSplit(bitmapStr, " ");
+    vec.erase(vec.begin());
+    for (auto &vs : vec) {
+        if (vs.find("-")) {
+            std::vector<std::string> s = stringSplit(vs, "-");
+            Expected<uint64_t> sPtr = ::tendisplus::stoul(s[0]);
+
+            Expected<uint64_t> ePtr = ::tendisplus::stoul(s[1]);
+            if (sPtr.ok() && ePtr.ok()) {
+                size_t begin = static_cast<size_t >(sPtr.value());
+                size_t end = static_cast<size_t >(ePtr.value());
+
+                if ( end >= size ) {
+                    return { ErrorCodes::ERR_DECODE, "bitset error length" };
+                }
+                for (size_t j = begin; j < end; j++) {
+                    bitmap.set(j);
+                }
+            } else  {
+                return { ErrorCodes::ERR_DECODE, "error start end " };
+            }
+        } else {
+            Expected<uint64_t> sPtr = ::tendisplus::stoul(vs);
+            if (sPtr.ok()) {
+                size_t pos =  static_cast<size_t > (sPtr.value());
+                bitmap.set(pos);
+            } else {
+                return { ErrorCodes::ERR_DECODE, "error start end " };
+            }
+         }
+    }
+    return  bitmap;
+}
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER

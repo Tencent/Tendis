@@ -50,8 +50,8 @@ class ClusterCommand: public Command {
         return false;
     }
 
-    Expected<std::string> run(Session* sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+    Expected<std::string> run(Session *sess) final {
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
         auto migrateMgr = svr->getMigrateManager();
@@ -121,6 +121,18 @@ class ClusterCommand: public Command {
             }
 
             return{ ErrorCodes::ERR_OK, "" };
+
+        }   else if (arg1 == "nodes" && argSize == 2) {
+
+            std::string eNodeInfo = clusterState->clusterGenNodesDescription
+                        (CLUSTER_NODE_HANDSHAKE);
+
+            if (eNodeInfo.size() > 0) {
+                return  eNodeInfo;
+            } else {
+                return { ErrorCodes::ERR_CLUSTER,
+                         "Invalid cluster nodes info" };
+            }
         }
 
         return{ ErrorCodes::ERR_CLUSTER,

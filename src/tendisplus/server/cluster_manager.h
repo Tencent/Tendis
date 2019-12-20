@@ -116,11 +116,13 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     ClusterNode(const std::string& name, const uint16_t flags,
                         std::shared_ptr<ClusterState> cstate,
+                   //     const std::bitset<CLUSTER_SLOTS>& slots_,
                         const std::string& host = "",
                         uint32_t port = 0, uint32_t cport = 0,
                         uint64_t pingSend = 0, uint64_t pongReceived = 0,
-                        uint64_t epoch = 0, const std::vector<std::string>& slots_ = {""});
- 
+                        uint64_t epoch = 0);
+
+
     ClusterNode(const ClusterNode&) = delete;
     ClusterNode(ClusterNode&&) = delete;
     bool operator==(const ClusterNode& other) const;
@@ -182,7 +184,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     bool getSlotBit(uint32_t slot) const;
 
     static std::string representClusterNodeFlags(uint32_t flags);
-
+    std::string clusterGenNodeDescription();
  protected:
     Status addSlot(uint32_t slot);
     bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -193,6 +195,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
  public:
     bool addSlave(std::shared_ptr<ClusterNode> slave);
     bool removeSlave(std::shared_ptr<ClusterNode> slave);
+    void setSlots(const std::bitset<CLUSTER_SLOTS>& slots);
 
  private:
     mutable myMutex _mutex;
@@ -203,12 +206,13 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint64_t _nodeCport;  /* Latest known cluster port of this node. */
     std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node */
     void cleanupFailureReportsNoLock();
+    std::bitset<CLUSTER_SLOTS> _mySlots;
 
 // TODO(wayenchen): make it private
  public:
     mstime_t _ctime;
     uint16_t _flags;
-    std::bitset<CLUSTER_SLOTS> _mySlots;  /* slots handled by this node */
+    /* slots handled by this node */
     uint16_t _numSlots;
 
     std::vector<std::shared_ptr<ClusterNode>> _slaves;
@@ -318,6 +322,7 @@ class ClusterMsgHeader{
     static constexpr const char* CLUSTER_NODE_NULL_NAME = "0000000000000000000000000000000000000000";
 
     size_t getHeaderSize() const;
+    static size_t headerMinSize();
     std::string headEncode() const;
     static Expected<ClusterMsgHeader> headDecode(const std::string& key);
 
@@ -368,6 +373,7 @@ class ClusterMsgDataUpdate: public ClusterMsgData {
     ClusterMsgDataUpdate(ClusterMsgDataUpdate&&) = default;
     virtual ~ClusterMsgDataUpdate() {}
 
+    static size_t  minUpdateSize();
     std::string dataEncode() const override;
     static Expected<ClusterMsgDataUpdate>  dataDecode(const std::string& key);
 
@@ -395,7 +401,7 @@ public:
         std::shared_ptr<RequestMatrix> reqMatrix);
     ClusterSession(const ClusterSession&) = delete;
     ClusterSession(ClusterSession&&) = delete;
-    virtual ~ClusterSession() = default;
+    virtual ~ClusterSession() {}
 
     Status clusterProcessPacket();
     Status clusterReadHandler();
@@ -494,6 +500,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void cronPingSomeNodes();
     void cronCheckFailState();
 
+    std::string clusterGenNodesDescription(uint16_t filter);
+
     // TODO(wayenchen)
     // Status clusterReadMeta();
     // Status clusterDelSlot(uint64_t slot);
@@ -506,7 +514,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
     std::shared_ptr<ServerEntry> _server;
-    void clusterSaveNodesNoLock();
+    Status clusterSaveNodesNoLock();
     void clusterAddNodeNoLock(CNodePtr node);
     void clusterDelNodeNoLock(CNodePtr node);
     bool clusterDelSlotNoLock(const uint32_t slot);
