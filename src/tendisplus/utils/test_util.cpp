@@ -427,7 +427,7 @@ void WorkLoad::clusterMeet(const std::string& ip, uint32_t port, uint32_t cport)
 }
 
 void WorkLoad::clusterNodes() {
-    _session->setArgs({ "cluster", "nodes");
+    _session->setArgs({ "cluster", "nodes"});
     
     auto expect = Command::runSessionCmd(_session.get());
     EXPECT_TRUE(expect.ok());
@@ -457,6 +457,16 @@ std::string randomStr(size_t s, bool maybeEmpty) {
         v.emplace_back(genRand() % 256);
     }
     return std::string(reinterpret_cast<const char*>(v.data()), v.size());
+}
+
+std::bitset<CLUSTER_SLOTS> genBitMap() {
+    std::bitset<CLUSTER_SLOTS> bitmap;
+    uint16_t  start  =  genRand() % CLUSTER_SLOTS;
+    uint16_t  length = genRand() % (CLUSTER_SLOTS - start);
+    for (size_t j = start; j < start+length; j++) {
+        bitmap.set(j);
+    }
+    return  bitmap;
 }
 
 void testList(std::shared_ptr<ServerEntry> svr) {

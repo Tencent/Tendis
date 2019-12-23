@@ -11,6 +11,7 @@
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/server/cluster_manager.h"
 #include "tendisplus/network/network.h"
 
 // disable one test if needed
@@ -46,6 +47,7 @@ void destroyReplEnv();
 int genRand();
 std::string randomIp();
 std::string randomStr(size_t s, bool maybeEmpty);
+std::bitset<CLUSTER_SLOTS> genBitMap();
 
 void testExpire1(std::shared_ptr<ServerEntry> svr);
 void testExpire2(std::shared_ptr<ServerEntry> svr);

@@ -396,6 +396,7 @@ TEST(Cluster, Simple_MEET) {
         compareClusterInfo(svr, node1);
     }
 
+    work1.clusterNodes();
 //#ifndef _WIN32
     for (auto svr : servers) {
         svr->stop();
