@@ -178,6 +178,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     bool nodeIsMyself() const;
 
     std::shared_ptr<ClusterSession> getSession() const;
+    std::shared_ptr<BlockingTcpClient> getClient() const;
+    void setClient(std::shared_ptr<BlockingTcpClient> client);
     void setSession(std::shared_ptr<ClusterSession> sess);
     void freeClusterSession();
 
@@ -204,7 +206,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     std::string _nodeIp;  /* Latest known IP address of this node */
     uint64_t _nodePort;  /* Latest known clients port of this node */
     uint64_t _nodeCport;  /* Latest known cluster port of this node. */
-    std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node */
+    std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node, connect success */
+    std::shared_ptr<BlockingTcpClient> _nodeClient;  /* try connect to the _node */
     void cleanupFailureReportsNoLock();
     std::bitset<CLUSTER_SLOTS> _mySlots;
 
@@ -422,6 +425,8 @@ private:
 
     // handle msg parsed from drainReqCallback
     virtual void processReq();
+    // TODO(wayenchen): check whether use single thread for gossip is better or not?
+    virtual void schedule();
 
     uint64_t _pkgSize;
     CNodePtr _node;
@@ -631,7 +636,9 @@ class ClusterManager {
     void installClusterNode(std::shared_ptr<ClusterNode>);
     void installClusterState(std::shared_ptr<ClusterState>);
 
-    Expected<std::shared_ptr<ClusterSession>> clusterCreateSession(const std::shared_ptr<ClusterNode>& node);
+    Expected<std::shared_ptr<ClusterSession>> clusterCreateSession(std::shared_ptr<BlockingTcpClient> client,
+                    const std::shared_ptr<ClusterNode>& node);
+    Expected<std::shared_ptr<BlockingTcpClient>> clusterCreateClient(const std::shared_ptr<ClusterNode>& node);
 
     NetworkAsio* getClusterNetwork() const;
     std::shared_ptr<ClusterState> getClusterState() const;

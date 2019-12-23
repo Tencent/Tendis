@@ -48,7 +48,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     constexpr uint32_t suggestBatch = 256;
     constexpr size_t suggestBytes = 16 * 1024 * 1024;
 
-    LocalSessionGuard sg(svr);
+    LocalSessionGuard sg(svr.get());
     sg.getSession()->setArgs(
             { "mastersendlog",
               std::to_string(storeId),
@@ -164,7 +164,8 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
 
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
-    std::shared_ptr<ServerEntry> svr, uint32_t chunkid) {
+    uint32_t chunkid) {
+    auto svr = sess->getServerEntry();
     auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
                                              mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {

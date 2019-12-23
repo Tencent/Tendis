@@ -11,7 +11,7 @@
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
-#include "tendisplus/server/cluster_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/network/network.h"
 
 // disable one test if needed

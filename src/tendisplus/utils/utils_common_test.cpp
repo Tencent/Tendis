@@ -12,7 +12,7 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/param_manager.h"
 #include "tendisplus/utils/test_util.h"
-#include "tendisplus/server/cluster_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "gtest/gtest.h"
 #include "glog/logging.h"

@@ -554,7 +554,7 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         // binlog_heartbeat
         // do nothing
     } else {
-        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue, _svr);
+        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue);
         if (!binlog.ok()) {
             return binlog.status();
         } else {

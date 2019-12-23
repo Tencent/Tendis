@@ -3,7 +3,7 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/server/cluster_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/redis_port.h"
@@ -43,6 +43,7 @@ ClusterNode::ClusterNode(const std::string& nodeName,
      _nodePort(port),
      _nodeCport(cport),
      _nodeSession(nullptr),
+     _nodeClient(nullptr),
      _ctime(msSinceEpoch()),
      _flags(flags),
  //    _mySlots(slots_),
@@ -498,6 +499,16 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node, std::shared_ptr<ClusterS
     }
 
     return true;
+}
+
+void ClusterNode::setClient(std::shared_ptr<BlockingTcpClient> client) {
+    std::lock_guard<myMutex> lk(_mutex);
+    _nodeClient = client;
+}
+
+std::shared_ptr<BlockingTcpClient> ClusterNode::getClient() const {
+    std::lock_guard<myMutex> lk(_mutex);
+    return _nodeClient;
 }
 
 void ClusterNode::setSession(std::shared_ptr<ClusterSession> sess) {
@@ -1709,12 +1720,7 @@ void ClusterManager::stop() {
     _controller->join();
 
     _clusterNetwork->stop();
-
-#ifdef _WIN32
-    _clusterNetwork->releaseForWin();
-#else
     _clusterNetwork.reset();
-#endif
     _clusterState.reset();
 
     LOG(WARNING) << "cluster manager stops success";
@@ -1901,12 +1907,10 @@ void ClusterState::clusterUpdateMyselfFlags() {
 }
 
 void ClusterState::cronRestoreSessionIfNeeded() {
-    uint64_t iteration = 0;
+    std::lock_guard<myMutex> lock(_mutex);
+
     auto now = msSinceEpoch();
     uint64_t handshake_timeout = 0;
-
-    /* Number of times this function was called so far. */
-    iteration++;
 
     /* The handshake timeout is the time after which a handshake node that was
     * not turned into a normal node is removed from the nodes. Usually it is
@@ -1915,12 +1919,6 @@ void ClusterState::cronRestoreSessionIfNeeded() {
     handshake_timeout = _server->getParams()->clusterNodeTimeout;
     if (handshake_timeout < 1000)
         handshake_timeout = 1000;
-
-    // lock 
-    _mutex.lock();
-
-    /* Update myself flags. */
-    // clusterUpdateMyselfFlags();
 
     _statsPfailNodes = 0;
 
@@ -1943,20 +1941,59 @@ void ClusterState::cronRestoreSessionIfNeeded() {
         /* A Node in HANDSHAKE state has a limited lifespan equal to the
         * configured node timeout. */
         if (node->nodeInHandshake() && now - node->_ctime > handshake_timeout) {
+            LOG(WARNING) << "deleting handshake node:"
+                << node->getNodeName()
+                << ", IP:" << node->getNodeIp()
+                << ", PORT:" << node->getPort();
+
             clusterDelNode(node);
             iter = _nodes.begin();
             continue;
         }
 
         if (!node->getSession()) {
-            // NOTE(vinchen): clusterCreateSession() maybe take a long time,
-            // so unlock first, and lock after the session create.
-            _mutex.unlock();
-
             uint64_t old_ping_sent = 0;
+            bool error = false;
+            std::string errmsg;
+
+            auto client = node->getClient();
+            if (!client) {
+                auto eclient = _server->getClusterMgr()->clusterCreateClient(node);
+                if (!eclient.ok()) {
+                    error = true;
+                    errmsg = eclient.status().toString();
+                } else {
+                    client = std::move(eclient.value());
+                    node->setClient(client);
+               }
+            }
+
             std::shared_ptr<ClusterSession> sess = nullptr;
-            auto esess = _server->getClusterMgr()->clusterCreateSession(node);
-            if (!esess.status().ok()) {
+            if (!error) {
+                INVARIANT_D(client != nullptr);
+                auto s = client->tryWaitConnect();
+                if (s.ok()) {
+                    // connected
+                    auto esess = _server->getClusterMgr()->clusterCreateSession(client, node);
+                    if (!esess.ok()) {
+                        error = true;
+                        errmsg = esess.status().toString();
+                    } else {
+                        sess = std::move(esess.value());
+                    }
+                } else if (s.code() == ErrorCodes::ERR_CONNECT_TRY) {
+                    // async connect
+                    serverLog(LL_DEBUG, "Async Connecting with Node %.40s at %s:%lu",
+                        node->getNodeName().c_str(), node->getNodeIp().c_str(), node->getCport());
+                    continue;
+                } else {
+                    error = true;
+                    errmsg = s.toString();
+                }
+            }
+
+            node->setClient(nullptr);
+            if (error) {
                 /* We got a synchronous error from connect before
                 * clusterSendPing() had a chance to be called.
                 * If node->ping_sent is zero, failure detection can't work,
@@ -1966,14 +2003,14 @@ void ClusterState::cronRestoreSessionIfNeeded() {
                     node->_pingSent = msSinceEpoch();
 
                 LOG(WARNING) << "Unable to connect to Cluster Node:"
-                    << node->getNodeIp()
+                    << node->getNodeName()
+                    << ", IP: " << node->getNodeIp()
                     << ", Port: " << node->getCport()
-                    << ", Error:" << esess.status().toString();
+                    << ", Error:" << errmsg;
 
-                goto NO_SESSION_END;
+                continue;
             }
 
-            sess = esess.value();
             node->setSession(sess);
 
             /* Queue a PING in the new connection ASAP: this is crucial
@@ -1989,9 +2026,10 @@ void ClusterState::cronRestoreSessionIfNeeded() {
                 /* If there was an active ping before the link was
                 * disconnected, we want to restore the ping time, otherwise
                 * replaced by the clusterSendPing() call. */
+
                 // TODO(vinchen): clusterCreateSession() is synchronous, so 
                 // node->_pingSent is reliable which replaced by the clusterSendPing();
-                // node->_pingSent = old_ping_sent;
+                node->_pingSent = old_ping_sent;
             }
             /* We can clear the flag after the first packet is sent.
             * If we'll never receive a PONG, we'll never send new packets
@@ -2000,17 +2038,10 @@ void ClusterState::cronRestoreSessionIfNeeded() {
             * normal PING packets. */
             node->_flags &= ~CLUSTER_NODE_MEET;
 
-            LOG(INFO) << "Connecting with Node " << node->getNodeName() << "at " <<
+            LOG(INFO) << "Connecting with Node " << node->getNodeName() << " at " <<
                 node->getNodeIp() << ":" << node->getCport();
-
-        NO_SESSION_END:
-            _mutex.lock();
-            // TOD0(vinchen): break here is not the best way
-            break;
         }
     }
-
-    _mutex.unlock();
 }
 
 void ClusterState::cronPingSomeNodes() {
@@ -2106,14 +2137,19 @@ void ClusterManager::controlRoutine() {
     LOG(INFO) << "cluster controller exits";
 }
 
-Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(const std::shared_ptr<ClusterNode>& node) {
+Expected<std::shared_ptr<BlockingTcpClient>> ClusterManager::clusterCreateClient(const std::shared_ptr<ClusterNode>& node) {
     std::shared_ptr<BlockingTcpClient> client =
         std::move(_clusterNetwork->createBlockingClient(64 * 1024 * 1024));
-    Status s = client->connect(node->getNodeIp(), node->getCport(), std::chrono::seconds(1));
+    Status s = client->connect(node->getNodeIp(), node->getCport(), std::chrono::seconds(3), false);
     if (!s.ok()) {
         return s;
     }
 
+    return client;
+}
+
+Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(std::shared_ptr<BlockingTcpClient> client,
+    const std::shared_ptr<ClusterNode>& node) {
     auto sess = _clusterNetwork->client2ClusterSession(std::move(client));
     if (!sess.ok()) {
         LOG(WARNING) << "client2ClusterSession failed: ";
@@ -2135,6 +2171,10 @@ ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
                     netMatrix, reqMatrix, Session::Type::CLUSTER),
       _pkgSize(-1) {
     DLOG(INFO) << "cluster session, id:" << id() << " created";
+}
+
+void ClusterSession::schedule() {
+    stepState();
 }
 
 // copy from clusterReadHandler
@@ -2453,7 +2493,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
             typeStr.c_str(),
             hdr->_sender.c_str(),
             sess->id(),
-            sess->getNode() ? "I'm sender" : "I'm receiver");
+            sess->getNode() ? (char*)"I'm sender" : (char*)"I'm receiver");
 
         auto sessNode = sess->getNode();
         if (sessNode) {

@@ -8,6 +8,7 @@
 #include "glog/logging.h"
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
 
@@ -44,8 +45,9 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
          _socket(*_ctx),
          _inputBuf(maxBufSize),
          _netBatchSize(netBatchSize),
-         _netBatchTimeoutSec(netBatchTimeoutSec) {
-
+         _netBatchTimeoutSec(netBatchTimeoutSec),
+         _timeout(std::chrono::seconds(3)),
+         _ctime(msSinceEpoch()) {
 }
 
 void BlockingTcpClient::closeSocket() {
@@ -54,7 +56,7 @@ void BlockingTcpClient::closeSocket() {
 }
 
 Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
-        std::chrono::milliseconds timeout) {
+        std::chrono::milliseconds timeout, bool isBlockingConnect) {
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_inited) {
@@ -78,21 +80,50 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
             _cv.notify_one();
         });
 
+    _timeout = timeout;
+
+    if (isBlockingConnect) {
+        std::unique_lock<std::mutex> lk(_mutex);
+        // TODO(vinchen): is it possible that _cv.notify_one() call before _cv.wait_for()?
+        if (_cv.wait_for(lk, timeout, [this] { return _notified; })) {
+            if (_ec) {
+                closeSocket();
+                return{ ErrorCodes::ERR_NETWORK, _ec.message() };
+            }
+            std::error_code ec;
+            _socket.non_blocking(true, ec);
+            INVARIANT(ec.value() == 0);
+            _socket.set_option(asio::ip::tcp::no_delay(true));
+            _socket.set_option(asio::socket_base::keep_alive(true));
+            return{ ErrorCodes::ERR_OK, "" };
+        } else {
+            closeSocket();
+            return{ ErrorCodes::ERR_TIMEOUT, "conn timeout" };
+        }
+    } else {
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+}
+
+Status BlockingTcpClient::tryWaitConnect() {
     std::unique_lock<std::mutex> lk(_mutex);
-    if (_cv.wait_for(lk, timeout, [this]{ return _notified;})) {
+    if (_cv.wait_for(lk, std::chrono::milliseconds(0), [this] { return _notified; })) {
         if (_ec) {
             closeSocket();
-            return {ErrorCodes::ERR_NETWORK, _ec.message()};
+            return{ ErrorCodes::ERR_NETWORK, _ec.message() };
         }
         std::error_code ec;
         _socket.non_blocking(true, ec);
         INVARIANT_D(ec.value() == 0);
         _socket.set_option(asio::ip::tcp::no_delay(true));
         _socket.set_option(asio::socket_base::keep_alive(true));
-        return {ErrorCodes::ERR_OK, ""};
+        return{ ErrorCodes::ERR_OK, "" };
     } else {
-        closeSocket();
-        return {ErrorCodes::ERR_TIMEOUT, "conn timeout"};
+        if (msSinceEpoch() - _ctime > (uint64_t)_timeout.count()) {
+            return{ ErrorCodes::ERR_TIMEOUT, "conn timeout" };
+        }
+
+        return{ ErrorCodes::ERR_CONNECT_TRY, "conn try again" };
     }
 }
 

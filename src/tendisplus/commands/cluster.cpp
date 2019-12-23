@@ -53,11 +53,19 @@ class ClusterCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
-        const auto& args = sess->getArgs();
+        if (!svr->isClusterEnabled()) {
+            return{ ErrorCodes::ERR_CLUSTER,
+                    "This instance has cluster support disabled" };
+        }
+
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
+        const auto& clusterState = svr->getClusterMgr()->getClusterState();
+        const auto& args = sess->getArgs();
+        const std::string arg1 = toLower(args[1]);
+        auto argSize = sess->getArgs().size();
 
-        if (args[1] == "setslot") {
+        if (arg1 == "setslot") {
             Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[2]);
             if (!exptChunkid.ok()) {
                 return exptChunkid.status();
@@ -80,19 +88,10 @@ class ClusterCommand: public Command {
             }
             if (!s.ok()) {
                 return Command::fmtErr(s.toString());
+            } else {
+                return Command::fmtOK();
             }
-        }
-		
-		if (!svr->isClusterEnabled()) {
-            return { ErrorCodes::ERR_CLUSTER,
-                    "This instance has cluster support disabled" };
-        }
-
-        const auto& clusterState = svr->getClusterMgr()->getClusterState();
-        auto& args = sess->getArgs();
-        const std::string arg1 = toLower(args[1]);
-        auto argSize = sess->getArgs().size();
-        if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
+        } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
             /* CLUSTER MEET <ip> <port> [cport] */
             uint64_t port, cport;
 
@@ -119,10 +118,8 @@ class ClusterCommand: public Command {
                 return{ ErrorCodes::ERR_CLUSTER,
                     "Invalid node address specified: " + host + std::to_string(port) };
             }
-
-            return{ ErrorCodes::ERR_OK, "" };
-
-        }   else if (arg1 == "nodes" && argSize == 2) {
+            return Command::fmtOK();
+        } else if (arg1 == "nodes" && argSize == 2) {
 
             std::string eNodeInfo = clusterState->clusterGenNodesDescription
                         (CLUSTER_NODE_HANDSHAKE);
@@ -138,7 +135,6 @@ class ClusterCommand: public Command {
         return{ ErrorCodes::ERR_CLUSTER,
                 "Invalid cluster command " + args[1] };
 		
-        return Command::fmtOK();
     }
 } clusterCmd;
 
@@ -198,7 +194,7 @@ public:
     }
 
     Expected<std::string> run(Session* sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const auto& args = sess->getArgs();
         auto migrateMgr = svr->getMigrateManager();

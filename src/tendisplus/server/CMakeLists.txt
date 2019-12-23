@@ -4,7 +4,6 @@ target_link_libraries(session status glog)
 add_library(server server_entry.cpp)
 target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate index_mgr cluster_mgr pessimistic server_params)
 
-
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)
 
@@ -13,9 +12,6 @@ target_link_libraries(segment_mgr status session lock)
 
 add_library(index_mgr index_manager.cpp)
 target_link_libraries(index_mgr status session lock glog ${SYS_LIBS})
-
-add_library(cluster_mgr cluster_manager.cpp)
-target_link_libraries(cluster_mgr status lock glog ${SYS_LIBS})
 
 add_executable(index_mgr_test index_manager_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)
@@ -35,8 +31,6 @@ else()
 	set_target_properties(repl_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
 
-
-
 add_executable(restore_test restore_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)
 	target_link_libraries(restore_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
@@ -46,26 +40,8 @@ else()
 	set_target_properties(restore_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
 
-add_executable(migrate_test migrate_test.cpp)
-if(CMAKE_COMPILER_IS_GNUCC)
-	target_link_libraries(migrate_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
-	target_link_libraries(migrate_test index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
-else()
-	target_link_libraries(migrate_test commands index_mgr status glog test_util network gtest_main server_params ${SYS_LIBS})
-	set_target_properties(migrate_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
-endif()
-
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})
-
-add_executable(cluster_test cluster_test.cpp)
-if(CMAKE_COMPILER_IS_GNUCC)
-	target_link_libraries(cluster_test -Wl,--whole-archive commands -Wl,--no-whole-archive)
-	target_link_libraries(cluster_test cluster_mgr status utils_common test_util server network gtest_main ${SYS_LIBS})
-else()
-	target_link_libraries(cluster_test commands cluster_mgr status utils_common test_util server network gtest_main ${SYS_LIBS})
-	set_target_properties(cluster_test PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
-endif()
 
 add_executable(tendisplus main.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)

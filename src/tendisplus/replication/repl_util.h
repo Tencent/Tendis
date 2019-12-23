@@ -32,7 +32,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
 
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
-    std::shared_ptr<ServerEntry> svr, uint32_t chunkid = Transaction::CHUNKID_UNINITED);
+    uint32_t chunkid = Transaction::CHUNKID_UNINITED);
 
 }  // namespace tendisplus
 

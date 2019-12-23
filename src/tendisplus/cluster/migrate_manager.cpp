@@ -315,7 +315,7 @@ void MigrateManager::fullReceive(uint32_t chunkid){
     }
     _migrateReceiveTask[chunkid]->receiver.setClient(client);
 
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
     uint32_t storeid = _svr->getStoreid(chunkid);
     auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeid,
         mgl::LockMode::LOCK_IX);

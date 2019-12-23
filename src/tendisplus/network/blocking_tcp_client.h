@@ -16,7 +16,8 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
         asio::ip::tcp::socket, size_t maxBufSize,
         uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10);
     Status connect(const std::string& host, uint16_t port,
-        std::chrono::milliseconds timeout);
+        std::chrono::milliseconds timeout, bool isBlockingConnect = true);
+    Status tryWaitConnect();
     Expected<std::string> readLine(std::chrono::seconds timeout);
     Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
     Status writeLine(const std::string& line);
@@ -69,6 +70,8 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
     asio::streambuf _inputBuf;
     uint32_t _netBatchSize;
     uint32_t _netBatchTimeoutSec;
+    std::chrono::milliseconds _timeout;  // ms
+    uint64_t _ctime;
 };
 
 }  // namespace tendisplus

@@ -1133,12 +1133,15 @@ void ServerEntry::stop() {
     _isRunning.store(false, std::memory_order_relaxed);
     _eventCV.notify_all();
     _network->stop();
-    _clusterMgr->stop();
+    if (_clusterMgr) {
+        _clusterMgr->stop();
+    }
     for (auto& executor : _executorList) {
         executor->stop();
     }
     _replMgr->stop();
-    _migrateMgr->stop();
+    if (_migrateMgr)
+        _migrateMgr->stop();
     if (_indexMgr) 
         _indexMgr->stop();
     _clusterMgr->stop();
@@ -1147,11 +1150,7 @@ void ServerEntry::stop() {
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
-#ifdef _WIN32
-        _network->releaseForWin();
-#else
         _network.reset();
-#endif
         for (auto& executor : _executorList) {
             executor.reset();
         }

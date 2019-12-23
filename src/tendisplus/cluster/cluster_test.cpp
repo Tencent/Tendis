@@ -12,7 +12,7 @@
 #include "tendisplus/utils/test_util.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/server/server_entry.h"
-#include "tendisplus/server/cluster_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/invariant.h"
@@ -43,6 +43,11 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
     cfg1->fullPushThreadnum = 1;
     cfg1->fullReceiveThreadnum = 1;
     cfg1->logRecycleThreadnum = 1;
+
+    cfg1->migrateSenderThreadnum = 1;
+    cfg1->migrateClearThreadnum = 1;
+    cfg1->migrateReceiveThreadnum = 1;
+    cfg1->migrateCheckThreadnum = 1;
 #endif
 
     auto master = std::make_shared<ServerEntry>(cfg1);
@@ -356,7 +361,7 @@ uint32_t storeCnt = 2;
 uint32_t storeCnt = 2;
 #endif // 
 
-TEST(Cluster, Simple_MEET) {
+MYTEST(Cluster, Simple_MEET) {
     std::vector<std::string> dirs = { "node1", "node2", "node3" };
     uint32_t startPort = 11000;
 
@@ -397,17 +402,17 @@ TEST(Cluster, Simple_MEET) {
     }
 
     work1.clusterNodes();
-//#ifndef _WIN32
+#ifndef _WIN32
     for (auto svr : servers) {
         svr->stop();
         LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
     }
-//#endif
+#endif
 
     servers.clear();
 }
 
-TEST(Cluster, Sequence_Meet) {
+MYTEST(Cluster, Sequence_Meet) {
     //std::vector<std::string> dirs = { "node1", "node2", "node3", "node4", "node5",
     //                "node6", "node7", "node8", "node9", "node10" };
     std::vector<std::string> dirs;
@@ -459,7 +464,7 @@ TEST(Cluster, Sequence_Meet) {
     servers.clear();
 }
 
-MYTEST(Cluster, Random_Meet) {
+TEST(Cluster, Random_Meet) {
     //std::vector<std::string> dirs = { "node1", "node2", "node3", "node4", "node5",
     //                "node6", "node7", "node8", "node9", "node10" };
     std::vector<std::string> dirs;
@@ -495,6 +500,20 @@ MYTEST(Cluster, Random_Meet) {
         work1.init();
 
         work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
+    }
+
+    // random meet non exist node;
+    for (uint32_t i = 0; i < servers.size(); i++) {
+        auto node1 = servers[genRand() % servers.size()];
+        auto port = startPort - 100;
+
+        auto ctx1 = std::make_shared<asio::io_context>();
+        auto sess1 = makeSession(node1, ctx1);
+        WorkLoad work1(node1, sess1);
+        work1.init();
+
+        // meet one non exists node
+        work1.clusterMeet(node1->getParams()->bindIp, port);
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(50));

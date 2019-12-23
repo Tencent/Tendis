@@ -179,6 +179,9 @@ makeMigrateEnv(uint32_t storeCnt) {
     cfg1->minBinlogKeepSec = 0;
     cfg2->minBinlogKeepSec = 0;
 
+    cfg1->enableCluster = true;
+    cfg2->enableCluster = true;
+
 #ifdef _WIN32
     cfg1->executorThreadNum = 1;
     cfg1->netIoThreadNum = 1;
@@ -191,6 +194,18 @@ makeMigrateEnv(uint32_t storeCnt) {
     cfg1->migrateClearThreadnum = 1;
     cfg1->migrateReceiveThreadnum = 1;
     cfg1->migrateCheckThreadnum = 1;
+
+    cfg2->executorThreadNum = 1;
+    cfg2->netIoThreadNum = 1;
+    cfg2->incrPushThreadnum = 1;
+    cfg2->fullPushThreadnum = 1;
+    cfg2->fullReceiveThreadnum = 1;
+    cfg2->logRecycleThreadnum = 1;
+
+    cfg2->migrateSenderThreadnum = 1;
+    cfg2->migrateClearThreadnum = 1;
+    cfg2->migrateReceiveThreadnum = 1;
+    cfg2->migrateCheckThreadnum = 1;
 #endif
 
     auto master1 = std::make_shared<ServerEntry>(cfg1);
@@ -239,10 +254,12 @@ TEST(Migrate, Common) {
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
+#ifndef _WIN32
         master1->stop();
         master2->stop();
         ASSERT_EQ(master1.use_count(), 1);
         ASSERT_EQ(master2.use_count(), 1);
+#endif
         LOG(INFO) << ">>>>>> test store count:" << i << " end;";
     }
 }

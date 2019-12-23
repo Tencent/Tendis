@@ -22,7 +22,7 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
-#include "tendisplus/server/cluster_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;

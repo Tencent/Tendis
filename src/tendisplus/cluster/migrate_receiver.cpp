@@ -120,7 +120,7 @@ Status ChunkMigrateReceiver::applyBinlog( Session* sess, uint32_t storeid, uint3
     const std::string& logKey, const std::string& logValue) {
     //LOG(INFO) << "takenliutest: applyBinlog " << chunkid << " "<<storeid;
     auto binlog = applySingleTxnV2(sess, storeid,
-        logKey, logValue, _svr, chunkid);
+        logKey, logValue, chunkid);
     if (!binlog.ok()) {
         return binlog.status();
     }

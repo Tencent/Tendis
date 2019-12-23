@@ -35,6 +35,7 @@ enum class ErrorCodes {
     ERR_LOCK_TIMEOUT,
     ERR_UNKNOWN,
     ERR_CLUSTER,
+    ERR_CONNECT_TRY,
     
     // error from redis
     ERR_AUTH = 100,

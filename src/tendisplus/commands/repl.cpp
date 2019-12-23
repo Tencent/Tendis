@@ -883,7 +883,7 @@ class RestoreBinlogCommandV2 : public Command {
 
         sess->getCtx()->setReplOnly(true);
         Expected<uint64_t> ret =
-            applySingleTxnV2(sess, storeId, key, value, svr);
+            applySingleTxnV2(sess, storeId, key, value);
         if (!ret.ok()) {
             return ret.status();
         }
