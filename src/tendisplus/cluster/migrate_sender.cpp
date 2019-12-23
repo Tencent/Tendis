@@ -41,26 +41,23 @@ std::string ChunkMigrateSender::encodePrefixPk(uint32_t chunkid) {
 }
 
 Status ChunkMigrateSender::sendSnapshot() {
-    std::unique_ptr<Cursor> cursor;
-    {
-        //LocalSessionGuard sg(_svr);
-        auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
-            mgl::LockMode::LOCK_IS); // lock IS
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-        _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
-
-        auto kvstore = _dbWithLock->store;
-        auto ptxn = kvstore->createTransaction(NULL);
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        // TODO(takenliu):truncatebinlog need contain binlogs after _curBinlogid.
-        // _curBinlogid = kvstore->getHighestBinlogId(); // takenliutest,TODO
-        _curBinlogid = 0;
-        cursor = std::move(ptxn.value()->createCursor()); // it's snapshot cursor
+    //LocalSessionGuard sg(_svr);
+    auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
+        mgl::LockMode::LOCK_IS); // lock IS
+    if (!expdb.ok()) {
+        return expdb.status();
     }
+    _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
+
+    auto kvstore = _dbWithLock->store;
+    auto ptxn = kvstore->createTransaction(NULL);
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    // TODO(takenliu):truncatebinlog need contain binlogs after _curBinlogid.
+    // _curBinlogid = kvstore->getHighestBinlogId(); // takenliutest,TODO
+    _curBinlogid = 0;
+    auto cursor = std::move(ptxn.value()->createCursor()); // it's snapshot cursor
     LOG(INFO) << "sendSnapshot begin, chunkid:" << _chunkid << " storeid:" << _storeid;
 
     cursor->seek(encodePrefixPk(_chunkid));

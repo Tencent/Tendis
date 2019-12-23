@@ -95,7 +95,7 @@ void migrate(const std::shared_ptr<ServerEntry>& server1,
 void waitMigrateEnd(const std::shared_ptr<ServerEntry>& server1,
         const std::shared_ptr<ServerEntry>& server2,
         uint32_t chunkid) {
-    usleep(1000000);  // 1s
+    std::this_thread::sleep_for(1s);
 }
 
 void compareData(const std::shared_ptr<ServerEntry>& master,
@@ -178,6 +178,20 @@ makeMigrateEnv(uint32_t storeCnt) {
     cfg2->maxBinlogKeepNum = 1;
     cfg1->minBinlogKeepSec = 0;
     cfg2->minBinlogKeepSec = 0;
+
+#ifdef _WIN32
+    cfg1->executorThreadNum = 1;
+    cfg1->netIoThreadNum = 1;
+    cfg1->incrPushThreadnum = 1;
+    cfg1->fullPushThreadnum = 1;
+    cfg1->fullReceiveThreadnum = 1;
+    cfg1->logRecycleThreadnum = 1;
+
+    cfg1->migrateSenderThreadnum = 1;
+    cfg1->migrateClearThreadnum = 1;
+    cfg1->migrateReceiveThreadnum = 1;
+    cfg1->migrateCheckThreadnum = 1;
+#endif
 
     auto master1 = std::make_shared<ServerEntry>(cfg1);
     auto s = master1->startup(cfg1);
