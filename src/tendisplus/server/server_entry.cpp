@@ -806,20 +806,6 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
     _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
 }
 
-Status ServerEntry::setTsVersion(const std::string& name, uint64_t ts, uint64_t version) {
-    if (confirmTs(name) == 0 && confirmVer(name) == 0) {
-        std::lock_guard<std::shared_timed_mutex> lock(_rwlock);
-        _cfrmTs[name] = ts;
-        _cfrmVersion[name] = version;
-    } else {
-        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
-        _cfrmTs[name] = ts;
-        _cfrmVersion[name] = version;
-    }
-
-    return {ErrorCodes::ERR_OK, ""};
-}
-
 Status ServerEntry::initSlowlog(std::string logPath) {
     _slowLog.open(logPath, std::ofstream::app);
     if (!_slowLog.is_open()) {

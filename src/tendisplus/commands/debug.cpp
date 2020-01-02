@@ -2392,28 +2392,22 @@ class SyncVersionCommand: public Command {
         if (args[2] == "?" && args[3] == "?") {
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, 2);
-            auto ts = server->confirmTs(name);
-            auto ver = server->confirmVer(name);
-            if (ts == 0 && ver == 0) {
-                auto expdb = server->getSegmentMgr()->getDb(sess,
-                        0, mgl::LockMode::LOCK_IX);
-                if (!expdb.ok()) {
-                    return expdb.status();
-                }
-                PStore store = expdb.value().store;
-                auto expvm = server->getCatalog()->getVersionMeta(
-                        store, name);
-                if (expvm.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                    server->setTsVersion(name, -1, -1);
-                    ts = ver = -1;
-                } else if (!expvm.ok()) {
-                    return expvm.status();
-                } else {
-                    server->setTsVersion(name,
-                                         expvm.value()->timestamp, expvm.value()->version);
-                    ts = expvm.value()->timestamp;
-                    ver = expvm.value()->version;
-                }
+            uint64_t ts, ver;
+            auto expdb = server->getSegmentMgr()->getDb(sess,
+                    0, mgl::LockMode::LOCK_IX);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore store = expdb.value().store;
+            auto expvm = server->getCatalog()->getVersionMeta(
+                    store, name);
+            if (expvm.status().code() == ErrorCodes::ERR_NOTFOUND) {
+                ts = ver = -1;
+            } else if (!expvm.ok()) {
+                return expvm.status();
+            } else {
+                ts = expvm.value()->timestamp;
+                ver = expvm.value()->version;
             }
             Command::fmtLongLong(ss, static_cast<int64_t>(ts));
             Command::fmtLongLong(ss, static_cast<int64_t>(ver));
@@ -2463,10 +2457,6 @@ class SyncVersionCommand: public Command {
         if (!s.ok()) {
             return s;
         }
-        s = server->setTsVersion(name, eTs.value(), eVersion.value());
-        if (!s.ok()) {
-            return s;
-        }
         return Command::fmtOK();
     }
 } syncVersionCmd;
@@ -2494,17 +2484,7 @@ class StoreCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        const auto& args = sess->getArgs();
-        auto server = sess->getServerEntry();
-        if (toLower(args[1]) == "getack") {
-            const auto& name = args[2];
-            std::stringstream ss;
-            Command::fmtMultiBulkLen(ss, 2);
-            Command::fmtBulk(ss, "ack-revision");
-            Command::fmtBulk(ss, std::to_string(server->confirmVer(name)));
-            return ss.str();
-        }
-        return {ErrorCodes::ERR_PARSEOPT, "Unknown sub-command"};
+        return {ErrorCodes::ERR_INTERNAL, "invalid command"};
     }
 } storeCmd;
 
