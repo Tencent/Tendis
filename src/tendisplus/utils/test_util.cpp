@@ -20,12 +20,17 @@
 namespace tendisplus {
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
                 const std::string& dir) {
-    const auto guard = MakeGuard([]{
-        remove("test.cfg");
+    std::stringstream ss_tmp_conf_file;
+    ss_tmp_conf_file << getpid() << "_";
+    ss_tmp_conf_file << port << "_test.cfg";
+    std::string tmp_conf_file = ss_tmp_conf_file.str();
+
+    const auto guard = MakeGuard([tmp_conf_file]{
+        remove(tmp_conf_file.c_str());
     });
 
     std::ofstream myfile;
-    myfile.open("test.cfg");
+    myfile.open(tmp_conf_file);
     myfile << "bind 127.0.0.1\n";
     myfile << "port " << port << "\n";
     myfile << "loglevel debug\n";
@@ -52,7 +57,7 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     myfile.close();
 
     auto cfg = std::make_shared<ServerParams>();
-    auto s = cfg->parseFile("test.cfg");
+    auto s = cfg->parseFile(tmp_conf_file);
     LOG(INFO) << "params:" << endl << cfg->showAll();
     EXPECT_EQ(s.ok(), true);
 

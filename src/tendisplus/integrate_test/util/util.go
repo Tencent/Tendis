@@ -149,9 +149,9 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	args := []string{}
 	if valgrind {
 		args = append(args, "./valgrind", "--tool=memcheck", "--leak-check=full",
-			"./tendisplus", cfgFilePath)
+			"../../../build/bin/tendisplus", cfgFilePath)
 	} else {
-		args = append(args, "./tendisplus", cfgFilePath)
+		args = append(args, "../../../build/bin/tendisplus", cfgFilePath)
 	}
 	_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second)
 	return err

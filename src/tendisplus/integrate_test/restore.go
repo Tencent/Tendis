@@ -22,6 +22,8 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     cfgArgs := make(map[string]string)
     cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
+    cfgArgs["requirepass"] = "tendis+test"
+    cfgArgs["masterauth"] = "tendis+test"
 
     cfgArgs["maxbinlogkeepnum"] = "10000"
     cfgArgs["minbinlogkeepsec"] = "60"

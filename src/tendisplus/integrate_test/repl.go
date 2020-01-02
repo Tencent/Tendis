@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	mport     = flag.Int("masterport", 12345, "master port")
-	sport     = flag.Int("slaveport", 12346, "slave port")
+	mport     = flag.Int("masterport", 62001, "master port")
+	sport     = flag.Int("slaveport", 62002, "slave port")
 	kvstorecount     = flag.Int("kvstorecount", 10, "kvstore count")
 	zsetcount = flag.Int("zsetcount", 1, "zset count")
 	setcount  = flag.Int("setcount", 100, "set count")
@@ -148,7 +148,7 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
         }
     }
 	for _, o := range keys {
-		log.Infof("%s", o.Pk)
+		//log.Infof("%s", o.Pk)
 		if o.Type == KV {
 			r, err := cli2.Cmd("get", o.Pk).Str()
 			if err != nil {
@@ -273,12 +273,17 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 	s := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-	m.Init(m_port, pwd, "m_")
-	s.Init(s_port, pwd, "s_")
-	if err := m.Setup(false); err != nil {
+	m.Init("127.0.0.1", m_port, pwd, "m_")
+	s.Init("127.0.0.1", s_port, pwd, "s_")
+
+    cfgArgs := make(map[string]string)
+    //cfgArgs["requirepass"] = "tendis+test"
+    //cfgArgs["masterauth"] = "tendis+test"
+
+	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
-	if err := s.Setup(false); err != nil {
+	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
 	}
 	testReplMatch1(kvstore_count, &m, &s)

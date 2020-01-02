@@ -717,7 +717,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
     string role = "master";
     int32_t master_repl_offset = 0;
     string master_host = "";
-    int16_t master_port = 0;
+    uint16_t master_port = 0;
     string master_link_status = "up";
     int64_t master_last_io_seconds_ago = 0;
     int32_t master_sync_in_progress = 0;
