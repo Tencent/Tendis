@@ -157,6 +157,7 @@ ServerParams::ServerParams() {
 
     REGISTER_VARS_DIFF_NAME("clustermode", enableCluster);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster_node_timeout", clusterNodeTimeout);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster_slave_no_failover", clusterSlaveNoFailover);
 };
 
 ServerParams::~ServerParams() {

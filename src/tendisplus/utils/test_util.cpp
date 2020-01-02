@@ -434,6 +434,14 @@ void WorkLoad::clusterNodes() {
 }
 
 
+void WorkLoad::addSlots(const std::string& slotsBuff) {
+    _session->setArgs({"cluster", "addslots", slotsBuff});
+
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
+
 int genRand() {
     int grand = 0;
     uint32_t ms = (uint32_t)nsSinceEpoch();

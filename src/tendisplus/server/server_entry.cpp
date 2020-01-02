@@ -296,6 +296,61 @@ void ServerEntry::logGeneral(Session *sess) {
     }
     LOG(INFO) << sess->getCmdStr();
 }
+//judge store key in slot
+bool  ServerEntry::emptySlot(uint32_t slot) {
+    auto storeId = getStoreid(slot);
+    LocalSessionGuard g(shared_from_this());
+    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
+                                    mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "get db error";
+        return true;
+    }
+    auto kvstore = std::move(expdb.value().store);
+
+    auto ptxn = kvstore->createTransaction(NULL);
+
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+    auto v = slotCursor->next();
+    if (!v.ok()) {
+        if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
+            return true;
+        }
+        LOG(ERROR) << "get slot cursor errror: " << v.status().toString();
+        return true;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
+    auto storeId = getStoreid(slot);
+    LocalSessionGuard g(shared_from_this());
+    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
+                                    mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "get db error";
+        return 0;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(NULL);
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+
+    uint64_t keyNum = 0;
+    while (true) {
+        Expected<Record> expRcd = slotCursor->next();
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "get slot cursor errror:" << expRcd.status().toString();
+            break;
+        }
+        keyNum++;
+    }
+    return keyNum;
+}
 
 void ServerEntry::logWarning(const std::string& str, Session* sess) {
     std::stringstream ss;
@@ -446,12 +501,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         return s;
     }
 
-    _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
-    s = _migrateMgr->startup();
-    if (!s.ok()) {
-        LOG(WARNING) << "start up cluster manager failed!";
-        return s;
-    }
 
     if (!cfg->noexpire) {
         _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
@@ -480,6 +529,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         if (!s.ok()) {
             LOG(WARNING) << "start up cluster manager failed!";
         return s;
+        }
+
+        _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
+        s = _migrateMgr->startup();
+        if (!s.ok()) {
+            LOG(WARNING) << "start up migrate manager failed!";
+            return s;
         }
     }
 

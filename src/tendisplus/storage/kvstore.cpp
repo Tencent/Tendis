@@ -290,6 +290,26 @@ Expected<TTLIndex> TTLIndexCursor::next() {
     }
 }
 
+SlotCursor::SlotCursor(std::unique_ptr<Cursor> cursor,
+    uint32_t slot)
+  : _slot(slot), _baseCursor(std::move(cursor)) {
+    _baseCursor->seek(slotPrefix(slot));
+}
+
+Expected<Record> SlotCursor::next() {
+    Expected<Record> expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        const RecordKey &rk = expRcd.value().getRecordKey();
+        if (rk.getRecordType() != RecordType::RT_DATA_META ||
+            rk.getChunkId() != _slot) {
+            return {ErrorCodes::ERR_EXHAUST, "no more primary key"};
+        }
+        return expRcd;
+    } else {
+        return expRcd.status();
+    }
+}
+
 KVStore::KVStore(const std::string& id, const std::string& path)
      :_id(id),
       _dbPath(path),

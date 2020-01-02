@@ -355,11 +355,51 @@ bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1, std::shared_ptr<Serve
     return false;
 }
 
+
+// if slot set successfully , return ture
+bool checkSlotInfo(std::shared_ptr<ClusterNode> node , std::string slots) {
+    auto slotInfo = node->getSlots();
+    if ((slots.find('{') !=string::npos) && (slots.find('}') !=string::npos)) {
+        slots = slots.substr(1,slots.size()-2);
+        std::vector<std::string> s = stringSplit(slots, "..");
+        auto startSlot = ::tendisplus::stoul(s[0]);
+        EXPECT_EQ(startSlot.ok(), true);
+        auto endSlot = ::tendisplus::stoul(s[1]);
+        EXPECT_EQ(endSlot.ok(), true);
+        auto start = startSlot.value();
+        auto end = endSlot.value();
+        if (start < end) {
+            for (size_t i = start; i < end; i++) {
+                if (!slotInfo.test(i)) {
+                    LOG(ERROR) << "set slot" << i <<"fail";
+                    return false;
+                }
+            }
+            return true;
+        }  else {
+            LOG(ERROR) << "checkt Slot: Invalid range slot";
+            return false;
+        }
+    } else {
+        auto slot = ::tendisplus::stoul(slots);
+       // EXPECT_EQ(slot.ok(), true);
+        if (!slotInfo.test(slot.value())) {
+            LOG(ERROR) << "set slot " << slot.value() <<"fail";
+            return false;
+        } else {
+             return true; 
+        }
+    }
+    return  false;
+}
+
+
 #ifdef _WIN32 
 uint32_t storeCnt = 2;
 #else 
 uint32_t storeCnt = 2;
 #endif // 
+
 
 MYTEST(Cluster, Simple_MEET) {
     std::vector<std::string> dirs = { "node1", "node2", "node3" };
@@ -411,6 +451,7 @@ MYTEST(Cluster, Simple_MEET) {
 
     servers.clear();
 }
+
 
 MYTEST(Cluster, Sequence_Meet) {
     //std::vector<std::string> dirs = { "node1", "node2", "node3", "node4", "node5",
@@ -531,6 +572,76 @@ TEST(Cluster, Random_Meet) {
 
     servers.clear();
 }
+
+
+
+TEST(Cluster, AddSlot) {
+    std::vector<std::string> dirs = { "node1", "node2" };
+    uint32_t startPort = 11000;
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    }
+
+    auto& node1 = servers[0];
+    auto& node2 = servers[1];
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(node1, ctx1);
+    WorkLoad work1(node1, sess1);
+    work1.init();
+
+    work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    std::vector<std::string> slots = { "{0..8000}", "{8001..16383}" };
+
+    work1.addSlots(slots[0]);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(node2, ctx2);
+    WorkLoad work2(node2, sess2);
+    work2.init();
+    work2.addSlots(slots[1]);
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    for (size_t i = 0; i < slots.size(); i++ ) {
+        auto nodePtr = servers[i]->getClusterMgr()->getClusterState()->getMyselfNode();
+        bool s = checkSlotInfo(nodePtr, slots[i]);
+        EXPECT_TRUE(s);
+    }
+
+
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    for (auto svr : servers) {
+        compareClusterInfo(svr, node1);
+    }
+
+    
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+
+    servers.clear();
+}
+
+
 
 }  // namespace tendisplus
 

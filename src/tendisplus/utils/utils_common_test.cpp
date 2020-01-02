@@ -146,18 +146,17 @@ TEST(Base64, common) {
 
 
 TEST(bitsetEncode, common) {
-    std::bitset<CLUSTER_SLOTS> data= genBitMap();
+
+    std::bitset<CLUSTER_SLOTS> data = genBitMap();
     std::vector<uint16_t> encode = bitsetEncode(data);
     encode.erase(encode.begin());
-    bitsetIntDecode<CLUSTER_SLOTS>(encode);
 
     auto v = bitsetIntDecode<CLUSTER_SLOTS>(encode);
     EXPECT_EQ(v.ok(), true);
     std::bitset<CLUSTER_SLOTS> decode = v.value();
     EXPECT_EQ(data, decode);
 
-
-    data= genBitMap();
+    data = genBitMap();
     std::vector<uint8_t> key;
     encode = bitsetEncode(data);
     encode.erase(encode.begin());
@@ -170,7 +169,7 @@ TEST(bitsetEncode, common) {
     auto s = bitsetDecode<CLUSTER_SLOTS>(result);
     EXPECT_EQ(s.ok(), true);
     EXPECT_EQ(data,s.value());
- 
+
     data = genBitMap();
     std::string bitmapStr = bitsetStrEncode(data);
     auto t = bitsetStrDecode<CLUSTER_SLOTS>(bitmapStr);

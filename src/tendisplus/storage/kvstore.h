@@ -114,6 +114,19 @@ class TTLIndexCursor {
     std::unique_ptr<Cursor> _baseCursor;
 };
 
+class SlotCursor {
+ public:
+    SlotCursor() = delete;
+    SlotCursor(std::unique_ptr<Cursor> cursor, uint32_t slot);
+    ~SlotCursor() = default;
+    Expected<Record> next();
+ private:
+    const uint32_t _slot;
+
+protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
+
 class Transaction {
  public:
     Transaction() = default;
@@ -147,6 +160,8 @@ class Transaction {
 #endif
     virtual std::unique_ptr<TTLIndexCursor>
         createTTLIndexCursor(std::uint64_t until) = 0;
+    virtual std::unique_ptr<SlotCursor>
+        createSlotCursor(uint32_t slot) = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val,

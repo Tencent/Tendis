@@ -10,10 +10,13 @@
 #include <unordered_map>
 #include <algorithm>
 #include <bitset>
+#include "tendisplus/storage/catalog.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/network/network.h"
 
 namespace tendisplus {
+
+enum class ConnectState: std::uint8_t;
 
 enum class ClusterHealth: std::uint8_t {
     CLUSTER_FAIL = 0,
@@ -82,25 +85,20 @@ enum class ClusterHealth: std::uint8_t {
 #define CLUSTER_TODO_SAVE_CONFIG (1<<2)
 #define CLUSTER_TODO_FSYNC_CONFIG (1<<3)
 
+#define CLUSTER_MAX_REJOIN_DELAY 5000
+#define CLUSTER_MIN_REJOIN_DELAY 500
+#define CLUSTER_WRITABLE_DELAY 2000
 ///* Message types.
 // *
 // * Note that the PING, PONG and MEET messages are actually the same exact
 // * kind of packet. PONG is the reply to ping, in the exact format as a PING,
 // * while MEET is a special PING that forces the receiver to add the sender
 // * as a node (if it is not already in the list). */
-//#define CLUSTERMSG_TYPE_PING 0          /* Ping */
-//#define CLUSTERMSG_TYPE_PONG 1          /* Pong (reply to Ping) */
-//#define CLUSTERMSG_TYPE_MEET 2          /* Meet "let's join" message */
-//#define CLUSTERMSG_TYPE_FAIL 3          /* Mark node xxx as failing */
-//#define CLUSTERMSG_TYPE_PUBLISH 4       /* Pub/Sub Publish propagation */
-//#define CLUSTERMSG_TYPE_FAILOVER_AUTH_REQUEST 5 /* May I failover? */
-//#define CLUSTERMSG_TYPE_FAILOVER_AUTH_ACK 6     /* Yes, you have my vote */
-//#define CLUSTERMSG_TYPE_UPDATE 7        /* Another node slots configuration */
-//#define CLUSTERMSG_TYPE_MFSTART 8       /* Pause clients for manual failover */
-//#define CLUSTERMSG_TYPE_COUNT 9         /* Total number of message types. */
+#define CLUSTERMSG_TYPE_COUNT 9         /* Total number of message types. */
 
 #define CLUSTER_IP_LENGTH  46
 #define CLUSTER_NAME_LENGTH  40
+
 
 using  mstime_t = uint64_t;
 
@@ -150,9 +148,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void setConfigEpoch(uint64_t epoch);
 
     uint16_t getFlags() const { return _flags; }
-
-
-
+    uint16_t getSlotNum() const { return  _numSlots; }
     bool addFailureReport(std::shared_ptr<ClusterNode> sender);
     bool delFailureReport(std::shared_ptr<ClusterNode> sender);
     uint32_t getNonFailingSlavesCount() const;
@@ -187,14 +183,16 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     static std::string representClusterNodeFlags(uint32_t flags);
     std::string clusterGenNodeDescription();
- protected:
-    Status addSlot(uint32_t slot);
+    ConnectState getConnectState();
+
+protected:
     bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
     bool clearSlotBit(uint32_t slot);
     uint32_t delAllSlots();
     uint32_t delAllSlotsNoLock();
 
  public:
+    Status addSlot(uint32_t slot);
     bool addSlave(std::shared_ptr<ClusterNode> slave);
     bool removeSlave(std::shared_ptr<ClusterNode> slave);
     void setSlots(const std::bitset<CLUSTER_SLOTS>& slots);
@@ -229,11 +227,11 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     // FIXME: there is no offset in tendis
     uint64_t _replOffset;  /* Last known repl offset for this node. */
     std::list<std::shared_ptr<ClusterNode>> _failReport;
-};
+
+
+    };
 
 using CNodePtr = std::shared_ptr<ClusterNode>;
-
-
 
 class ClusterMsgHeader;
 class ClusterMsgData;
@@ -256,7 +254,8 @@ class ClusterMsg{
            UPDATE = 7,        /* Another node slots configuration */
            MFSTART = 8,       /* Pause clients for manual failover */
     };
-    static constexpr uint16_t CLUSTERMSG_TYPE_COUNT = 9;
+
+//    static constexpr uint16_t CLUSTERMSG_TYPE_COUNT = 9;
     static constexpr uint16_t CLUSTER_PROTO_VER = 1;
 
     static std::string clusterGetMessageTypeString(Type type);
@@ -411,6 +410,9 @@ public:
     Status clusterSendMessage(ClusterMsg& msg);
 
     void setNode(const CNodePtr& node);
+    void setCtime(const mstime_t& ctime);
+    mstime_t getCtime() const { return _ctime; }
+
     CNodePtr getNode() const { return _node; }
     std::string nodeIp2String(const std::string& announcedIp) const;
 
@@ -430,6 +432,7 @@ private:
 
     uint64_t _pkgSize;
     CNodePtr _node;
+    mstime_t  _ctime;
 };
 
 class ClusterState: public std::enable_shared_from_this<ClusterState> {
@@ -453,6 +456,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void clusterRenameNode(CNodePtr node, const std::string& newname, bool save = false);
     void clusterSaveNodes();
     bool clusterSetNodeAsMaster(CNodePtr node);
+    void clusterSetMaster(CNodePtr node);
     bool clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave);
     bool clusterNodeAddSlave(CNodePtr master, CNodePtr slave);
 
@@ -473,8 +477,10 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterNodeFailureReportsCount(CNodePtr node);
     bool markAsFailingIfNeeded(CNodePtr node);
 
-    //Status setSlot(CNodePtr n, uint32_t slot);
-    //void setSlotBelong(CNodePtr n, const uint32_t slot);
+    Status setSlot(CNodePtr n, const uint32_t slot);
+   // void setSlotBelong(CNodePtr n, const uint32_t slot);
+    Status setSlotMyself(const uint32_t slot);
+    void setSlotBelongMyself(const uint32_t slot);
     CNodePtr getNodeBySlot(uint32_t slot) const;
 
     void clusterUpdateSlotsConfigWith(CNodePtr sender,
@@ -499,6 +505,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     Status clusterSendPing(std::shared_ptr<ClusterSession> sess, ClusterMsg::Type type);
     bool clusterStartHandshake(const std::string& host, uint32_t port, uint32_t cport);
     bool clusterHandshakeInProgress(const std::string& host, uint32_t port, uint32_t cport);
+    Status clusterBumpConfigEpochWithoutConsensus();
+
 
     void clusterUpdateMyselfFlags();
     void cronRestoreSessionIfNeeded();
@@ -506,14 +514,16 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void cronCheckFailState();
 
     std::string clusterGenNodesDescription(uint16_t filter);
+    std::string clusterGenStateDescription();
 
+    void clusterUpdateState();
+    bool isContainSlot(uint32_t slotId);
     // TODO(wayenchen)
     // Status clusterReadMeta();
-    // Status clusterDelSlot(uint64_t slot);
     // Status clusterDelNodeSlots(CNodePtr n);
     // Status clusterDelNode(CNodePtr delnode);
     // Status setStateFail();
-    // void clusterUpdateState();
+
  private:
     mutable myMutex _mutex;
     CNodePtr _myself; /* This node */
@@ -560,8 +570,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint64_t _lastVoteEpoch;     /* Epoch of the last vote granted. */
     uint8_t _todoBeforeSleep; /* Things to do in clusterBeforeSleep(). */
     /* Messages received and sent by type. */
-    std::array<uint64_t, ClusterMsg::CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
-    std::array<uint64_t, ClusterMsg::CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
+    std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
+    std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
     uint64_t _statsPfailNodes;    /* Number of nodes in PFAIL status */
 };
 

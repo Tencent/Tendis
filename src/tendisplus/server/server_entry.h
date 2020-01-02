@@ -256,7 +256,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
     // TODO: finish it
     uint32_t getStoreid(uint32_t chunkid) {
-        if (getKVStoreCount() == 1) {
+        auto storeSize = getKVStoreCount();
+        if (storeSize == 1) {
             return 0;
         }
         if (chunkid == 15495) { // "a"
@@ -264,7 +265,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         } else if (chunkid == 3300) { // "b"
             return 0;
         }
-        return chunkid;
+        return chunkid % storeSize;
     }
     std::vector<uint32_t> getChunkList(uint32_t storeid) {
         std::vector<uint32_t> result;
@@ -274,7 +275,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
             return result;
         }
         if (storeid == 5) {
-            result.push_back(15495);
+            result.push_back(15495); 
         } else if (storeid == 0) {
             result.push_back(3300);
         } else {
@@ -300,6 +301,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status deleteChunk(uint32_t chunkid) {
         return {ErrorCodes::ERR_OK, ""};
     }
+    bool emptySlot(uint32_t slot) ;
+    uint64_t countKeysInSlot(uint32_t slot);
+
     bool isClusterEnabled() const { return _enableCluster; }
     void updateClusterFromMeta();
 

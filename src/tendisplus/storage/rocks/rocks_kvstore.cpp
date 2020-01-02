@@ -168,6 +168,12 @@ std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
     return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
 }
 
+std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
+    auto cursor = createCursor();
+
+    return std::make_unique<SlotCursor>(std::move(cursor),slot);
+}
+
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();

@@ -77,8 +77,9 @@ std::unique_ptr<MainMeta> MainMeta::copy() const {
 //server first start in cluster mode
 //c1780cb48b3398452e3fd8b162b60246213e3379 127.0.0.1 0 myself,master - 0 0 0 connected
 ClusterMeta::ClusterMeta()
-    :ClusterMeta("TendisNode-"+getUUid(40),"",0,"myself,master","-",0,0,0,ConnectState::CONNECTED,{}){
-    //get clustermeta , if not exit ,create uuid
+    :ClusterMeta(getUUid(20), "", 0, 0,
+                CLUSTER_NODE_MYSELF|CLUSTER_NODE_MASTER, "-", 0, 0, 0, {}) {
+    // get clustermeta , if not exit ,create uuid
 }
 
 
@@ -90,8 +91,7 @@ ClusterMeta::ClusterMeta(const std::string& name)
      masterName("-"),
      pingTime(0),
      pongTime(0),
-     configEpoch(0),
-     connectState(ConnectState::CONNECTED) {        
+     configEpoch(0) {
 }
 
 /*
@@ -104,7 +104,7 @@ ClusterMeta::ClusterMeta(const std::string& nodeName_, const std::string& ip_,
                 uint64_t port_, uint64_t cport_, uint16_t nodeFlag_,
                 const std::string& masterName_, uint64_t pingTime_,
                 uint64_t pongTime_, uint64_t configEpoch_,
-                ConnectState ConnectState_, const std::vector<uint16_t>& slots_)
+                const std::vector<uint16_t>& slots_)
     :nodeName(nodeName_),
      ip(ip_),
      port(port_),
@@ -113,8 +113,7 @@ ClusterMeta::ClusterMeta(const std::string& nodeName_, const std::string& ip_,
      pingTime(pingTime_),
      pongTime(pongTime_),
      configEpoch(configEpoch_),
-     connectState(ConnectState_),
-     slots(slots_) {        
+     slots(slots_) {
 }
 
 
@@ -487,9 +486,7 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
     writer.Key("configEpoch");
     writer.Uint64(meta.configEpoch);
 
-    writer.Key("connectState");
-    writer.Uint64(static_cast<uint8_t>(meta.connectState));
-
+    // TODO(wayenchen): how to store the slots?
     writer.Key("slots");
     writer.StartArray();
     for (auto &v : meta.slots)
@@ -502,7 +499,8 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
 
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
-        LOG(ERROR) << "Catalog::ClusterMeta failed:" << exptxn.status().toString() << " " << sb.GetString();
+        LOG(ERROR) << "Catalog::ClusterMeta failed:"
+            << exptxn.status().toString() << " " << sb.GetString();
         return exptxn.status();
     }
 
@@ -511,7 +509,8 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
     Record rd(std::move(rk), std::move(rv));
     Status s = _store->setKV(rd, txn);
     if (!s.ok()) {
-        LOG(ERROR) << "Catalog::ClusterMeta set failed:" << s.toString() << " " << sb.GetString();
+        LOG(ERROR) << "Catalog::ClusterMeta set failed:" << s.toString()
+                << " " << sb.GetString();
         return s;
     }
     return txn->commit().status();
@@ -547,6 +546,7 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
                 LOG(INFO) << "get ClusterMeta ErrorCodes::ERR_EXHAUST" ;                             
                 return {ErrorCodes::ERR_NOTFOUND,"wrong meta"};
             }
+            LOG(ERROR) << "get ClusterMeta error: " << v.status().toString();
             return v.status();
         }     
         const auto& nodeRecord = v.value();
@@ -574,6 +574,7 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
 
         INVARIANT(doc.HasMember("nodeName"));
         INVARIANT(doc["nodeName"].IsString());
+        result->nodeName = doc["nodeName"].GetString();
 
         INVARIANT(doc.HasMember("ip"));
         INVARIANT(doc["ip"].IsString());
@@ -590,7 +591,7 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         INVARIANT(doc.HasMember("nodeFlag"));
         INVARIANT(doc["nodeFlag"].IsUint64());
         result->nodeFlag = static_cast<uint16_t>(
-                doc["port"].GetUint64());
+                doc["nodeFlag"].GetUint64());
 
         INVARIANT(doc.HasMember("masterName"));
         INVARIANT(doc["masterName"].IsString());
@@ -611,12 +612,6 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         result->configEpoch = static_cast<uint64_t>(
                 doc["configEpoch"].GetUint64());
 
-        INVARIANT(doc.HasMember("connectState"));
-        INVARIANT(doc["connectState"].IsUint64());
-        
-        uint16_t s = static_cast<uint8_t>(doc["connectState"].GetUint64());
-        result->connectState = int2ConnectState(s);
-
         INVARIANT(doc.HasMember("slots"));
         INVARIANT(doc["slots"].IsArray());
         
@@ -625,11 +620,13 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++)
         {
             const rapidjson::Value& object = slotArray[i];
-            auto element= static_cast<uint16_t>(object.GetUint64());
+            auto element = static_cast<uint16_t>(object.GetUint64());
             result->slots.push_back(element);
         }
-        
-        LOG(INFO)<<"Get ClusterMeta Node name is" << result->nodeName << "ip address is " << result->ip << "node Flag is" << result->nodeFlag;
+        LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName
+                << "ip address is "<< result->ip << "node Flag is"
+                << result->nodeFlag;
+
         resultList.emplace_back(std::move(result));
         
     }
@@ -659,7 +656,7 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
    
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
-        LOG(INFO)<<"ERROR Get createTransaction status"<< exptxn.status().toString();
+        LOG(ERROR) << "ERROR Get createTransaction status"<< exptxn.status().toString();
         return exptxn.status();
     }
   
@@ -719,11 +716,6 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
     result->configEpoch = static_cast<uint64_t>(
             doc["configEpoch"].GetUint64());
 
-    INVARIANT(doc.HasMember("connectState"));
-    INVARIANT(doc["connectState"].IsUint64());
-    result->connectState = static_cast<ConnectState>(
-            doc["connectState"].GetUint64());
-
     INVARIANT(doc.HasMember("slots"));
     INVARIANT(doc["slots"].IsArray());
 
@@ -736,7 +728,6 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
         result->slots.push_back(element);
     }
 
-    LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName << "ip address is " << result->ip << "node Flag is" << result->nodeFlag;
     return result;
 }
 

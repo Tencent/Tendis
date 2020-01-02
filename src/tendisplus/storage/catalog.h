@@ -102,7 +102,7 @@ class ClusterMeta{
                 uint64_t port_, uint64_t cport_, uint16_t nodeFlag_,
                 const std::string& masterName_, uint64_t pingTime_,
                 uint64_t pongTime_, uint64_t configEpoch_,
-                ConnectState ConnectState_, const std::vector<uint16_t>& slots_);
+                const std::vector<uint16_t>& slots_);
 
     ClusterMeta(const ClusterMeta&) = default;
     ClusterMeta(ClusterMeta&&) = delete;
@@ -116,12 +116,11 @@ class ClusterMeta{
     std::string ip;
     uint64_t port;
     uint64_t cport;
-    uint64_t nodeFlag;
+    uint16_t nodeFlag;
     std::string masterName;
     uint64_t pingTime;
     uint64_t pongTime;
     uint64_t configEpoch;
-    ConnectState connectState;
     std::vector<uint16_t> slots;
 
     static std::string& getClusterPrefix();

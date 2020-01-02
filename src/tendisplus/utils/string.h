@@ -60,14 +60,14 @@ void CopyUint(std::vector<uint8_t> *buf, T element) {
     }
 }
 
-
+std::string slotPrefix(uint32_t chunkid) ;
 
 template <size_t size>
 std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
         // TODO(wayenche)
     size_t idx = 0;
     std::vector<uint16_t> slotBuff(1,0);
-    while ( idx < bitmap.size() ) {
+    while (idx < bitmap.size()) {
         if ( bitmap.test(idx) ) {
             uint16_t pageLen = 0;
             slotBuff.push_back(static_cast<uint16_t >(idx));
@@ -81,7 +81,7 @@ std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
         }
     }
         // the length after encode
-    slotBuff[0]  =  (slotBuff.size())* sizeof(uint16_t);
+    slotBuff[0] = (slotBuff.size())* sizeof(uint16_t);
     return  slotBuff;
 }
 
@@ -94,15 +94,16 @@ std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
         if (bitmap.test(idx)) {
             size_t pos = idx;
             size_t pageLen = 0;
-
-            while (idx < bitmap.size() && bitmap.test(idx)) {
-                pageLen++;
-                idx++;
-            }
             std::stringstream tempStream;
-            if(pageLen > 0) {
-                tempStream << pos <<"-"<<pos + pageLen;
+            if(bitmap.test(idx+1)) {
+                idx++;
+                while (idx < bitmap.size() && bitmap.test(idx)) {
+                    pageLen++;
+                    idx++;
+                }
+                tempStream << pos <<"-"<< pos + pageLen;
             } else {
+                idx ++;
                 tempStream << pos ;
             }
             slotStr += tempStream.str() + " ";
@@ -110,7 +111,6 @@ std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
             idx++;
         }
     }
-   // slotStr.erase(slotStr.end());
     return slotStr;
 }
 
@@ -132,7 +132,7 @@ uint32_t bitsetEncodeSize(const std::bitset<size>& bitmap) {
         }
     }
     // the length after encode
-    uint32_t mapSize =  (slotBuff.size())* sizeof(uint16_t);
+    uint32_t mapSize = (slotBuff.size())* sizeof(uint16_t);
     return  mapSize;
 }
 
@@ -143,13 +143,15 @@ Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
     while ( offset < str.size() ) {
         auto pos = int16Decode(str.c_str()+offset);
         offset += sizeof(pos);
+
         auto pageLength = int16Decode(str.c_str()+offset);
         offset += sizeof(pageLength);
         auto len = static_cast<size_t>(pos+pageLength);
-        if ( len >= size ) {
-            return { ErrorCodes::ERR_DECODE, "bitset error length" };
+
+        if ( len > size ) {
+            return { ErrorCodes::ERR_DECODE, "bitsetDecode bitset error length: "};
         }
-        for (size_t j = pos; j < pos+pageLength; j++) {
+        for (size_t j = pos; j < len; j++) {
             bitmap.set(j);
         }
     }
@@ -166,10 +168,10 @@ Expected<std::bitset<size>> bitsetIntDecode(const std::vector<uint16_t> vec) {
         auto pageLength = vec[offset+1];
         offset += 2;
         auto len = static_cast<size_t>(pos+pageLength);
-        if ( len >= size ) {
-            return { ErrorCodes::ERR_DECODE, "bitset error length" };
+        if ( len > size ) {
+            return { ErrorCodes::ERR_DECODE, "bitsetIntDecode bitset error length"};
         }
-        for (size_t j = pos; j < pos+pageLength; j++) {
+        for (size_t j = pos; j < len; j++) {
             bitmap.set(j);
         }
     }
@@ -193,9 +195,9 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
                 size_t end = static_cast<size_t >(ePtr.value());
 
                 if ( end >= size ) {
-                    return { ErrorCodes::ERR_DECODE, "bitset error length" };
+                    return { ErrorCodes::ERR_DECODE, "bitsetStrDecode bitset error length"};
                 }
-                for (size_t j = begin; j < end; j++) {
+                for (size_t j = begin; j <= end; j++) {
                     bitmap.set(j);
                 }
             } else  {

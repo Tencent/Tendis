@@ -203,6 +203,14 @@ Expected<std::string> unhexlify(const std::string& s) {
     return result;
 }
 
+std::string slotPrefix(uint32_t chunkid) {
+    std::string result;
+    for (size_t i = 0; i < sizeof(chunkid); ++i) {
+        result.push_back((chunkid>>((sizeof(chunkid)-i-1)*8))&0xff);
+    }
+    return result + 'D';
+}
+
 bool isOptionOn(const std::string& s) {
     auto x = toLower(s);
     if (x == "on" || x == "1" || x == "true") {
