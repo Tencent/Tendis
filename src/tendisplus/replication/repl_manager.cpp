@@ -836,7 +836,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
                 ss_slaveinfo << ",dest_store_id=" << iter->second->dstStoreId;
                 ss_slaveinfo << ",binlog_pos=" << iter->second->binlogPos;
                 ss_slaveinfo << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
-                string remoteAddr;
+                /*string remoteAddr;
                 uint16_t remotePort = 0;
                 if (iter->second->client != nullptr) {
                     remoteAddr=iter->second->client->getRemoteRepr();
@@ -845,7 +845,10 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
                     remoteAddr="???";
                 }
                 ss_slaveinfo << ",remote_host=" << remoteAddr;
-                ss_slaveinfo << ",remote_port=" << remotePort;
+                ss_slaveinfo << ",remote_port=" << remotePort;*/
+                ss_slaveinfo << ",remote_host=" << iter->second->slave_listen_ip;
+                ss_slaveinfo << ",remote_port=" << iter->second->slave_listen_port;
+
                 ss_slaveinfo << "\r\n";
             }
             clientnum++;

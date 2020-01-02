@@ -502,8 +502,8 @@ bool ServerEntry::processRequest(Session *sess) {
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
         // we have called precheck, it should have 2 args
-        INVARIANT(args.size() == 4);
-        _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3]);
+        INVARIANT(args.size() == 6);
+        _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3], args[4], args[5]);
         return false;
     } else if (expCmdName.value() == "quit") {
         LOG(INFO) << "quit command";

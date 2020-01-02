@@ -268,7 +268,7 @@ class IncrSyncCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 4;
+        return 6;
     }
 
     int32_t firstkey() const {
