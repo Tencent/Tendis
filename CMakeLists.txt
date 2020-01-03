@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8.0)
+﻿cmake_minimum_required (VERSION 2.8.0)
 project (TENDIS_PLUS)
 
 #message("TODO(deyukong): currently libsnappy depends on the system provided, integrate it into thirdparty")
@@ -7,7 +7,7 @@ project (TENDIS_PLUS)
 
 message("TODO(vinchen): only in debug mode, remove it when release")
 add_definitions(-DTENDIS_DEBUG)
-
+add_definitions(-DDEBUG)
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})
 if(CMAKE_COMPILER_IS_GNUCC)
@@ -53,7 +53,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
 
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -O0 -g -fno-inline-functions")
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
 				COMMAND ./configure --with-lg-quantum=3 --with-jemalloc-prefix=je_ --enable-cc-silence
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
@@ -154,7 +154,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
 include_directories("src/thirdparty/include/Windows/")
 ENDIF()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 ${WARN_C_CXX} ${WARN_CXX_ONLY}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17   ${WARN_C_CXX} ${WARN_CXX_ONLY} -O0 -g -fno-inline-functions")
 
 add_definitions(-DASIO_STANDALONE)
 add_definitions(-DRAPIDJSON_HAS_STDSTRING)
