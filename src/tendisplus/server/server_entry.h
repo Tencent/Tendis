@@ -123,17 +123,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getMaxCli();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
-    inline uint64_t confirmTs(const std::string& name) const {
-        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
-        auto it = _cfrmTs.find(name);
-        return it == _cfrmTs.end() ? 0 : it->second;
-    }
-    inline uint64_t confirmVer(const std::string& name) const {
-        std::shared_lock<std::shared_timed_mutex> lock(_rwlock);
-        auto it = _cfrmVersion.find(name);
-        return it == _cfrmVersion.end() ? 0 : it->second;
-    }
-    Status setTsVersion(const std::string& name, uint64_t ts, uint64_t version);
     void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, const std::vector<std::string>& args);
     Status initSlowlog(std::string logPath);
     void resetSlowlogNum() {
@@ -216,9 +205,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::ofstream _slowLog;
     std::atomic<uint64_t> _slowlogId;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
-    mutable std::shared_timed_mutex _rwlock;
-    std::map<std::string, uint64_t> _cfrmTs;
-    std::map<std::string, uint64_t> _cfrmVersion;
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;
     std::shared_ptr<ServerParams> _cfg;
