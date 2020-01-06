@@ -303,7 +303,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     std::stringstream ss;
     ss << "INCRSYNC " << metaSnapshot.syncFromId
         << ' ' << metaSnapshot.id
-        << ' ' << metaSnapshot.binlogId;
+        << ' ' << metaSnapshot.binlogId
+        << ' ' << _cfg->bindIp
+        << ' ' << _cfg->port;
     client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {

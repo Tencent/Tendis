@@ -58,7 +58,7 @@ func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel 
 func addData(m *util.RedisServer, num int, prefixkey string) {
     log.Infof("addData begin. %s:%d", m.Ip, m.Port)
 
-    cmd := exec.Command("./redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
+    cmd := exec.Command("../../../bin/redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
         "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey,
         "-t", *benchtype, "-a", *auth)
     _, err := cmd.Output()
@@ -316,17 +316,17 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeI
     var endTs uint64 = math.MaxUint64
     for j := 0; j < len(files); j++ {
         var commands []*exec.Cmd
-        commands = append(commands, exec.Command("./binlog_tool",
+        commands = append(commands, exec.Command("../../../build/bin/binlog_tool",
             "--logfile=" + files[j],
             "--mode=base64",
             "--start-position=" + strconv.Itoa(binlogPos),
             "--end-datetime=" + strconv.FormatUint(endTs, 10),
             ))
         if *auth == "" {
-            commands = append(commands, exec.Command("./redis-cli",
+            commands = append(commands, exec.Command("../../../bin/redis-cli",
                 "-p", strconv.Itoa(m2.Port)))
         } else {
-            commands = append(commands, exec.Command("./redis-cli",
+            commands = append(commands, exec.Command("../../../bin/redis-cli",
                 "-p", strconv.Itoa(m2.Port), "-a", *auth))
         }
         pipeRun(commands)
@@ -361,7 +361,7 @@ func compareInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, channel chan
 
 func compare(m1 *util.RedisServer, m2 *util.RedisServer) {
     log.Infof("takenliutest2 auth:%s\n", *auth);
-    cmd := exec.Command("./compare_instances", "-addr1", fmt.Sprintf("%s:%d", m1.Ip, m1.Port), "-addr2", fmt.Sprintf("%s:%d", m2.Ip, m2.Port),
+    cmd := exec.Command("../../../bin/compare_instances", "-addr1", fmt.Sprintf("%s:%d", m1.Ip, m1.Port), "-addr2", fmt.Sprintf("%s:%d", m2.Ip, m2.Port),
         "-password1", *auth, "-password2", *auth)
     cmd.Stderr = os.Stderr
     output, err := cmd.Output()

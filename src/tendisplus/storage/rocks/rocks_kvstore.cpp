@@ -713,7 +713,7 @@ bool RocksKVStore::isPaused() const {
 }
 
 bool RocksKVStore::isEmpty() const {
-    std::lock_guard<std::mutex> lk(_mutex);
+    //std::lock_guard<std::mutex> lk(_mutex);
 
     auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
     if (!ptxn.ok()) {

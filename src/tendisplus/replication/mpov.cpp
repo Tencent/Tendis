@@ -365,7 +365,9 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
 void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
-            const std::string& binlogPosArg) {
+            const std::string& binlogPosArg,
+            const std::string& listenIpArg,
+            const std::string& listenPortArg) {
     std::shared_ptr<BlockingTcpClient> client =
         std::move(_svr->getNetwork()->createBlockingClient(
             std::move(sock), 64*1024*1024));
@@ -373,10 +375,12 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     uint32_t storeId;
     uint32_t  dstStoreId;
     uint64_t binlogPos;
+    uint16_t listen_port;
     try {
         storeId = std::stoul(storeIdArg);
         dstStoreId = std::stoul(dstStoreIdArg);
         binlogPos = std::stoull(binlogPosArg);
+        listen_port = std::stoull(listenPortArg);
     } catch (const std::exception& ex) {
         std::stringstream ss;
         ss << "-ERR parse opts failed:" << ex.what();
@@ -451,7 +455,9 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
              storeId,
              dstStoreId,
              binlogPos,
-             client = std::move(client)]() mutable {
+             client = std::move(client),
+             listenIpArg,
+             listen_port]() mutable {
         std::lock_guard<std::mutex> lk(_mutex);
         // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
         if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos+1) &&
@@ -474,7 +480,9 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                      SCLOCK::now(),
                      SCLOCK::time_point::min(),
                      std::move(client),
-                     clientId}));
+                     clientId,
+                     listenIpArg,
+                     listen_port}));
         return true;
     }();
     LOG(INFO) << "slave:" << remoteHost

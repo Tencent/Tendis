@@ -18,6 +18,8 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     cfgArgs := make(map[string]string)
     cfgArgs["maxBinlogKeepNum"] = "1"
     cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
+    cfgArgs["requirepass"] = "tendis+test"
+    cfgArgs["masterauth"] = "tendis+test"
 
     if err := m1.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master1 failed:%v", err)

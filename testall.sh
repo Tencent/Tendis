@@ -9,3 +9,7 @@ sh ./redistest.sh >&redistest.log
 
 grep -En "\[err|\[exception" redistest.log
 
+cd src/tendisplus/integrate_test
+./gotest.sh &
+cd -
+

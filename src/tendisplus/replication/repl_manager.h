@@ -42,6 +42,8 @@ struct MPovStatus {
     SCLOCK::time_point lastSendBinlogTime;
     std::shared_ptr<BlockingTcpClient> client;
     uint64_t clientId;
+    string slave_listen_ip;
+    uint16_t slave_listen_port;
 };
 
 struct RecycleBinlogStatus {
@@ -103,7 +105,9 @@ class ReplManager {
     void registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
-            const std::string& binlogPosArg);
+            const std::string& binlogPosArg,
+            const std::string& listenIpArg,
+            const std::string& listenPortArg);
 #ifdef BINLOG_V1
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
