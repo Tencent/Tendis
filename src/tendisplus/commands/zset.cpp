@@ -82,16 +82,10 @@ Expected<std::string> genericZrem(Session *sess,
         s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
     } else {
         INVARIANT(sl.getCount() == 1);
-        s = kvstore->delKV(mk, txn.get());
+        s = Command::delKeyAndTTL(sess, mk, eMeta.value(), txn.get());
         if (!s.ok()) {
             return s;
         }
-        RecordKey head(mk.getChunkId(),
-                       pCtx->getDbId(),
-                       RecordType::RT_ZSET_S_ELE,
-                       mk.getPrimaryKey(),
-                       std::to_string(ZSlMetaValue::HEAD_ID));
-        s = kvstore->delKV(head, txn.get());
     }
     if (!s.ok()) {
         return s;
@@ -447,16 +441,10 @@ class ZRemByRangeGenericCommand: public Command {
             s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
         } else {
             INVARIANT(sl.getCount() == 1);
-            s = kvstore->delKV(mk, txn.get());
+            s = Command::delKeyAndTTL(sess, mk, eMeta.value(), txn.get());
             if (!s.ok()) {
                 return s;
             }
-            RecordKey head(mk.getChunkId(),
-                           pCtx->getDbId(),
-                           RecordType::RT_ZSET_S_ELE,
-                           mk.getPrimaryKey(),
-                           std::to_string(ZSlMetaValue::HEAD_ID));
-            s = kvstore->delKV(head, txn.get());
         }
         if (!s.ok()) {
             return s;

@@ -1449,7 +1449,7 @@ class HDelCommand: public Command {
         INVARIANT(realDel <= hashMeta.getCount());
         Status s;
         if (realDel == hashMeta.getCount()) {
-            s = kvstore->delKV(metaKey, txn);
+            s = Command::delKeyAndTTL(sess, metaKey, eValue.value(), txn);
         } else {
             hashMeta.setCount(hashMeta.getCount() - realDel);
             RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,

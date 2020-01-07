@@ -2043,7 +2043,7 @@ public:
         });
 
         // del old meta k/v
-        Status s = srcstore->delKV(rk, sptxn.value());
+        Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value(), false);
         if (!s.ok()) {
             return s;
         }
@@ -2058,6 +2058,19 @@ public:
         s = dststore->setKV(dstRk, rv.value(), dptxn.value());
         if (!s.ok()) {
             return s;
+        }
+        if (rv.value().getRecordType() != RecordType::RT_KV && rv.value().getTtl() > 0) {
+          if (!Command::noExpire()) {
+            TTLIndex ictx(dst, rv.value().getRecordType(),
+                          sess->getCtx()->getDbId(), rv.value().getTtl());
+            if (ictx.getType() != RecordType::RT_KV) {
+              s = dptxn.value()->setKV(ictx.encode(),
+                                      RecordValue(RecordType::RT_TTL_INDEX).encode());
+              if (!s.ok()) {
+                return s;
+              }
+            }
+          }
         }
 
         if (rv.value().getRecordType() == RecordType::RT_KV) {
@@ -2151,7 +2164,7 @@ public:
             ret.push_back(fakeRk.prefixPk());
             RecordKey fakeRk2(rk.getChunkId(),
                     rk.getDbId(),
-                    RecordType::RT_ZSET_S_ELE,
+                    RecordType::RT_ZSET_H_ELE,
                     rk.getPrimaryKey(), "");
             ret.push_back(fakeRk2.prefixPk());
         }
