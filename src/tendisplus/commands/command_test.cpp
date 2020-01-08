@@ -872,6 +872,214 @@ TEST(Command, TendisadminCommand) {
   testTendisadminSleep(server);
 }
 
+
+void testDelTTLIndex(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"zadd", "zset1", "10", "a"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"expire", "zset1", "3"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  sess.setArgs({"zrem", "zset1", "a"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  {
+    sess.setArgs({"sadd", "set2", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "set2", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"srem", "set2", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+  }
+
+  {
+    sess.setArgs({"sadd", "set1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "set1", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"spop", "set1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  {
+    sess.setArgs({"rpush", "list1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "list1", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"lrem", "list1", "0", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+  }
+
+  {
+    sess.setArgs({"rpush", "list2", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "list2", "3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"ltrim", "list2", "1", "-1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  {
+    sess.setArgs({"rpush", "list3", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "list3", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"lpop", "list3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  {
+    sess.setArgs({"hset", "hash1", "hh", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "hash1", "2"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    sess.setArgs({"hdel", "hash1", "hh"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  sess.setArgs({"dbsize"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(0), expect.value());
+
+  {
+    sess.setArgs({"zadd", "zset1", "10", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"sadd", "set2", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"sadd", "set1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"rpush", "list1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"rpush", "list2", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"rpush", "list3", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"hset", "hash1", "hh", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  sess.setArgs({"dbsize"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(7), expect.value());
+}
+
+void testRenameCommandTTL(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"zadd", "ss", "10", "a"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"expire", "ss", "3"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  sess.setArgs({"rename", "ss", "sa"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(Command::fmtOK(), expect.value());
+
+  sess.setArgs({"dbsize"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  sess.setArgs({"dbsize"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(0), expect.value());
+
+  sess.setArgs({"zadd", "ss", "3", "a"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  sess.setArgs({"dbsize"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+}
+
+TEST(Command, DelTTLIndex) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testDelTTLIndex(server);
+}
+
+TEST(Command, RenameCommandTTL) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testRenameCommandTTL(server);
+}
+
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {

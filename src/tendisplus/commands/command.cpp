@@ -588,7 +588,8 @@ Status Command::delKeyAndTTL(Session* sess, const RecordKey& mk,
   return s;
 }
 
-  Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
+
+Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     SessionCtx *pCtx = sess->getCtx();
