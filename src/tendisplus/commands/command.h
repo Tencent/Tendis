@@ -71,8 +71,7 @@ class Command {
          Transaction *txn);
 
     static Status delKeyAndTTL(Session* sess, const RecordKey& mk,
-                               const RecordValue& val, Transaction* txn,
-                               bool skipHead = false);
+                               const RecordValue& val, Transaction* txn);
     static Status delKey(Session *sess, const std::string& key, RecordType tp);
 
     // return true if exists and delete succ

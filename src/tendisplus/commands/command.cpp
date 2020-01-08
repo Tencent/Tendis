@@ -395,11 +395,11 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        Transaction* txn,
                                        const TTLIndex *ictx) {
     Status s(ErrorCodes::ERR_OK, "");
-    auto guard = MakeGuard([s] {
+    auto guard = MakeGuard([&s] {
        if (!s.ok()) {
-         INVARIANT(0);
+          INVARIANT_D(0);
        }
-      });
+    });
     if (deleteMeta && subCount != std::numeric_limits<uint32_t>::max()) {
         s = Status{ ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount" };
         return s;
@@ -551,43 +551,23 @@ Expected<bool> Command::delKeyChkExpire(Session *sess,
 
   // del meta and it's ttlindex
 Status Command::delKeyAndTTL(Session* sess, const RecordKey& mk,
-                             const RecordValue& val, Transaction* txn,
-                             bool skipHead) {
+                             const RecordValue& val, Transaction* txn) {
   Status s(ErrorCodes::ERR_OK, "");
-  SessionCtx* pCtx = sess->getCtx();
-
   s = txn->delKV(mk.encode());
   if (!s.ok()) {
     return s;
   }
 
-  if (val.getTtl() > 0) {
-    TTLIndex ictx(mk.getPrimaryKey(), val.getRecordType(), sess->getCtx()->getDbId(),
-      val.getTtl());
-
-    if (ictx.getType() != RecordType::RT_KV) {
+  if (val.getTtl() > 0 && val.getRecordType() != RecordType::RT_KV) {
+      TTLIndex ictx(mk.getPrimaryKey(), val.getRecordType(),
+                    sess->getCtx()->getDbId(), val.getTtl());
       s = txn->delKV(ictx.encode());
       if (!s.ok()) {
         return s;
       }
-    }
   }
-
-  // when delete ZSET meta, we delete head node, except rename command  
-  if (skipHead) {
-    RecordType valueType = val.getRecordType();
-    if (valueType == RecordType::RT_ZSET_META) {
-      RecordKey head(mk.getChunkId(), pCtx->getDbId(),
-                     RecordType::RT_ZSET_S_ELE, mk.getPrimaryKey(),
-                     std::to_string(ZSlMetaValue::HEAD_ID));
-      s = txn->delKV(head.encode());
-    }
-  }
-  
-
   return s;
 }
-
 
 Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
     auto server = sess->getServerEntry();
@@ -738,7 +718,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                     && i != RETRY_CNT - 1) {
                 continue;
             }
-			INVARIANT(s.ok());
             if (s.ok()) {
                 return {ErrorCodes::ERR_EXPIRED, ""};
             } else {

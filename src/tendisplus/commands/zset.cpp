@@ -86,6 +86,12 @@ Expected<std::string> genericZrem(Session *sess,
         if (!s.ok()) {
             return s;
         }
+        RecordKey head(mk.getChunkId(),
+                       pCtx->getDbId(),
+                       RecordType::RT_ZSET_S_ELE,
+                       mk.getPrimaryKey(),
+                       std::to_string(ZSlMetaValue::HEAD_ID));
+        s = kvstore->delKV(head, txn.get());
     }
     if (!s.ok()) {
         return s;
@@ -445,6 +451,12 @@ class ZRemByRangeGenericCommand: public Command {
             if (!s.ok()) {
                 return s;
             }
+            RecordKey head(mk.getChunkId(),
+                           pCtx->getDbId(),
+                           RecordType::RT_ZSET_S_ELE,
+                           mk.getPrimaryKey(),
+                           std::to_string(ZSlMetaValue::HEAD_ID));
+            s = kvstore->delKV(head, txn.get());
         }
         if (!s.ok()) {
             return s;

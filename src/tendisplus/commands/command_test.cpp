@@ -1041,7 +1041,7 @@ void testRenameCommandTTL(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(Command::fmtLongLong(1), expect.value());
 
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+  std::this_thread::sleep_for(std::chrono::seconds(4));
 
   sess.setArgs({"dbsize"});
   expect = Command::runSessionCmd(&sess);

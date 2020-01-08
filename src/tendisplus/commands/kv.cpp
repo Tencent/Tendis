@@ -2043,7 +2043,7 @@ public:
         });
 
         // del old meta k/v
-        Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value(), false);
+        Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value());
         if (!s.ok()) {
             return s;
         }
