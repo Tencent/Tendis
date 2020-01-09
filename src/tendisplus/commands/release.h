@@ -6,8 +6,6 @@
 #define TENDISPLUS_BUILD_ID "TENCENT64site-1578575524"
 
 #include <stdint.h>
-char *redisGitSHA1(void);
-char *redisGitDirty(void);
 uint64_t redisBuildId(void);
 
 #endif // RELEASE_H

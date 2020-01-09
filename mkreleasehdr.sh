@@ -24,8 +24,6 @@ echo "#define TENDISPLUS_BUILD_ID \"$BUILD_ID\"" >> ${h_file}
 
 echo "" >> ${h_file}
 echo "#include <stdint.h>" >> ${h_file}
-echo "char *redisGitSHA1(void);" >> ${h_file}
-echo "char *redisGitDirty(void);" >> ${h_file}
 echo "uint64_t redisBuildId(void);" >> ${h_file}
 
 echo "" >> ${h_file}
