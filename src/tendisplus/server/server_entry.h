@@ -32,11 +32,6 @@ class Catalog;
 class ReplManager;
 class IndexManager;
 
-#define TENDISPLUS_VERSION "4.0.10-Tendisx-v0.0.1"
-#define REDIS_GIT_SHA1 "00000000"
-#define REDIS_GIT_DIRTY "0"
-#define REDIS_BUILD_ID "TENCENT64site-1562728800"
-
 class ServerEntry;
 std::shared_ptr<ServerEntry> getGlobalServer();
 

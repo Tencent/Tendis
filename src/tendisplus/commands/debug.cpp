@@ -26,6 +26,8 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/commands/release.h"
+#include "tendisplus/commands/version.h"
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
@@ -1459,9 +1461,9 @@ private:
 #endif
             ss << "# Server\r\n"
                 << "redis_version:" << TENDISPLUS_VERSION << "\r\n"
-                << "redis_git_sha1:" << REDIS_GIT_SHA1 << "\r\n"
-                << "redis_git_dirty:" << REDIS_GIT_DIRTY << "\r\n"
-                << "redis_build_id:" << REDIS_BUILD_ID << "\r\n"
+                << "redis_git_sha1:" << TENDISPLUS_GIT_SHA1 << "\r\n"
+                << "redis_git_dirty:" << TENDISPLUS_GIT_DIRTY << "\r\n"
+                << "redis_build_id:" << redisBuildId() << "\r\n"
                 << "redis_mode:" << "standalone" << "\r\n"
 #ifndef _WIN32
                 << "os:" << name.sysname << " " << name.release << " " << name.machine << "\r\n"        // NOLINT
