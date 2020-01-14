@@ -2100,6 +2100,11 @@ public:
                 if (!expRcd.ok()) {
                     return expRcd.status();
                 }
+                Record& rcd = expRcd.value();
+                const RecordKey& rcdKey = rcd.getRecordKey();
+                if (rcdKey.prefixPk() != prefix) {
+                  break;
+                }
                 pending.emplace_back(std::move(expRcd.value()));
             }
         }
