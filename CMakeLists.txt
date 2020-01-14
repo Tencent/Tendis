@@ -7,8 +7,10 @@ project (TENDIS_PLUS)
 
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
-message("TODO(vinchen): only in debug mode, remove it when release")
-add_definitions(-DTENDIS_DEBUG)
+option(TENDIS_DEBUG "define TENDIS_DEBUG" ON)
+if(TENDIS_DEBUG)
+    add_definitions(-DTENDIS_DEBUG)
+endif()
 
 # configure compiler requirement
 message(${CMAKE_CXX_COMPILER})
