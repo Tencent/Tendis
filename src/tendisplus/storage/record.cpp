@@ -239,6 +239,15 @@ std::string RecordKey::prefixPk() const {
                 key.data()), key.size());
 }
 
+std::string RecordKey::prefixSlotType() const {
+    std::vector<uint8_t> key;
+    for (size_t i = 0; i < sizeof(_chunkId); ++i) {
+        key.emplace_back((_chunkId>>((sizeof(_chunkId)-1-i)*8))&0xff);
+    }
+    key.emplace_back(rt2Char(_type));
+    return std::string(key.begin(), key.end());
+}
+
 /* NOTE(deyukong): after chunkid prefix, the dbid-type prefix is
 // meaningless
 std::string RecordKey::prefixDbidType() const {
