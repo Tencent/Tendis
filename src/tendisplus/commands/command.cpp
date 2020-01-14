@@ -394,26 +394,34 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                                        bool deleteMeta,
                                        Transaction* txn,
                                        const TTLIndex *ictx) {
+    Status s(ErrorCodes::ERR_OK, "");
+    auto guard = MakeGuard([&s] {
+       if (!s.ok()) {
+          INVARIANT_D(0);
+       }
+    });
     if (deleteMeta && subCount != std::numeric_limits<uint32_t>::max()) {
-        return {ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount"};
+        s = Status{ ErrorCodes::ERR_PARSEOPT, "delmeta with limited subcount" };
+        return s;
     }
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId,
                     mgl::LockMode::LOCK_NONE);
     if (!expdb.ok()) {
-        return expdb.status();
+        s = expdb.status();
+        return s;
     }
     PStore kvstore = expdb.value().store;
     INVARIANT(mk.getRecordType() == RecordType::RT_DATA_META);
     if (valueType == RecordType::RT_KV) {
-        Status s = kvstore->delKV(mk, txn);
+        s = kvstore->delKV(mk, txn);
         if (!s.ok()) {
             return s;
         }
 
         if (ictx) {
-            Status s = txn->delKV(ictx->encode());
+            s = txn->delKV(ictx->encode());
             if (!s.ok()) {
                 return s;
             }
@@ -421,7 +429,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
 
         auto commitStatus = txn->commit();
         if (!commitStatus.ok()) {
-            return commitStatus.status();
+            s = commitStatus.status();
+            return s;
         }
         return 1;
     }
@@ -478,7 +487,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                 break;
             }
             if (!exptRcd.ok()) {
-                return exptRcd.status();
+                s = exptRcd.status();
+                return s;
             }
             Record& rcd = exptRcd.value();
             const RecordKey& rcdKey = rcd.getRecordKey();
@@ -493,14 +503,14 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         pendingDelete.push_back(mk);
     }
     for (auto& v : pendingDelete) {
-        Status s = kvstore->delKV(v, txn);
+        s = kvstore->delKV(v, txn);
         if (!s.ok()) {
             return s;
         }
     }
 
     if (ictx && ictx->getType() != RecordType::RT_KV) {
-        Status s = txn->delKV(ictx->encode());
+        s = txn->delKV(ictx->encode());
         if (!s.ok()) {
             return s;
         }
@@ -510,7 +520,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     if (commitStatus.ok()) {
         return pendingDelete.size();
     } else {
-        return commitStatus.status();
+        s = commitStatus.status();
+        return s;
     }
 }
 
@@ -536,6 +547,26 @@ Expected<bool> Command::delKeyChkExpire(Session *sess,
         return true;
     }
     return s;
+}
+
+  // del meta and it's ttlindex
+Status Command::delKeyAndTTL(Session* sess, const RecordKey& mk,
+                             const RecordValue& val, Transaction* txn) {
+  Status s(ErrorCodes::ERR_OK, "");
+  s = txn->delKV(mk.encode());
+  if (!s.ok()) {
+    return s;
+  }
+
+  if (val.getTtl() > 0 && val.getRecordType() != RecordType::RT_KV) {
+      TTLIndex ictx(mk.getPrimaryKey(), val.getRecordType(),
+                    sess->getCtx()->getDbId(), val.getTtl());
+      s = txn->delKV(ictx.encode());
+      if (!s.ok()) {
+        return s;
+      }
+  }
+  return s;
 }
 
 Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {

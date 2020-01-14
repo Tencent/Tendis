@@ -82,7 +82,7 @@ Expected<std::string> genericZrem(Session *sess,
         s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
     } else {
         INVARIANT(sl.getCount() == 1);
-        s = kvstore->delKV(mk, txn.get());
+        s = Command::delKeyAndTTL(sess, mk, eMeta.value(), txn.get());
         if (!s.ok()) {
             return s;
         }
@@ -447,7 +447,7 @@ class ZRemByRangeGenericCommand: public Command {
             s = sl.save(txn.get(), eMeta, pCtx->getVersionEP());
         } else {
             INVARIANT(sl.getCount() == 1);
-            s = kvstore->delKV(mk, txn.get());
+            s = Command::delKeyAndTTL(sess, mk, eMeta.value(), txn.get());
             if (!s.ok()) {
                 return s;
             }

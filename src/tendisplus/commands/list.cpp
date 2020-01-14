@@ -64,7 +64,7 @@ Expected<std::string> genericPop(Session *sess,
         return s;
     }
     if (head == tail) {
-        s = kvstore->delKV(metaRk, txn);
+        s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn);
     } else {
         lm.setHead(head);
         lm.setTail(tail);
@@ -602,6 +602,9 @@ class LtrimCommand: public Command {
         if (!ptxn.ok()) {
             return ptxn.status();
         }
+        if (!rv.ok()) {
+          return rv.status();
+        }
         uint64_t head = lm.getHead();
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         uint64_t cnt = 0;
@@ -641,7 +644,7 @@ class LtrimCommand: public Command {
             return st;
         }
         if (cnt >= lm.getTail() - lm.getHead()) {
-            st = kvstore->delKV(mk, txn.get());
+            st = Command::delKeyAndTTL(sess, mk, rv.value(), txn.get());
             if (!st.ok()) {
                 return st;
             }
@@ -1247,7 +1250,7 @@ class LRemCommand: public Command {
                          "");
         Status s;
         if (head == tail) {
-            s = kvstore->delKV(metaRk, txn.get());
+            s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn.get());
         } else {
             s = kvstore->setKV(metaRk,
                     RecordValue(lm.encode(), RecordType::RT_LIST_META,
