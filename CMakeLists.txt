@@ -5,6 +5,8 @@ project (TENDIS_PLUS)
 #message("TODO(deyukong): currently jemalloc can only be used by LD_PRELOAD, integrate it into thirdparty \
 # and compile internally")
 
+execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
 message("TODO(vinchen): only in debug mode, remove it when release")
 add_definitions(-DTENDIS_DEBUG)
 
