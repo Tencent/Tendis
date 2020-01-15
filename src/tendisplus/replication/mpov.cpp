@@ -116,6 +116,11 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
                 << client->getRemoteRepr() << " failed:"
                 << newPos.status().toString();
         std::lock_guard<std::mutex> lk(_mutex);
+#if defined(WIN32) && _MSC_VER > 1900
+        if (_pushStatus[storeId][clientId] != nullptr) {
+            delete _pushStatus[storeId][clientId];
+        }
+#endif
         // it is safe to remove a non-exist key
         _pushStatus[storeId].erase(clientId);
         return;
@@ -471,6 +476,19 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             return false;
         }
         uint64_t clientId = _clientIdGen.fetch_add(1);
+#if defined(_WIN32) && _MSC_VER > 1900
+        _pushStatus[storeId][clientId] =
+                new MPovStatus {
+                     false,
+                     static_cast<uint32_t>(dstStoreId),
+                     binlogPos,
+                     SCLOCK::now(),
+                     SCLOCK::time_point::min(),
+                     std::move(client),
+                     clientId,
+                     listenIpArg,
+                     listen_port};
+#else
         _pushStatus[storeId][clientId] =
             std::move(std::unique_ptr<MPovStatus>(
                 new MPovStatus {
@@ -483,6 +501,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                      clientId,
                      listenIpArg,
                      listen_port}));
+#endif
         return true;
     }();
     LOG(INFO) << "slave:" << remoteHost

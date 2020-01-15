@@ -162,8 +162,14 @@ Status ReplManager::startup() {
         // NOTE(vinchen): if the mode == STORE_NONE, _pushStatus would do
         // nothing, more detailed in ReplManager::registerIncrSync()
         // init master's pov, incrpush status
+#if defined(_WIN32) && _MSC_VER > 1900
+        _pushStatus.emplace_back(
+			std::map<uint64_t, MPovStatus*>());
+#else
         _pushStatus.emplace_back(
             std::map<uint64_t, std::unique_ptr<MPovStatus>>());
+#endif
+
 
         Status status;
 
@@ -931,6 +937,15 @@ void ReplManager::stop() {
     _fullReceiver->stop();
     _incrChecker->stop();
     _logRecycler->stop();
+
+#if defined(_WIN32) && _MSC_VER > 1900
+    for (size_t i = 0; i < _pushStatus.size(); i++) {
+        for (auto& mpov : _pushStatus[i]) {
+            delete mpov.second;
+        }
+        _pushStatus[i].clear();
+    }
+#endif
 
     LOG(WARNING) << "repl manager stops succ";
 }
