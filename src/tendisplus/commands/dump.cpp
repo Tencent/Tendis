@@ -206,25 +206,54 @@ class DumpXCommand: public Command {
         return 2;
     }
 
+    std::string fmtRestorexSubCmd(const std::string& dbid,
+            const std::string& key,
+            std::vector<byte>::const_iterator begin,
+            std::vector<byte>::const_iterator end) {
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 4);
+        Command::fmtBulk(ss, "RESTOREX");
+        Command::fmtBulk(ss, dbid);
+        Command::fmtBulk(ss, key);
+        Command::fmtBulk(ss, std::string(begin, end));
+        return ss.str();
+    }
+
+    std::string fmtDumpxError(const std::string& dbid,
+            const std::string& key, const Status& err) {
+        INVARIANT(!err.ok());
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 4);
+        Command::fmtBulk(ss, "DUMPXERROR");
+        Command::fmtBulk(ss, dbid);
+        Command::fmtBulk(ss, key);
+        Command::fmtBulk(ss, err.toString());
+        return ss.str();
+    }
+
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         auto server = sess->getServerEntry();
         std::vector<int> index((args.size() - 1)/2);
-        std::generate(index.begin(), index.end(), [n=0]() mutable { return n+=2; });
+        std::generate(index.begin(),index.end(),
+                [n=0]() mutable { return n+=2; });
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(
                 sess, args, index, Command::RdLock());
         if (!locklist.ok()) {
             return locklist.status();
         }
         std::stringstream ss;
-        std::vector<std::unique_ptr<std::string>> bufferlist;
+        std::vector<std::string> errorlist;
+        std::vector<std::string> bufferlist;
         INVARIANT(!((args.size() - 1) % 2));
         bufferlist.reserve(3 * (args.size() - 1) / 2);
-        size_t cnt(0);
         for (const auto& i : index) {
             auto expDbid = tendisplus::stoul(args[i-1]);
             if (!expDbid.ok()) {
-                return expDbid.status();
+                errorlist.emplace_back(
+                        std::move(fmtDumpxError(
+                                args[i-1], args[i], expDbid.status())));
+                continue;
             }
             auto dbid = static_cast<uint32_t>(expDbid.value());
             if (sess->getCtx()->getDbId() != dbid) {
@@ -232,35 +261,45 @@ class DumpXCommand: public Command {
             }
             auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, args[i]);
             if (!expdb.ok()) {
-                return expdb.status();
+                errorlist.emplace_back(
+                        std::move(fmtDumpxError(
+                                args[i-1], args[i], expdb.status())));
+                continue;
             }
             auto exps = getSerializer(sess, args[i]);
             if (!exps.ok()) {
                 if (exps.status().code() != ErrorCodes::ERR_EXPIRED ||
                     exps.status().code() != ErrorCodes::ERR_NOTFOUND) {
-                    return exps.status();
+                    errorlist.emplace_back(
+                            std::move(fmtDumpxError(
+                                    args[i-1], args[i], exps.status())));
+                    continue;
                 }
             }
 
             auto expBuf = exps.value()->dump(true);
             if (!expBuf.ok()) {
-                return expBuf.status();
+                errorlist.emplace_back(
+                        std::move(fmtDumpxError(
+                                args[i-1], args[i], expBuf.status())));
+                continue;
             }
-            bufferlist.emplace_back(std::make_unique<std::string>(args[i-1]));
-            bufferlist.emplace_back(std::make_unique<std::string>(
-                    args[i]));
-            bufferlist.emplace_back(std::make_unique<std::string>(
-                    expBuf.value().begin() + exps.value()->_begin,
-                    expBuf.value().begin() + exps.value()->_end));
-            cnt++;
+            bufferlist.emplace_back(
+                    std::move(fmtRestorexSubCmd(
+                            args[i-1],
+                            args[i],
+                            expBuf.value().begin() + exps.value()->_begin,
+                            expBuf.value().begin() + exps.value()->_end)));
         }
-        Command::fmtMultiBulkLen(ss, 3 * cnt + 1);
-        Command::fmtBulk(ss, "RESTOREX");
-        INVARIANT(bufferlist.size() == 3 * cnt);
-        for (size_t i = 0; i < 3 * cnt; i++) {
-            Command::fmtBulk(ss, *bufferlist[i]);
+        /* we return keys can't be restored first */
+        for (const auto& str : errorlist) {
+            sess->setResponse(str);
         }
-        return ss.str();
+
+        for (const auto& str : bufferlist) {
+            sess->setResponse(str);
+        }
+        return std::string();
     }
 } dumpxCommand;
 
