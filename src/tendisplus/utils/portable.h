@@ -36,7 +36,11 @@ namespace filesystem = std::experimental::filesystem;
 #endif  // __has_include(<filesystem>)
 #else
 
-#include <filesystem>
+#if _MSC_VER > 1900
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#include <experimental/filesystem> // C++-standard header file name
+#endif
+#include <filesystem> // Microsoft-specific implementation header file name
 namespace tendisplus {
 namespace filesystem = std::experimental::filesystem::v1;
 }  // namespace tendisplus

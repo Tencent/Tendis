@@ -178,7 +178,15 @@ class ReplManager {
     std::vector<std::unique_ptr<SPovStatus>> _syncStatus;
 
     // master's pov, living slave clients
+#if defined(_WIN32) && _MSC_VER > 1900
+	/* bugs for vs2017+, it can't use std::unique_ptr<> in std::pair
+        https://stackoverflow.com/questions/44136073/stdvectorstdmapuint64-t-stdunique-ptrdouble-compilation-error-in-vs
+        https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/15bfb88a-5fee-461c-b9c8-dc255148aad9/stdvectorltstdmapltuint64t-stduniqueptrltdoublegtgtgt-compilation-error-in?forum=vcgeneral
+	*/
+    std::vector<std::map<uint64_t, MPovStatus*>> _pushStatus;
+#else
     std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
+#endif
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
