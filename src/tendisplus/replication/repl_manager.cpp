@@ -339,6 +339,13 @@ void ReplManager::changeReplState(const StoreMeta& storeMeta,
     changeReplStateInLock(storeMeta, persist);
 }
 
+void ReplManager::resetRecycleState(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+    _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
+    _logRecycStatus[storeId]->timestamp = 0;
+    _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+}
+
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
                     const StoreMeta& metaSnapshot,
                     uint64_t timeoutMs) {
@@ -434,9 +441,11 @@ void ReplManager::controlRoutine() {
                 continue;
             }
             doSth = true;
-            // TODO(vinchen): check if any connected slaves or REPL_ONLY?
-            //bool saveLogs = (_pushStatus[i].size() == 0);
-            bool saveLogs = true;
+
+            bool saveLogs = _syncMeta[i]->syncFromHost != ""; // REPLICATE_ONLY
+            if (_syncMeta[i]->syncFromHost == "" && _pushStatus[i].size() == 0 ) { // single node
+                saveLogs = true;
+            }
             _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
             uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;

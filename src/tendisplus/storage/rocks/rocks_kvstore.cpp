@@ -712,7 +712,7 @@ bool RocksKVStore::isPaused() const {
     return _isPaused;
 }
 
-bool RocksKVStore::isEmpty() const {
+bool RocksKVStore::isEmpty(bool ignoreBinlog) const {
     //std::lock_guard<std::mutex> lk(_mutex);
 
     auto ptxn = const_cast<RocksKVStore*>(this)->createTransaction(nullptr);
@@ -722,10 +722,21 @@ bool RocksKVStore::isEmpty() const {
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     auto baseCursor = txn->createCursor();
-    baseCursor->seekToLast();
+    //baseCursor->seekToLast();
 
     Expected<std::string> expKey = baseCursor->key();
     if (expKey.ok()) {
+        if (!ignoreBinlog) {
+            return false;
+        }
+        Expected<RecordKey> expRk = RecordKey::decode(expKey.value());
+        if (!expRk.ok()) {
+            LOG(ERROR) << "RecordKey::decode failed.";
+            return false;
+        }
+        if (expRk.value().getChunkId() == ReplLogKeyV2::CHUNKID) {
+            return true;
+        }
         return false;
     } else if (expKey.status().code() == ErrorCodes::ERR_EXHAUST) {
         return true;

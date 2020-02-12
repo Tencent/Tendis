@@ -1954,9 +1954,12 @@ class FlushGeneric : public Command {
             auto nextBinlogid = store->getNextBinlogSeq();
 
             auto eflush = store->flush(sess, nextBinlogid);
+            if (!eflush.ok()) {
+                return eflush.status();
+            }
 
             // it is the first txn and binlog, because of LOCK_X
-            INVARIANT_D(eflush.value() == nextBinlogid);
+            INVARIANT_COMPARE_D(eflush.value(), ==, nextBinlogid);
 
             replMgr->onFlush(i, eflush.value());
         }
@@ -2123,7 +2126,7 @@ class DestroyStoreCommand : public Command {
     }
 
     ssize_t arity() const {
-        return -1;
+        return -2;
     }
 
     int32_t firstkey() const {

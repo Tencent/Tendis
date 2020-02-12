@@ -271,7 +271,7 @@ class KVStore {
 
     virtual bool isRunning() const = 0;
     virtual bool isOpen() const = 0;
-    virtual bool isEmpty() const = 0;
+    virtual bool isEmpty(bool ignoreBinlog = false) const = 0;
     virtual bool isPaused() const = 0;
     virtual Status stop() = 0;
     virtual Status pause() = 0;

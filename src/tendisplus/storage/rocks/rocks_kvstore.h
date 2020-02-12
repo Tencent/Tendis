@@ -209,7 +209,7 @@ class RocksKVStore: public KVStore {
     }
 
     // check whether there is any data in the store
-    bool isEmpty() const final;
+    bool isEmpty(bool ignoreBinlog = false) const final;
     // check whether the store get do get/set operations
     bool isPaused() const final;
     bool enableRepllog() const { return _enableRepllog; }
