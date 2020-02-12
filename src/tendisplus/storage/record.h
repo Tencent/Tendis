@@ -98,6 +98,7 @@ class RecordKey {
     // mainly for prefix scan.
     std::string prefixPk() const;
 
+    std::string prefixSlotType() const;
     /*
     // an encoded prefix with db & type, with no padding zero.
     std::string prefixDbidType() const;
