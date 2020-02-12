@@ -626,8 +626,28 @@ void ReplManager::flushCurBinlogFs(uint32_t storeId) {
     updateCurBinlogFs(storeId, 0, 0, true);
 }
 
+Status ReplManager::changeReplSource(Session* sess, uint32_t storeId, std::string ip,
+        uint32_t port, uint32_t sourceStoreId) {
+    auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
+                                             mgl::LockMode::LOCK_X, true);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    if (!expdb.value().store->isOpen()) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    if (ip != "" && !expdb.value().store->isEmpty(true)) {
+        return {ErrorCodes::ERR_MANUAL, "store not empty"};
+    }
+    Status s = changeReplSourceInLock(storeId, ip, port, sourceStoreId);
+    if (!s.ok()) {
+        return s;
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 // changeReplSource should be called with LOCK_X held
-Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
+Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
     uint64_t oldTimeout = _connectMasterTimeoutMs;
     if (ip != "") {
