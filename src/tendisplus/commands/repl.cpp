@@ -904,6 +904,8 @@ class SlaveofCommand: public Command {
             return {ErrorCodes::ERR_PARSEPKT, ex.what()};
         }
         if (args.size() == 3) {
+            // NOTE(takenliu): ensure automic operation for all store
+            std::list<Expected<DbWithLock>> expdbList;
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 auto expdb = svr->getSegmentMgr()->getDb(sess, i,
                     mgl::LockMode::LOCK_X, true);
@@ -911,9 +913,17 @@ class SlaveofCommand: public Command {
                     return expdb.status();
                 }
                 if (!expdb.value().store->isOpen()) {
-                    continue;
+                    // NOTE(takenliu): only DestroyStoreCommand will set isOpen be false, and it's unuse.
+                    //return {ErrorCodes::ERR_OK, ""};
+                    return {ErrorCodes::ERR_INTERNAL, "store not open"};
                 }
-                Status s = replMgr->changeReplSource(i, ip, port, i);
+                if (ip != "" && !expdb.value().store->isEmpty(true)) {
+                    return {ErrorCodes::ERR_MANUAL, "store not empty"};
+                }
+                expdbList.push_back(std::move(expdb));
+            }
+            for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                Status s = replMgr->changeReplSourceInLock(i, ip, port, i);
                 if (!s.ok()) {
                     return s;
                 }
@@ -932,19 +942,12 @@ class SlaveofCommand: public Command {
                     sourceStoreId >= svr->getKVStoreCount()) {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
-
-            auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-                mgl::LockMode::LOCK_X);
-            if (!expdb.ok()) {
-                return expdb.status();
-            }
-
-            Status s = replMgr->changeReplSource(
+            Status s = replMgr->changeReplSource(sess,
                     storeId, ip, port, sourceStoreId);
-            if (s.ok()) {
-                return Command::fmtOK();
+            if (!s.ok()) {
+                return s;
             }
-            return s;
+            return Command::fmtOK();
         } else {
             return {ErrorCodes::ERR_PARSEPKT, "bad argument num"};
         }
@@ -968,28 +971,14 @@ class SlaveofCommand: public Command {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
 
-            auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-                mgl::LockMode::LOCK_X);
-            if (!expdb.ok()) {
-                return expdb.status();
+            Status s = replMgr->changeReplSource(sess, storeId, "", 0, 0);
+            if (!s.ok()) {
+                return s;
             }
-
-            Status s = replMgr->changeReplSource(storeId, "", 0, 0);
-            if (s.ok()) {
-                return Command::fmtOK();
-            }
-            return s;
+            return Command::fmtOK();
         } else {
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-                auto expdb = svr->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_X, true);
-                if (!expdb.ok()) {
-                    return expdb.status();
-                }
-                if (!expdb.value().store->isOpen()) {
-                    continue;
-                }
-                Status s = replMgr->changeReplSource(i, "", 0, 0);
+                Status s = replMgr->changeReplSource(sess, i, "", 0, 0);
                 if (!s.ok()) {
                     return s;
                 }

@@ -83,6 +83,12 @@ void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
                 LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
                     << ">" << binlogPos2.value() << ");";
                 std::this_thread::sleep_for(std::chrono::seconds(1));
+            } else if (binlogPos1.value() < binlogPos2.value() ) {
+                // NOTE(takenliu): flush command maybe let slave's binlogpos bigger,
+                //     but it will be set to equal master's binlogpos later
+                LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
+                             << "<" << binlogPos2.value() << ");";
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             } else {
                 EXPECT_EQ(binlogPos1.value(), binlogPos2.value());
                 break;
@@ -288,5 +294,76 @@ TEST(Repl, Common) {
     }
 }
 
+TEST(Repl, SlaveOf) {
+#ifdef _WIN32
+    size_t i = 0;
+{
+#else
+    for(size_t i = 0; i<9; i++) {
+#endif
+        LOG(INFO) << ">>>>>> test store count:" << i;
+        const auto guard = MakeGuard([] {
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
+
+        EXPECT_TRUE(setupEnv(master_dir));
+        EXPECT_TRUE(setupEnv(slave_dir));
+
+        auto cfg1 = makeServerParam(master_port, i, master_dir);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+
+        auto master = std::make_shared<ServerEntry>(cfg1);
+        auto s = master->startup(cfg1);
+        INVARIANT(s.ok());
+
+        auto slave = std::make_shared<ServerEntry>(cfg2);
+        s = slave->startup(cfg2);
+        INVARIANT(s.ok());
+        {
+            auto ctx0 = std::make_shared<asio::io_context>();
+            auto session0 = makeSession(master, ctx0);
+            session0->setArgs({ "set", "a", "2" });
+            auto expect = Command::runSessionCmd(session0.get());
+            EXPECT_TRUE(expect.ok());
+
+            auto ctx = std::make_shared<asio::io_context>();
+            auto session = makeSession(slave, ctx);
+
+            session->setArgs({ "set", "a", "1" });
+            expect = Command::runSessionCmd(session.get());
+            EXPECT_TRUE(expect.ok());
+
+            session->setArgs({ "slaveof", "127.0.0.1", std::to_string(master_port) });
+            expect = Command::runSessionCmd(session.get());
+            EXPECT_EQ(expect.ok(), false);
+            EXPECT_EQ(expect.status().toString(), "-ERR:4,msg:store not empty\r\n");
+
+            session->setArgs({ "flushall", });
+            expect = Command::runSessionCmd(session.get());
+            EXPECT_EQ(expect.ok(), true);
+
+            session->setArgs({ "slaveof", "127.0.0.1", std::to_string(master_port) });
+            expect = Command::runSessionCmd(session.get());
+            EXPECT_EQ(expect.ok(), true);
+
+            waitSlaveCatchup(master, slave);
+
+            session->setArgs({ "get", "a" });
+            expect = Command::runSessionCmd(session.get());
+            EXPECT_EQ(expect.value(), "$1\r\n2\r\n" );
+        }
+
+#ifndef _WIN32
+        master->stop();
+        slave->stop();
+
+        ASSERT_EQ(slave.use_count(), 1);
+#endif
+
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
 }  // namespace tendisplus
 

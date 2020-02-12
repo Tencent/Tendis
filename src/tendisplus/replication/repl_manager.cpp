@@ -345,6 +345,13 @@ void ReplManager::changeReplState(const StoreMeta& storeMeta,
     changeReplStateInLock(storeMeta, persist);
 }
 
+void ReplManager::resetRecycleState(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+    _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
+    _logRecycStatus[storeId]->timestamp = 0;
+    _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+}
+
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
                     const StoreMeta& metaSnapshot,
                     uint64_t timeoutMs) {
@@ -440,9 +447,11 @@ void ReplManager::controlRoutine() {
                 continue;
             }
             doSth = true;
-            // TODO(vinchen): check if any connected slaves or REPL_ONLY?
-            //bool saveLogs = (_pushStatus[i].size() == 0);
-            bool saveLogs = true;
+
+            bool saveLogs = _syncMeta[i]->syncFromHost != ""; // REPLICATE_ONLY
+            if (_syncMeta[i]->syncFromHost == "" && _pushStatus[i].size() == 0 ) { // single node
+                saveLogs = true;
+            }
             _logRecycStatus[i]->isRunning = true;
             uint64_t endLogId = std::numeric_limits<uint64_t>::max();
             uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;
@@ -623,8 +632,28 @@ void ReplManager::flushCurBinlogFs(uint32_t storeId) {
     updateCurBinlogFs(storeId, 0, 0, true);
 }
 
+Status ReplManager::changeReplSource(Session* sess, uint32_t storeId, std::string ip,
+        uint32_t port, uint32_t sourceStoreId) {
+    auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
+                                             mgl::LockMode::LOCK_X, true);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    if (!expdb.value().store->isOpen()) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    if (ip != "" && !expdb.value().store->isEmpty(true)) {
+        return {ErrorCodes::ERR_MANUAL, "store not empty"};
+    }
+    Status s = changeReplSourceInLock(storeId, ip, port, sourceStoreId);
+    if (!s.ok()) {
+        return s;
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 // changeReplSource should be called with LOCK_X held
-Status ReplManager::changeReplSource(uint32_t storeId, std::string ip,
+Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
             uint32_t port, uint32_t sourceStoreId) {
     uint64_t oldTimeout = _connectMasterTimeoutMs;
     if (ip != "") {

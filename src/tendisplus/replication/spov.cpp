@@ -261,7 +261,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
 
     changeReplState(*newMeta, true);
-
+    resetRecycleState(metaSnapshot.id);
     rollback = false;
 
     LOG(INFO) << "store:" << metaSnapshot.id

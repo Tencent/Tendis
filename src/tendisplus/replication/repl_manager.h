@@ -98,8 +98,10 @@ class ReplManager {
     Status stopStore(uint32_t storeId);
     void stop();
     void togglePauseState(bool isPaused) { _incrPaused = isPaused; }
-    Status changeReplSource(uint32_t storeId, std::string ip, uint32_t port,
+    Status changeReplSource(Session* sess, uint32_t storeId, std::string ip, uint32_t port,
             uint32_t sourceStoreId);
+    Status changeReplSourceInLock(uint32_t storeId, std::string ip, uint32_t port,
+                                  uint32_t sourceStoreId);
     void supplyFullSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg);
     void registerIncrSync(asio::ip::tcp::socket sock,
@@ -157,6 +159,8 @@ class ReplManager {
  private:
     void changeReplState(const StoreMeta& storeMeta, bool persist);
     void changeReplStateInLock(const StoreMeta&, bool persist);
+
+    void resetRecycleState(uint32_t storeId);
 
     Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
 #ifdef BINLOG_V1

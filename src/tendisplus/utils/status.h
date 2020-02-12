@@ -20,6 +20,7 @@ enum class ErrorCodes {
     ERR_NETWORK,
     ERR_TIMEOUT,
     ERR_INTERNAL,
+    ERR_MANUAL,
     ERR_COMMIT_RETRY,
     ERR_NOTFOUND,
     ERR_DECODE,
