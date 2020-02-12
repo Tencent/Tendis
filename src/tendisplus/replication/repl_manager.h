@@ -135,6 +135,8 @@ class ReplManager {
             const std::string& binlogPosArg,
             const std::string& listenIpArg,
             const std::string& listenPortArg);
+    Status replicationSetMaster(std::string ip, uint32_t port);
+    Status replicationUnSetMaster();
 #ifdef BINLOG_V1
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
             const std::map<uint64_t, std::list<ReplLog>>& binlogs);
@@ -151,6 +153,12 @@ class ReplManager {
     bool hasSomeSlave(uint32_t storeId);
     bool isSlaveOfSomeone(uint32_t storeId);
     Status resetRecycleState(uint32_t storeId);
+
+    std::string getMasterHost() const;
+    uint32_t getMasterPort() const;
+    uint64_t getLastSyncTime() const;
+    uint64_t replicationGetSlaveOffset() const;
+    uint64_t replicationGetMasterOffset() const;
 
  protected:
     void controlRoutine();

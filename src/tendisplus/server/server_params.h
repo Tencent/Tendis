@@ -303,7 +303,11 @@ public:
     uint32_t migrateCheckThreadnum = 2;
     bool enableCluster = false;
     uint32_t clusterNodeTimeout = 15000;
-    uint16_t clusterSlaveNoFailover = 0;
+    bool clusterRequireFullCoverage = true;
+    bool clusterSlaveNoFailover = false;
+    uint32_t clusterMigrationBarrier = 1;
+    uint32_t clusterSlaveValidityFactor = 10;
+
 };
 }  // namespace tendisplus
 

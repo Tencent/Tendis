@@ -101,6 +101,7 @@ struct redisCommand {
 uint64_t htonll(uint64_t v);
 uint64_t ntohll(uint64_t v);
 uint64_t crc64(uint64_t crc, const unsigned char *s, uint64_t l);
+int random();
 
 /* Input flags. */
 #define ZADD_NONE 0

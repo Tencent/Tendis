@@ -30,6 +30,7 @@ class Session: public std::enable_shared_from_this<Session> {
     SessionCtx *getCtx() const;
     ServerEntry* getServerEntry() const;
     std::string getCmdStr() const;
+    uint64_t getCtime() const;
 
     virtual void start() = 0;
     virtual Status cancel() = 0;
@@ -55,6 +56,7 @@ class Session: public std::enable_shared_from_this<Session> {
     ServerEntry*             _server;
     std::unique_ptr<SessionCtx> _ctx;
     Type _type;
+    uint64_t _timestamp;
 
  private:
     mutable std::mutex _baseMutex;

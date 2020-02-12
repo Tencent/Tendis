@@ -156,8 +156,12 @@ ServerParams::ServerParams() {
     REGISTER_VARS(migrateCheckThreadnum);
 
     REGISTER_VARS_DIFF_NAME("clustermode", enableCluster);
-    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster_node_timeout", clusterNodeTimeout);
-    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster_slave_no_failover", clusterSlaveNoFailover);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage", clusterRequireFullCoverage);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-no-failover", clusterSlaveNoFailover);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-node-timeout", clusterNodeTimeout);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier", clusterMigrationBarrier);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor", clusterSlaveValidityFactor);
+
 };
 
 ServerParams::~ServerParams() {

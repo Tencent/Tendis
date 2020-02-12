@@ -230,8 +230,8 @@ public:
 
         } else if (arg1 == "replicate" && argSize == 3) {
             auto n = clusterState->clusterLookupNode(args[2]);
-            if ( n == nullptr ) {
-                return  {ErrorCodes::ERR_CLUSTER, "Unknown node"+args[2]};
+            if (!n) {
+                return { ErrorCodes::ERR_CLUSTER, "Unknown node: " + args[2] };
             }
             Status s = replicateNode(n, myself, svr, sess, replMgr, clusterState);
             if (!s.ok()) {
@@ -481,6 +481,7 @@ private:
     Status replicateNode(CNodePtr n, CNodePtr myself,
                          ServerEntry *svr, Session *sess, ReplManager *replMgr,
                          const std::shared_ptr<ClusterState> clusterState) {
+        INVARIANT_D(n != nullptr);
         if (n == myself) {
             return {ErrorCodes::ERR_CLUSTER, "Can't replicate myself"};
         }

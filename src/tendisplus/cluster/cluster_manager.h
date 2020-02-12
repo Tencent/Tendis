@@ -175,6 +175,9 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     bool nodeIsMyself() const;
 
+    uint64_t getVoteTime() const { return _votedTime; }
+    void setVoteTime(uint64_t time);
+
     std::shared_ptr<ClusterSession> getSession() const;
     std::shared_ptr<BlockingTcpClient> getClient() const;
     void setClient(std::shared_ptr<BlockingTcpClient> client);
@@ -269,6 +272,7 @@ class ClusterMsg{
 
     ClusterMsg(const std::string& sig,
             const uint32_t totlen, const ClusterMsg::Type type,
+            const uint32_t mflags,
             const std::shared_ptr<ClusterMsgHeader>& header,
             const std::shared_ptr<ClusterMsgData>& data);
 
@@ -291,6 +295,7 @@ class ClusterMsg{
     std::shared_ptr<ClusterMsgData> getData() const  { return _msgData; }
 
     uint32_t  getTotlen() const { return _totlen; }
+    uint32_t  getMflags() const { return _mflags; }
     ClusterMsg::Type getType() const { return _type; }
     void setTotlen(uint32_t totlen);
 
@@ -298,6 +303,7 @@ class ClusterMsg{
     std::string _sig;
     uint32_t _totlen;
     ClusterMsg::Type _type;
+    uint32_t _mflags;
     std::shared_ptr<ClusterMsgHeader> _header;
     std::shared_ptr<ClusterMsgData> _msgData;
 };
@@ -344,8 +350,6 @@ class ClusterMsgHeader{
     uint16_t _cport;      /* Sender TCP cluster bus port */
     uint16_t _flags;      /* Sender node flags */
     ClusterHealth _state; /* Cluster state from the POV of the sender */
-    unsigned char _mflags[3]; /* Message flags: CLUSTERMSG_FLAG[012]_... */
-
 };
 
 
@@ -354,6 +358,8 @@ class ClusterMsgData{
     enum class Type {
         Gossip = 0,
         Update = 1,
+        FAIL = 2,
+        PUBLIC = 3,
     };
     ClusterMsgData(Type type) : _type(type) {}
     virtual std::string dataEncode() const = 0;
@@ -391,6 +397,20 @@ private:
     std::bitset<CLUSTER_SLOTS> _slots;
 };
 
+class ClusterMsgDataFail : public ClusterMsgData {
+ public:
+    ClusterMsgDataFail(const std::string& nodename)
+        : ClusterMsgData(ClusterMsgData::Type::FAIL),
+          _nodeName(nodename) {}
+    ClusterMsgDataFail(const ClusterMsgDataFail&) = delete;
+    ClusterMsgDataFail(ClusterMsgDataFail&&) = default;
+    std::string getNodeName() const { return  _nodeName; }
+	std::string dataEncode() const override;
+	static Expected<ClusterMsgDataFail>  dataDecode(const std::string& msg);
+ private:
+     std::string _nodeName;
+};
+
 class NetSession;
 class NetworkMatrix;
 class RequestMatrix;
@@ -412,9 +432,6 @@ public:
     Status clusterSendMessage(ClusterMsg& msg);
 
     void setNode(const CNodePtr& node);
-    void setCtime(const mstime_t& ctime);
-    mstime_t getCtime() const { return _ctime; }
-
     CNodePtr getNode() const { return _node; }
     std::string nodeIp2String(const std::string& announcedIp) const;
 
@@ -479,6 +496,20 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool clusterNodeDelFailureReport(CNodePtr node, CNodePtr sender);
     uint32_t clusterNodeFailureReportsCount(CNodePtr node);
     bool markAsFailingIfNeeded(CNodePtr node);
+    uint32_t clusterCountNonFailingSlaves(CNodePtr node);
+    void manualFailoverCheckTimeout();
+    void resetManualFailover();
+    void clusterHandleManualFailover();
+    void clusterHandleSlaveMigration(uint32_t max_slaves);
+
+	void clusterHandleSlaveFailover(void);
+	void clusterFailoverReplaceYourMaster(void);
+	void clusterLogCantFailover(int reason);
+	uint32_t clusterGetSlaveRank(void);
+	void clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request);
+	void clusterSendMFStart(CNodePtr node);
+	void clusterSendFailoverAuth(CNodePtr node);
+	void clusterRequestFailoverAuth(void);
 
     Status setSlot(CNodePtr n, const uint32_t slot);
    // void setSlotBelong(CNodePtr n, const uint32_t slot);
@@ -490,8 +521,11 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
         uint64_t senderConfigEpoch, const std::bitset<CLUSTER_SLOTS>& slots);
     void clusterHandleConfigEpochCollision(CNodePtr sender);
 
+    void clusterBroadcastPong(int target);
+    //void clusterSendPublish(std::shared_ptr<ClusterSession> sess, const ClusterMsgDataP)
     void clusterSendFail(CNodePtr node);
-    void clusterBroadcastMessage(const ClusterMsg& msg);
+    // TODO(vinchen): make it const reference
+    void clusterBroadcastMessage(ClusterMsg& msg);
 
     // if update == true, _currentEpoch should be updated
     uint64_t clusterGetOrUpdateMaxEpoch(bool update = false);
@@ -563,12 +597,17 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint64_t _failoverAuthEpoch; /* Epoch of the current election. */
     uint8_t _cantFailoverReason;   /* Why a slave is currently not able to failover*/
 
+    uint64_t _lastLogTime;
+    uint64_t _updateStateCallTime;
+    uint64_t _amongMinorityTime;
+
                                 /* Manual failover state in common. */
     mstime_t _mfEnd;            /* Manual failover time limit (ms unixtime).
                                 It is zero if there is no MF in progress. */
                                 /* Manual failover state of master. */
     CNodePtr _mfSlave;          /* Slave performing the manual failover. */
                                 /* Manual failover state of slave. */
+    // TODO(vinchen): _mfMasterOffset should be the binlogid of first store?
     uint64_t _mfMasterOffset;   /* Master offset the slave needs to start MF
                                 or zero if stil not received. */
     uint32_t _mfCanStart;       /* If non-zero signal that the manual failover

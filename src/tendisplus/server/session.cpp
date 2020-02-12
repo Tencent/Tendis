@@ -17,6 +17,7 @@ Session::Session(std::shared_ptr<ServerEntry> svr, Type type)
          _server(svr.get()),
          _ctx(std::make_unique<SessionCtx>(this)),
          _type(type),
+         _timestamp(msSinceEpoch()),
          _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
@@ -26,6 +27,7 @@ Session::Session(ServerEntry* svr, Type type)
     _server(svr),
     _ctx(std::make_unique<SessionCtx>(this)),
     _type(type),
+    _timestamp(msSinceEpoch()),
     _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
     _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
@@ -39,6 +41,10 @@ Session::~Session() {
         DLOG(INFO) << "cluster session " << id() << " is destroyed.";
     }
 #endif
+}
+
+uint64_t Session::getCtime() const {
+    return _timestamp;
 }
 
 void Session::setCurSess(Session* sess) {

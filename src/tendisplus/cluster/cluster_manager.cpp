@@ -255,6 +255,11 @@ void ClusterNode::setConfigEpoch(uint64_t epoch) {
     _configEpoch = epoch;
 }
 
+void ClusterNode::setVoteTime(uint64_t time) {
+    std::lock_guard<myMutex> lk(_mutex);
+    _votedTime = time;
+}
+
 Status ClusterNode::addSlot(uint32_t slot) {
     std::lock_guard<myMutex> lk(_mutex);
     if( slot >= CLUSTER_SLOTS) {
@@ -372,15 +377,21 @@ bool ClusterNode::addFailureReport(std::shared_ptr<ClusterNode> sender) {
 
 bool ClusterNode::delFailureReport(std::shared_ptr<ClusterNode> sender) {
     std::lock_guard<myMutex> lk(_mutex);
-    //INVARIANT_D(0);
     cleanupFailureReportsNoLock();
     return false;  /* No failure report from this sender. */
 
 }
 
 uint32_t ClusterNode::getNonFailingSlavesCount() const {
-    INVARIANT_D(0);
-    return 0;
+    std::lock_guard<myMutex> lk(_mutex);
+    uint32_t okslaves = 0;
+
+    for (const auto& slave : _slaves) {
+        if (!slave->nodeFailed())
+            okslaves++;
+    }
+
+    return okslaves;
 }
 
 void ClusterNode::cleanupFailureReportsNoLock() {
@@ -583,7 +594,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
      _lastVoteEpoch(0),
      _server(server),
      _state(ClusterHealth::CLUSTER_FAIL),
-     _size(0),
+     _size(1),
      _migratingSlots(),
      _importingSlots(),
      _allSlots(),
@@ -593,6 +604,9 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
      _failoverAuthRank(0),
      _failoverAuthEpoch(0),
      _cantFailoverReason(CLUSTER_CANT_FAILOVER_NONE),
+     _lastLogTime(0),
+     _updateStateCallTime(0),
+     _amongMinorityTime(0),
      _mfEnd(0),
      _mfSlave(nullptr),
      _mfMasterOffset(0),
@@ -661,17 +675,103 @@ Status ClusterState::clusterBumpConfigEpochWithoutConsensus() {
 
 }
 
+/* Send a PONG packet to every connected node that's not in handshake state
+ * and for which we have a valid link.
+ *
+ * In Redis Cluster pongs are not used just for failure detection, but also
+ * to carry important configuration information. So broadcasting a pong is
+ * useful when something changes in the configuration and we want to make
+ * the cluster aware ASAP (for instance after a slave promotion).
+ *
+ * The 'target' argument specifies the receiving instances using the
+ * defines below:
+ *
+ * CLUSTER_BROADCAST_ALL -> All known instances.
+ * CLUSTER_BROADCAST_LOCAL_SLAVES -> All slaves in my master-slaves ring.
+ */
+#define CLUSTER_BROADCAST_ALL 0
+#define CLUSTER_BROADCAST_LOCAL_SLAVES 1
+void ClusterState::clusterBroadcastPong(int target) {
+    for (const auto& nodep : _nodes) {
+        const auto& node = nodep.second;
+
+        if (!node->getSession()) continue;
+        if (node == _myself || node->nodeInHandshake()) continue;
+        if (target == CLUSTER_BROADCAST_LOCAL_SLAVES) {
+            int local_slave =
+                node->nodeIsSlave() && node->getMaster() &&
+                (node->getMaster() == _myself ||
+                    node->getMaster() == _myself->getMaster());
+            if (!local_slave) continue;
+        }
+        clusterSendPing(node->getSession(), ClusterMsg::Type::PONG);
+    }
+}
+
+/* Send a PUBLISH message.
+ *
+ * If link is NULL, then the message is broadcasted to the whole cluster. */
+//void ClusterState::clusterSendPublish(clusterLink* link, robj* channel, robj* message) {
+//    unsigned char buf[sizeof(clusterMsg)], * payload;
+//    clusterMsg* hdr = (clusterMsg*)buf;
+//    uint32_t totlen;
+//    uint32_t channel_len, message_len;
+//
+//    channel = getDecodedObject(channel);
+//    message = getDecodedObject(message);
+//    channel_len = sdslen(channel->ptr);
+//    message_len = sdslen(message->ptr);
+//
+//    clusterBuildMessageHdr(hdr, CLUSTERMSG_TYPE_PUBLISH);
+//    totlen = sizeof(clusterMsg) - sizeof(union clusterMsgData);
+//    totlen += sizeof(clusterMsgDataPublish) - 8 + channel_len + message_len;
+//
+//    hdr->data.publish.msg.channel_len = htonl(channel_len);
+//    hdr->data.publish.msg.message_len = htonl(message_len);
+//    hdr->totlen = htonl(totlen);
+//
+//    /* Try to use the local buffer if possible */
+//    if (totlen < sizeof(buf)) {
+//        payload = buf;
+//    }
+//    else {
+//        payload = zmalloc(totlen);
+//        memcpy(payload, hdr, sizeof(*hdr));
+//        hdr = (clusterMsg*)payload;
+//    }
+//    memcpy(hdr->data.publish.msg.bulk_data, channel->ptr, sdslen(channel->ptr));
+//    memcpy(hdr->data.publish.msg.bulk_data + sdslen(channel->ptr),
+//        message->ptr, sdslen(message->ptr));
+//
+//    if (link)
+//        clusterSendMessage(link, payload, totlen);
+//    else
+//        clusterBroadcastMessage(payload, totlen);
+//
+//    decrRefCount(channel);
+//    decrRefCount(message);
+//    if (payload != buf) zfree(payload);
+//}
+
 void ClusterState::clusterSendFail(CNodePtr node) {
     ClusterMsg msg(ClusterMsg::Type::FAIL, shared_from_this(), _server, node);
     clusterBroadcastMessage(msg);
 }
 
-void ClusterState::clusterBroadcastMessage(const ClusterMsg& msg) {
-    INVARIANT_D(0);
+void ClusterState::clusterBroadcastMessage(ClusterMsg& msg) {
+    for (const auto& nodep : _nodes) {
+        const auto& node = nodep.second;
+
+		if (!node->getSession()) continue;
+		if (node->getFlags() & (CLUSTER_NODE_MYSELF | CLUSTER_NODE_HANDSHAKE))
+			continue;
+        node->getSession()->clusterSendMessage(msg);
+	}
 }
 
 void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
     uint64_t senderConfigEpoch, const std::bitset<CLUSTER_SLOTS>& slots) {
+    std::lock_guard<myMutex> lk(_mutex);
 
     std::array<uint16_t, CLUSTER_SLOTS> dirty_slots;
     CNodePtr newmaster = nullptr;
@@ -765,6 +865,7 @@ void ClusterState::setLastVoteEpoch(uint64_t epoch) {
 }
 
 Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
+    std::lock_guard<myMutex> lk(_mutex);
     if (_migratingSlots[slot]) {
         _migratingSlots[slot] = nullptr;
     }
@@ -791,6 +892,7 @@ Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
 }
 
 Status ClusterState::setSlotMyself(const uint32_t slot) {
+    std::lock_guard<myMutex> lk(_mutex);
     if (_migratingSlots[slot]) {
         _migratingSlots[slot] = nullptr;
     }
@@ -848,7 +950,7 @@ void ClusterState::setMyselfNode(CNodePtr node) {
 Status ClusterState::clusterSaveNodesNoLock() {
     _todoBeforeSleep  &= ~CLUSTER_TODO_SAVE_CONFIG;
     Catalog* cataLog = _server->getCatalog();
-    EpochMeta epoch(_currentEpoch, 0);
+    EpochMeta epoch(_currentEpoch, _lastVoteEpoch);
     Status s = cataLog->setEpochMeta(epoch);
     if (!s.ok()) {
         LOG(FATAL) << "save epoch meta error:"<< s.toString();
@@ -916,7 +1018,6 @@ bool ClusterState::clusterSetNodeAsMaster(CNodePtr node) {
         // node->_mutex and node->getMaster()->_mutex.
         // Because if we want to lock more than one node,
         // you must lock ClusterState::_mutex first.
-        node->getMaster()->removeSlave(node);
         clusterNodeRemoveSlave(node->getMaster(), node);
         if (node != _myself) {
             node->_flags |= CLUSTER_NODE_MIGRATE_TO;
@@ -931,19 +1032,23 @@ void ClusterState::clusterSetMaster(CNodePtr node) {
     std::lock_guard<myMutex> lk(_mutex);
 
     INVARIANT(node != _myself);
-    INVARIANT(_myself->_numSlots == 0);
+    INVARIANT(_myself->getSlotNum() == 0);
 
     if (_myself->nodeIsMaster()) {
         _myself->_flags &= ~(CLUSTER_NODE_MASTER|CLUSTER_NODE_MIGRATE_TO);
         _myself->_flags |= CLUSTER_NODE_SLAVE;
         clusterCloseAllSlots();
     } else {
-        if (_myself->_slaveOf) {
-            clusterNodeRemoveSlave(_myself->_slaveOf, _myself);
+        if (_myself->getMaster()) {
+            clusterNodeRemoveSlave(_myself->getMaster(), _myself);
         }
     }
     _myself->setMaster(node);
     clusterNodeAddSlave(node, _myself);
+    _server->getReplManager()->replicationSetMaster(
+        node->getNodeIp(), node->getPort());
+    resetManualFailover();
+}
 
 }
 
@@ -1309,17 +1414,625 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
     return true;
 }
 
+void ClusterState::manualFailoverCheckTimeout() {
+    std::lock_guard<myMutex> lk(_mutex);
+
+    if (_mfEnd && _mfEnd < msSinceEpoch()) {
+        serverLog(LL_WARNING, "Manual failover timed out.");
+        resetManualFailover();
+    }
+}
+
+void ClusterState::resetManualFailover() {
+    std::lock_guard<myMutex> lk(_mutex);
+
+    // TODO(vichen): I think it doesn't need to pause the client
+    // because of the concurrency control
+	//if (server.cluster->mf_end && clientsArePaused()) {
+	//	server.clients_pause_end_time = 0;
+	//	clientsArePaused(); /* Just use the side effect of the function. */
+	//}
+
+    _mfEnd = 0;
+    _mfCanStart = 0;
+    _mfSlave = nullptr;
+    _mfMasterOffset = 0;
+}
+
+void ClusterState::clusterHandleManualFailover() {
+    std::lock_guard<myMutex> lk(_mutex);
+
+    /* Return ASAP if no manual failover is in progress. */
+    if (_mfEnd == 0) return;
+
+    /* If mf_can_start is non-zero, the failover was already triggered so the
+     * next steps are performed by clusterHandleSlaveFailover(). */
+    if (_mfCanStart) return;
+
+    if (_mfMasterOffset == 0) return; /* Wait for offset... */
+
+    // TODO(vinchen)
+    if (_mfMasterOffset == _server->getReplManager()->replicationGetSlaveOffset()) {
+        /* Our replication offset matches the master replication offset
+         * announced after clients were paused. We can start the failover. */
+        _mfCanStart = 1;
+        serverLog(LL_WARNING,
+            "All master replication stream processed, "
+            "manual failover can start.");
+    }
+}
+
+/* This function is responsible to decide if this replica should be migrated
+ * to a different (orphaned) master. It is called by the clusterCron() function
+ * only if:
+ *
+ * 1) We are a slave node.
+ * 2) It was detected that there is at least one orphaned master in
+ *    the cluster.
+ * 3) We are a slave of one of the masters with the greatest number of
+ *    slaves.
+ *
+ * This checks are performed by the caller since it requires to iterate
+ * the nodes anyway, so we spend time into clusterHandleSlaveMigration()
+ * if definitely needed.
+ *
+ * The fuction is called with a pre-computed max_slaves, that is the max
+ * number of working (not in FAIL state) slaves for a single master.
+ *
+ * Additional conditions for migration are examined inside the function.
+ */
+void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
+    std::lock_guard<myMutex> lk(_mutex);
+
+    uint32_t j, okslaves = 0;
+    auto mymaster = _myself->getMaster();
+    CNodePtr target = nullptr, candidate = nullptr;
+
+    /* Step 1: Don't migrate if the cluster state is not ok. */
+    if (_state != ClusterHealth::CLUSTER_OK) return;
+
+    /* Step 2: Don't migrate if my master will not be left with at least
+     *         'migration-barrier' slaves after my migration. */
+    if (mymaster == nullptr) return;
+    for (j = 0; j < mymaster->getSlavesCount(); j++) {
+        if (!mymaster->_slaves[j]->nodeFailed() && 
+            !mymaster->_slaves[j]->nodeTimedOut()) {
+            okslaves++;
+        }
+    }
+    if (okslaves <= _server->getParams()->clusterMigrationBarrier) return;
+
+    /* Step 3: Identify a candidate for migration, and check if among the
+     * masters with the greatest number of ok slaves, I'm the one with the
+     * smallest node ID (the "candidate slave").
+     *
+     * Note: this means that eventually a replica migration will occurr
+     * since slaves that are reachable again always have their FAIL flag
+     * cleared, so eventually there must be a candidate. At the same time
+     * this does not mean that there are no race conditions possible (two
+     * slaves migrating at the same time), but this is unlikely to
+     * happen, and harmless when happens. */
+    candidate = _myself;
+    for (const auto& nodep : _nodes) {
+        const auto& node = nodep.second;
+
+        uint32_t okslaves = 0;
+        bool is_orphaned = true;
+
+        /* We want to migrate only if this master is working, orphaned, and
+         * used to have slaves or if failed over a master that had slaves
+         * (MIGRATE_TO flag). This way we only migrate to instances that were
+         * supposed to have replicas. */
+        if (node->nodeIsSlave() || node->nodeFailed())
+            is_orphaned = false;
+        if (!(node->getFlags() & CLUSTER_NODE_MIGRATE_TO))
+            is_orphaned = false;
+
+        /* Check number of working slaves. */
+        if (node->nodeIsMaster())
+            okslaves = clusterCountNonFailingSlaves(node);
+        if (okslaves > 0)
+            is_orphaned = false;
+
+        if (is_orphaned) {
+            if (!target && node->getSlotNum() > 0)
+                target = node;
+
+            /* Track the starting time of the orphaned condition for this
+             * master. */
+            if (!node->_orphanedTime)
+                node->_orphanedTime = msSinceEpoch();
+        } else {
+            node->_orphanedTime = 0;
+        }
+
+        /* Check if I'm the slave candidate for the migration: attached
+         * to a master with the maximum number of slaves and with the smallest
+         * node ID. */
+        if (okslaves == max_slaves) {
+            for (j = 0; j < node->getSlavesCount(); j++) {
+                if (node->_slaves[j]->getNodeName() < candidate->getNodeName()) {
+                    candidate = node->_slaves[j];
+                }
+            }
+        }
+    }
+
+    /* Step 4: perform the migration if there is a target, and if I'm the
+     * candidate, but only if the master is continuously orphaned for a
+     * couple of seconds, so that during failovers, we give some time to
+     * the natural slaves of this instance to advertise their switch from
+     * the old master to the new one. */
+    if (target && candidate == _myself &&
+        (msSinceEpoch() - target->_orphanedTime) > CLUSTER_SLAVE_MIGRATION_DELAY) {
+        serverLog(LL_WARNING, "Migrating to orphaned master %.40s",
+            target->getNodeName().c_str());
+        clusterSetMaster(target);
+    }
+}
+
+uint32_t ClusterState::clusterCountNonFailingSlaves(CNodePtr node) {
+    std::lock_guard<myMutex> lk(_mutex);
+    return node->getNonFailingSlavesCount();
+}
+
+/* -----------------------------------------------------------------------------
+ * SLAVE node specific functions
+ * -------------------------------------------------------------------------- */
+
+ /* This function sends a FAILOVE_AUTH_REQUEST message to every node in order to
+  * see if there is the quorum for this slave instance to failover its failing
+  * master.
+  *
+  * Note that we send the failover request to everybody, master and slave nodes,
+  * but only the masters are supposed to reply to our query. */
+void ClusterState::clusterRequestFailoverAuth(void) {
+    ClusterMsg msg(ClusterMsg::Type::FAILOVER_AUTH_REQUEST, shared_from_this(), _server);
+    clusterBroadcastMessage(msg);
+}
+
+/* Send a FAILOVER_AUTH_ACK message to the specified node. */
+void ClusterState::clusterSendFailoverAuth(CNodePtr node) {
+    if (!node->getSession()) {
+        return;
+    }
+
+    ClusterMsg msg(ClusterMsg::Type::FAILOVER_AUTH_ACK, shared_from_this(), _server, node);
+    node->getSession()->clusterSendMessage(msg);
+}
+
+/* Send a MFSTART message to the specified node. */
+void ClusterState::clusterSendMFStart(CNodePtr node) {
+    if (!node->getSession()) {
+        return;
+    }
+
+    ClusterMsg msg(ClusterMsg::Type::MFSTART, shared_from_this(), _server, node);
+    node->getSession()->clusterSendMessage(msg);
+}
+
+/* Vote for the node asking for our vote if there are the conditions. */
+void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request) {
+    auto master = node->getMaster();
+    uint64_t requestCurrentEpoch = request.getHeader()->_currentEpoch;
+    uint64_t requestConfigEpoch = request.getHeader()->_configEpoch;
+    const auto& claimed_slots = request.getHeader()->_slots;
+    int force_ack = request.getMflags() & CLUSTERMSG_FLAG0_FORCEACK;
+    int j;
+
+    // TODO(vinchen): if there is a slave, we should be able to vote!
+    /* IF we are not a master serving at least 1 slot, we don't have the
+     * right to vote, as the cluster size in Redis Cluster is the number
+     * of masters serving at least one slot, and quorum is the cluster
+     * size + 1 */
+    if (_myself->nodeIsSlave() || _myself->getSlotNum() == 0) return;
+
+    /* Request epoch must be >= our currentEpoch.
+     * Note that it is impossible for it to actually be greater since
+     * our currentEpoch was updated as a side effect of receiving this
+     * request, if the request epoch was greater. */
+    if (requestCurrentEpoch < _currentEpoch) {
+        serverLog(LL_WARNING,
+            "Failover auth denied to %.40s: reqEpoch (%llu) < curEpoch(%llu)",
+            node->getNodeName().c_str(),
+            (unsigned long long) requestCurrentEpoch,
+            (unsigned long long) _currentEpoch);
+        return;
+    }
+
+    /* I already voted for this epoch? Return ASAP. */
+    if (_lastVoteEpoch == _currentEpoch) {
+        serverLog(LL_WARNING,
+            "Failover auth denied to %.40s: already voted for epoch %llu",
+            node->getNodeName().c_str(),
+            (unsigned long long) _currentEpoch);
+        return;
+    }
+
+    /* Node must be a slave and its master down.
+     * The master can be non failing if the request is flagged
+     * with CLUSTERMSG_FLAG0_FORCEACK (manual failover). */
+    if (node->nodeIsMaster() || master == nullptr ||
+        (!master->nodeFailed() && !force_ack)) {
+        if (node->nodeIsMaster()) {
+            serverLog(LL_WARNING,
+                "Failover auth denied to %.40s: it is a master node",
+                node->getNodeName().c_str());
+        } else if (master == nullptr) {
+            serverLog(LL_WARNING,
+                "Failover auth denied to %.40s: I don't know its master",
+                node->getNodeName().c_str());
+        } else if (!master->nodeFailed()) {
+            serverLog(LL_WARNING,
+                "Failover auth denied to %.40s: its master is up",
+                node->getNodeName().c_str());
+        }
+        return;
+    }
+
+    auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
+    /* We did not voted for a slave about this master for two
+     * times the node timeout. This is not strictly needed for correctness
+     * of the algorithm but makes the base case more linear. */
+    if (msSinceEpoch() - master->getVoteTime() < nodeTimeout * 2) {
+        serverLog(LL_WARNING,
+            "Failover auth denied to %.40s: "
+            "can't vote about this master before %lld milliseconds",
+            node->getNodeName().c_str(),
+            (long long)((nodeTimeout * 2) -
+            (msSinceEpoch() - master->getVoteTime())));
+        return;
+    }
+
+    /* The slave requesting the vote must have a configEpoch for the claimed
+     * slots that is >= the one of the masters currently serving the same
+     * slots in the current configuration. */
+    for (j = 0; j < CLUSTER_SLOTS; j++) {
+        if (claimed_slots.test(j) == 0)
+            continue;
+
+        if (_allSlots[j] == nullptr || 
+            _allSlots[j]->getConfigEpoch() <= requestCurrentEpoch) {
+            continue;
+        }
+
+        /* If we reached this point we found a slot that in our current slots
+         * is served by a master with a greater configEpoch than the one claimed
+         * by the slave requesting our vote. Refuse to vote for this slave. */
+        serverLog(LL_WARNING,
+            "Failover auth denied to %.40s: "
+            "slot %d epoch (%llu) > reqEpoch (%llu)",
+            node->getNodeName().c_str(), j,
+            (unsigned long long) _allSlots[j]->getConfigEpoch(),
+            (unsigned long long) requestConfigEpoch);
+        return;
+    }
+
+    /* We can vote for this slave. */
+    _lastVoteEpoch = _currentEpoch;
+    master->setVoteTime(msSinceEpoch());
+
+    // TODO(vinchen)
+    //clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG | CLUSTER_TODO_FSYNC_CONFIG);
+    clusterSaveNodes();
+
+    clusterSendFailoverAuth(node);
+    serverLog(LL_WARNING, "Failover auth granted to %.40s for epoch %llu",
+        node->getNodeName().c_str(), (unsigned long long) _currentEpoch);
+}
+
+/* This function returns the "rank" of this instance, a slave, in the context
+ * of its master-slaves ring. The rank of the slave is given by the number of
+ * other slaves for the same master that have a better replication offset
+ * compared to the local one (better means, greater, so they claim more data).
+ *
+ * A slave with rank 0 is the one with the greatest (most up to date)
+ * replication offset, and so forth. Note that because how the rank is computed
+ * multiple slaves may have the same rank, in case they have the same offset.
+ *
+ * The slave rank is used to add a delay to start an election in order to
+ * get voted and replace a failing master. Slaves with better replication
+ * offsets are more likely to win. */
+uint32_t ClusterState::clusterGetSlaveRank(void) {
+    uint32_t rank = 0;
+
+    INVARIANT_D(_myself->nodeIsSlave());
+    auto master = _myself->getMaster();
+    if (master == nullptr) return 0; /* Never called by slaves without master. */
+
+    auto myoffset = _server->getReplManager()->replicationGetSlaveOffset();
+    for (uint32_t j = 0; j < master->getSlavesCount(); j++)
+        if (master->_slaves[j] != _myself &&
+            !master->_slaves[j]->nodeCantFailover() &&
+            master->_slaves[j]->_replOffset > myoffset) rank++;
+    return rank;
+}
+
+/* This function is called by clusterHandleSlaveFailover() in order to
+ * let the slave log why it is not able to failover. Sometimes there are
+ * not the conditions, but since the failover function is called again and
+ * again, we can't log the same things continuously.
+ *
+ * This function works by logging only if a given set of conditions are
+ * true:
+ *
+ * 1) The reason for which the failover can't be initiated changed.
+ *    The reasons also include a NONE reason we reset the state to
+ *    when the slave finds that its master is fine (no FAIL flag).
+ * 2) Also, the log is emitted again if the master is still down and
+ *    the reason for not failing over is still the same, but more than
+ *    CLUSTER_CANT_FAILOVER_RELOG_PERIOD seconds elapsed.
+ * 3) Finally, the function only logs if the slave is down for more than
+ *    five seconds + NODE_TIMEOUT. This way nothing is logged when a
+ *    failover starts in a reasonable time.
+ *
+ * The function is called with the reason why the slave can't failover
+ * which is one of the integer macros CLUSTER_CANT_FAILOVER_*.
+ *
+ * The function is guaranteed to be called only if 'myself' is a slave. */
+void ClusterState::clusterLogCantFailover(int reason) {
+    std::lock_guard<myMutex> lk(_mutex);
+    char* msg;
+
+    mstime_t nolog_fail_time = _server->getParams()->clusterNodeTimeout + 5000;
+
+    /* Don't log if we have the same reason for some time. */
+    if (reason == _cantFailoverReason &&
+        msSinceEpoch() - _lastLogTime < CLUSTER_CANT_FAILOVER_RELOG_PERIOD * 10000)
+        return;
+
+    _cantFailoverReason = reason;
+
+    /* We also don't emit any log if the master failed no long ago, the
+     * goal of this function is to log slaves in a stalled condition for
+     * a long time. */
+    if (_myself->getMaster() &&
+        _myself->getMaster()->nodeFailed() &&
+        (msSinceEpoch() - _myself->getMaster()->_failTime) < nolog_fail_time) return;
+
+    switch (reason) {
+    case CLUSTER_CANT_FAILOVER_DATA_AGE:
+        msg = "Disconnected from master for longer than allowed. "
+            "Please check the 'cluster-slave-validity-factor' configuration "
+            "option.";
+        break;
+    case CLUSTER_CANT_FAILOVER_WAITING_DELAY:
+        msg = "Waiting the delay before I can start a new failover.";
+        break;
+    case CLUSTER_CANT_FAILOVER_EXPIRED:
+        msg = "Failover attempt expired.";
+        break;
+    case CLUSTER_CANT_FAILOVER_WAITING_VOTES:
+        msg = "Waiting for votes, but majority still not reached.";
+        break;
+    default:
+        msg = "Unknown reason code.";
+        break;
+    }
+    _lastLogTime = msSinceEpoch();
+    serverLog(LL_WARNING, "Currently unable to failover: %s", msg);
+}
+
+/* This function implements the final part of automatic and manual failovers,
+ * where the slave grabs its master's hash slots, and propagates the new
+ * configuration.
+ *
+ * Note that it's up to the caller to be sure that the node got a new
+ * configuration epoch already. */
+void ClusterState::clusterFailoverReplaceYourMaster(void) {
+    auto oldmaster = _myself->getMaster();
+
+    if (_myself->nodeIsMaster() || oldmaster == nullptr) return;
+
+    /* 1) Turn this node into a master. */
+    clusterSetNodeAsMaster(_myself);
+    _server->getReplManager()->replicationUnSetMaster();
+
+    /* 2) Claim all the slots assigned to our master. */
+    for (uint32_t j = 0; j < CLUSTER_SLOTS; j++) {
+        if (oldmaster->getSlotBit(j)) {
+            clusterDelSlot(j);
+            clusterAddSlot(_myself, j);
+        }
+    }
+
+    /* 3) Update state and save config. */
+    clusterUpdateState();
+    clusterSaveNodes();
+    // clusterSaveConfigOrDie(1);
+
+    /* 4) Pong all the other nodes so that they can update the state
+     *    accordingly and detect that we switched to master role. */
+    clusterBroadcastPong(CLUSTER_BROADCAST_ALL);
+
+    /* 5) If there was a manual failover in progress, clear the state. */
+    resetManualFailover();
+}
+
+/* This function is called if we are a slave node and our master serving
+ * a non-zero amount of hash slots is in FAIL state.
+ *
+ * The gaol of this function is:
+ * 1) To check if we are able to perform a failover, is our data updated?
+ * 2) Try to get elected by masters.
+ * 3) Perform the failover informing all the other nodes.
+ */
+void ClusterState::clusterHandleSlaveFailover(void) {
+    std::lock_guard<myMutex> lk(_mutex);
+
+    mstime_t data_age;
+    mstime_t now = msSinceEpoch();
+    mstime_t auth_age = now - _failoverAuthTime;
+    int needed_quorum = (_size / 2) + 1;
+    int manual_failover = _mfEnd != 0 && _mfCanStart;
+    mstime_t auth_timeout, auth_retry_time;
+
+    /* Compute the failover timeout (the max time we have to send votes
+     * and wait for replies), and the failover retry time (the time to wait
+     * before trying to get voted again).
+     *
+     * Timeout is MAX(NODE_TIMEOUT*2,2000) milliseconds.
+     * Retry is two times the Timeout.
+     */
+    auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
+    auth_timeout = nodeTimeout * 2;
+    if (auth_timeout < 2000) auth_timeout = 2000;
+    auth_retry_time = auth_timeout * 2;
+
+    /* Pre conditions to run the function, that must be met both in case
+     * of an automatic or manual failover:
+     * 1) We are a slave.
+     * 2) Our master is flagged as FAIL, or this is a manual failover.
+     * 3) We don't have the no failover configuration set, and this is
+     *    not a manual failover.
+     * 4) It is serving slots. */
+    if (_myself->nodeIsMaster() ||
+        _myself->getMaster() == nullptr ||
+        (!_myself->getMaster()->nodeFailed() && !manual_failover) ||
+        (_server->getParams()->clusterSlaveNoFailover && !manual_failover) ||
+        _myself->getMaster()->getSlotNum() == 0) {
+        /* There are no reasons to failover, so we set the reason why we
+         * are returning without failing over to NONE. */
+        _cantFailoverReason = CLUSTER_CANT_FAILOVER_NONE;
+        return;
+    }
+
+    /* Set data_age to the number of seconds we are disconnected from
+     * the master. */
+    data_age = now - _server->getReplManager()->getLastSyncTime();
+    INVARIANT_D(data_age > 0);
+
+    /* Remove the node timeout from the data age as it is fine that we are
+     * disconnected from our master at least for the time it was down to be
+     * flagged as FAIL, that's the baseline. */
+    if (data_age > nodeTimeout)
+        data_age -= nodeTimeout;
+
+    /* Check if our data is recent enough according to the slave validity
+     * factor configured by the user.
+     *
+     * Check bypassed for manual failovers. */
+    // TODO(vinchen): clusterSlaveValidityFactor maybe too big
+    auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
+    if (slavefactor &&
+        data_age >
+        (((mstime_t)gBinlogHeartbeatSecs * 1000) +
+        (nodeTimeout * slavefactor))) {
+        if (!manual_failover) {
+            clusterLogCantFailover(CLUSTER_CANT_FAILOVER_DATA_AGE);
+            return;
+        }
+    }
+
+    /* If the previous failover attempt timedout and the retry time has
+     * elapsed, we can setup a new one. */
+    if (auth_age > auth_retry_time) {
+        _failoverAuthTime = msSinceEpoch() +
+            500 + /* Fixed delay of 500 milliseconds, let FAIL msg propagate. */
+            redis_port::random() % 500; /* Random delay between 0 and 500 milliseconds. */
+        _failoverAuthCount = 0;
+        _failoverAuthSent = 0;
+        _failoverAuthRank = clusterGetSlaveRank();
+        /* We add another delay that is proportional to the slave rank.
+         * Specifically 1 second * rank. This way slaves that have a probably
+         * less updated replication offset, are penalized. */
+        _failoverAuthTime += _failoverAuthRank * 1000;
+        /* However if this is a manual failover, no delay is needed. */
+        if (_mfEnd) {
+            _failoverAuthTime = msSinceEpoch();
+            _failoverAuthRank = 0;
+        }
+        serverLog(LL_WARNING,
+            "Start of election delayed for %lld milliseconds "
+            "(rank #%d, offset %lld).",
+            _failoverAuthTime - msSinceEpoch(),
+            _failoverAuthRank,
+            _server->getReplManager()->replicationGetSlaveOffset());
+        /* Now that we have a scheduled election, broadcast our offset
+         * to all the other slaves so that they'll updated their offsets
+         * if our offset is better. */
+        clusterBroadcastPong(CLUSTER_BROADCAST_LOCAL_SLAVES);
+        return;
+    }
+
+    /* It is possible that we received more updated offsets from other
+     * slaves for the same master since we computed our election delay.
+     * Update the delay if our rank changed.
+     *
+     * Not performed if this is a manual failover. */
+    if (_failoverAuthSent == 0 && _mfEnd == 0) {
+        int newrank = clusterGetSlaveRank();
+        if (newrank > _failoverAuthRank ) {
+            long long added_delay =
+                (newrank - _failoverAuthRank) * 1000;
+            _failoverAuthTime += added_delay;
+            _failoverAuthRank = newrank;
+            serverLog(LL_WARNING,
+                "Slave rank updated to #%d, added %lld milliseconds of delay.",
+                newrank, added_delay);
+        }
+    }
+
+    /* Return ASAP if we can't still start the election. */
+    if (msSinceEpoch() < _failoverAuthTime) {
+        clusterLogCantFailover(CLUSTER_CANT_FAILOVER_WAITING_DELAY);
+        return;
+    }
+
+    /* Return ASAP if the election is too old to be valid. */
+    if (auth_age > auth_timeout) {
+        clusterLogCantFailover(CLUSTER_CANT_FAILOVER_EXPIRED);
+        return;
+    }
+
+    /* Ask for votes if needed. */
+    if (_failoverAuthSent == 0) {
+        _currentEpoch++;
+        _failoverAuthEpoch = _currentEpoch;
+        serverLog(LL_WARNING, "Starting a failover election for epoch %llu.",
+            (unsigned long long) _currentEpoch);
+        clusterRequestFailoverAuth();
+        _failoverAuthSent = 1;
+        
+        // TODO(vinchen)
+        clusterSaveNodes();
+        clusterUpdateState();
+		/*
+		 clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG |
+			 CLUSTER_TODO_UPDATE_STATE |
+			 CLUSTER_TODO_FSYNC_CONFIG);*/
+        return; /* Wait for replies. */
+    }
+
+    /* Check if we reached the quorum. */
+    if (_failoverAuthCount >= needed_quorum) {
+        /* We have the quorum, we can finally failover the master. */
+
+        serverLog(LL_WARNING,
+            "Failover election won: I'm the new master.");
+
+        /* Update my configEpoch to the epoch of the election. */
+        if (_myself->getConfigEpoch() < _failoverAuthEpoch) {
+            _myself->setConfigEpoch(_failoverAuthEpoch);
+            serverLog(LL_WARNING,
+                "configEpoch set to %llu after successful failover",
+                (unsigned long long) _myself->getConfigEpoch());
+        }
+
+        /* Take responsability for the cluster slots. */
+        clusterFailoverReplaceYourMaster();
+    } else {
+        clusterLogCantFailover(CLUSTER_CANT_FAILOVER_WAITING_VOTES);
+    }
+}
+
 
 /* Clear the migrating / importing state for all the slots.
 * This is useful at initialization and when turning a master into slave. */
 void ClusterState::clusterCloseAllSlots() {
-
+    std::lock_guard<myMutex> lk(_mutex);
     _migratingSlots.fill(nullptr);
     _importingSlots.fill(nullptr);
-    //memset(server.cluster->migrating_slots_to, 0,
-    //    sizeof(server.cluster->migrating_slots_to));
-    // memset(server.cluster->importing_slots_from, 0,
-    //    sizeof(server.cluster->importing_slots_from));
 }
 
 uint64_t ClusterState::clusterGetOrUpdateMaxEpoch(bool update) {
@@ -1349,8 +2062,14 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
     : _sig("RCmb"),
       _totlen(-1),
       _type(type),
+      _mflags(0),
       _header(std::make_shared<ClusterMsgHeader>(cstate, svr)),
       _msgData(nullptr) {
+        if (cstate->getMyselfNode()->nodeIsMaster() && 
+            cstate->_mfEnd) {
+            _mflags |= CLUSTERMSG_FLAG0_PAUSED;
+        }
+        
         switch (type) {
             case Type::MEET:
             case Type::PING:
@@ -1359,6 +2078,7 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
                 break;
             case Type::FAIL:
                 INVARIANT_D(node != nullptr);
+                _msgData = std::move(std::make_shared<ClusterMsgDataFail>(node->getNodeName()));
                 break;
             case Type::UPDATE:
                 INVARIANT_D(node != nullptr);
@@ -1366,6 +2086,17 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
                     node->getConfigEpoch(),
                     node->getNodeName(),
                     node->getSlots()));
+                break;
+            case Type::FAILOVER_AUTH_ACK:
+            case Type::MFSTART:
+                break;
+            case Type::FAILOVER_AUTH_REQUEST:
+                /* If this is a manual failover, set the CLUSTERMSG_FLAG0_FORCEACK bit
+                 * in the header to communicate the nodes receiving the message that
+                 * they should authorized the failover even if the master is working. */
+                if (cstate->_mfEnd) {
+                    _mflags |= CLUSTERMSG_FLAG0_FORCEACK; 
+                }
                 break;
             default:
                 INVARIANT(0);
@@ -1375,11 +2106,13 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
 
 ClusterMsg::ClusterMsg(const std::string& sig,
             const uint32_t totlen, const ClusterMsg::Type type,
+            const uint32_t mflags,
             const std::shared_ptr<ClusterMsgHeader>& header,
             const std::shared_ptr<ClusterMsgData>& data)
     :_sig(sig),
      _totlen(totlen),
      _type(type),
+     _mflags(mflags),
      _header(header),
      _msgData(data) {
 }
@@ -1408,8 +2141,6 @@ std::string ClusterMsg::clusterGetMessageTypeString(Type type) {
         INVARIANT_D(0);
         return "unknown";
     }
-
-
 }
 
 bool ClusterMsg::clusterNodeIsInGossipSection(const CNodePtr& node) const {
@@ -1444,7 +2175,15 @@ void ClusterMsg::setTotlen(uint32_t totlen) {
 std::string ClusterMsg::msgEncode() {
     std::vector<uint8_t> key;
 
-    std::string data = _msgData->dataEncode();
+    std::string data = "";
+    if (_msgData != nullptr) {
+        data = _msgData->dataEncode();
+    } else {
+        INVARIANT_D(_type == ClusterMsg::Type::FAILOVER_AUTH_ACK ||
+            _type == ClusterMsg::Type::FAILOVER_AUTH_REQUEST || 
+            _type == ClusterMsg::Type::MFSTART);
+    }
+
     std::string head = _header->headEncode();
 
     key.insert(key.end(), _sig.begin(), _sig.end());
@@ -1454,6 +2193,7 @@ std::string ClusterMsg::msgEncode() {
 
     CopyUint(&key, _totlen);
     CopyUint(&key, (uint16_t)_type);
+    CopyUint(&key, (uint32_t)_mflags);
 
     key.insert(key.end(), head.begin(), head.end());
 
@@ -1474,6 +2214,7 @@ Expected<ClusterMsg> ClusterMsg::msgDecode(const std::string& key) {
     auto decode = [&] (auto func) { auto n = func(key.c_str()+offset); offset+=sizeof(n); return n; };
     auto totlen = decode(int32Decode);
     auto ptype = decode(int16Decode);
+    auto mflags = decode(int32Decode);
 
     if (ptype >= CLUSTERMSG_TYPE_COUNT) {
         return { ErrorCodes::ERR_DECODE,
@@ -1494,7 +2235,7 @@ Expected<ClusterMsg> ClusterMsg::msgDecode(const std::string& key) {
 
     auto msgStr = key.substr(headLen+offset, key.size()-headLen-offset);
 
-    std::shared_ptr<ClusterMsgData> msgDataPtr;
+    std::shared_ptr<ClusterMsgData> msgDataPtr = nullptr;
 
     if (type == Type::PING|| type == Type::PONG||
           type == Type::MEET) {
@@ -1513,12 +2254,23 @@ Expected<ClusterMsg> ClusterMsg::msgDecode(const std::string& key) {
         }
         msgDataPtr = std::make_shared<ClusterMsgDataUpdate>
             (std::move(msgUData.value()));
+    } else if (type == Type::FAIL) {
+        auto msgFdata = ClusterMsgDataFail::dataDecode(msgStr);
+        if (!msgFdata.ok()) {
+            return msgFdata.status();
+        }
+        msgDataPtr = std::make_shared<ClusterMsgDataFail>(
+            std::move(msgFdata.value()));
+    } else if (type == Type::FAILOVER_AUTH_ACK || 
+                type == Type::FAILOVER_AUTH_REQUEST ||
+                type == Type::MFSTART) {
+        msgDataPtr = nullptr;
     } else {
         //server.cluster->stats_bus_messages_received[type]++;
         return {ErrorCodes::ERR_CLUSTER, "decode error type"};
     }
 
-    return ClusterMsg(sig, totlen , type, headerPtr, msgDataPtr);
+    return ClusterMsg(sig, totlen , type, mflags, headerPtr, msgDataPtr);
 }
 
 
@@ -1528,7 +2280,7 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
      _count(0),
      _currentEpoch(cstate->getCurrentEpoch()),
      _slaveOf(CLUSTER_NODE_NULL_NAME),
-     _state(cstate->_state)  {
+     _state(cstate->_state) {
     auto myself = cstate->getMyselfNode();
     /* If this node is a master, we send its slots bitmap and configEpoch.
     * If this node is a slave we send the master's information instead (the
@@ -1548,7 +2300,7 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
     /* Handle cluster-announce-port/cluster-announce-ip as well. */
 
     _slots = master->getSlots();
-    if (myself->_slaveOf) {
+    if (myself->getMaster()) {
         _slaveOf = myself->_slaveOf->getNodeName();
     }
     INVARIANT_D(_slaveOf.size() == 40);
@@ -1556,35 +2308,35 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
     _flags = myself->getFlags();
     _configEpoch = master->getConfigEpoch();
 
-    // TODO(wayenchen)
+    // TODO(vinchen)
     /* Set the replication offset. */
-    _offset = 0;
-    if (myself->nodeIsMaster() && cstate->_mfEnd) {
-        _mflags[0] |= CLUSTERMSG_FLAG0_PAUSED;
+    if (myself->nodeIsSlave()) {
+        _offset = svr->getReplManager()->replicationGetSlaveOffset();
+    } else {
+        _offset = svr->getReplManager()->replicationGetMasterOffset();
     }
 }
 
-
 ClusterMsgHeader::ClusterMsgHeader(const uint16_t port,
-                const uint16_t count, const uint64_t currentEpoch,
-                const uint64_t configEpoch, const uint64_t offset,
-                const std::string& sender,
-                const std::bitset<CLUSTER_SLOTS>& slots,
-                const std::string& slaveOf, const std::string& myIp,
-                const uint16_t cport, const uint16_t flags, ClusterHealth state)
+    const uint16_t count, const uint64_t currentEpoch,
+    const uint64_t configEpoch, const uint64_t offset,
+    const std::string& sender,
+    const std::bitset<CLUSTER_SLOTS>& slots,
+    const std::string& slaveOf, const std::string& myIp,
+    const uint16_t cport, const uint16_t flags, ClusterHealth state)
     :_ver(ClusterMsg::CLUSTER_PROTO_VER),
-     _port(port),
-     _count(count),
-     _currentEpoch(currentEpoch),
-     _configEpoch(configEpoch),
-     _offset(offset),
-     _sender(sender),
-     _slots(slots),
-     _slaveOf(slaveOf),
-     _myIp(myIp),
-     _cport(cport),
-     _flags(flags),
-     _state(state) {
+    _port(port),
+    _count(count),
+    _currentEpoch(currentEpoch),
+    _configEpoch(configEpoch),
+    _offset(offset),
+    _sender(sender),
+    _slots(slots),
+    _slaveOf(slaveOf),
+    _myIp(myIp),
+    _cport(cport),
+    _flags(flags),
+    _state(state) {
 }
 
 
@@ -1643,8 +2395,8 @@ std::string ClusterMsgHeader::headEncode() const {
     //  slaveOf
     key.insert(key.end(), _slaveOf.begin(), _slaveOf.end());
 
+    // TODO(vinchen): use lenstr
     key.insert(key.end(), _myIp.begin(), _myIp.end());
-
     uint16_t ipLen = CLUSTER_IP_LENGTH - _myIp.size();
     std::vector<uint8_t> zeroVec(ipLen, '\0');
     key.insert(key.end(), zeroVec.begin(), zeroVec.end());
@@ -1655,6 +2407,7 @@ std::string ClusterMsgHeader::headEncode() const {
     uint8_t state = (_state == ClusterHealth::CLUSTER_FAIL) ? 0 : 1;
     CopyUint(&key, state);
 
+    // first element, it is the length
     for (auto &v: slotBuff) {
         CopyUint(&key, v);
     }
@@ -1701,6 +2454,8 @@ Expected<ClusterMsgHeader> ClusterMsgHeader::headDecode(const std::string& key) 
 
     uint8_t  s = static_cast<uint8_t>(*(key.begin()+offset));
     offset += 1;
+
+    uint32_t mflags = decode(int32Decode);
 
     size_t headLen = offset + decode(int16Decode) - sizeof(uint16_t);
 
@@ -1864,6 +2619,15 @@ Status ClusterMsgDataGossip::addGossipMsg(const ClusterGossip& msg) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+std::string ClusterMsgDataFail::dataEncode() const {
+    return _nodeName;
+}
+
+Expected<ClusterMsgDataFail> ClusterMsgDataFail::dataDecode(
+	const std::string& msg) {
+    // TODO(vinchen): do some check here
+	return ClusterMsgDataFail(msg);
+}
 
 ClusterGossip::ClusterGossip(const std::shared_ptr<ClusterNode> node)
     :_gossipName(node->getNodeName()),
@@ -2087,6 +2851,7 @@ Status ClusterManager::initMetaData() {
     std::shared_ptr<ClusterState> gState = std::make_shared<tendisplus::ClusterState>(_svr);
     installClusterState(gState);
 
+    // TODO(vinchen): lastvoteepoch
     auto vs = catalog->getAllClusterMeta();
     if (!vs.ok()) {
         LOG(ERROR) << "getAllClusterMeta error";
@@ -2455,124 +3220,168 @@ void ClusterState::cronPingSomeNodes() {
 }
 
 void ClusterState::cronCheckFailState() {
-    // TODO(wayenchen)
-//    uint32_t orphaned_masters = 0;
-//    uint32_t max_slaves = 0;
-//    uint32_t this_slaves = 0;
+    uint32_t orphaned_masters = 0;
+    uint32_t max_slaves = 0;
+    uint32_t this_slaves = 0;
+    bool updateState = false;
+    auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
 
-    std::unordered_map<std::string, CNodePtr>::iterator iter;
-    std::vector<CNodePtr> vec;
-    auto cluster_node_timeout = _server->getParams()->clusterNodeTimeout;
-
-    uint16_t update_state = 0;
-    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-        CNodePtr node = iter->second;
-        mstime_t now = msSinceEpoch(); /* Use an updated time at every iteration. */
+    /* Iterate nodes to check if we need to flag something as failing.
+     * This loop is also responsible to:
+     * 1) Check if there are orphaned masters (masters without non failing
+     *    slaves).
+     * 2) Count the max number of non failing slaves for a single master.
+     * 3) Count the number of slaves for our master, if we are a slave. */
+    for (const auto& nodep : _nodes) {
+        const auto& node = nodep.second;
+        auto now = msSinceEpoch(); /* Use an updated time at every iteration. */
         mstime_t delay;
-
-        auto sess = node->getSession();
 
         if (node->getFlags() &
             (CLUSTER_NODE_MYSELF | CLUSTER_NODE_NOADDR | CLUSTER_NODE_HANDSHAKE))
             continue;
 
+        /* Orphaned master check, useful only if the current instance
+         * is a slave that may migrate to another master. */
+        if (_myself->nodeIsSlave() && node->nodeIsMaster() && !node->nodeFailed()) {
+            uint32_t okslaves = clusterCountNonFailingSlaves(node);
+
+            /* A master is orphaned if it is serving a non-zero number of
+             * slots, have no working slaves, but used to have at least one
+             * slave, or failed over a master that used to have slaves. */
+            if (okslaves == 0 && node->getSlotNum() > 0 &&
+                node->getFlags() & CLUSTER_NODE_MIGRATE_TO) {
+                orphaned_masters++;
+            }
+            if (okslaves > max_slaves)
+                max_slaves = okslaves;
+
+            if (_myself->nodeIsSlave() && _myself->getMaster() == node)
+                this_slaves = okslaves;
+        }
+
         /* If we are waiting for the PONG more than half the cluster
-        * timeout, reconnect the link: maybe there is a connection
-        * issue even if the node is alive. */
+         * timeout, reconnect the link: maybe there is a connection
+         * issue even if the node is alive. */
         if (node->getSession() && /* is connected */
-            (node->getSession()->getCtime() > cluster_node_timeout) && /* was not already reconnected */
-            node->_pingSent && /* we already sent a ping */
+            now - node->getSession()->getCtime() >
+            nodeTimeout&& /* was not already reconnected */
+            node->_pingSent&& /* we already sent a ping */
             node->_pongReceived < node->_pingSent && /* still waiting pong */
             /* and we are waiting for the pong more than timeout/2 */
-            now - node->_pingSent > cluster_node_timeout / 2) {
-
+            now - node->_pingSent > nodeTimeout / 2) {
             /* Disconnect the link, it will be reconnected automatically. */
             node->freeClusterSession();
         }
 
         /* If we have currently no active ping in this instance, and the
-        * received PONG is older than half the cluster timeout, send
-        * a new ping now, to ensure all the nodes are pinged without
-        * a too big delay. */
+         * received PONG is older than half the cluster timeout, send
+         * a new ping now, to ensure all the nodes are pinged without
+         * a too big delay. */
         if (node->getSession() &&
             node->_pingSent == 0 &&
-            (now - node->_pongReceived) > cluster_node_timeout / 2) {
-            clusterSendPing(sess, ClusterMsg::Type::PING);
+            (now - node->_pongReceived) > nodeTimeout / 2) {
+            clusterSendPing(node->getSession(), ClusterMsg::Type::PING);
             continue;
         }
+
         /* If we are a master and one of the slaves requested a manual
-      * failover, ping it continuously. */
-        if (_mfEnd && _myself->nodeIsMaster() &&
-            _mfSlave == node && node->getSession()) {
-            clusterSendPing(sess, ClusterMsg::Type::PING);
+         * failover, ping it continuously. */
+         // TODO(vinchen) : _mfend
+        if (_mfEnd &&
+            _myself->nodeIsMaster() &&
+            _mfSlave == node &&
+            node->getSession()) {
+            clusterSendPing(node->getSession(), ClusterMsg::Type::PING);
             continue;
         }
 
         /* Check only if we have an active ping for this instance. */
-        if (node->_pingSent == 0) continue;
+        if (node->_pingSent == 0)
+            continue;
+
+        /* Compute the delay of the PONG. Note that if we already received
+         * the PONG, then node->ping_sent is zero, so can't reach this
+         * code at all. */
         delay = now - node->_pingSent;
 
-        if (delay > cluster_node_timeout) {
+        if (delay > nodeTimeout) {
             /* Timeout reached. Set the node as possibly failing if it is
              * not already in this state. */
             if (!(node->getFlags() & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL))) {
-                        serverLog(LL_DEBUG, "*** NODE %.40s possibly failing",
-                                  node->getNodeName().c_str());
+                serverLog(LL_DEBUG, "*** NODE %.40s possibly failing",
+                    node->getNodeName().c_str());
                 node->_flags |= CLUSTER_NODE_PFAIL;
-                update_state = 1;
+                updateState = true;
             }
         }
     }
-    /* Abourt a manual failover if the timeout is reached. */
-    //manualFailoverCheckTimeout();
-    // if (nodeIsSlave(myself)) {
-    //   clusterHandleManualFailover();
-    //   clusterHandleSlaveFailover();
-    // if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
-    //   clusterHandleSlaveMigration(max_slaves);
-    // }
-    if (update_state || getClusterState() == ClusterHealth::CLUSTER_FAIL)
-        clusterUpdateState();
 
-}
-
-
-void ClusterState::clusterUpdateState() {
-   std::lock_guard<myMutex> lock(_mutex);
-   uint32_t  reachable_masters = 0;
-   ClusterHealth new_state;
-   static mstime_t among_minority_time;
-   static mstime_t first_call_time = 0;
-
-  /* If this is a master node, wait some time before turning the state
- * into OK, since it is not a good idea to rejoin the cluster as a writable
- * master, after a reboot, without giving the cluster a chance to
- * reconfigure this node. Note that the delay is calculated starting from
- * the first call to this function and not since the server start, in order
- * to don't count the DB loading time. */
-    if (first_call_time == 0) first_call_time = msSinceEpoch();
-    if ( _myself->nodeIsMaster() &&
-         _state == ClusterHealth::CLUSTER_FAIL &&
-         msSinceEpoch()- first_call_time < CLUSTER_WRITABLE_DELAY) {
-         return;
+    /* If we are a slave node but the replication is still turned off,
+     * enable it if we know the address of our master and it appears to
+     * be up. */
+    if (_myself->nodeIsSlave() &&
+        _server->getReplManager()->getMasterHost() == "" &&
+        _myself->getMaster() &&
+        _myself->getMaster()->nodeHasAddr()) {
+        _server->getReplManager()->replicationSetMaster(
+            _myself->getMaster()->getNodeIp(),
+            _myself->getMaster()->getPort());
     }
 
-    /* Start assuming the state is OK. We'll turn it into FAIL if there
+    /* Abort a manual failover if the timeout is reached. */
+    manualFailoverCheckTimeout();
+
+    if (_myself->nodeIsSlave()) {
+        clusterHandleManualFailover();
+        // TODO(vinchen)
+        clusterHandleSlaveFailover();
+        /* If there are orphaned slaves, and we are a slave among the masters
+        * with the max number of non-failing slaves, consider migrating to
+        * the orphaned masters. Note that it does not make sense to try
+        * a migration if there is no master with at least *two* working
+        * slaves. */
+        if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
+            clusterHandleSlaveMigration(max_slaves);
+    }
+
+    if (updateState || _state == ClusterHealth::CLUSTER_FAIL)
+        clusterUpdateState();
+}
+
+void ClusterState::clusterUpdateState() {
+	std::lock_guard<myMutex> lock(_mutex);
+	uint32_t  reachable_masters = 0;
+	ClusterHealth new_state;
+
+	/* If this is a master node, wait some time before turning the state
+     * into OK, since it is not a good idea to rejoin the cluster as a writable
+     * master, after a reboot, without giving the cluster a chance to
+     * reconfigure this node. Note that the delay is calculated starting from
+     * the first call to this function and not since the server start, in order
+     * to don't count the DB loading time. */
+	if (_updateStateCallTime == 0)
+        _updateStateCallTime = msSinceEpoch();
+	if (_myself->nodeIsMaster() &&
+		_state == ClusterHealth::CLUSTER_FAIL &&
+		msSinceEpoch() - _updateStateCallTime < CLUSTER_WRITABLE_DELAY) {
+		return;
+	}
+
+	/* Start assuming the state is OK. We'll turn it into FAIL if there
      * are the right conditions. */
     new_state = ClusterHealth::CLUSTER_OK;
 
-    for(size_t j = 0 ; j < CLUSTER_SLOTS ; j++) {
-        if (_allSlots[j] == nullptr ||
-            _allSlots[j]->getFlags() & (CLUSTER_NODE_FAIL))
-        {
-            LOG(WARNING) << "cluster state fail of slot";
-            new_state = ClusterHealth::CLUSTER_FAIL;
-            break;
+    if (_server->getParams()->clusterRequireFullCoverage) {
+        for (size_t j = 0; j < CLUSTER_SLOTS; j++) {
+            if (_allSlots[j] == nullptr ||
+                _allSlots[j]->getFlags() & (CLUSTER_NODE_FAIL)) {
+                LOG(WARNING) << "cluster state fail of slot";
+                new_state = ClusterHealth::CLUSTER_FAIL;
+                break;
+            }
         }
     }
-    std::unordered_map<std::string, CNodePtr>::iterator iter;
-    std::stringstream ss;
-    std::vector<CNodePtr> vec;
 
     /* Compute the cluster size, that is the numbe r of master nodes
       * serving at least a single slot.
@@ -2580,10 +3389,10 @@ void ClusterState::clusterUpdateState() {
       * At the same time count the number of reachable masters having
       * at least one slot. */
     _size = 0;
-    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-        CNodePtr node = iter->second;
-        if (node->nodeIsMaster() && node->_numSlots ) {
-            _size ++;
+    for (const auto& nodep : _nodes) {
+        const auto& node = nodep.second;
+        if (node->nodeIsMaster() && node->getSlotNum()) {
+            _size++;
             if ((node->getFlags() & (CLUSTER_NODE_FAIL|CLUSTER_NODE_PFAIL)) == 0) {
                 reachable_masters ++;
             }
@@ -2594,7 +3403,7 @@ void ClusterState::clusterUpdateState() {
        * to FAIL. */
     if ( reachable_masters < needed_quorum ) {
         new_state = ClusterHealth::CLUSTER_FAIL;
-        among_minority_time =  msSinceEpoch();
+        _amongMinorityTime =  msSinceEpoch();
     }
     /* Log a state change */
     if (new_state != _state) {
@@ -2611,8 +3420,7 @@ void ClusterState::clusterUpdateState() {
 
         if (new_state == ClusterHealth::CLUSTER_OK &&
             _myself->nodeIsMaster() &&
-            msSinceEpoch() - among_minority_time < rejoin_delay)
-        {
+            msSinceEpoch() - _amongMinorityTime < rejoin_delay) {
             return;
         }
 
@@ -2621,13 +3429,12 @@ void ClusterState::clusterUpdateState() {
                           new_state == ClusterHealth::CLUSTER_OK ? "ok" : "fail");
         _state = new_state;
     }
-
 }
-
 
 void ClusterManager::controlRoutine() {
     uint64_t iteration = 0;
     while (_isRunning.load(std::memory_order_relaxed)) {
+        bool updateState = false;
 
         /* Update myself flags. */
 
@@ -2644,44 +3451,7 @@ void ClusterManager::controlRoutine() {
             _clusterState->cronPingSomeNodes();
         }
 
-        /* Iterate nodes to check if we need to flag something as failing.
-        * This loop is also responsible to:
-        * 1) Check if there are orphaned masters (masters without non failing
-        *    slaves).
-        * 2) Count the max number of non failing slaves for a single master.
-        * 3) Count the number of slaves for our master, if we are a slave. */
         _clusterState->cronCheckFailState();
-
-        /* If we are a slave node but the replication is still turned off,
-        * enable it if we know the address of our master and it appears to
-        * be up. */
-        //if (nodeIsSlave(myself) &&
-        //    server.masterhost == NULL &&
-        //    myself->slaveof &&
-        //    nodeHasAddr(myself->slaveof))
-        //{
-        //    replicationSetMaster(myself->slaveof->ip, myself->slaveof->port);
-        //}
-
-        /* Abourt a manual failover if the timeout is reached. */
-        //manualFailoverCheckTimeout();
-
-        //if (nodeIsSlave(myself)) {
-        //    clusterHandleManualFailover();
-        //    clusterHandleSlaveFailover();
-        //    /* If there are orphaned slaves, and we are a slave among the masters
-        //    * with the max number of non-failing slaves, consider migrating to
-        //    * the orphaned masters. Note that it does not make sense to try
-        //    * a migration if there is no master with at least *two* working
-        //    * slaves. */
-        //    if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
-        //        clusterHandleSlaveMigration(max_slaves);
-        //}
-
-        //if (update_state || server.cluster->state == CLUSTER_FAIL)
-        //    clusterUpdateState();
-
-        // done
 
         std::this_thread::sleep_for(100ms);
     }
@@ -2708,7 +3478,6 @@ Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(s
     }
     INVARIANT_D(sess.value()->getType() == Session::Type::CLUSTER);
     sess.value()->setNode(node);
-    sess.value()->setCtime(msSinceEpoch());
     return sess.value();
 }
 
@@ -2974,7 +3743,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         // FIXME: 
         /* If we are a slave performing a manual failover and our master
         * sent its offset while already paused, populate the MF state. */
-        if (hdr->_mflags[0] & CLUSTERMSG_FLAG0_PAUSED &&
+        if (msg.getMflags() & CLUSTERMSG_FLAG0_PAUSED &&
             setMfMasterOffsetIfNecessary(sender)) {
             serverLog(LL_WARNING,
                 "Received replication offset for paused "
@@ -3322,23 +4091,24 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         //    decrRefCount(message);
         //}
     } else if (type == ClusterMsg::Type::FAILOVER_AUTH_REQUEST) {
-        INVARIANT_D(0);
-        //if (!sender) return 1;  /* We don't know that node. */
-        //clusterSendFailoverAuthIfNeeded(sender, hdr);
+        if (!sender)
+            return { ErrorCodes::ERR_OK, "" }; /* We don't know that node. */
+        clusterSendFailoverAuthIfNeeded(sender, msg);
     } else if (type == ClusterMsg::Type::FAILOVER_AUTH_ACK) {
-        INVARIANT_D(0);
-        //if (!sender) return 1;  /* We don't know that node. */
-        //                        /* We consider this vote only if the sender is a master serving
-        //                        * a non zero number of slots, and its currentEpoch is greater or
-        //                        * equal to epoch where this node started the election. */
-        //if (nodeIsMaster(sender) && sender->numslots > 0 &&
-        //    senderCurrentEpoch >= server.cluster->failover_auth_epoch)
-        //{
-        //    server.cluster->failover_auth_count++;
-        //    /* Maybe we reached a quorum here, set a flag to make sure
-        //    * we check ASAP. */
-        //    clusterDoBeforeSleep(CLUSTER_TODO_HANDLE_FAILOVER);
-        //}
+        if (!sender)
+            return { ErrorCodes::ERR_OK, "" };  /* We don't know that node. */
+        /* We consider this vote only if the sender is a master serving
+	     * a non zero number of slots, and its currentEpoch is greater or
+         * equal to epoch where this node started the election. */
+		if (sender->nodeIsMaster() && sender->getSlotNum() > 0 &&
+			senderCurrentEpoch >= _failoverAuthEpoch)
+        {
+            _failoverAuthCount++;
+            /* Maybe we reached a quorum here, set a flag to make sure
+            * we check ASAP. */
+            //clusterDoBeforeSleep(CLUSTER_TODO_HANDLE_FAILOVER);
+			clusterHandleSlaveFailover();
+        }
     } else if (type == ClusterMsg::Type::MFSTART) {
         INVARIANT_D(0);
         /* This message is acceptable only if I'm a master and the sender
@@ -3420,9 +4190,7 @@ Status ClusterSession::clusterProcessPacket() {
         return{ ErrorCodes::ERR_DECODE, "invalid message len" };
     }
 
-
     return _server->getClusterMgr()->getClusterState()->clusterProcessPacket(shared_from_this(), msg);
-
 }
 
 Status ClusterSession::clusterReadHandler() {
@@ -3444,9 +4212,6 @@ Status ClusterState::clusterSendUpdate(std::shared_ptr<ClusterSession> sess, CNo
 
 void ClusterSession::setNode(const CNodePtr& node) {
     _node = node;
-}
-void ClusterSession::setCtime(const mstime_t& ctime) {
-    _ctime = ctime;
 }
 
 std::string ClusterSession::nodeIp2String(const std::string& announcedIp) const {

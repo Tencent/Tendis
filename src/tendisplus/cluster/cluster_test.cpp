@@ -141,7 +141,7 @@ TEST(ClusterMsg, Common) {
         auto msgGossipPtr = std::make_shared<ClusterMsgDataGossip>
                     (std::move(GossipMsg));
 
-        ClusterMsg gMsg(sig, totlen, type1, headGossip, msgGossipPtr);
+        ClusterMsg gMsg(sig, totlen, type1, CLUSTERMSG_FLAG0_PAUSED, headGossip, msgGossipPtr);
 
         std::string gbuff = gMsg.msgEncode();
         uint32_t msgSize = gMsg.getTotlen();
@@ -157,6 +157,7 @@ TEST(ClusterMsg, Common) {
         EXPECT_EQ(sender, decodegHeader->_sender);
         EXPECT_EQ(port, decodegHeader->_port);
         EXPECT_EQ(type1, decodegMsg.getType());
+        EXPECT_EQ(CLUSTERMSG_FLAG0_PAUSED, gMsg.getMflags());
         EXPECT_EQ(slots, decodegHeader->_slots);
         EXPECT_EQ(slaveof, decodegHeader->_slaveOf);
 
@@ -227,7 +228,7 @@ TEST(ClusterMsg, CommonMoreGossip) {
     auto msgGossipPtr = std::make_shared<ClusterMsgDataGossip>
         (std::move(GossipMsg));
 
-    ClusterMsg gMsg(sig, totlen, type1, headGossip, msgGossipPtr);
+    ClusterMsg gMsg(sig, totlen, type1, CLUSTERMSG_FLAG0_PAUSED, headGossip, msgGossipPtr);
 
     std::string gbuff = gMsg.msgEncode();
     uint32_t msgSize = gMsg.getTotlen();
@@ -243,6 +244,7 @@ TEST(ClusterMsg, CommonMoreGossip) {
     EXPECT_EQ(sender, decodegHeader->_sender);
     EXPECT_EQ(port, decodegHeader->_port);
     EXPECT_EQ(type1, decodegMsg.getType());
+    EXPECT_EQ(CLUSTERMSG_FLAG0_PAUSED, decodegMsg.getMflags());
     EXPECT_EQ(slots, decodegHeader->_slots);
     EXPECT_EQ(slaveof, decodegHeader->_slaveOf);
 
@@ -302,7 +304,7 @@ TEST(ClusterMsg, CommonUpdate) {
 
         std::shared_ptr<ClusterMsgData> msgDataPtr(msgUpdatePtr);
 
-        ClusterMsg uMsg(sig, totlen, type2, headUpdate, msgUpdatePtr);
+        ClusterMsg uMsg(sig, totlen, type2, CLUSTERMSG_FLAG0_PAUSED, headUpdate, msgUpdatePtr);
 
         std::string buff = uMsg.msgEncode();
 
@@ -317,6 +319,7 @@ TEST(ClusterMsg, CommonUpdate) {
         EXPECT_EQ(sender, decodeHeader->_sender);
         EXPECT_EQ(port, decodeHeader->_port);
         EXPECT_EQ(type2, decodeuMsg.getType());
+        EXPECT_EQ(CLUSTERMSG_FLAG0_PAUSED, decodeuMsg.getMflags());
         EXPECT_EQ(slots, decodeHeader->_slots);
         EXPECT_EQ(slaveof, decodeHeader->_slaveOf);
 

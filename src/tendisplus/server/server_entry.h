@@ -254,7 +254,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
-    // TODO: finish it
+    // TODO(takenliu): finish it
     uint32_t getStoreid(uint32_t chunkid) {
         auto storeSize = getKVStoreCount();
         if (storeSize == 1) {
