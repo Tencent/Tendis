@@ -158,6 +158,8 @@ class ReplManager {
             uint32_t storeId, const string& slave_listen_ip, uint16_t slave_listen_port);
     bool isFullSupplierFull() const;
 
+	std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
+		uint64_t timeoutMs = 1000);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 

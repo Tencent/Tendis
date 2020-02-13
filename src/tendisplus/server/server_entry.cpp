@@ -299,7 +299,7 @@ void ServerEntry::logGeneral(Session *sess) {
 //judge store key in slot
 bool  ServerEntry::emptySlot(uint32_t slot) {
     auto storeId = getStoreid(slot);
-    LocalSessionGuard g(shared_from_this());
+    LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
@@ -326,7 +326,7 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
 
 uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
     auto storeId = getStoreid(slot);
-    LocalSessionGuard g(shared_from_this());
+    LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {

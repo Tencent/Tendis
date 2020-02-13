@@ -60,8 +60,6 @@ void CopyUint(std::vector<uint8_t> *buf, T element) {
     }
 }
 
-std::string slotPrefix(uint32_t chunkid) ;
-
 template <size_t size>
 std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
         // TODO(wayenche)

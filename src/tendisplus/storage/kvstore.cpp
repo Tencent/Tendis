@@ -293,7 +293,12 @@ Expected<TTLIndex> TTLIndexCursor::next() {
 SlotCursor::SlotCursor(std::unique_ptr<Cursor> cursor,
     uint32_t slot)
   : _slot(slot), _baseCursor(std::move(cursor)) {
-    _baseCursor->seek(slotPrefix(slot));
+	RecordKey tmplRk(slot,
+		0,
+		RecordType::RT_DATA_META,
+		"", "");
+	auto prefix = tmplRk.prefixSlotType();
+	_baseCursor->seek(prefix);
 }
 
 Expected<Record> SlotCursor::next() {
@@ -304,7 +309,7 @@ Expected<Record> SlotCursor::next() {
             rk.getChunkId() != _slot) {
             return {ErrorCodes::ERR_EXHAUST, "no more primary key"};
         }
-        return expRcd;
+        return expRcd.value();
     } else {
         return expRcd.status();
     }

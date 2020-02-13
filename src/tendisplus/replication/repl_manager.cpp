@@ -429,6 +429,7 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
         } else {
             LOG(ERROR) << "ReplManager::restart failed, storeid:" << storeId;
             return {ErrorCodes::ERR_INTERGER, "getMinBinlog failed."};
+
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -598,7 +599,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();
     });
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
 
     auto segMgr = _svr->getSegmentMgr();
     INVARIANT(segMgr != nullptr);

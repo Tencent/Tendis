@@ -381,7 +381,7 @@ private:
             if (!expdb.value().store->isOpen()) {
                 continue;
             }
-            Status s = replMgr->changeReplSource(i, ip, port, i);
+            Status s = replMgr->changeReplSource(sess, i, ip, port, i);
             if (!s.ok()) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "replicate kvstore fail"};
