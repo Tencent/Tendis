@@ -98,7 +98,7 @@ enum class ClusterHealth: std::uint8_t {
 
 #define CLUSTER_IP_LENGTH  46
 #define CLUSTER_NAME_LENGTH  40
-
+#define CLUSTER_BLACKLIST_TTL 60
 
 using  mstime_t = uint64_t;
 
@@ -149,6 +149,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     uint16_t getFlags() const { return _flags; }
     uint16_t getSlotNum() const { return  _numSlots; }
+    uint16_t getSlaveNum() const { return _numSlaves; }
+
     bool addFailureReport(std::shared_ptr<ClusterNode> sender);
     bool delFailureReport(std::shared_ptr<ClusterNode> sender);
     uint32_t getNonFailingSlavesCount() const;
@@ -208,6 +210,7 @@ protected:
     std::shared_ptr<BlockingTcpClient> _nodeClient;  /* try connect to the _node */
     void cleanupFailureReportsNoLock();
     std::bitset<CLUSTER_SLOTS> _mySlots;
+    uint16_t _numSlaves;
 
 // TODO(wayenchen): make it private
  public:
@@ -227,7 +230,6 @@ protected:
     // FIXME: there is no offset in tendis
     uint64_t _replOffset;  /* Last known repl offset for this node. */
     std::list<std::shared_ptr<ClusterNode>> _failReport;
-
 
     };
 
@@ -445,6 +447,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint64_t getCurrentEpoch() const { return _currentEpoch;}
     // set epoch
     void setCurrentEpoch(uint64_t epoch);
+    void setLastVoteEpoch(uint64_t epoch);
     // get myself
     CNodePtr  getMyselfNode() const { return _myself;}
     std::string getMyselfName() const { return _myself->getNodeName();}
@@ -461,7 +464,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool clusterNodeAddSlave(CNodePtr master, CNodePtr slave);
 
     void clusterBlacklistAddNode(CNodePtr node);
-    bool clusterBlacklistExists(const std::string& nodeid) const;
+    bool clusterBlacklistExists(const std::string& nodeid);
 
     CNodePtr getRandomNode() const;
     CNodePtr clusterLookupNode(const std::string& name);
@@ -507,7 +510,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool clusterHandshakeInProgress(const std::string& host, uint32_t port, uint32_t cport);
     Status clusterBumpConfigEpochWithoutConsensus();
 
-
+  //  Status clusterReset(uint16_t hard);
     void clusterUpdateMyselfFlags();
     void cronRestoreSessionIfNeeded();
     void cronPingSomeNodes();
@@ -518,6 +521,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
     void clusterUpdateState();
     bool isContainSlot(uint32_t slotId);
+
+    Status clusterSaveConfig();
     // TODO(wayenchen)
     // Status clusterReadMeta();
     // Status clusterDelNodeSlots(CNodePtr n);
@@ -528,6 +533,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     mutable myMutex _mutex;
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
+    uint64_t _lastVoteEpoch;     /* Epoch of the last vote granted. */
     std::shared_ptr<ServerEntry> _server;
     Status clusterSaveNodesNoLock();
     void clusterAddNodeNoLock(CNodePtr node);
@@ -542,7 +548,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     ClusterHealth _state;
     uint16_t _size;
     std::unordered_map<std::string, CNodePtr> _nodes;
-    std::unordered_map<std::string, CNodePtr> _nodesBackList;
+  //  std::unordered_map<std::string, CNodePtr> _nodesBackList;
+    std::unordered_map<std::string, uint64_t> _nodesBlackList;
     std::array<CNodePtr, CLUSTER_SLOTS> _migratingSlots;
     std::array<CNodePtr, CLUSTER_SLOTS> _importingSlots;
     std::array<CNodePtr, CLUSTER_SLOTS> _allSlots;
@@ -567,7 +574,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t _mfCanStart;       /* If non-zero signal that the manual failover
                                 can start requesting masters vote. */
                                 /* The followign fields are used by masters to take state on elections. */
-    uint64_t _lastVoteEpoch;     /* Epoch of the last vote granted. */
     uint8_t _todoBeforeSleep; /* Things to do in clusterBeforeSleep(). */
     /* Messages received and sent by type. */
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
@@ -654,6 +660,7 @@ class ClusterManager {
     std::shared_ptr<ClusterState> getClusterState() const;
     // Status run();
     bool isRunning() const;
+    Status clusterReset(uint16_t hard);
  protected:
     void controlRoutine();
 

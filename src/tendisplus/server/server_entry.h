@@ -301,8 +301,13 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status deleteChunk(uint32_t chunkid) {
         return {ErrorCodes::ERR_OK, ""};
     }
+
+    std::vector<Record> getKeyList(uint32_t  slot);
     bool emptySlot(uint32_t slot) ;
     uint64_t countKeysInSlot(uint32_t slot);
+
+    std::vector<std::string> getKeyBySlot(uint32_t  slot, uint32_t count);
+    Status delKeysInSlot(uint32_t slot);
 
     bool isClusterEnabled() const { return _enableCluster; }
     void updateClusterFromMeta();

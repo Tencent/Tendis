@@ -324,32 +324,91 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
     return true;
 }
 
-uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
+std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
     auto storeId = getStoreid(slot);
     LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
+
+    std::vector<Record> keysList;
     if (!expdb.ok()) {
         LOG(ERROR) << "get db error";
-        return 0;
+        return keysList;
     }
     auto kvstore = std::move(expdb.value().store);
     auto ptxn = kvstore->createTransaction(NULL);
     auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
 
-    uint64_t keyNum = 0;
     while (true) {
         Expected<Record> expRcd = slotCursor->next();
         if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
             break;
         }
         if (!expRcd.ok()) {
-            LOG(ERROR) << "get slot cursor errror:" << expRcd.status().toString();
+            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
             break;
         }
-        keyNum++;
+        keysList.push_back(expRcd.value());
     }
-    return keyNum;
+    return keysList;
+}
+
+
+uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
+    std::vector<Record> records = getKeyList(slot);
+    return  records.size();
+}
+
+std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t count) {
+    auto storeId = getStoreid(slot);
+    LocalSessionGuard g(this);
+    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
+                                    mgl::LockMode::LOCK_IS);
+    std::vector<std::string> keysList;
+
+    if (!expdb.ok()) {
+        LOG(ERROR) << "get db error";
+        return keysList;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(NULL);
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+
+    uint32_t n = 0;
+    while (true) {
+        Expected<Record> expRcd = slotCursor->next();
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "search slot error:" << expRcd.status().toString();
+            break;
+        }
+        std::string keyname = expRcd.value().getRecordKey().getPrimaryKey();
+        keysList.push_back(keyname);
+        n++;
+        if (n >= count)
+            break;
+    }
+    return keysList;
+}
+
+ Status ServerEntry::delKeysInSlot(uint32_t slot) {
+    auto storeId = getStoreid(slot);
+    LocalSessionGuard g(this);
+    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
+                                    mgl::LockMode::LOCK_IS);
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(NULL);
+
+    std::vector<Record> list = getKeyList(slot);
+
+    for(auto &v: list) {
+        RecordKey key = v.getRecordKey();
+        Status s = kvstore->delKV(key, ptxn.value().get());
+        if(!s.ok()) {
+            return s;
+        }
+    }
+    return  {ErrorCodes::ERR_OK, "finish delte keys in slot"};
+
 }
 
 void ServerEntry::logWarning(const std::string& str, Session* sess) {

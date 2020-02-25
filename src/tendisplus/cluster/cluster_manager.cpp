@@ -75,6 +75,7 @@ ClusterNode::ClusterNode(const std::string& nodeName,
      _nodeCport(cport),
      _nodeSession(nullptr),
      _nodeClient(nullptr),
+     _numSlaves(0),
      _ctime(msSinceEpoch()),
      _flags(flags),
  //    _mySlots(slots_),
@@ -186,9 +187,8 @@ std::string ClusterNode::clusterGenNodeDescription() {
     std::string flags = representClusterNodeFlags(_flags);
 
     std::string slotStr = bitsetStrEncode(slots);
-
     slotStr.erase(slotStr.end()-1);
-    LOG(INFO) << "slot Str :" << slotStr;
+
     std::stringstream stream;
 
     ConnectState connectState = getConnectState();
@@ -333,6 +333,7 @@ bool ClusterNode::addSlave(std::shared_ptr<ClusterNode> slave) {
 
     _slaves.emplace_back(std::move(slave));
     _flags |= CLUSTER_NODE_MIGRATE_TO;
+    _numSlaves++;
     return true;
 }
 
@@ -579,6 +580,7 @@ void ClusterNode::freeClusterSession() {
 ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     :_myself(nullptr),
      _currentEpoch(0),
+     _lastVoteEpoch(0),
      _server(server),
      _state(ClusterHealth::CLUSTER_FAIL),
      _size(0),
@@ -595,7 +597,6 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
      _mfSlave(nullptr),
      _mfMasterOffset(0),
      _mfCanStart(0),
-     _lastVoteEpoch(0),
      _todoBeforeSleep(0),
      _statsPfailNodes(0) {
         _slotsKeysCount.fill(0);
@@ -704,7 +705,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
                 if (_allSlots[j] == myself &&
                     !_server->emptySlot(j) &&
                     sender != myself ) {
-                //to do wayen countKeysInSlot(j)
                     dirty_slots[dirty_slots_count] = j;
                     dirty_slots_count++;
                 }
@@ -721,11 +721,12 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
     if (newmaster && curmaster->getSlotNum() == 0) {
         LOG(WARNING) << " Configuration change detected. Reconfiguring myself :"
             << sender->getNodeName();
-        myself->setMaster(newmaster);
+        clusterSetMaster(newmaster);
+
     }   else if (dirty_slots_count) {
         // to do wayen
-        // for (j = 0; j < dirty_slots_count; j++)
-        //  delKeysInSlot(dirty_slots[j]);
+        for (uint32_t  j = 0; j < dirty_slots_count; j++)
+            _server->delKeysInSlot(dirty_slots[j]);
     }
 
 }
@@ -756,6 +757,11 @@ void ClusterState::clusterHandleConfigEpochCollision(CNodePtr sender) {
 void ClusterState::setCurrentEpoch(uint64_t epoch) {
     std::lock_guard<myMutex> lk(_mutex);
     _currentEpoch = epoch;
+}
+
+void ClusterState::setLastVoteEpoch(uint64_t epoch) {
+    std::lock_guard<myMutex> lk(_mutex);
+    _lastVoteEpoch = epoch;
 }
 
 Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
@@ -893,6 +899,12 @@ void ClusterState::clusterSaveNodes() {
     }
 }
 
+Status ClusterState::clusterSaveConfig() {
+    std::lock_guard<myMutex> lk(_mutex);
+    Status s =  clusterSaveNodesNoLock();
+    return  s;
+}
+
 bool ClusterState::clusterSetNodeAsMaster(CNodePtr node) {
     std::lock_guard<myMutex> lk(_mutex);
     if (node->nodeIsMaster()) {
@@ -930,9 +942,10 @@ void ClusterState::clusterSetMaster(CNodePtr node) {
             clusterNodeRemoveSlave(_myself->_slaveOf, _myself);
         }
     }
+    _myself->setMaster(node);
     clusterNodeAddSlave(node, _myself);
-}
 
+}
 
 bool ClusterState::clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave) {
     std::lock_guard<myMutex> lk(_mutex);
@@ -947,16 +960,39 @@ bool ClusterState::clusterNodeAddSlave(CNodePtr master, CNodePtr slave) {
 
 void ClusterState::clusterBlacklistAddNode(CNodePtr node) {
     std::lock_guard<myMutex> lk(_mutex);
-    INVARIANT_D(0);
+
+    std::string id = node->getNodeName();
+    clusterBlacklistCleanupNoLock();
+    //_nodesBackList.insert(std::make_pair(id, nullptr));
+
+    auto iter = _nodesBlackList.find (id) ;
+    if (iter != _nodesBlackList.end()) {
+        _nodesBlackList.insert(std::make_pair(id,sinceEpoch()+CLUSTER_BLACKLIST_TTL));
+    } else {
+        _nodesBlackList[id] = sinceEpoch()+CLUSTER_BLACKLIST_TTL;
+    }
+
 }
 
 void ClusterState::clusterBlacklistCleanupNoLock() {
-    INVARIANT_D(0);
+
+    for (const auto &v: _nodesBlackList) {
+        std::string id = v.first;
+        uint64_t  expire = v.second;
+
+        if (expire < sinceEpoch()) {
+            auto iter = _nodesBlackList.find(id);
+            if (iter != _nodesBlackList.end())
+                _nodesBlackList.erase(iter);
+        }
+    }
 }
 
-bool ClusterState::clusterBlacklistExists(const std::string& nodeid) const {
+bool ClusterState::clusterBlacklistExists(const std::string& nodeid)  {
     // TODO(wayenchen)
-    return false;
+    clusterBlacklistCleanupNoLock();
+    auto iter = _nodesBlackList.find (nodeid);
+    return iter != _nodesBlackList.end();
 }
 
 void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
@@ -974,24 +1010,17 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter) {
 
     std::unordered_map<std::string, CNodePtr>::iterator iter;
     std::stringstream ss;
-    size_t len = _nodes.size();
-    std::vector<CNodePtr> vec;
-    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-        CNodePtr node = iter->second;
+
+    for (const auto &v: _nodes) {
+        CNodePtr node = v.second;
         if (node->getFlags() & filter)  {
-            len--;
             continue;
         }
-        vec.push_back(node);
+        std::string nodeDescription = node->clusterGenNodeDescription();
+        ss << nodeDescription << "\r\n";
     }
 
-    Command::fmtMultiBulkLen(ss, vec.size());
-    for (auto &&vs : vec) {
-        std::string nodeDescription = vs->clusterGenNodeDescription();
-        Command::fmtBulk(ss, nodeDescription);
-    }
-    
-    return ss.str();
+    return Command::fmtBulk(ss.str());
 }
 
 std::string ClusterState::clusterGenStateDescription() {
@@ -1031,7 +1060,6 @@ std::string ClusterState::clusterGenStateDescription() {
     uint64_t totMsgReceived = 0;
 
     for (size_t i = 0; i < CLUSTERMSG_TYPE_COUNT; i++) {
-        LOG(INFO) <<"_statsMessagesSent[i]=:" << _statsMessagesSent[i];
         if (_statsMessagesSent[i] == 0) continue;
         totMsgSent += _statsMessagesSent[i];
         clusterInfo << "cluster_stats_messages_"
@@ -1048,7 +1076,6 @@ std::string ClusterState::clusterGenStateDescription() {
         << "_received:" << _statsMessagesReceived[i] << "\r\n";
     }
     clusterInfo << "cluster_stats_messages_received:" << totMsgSent << "\r\n";
-    clusterInfo << "\r\n";
 
     return  Command::fmtBulk(clusterInfo.str());
 }
@@ -1965,6 +1992,55 @@ bool ClusterManager::isRunning() const {
     return _isRunning.load(std::memory_order_relaxed);
 }
 
+Status ClusterManager::clusterReset(uint16_t hard) {
+    /* Turn into master. */
+    CNodePtr myself = _clusterState->getMyselfNode();
+    if(myself->nodeIsSlave()) {
+        _clusterState->clusterSetNodeAsMaster(myself);
+        auto replMgr = _svr->getReplManager();
+        LocalSessionGuard g(_svr.get());
+        for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+            Status s = replMgr->changeReplSource(g.getSession(), i, "", 0, 0);
+            if (!s.ok()) {
+                return s;
+            }
+        }
+    }
+    /* Close slots, reset manual failover state. */
+    _clusterState->clusterCloseAllSlots();
+    //resetManualFailover();
+    _clusterState->clusterDelNodeSlots(myself);
+
+    /* Forget all the nodes, but myself. */
+    for (const auto &v: _clusterState->_nodes) {
+        CNodePtr node = v.second;
+        if (node == myself) {
+            continue;
+        }
+        _clusterState->clusterDelNode(node, false);
+    }
+    auto nodeList = _clusterState->_nodes;
+    if(hard) {
+        _clusterState->setCurrentEpoch(0);
+        _clusterState->setLastVoteEpoch(0);
+        myself->setConfigEpoch(0);
+        serverLog(LL_WARNING, "configEpoch set to 0 via CLUSTER RESET HARD");
+        std::string name = myself->getNodeName();
+        auto iter = nodeList.find(name);
+        if (iter != nodeList.end()) {
+            iter = nodeList.erase(iter);
+        }
+        std::string newName = getUUid(20);
+      //  _clusterState->clusterRenameNode(myself, newName);
+        myself->setNodeName(newName);
+        _clusterState->clusterAddNode(myself);
+        serverLog(LL_NOTICE, "Node hard reset, now I'm %.40s", newName.c_str());
+    }
+    _clusterState->clusterSaveNodes();
+    _clusterState->clusterUpdateState();
+    return  {ErrorCodes::ERR_OK, "finish reset"};
+}
+
 void ClusterManager::stop() {
     LOG(WARNING) << "cluster manager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
@@ -2186,7 +2262,32 @@ void ClusterState::clusterUpdateMyselfFlags() {
         clusterSaveNodes();
     }
 }
+/*
+Status ClusterState::clusterReset(uint16_t hard) {
+    if(_myself->nodeIsSlave()) {
+        clusterSetNodeAsMaster(_myself);
 
+    }
+    clusterCloseAllSlots();
+    //resetManualFailover();
+    clusterDelNodeSlots(_myself);
+
+
+    for (const auto &v: _nodes) {
+        CNodePtr node = v.second;
+        if (node == _myself) {
+            continue;
+        }
+        clusterDelNode(node, false);
+    }
+
+    if(hard) {
+        setCurrentEpoch(0);
+        _lastVoteEpoch = 0;
+
+    }
+
+*/
 void ClusterState::cronRestoreSessionIfNeeded() {
     std::lock_guard<myMutex> lock(_mutex);
 
