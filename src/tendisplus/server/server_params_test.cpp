@@ -144,35 +144,35 @@ TEST(ServerParams, DynamicSet) {
 }
 
 TEST(ServerParams, RocksOption) {
-	std::ofstream myfile;
-	myfile.open("a.cfg");
-	myfile << "bind 127.0.0.1\n";
-	myfile << "port 8903\n";
-	myfile << "loglevel debug\n";
-	myfile << "logdir ./\n";
-	myfile << "rocks.disable_wal 1\n";
-	myfile << "rocks.wal_dir \"/Abc/dfg\"\n";
-	myfile << "rocks.compress_type LZ4\n";
-	myfile << "rocks.flush_log_at_trx_commit 1\n";
-	myfile << "rocks.blockcache_strict_capacity_limit 1\n";
-	myfile << "rocks.max_write_buffer_number 1\n";
-	myfile << "rocks.cache_index_and_filter_blocks 1\n";
-	myfile.close();
-	const auto guard = MakeGuard([] {
-		remove("a.cfg");
-		});
-	auto cfg = std::make_unique<ServerParams>();
-	auto s = cfg->parseFile("a.cfg");
-	EXPECT_EQ(s.ok(), true) << s.toString();
-	EXPECT_EQ(cfg->bindIp, "127.0.0.1");
-	EXPECT_EQ(cfg->port, 8903);
-	EXPECT_EQ(cfg->logLevel, "debug");
-	EXPECT_EQ(cfg->logDir, "./");
-	EXPECT_EQ(cfg->rocksDisalbeWAL, 1);
-	EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
-	EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
-	EXPECT_EQ(cfg->rocksCompressType, "lz4");
-	EXPECT_EQ(cfg->rocksWALDir, "/Abc/dfg");
+    std::ofstream myfile;
+    myfile.open("a.cfg");
+    myfile << "bind 127.0.0.1\n";
+    myfile << "port 8903\n";
+    myfile << "loglevel debug\n";
+    myfile << "logdir ./\n";
+    myfile << "rocks.disable_wal 1\n";
+    myfile << "rocks.wal_dir \"/Abc/dfg\"\n";
+    myfile << "rocks.compress_type LZ4\n";
+    myfile << "rocks.flush_log_at_trx_commit 1\n";
+    myfile << "rocks.blockcache_strict_capacity_limit 1\n";
+    myfile << "rocks.max_write_buffer_number 1\n";
+    myfile << "rocks.cache_index_and_filter_blocks 1\n";
+    myfile.close();
+    const auto guard = MakeGuard([] {
+        remove("a.cfg");
+        });
+    auto cfg = std::make_unique<ServerParams>();
+    auto s = cfg->parseFile("a.cfg");
+    EXPECT_EQ(s.ok(), true) << s.toString();
+    EXPECT_EQ(cfg->bindIp, "127.0.0.1");
+    EXPECT_EQ(cfg->port, 8903);
+    EXPECT_EQ(cfg->logLevel, "debug");
+    EXPECT_EQ(cfg->logDir, "./");
+    EXPECT_EQ(cfg->rocksDisalbeWAL, 1);
+    EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
+    EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
+    EXPECT_EQ(cfg->rocksCompressType, "lz4");
+    EXPECT_EQ(cfg->rocksWALDir, "/Abc/dfg");
     EXPECT_TRUE(cfg->getRocksdbOptions().find("max_write_buffer_number") != cfg->getRocksdbOptions().end());
     EXPECT_TRUE(cfg->getRocksdbOptions().find("cache_index_and_filter_blocks") != cfg->getRocksdbOptions().end());
     EXPECT_EQ(cfg->getRocksdbOptions().size(), 2);

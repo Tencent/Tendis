@@ -37,44 +37,43 @@ string gMappingCmdList = "";
 
 bool logLevelParamCheck(const string& val) {
     auto v = toLower(val);
-    if(v == "debug" || v == "verbose" || v == "notice" || v =="warning") {
+    if (v == "debug" || v == "verbose" || v == "notice" || v == "warning") {
         return true;
     }
     return false;
 };
 
 bool compressTypeParamCheck(const string& val) {
-	auto v = toLower(val);
-	if (v == "snappy" || v == "lz4" || v == "none") {
-		return true;
-	}
-	return false;
+    auto v = toLower(val);
+    if (v == "snappy" || v == "lz4" || v == "none") {
+        return true;
+    }
+    return false;
 };
 
 string removeQuotes(const string& v) {
-	if (v.size() < 2) {
-		return v;
-	}
+    if (v.size() < 2) {
+        return v;
+    }
 
-	auto tmp = v;
-	if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
-		tmp = tmp.substr(1, tmp.size() - 2);
-	}
-	return tmp;
+    auto tmp = v;
+    if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+        tmp = tmp.substr(1, tmp.size() - 2);
+    }
+    return tmp;
 }
 
 string  removeQuotesAndToLower(const string& v) {
-	auto tmp = toLower(v);
-	if (tmp.size() < 2) {
-		return tmp;
-	}
+    auto tmp = toLower(v);
+    if (tmp.size() < 2) {
+        return tmp;
+    }
 
-	if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
-		tmp = tmp.substr(1, tmp.size() - 2);
-	}
-	return tmp;
+    if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+        tmp = tmp.substr(1, tmp.size() - 2);
+    }
+    return tmp;
 }
-
 
 ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("bind", bindIp);

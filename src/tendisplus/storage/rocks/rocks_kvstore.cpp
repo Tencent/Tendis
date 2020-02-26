@@ -596,8 +596,8 @@ void RocksOptTxn::ensureTxn() {
         return;
     }
     rocksdb::WriteOptions writeOpts;
-	writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
-	writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
+    writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
+    writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
 
     rocksdb::OptimisticTransactionOptions txnOpts;
 
@@ -660,110 +660,110 @@ void RocksPesTxn::ensureTxn() {
 
 Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, int64_t value) {
     // AdvancedColumnFamilyOptions
-	if (key == "max_write_buffer_number") { options.max_write_buffer_number = (int)value; }
-	else if (key == "min_write_buffer_number_to_merge") { options.min_write_buffer_number_to_merge = (int)value; }
-	else if (key == "max_write_buffer_number_to_maintain") { options.max_write_buffer_number_to_maintain = (int)value; }
-	else if (key == "inplace_update_support") { options.inplace_update_support = (bool)value; }
-	else if (key == "inplace_update_num_locks") { options.inplace_update_num_locks = (size_t)value; }
-	//else if (key == "memtable_prefix_bloom_size_ratio") { options.memtable_prefix_bloom_size_ratio = (double)value; }
+    if (key == "max_write_buffer_number") { options.max_write_buffer_number = (int)value; }
+    else if (key == "min_write_buffer_number_to_merge") { options.min_write_buffer_number_to_merge = (int)value; }
+    else if (key == "max_write_buffer_number_to_maintain") { options.max_write_buffer_number_to_maintain = (int)value; }
+    else if (key == "inplace_update_support") { options.inplace_update_support = (bool)value; }
+    else if (key == "inplace_update_num_locks") { options.inplace_update_num_locks = (size_t)value; }
+    //else if (key == "memtable_prefix_bloom_size_ratio") { options.memtable_prefix_bloom_size_ratio = (double)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "memtable_whole_key_filtering") { options.memtable_whole_key_filtering = (bool)value; }
+    else if (key == "memtable_whole_key_filtering") { options.memtable_whole_key_filtering = (bool)value; }
 #endif
-	else if (key == "memtable_huge_page_size") { options.memtable_huge_page_size = (size_t)value; }
-	else if (key == "bloom_locality") { options.bloom_locality = (uint32_t)value; }
-	else if (key == "arena_block_size") { options.arena_block_size = (size_t)value; }
-	else if (key == "num_levels") { options.num_levels = (int)value; }
-	else if (key == "level0_slowdown_writes_trigger") { options.level0_slowdown_writes_trigger = (int)value; }
-	else if (key == "level0_stop_writes_trigger") { options.level0_stop_writes_trigger = (int)value; }
-	else if (key == "target_file_size_base") { options.target_file_size_base = (uint64_t)value; }
-	else if (key == "target_file_size_multiplier") { options.target_file_size_multiplier = (int)value; }
-	else if (key == "level_compaction_dynamic_level_bytes") { options.level_compaction_dynamic_level_bytes = (bool)value; }
-	//else if (key == "max_bytes_for_level_multiplier") { options.max_bytes_for_level_multiplier = (double)value; }
-	else if (key == "max_compaction_bytes") { options.max_compaction_bytes = (uint64_t)value; }
-	else if (key == "soft_pending_compaction_bytes_limit") { options.soft_pending_compaction_bytes_limit = (uint64_t)value; }
-	else if (key == "hard_pending_compaction_bytes_limit") { options.hard_pending_compaction_bytes_limit = (uint64_t)value; }
-	else if (key == "max_sequential_skip_in_iterations") { options.max_sequential_skip_in_iterations = (uint64_t)value; }
-	else if (key == "max_successive_merges") { options.max_successive_merges = (size_t)value; }
-	else if (key == "optimize_filters_for_hits") { options.optimize_filters_for_hits = (bool)value; }
-	else if (key == "paranoid_file_checks") { options.paranoid_file_checks = (bool)value; }
-	else if (key == "force_consistency_checks") { options.force_consistency_checks = (bool)value; }
-	else if (key == "report_bg_io_stats") { options.report_bg_io_stats = (bool)value; }
+    else if (key == "memtable_huge_page_size") { options.memtable_huge_page_size = (size_t)value; }
+    else if (key == "bloom_locality") { options.bloom_locality = (uint32_t)value; }
+    else if (key == "arena_block_size") { options.arena_block_size = (size_t)value; }
+    else if (key == "num_levels") { options.num_levels = (int)value; }
+    else if (key == "level0_slowdown_writes_trigger") { options.level0_slowdown_writes_trigger = (int)value; }
+    else if (key == "level0_stop_writes_trigger") { options.level0_stop_writes_trigger = (int)value; }
+    else if (key == "target_file_size_base") { options.target_file_size_base = (uint64_t)value; }
+    else if (key == "target_file_size_multiplier") { options.target_file_size_multiplier = (int)value; }
+    else if (key == "level_compaction_dynamic_level_bytes") { options.level_compaction_dynamic_level_bytes = (bool)value; }
+    //else if (key == "max_bytes_for_level_multiplier") { options.max_bytes_for_level_multiplier = (double)value; }
+    else if (key == "max_compaction_bytes") { options.max_compaction_bytes = (uint64_t)value; }
+    else if (key == "soft_pending_compaction_bytes_limit") { options.soft_pending_compaction_bytes_limit = (uint64_t)value; }
+    else if (key == "hard_pending_compaction_bytes_limit") { options.hard_pending_compaction_bytes_limit = (uint64_t)value; }
+    else if (key == "max_sequential_skip_in_iterations") { options.max_sequential_skip_in_iterations = (uint64_t)value; }
+    else if (key == "max_successive_merges") { options.max_successive_merges = (size_t)value; }
+    else if (key == "optimize_filters_for_hits") { options.optimize_filters_for_hits = (bool)value; }
+    else if (key == "paranoid_file_checks") { options.paranoid_file_checks = (bool)value; }
+    else if (key == "force_consistency_checks") { options.force_consistency_checks = (bool)value; }
+    else if (key == "report_bg_io_stats") { options.report_bg_io_stats = (bool)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "ttl") { options.ttl = (uint64_t)value; }
+    else if (key == "ttl") { options.ttl = (uint64_t)value; }
 #endif
-	//else if (key == "soft_rate_limit") { options.soft_rate_limit = (double)value; }
-	//else if (key == "hard_rate_limit") { options.hard_rate_limit = (double)value; }
-	else if (key == "rate_limit_delay_max_milliseconds") { options.rate_limit_delay_max_milliseconds = (unsigned int)value; }
-	else if (key == "purge_redundant_kvs_while_flush") { options.purge_redundant_kvs_while_flush = (bool)value; }
+    //else if (key == "soft_rate_limit") { options.soft_rate_limit = (double)value; }
+    //else if (key == "hard_rate_limit") { options.hard_rate_limit = (double)value; }
+    else if (key == "rate_limit_delay_max_milliseconds") { options.rate_limit_delay_max_milliseconds = (unsigned int)value; }
+    else if (key == "purge_redundant_kvs_while_flush") { options.purge_redundant_kvs_while_flush = (bool)value; }
     // ColumnFamilyOptions
-	else if (key == "write_buffer_size") { options.write_buffer_size = (size_t)value; }
-	else if (key == "level0_file_num_compaction_trigger") { options.level0_file_num_compaction_trigger = (int)value; }
-	else if (key == "max_bytes_for_level_base") { options.max_bytes_for_level_base = (uint64_t)value; }
-	else if (key == "disable_auto_compactions") { options.disable_auto_compactions = (bool)value; }
+    else if (key == "write_buffer_size") { options.write_buffer_size = (size_t)value; }
+    else if (key == "level0_file_num_compaction_trigger") { options.level0_file_num_compaction_trigger = (int)value; }
+    else if (key == "max_bytes_for_level_base") { options.max_bytes_for_level_base = (uint64_t)value; }
+    else if (key == "disable_auto_compactions") { options.disable_auto_compactions = (bool)value; }
     // DBOptions
-	else if (key == "create_if_missing") { options.create_if_missing = (bool)value; }
-	else if (key == "create_missing_column_families") { options.create_missing_column_families = (bool)value; }
-	else if (key == "error_if_exists") { options.error_if_exists = (bool)value; }
-	else if (key == "paranoid_checks") { options.paranoid_checks = (bool)value; }
-	else if (key == "max_open_files") { options.max_open_files = (int)value; }
-	else if (key == "max_file_opening_threads") { options.max_file_opening_threads = (int)value; }
-	else if (key == "max_total_wal_size") { options.max_total_wal_size = (uint64_t)value; }
-	else if (key == "use_fsync") { options.use_fsync = (bool)value; }
-	else if (key == "delete_obsolete_files_period_micros") { options.delete_obsolete_files_period_micros = (uint64_t)value; }
-	else if (key == "max_background_jobs") { options.max_background_jobs = (int)value; }
-	else if (key == "base_background_compactions") { options.base_background_compactions = (int)value; }
-	else if (key == "max_background_compactions") { options.max_background_compactions = (int)value; }
-	else if (key == "max_subcompactions") { options.max_subcompactions = (uint32_t)value; }
-	else if (key == "max_background_flushes") { options.max_background_flushes = (int)value; }
-	else if (key == "max_log_file_size") { options.max_log_file_size = (size_t)value; }
-	else if (key == "log_file_time_to_roll") { options.log_file_time_to_roll = (size_t)value; }
-	else if (key == "keep_log_file_num") { options.keep_log_file_num = (size_t)value; }
-	else if (key == "recycle_log_file_num") { options.recycle_log_file_num = (size_t)value; }
-	else if (key == "max_manifest_file_size") { options.max_manifest_file_size = (uint64_t)value; }
-	else if (key == "table_cache_numshardbits") { options.table_cache_numshardbits = (int)value; }
-	else if (key == "wal_ttl_seconds") { options.WAL_ttl_seconds = (uint64_t)value; }
-	else if (key == "wal_size_limit_MB") { options.WAL_size_limit_MB = (uint64_t)value; }
-	else if (key == "manifest_preallocation_size") { options.manifest_preallocation_size = (size_t)value; }
-	else if (key == "allow_mmap_reads") { options.allow_mmap_reads = (bool)value; }
-	else if (key == "allow_mmap_writes") { options.allow_mmap_writes = (bool)value; }
-	else if (key == "use_direct_reads") { options.use_direct_reads = (bool)value; }
-	else if (key == "use_direct_io_for_flush_and_compaction") { options.use_direct_io_for_flush_and_compaction = (bool)value; }
-	else if (key == "allow_fallocate") { options.allow_fallocate = (bool)value; }
-	else if (key == "is_fd_close_on_exec") { options.is_fd_close_on_exec = (bool)value; }
-	else if (key == "skip_log_error_on_recovery") { options.skip_log_error_on_recovery = (bool)value; }
-	else if (key == "stats_dump_period_sec") { options.stats_dump_period_sec = (int)value; }
+    else if (key == "create_if_missing") { options.create_if_missing = (bool)value; }
+    else if (key == "create_missing_column_families") { options.create_missing_column_families = (bool)value; }
+    else if (key == "error_if_exists") { options.error_if_exists = (bool)value; }
+    else if (key == "paranoid_checks") { options.paranoid_checks = (bool)value; }
+    else if (key == "max_open_files") { options.max_open_files = (int)value; }
+    else if (key == "max_file_opening_threads") { options.max_file_opening_threads = (int)value; }
+    else if (key == "max_total_wal_size") { options.max_total_wal_size = (uint64_t)value; }
+    else if (key == "use_fsync") { options.use_fsync = (bool)value; }
+    else if (key == "delete_obsolete_files_period_micros") { options.delete_obsolete_files_period_micros = (uint64_t)value; }
+    else if (key == "max_background_jobs") { options.max_background_jobs = (int)value; }
+    else if (key == "base_background_compactions") { options.base_background_compactions = (int)value; }
+    else if (key == "max_background_compactions") { options.max_background_compactions = (int)value; }
+    else if (key == "max_subcompactions") { options.max_subcompactions = (uint32_t)value; }
+    else if (key == "max_background_flushes") { options.max_background_flushes = (int)value; }
+    else if (key == "max_log_file_size") { options.max_log_file_size = (size_t)value; }
+    else if (key == "log_file_time_to_roll") { options.log_file_time_to_roll = (size_t)value; }
+    else if (key == "keep_log_file_num") { options.keep_log_file_num = (size_t)value; }
+    else if (key == "recycle_log_file_num") { options.recycle_log_file_num = (size_t)value; }
+    else if (key == "max_manifest_file_size") { options.max_manifest_file_size = (uint64_t)value; }
+    else if (key == "table_cache_numshardbits") { options.table_cache_numshardbits = (int)value; }
+    else if (key == "wal_ttl_seconds") { options.WAL_ttl_seconds = (uint64_t)value; }
+    else if (key == "wal_size_limit_MB") { options.WAL_size_limit_MB = (uint64_t)value; }
+    else if (key == "manifest_preallocation_size") { options.manifest_preallocation_size = (size_t)value; }
+    else if (key == "allow_mmap_reads") { options.allow_mmap_reads = (bool)value; }
+    else if (key == "allow_mmap_writes") { options.allow_mmap_writes = (bool)value; }
+    else if (key == "use_direct_reads") { options.use_direct_reads = (bool)value; }
+    else if (key == "use_direct_io_for_flush_and_compaction") { options.use_direct_io_for_flush_and_compaction = (bool)value; }
+    else if (key == "allow_fallocate") { options.allow_fallocate = (bool)value; }
+    else if (key == "is_fd_close_on_exec") { options.is_fd_close_on_exec = (bool)value; }
+    else if (key == "skip_log_error_on_recovery") { options.skip_log_error_on_recovery = (bool)value; }
+    else if (key == "stats_dump_period_sec") { options.stats_dump_period_sec = (int)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "stats_persist_period_sec") { options.stats_persist_period_sec = (int)value; }
-	else if (key == "stats_history_buffer_size") { options.stats_history_buffer_size = (size_t)value; }
+    else if (key == "stats_persist_period_sec") { options.stats_persist_period_sec = (int)value; }
+    else if (key == "stats_history_buffer_size") { options.stats_history_buffer_size = (size_t)value; }
 #endif
-	else if (key == "advise_random_on_open") { options.advise_random_on_open = (bool)value; }
-	else if (key == "db_write_buffer_size") { options.db_write_buffer_size = (size_t)value; }
-	else if (key == "new_table_reader_for_compaction_inputs") { options.new_table_reader_for_compaction_inputs = (bool)value; }
-	else if (key == "compaction_readahead_size") { options.compaction_readahead_size = (size_t)value; }
-	else if (key == "random_access_max_buffer_size") { options.random_access_max_buffer_size = (size_t)value; }
-	else if (key == "writable_file_max_buffer_size") { options.writable_file_max_buffer_size = (size_t)value; }
-	else if (key == "use_adaptive_mutex") { options.use_adaptive_mutex = (bool)value; }
-	else if (key == "bytes_per_sync") { options.bytes_per_sync = (uint64_t)value; }
-	else if (key == "wal_bytes_per_sync") { options.wal_bytes_per_sync = (uint64_t)value; }
-	else if (key == "enable_thread_tracking") { options.enable_thread_tracking = (bool)value; }
-	else if (key == "delayed_write_rate") { options.delayed_write_rate = (uint64_t)value; }
-	else if (key == "enable_pipelined_write") { options.enable_pipelined_write = (bool)value; }
-	else if (key == "allow_concurrent_memtable_write") { options.allow_concurrent_memtable_write = (bool)value; }
-	else if (key == "enable_write_thread_adaptive_yield") { options.enable_write_thread_adaptive_yield = (bool)value; }
-	else if (key == "write_thread_max_yield_usec") { options.write_thread_max_yield_usec = (uint64_t)value; }
-	else if (key == "write_thread_slow_yield_usec") { options.write_thread_slow_yield_usec = (uint64_t)value; }
-	else if (key == "skip_stats_update_on_db_open") { options.skip_stats_update_on_db_open = (bool)value; }
-	else if (key == "allow_2pc") { options.allow_2pc = (bool)value; }
-	else if (key == "fail_if_options_file_error") { options.fail_if_options_file_error = (bool)value; }
-	else if (key == "dump_malloc_stats") { options.dump_malloc_stats = (bool)value; }
-	else if (key == "avoid_flush_during_recovery") { options.avoid_flush_during_recovery = (bool)value; }
-	else if (key == "avoid_flush_during_shutdown") { options.avoid_flush_during_shutdown = (bool)value; }
-	else if (key == "allow_ingest_behind") { options.allow_ingest_behind = (bool)value; }
-	else if (key == "preserve_deletes") { options.preserve_deletes = (bool)value; }
-	else if (key == "two_write_queues") { options.two_write_queues = (bool)value; }
-	else if (key == "manual_wal_flush") { options.manual_wal_flush = (bool)value; }
+    else if (key == "advise_random_on_open") { options.advise_random_on_open = (bool)value; }
+    else if (key == "db_write_buffer_size") { options.db_write_buffer_size = (size_t)value; }
+    else if (key == "new_table_reader_for_compaction_inputs") { options.new_table_reader_for_compaction_inputs = (bool)value; }
+    else if (key == "compaction_readahead_size") { options.compaction_readahead_size = (size_t)value; }
+    else if (key == "random_access_max_buffer_size") { options.random_access_max_buffer_size = (size_t)value; }
+    else if (key == "writable_file_max_buffer_size") { options.writable_file_max_buffer_size = (size_t)value; }
+    else if (key == "use_adaptive_mutex") { options.use_adaptive_mutex = (bool)value; }
+    else if (key == "bytes_per_sync") { options.bytes_per_sync = (uint64_t)value; }
+    else if (key == "wal_bytes_per_sync") { options.wal_bytes_per_sync = (uint64_t)value; }
+    else if (key == "enable_thread_tracking") { options.enable_thread_tracking = (bool)value; }
+    else if (key == "delayed_write_rate") { options.delayed_write_rate = (uint64_t)value; }
+    else if (key == "enable_pipelined_write") { options.enable_pipelined_write = (bool)value; }
+    else if (key == "allow_concurrent_memtable_write") { options.allow_concurrent_memtable_write = (bool)value; }
+    else if (key == "enable_write_thread_adaptive_yield") { options.enable_write_thread_adaptive_yield = (bool)value; }
+    else if (key == "write_thread_max_yield_usec") { options.write_thread_max_yield_usec = (uint64_t)value; }
+    else if (key == "write_thread_slow_yield_usec") { options.write_thread_slow_yield_usec = (uint64_t)value; }
+    else if (key == "skip_stats_update_on_db_open") { options.skip_stats_update_on_db_open = (bool)value; }
+    else if (key == "allow_2pc") { options.allow_2pc = (bool)value; }
+    else if (key == "fail_if_options_file_error") { options.fail_if_options_file_error = (bool)value; }
+    else if (key == "dump_malloc_stats") { options.dump_malloc_stats = (bool)value; }
+    else if (key == "avoid_flush_during_recovery") { options.avoid_flush_during_recovery = (bool)value; }
+    else if (key == "avoid_flush_during_shutdown") { options.avoid_flush_during_shutdown = (bool)value; }
+    else if (key == "allow_ingest_behind") { options.allow_ingest_behind = (bool)value; }
+    else if (key == "preserve_deletes") { options.preserve_deletes = (bool)value; }
+    else if (key == "two_write_queues") { options.two_write_queues = (bool)value; }
+    else if (key == "manual_wal_flush") { options.manual_wal_flush = (bool)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "atomic_flush") { options.atomic_flush = (bool)value; }
+    else if (key == "atomic_flush") { options.atomic_flush = (bool)value; }
 #endif
     else {
         return { ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key };
@@ -773,29 +773,29 @@ Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, int64
 }
 
 Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options, const std::string key, int64_t value) {
-	if (key == "cache_index_and_filter_blocks") { options.cache_index_and_filter_blocks = (bool)value; }
-	else if (key == "cache_index_and_filter_blocks_with_high_priority") { options.cache_index_and_filter_blocks_with_high_priority = (bool)value; }
-	else if (key == "pin_l0_filter_and_index_blocks_in_cache") { options.pin_l0_filter_and_index_blocks_in_cache = (bool)value; }
+    if (key == "cache_index_and_filter_blocks") { options.cache_index_and_filter_blocks = (bool)value; }
+    else if (key == "cache_index_and_filter_blocks_with_high_priority") { options.cache_index_and_filter_blocks_with_high_priority = (bool)value; }
+    else if (key == "pin_l0_filter_and_index_blocks_in_cache") { options.pin_l0_filter_and_index_blocks_in_cache = (bool)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "pin_top_level_index_and_filter") { options.pin_top_level_index_and_filter = (bool)value; }
-	//else if (key == "data_block_hash_table_util_ratio") { options.data_block_hash_table_util_ratio = (double)value; }
+    else if (key == "pin_top_level_index_and_filter") { options.pin_top_level_index_and_filter = (bool)value; }
+    //else if (key == "data_block_hash_table_util_ratio") { options.data_block_hash_table_util_ratio = (double)value; }
 #endif
-	else if (key == "hash_index_allow_collision") { options.hash_index_allow_collision = (bool)value; }
-	else if (key == "no_block_cache") { options.no_block_cache = (bool)value; }
-	else if (key == "block_size") { options.block_size = (size_t)value; }
-	else if (key == "block_size_deviation") { options.block_size_deviation = (int)value; }
-	else if (key == "block_restart_interval") { options.block_restart_interval = (int)value; }
-	else if (key == "index_block_restart_interval") { options.index_block_restart_interval = (int)value; }
-	else if (key == "metadata_block_size") { options.metadata_block_size = (uint64_t)value; }
-	else if (key == "partition_filters") { options.partition_filters = (bool)value; }
-	else if (key == "use_delta_encoding") { options.use_delta_encoding = (bool)value; }
-	else if (key == "whole_key_filtering") { options.whole_key_filtering = (bool)value; }
-	else if (key == "verify_compression") { options.verify_compression = (bool)value; }
-	else if (key == "read_amp_bytes_per_bit") { options.read_amp_bytes_per_bit = (uint32_t)value; }
-	else if (key == "format_version") { options.format_version = (uint32_t)value; }
-	else if (key == "enable_index_compression") { options.enable_index_compression = (bool)value; }
+    else if (key == "hash_index_allow_collision") { options.hash_index_allow_collision = (bool)value; }
+    else if (key == "no_block_cache") { options.no_block_cache = (bool)value; }
+    else if (key == "block_size") { options.block_size = (size_t)value; }
+    else if (key == "block_size_deviation") { options.block_size_deviation = (int)value; }
+    else if (key == "block_restart_interval") { options.block_restart_interval = (int)value; }
+    else if (key == "index_block_restart_interval") { options.index_block_restart_interval = (int)value; }
+    else if (key == "metadata_block_size") { options.metadata_block_size = (uint64_t)value; }
+    else if (key == "partition_filters") { options.partition_filters = (bool)value; }
+    else if (key == "use_delta_encoding") { options.use_delta_encoding = (bool)value; }
+    else if (key == "whole_key_filtering") { options.whole_key_filtering = (bool)value; }
+    else if (key == "verify_compression") { options.verify_compression = (bool)value; }
+    else if (key == "read_amp_bytes_per_bit") { options.read_amp_bytes_per_bit = (uint32_t)value; }
+    else if (key == "format_version") { options.format_version = (uint32_t)value; }
+    else if (key == "enable_index_compression") { options.enable_index_compression = (bool)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
-	else if (key == "block_align") { options.block_align = (bool)value; }
+    else if (key == "block_align") { options.block_align = (bool)value; }
 #endif
     else {
         return { ErrorCodes::ERR_PARSEOPT, "invalid rocksdb  option :" + key };

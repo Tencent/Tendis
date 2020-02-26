@@ -155,11 +155,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         }
     }
 
-	// a duration of 49 days.
-	uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
-	if (sess && sess->getServerEntry()) {
-		lockTimeoutMs = sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
-	}
+    // a duration of 49 days.
+    uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+    if (sess && sess->getServerEntry()) {
+        lockTimeoutMs = sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    }
 
     std::unique_ptr<StoreLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
