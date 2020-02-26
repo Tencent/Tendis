@@ -794,6 +794,18 @@ Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options, const st
     return { ErrorCodes::ERR_OK, "" };
 }
 
+rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
+    if (typeStr == "snappy") {
+        return rocksdb::CompressionType::kSnappyCompression;
+    } else if (typeStr == "lz4") {
+        return rocksdb::CompressionType::kLZ4Compression;
+    } else if (typeStr == "none") {
+        return rocksdb::CompressionType::kNoCompression;
+    } else {
+        INVARIANT(0);
+    }
+}
+
 rocksdb::Options RocksKVStore::options() {
     rocksdb::Options options;
     rocksdb::BlockBasedTableOptions table_options;
@@ -828,7 +840,7 @@ rocksdb::Options RocksKVStore::options() {
     options.compression_per_level[0] = rocksdb::kNoCompression;
     options.compression_per_level[1] = rocksdb::kNoCompression;
     for (int i = 2; i < ROCKSDB_NUM_LEVELS; ++i) {
-        options.compression_per_level[i] = (rocksdb::CompressionType)_cfg->compressType;
+        options.compression_per_level[i] = rocksGetCompressType(_cfg->rocksCompressType);
     }
     options.statistics = _stats;
     options.create_if_missing = true;

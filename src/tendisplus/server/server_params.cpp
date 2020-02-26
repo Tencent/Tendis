@@ -43,6 +43,14 @@ bool logLevelParamCheck(const string& val) {
     return false;
 };
 
+bool compressTypeParamCheck(const string& val) {
+	auto v = toLower(val);
+	if (v == "snappy" || v == "lz4" || v == "none") {
+		return true;
+	}
+	return false;
+};
+
 string removeQuotes(const string& v) {
 	if (v.size() < 2) {
 		return v;
@@ -133,7 +141,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit", rocksFlushLogAtTrxCommit);
     REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 
-    REGISTER_VARS(compressType);
+    REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, false);
 };
 
 ServerParams::~ServerParams() {

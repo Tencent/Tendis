@@ -260,10 +260,10 @@ public:
     uint32_t  rocksBlockcacheMB = 4096;
     bool rocksStrictCapacityLimit = false;
     std::string rocksWALDir = "";
+    string rocksCompressType = "snappy";
     // WriteOptions
     bool rocksDisalbeWAL = false;
     bool rocksFlushLogAtTrxCommit = false;
-    uint32_t compressType = 1;
 };
 }  // namespace tendisplus
 

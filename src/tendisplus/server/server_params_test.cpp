@@ -48,6 +48,11 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(cfg->setVar("logLevel", "nothavelevel", NULL), false);
     EXPECT_EQ(cfg->logLevel, "warning");
 
+    EXPECT_EQ(cfg->setVar("rocks.compress_type", "None", NULL), true);
+    EXPECT_EQ(cfg->rocksCompressType, "none");
+    EXPECT_EQ(cfg->setVar("rocks.compress_type", "nothavelevel", NULL), false);
+    EXPECT_EQ(cfg->rocksCompressType, "none");
+
     EXPECT_EQ(cfg->setVar("logDir", "\"./\"", NULL), true);
     EXPECT_EQ(cfg->logDir, "./");
     EXPECT_EQ(cfg->setVar("logDir", "\"./", NULL), true);
@@ -146,6 +151,8 @@ TEST(ServerParams, RocksOption) {
 	myfile << "loglevel debug\n";
 	myfile << "logdir ./\n";
 	myfile << "rocks.disable_wal 1\n";
+	myfile << "rocks.wal_dir \"/Abc/dfg\"\n";
+	myfile << "rocks.compress_type LZ4\n";
 	myfile << "rocks.flush_log_at_trx_commit 1\n";
 	myfile << "rocks.blockcache_strict_capacity_limit 1\n";
 	myfile << "rocks.max_write_buffer_number 1\n";
@@ -164,6 +171,8 @@ TEST(ServerParams, RocksOption) {
 	EXPECT_EQ(cfg->rocksDisalbeWAL, 1);
 	EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
 	EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
+	EXPECT_EQ(cfg->rocksCompressType, "lz4");
+	EXPECT_EQ(cfg->rocksWALDir, "/Abc/dfg");
     EXPECT_TRUE(cfg->getRocksdbOptions().find("max_write_buffer_number") != cfg->getRocksdbOptions().end());
     EXPECT_TRUE(cfg->getRocksdbOptions().find("cache_index_and_filter_blocks") != cfg->getRocksdbOptions().end());
     EXPECT_EQ(cfg->getRocksdbOptions().size(), 2);
@@ -226,11 +235,11 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->binlogFileSecs, 20*60);
     EXPECT_EQ(cfg->lockWaitTimeOut, 3600);
 
-    EXPECT_EQ(cfg->compressType, 1);
     EXPECT_EQ(cfg->rocksBlockcacheMB, 4096);
     EXPECT_EQ(cfg->rocksDisalbeWAL, false);
     EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, false);
     EXPECT_EQ(cfg->rocksWALDir, "");
+    EXPECT_EQ(cfg->rocksCompressType, "snappy");
     EXPECT_EQ(cfg->rocksStrictCapacityLimit, false);
     EXPECT_EQ(cfg->getRocksdbOptions().size(), 0);
 }
