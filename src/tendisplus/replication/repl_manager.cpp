@@ -489,7 +489,9 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
 void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
                             uint64_t end, bool saveLogs) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    nextSched = nextSched + std::chrono::milliseconds(_cfg->truncateBinlogIntervalMs);
+    float randRatio = rand() % 40 / 100.0 + 0.80; // 0.80 to 1.20
+    uint32_t nextSchedInterval = _cfg->truncateBinlogIntervalMs * randRatio;
+    nextSched = nextSched + std::chrono::milliseconds(nextSchedInterval);
 
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {

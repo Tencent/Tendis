@@ -5,13 +5,16 @@
 # LZ4_LIBRARIES - List of libraries when using lz4.
 # LZ4_FOUND - True if lz4 found.
 
-find_path(LZ4_INCLUDE_DIR
-  NAMES lz4.h
-  HINTS ${LZ4_ROOT_DIR}/include)
+#find_path(LZ4_INCLUDE_DIR
+#  NAMES lz4.h
+#  HINTS ${LZ4_ROOT_DIR}/include)
 
-find_library(LZ4_LIBRARIES
-  NAMES lz4
-  HINTS ${LZ4_ROOT_DIR}/lib)
+#find_library(LZ4_LIBRARIES
+#  NAMES lz4
+#  HINTS ${LZ4_ROOT_DIR}/lib)
+
+set(LZ4_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/thirdparty/lz4-1.9.2/lib/")
+set(LZ4_LIBRARIES "${CMAKE_SOURCE_DIR}/src/thirdparty/libs/liblz4.a")
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(lz4 DEFAULT_MSG LZ4_LIBRARIES LZ4_INCLUDE_DIR)

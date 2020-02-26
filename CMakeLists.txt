@@ -88,6 +88,7 @@ list(APPEND SYS_LIBS sync_point)
 
 add_subdirectory(src/thirdparty/gflags)
 add_subdirectory(src/thirdparty/snappy-1.1.7)
+add_subdirectory(src/thirdparty/lz4-1.9.2/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest-release-1.8.0)
 add_subdirectory(src/thirdparty/glog-0.3.5)
 add_subdirectory(${ROCKSDB_DIR}/rocksdb)
@@ -148,9 +149,11 @@ set(WARN_C_ONLY
 
 include_directories("src/thirdparty/include")
 include_directories("src/thirdparty/include/snappy/")
+include_directories("src/thirdparty/lz4-1.9.2/lib/")
 else()
 include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
 #include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include/snappy")
+#include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/lz4-1.9.2/lib/")
 
 # gflags
 include_directories("src/thirdparty/include/Windows/")
