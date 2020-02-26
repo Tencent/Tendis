@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <assert.h>
 #include <stdlib.h>
@@ -17,22 +18,24 @@ namespace tendisplus {
 using namespace std;
 
 typedef void (*funptr) ();
-typedef bool (*checkfunptr) (string&);
+typedef bool (*checkfunptr) (const string&);
+typedef string (*preProcess) (const string&);
+
+string removeQuotes(const string& v);
+string  removeQuotesAndToLower(const string& v);
 
 class BaseVar {
 public:
-    BaseVar(string s, void* v, checkfunptr ptr, bool allowDS) {
+    BaseVar(const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)
+        : name(s), value(v), Onupdate(nullptr),
+          checkFun(ptr), preProcessFun(preFun), allowDynamicSet(allowDS) {
         if (v == NULL) {
             assert(false);
             return;
         }
-        name = s;
-        value = v;
-        checkFun = ptr;
-        allowDynamicSet = allowDS;
     };
     virtual ~BaseVar(){};
-    bool setVar(string value, string* errinfo = NULL, bool force = true) {
+    bool setVar(const string& value, string* errinfo = NULL, bool force = true) {
         if (!allowDynamicSet && !force) {
             if (errinfo != NULL) {
                 *errinfo = "not allow dynamic set";
@@ -41,17 +44,17 @@ public:
         }
         return set(value);
     }
-    virtual string show() = 0;
+    virtual string show() const = 0;
     void setUpdate(funptr f){
         Onupdate = f;
     }
 
-    string getName(){
+    string getName() const{
         return name;
     }
 protected:
-    virtual bool set(string value) = 0;
-    virtual bool check(string& value) {
+    virtual bool set(const string& value) = 0;
+    virtual bool check(const string& value) {
         if (checkFun != NULL) {
             return checkFun(value);
         }
@@ -61,20 +64,26 @@ protected:
     string name = "";
     void* value = NULL;
     funptr Onupdate = NULL;
-    checkfunptr checkFun = NULL;
+    checkfunptr checkFun = NULL;        // check the value whether it is valid
+    preProcess preProcessFun = NULL;    // pre process for the value, such as remove the quotes
     bool allowDynamicSet = false;
 };
 
 class StringVar : public BaseVar {
 public:
-    StringVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
-    virtual string show(){
+    StringVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet){
+        if (!preProcessFun) {
+            preProcessFun = removeQuotes;
+        }
+    };
+    virtual string show() const {
         return "\"" + *(string*)value + "\"";
     };
 
 private:
-    bool set(string v) {
-        preProcess(v);
+    bool set(const string& val) {
+        auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
 
         *(string*)value = v;
@@ -82,32 +91,25 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
-    void preProcess(string& v) {
-        if (v.size()<2) {
-            return;
-        }
-        if (v[0] == '\"' && v[v.size()-1] == '\"') {
-            v = v.substr(1, v.size()-2);
-        }
-    }
 };
 
 // support:int, uint32_t
 class IntVar : public BaseVar {
 public:
-    IntVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
-    virtual string show(){
+    IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+    virtual string show() const {
         return std::to_string(*(int*)value);
     };
 
 private:
-    bool set(string v) {
+    bool set(const string& val) {
+        auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
 
         try {
             *(int*)value = std::stoi(v);
-        }
-        catch (...) {
+        } catch (...) {
             LOG(ERROR) << "IntVar stoi err:" << v;
             return false;
         }
@@ -120,13 +122,15 @@ private:
 
 class FloatVar : public BaseVar {
 public:
-    FloatVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
-    virtual string show(){
+    FloatVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+    virtual string show() const {
         return std::to_string(*(float*)value);
     };
 
 private:
-    bool set(string v) {
+    bool set(const string& val) {
+        auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
         try {
             *(float*)value = std::stof(v);
@@ -141,13 +145,15 @@ private:
 
 class BoolVar : public BaseVar {
 public:
-    BoolVar(string name, void* v, checkfunptr ptr, bool allowDynamicSet) : BaseVar(name, v, ptr, allowDynamicSet){};
-    virtual string show(){
+    BoolVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+    virtual string show() const {
         return std::to_string(*(bool*)value);
     };
 
 private:
-    bool set(string v) {
+    bool set(const string& val) {
+        auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
 
         *(bool*)value = isOptionOn(v);
@@ -171,18 +177,23 @@ public:
     ~ServerParams();
 
     Status parseFile(const std::string& filename);
-    bool registerOnupdate(string name, funptr ptr);
-    string showAll();
-    bool showVar(const string& key, string& info);
-    bool setVar(string name, string value, string* errinfo, bool force = true);
-    uint32_t paramsNum() {
+    bool registerOnupdate(const string& name, funptr ptr);
+    string showAll() const;
+    bool showVar(const string& key, string& info) const;
+    bool setVar(const string& name, const string& value, string* errinfo, bool force = true);
+    uint32_t paramsNum() const {
         return _mapServerParams.size();
     }
-    string getConfFile() {
+    string getConfFile() const {
         return _confFile;
+    }
+
+    const std::unordered_map<string, double>& getRocksdbOptions() const {
+        return _rocksdbOptions;
     }
 private:
     map<string, BaseVar*> _mapServerParams;
+    std::unordered_map<string, double> _rocksdbOptions;
     std::string _confFile = "";
     std::set<std::string> _setConfFile;
 
@@ -195,7 +206,6 @@ public:
     std::string storageEngine = "rocks";
     std::string dbPath = "./db";
     std::string dumpPath = "./dump";
-    uint32_t  rocksBlockcacheMB = 4096;
     std::string requirepass = "";
     std::string masterauth = "";
     std::string pidFile = "./tendisplus.pid";
@@ -243,22 +253,16 @@ public:
     uint32_t binlogFileSizeMB = 64;
     uint32_t binlogFileSecs = 20*60;
 
-    bool strictCapacityLimit = false;
-    bool cacheIndexFilterblocks = false;
-    int32_t maxOpenFiles = -1;
-    int32_t keysDefaultLimit = 100;
+    uint32_t keysDefaultLimit = 100;
+    uint32_t lockWaitTimeOut = 3600;
 
-    uint32_t writeBufferSize = 64 * 1024 * 1024;  // 64MB
-    uint32_t targetFileSizeBase = 64 * 1024 * 1024;  // 64MB
-    uint32_t maxBytesForLevelBase = 512 * 1024 * 1024;  // 512 MB
-
-    bool levelCompactionDynamicLevelBytes = true;
-    uint32_t maxWriteBufferNumber = 4;
-    uint32_t minWriteBufferNumberToMerge = 1;
-    int32_t maxWriteBufferNumberToMaintain = 1;
-    uint32_t maxBackgroundCompactions = 8;
-    uint32_t maxBackgroundFlushes = 2;
-    std::string walDir = "";
+    // parameter for rocksdb
+    uint32_t  rocksBlockcacheMB = 4096;
+    bool rocksStrictCapacityLimit = false;
+    std::string rocksWALDir = "";
+    // WriteOptions
+    bool rocksDisalbeWAL = false;
+    bool rocksFlushLogAtTrxCommit = false;
     uint32_t compressType = 1;
 };
 }  // namespace tendisplus

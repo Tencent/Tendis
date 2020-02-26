@@ -596,6 +596,9 @@ void RocksOptTxn::ensureTxn() {
         return;
     }
     rocksdb::WriteOptions writeOpts;
+	writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
+	writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
+
     rocksdb::OptimisticTransactionOptions txnOpts;
 
     // NOTE(deyukong): the optimistic_txn won't save a snapshot
@@ -636,6 +639,9 @@ void RocksPesTxn::ensureTxn() {
         return;
     }
     rocksdb::WriteOptions writeOpts;
+    writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
+    writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
+
     rocksdb::TransactionOptions txnOpts;
 
     // NOTE(deyukong): the txn won't set a snapshot automaticly.
@@ -652,6 +658,142 @@ void RocksPesTxn::ensureTxn() {
     INVARIANT(_txn != nullptr);
 }
 
+Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, double value) {
+    // AdvancedColumnFamilyOptions
+	if (key == "max_write_buffer_number") { options.max_write_buffer_number = value; }
+	else if (key == "min_write_buffer_number_to_merge") { options.min_write_buffer_number_to_merge = value; }
+	else if (key == "max_write_buffer_number_to_maintain") { options.max_write_buffer_number_to_maintain = value; }
+	else if (key == "inplace_update_support") { options.inplace_update_support = value; }
+	else if (key == "inplace_update_num_locks") { options.inplace_update_num_locks = value; }
+	else if (key == "memtable_prefix_bloom_size_ratio") { options.memtable_prefix_bloom_size_ratio = value; }
+	else if (key == "memtable_whole_key_filtering") { options.memtable_whole_key_filtering = value; }
+	else if (key == "memtable_huge_page_size") { options.memtable_huge_page_size = value; }
+	else if (key == "bloom_locality") { options.bloom_locality = value; }
+	else if (key == "arena_block_size") { options.arena_block_size = value; }
+	else if (key == "num_levels") { options.num_levels = value; }
+	else if (key == "level0_slowdown_writes_trigger") { options.level0_slowdown_writes_trigger = value; }
+	else if (key == "level0_stop_writes_trigger") { options.level0_stop_writes_trigger = value; }
+	else if (key == "target_file_size_base") { options.target_file_size_base = value; }
+	else if (key == "target_file_size_multiplier") { options.target_file_size_multiplier = value; }
+	else if (key == "level_compaction_dynamic_level_bytes") { options.level_compaction_dynamic_level_bytes = value; }
+	else if (key == "max_bytes_for_level_multiplier") { options.max_bytes_for_level_multiplier = value; }
+	else if (key == "max_compaction_bytes") { options.max_compaction_bytes = value; }
+	else if (key == "soft_pending_compaction_bytes_limit") { options.soft_pending_compaction_bytes_limit = value; }
+	else if (key == "hard_pending_compaction_bytes_limit") { options.hard_pending_compaction_bytes_limit = value; }
+	else if (key == "max_sequential_skip_in_iterations") { options.max_sequential_skip_in_iterations = value; }
+	else if (key == "max_successive_merges") { options.max_successive_merges = value; }
+	else if (key == "optimize_filters_for_hits") { options.optimize_filters_for_hits = value; }
+	else if (key == "paranoid_file_checks") { options.paranoid_file_checks = value; }
+	else if (key == "force_consistency_checks") { options.force_consistency_checks = value; }
+	else if (key == "report_bg_io_stats") { options.report_bg_io_stats = value; }
+	else if (key == "ttl") { options.ttl = value; }
+	else if (key == "soft_rate_limit") { options.soft_rate_limit = value; }
+	else if (key == "hard_rate_limit") { options.hard_rate_limit = value; }
+	else if (key == "rate_limit_delay_max_milliseconds") { options.rate_limit_delay_max_milliseconds = value; }
+	else if (key == "purge_redundant_kvs_while_flush") { options.purge_redundant_kvs_while_flush = value; }
+    // ColumnFamilyOptions
+	else if (key == "write_buffer_size") { options.write_buffer_size = value; }
+	else if (key == "level0_file_num_compaction_trigger") { options.level0_file_num_compaction_trigger = value; }
+	else if (key == "max_bytes_for_level_base") { options.max_bytes_for_level_base = value; }
+	else if (key == "disable_auto_compactions") { options.disable_auto_compactions = value; }
+    // DBOptions
+	else if (key == "create_if_missing") { options.create_if_missing = value; }
+	else if (key == "create_missing_column_families") { options.create_missing_column_families = value; }
+	else if (key == "error_if_exists") { options.error_if_exists = value; }
+	else if (key == "paranoid_checks") { options.paranoid_checks = value; }
+	else if (key == "max_open_files") { options.max_open_files = value; }
+	else if (key == "max_file_opening_threads") { options.max_file_opening_threads = value; }
+	else if (key == "max_total_wal_size") { options.max_total_wal_size = value; }
+	else if (key == "use_fsync") { options.use_fsync = value; }
+	else if (key == "delete_obsolete_files_period_micros") { options.delete_obsolete_files_period_micros = value; }
+	else if (key == "max_background_jobs") { options.max_background_jobs = value; }
+	else if (key == "base_background_compactions") { options.base_background_compactions = value; }
+	else if (key == "max_background_compactions") { options.max_background_compactions = value; }
+	else if (key == "max_subcompactions") { options.max_subcompactions = value; }
+	else if (key == "max_background_flushes") { options.max_background_flushes = value; }
+	else if (key == "max_log_file_size") { options.max_log_file_size = value; }
+	else if (key == "log_file_time_to_roll") { options.log_file_time_to_roll = value; }
+	else if (key == "keep_log_file_num") { options.keep_log_file_num = value; }
+	else if (key == "recycle_log_file_num") { options.recycle_log_file_num = value; }
+	else if (key == "max_manifest_file_size") { options.max_manifest_file_size = value; }
+	else if (key == "table_cache_numshardbits") { options.table_cache_numshardbits = value; }
+	else if (key == "wal_ttl_seconds") { options.WAL_ttl_seconds = value; }
+	else if (key == "wal_size_limit_MB") { options.WAL_size_limit_MB = value; }
+	else if (key == "manifest_preallocation_size") { options.manifest_preallocation_size = value; }
+	else if (key == "allow_mmap_reads") { options.allow_mmap_reads = value; }
+	else if (key == "allow_mmap_writes") { options.allow_mmap_writes = value; }
+	else if (key == "use_direct_reads") { options.use_direct_reads = value; }    // direct IO
+	else if (key == "use_direct_io_for_flush_and_compaction") { options.use_direct_io_for_flush_and_compaction = value; }
+	else if (key == "allow_fallocate") { options.allow_fallocate = value; }
+	else if (key == "is_fd_close_on_exec") { options.is_fd_close_on_exec = value; }
+	else if (key == "skip_log_error_on_recovery") { options.skip_log_error_on_recovery = value; }
+	else if (key == "stats_dump_period_sec") { options.stats_dump_period_sec = value; }
+	else if (key == "stats_persist_period_sec") { options.stats_persist_period_sec = value; }
+	else if (key == "stats_history_buffer_size") { options.stats_history_buffer_size = value; }
+	else if (key == "advise_random_on_open") { options.advise_random_on_open = value; }
+	else if (key == "db_write_buffer_size") { options.db_write_buffer_size = value; }
+	else if (key == "new_table_reader_for_compaction_inputs") { options.new_table_reader_for_compaction_inputs = value; }
+	else if (key == "compaction_readahead_size") { options.compaction_readahead_size = value; }
+	else if (key == "random_access_max_buffer_size") { options.random_access_max_buffer_size = value; }
+	else if (key == "writable_file_max_buffer_size") { options.writable_file_max_buffer_size = value; }
+	else if (key == "use_adaptive_mutex") { options.use_adaptive_mutex = value; }
+	else if (key == "bytes_per_sync") { options.bytes_per_sync = value; }
+	else if (key == "wal_bytes_per_sync") { options.wal_bytes_per_sync = value; }
+	else if (key == "enable_thread_tracking") { options.enable_thread_tracking = value; }
+	else if (key == "delayed_write_rate") { options.delayed_write_rate = value; }
+	else if (key == "enable_pipelined_write") { options.enable_pipelined_write = value; }
+	else if (key == "allow_concurrent_memtable_write") { options.allow_concurrent_memtable_write = value; }
+	else if (key == "enable_write_thread_adaptive_yield") { options.enable_write_thread_adaptive_yield = value; }
+	else if (key == "write_thread_max_yield_usec") { options.write_thread_max_yield_usec = value; }
+	else if (key == "write_thread_slow_yield_usec") { options.write_thread_slow_yield_usec = value; }
+	else if (key == "skip_stats_update_on_db_open") { options.skip_stats_update_on_db_open = value; }
+	else if (key == "allow_2pc") { options.allow_2pc = value; }
+	else if (key == "fail_if_options_file_error") { options.fail_if_options_file_error = value; }
+	else if (key == "dump_malloc_stats") { options.dump_malloc_stats = value; }
+	else if (key == "avoid_flush_during_recovery") { options.avoid_flush_during_recovery = value; }
+	else if (key == "avoid_flush_during_shutdown") { options.avoid_flush_during_shutdown = value; }
+	else if (key == "allow_ingest_behind") { options.allow_ingest_behind = value; }
+	else if (key == "preserve_deletes") { options.preserve_deletes = value; }
+	else if (key == "two_write_queues") { options.two_write_queues = value; }
+	else if (key == "manual_wal_flush") { options.manual_wal_flush = value; }
+	else if (key == "atomic_flush") { options.atomic_flush = value; }
+    else {
+        return { ErrorCodes::ERR_PARSEOPT, "invalid rocksdb option :" + key };
+    }
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
+Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options, const std::string key, double value) {
+	if (key == "cache_index_and_filter_blocks") { options.cache_index_and_filter_blocks = value; }
+	else if (key == "cache_index_and_filter_blocks_with_high_priority") { options.cache_index_and_filter_blocks_with_high_priority = value; }
+	else if (key == "pin_l0_filter_and_index_blocks_in_cache") { options.pin_l0_filter_and_index_blocks_in_cache = value; }
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
+	else if (key == "pin_top_level_index_and_filter") { options.pin_top_level_index_and_filter = value; }
+#endif
+	else if (key == "data_block_hash_table_util_ratio") { options.data_block_hash_table_util_ratio = value; }
+	else if (key == "hash_index_allow_collision") { options.hash_index_allow_collision = value; }
+	else if (key == "no_block_cache") { options.no_block_cache = value; }
+	else if (key == "block_size") { options.block_size = value; }
+	else if (key == "block_size_deviation") { options.block_size_deviation = value; }
+	else if (key == "block_restart_interval") { options.block_restart_interval = value; }
+	else if (key == "index_block_restart_interval") { options.index_block_restart_interval = value; }
+	else if (key == "metadata_block_size") { options.metadata_block_size = value; }
+	else if (key == "partition_filters") { options.partition_filters = value; }
+	else if (key == "use_delta_encoding") { options.use_delta_encoding = value; }
+	else if (key == "whole_key_filtering") { options.whole_key_filtering = value; }
+	else if (key == "verify_compression") { options.verify_compression = value; }
+	else if (key == "read_amp_bytes_per_bit") { options.read_amp_bytes_per_bit = value; }
+	else if (key == "format_version") { options.format_version = value; }
+	else if (key == "enable_index_compression") { options.enable_index_compression = value; }
+	else if (key == "block_align") { options.block_align = value; }
+    else {
+        return { ErrorCodes::ERR_PARSEOPT, "invalid rocksdb  option :" + key };
+    }
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
 rocksdb::Options RocksKVStore::options() {
     rocksdb::Options options;
     rocksdb::BlockBasedTableOptions table_options;
@@ -660,26 +802,21 @@ rocksdb::Options RocksKVStore::options() {
     table_options.block_size = 16 * 1024;  // 16KB
     table_options.format_version = 2;
     // let index and filters pining in mem forever
-    table_options.cache_index_and_filter_blocks = _cfg->cacheIndexFilterblocks;
-    options.table_factory.reset(
-        rocksdb::NewBlockBasedTableFactory(table_options));
-    options.write_buffer_size = _cfg->writeBufferSize;
+    table_options.cache_index_and_filter_blocks = false;
+
+    options.write_buffer_size = 64 * 1024 * 1024; // 64MB
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
-    options.max_write_buffer_number = _cfg->maxWriteBufferNumber;
-    options.min_write_buffer_number_to_merge = _cfg->minWriteBufferNumberToMerge;
-    options.max_write_buffer_number_to_maintain = _cfg->maxWriteBufferNumberToMaintain;
-    options.max_background_compactions = _cfg->maxBackgroundCompactions;
-    options.max_background_flushes = _cfg->maxBackgroundFlushes;
-    options.target_file_size_base = _cfg->targetFileSizeBase;
-    options.level_compaction_dynamic_level_bytes = _cfg->levelCompactionDynamicLevelBytes;
-    if (_cfg->walDir != "") {
-        options.wal_dir = _cfg->walDir + "/" + dbId() + "/";
-    }
+    options.max_write_buffer_number = 4;
+    options.max_write_buffer_number_to_maintain = 1;
+    options.max_background_compactions = 8;
+    options.max_background_flushes = 2;
+    options.target_file_size_base = 64 * 1024 * 1024; // 64MB
+    options.level_compaction_dynamic_level_bytes = true;
     // level_1 max size: 512MB, in fact, things are more complex
     // since we set level_compaction_dynamic_level_bytes = true
-    options.max_bytes_for_level_base = _cfg->maxBytesForLevelBase;
-    options.max_open_files = _cfg->maxOpenFiles;
+    options.max_bytes_for_level_base = 512 * 1024 * 1024; // 512MB
+    options.max_open_files = -1;
     // if we have no 'empty reads', we can disable bottom
     // level's bloomfilters
     options.optimize_filters_for_hits = false;
@@ -698,11 +835,29 @@ rocksdb::Options RocksKVStore::options() {
 
     options.max_total_wal_size = uint64_t(4294967296);  // 4GB
 
+    if (_cfg->rocksWALDir != "") {
+        options.wal_dir = _cfg->rocksWALDir + "/" + dbId() + "/";
+    }
+
+    for (const auto& iter : _cfg->getRocksdbOptions()) {
+        auto status = rocksdbOptionsSet(options, iter.first, iter.second);
+        if (!status.ok()) {
+            status = rocksdbTableOptionsSet(table_options, iter.first, iter.second);
+            if (!status.ok()) {
+                LOG(ERROR) << status.toString();
+            }
+        }
+    }
+
+    options.table_factory.reset(
+        rocksdb::NewBlockBasedTableFactory(table_options));
+
     if (_enableFilter && dbId() != CATALOG_NAME) {
         // setup the ttlcompactionfilter expect "catalog" db
         options.compaction_filter_factory.reset(
             new KVTtlCompactionFilterFactory(this));
     }
+
     return options;
 }
 

@@ -70,6 +70,9 @@ class RocksTxn: public Transaction {
     uint64_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint64_t timestamp);
     bool isReplOnly() const { return _replOnly; }
+    const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
+        return _txn;
+    }
 
  protected:
     virtual void ensureTxn() {}
@@ -243,6 +246,10 @@ class RocksKVStore: public KVStore {
 
     // NOTE(deyukong): this api is only for debug
     std::set<uint64_t> getUncommittedTxns() const;
+
+    const std::shared_ptr<ServerParams>& getCfg() const {
+        return _cfg;
+    }
  private:
     rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);

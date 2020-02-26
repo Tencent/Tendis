@@ -33,7 +33,8 @@ class ILock {
 // TODO(takenliu) : delete StoresLock
 class StoresLock: public ILock {
  public:
-    explicit StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
+    explicit StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
+            uint64_t lockTimeoutMs = 3600000);
     virtual ~StoresLock() = default;
 
  private:
@@ -43,7 +44,8 @@ class StoresLock: public ILock {
 class StoreLock: public ILock {
  public:
     StoreLock(uint32_t storeId, mgl::LockMode mode,
-              Session* sess, mgl::MGLockMgr* mgr);
+              Session* sess, mgl::MGLockMgr* mgr,
+              uint64_t lockTimeoutMs = 3600000);
     uint32_t getStoreId() const final;
     virtual ~StoreLock() = default;
 
@@ -54,9 +56,11 @@ class StoreLock: public ILock {
 class KeyLock: public ILock {
  public:
     static std::unique_ptr<KeyLock> AquireKeyLock(uint32_t storeId, const std::string& key,
-            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
+            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
+            uint64_t lockTimeoutMs = 3600000);
     KeyLock(uint32_t storeId, const std::string& key,
-            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr);
+            mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
+            uint64_t lockTimeoutMs = 3600000);
     uint32_t getStoreId() const final;
     std::string getKey() const final;
     // remove lock from session before that lock has really been unlocked in its parent's destructor.

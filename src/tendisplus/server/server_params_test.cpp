@@ -18,7 +18,7 @@ TEST(ServerParams, Common) {
     myfile << "bind 127.0.0.1\n";
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
-    myfile << "logdir ./\n";
+    myfile << "logdir ./Log\n";
     myfile.close();
     const auto guard = MakeGuard([] {
         remove("a.cfg");
@@ -29,7 +29,7 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
     EXPECT_EQ(cfg->logLevel, "debug");
-    EXPECT_EQ(cfg->logDir, "./");
+    EXPECT_EQ(cfg->logDir, "./Log");
 
     EXPECT_EQ(cfg->setVar("binlogRateLimitMB", "100", NULL), true);
     EXPECT_EQ(cfg->binlogRateLimitMB, 100);
@@ -58,7 +58,7 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(cfg->setVar("kvStoreCount", "aa12abc", NULL), false);
 
     float testFloat;
-    FloatVar testFloatVar("testFloatVar", &testFloat, NULL, true);
+    FloatVar testFloatVar("testFloatVar", &testFloat, NULL, NULL, true);
     EXPECT_EQ(testFloatVar.setVar("1.5"), true);
     EXPECT_EQ(testFloat, 1.5);
     EXPECT_EQ(testFloatVar.setVar("abc2.5abc"), false);
@@ -138,10 +138,41 @@ TEST(ServerParams, DynamicSet) {
     EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
 }
 
+TEST(ServerParams, RocksOption) {
+	std::ofstream myfile;
+	myfile.open("a.cfg");
+	myfile << "bind 127.0.0.1\n";
+	myfile << "port 8903\n";
+	myfile << "loglevel debug\n";
+	myfile << "logdir ./\n";
+	myfile << "rocks.disable_wal 1\n";
+	myfile << "rocks.flush_log_at_trx_commit 1\n";
+	myfile << "rocks.blockcache_strict_capacity_limit 1\n";
+	myfile << "rocks.max_write_buffer_number 1\n";
+	myfile << "rocks.cache_index_and_filter_blocks 1\n";
+	myfile.close();
+	const auto guard = MakeGuard([] {
+		remove("a.cfg");
+		});
+	auto cfg = std::make_unique<ServerParams>();
+	auto s = cfg->parseFile("a.cfg");
+	EXPECT_EQ(s.ok(), true) << s.toString();
+	EXPECT_EQ(cfg->bindIp, "127.0.0.1");
+	EXPECT_EQ(cfg->port, 8903);
+	EXPECT_EQ(cfg->logLevel, "debug");
+	EXPECT_EQ(cfg->logDir, "./");
+	EXPECT_EQ(cfg->rocksDisalbeWAL, 1);
+	EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
+	EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
+    EXPECT_TRUE(cfg->getRocksdbOptions().find("max_write_buffer_number") != cfg->getRocksdbOptions().end());
+    EXPECT_TRUE(cfg->getRocksdbOptions().find("cache_index_and_filter_blocks") != cfg->getRocksdbOptions().end());
+    EXPECT_EQ(cfg->getRocksdbOptions().size(), 2);
+}
+
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 58);
+    EXPECT_EQ(cfg->paramsNum(), 51);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -151,7 +182,6 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->storageEngine, "rocks");
     EXPECT_EQ(cfg->dbPath, "./db");
     EXPECT_EQ(cfg->dumpPath, "./dump");
-    EXPECT_EQ(cfg-> rocksBlockcacheMB, 4096);
     EXPECT_EQ(cfg->requirepass, "");
     EXPECT_EQ(cfg->masterauth, "");
     EXPECT_EQ(cfg->pidFile, "./tendisplus.pid");
@@ -194,23 +224,14 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->truncateBinlogNum, 50000);
     EXPECT_EQ(cfg->binlogFileSizeMB, 64);
     EXPECT_EQ(cfg->binlogFileSecs, 20*60);
+    EXPECT_EQ(cfg->lockWaitTimeOut, 3600);
 
-    EXPECT_EQ(cfg->strictCapacityLimit, false);
-    EXPECT_EQ(cfg->cacheIndexFilterblocks, false);
-    EXPECT_EQ(cfg->maxOpenFiles, -1);
-    EXPECT_EQ(cfg->keysDefaultLimit, 100);
-
-    EXPECT_EQ(cfg->writeBufferSize, 64 * 1024 * 1024);
-    EXPECT_EQ(cfg->targetFileSizeBase, 64 * 1024 * 1024);
-    EXPECT_EQ(cfg->maxBytesForLevelBase, 512 * 1024 * 1024);
-
-    EXPECT_EQ(cfg->levelCompactionDynamicLevelBytes, true);
-    EXPECT_EQ(cfg->maxWriteBufferNumber, 4);
-    EXPECT_EQ(cfg->minWriteBufferNumberToMerge, 1);
-    EXPECT_EQ(cfg->maxWriteBufferNumberToMaintain, 1);
-    EXPECT_EQ(cfg->maxBackgroundCompactions, 8);
-    EXPECT_EQ(cfg->maxBackgroundFlushes, 2);
-    EXPECT_EQ(cfg->walDir, "");
     EXPECT_EQ(cfg->compressType, 1);
+    EXPECT_EQ(cfg->rocksBlockcacheMB, 4096);
+    EXPECT_EQ(cfg->rocksDisalbeWAL, false);
+    EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, false);
+    EXPECT_EQ(cfg->rocksWALDir, "");
+    EXPECT_EQ(cfg->rocksStrictCapacityLimit, false);
+    EXPECT_EQ(cfg->getRocksdbOptions().size(), 0);
 }
 }  // namespace tendisplus

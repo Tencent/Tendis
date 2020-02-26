@@ -15,6 +15,12 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/network/session_ctx.h"
 
+#include "rocksdb/table.h"
+#include "rocksdb/filter_policy.h"
+#include "rocksdb/utilities/backupable_db.h"
+#include "rocksdb/utilities/checkpoint.h"
+#include "rocksdb/options.h"
+
 namespace tendisplus {
 
 static int genRand() {
@@ -145,6 +151,33 @@ std::shared_ptr<ServerParams> genParams() {
     return cfg;
 }
 
+std::shared_ptr<ServerParams> genParamsRocks() {
+	const auto guard = MakeGuard([] {
+		remove("a.cfg");
+		});
+	std::ofstream myfile;
+	myfile.open("a.cfg");
+	myfile << "bind 127.0.0.1\n";
+	myfile << "port 8903\n";
+	myfile << "loglevel debug\n";
+	myfile << "logdir ./log\n";
+	myfile << "storage rocks\n";
+	myfile << "dir ./db\n";
+	myfile << "rocks.blockcachemb 4096\n";
+	myfile << "rocks.disable_wal 1\n";
+	myfile << "rocks.flush_log_at_trx_commit 0\n";
+	myfile << "rocks.blockcache_strict_capacity_limit 1\n";
+	myfile << "rocks.max_write_buffer_number 5\n";
+	myfile << "rocks.write_buffer_size 4096000\n";
+	myfile << "rocks.create_if_missing 1\n";
+	myfile << "rocks.cache_index_and_filter_blocks 1\n";
+	myfile.close();
+	auto cfg = std::make_shared<ServerParams>();
+	auto s = cfg->parseFile("a.cfg");
+	EXPECT_EQ(s.ok(), true) << s.toString();
+	return cfg;
+}
+
 void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
 #ifndef BINLOG_V1
     auto eTxn1 = kvstore->createTransaction(nullptr);
@@ -156,6 +189,51 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
 
     EXPECT_EQ(expMax.value() + 1, kvstore->getNextBinlogSeq());
 #endif
+}
+
+TEST(RocksKVStore, RocksOptions) {
+	auto cfg = genParamsRocks();
+
+	EXPECT_TRUE(filesystem::create_directory("db"));
+	EXPECT_TRUE(filesystem::create_directory("log"));
+	const auto guard = MakeGuard([] {
+		filesystem::remove_all("./log");
+		filesystem::remove_all("./db");
+		});
+	auto blockCache =
+		rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+	auto kvstore = std::make_unique<RocksKVStore>(
+		"0",
+		cfg,
+		blockCache);
+
+    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 5);
+    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size, 4096000);
+    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing, true);
+
+    rocksdb::BlockBasedTableOptions* option = 
+        (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()->GetOptions().table_factory->GetOptions();
+    EXPECT_EQ(option->cache_index_and_filter_blocks, true);
+
+	LocalSessionGuard sg(nullptr);
+	uint64_t ts = genRand();
+	uint64_t versionep = genRand();
+	sg.getSession()->getCtx()->setExtendProtocolValue(ts, versionep);
+	auto eTxn1 = kvstore->createTransaction(sg.getSession());
+	EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+    RocksTxn* rtxn = (RocksTxn*)txn1.get();
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, true);
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
+
+	RecordKey rk(0, 1, RecordType::RT_KV, "a", "");
+	RecordValue rv("txn1", RecordType::RT_KV, -1);
+	Status s = kvstore->setKV(rk, rv, txn1.get());
+	EXPECT_EQ(s.ok(), true);
+
+	Expected<uint64_t> exptCommitId = txn1->commit();
+	EXPECT_EQ(exptCommitId.ok(), true);
 }
 
 TEST(RocksKVStore, BinlogRightMost) {
@@ -177,6 +255,15 @@ TEST(RocksKVStore, BinlogRightMost) {
         cfg,
         blockCache);
 
+    // default values
+	EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 4);
+	EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size, 64 * 1024 * 1024);
+	EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing, true);
+
+	rocksdb::BlockBasedTableOptions* option =
+		(rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()->GetOptions().table_factory->GetOptions();
+	EXPECT_EQ(option->cache_index_and_filter_blocks, false);
+
     LocalSessionGuard sg(nullptr);
     uint64_t ts = genRand();
     uint64_t versionep = genRand();
@@ -184,6 +271,11 @@ TEST(RocksKVStore, BinlogRightMost) {
     auto eTxn1 = kvstore->createTransaction(sg.getSession());
     EXPECT_EQ(eTxn1.ok(), true);
     std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+
+    // default value for transaction
+	RocksTxn* rtxn = (RocksTxn*)txn1.get();
+	EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, false);
+	EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
 
 #ifndef BINLOG_V1
     {

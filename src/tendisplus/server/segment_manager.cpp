@@ -27,6 +27,12 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
+    // a duration of 49 days.
+    uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+    if (sess && sess->getServerEntry()) {
+        lockTimeoutMs = sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    }
+
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
             std::memory_order_relaxed);
@@ -48,7 +54,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
     std::unique_ptr<KeyLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
         lk = KeyLock::AquireKeyLock(segId, key, mode, sess,
-            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr);
+            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
     }
     return DbWithLock{
             segId, chunkId, _instances[segId], nullptr, std::move(lk)
@@ -97,6 +103,11 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
         return locklist;
 #endif
     }
+    // a duration of 49 days.
+    uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+    if (sess && sess->getServerEntry()) {
+        lockTimeoutMs = sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    }
     std::map<uint32_t, std::vector<std::string>> segList;
     for (auto iter = index.begin(); iter != index.end(); iter++) {
         auto key = args[*iter];
@@ -115,7 +126,7 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
         for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {
             const std::string& key = *keyIter;
             locklist.emplace_back(KeyLock::AquireKeyLock(segId, key, mode, sess,
-                (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr));
+                (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs));
         }
     }
 
@@ -144,10 +155,16 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         }
     }
 
+	// a duration of 49 days.
+	uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+	if (sess && sess->getServerEntry()) {
+		lockTimeoutMs = sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+	}
+
     std::unique_ptr<StoreLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
         lk = std::make_unique<StoreLock>(insId, mode, sess,
-            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr);
+            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
     }
 
     if (sess && sess->getCtx() &&
