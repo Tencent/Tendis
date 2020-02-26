@@ -106,6 +106,12 @@ ServerParams::ServerParams() {
     REGISTER_VARS(targetFileSizeBase);
     REGISTER_VARS(maxBytesForLevelBase);
     REGISTER_VARS(levelCompactionDynamicLevelBytes);
+    REGISTER_VARS(maxWriteBufferNumber);
+    REGISTER_VARS(minWriteBufferNumberToMerge);
+    REGISTER_VARS(maxBackgroundCompactions);
+    REGISTER_VARS(maxBackgroundFlushes);
+    REGISTER_VARS(walDir);
+    REGISTER_VARS(compressType);
 };
 
 ServerParams::~ServerParams() {

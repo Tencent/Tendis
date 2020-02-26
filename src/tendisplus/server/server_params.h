@@ -253,6 +253,13 @@ public:
     uint32_t maxBytesForLevelBase = 512 * 1024 * 1024;  // 512 MB
 
     bool levelCompactionDynamicLevelBytes = true;
+    uint32_t maxWriteBufferNumber = 4;
+    uint32_t minWriteBufferNumberToMerge = 1;
+    int32_t maxWriteBufferNumberToMaintain = 1;
+    uint32_t maxBackgroundCompactions = 8;
+    uint32_t maxBackgroundFlushes = 2;
+    std::string walDir = "";
+    uint32_t compressType = 1;
 };
 }  // namespace tendisplus
 

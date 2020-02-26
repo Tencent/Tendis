@@ -666,12 +666,16 @@ rocksdb::Options RocksKVStore::options() {
     options.write_buffer_size = _cfg->writeBufferSize;
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
-    options.max_write_buffer_number = 4;
-    options.max_write_buffer_number_to_maintain = 1;
-    options.max_background_compactions = 8;
-    options.max_background_flushes = 2;
+    options.max_write_buffer_number = _cfg->maxWriteBufferNumber;
+    options.min_write_buffer_number_to_merge = _cfg->minWriteBufferNumberToMerge;
+    options.max_write_buffer_number_to_maintain = _cfg->maxWriteBufferNumberToMaintain;
+    options.max_background_compactions = _cfg->maxBackgroundCompactions;
+    options.max_background_flushes = _cfg->maxBackgroundFlushes;
     options.target_file_size_base = _cfg->targetFileSizeBase;
     options.level_compaction_dynamic_level_bytes = _cfg->levelCompactionDynamicLevelBytes;
+    if (_cfg->walDir != "") {
+        options.wal_dir = _cfg->walDir + "/" + dbId() + "/";
+    }
     // level_1 max size: 512MB, in fact, things are more complex
     // since we set level_compaction_dynamic_level_bytes = true
     options.max_bytes_for_level_base = _cfg->maxBytesForLevelBase;
@@ -687,7 +691,7 @@ rocksdb::Options RocksKVStore::options() {
     options.compression_per_level[0] = rocksdb::kNoCompression;
     options.compression_per_level[1] = rocksdb::kNoCompression;
     for (int i = 2; i < ROCKSDB_NUM_LEVELS; ++i) {
-        options.compression_per_level[i] = rocksdb::kSnappyCompression;
+        options.compression_per_level[i] = (rocksdb::CompressionType)_cfg->compressType;
     }
     options.statistics = _stats;
     options.create_if_missing = true;
