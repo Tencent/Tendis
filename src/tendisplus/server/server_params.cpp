@@ -108,7 +108,6 @@ ServerParams::ServerParams() {
     REGISTER_VARS(levelCompactionDynamicLevelBytes);
     REGISTER_VARS(maxWriteBufferNumber);
     REGISTER_VARS(minWriteBufferNumberToMerge);
-    REGISTER_VARS(noRecycleBinlog);
     REGISTER_VARS(maxBackgroundCompactions);
     REGISTER_VARS(maxBackgroundFlushes);
     REGISTER_VARS(walDir);

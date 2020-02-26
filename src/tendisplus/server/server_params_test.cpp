@@ -141,7 +141,7 @@ TEST(ServerParams, DynamicSet) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 52);
+    EXPECT_EQ(cfg->paramsNum(), 58);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -198,5 +198,19 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->strictCapacityLimit, false);
     EXPECT_EQ(cfg->cacheIndexFilterblocks, false);
     EXPECT_EQ(cfg->maxOpenFiles, -1);
+    EXPECT_EQ(cfg->keysDefaultLimit, 100);
+
+    EXPECT_EQ(cfg->writeBufferSize, 64 * 1024 * 1024);
+    EXPECT_EQ(cfg->targetFileSizeBase, 64 * 1024 * 1024);
+    EXPECT_EQ(cfg->maxBytesForLevelBase, 512 * 1024 * 1024);
+
+    EXPECT_EQ(cfg->levelCompactionDynamicLevelBytes, true);
+    EXPECT_EQ(cfg->maxWriteBufferNumber, 4);
+    EXPECT_EQ(cfg->minWriteBufferNumberToMerge, 1);
+    EXPECT_EQ(cfg->maxWriteBufferNumberToMaintain, 1);
+    EXPECT_EQ(cfg->maxBackgroundCompactions, 8);
+    EXPECT_EQ(cfg->maxBackgroundFlushes, 2);
+    EXPECT_EQ(cfg->walDir, "");
+    EXPECT_EQ(cfg->compressType, 1);
 }
 }  // namespace tendisplus
