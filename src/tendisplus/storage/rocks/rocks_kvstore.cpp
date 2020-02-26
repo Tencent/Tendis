@@ -658,14 +658,14 @@ void RocksPesTxn::ensureTxn() {
     INVARIANT(_txn != nullptr);
 }
 
-Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, double value) {
+Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, int64_t value) {
     // AdvancedColumnFamilyOptions
 	if (key == "max_write_buffer_number") { options.max_write_buffer_number = (int)value; }
 	else if (key == "min_write_buffer_number_to_merge") { options.min_write_buffer_number_to_merge = (int)value; }
 	else if (key == "max_write_buffer_number_to_maintain") { options.max_write_buffer_number_to_maintain = (int)value; }
 	else if (key == "inplace_update_support") { options.inplace_update_support = (bool)value; }
 	else if (key == "inplace_update_num_locks") { options.inplace_update_num_locks = (size_t)value; }
-	else if (key == "memtable_prefix_bloom_size_ratio") { options.memtable_prefix_bloom_size_ratio = (double)value; }
+	//else if (key == "memtable_prefix_bloom_size_ratio") { options.memtable_prefix_bloom_size_ratio = (double)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
 	else if (key == "memtable_whole_key_filtering") { options.memtable_whole_key_filtering = (bool)value; }
 #endif
@@ -678,7 +678,7 @@ Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, doubl
 	else if (key == "target_file_size_base") { options.target_file_size_base = (uint64_t)value; }
 	else if (key == "target_file_size_multiplier") { options.target_file_size_multiplier = (int)value; }
 	else if (key == "level_compaction_dynamic_level_bytes") { options.level_compaction_dynamic_level_bytes = (bool)value; }
-	else if (key == "max_bytes_for_level_multiplier") { options.max_bytes_for_level_multiplier = (double)value; }
+	//else if (key == "max_bytes_for_level_multiplier") { options.max_bytes_for_level_multiplier = (double)value; }
 	else if (key == "max_compaction_bytes") { options.max_compaction_bytes = (uint64_t)value; }
 	else if (key == "soft_pending_compaction_bytes_limit") { options.soft_pending_compaction_bytes_limit = (uint64_t)value; }
 	else if (key == "hard_pending_compaction_bytes_limit") { options.hard_pending_compaction_bytes_limit = (uint64_t)value; }
@@ -691,8 +691,8 @@ Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, doubl
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
 	else if (key == "ttl") { options.ttl = (uint64_t)value; }
 #endif
-	else if (key == "soft_rate_limit") { options.soft_rate_limit = (double)value; }
-	else if (key == "hard_rate_limit") { options.hard_rate_limit = (double)value; }
+	//else if (key == "soft_rate_limit") { options.soft_rate_limit = (double)value; }
+	//else if (key == "hard_rate_limit") { options.hard_rate_limit = (double)value; }
 	else if (key == "rate_limit_delay_max_milliseconds") { options.rate_limit_delay_max_milliseconds = (unsigned int)value; }
 	else if (key == "purge_redundant_kvs_while_flush") { options.purge_redundant_kvs_while_flush = (bool)value; }
     // ColumnFamilyOptions
@@ -772,13 +772,13 @@ Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, doubl
     return { ErrorCodes::ERR_OK, "" };
 }
 
-Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options, const std::string key, double value) {
+Status rocksdbTableOptionsSet(rocksdb::BlockBasedTableOptions& options, const std::string key, int64_t value) {
 	if (key == "cache_index_and_filter_blocks") { options.cache_index_and_filter_blocks = (bool)value; }
 	else if (key == "cache_index_and_filter_blocks_with_high_priority") { options.cache_index_and_filter_blocks_with_high_priority = (bool)value; }
 	else if (key == "pin_l0_filter_and_index_blocks_in_cache") { options.pin_l0_filter_and_index_blocks_in_cache = (bool)value; }
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
 	else if (key == "pin_top_level_index_and_filter") { options.pin_top_level_index_and_filter = (bool)value; }
-	else if (key == "data_block_hash_table_util_ratio") { options.data_block_hash_table_util_ratio = (double)value; }
+	//else if (key == "data_block_hash_table_util_ratio") { options.data_block_hash_table_util_ratio = (double)value; }
 #endif
 	else if (key == "hash_index_allow_collision") { options.hash_index_allow_collision = (bool)value; }
 	else if (key == "no_block_cache") { options.no_block_cache = (bool)value; }

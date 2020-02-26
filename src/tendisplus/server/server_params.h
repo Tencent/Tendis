@@ -188,12 +188,12 @@ public:
         return _confFile;
     }
 
-    const std::unordered_map<string, double>& getRocksdbOptions() const {
+    const std::unordered_map<string, int64_t>& getRocksdbOptions() const {
         return _rocksdbOptions;
     }
 private:
     map<string, BaseVar*> _mapServerParams;
-    std::unordered_map<string, double> _rocksdbOptions;
+    std::unordered_map<string, int64_t> _rocksdbOptions;
     std::string _confFile = "";
     std::set<std::string> _setConfFile;
 

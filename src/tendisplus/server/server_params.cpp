@@ -211,7 +211,7 @@ bool ServerParams::setVar(const string& name, const string& value, string* errin
     auto iter = _mapServerParams.find(toLower(name));
     if (iter == _mapServerParams.end()){
         if (name.substr(0,6) == "rocks.") {
-            auto ed = tendisplus::stold(value);
+            auto ed = tendisplus::stoll(value);
             if (!ed.ok()) {
 				if (errinfo != NULL)
 					*errinfo = "invalid rocksdb options:" + name
