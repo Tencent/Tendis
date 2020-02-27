@@ -32,6 +32,8 @@ enum class ErrorCodes {
     ERR_NOT_EXPIRED,
     ERR_EXTENDED_PROTOCOL,
     ERR_STORE_NOT_OPEN,
+    ERR_LOCK_TIMEOUT,
+    ERR_UNKNOWN,
     
     // error from redis
     ERR_AUTH = 100,

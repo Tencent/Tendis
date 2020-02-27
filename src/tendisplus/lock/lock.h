@@ -19,11 +19,13 @@ class ILock {
     ILock(ILock* parent, mgl::MGLock* lk, Session* sess);
     virtual ~ILock();
     mgl::LockMode getMode() const;
+    mgl::LockRes getLockResult() const;
     virtual uint32_t getStoreId() const;
     virtual std::string getKey() const;
 
  protected:
     static mgl::LockMode getParentMode(mgl::LockMode mode);
+    mgl::LockRes _lockResult;
     std::unique_ptr<ILock> _parent;
     std::unique_ptr<mgl::MGLock> _mgl;
     // not owned
@@ -43,6 +45,8 @@ class StoresLock: public ILock {
 
 class StoreLock: public ILock {
  public:
+    static Expected<std::unique_ptr<StoreLock>> AquireStoreLock(uint32_t storeId,
+         mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs);
     StoreLock(uint32_t storeId, mgl::LockMode mode,
               Session* sess, mgl::MGLockMgr* mgr,
               uint64_t lockTimeoutMs = 3600000);
@@ -55,7 +59,7 @@ class StoreLock: public ILock {
 
 class KeyLock: public ILock {
  public:
-    static std::unique_ptr<KeyLock> AquireKeyLock(uint32_t storeId, const std::string& key,
+    static Expected<std::unique_ptr<KeyLock>> AquireKeyLock(uint32_t storeId, const std::string& key,
             mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
             uint64_t lockTimeoutMs = 3600000);
     KeyLock(uint32_t storeId, const std::string& key,

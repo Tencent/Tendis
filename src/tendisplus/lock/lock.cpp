@@ -8,7 +8,8 @@ namespace tendisplus {
 const char StoresLock::_target[] = "stores";
 
 ILock::ILock(ILock* parent, mgl::MGLock* lk, Session* sess)
-    :_parent(parent),
+    :_lockResult(mgl::LockRes::LOCKRES_WAIT),
+     _parent(parent),
      _mgl(lk),
      _sess(sess) {
 }
@@ -30,6 +31,10 @@ mgl::LockMode ILock::getMode() const {
         return mgl::LockMode::LOCK_NONE;
     }
     return _mgl->getMode();
+}
+
+mgl::LockRes ILock::getLockResult() const {
+    return _lockResult;
 }
 
 uint32_t ILock::getStoreId() const {
@@ -61,8 +66,20 @@ mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
 StoresLock::StoresLock(mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
                         uint64_t lockTimeoutMs)
         :ILock(nullptr, new mgl::MGLock(mgr), sess) {
-    auto lockResult = _mgl->lock(_target, mode, lockTimeoutMs);
-    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    _lockResult = _mgl->lock(_target, mode, lockTimeoutMs);
+}
+
+Expected<std::unique_ptr<StoreLock>> StoreLock::AquireStoreLock(uint32_t storeId,
+    mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs) {
+    auto lock = std::make_unique<StoreLock>(storeId, mode, sess, mgr, lockTimeoutMs);
+    if (lock->getLockResult() == mgl::LockRes::LOCKRES_OK) {
+        return lock;
+    } else if (lock->getLockResult() == mgl::LockRes::LOCKRES_TIMEOUT) {
+        return { ErrorCodes::ERR_LOCK_TIMEOUT, "Lock wait timeout" };
+    } else {
+        INVARIANT_D(0);
+        return { ErrorCodes::ERR_UNKNOWN, "unknown error" };
+    }
 }
 
 StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
@@ -78,8 +95,7 @@ StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
     if (_sess) {
         _sess->getCtx()->setWaitLock(storeId, "", mode);
     }
-    auto lockResult = _mgl->lock(target, mode, lockTimeoutMs);
-    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
     if (_sess) {
         _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
@@ -90,13 +106,21 @@ uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
-std::unique_ptr<KeyLock> KeyLock::AquireKeyLock(uint32_t storeId,
+Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId,
         const std::string &key, mgl::LockMode mode,
         Session *sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs) {
     if (sess->getCtx()->isLockedByMe(key, mode)) {
         return std::unique_ptr<KeyLock>(nullptr);
     } else {
-        return std::make_unique<KeyLock>(storeId, key, mode, sess, mgr, lockTimeoutMs);
+        auto lock = std::make_unique<KeyLock>(storeId, key, mode, sess, mgr, lockTimeoutMs);
+        if (lock->getLockResult() == mgl::LockRes::LOCKRES_OK) {
+            return lock;
+        } else if (lock->getLockResult() == mgl::LockRes::LOCKRES_TIMEOUT) {
+            return { ErrorCodes::ERR_LOCK_TIMEOUT, "Lock wait timeout" };
+        } else {
+            INVARIANT_D(0);
+            return { ErrorCodes::ERR_UNKNOWN, "unknown error" };
+        }
     }
 }
 
@@ -109,8 +133,7 @@ KeyLock::KeyLock(uint32_t storeId, const std::string& key,
     if (_sess) {
         _sess->getCtx()->setWaitLock(storeId, key, mode);
     }
-    auto lockResult = _mgl->lock(target, mode, lockTimeoutMs);
-    INVARIANT(lockResult == mgl::LockRes::LOCKRES_OK);
+    _lockResult = _mgl->lock(target, mode, lockTimeoutMs);
     if (_sess) {
         _sess->getCtx()->setWaitLock(0, "", mgl::LockMode::LOCK_NONE);
         _sess->getCtx()->addLock(this);
@@ -119,7 +142,9 @@ KeyLock::KeyLock(uint32_t storeId, const std::string& key,
 }
 
 KeyLock::~KeyLock() {
-    _sess->getCtx()->unsetKeylock(_key);
+    if (_sess) {
+        _sess->getCtx()->unsetKeylock(_key);
+    }
 }
 
 uint32_t KeyLock::getStoreId() const {
