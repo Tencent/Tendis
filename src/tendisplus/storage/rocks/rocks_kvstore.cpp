@@ -596,7 +596,7 @@ void RocksOptTxn::ensureTxn() {
         return;
     }
     rocksdb::WriteOptions writeOpts;
-    writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
+    writeOpts.disableWAL = _store->getCfg()->rocksDisableWAL;
     writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
 
     rocksdb::OptimisticTransactionOptions txnOpts;
@@ -639,7 +639,7 @@ void RocksPesTxn::ensureTxn() {
         return;
     }
     rocksdb::WriteOptions writeOpts;
-    writeOpts.disableWAL = _store->getCfg()->rocksDisalbeWAL;
+    writeOpts.disableWAL = _store->getCfg()->rocksDisableWAL;
     writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
 
     rocksdb::TransactionOptions txnOpts;

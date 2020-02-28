@@ -136,7 +136,7 @@ ServerParams::ServerParams() {
 
     REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
     REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit", rocksStrictCapacityLimit);
-    REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisalbeWAL);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisableWAL);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit", rocksFlushLogAtTrxCommit);
     REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 

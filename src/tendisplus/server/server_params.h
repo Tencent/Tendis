@@ -262,7 +262,7 @@ public:
     std::string rocksWALDir = "";
     string rocksCompressType = "snappy";
     // WriteOptions
-    bool rocksDisalbeWAL = false;
+    bool rocksDisableWAL = false;
     bool rocksFlushLogAtTrxCommit = false;
 };
 }  // namespace tendisplus

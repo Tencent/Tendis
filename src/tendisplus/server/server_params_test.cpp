@@ -168,7 +168,7 @@ TEST(ServerParams, RocksOption) {
     EXPECT_EQ(cfg->port, 8903);
     EXPECT_EQ(cfg->logLevel, "debug");
     EXPECT_EQ(cfg->logDir, "./");
-    EXPECT_EQ(cfg->rocksDisalbeWAL, 1);
+    EXPECT_EQ(cfg->rocksDisableWAL, 1);
     EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
     EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
     EXPECT_EQ(cfg->rocksCompressType, "lz4");
@@ -236,7 +236,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->lockWaitTimeOut, 3600);
 
     EXPECT_EQ(cfg->rocksBlockcacheMB, 4096);
-    EXPECT_EQ(cfg->rocksDisalbeWAL, false);
+    EXPECT_EQ(cfg->rocksDisableWAL, false);
     EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, false);
     EXPECT_EQ(cfg->rocksWALDir, "");
     EXPECT_EQ(cfg->rocksCompressType, "snappy");
