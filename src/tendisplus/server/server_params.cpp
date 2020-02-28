@@ -8,7 +8,9 @@
 #include <sstream>
 
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 using namespace std;
@@ -16,40 +18,72 @@ using namespace std;
 string gRenameCmdList = "";
 string gMappingCmdList = "";
 
-#define REGISTER_VARS_FULL(str, var, fun, allowDynamicSet) \
+#define REGISTER_VARS_FULL(str, var, checkfun, prefun, allowDynamicSet) \
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
-        _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, fun, allowDynamicSet))); \
+        _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(float)) \
-        _mapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, fun, allowDynamicSet))); \
+        _mapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(string)) \
-        _mapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, fun, allowDynamicSet))); \
+        _mapServerParams.insert(make_pair(toLower(str), new StringVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(bool)) \
-        _mapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, fun, allowDynamicSet))); \
-    else assert(false); // NOTE(takenliu): if other type is needed, change here.
+        _mapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
+    else INVARIANT(0); // NOTE(takenliu): if other type is needed, change here.
 
-#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, false)
-#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, false)
-#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, true)
+#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, false)
+#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, false)
+#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, true)
+#define REGISTER_VARS_DIFF_NAME_DYNAMIC(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, true)
 
-bool logLevelParamCheck(string& v) {
-    v = toLower(v);
-    if(v == "debug" || v == "verbose" || v == "notice" || v =="warning") {
+bool logLevelParamCheck(const string& val) {
+    auto v = toLower(val);
+    if (v == "debug" || v == "verbose" || v == "notice" || v == "warning") {
         return true;
     }
     return false;
 };
 
+bool compressTypeParamCheck(const string& val) {
+    auto v = toLower(val);
+    if (v == "snappy" || v == "lz4" || v == "none") {
+        return true;
+    }
+    return false;
+};
+
+string removeQuotes(const string& v) {
+    if (v.size() < 2) {
+        return v;
+    }
+
+    auto tmp = v;
+    if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+        tmp = tmp.substr(1, tmp.size() - 2);
+    }
+    return tmp;
+}
+
+string  removeQuotesAndToLower(const string& v) {
+    auto tmp = toLower(v);
+    if (tmp.size() < 2) {
+        return tmp;
+    }
+
+    if (tmp[0] == '\"' && tmp[tmp.size() - 1] == '\"') {
+        tmp = tmp.substr(1, tmp.size() - 2);
+    }
+    return tmp;
+}
+
 ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("bind", bindIp);
     REGISTER_VARS(port);
-    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, false);
+    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, removeQuotesAndToLower, false);
     REGISTER_VARS(logDir);
 
     REGISTER_VARS_DIFF_NAME("storage", storageEngine);
     REGISTER_VARS_DIFF_NAME("dir", dbPath);
     REGISTER_VARS_DIFF_NAME("dumpdir", dumpPath);
-    REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
     REGISTER_VARS(requirepass);
     REGISTER_VARS(masterauth);
     REGISTER_VARS(pidFile);
@@ -78,9 +112,9 @@ ServerParams::ServerParams() {
 
     REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
     REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);
-    REGISTER_VARS_FULL("slowlog-log-slower-than", slowlogLogSlowerThan, NULL, true);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-log-slower-than", slowlogLogSlowerThan);
     //REGISTER_VARS(slowlogMaxLen);
-    REGISTER_VARS_FULL("slowlog-flush-interval", slowlogFlushInterval, NULL, true);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-flush-interval", slowlogFlushInterval);
     REGISTER_VARS(netIoThreadNum);
     REGISTER_VARS(executorThreadNum);
 
@@ -97,21 +131,16 @@ ServerParams::ServerParams() {
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
 
-    REGISTER_VARS(strictCapacityLimit);
-    REGISTER_VARS(cacheIndexFilterblocks);
-    REGISTER_VARS(maxOpenFiles);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
 
-    REGISTER_VARS(writeBufferSize);
-    REGISTER_VARS(targetFileSizeBase);
-    REGISTER_VARS(maxBytesForLevelBase);
-    REGISTER_VARS(levelCompactionDynamicLevelBytes);
-    REGISTER_VARS(maxWriteBufferNumber);
-    REGISTER_VARS(minWriteBufferNumberToMerge);
-    REGISTER_VARS(maxBackgroundCompactions);
-    REGISTER_VARS(maxBackgroundFlushes);
-    REGISTER_VARS(walDir);
-    REGISTER_VARS(compressType);
+    REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
+    REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit", rocksStrictCapacityLimit);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisableWAL);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit", rocksFlushLogAtTrxCommit);
+    REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
+
+    REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, false);
 };
 
 ServerParams::~ServerParams() {
@@ -160,8 +189,7 @@ Status ServerParams::parseFile(const std::string& filename) {
                         LOG(ERROR) << "parseFile include file failed: " << tokens[1];
                         return ret;
                     }
-                }
-                else if (!setVar(tokens[0], tokens[1], NULL)) {
+                } else if (!setVar(tokens[0], tokens[1], NULL)) {
                     LOG(ERROR) << "err arg:" << tokens[0] << " " << tokens[1];
                     // return {ErrorCodes::ERR_PARSEOPT, ""}; // TODO(takenliu): return error
                 }
@@ -178,9 +206,22 @@ Status ServerParams::parseFile(const std::string& filename) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-bool ServerParams::setVar(string name, string value, string* errinfo, bool force) {
+bool ServerParams::setVar(const string& name, const string& value, string* errinfo, bool force) {
     auto iter = _mapServerParams.find(toLower(name));
     if (iter == _mapServerParams.end()){
+        if (name.substr(0,6) == "rocks.") {
+            auto ed = tendisplus::stoll(value);
+            if (!ed.ok()) {
+				if (errinfo != NULL)
+					*errinfo = "invalid rocksdb options:" + name
+                        + " value:" + value;
+
+                return false;
+            }
+
+            _rocksdbOptions.insert(make_pair(toLower(name.substr(6, name.length())), ed.value()));
+        }
+
         if (errinfo != NULL)
             *errinfo = "not found arg:" + name;
         return false;
@@ -192,7 +233,7 @@ bool ServerParams::setVar(string name, string value, string* errinfo, bool force
 }
 
 
-bool ServerParams::registerOnupdate(string name, funptr ptr){
+bool ServerParams::registerOnupdate(const string& name, funptr ptr){
     auto iter = _mapServerParams.find(toLower(name));
     if (iter == _mapServerParams.end()){
         return false;
@@ -201,16 +242,21 @@ bool ServerParams::registerOnupdate(string name, funptr ptr){
     return true;
 }
 
-string ServerParams::showAll() {
+string ServerParams::showAll() const {
     string ret;
     for (auto iter : _mapServerParams) {
         ret += "  " + iter.second->getName() + ":"+ iter.second->show() + "\n";
     }
+
+    for (auto iter : _rocksdbOptions) {
+        ret += "  " + iter.first + ":" + std::to_string(iter.second) + "\n";
+    }
+
     ret.resize(ret.size() - 1);
     return ret;
 }
 
-bool ServerParams::showVar(const string& key, string& info) {
+bool ServerParams::showVar(const string& key, string& info) const {
     auto iter = _mapServerParams.find(key);
     if (iter == _mapServerParams.end()) {
         return false;
