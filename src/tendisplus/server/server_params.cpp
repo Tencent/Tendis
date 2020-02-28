@@ -191,11 +191,12 @@ Status ServerParams::parseFile(const std::string& filename) {
                     }
                 } else if (!setVar(tokens[0], tokens[1], NULL)) {
                     LOG(ERROR) << "err arg:" << tokens[0] << " " << tokens[1];
-                    // return {ErrorCodes::ERR_PARSEOPT, ""}; // TODO(takenliu): return error
+                    return {ErrorCodes::ERR_PARSEOPT,
+                        "invalid parameter " + tokens[0] + " value: " + tokens[1]}; 
                 }
             } else {
                 LOG(ERROR) << "err arg:" << line;
-                return {ErrorCodes::ERR_PARSEOPT, ""};
+                return {ErrorCodes::ERR_PARSEOPT, "err arg: " + line};
             }
         }
     } catch (const std::exception& ex) {
@@ -212,14 +213,15 @@ bool ServerParams::setVar(const string& name, const string& value, string* errin
         if (name.substr(0,6) == "rocks.") {
             auto ed = tendisplus::stoll(value);
             if (!ed.ok()) {
-				if (errinfo != NULL)
-					*errinfo = "invalid rocksdb options:" + name
-                        + " value:" + value;
+                if (errinfo != NULL)
+                    *errinfo = "invalid rocksdb options:" + name
+                    + " value:" + value;
 
                 return false;
             }
 
             _rocksdbOptions.insert(make_pair(toLower(name.substr(6, name.length())), ed.value()));
+            return true;
         }
 
         if (errinfo != NULL)
@@ -249,7 +251,7 @@ string ServerParams::showAll() const {
     }
 
     for (auto iter : _rocksdbOptions) {
-        ret += "  " + iter.first + ":" + std::to_string(iter.second) + "\n";
+        ret += "  rocks." + iter.first + ":" + std::to_string(iter.second) + "\n";
     }
 
     ret.resize(ret.size() - 1);

@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
         //LOG(FATAL) << "parse config failed:" << s.toString();
         return -1;
     } else {
-        std::cout << "start server with cfg:" << params->showAll();
+        std::cout << "start server with cfg:\n" << params->showAll() << std::endl;
         //LOG(INFO) << "start server with cfg:" << params->toString();
     }
 

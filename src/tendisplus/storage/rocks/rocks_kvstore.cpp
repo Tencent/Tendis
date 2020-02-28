@@ -722,7 +722,7 @@ Status rocksdbOptionsSet(rocksdb::Options& options, const std::string key, int64
     else if (key == "max_manifest_file_size") { options.max_manifest_file_size = (uint64_t)value; }
     else if (key == "table_cache_numshardbits") { options.table_cache_numshardbits = (int)value; }
     else if (key == "wal_ttl_seconds") { options.WAL_ttl_seconds = (uint64_t)value; }
-    else if (key == "wal_size_limit_MB") { options.WAL_size_limit_MB = (uint64_t)value; }
+    else if (key == "wal_size_limit_mb") { options.WAL_size_limit_MB = (uint64_t)value; }
     else if (key == "manifest_preallocation_size") { options.manifest_preallocation_size = (size_t)value; }
     else if (key == "allow_mmap_reads") { options.allow_mmap_reads = (bool)value; }
     else if (key == "allow_mmap_writes") { options.allow_mmap_writes = (bool)value; }
