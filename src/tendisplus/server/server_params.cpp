@@ -213,15 +213,14 @@ bool ServerParams::setVar(const string& name, const string& value, string* errin
         if (name.substr(0,6) == "rocks.") {
             auto ed = tendisplus::stoll(value);
             if (!ed.ok()) {
-				if (errinfo != NULL)
-					*errinfo = "invalid rocksdb options:" + name
-                        + " value:" + value;
+                if (errinfo != NULL)
+                    *errinfo = "invalid rocksdb options:" + name
+                    + " value:" + value;
 
-                return true;
+                return false;
             }
 
             _rocksdbOptions.insert(make_pair(toLower(name.substr(6, name.length())), ed.value()));
-
             return true;
         }
 
