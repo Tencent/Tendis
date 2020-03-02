@@ -29,7 +29,7 @@ bool setupEnv(const std::string& v);
 void destroyEnv(const std::string& v);
 std::string getBulkValue(const std::string& reply, uint32_t index);
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port = 8811, uint32_t storeCnt = 0,
-    const std::string& dir = "");
+    const std::string& dir = "", bool general_log = true);
 std::shared_ptr<ServerEntry> makeServerEntry(const std::shared_ptr<ServerParams>& cfg);
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);

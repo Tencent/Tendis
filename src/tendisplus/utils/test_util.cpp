@@ -19,7 +19,7 @@
 
 namespace tendisplus {
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
-                const std::string& dir) {
+                const std::string& dir, bool general_log) {
     std::stringstream ss_tmp_conf_file;
     ss_tmp_conf_file << getpid() << "_";
     ss_tmp_conf_file << port << "_test.cfg";
@@ -47,7 +47,9 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     }
     myfile << "storage rocks\n";
     myfile << "rocks.blockcachemb 4096\n";
-    myfile << "generallog on\n";
+    if (general_log) {
+        myfile << "generallog on\n";
+    }
     myfile << "slowlog-flush-interval 1\n";
     // TODO(vinchen): should it always be on?
     myfile << "checkkeytypeforsetcmd on\n";

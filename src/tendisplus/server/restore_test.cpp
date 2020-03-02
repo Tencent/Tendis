@@ -392,8 +392,8 @@ makeRestoreEnv(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master1_dir));
     EXPECT_TRUE(setupEnv(master2_dir));
 
-    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
-    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir, false);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
     cfg1->maxBinlogKeepNum = 1;
     cfg2->maxBinlogKeepNum = 1;
 
