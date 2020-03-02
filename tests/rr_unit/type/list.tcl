@@ -1,9 +1,5 @@
 start_server {
     tags {"list"}
-    overrides {
-        "list-max-ziplist-value" 16
-        "list-max-ziplist-entries" 256
-    }
 } {
     source "tests/unit/type/list-common.tcl"
 

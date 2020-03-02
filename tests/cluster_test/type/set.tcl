@@ -1,8 +1,5 @@
 start_server {
     tags {"set"}
-    overrides {
-        "set-max-intset-entries" 512
-    }
 } {
     proc create_set {key entries} {
         r del $key
