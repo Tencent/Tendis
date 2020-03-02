@@ -52,14 +52,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	option(ENABLE_JEMALLOC "enable jemalloc" ON)
-	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	if(ENABLE_JEMALLOC)
-		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
+		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc-5.2.1")
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
 
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
-				COMMAND ./configure --with-lg-quantum=3 --with-jemalloc-prefix=je_ --enable-cc-silence
+				COMMAND ./autogen.sh
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a" "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
 				COMMAND ${CMAKE_MAKE_PROGRAM}
@@ -79,6 +77,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_dependencies(jemalloc_SHARED build_jemalloc)
 	endif()
 
+	list(APPEND SYS_LIBS "dl" "pthread" "rt")
 	# thirdparty code
 	# do not set unnecessary flags before thirdparty dirs
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
