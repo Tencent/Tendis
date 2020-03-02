@@ -249,6 +249,9 @@ class RocksKVStore: public KVStore {
     void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
     rocksdb::Options options();
     Expected<bool> deleteBinlog(uint64_t start);
+    void initRocksProperties();
+
+private:
     mutable std::mutex _mutex;
 
     const std::shared_ptr<ServerParams> _cfg;
@@ -304,6 +307,8 @@ class RocksKVStore: public KVStore {
     uint64_t _highestVisible;
 
     std::shared_ptr<BinlogObserver> _logOb;
+    std::map<std::string, std::string> _rocksIntProperties;
+    std::map<std::string, std::string> _rocksStringProperties;
 
 };
 
