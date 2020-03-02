@@ -1,9 +1,5 @@
 start_server {
     tags {"sort"}
-    overrides {
-        "list-max-ziplist-size" 32
-        "set-max-intset-entries" 32
-    }
 } {
     proc create_random_dataset {num cmd} {
         set tosort {}

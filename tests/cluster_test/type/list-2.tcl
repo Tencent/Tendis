@@ -1,8 +1,5 @@
 start_server {
     tags {"list"}
-    overrides {
-        "list-max-ziplist-size" 4
-    }
 } {
     source "tests/unit/type/list-common.tcl"
 
