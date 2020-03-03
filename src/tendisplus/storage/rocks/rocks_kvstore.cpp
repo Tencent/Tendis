@@ -1597,6 +1597,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
         LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
                     << ", failed info:" << s.status().toString();
     }
+    initRocksProperties();
 }
 
 Status RocksKVStore::releaseBackup() {
@@ -1993,9 +1994,9 @@ Status RocksKVStore::delKV(const RecordKey& key,
     return txn->delKV(key.encode());
 }
 
-void RocksKVStore::appendJSONStat(
-            rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
-    static std::map<std::string, std::string> properties = {
+void RocksKVStore::initRocksProperties()
+{
+    _rocksIntProperties = {
         {"rocksdb.num-immutable-mem-table", "num_immutable_mem_table"},
         {"rocksdb.mem-table-flush-pending", "mem_table_flush_pending"},
         {"rocksdb.compaction-pending", "compaction_pending"},
@@ -2004,10 +2005,10 @@ void RocksKVStore::appendJSONStat(
         {"rocksdb.cur-size-all-mem-tables", "cur_size_all_mem_tables"},
         {"rocksdb.size-all-mem-tables", "size_all_mem_tables"},
         {"rocksdb.num-entries-active-mem-table",
-                                "num_entries_active_mem_table"},
+                "num_entries_active_mem_table"},
         {"rocksdb.num-entries-imm-mem-tables", "num_entries_imm_mem_tables"},
         {"rocksdb.num-deletes-active-mem-table",
-                                "num_deletes_active_mem_table"},
+                "num_deletes_active_mem_table"},
         {"rocksdb.num-deletes-imm-mem-tables", "num_deletes_imm_mem_tables"},
         {"rocksdb.estimate-num-keys", "estimate_num_keys"},
         {"rocksdb.estimate-table-readers-mem", "estimate_table_readers_mem"},
@@ -2016,14 +2017,14 @@ void RocksKVStore::appendJSONStat(
         {"rocksdb.oldest-snapshot-time", "oldest_snapshot_time"},
         {"rocksdb.num-live-versions", "num_live_versions"},
         {"rocksdb.current-super-version-number",
-                                "current_super_version_number"},
+                "current_super_version_number"},
         {"rocksdb.estimate-live-data-size", "estimate_live_data_size"},
         {"rocksdb.min-log-number-to-keep", "min_log_number_to_keep"},
         {"rocksdb.total-sst-files-size", "total_sst_files_size"},
         {"rocksdb.live-sst-files-size", "live_sst_files_size"},
         {"rocksdb.base-level", "base_level"},
         {"rocksdb.estimate-pending-compaction-bytes",
-                                "estimate_pending_compaction_bytes"},
+                "estimate_pending_compaction_bytes"},
         {"rocksdb.num-running-compactions", "num_running_compactions"},
         {"rocksdb.num-running-flushes", "num_running_flushses"},
         {"rocksdb.actual-delayed-write-rate", "actual_delayed_write_rate"},
@@ -2031,6 +2032,27 @@ void RocksKVStore::appendJSONStat(
         {"rocksdb.num-immutable-mem-table-flushed", "num-immutable-mem-table-flushed"},
     };
 
+    _rocksStringProperties = {
+        {"rocksdb.stats", "stats"},
+        {"rocksdb.sstables", "sstables"},
+        {"rocksdb.cfstats", "cfstats"},
+        {"rocksdb.cfstats-no-file-histogram", "cfstats-no-file-histogram"},
+        {"rocksdb.cf-file-histogram", "cf-file-histogram"},
+        {"rocksdb.dbstats", "dbstats"},
+        {"rocksdb.levelstats", "levelstats"},
+        {"rocksdb.aggregated-table-properties", "aggregated-table-properties"},
+        {"rocksdb.num-files-at-level0", "num-files-at-level0"},
+        //{"rocksdb.estimate-oldest-key-time", "estimate-oldest-key-time"},
+    };
+    for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
+        _rocksStringProperties["rocksdb.num-files-at-level" + std::to_string(i)] = "num_files_at_level" + std::to_string(i);
+        _rocksStringProperties["rocksdb.compression-ratio-at-level" + std::to_string(i)] = "compression-ratio-at-level" + std::to_string(i);
+        _rocksStringProperties["rocksdb.aggregated-table-properties-at-level" + std::to_string(i)] = "aggregated-table-properties-at-level" + std::to_string(i);
+    }
+}
+
+void RocksKVStore::appendJSONStat(
+            rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     w.Key("id");
     w.String(dbId().c_str());
     w.Key("is_running");
@@ -2076,7 +2098,7 @@ void RocksKVStore::appendJSONStat(
     w.Key("rocksdb");
     w.StartObject();
     if (_isRunning) {
-        for (const auto& kv : properties) {
+        for (const auto& kv : _rocksIntProperties) {
             uint64_t tmp;
             bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
             if (!ok) {
@@ -2088,25 +2110,7 @@ void RocksKVStore::appendJSONStat(
             w.Uint64(tmp);
         }
 
-        static std::map<std::string, std::string> stringProperties = {
-            {"rocksdb.stats", "stats"},
-            {"rocksdb.sstables", "sstables"},
-            {"rocksdb.cfstats", "cfstats"},
-            {"rocksdb.cfstats-no-file-histogram", "cfstats-no-file-histogram"},
-            {"rocksdb.cf-file-histogram", "cf-file-histogram"},
-            {"rocksdb.dbstats", "dbstats"},
-            {"rocksdb.levelstats", "levelstats"},
-            {"rocksdb.aggregated-table-properties", "aggregated-table-properties"},
-            {"rocksdb.num-files-at-level0", "num-files-at-level0"},
-            //{"rocksdb.estimate-oldest-key-time", "estimate-oldest-key-time"},
-        };
-        for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
-            stringProperties["rocksdb.num-files-at-level" + std::to_string(i)] = "num_files_at_level" + std::to_string(i);
-            stringProperties["rocksdb.compression-ratio-at-level" + std::to_string(i)] = "compression-ratio-at-level" + std::to_string(i);
-            stringProperties["rocksdb.aggregated-table-properties-at-level" + std::to_string(i)] = "aggregated-table-properties-at-level" + std::to_string(i);
-        }
-
-        for (const auto& kv : stringProperties) {
+        for (const auto& kv : _rocksStringProperties) {
             string tmp;
             bool ok = getBaseDB()->GetProperty(kv.first, &tmp);
             if (!ok) {
@@ -2117,7 +2121,6 @@ void RocksKVStore::appendJSONStat(
             w.Key(kv.second.c_str());
             w.String(tmp);
         }
-
 
         sstMetaData level_summary[ROCKSDB_NUM_LEVELS];
         std::vector<rocksdb::LiveFileMetaData> metadata;
