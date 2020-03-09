@@ -21,6 +21,9 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/lock/lock.h"
+#include "tendisplus/network/network.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/server/session.h"
 
 namespace tendisplus {
 
@@ -878,6 +881,57 @@ struct ReplMPovStatus {
     string slave_listen_ip;
     uint16_t slave_listen_port = 0;
 };
+
+uint64_t ReplManager::getLastSyncTime() const {
+	std::lock_guard<std::mutex> lk(_mutex);
+    uint64_t min = 0;
+	for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+        if (_syncMeta[i]->syncFromHost != "") {
+            // it is a slave
+			uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime) / 1000000;  // ms
+			if (last_sync_time < min || min == 0) {
+				min = last_sync_time;
+			}
+        }
+	}
+
+	return min;
+}
+
+uint64_t ReplManager::replicationGetSlaveOffset() const {
+   // INVARIANT_D(0);
+    // TODO(vinchen)
+    const uint32_t  storeId = 0;
+    LocalSessionGuard sg(_svr.get());
+
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
+                                    mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "slave offset get db error";
+        return 0;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    uint64_t max = kvstore->getHighestBinlogId();
+
+    return max;
+}
+
+uint64_t ReplManager::replicationGetMasterOffset() const {
+ //   INVARIANT_D(0);
+ // TODO(vinchen)
+    const uint32_t  storeId = 0;
+    LocalSessionGuard sg(_svr.get());
+    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
+                                              mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "slave offset get db error";
+        return 0;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    uint64_t max = kvstore->getHighestBinlogId();
+
+    return max;
+}
 
 void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     // NOTE(takenliu), only consider slaveof all rockskvstores.

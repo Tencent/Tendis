@@ -295,18 +295,23 @@ public:
     bool rocksFlushLogAtTrxCommit = false;
     bool level0Compress = false;
     bool level1Compress = false;
+
+    uint32_t bingLogSendBatch =  256;
+    uint32_t bingLogSendBytes =  16 * 1024 * 1024;
     bool levelCompactionDynamicLevelBytes = true;
+
 
     uint32_t migrateSenderThreadnum = 4;
     uint32_t migrateClearThreadnum = 4;
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t migrateCheckThreadnum = 2;
-    bool enableCluster = false;
+    bool clusterEnabled = false;
+    uint32_t  migrateDistance = 150;
     uint32_t clusterNodeTimeout = 15000;
     bool clusterRequireFullCoverage = true;
     bool clusterSlaveNoFailover = false;
     uint32_t clusterMigrationBarrier = 1;
-    uint32_t clusterSlaveValidityFactor = 10;
+    uint32_t clusterSlaveValidityFactor = 50;
 
 };
 }  // namespace tendisplus

@@ -85,6 +85,7 @@ class WorkLoad {
     void clusterMeet(const std::string& ip, uint32_t port, const uint32_t cport = 0);
     void clusterNodes();
     void addSlots(const std::string& slotsBuff);
+    void replicate(const std::string& nodeName);
     void setMaxKeyLen(uint32_t max_key_len);
     Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
     std::string getStringResult(const std::vector<std::string>& args);

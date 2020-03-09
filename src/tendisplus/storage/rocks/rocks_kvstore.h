@@ -47,6 +47,7 @@ class RocksTxn: public Transaction {
     std::unique_ptr<TTLIndexCursor> createTTLIndexCursor(
                                       uint64_t until) final;
     std::unique_ptr<SlotCursor> createSlotCursor(uint32_t  slot) final;
+    std::unique_ptr<SlotsCursor> createSlotsCursor(uint32_t start, uint32_t end) final;
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;

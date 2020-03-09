@@ -255,18 +255,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
     // TODO(takenliu): finish it
-    uint32_t getStoreid(uint32_t chunkid) {
-        auto storeSize = getKVStoreCount();
-        if (storeSize == 1) {
-            return 0;
-        }
-        if (chunkid == 15495) { // "a"
-            return 5;
-        } else if (chunkid == 3300) { // "b"
-            return 0;
-        }
-        return chunkid % storeSize;
-    }
+
     std::vector<uint32_t> getChunkList(uint32_t storeid) {
         std::vector<uint32_t> result;
         if (getKVStoreCount() == 1) {
@@ -283,21 +272,18 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         }
         return result;
     }
+
     bool isContainChunk(uint32_t chunkid) {
         return true;
     }
-    Status lockChunk(uint32_t chunkid, string mode) {
-        return {ErrorCodes::ERR_OK, ""};
-    }
+
     Status updateChunkInfo(uint32_t chunkid, string mode) {
         return {ErrorCodes::ERR_OK, ""};
     }
     Status gossipBroadcast(uint32_t chunkid, string ip, uint32_t port) {
         return {ErrorCodes::ERR_OK, ""};
     }
-    Status unlockChunk(uint32_t chunkid, string mode) {
-        return {ErrorCodes::ERR_OK, ""};
-    }
+
     Status deleteChunk(uint32_t chunkid) {
         return {ErrorCodes::ERR_OK, ""};
     }
@@ -367,6 +353,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     //cluster test
     std::map<std::string, std::string> _nodeName;
     std::map<std::string, std::string> _ip;
+    std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
 
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;

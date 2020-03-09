@@ -6,15 +6,19 @@
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/cluster/migrate_manager.h"
+#include "tendisplus/cluster/cluster_manager.h"
 
 namespace tendisplus {
 using namespace std;
 
 class ChunkMigrateReceiver {
  public:
-    explicit ChunkMigrateReceiver (uint32_t chunkid, uint32_t storeid,
+    explicit ChunkMigrateReceiver(const std::bitset<CLUSTER_SLOTS>& slots,
+        uint32_t storeid,
         std::shared_ptr<ServerEntry> svr,
         std::shared_ptr<ServerParams> cfg);
+
     Status receiveSnapshot();
 
     void setDbWithLock(std::unique_ptr<DbWithLock> db) {
@@ -24,19 +28,21 @@ class ChunkMigrateReceiver {
         _client = client;
     }
 
-    Status applyBinlog( Session* sess, uint32_t storeid, uint32_t chunkid,
+    uint32_t getsStoreid() { return  _storeid; }
+    std::bitset<CLUSTER_SLOTS> getSlots()  { return  _slots; }
+
+    Status applyBinlog(Session* sess, uint32_t storeid, uint32_t chunkid,
         const std::string& logKey, const std::string& logValue);
 
  private:
     Status supplySetKV(const string& key, const string& value);
 
- private:
     std::shared_ptr<ServerEntry> _svr;
     const std::shared_ptr<ServerParams> _cfg;
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
-    uint32_t _chunkid;
     uint32_t _storeid;
+    std::bitset<CLUSTER_SLOTS> _slots;
 };
 
 }  // namespace tendisplus

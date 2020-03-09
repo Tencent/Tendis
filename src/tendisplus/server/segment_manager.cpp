@@ -21,13 +21,17 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
          _chunkSize(chunkSize) {
 }
 
+uint32_t SegmentMgrFnvHash64::getStoreid(uint32_t chunkid) {
+    return chunkid % _instances.size();
+}
+
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                     const std::string& key, mgl::LockMode mode) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
     INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     INVARIANT(_chunkSize == CLUSTER_SLOTS);
-    uint32_t segId = chunkId % _instances.size();
+    uint32_t segId = getStoreid(chunkId);
 
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
@@ -35,25 +39,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
         lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
 
     auto svr = sess->getServerEntry();
-    if (svr->isClusterEnabled()) {
-        const std::shared_ptr<tendisplus::ClusterState>
-                &clusterState = svr->getClusterMgr()->getClusterState();
-        std::stringstream ss;
-        /* If the cluster is down, unblock the client with the right error. */
-        if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-            ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
-            return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
-        }
-        CNodePtr myself = clusterState->getMyselfNode();
-        CNodePtr node = clusterState->getNodeBySlot(chunkId);
+    const std::shared_ptr<tendisplus::ClusterState>
+            &clusterState = svr->getClusterMgr()->getClusterState();
 
-        if (node != myself) {
-            ss << "-" << "MOVED" << " " << chunkId << " "
-               << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
-
-            return { ErrorCodes::ERR_MOVED, ss.str()};
-        }
-    }
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
@@ -103,20 +91,24 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
     uint32_t segId = chunkId % _instances.size();
 
     auto svr = sess->getServerEntry();
+    const std::shared_ptr<tendisplus::ClusterState>
+            &clusterState = svr->getClusterMgr()->getClusterState();
+
     if (svr->isClusterEnabled()) {
-        const std::shared_ptr<tendisplus::ClusterState>
-                &clusterState = svr->getClusterMgr()->getClusterState();
         std::stringstream ss;
-        /* If the cluster is down, unblock the client with the right error. */
-        if(clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
+
+        if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
             ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
+            return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
+        }
+        if (clusterState->getBlockState()) {
+            ss << "-BLOCK The cluster is block now" << "\r\n";
             return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
         }
         CNodePtr myself = clusterState->getMyselfNode();
         CNodePtr node = clusterState->getNodeBySlot(chunkId);
 
-
-        if ( node != myself) {
+        if ( node != myself && myself->getMaster() != node) {
             ss << "-" << "MOVED" << " " << chunkId << " "
                << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
 

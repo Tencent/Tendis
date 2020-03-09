@@ -3,6 +3,7 @@
 
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/cluster/cluster_manager.h"
 
 namespace tendisplus {
 #define SyncReadData(data, len, timeout) \
@@ -23,6 +24,7 @@ namespace tendisplus {
 std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
     std::shared_ptr<ServerEntry> svr);
 
+
 Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
     uint32_t storeId, uint32_t dstStoreId,
     uint64_t binlogPos, bool needHeartBeart,
@@ -30,9 +32,26 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
     const std::shared_ptr<ServerParams> cfg,
     uint32_t chunkid = Transaction::CHUNKID_UNINITED);
 
+
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
     uint32_t chunkid = Transaction::CHUNKID_UNINITED);
+
+
+
+Status sendWriter(BinlogWriter* writer,
+                    BlockingTcpClient*,
+                    uint32_t dstStoreId, bool needHeartBeat,
+                    uint32_t secs, uint32_t slot);
+
+
+Status SendSlotsBinlog(BlockingTcpClient*,
+                       uint32_t storeId, uint32_t dstStoreId,
+                       uint64_t binlogPos, uint64_t  binglogEnd,
+                       bool needHeartBeart,
+                       const std::bitset<CLUSTER_SLOTS>& slots,
+                       std::shared_ptr<ServerEntry> svr,
+                       const std::shared_ptr<ServerParams> cfg);
 
 }  // namespace tendisplus
 

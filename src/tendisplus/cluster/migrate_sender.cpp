@@ -2,77 +2,123 @@
 #include "tendisplus/replication/repl_util.h"
 #include "tendisplus/cluster/migrate_sender.h"
 #include "tendisplus/commands/command.h"
-
+#include "tendisplus/utils/invariant.h"
 namespace tendisplus {
 
-ChunkMigrateSender::ChunkMigrateSender(uint32_t chunkid,
+ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     std::shared_ptr<ServerEntry> svr,
     std::shared_ptr<ServerParams> cfg) :
+    _slots(slots),
     _svr(svr),
-    _cfg(cfg),
-    _chunkid(chunkid) {
+    _cfg(cfg) {
+        size_t idx = 0;
+        while (idx < slots.size() && !slots.test(idx)) {
+            ++idx;
+        }
+        _start  = idx;
+        idx  = slots.size()-1;
+        while (idx > 0 && !slots.test(idx)) {
+            --idx;
+        }
+        _end  = idx;
+        _clusterState = _svr->getClusterMgr()->getClusterState();
 }
 
+
 Status ChunkMigrateSender::sendChunk() {
-    Status s= sendSnapshot();
+    Status s = sendSnapshot(_slots);
+   // Status s = sendSnapshot(_start, _end+1);  // work on continous slots
     if (!s.ok()) {
         return s;
     }
-    s = sendBinlog();
+    // define max time to catch up binlog
+    uint16_t  maxTime = 10;
+    s = sendBinlog(maxTime);
     if (!s.ok()) {
-        return s;
+        LOG(ERROR) << "catch up binlog fail on task:" << _start;
+        return  s;
     }
+
     s = sendOver();
+
     if (!s.ok()) {
+        LOG(ERROR) << "sendover error";
+        if (s.code() == ErrorCodes::ERR_CLUSTER) {
+            LOG(ERROR) << "sendover error cluster";
+            return {ErrorCodes::ERR_CLUSTER, "send over fail on"};
+        }
         return s;
     }
-    _svr->updateChunkInfo(_chunkid, "not_mine");
-    _svr->gossipBroadcast(_chunkid, _dstIp, _dstPort);
-    _svr->unlockChunk(_chunkid, "X");
+
+    /* unlock after receive package */
+    s = _svr->getMigrateManager()->unlockChunks(_slots);
+    if (!s.ok()) {
+        LOG(ERROR) << "unlock fail on slots:"+ _slots.to_string();
+        return  {ErrorCodes::ERR_CLUSTER, "unlock fail on slots"};
+    }
+
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-std::string ChunkMigrateSender::encodePrefixPk(uint32_t chunkid) {
-    std::string result;
-    for (size_t i = 0; i < sizeof(chunkid); ++i) {
-        result.push_back((chunkid>>((sizeof(chunkid)-i-1)*8))&0xff);
-    }
-    return result;
+
+
+void ChunkMigrateSender::setDstNode(const std::string nodeid) {
+    _nodeid = nodeid;
+    _dstNode = _clusterState->clusterLookupNode(_nodeid);
 }
 
-Status ChunkMigrateSender::sendSnapshot() {
-    //LocalSessionGuard sg(_svr);
+
+// check if bitmap all belong to dst node
+bool ChunkMigrateSender::checkSlotsBlongDst(const std::bitset<CLUSTER_SLOTS>& slots) {
+//    auto state = _svr->getClusterMgr()->getClusterState();
+//    CNodePtr receiverNode = state->clusterLookupNode(_nodeid);
+
+    for (size_t id =0; id < slots.size(); id++) {
+        if (slots.test(id)) {
+            if (_clusterState->getNodeBySlot(id) != _dstNode) {
+                LOG(ERROR) << "slot:" << id << "not belong to:" << _nodeid;
+                return false;
+             }
+        }
+    }
+    return true;
+}
+
+
+Expected<Transaction*> ChunkMigrateSender:: initTxn() {
     auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
-        mgl::LockMode::LOCK_IS); // lock IS
+                                              mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
         return expdb.status();
     }
-    _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
 
+    _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
     auto kvstore = _dbWithLock->store;
+
     auto ptxn = kvstore->createTransaction(NULL);
+
     if (!ptxn.ok()) {
         return ptxn.status();
     }
-    // TODO(takenliu):truncatebinlog need contain binlogs after _curBinlogid.
-    // _curBinlogid = kvstore->getHighestBinlogId(); // takenliutest,TODO
-    _curBinlogid = 0;
-    auto cursor = std::move(ptxn.value()->createCursor()); // it's snapshot cursor
-    LOG(INFO) << "sendSnapshot begin, chunkid:" << _chunkid << " storeid:" << _storeid;
+    _curBinlogid = kvstore->getHighestBinlogId();
 
-    cursor->seek(encodePrefixPk(_chunkid));
+    Transaction* txn =  ptxn.value().release();
+    return  txn;
+}
+
+Status ChunkMigrateSender::sendRange(Transaction* txn,
+                                uint32_t begin, uint32_t end) {
+    auto cursor = std::move(txn->createSlotsCursor(begin, end));
     uint32_t totalWriteNum = 0;
     uint32_t curWriteNum = 0;
     uint32_t curWriteLen = 0;
     uint32_t timeoutSec = 100;
     Status s;
-    // size_t sendBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
-    // todo rate limit
     while (true) {
         Expected<Record> expRcd = cursor->next();
         if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            LOG(INFO) << "sendSnapshot Record is over, totalWriteNum:" << totalWriteNum
-                << " chunkid:" << _chunkid << " storeid:" << _storeid;
+                LOG(INFO) << "sendSnapshot Record is over, totalWriteNum:" << totalWriteNum
+                          << " storeid:" << _storeid;
             break;
         }
         if (!expRcd.ok()) {
@@ -80,26 +126,17 @@ Status ChunkMigrateSender::sendSnapshot() {
         }
         Record &rcd = expRcd.value();
         const RecordKey &rcdKey = rcd.getRecordKey();
-        /*LOG(INFO) << "takenliutest type:" << (int)rcdKey.getRecordType()
-            << " pk:" << rcdKey.getPrimaryKey()
-            << " chunkid:" << rcdKey.getChunkId() << " dbid:" << rcdKey.getDbId();*/
 
-        if (rcdKey.getChunkId() != _chunkid) {
-            LOG(INFO) << "sendSnapshot Record is over, totalWriteNum:" << totalWriteNum
-                      << " chunkid:" << _chunkid << " storeid:" << _storeid;
-            break;
-        }
         std::string key = rcdKey.encode();
         const RecordValue& rcdValue = rcd.getRecordValue();
         std::string value = rcdValue.encode();
 
         SyncWriteData("0");
-        //LOG(INFO) << "takenliutest write 0.";
+
         uint32_t keylen = key.size();
         SyncWriteData(string((char*)&keylen, sizeof(uint32_t)));
-        //LOG(INFO) << "takenliutest write keylen:" << keylen;
+
         SyncWriteData(key);
-        //LOG(INFO) << "takenliutest write key.";
 
         uint32_t valuelen = value.size();
         SyncWriteData(string((char*)&valuelen, sizeof(uint32_t)));
@@ -107,81 +144,177 @@ Status ChunkMigrateSender::sendSnapshot() {
 
         curWriteNum++;
         totalWriteNum++;
+        LOG(INFO) << "sendSnapshot Record is running, totalWriteNum:" << totalWriteNum << "slot:" << begin;
         curWriteLen+= 1 + sizeof(uint32_t) + keylen + sizeof(uint32_t) + valuelen;
 
         if (curWriteNum >= 1000) {
-            DLOG(INFO) << "ChunkMigrateSender::sendSnapshot chunk " << _chunkid
-                << " send one batch,totalWriteNum:" << totalWriteNum;
             SyncWriteData("1");
             SyncReadData(exptData, 3, timeoutSec)
             if (exptData.value() != "+OK") {
                 LOG(ERROR) << "read data is not +OK. totalWriteNum:" << totalWriteNum
-                    << " curWriteNum:" << curWriteNum << " data:" << exptData.value();
+                           << " curWriteNum:" << curWriteNum << " data:" << exptData.value();
                 return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
             }
             curWriteNum = 0;
             curWriteLen = 0;
         }
     }
+
+    return { ErrorCodes::ERR_OK, ""};
+}
+// send snapshot from begin to end
+// more effective than bitmap  when slots is continuous
+Status ChunkMigrateSender::sendSnapshot(uint32_t begin, uint32_t end) {
+    auto eTxn = initTxn();
+    if (!eTxn.ok()) {
+        return eTxn.status();
+    }
+    Transaction * txn = eTxn.value();
+    auto s = sendRange(txn, begin, end);
+
+    if (!s.ok()) {
+        LOG(ERROR) << "fail send snapshot from:" << begin << " to:"<< end;
+        return  {ErrorCodes::ERR_NETWORK, "fail send snapshot"};
+    }
+
+    uint32_t timeoutSec = 100;
+    SyncWriteData("2"); //  send over
+    SyncReadData(exptData, 3, timeoutSec)
+    if (exptData.value() != "+OK") {
+        LOG(ERROR) << "read receiver data is not +OK. totalWriteNum:" << " data:" << exptData.value();
+        return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
+    }
+
+    return  {ErrorCodes::ERR_OK, "finish snapshot"};
+}
+
+//deal with slots that is not continuous
+Status ChunkMigrateSender::sendSnapshot(const SlotsBitmap& slots) {
+    Status s;
+    auto eTxn = initTxn();
+    if (!eTxn.ok()) {
+        return eTxn.status();
+    }
+    Transaction * txn = eTxn.value();
+    uint32_t timeoutSec = 100;
+
+    for (size_t  i = 0; i < CLUSTER_SLOTS; i++) {
+        if (slots.test(i)) {
+            s = sendRange(txn, i , i+1);
+            if (!s.ok()) {
+                LOG(ERROR) << "fail send snapshot of bitmap";
+                return  {ErrorCodes::ERR_NETWORK, "fail send snapshot"};
+            }
+        }
+    }
     SyncWriteData("2"); // send over
     SyncReadData(exptData, 3, timeoutSec)
     if (exptData.value() != "+OK") {
-        LOG(ERROR) << "read data is not +OK. totalWriteNum:" << totalWriteNum
-                   << " curWriteNum:" << curWriteNum << " data:" << exptData.value();
+        LOG(ERROR) << "read receiver data is not +OK. totalWriteNum:" << " data:" << exptData.value();
         return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
     }
-    LOG(INFO) << "sendSnapshot over, totalWriteNum:" << totalWriteNum
-              << " chunkid:" << _chunkid << " storeid:" << _storeid;
-    return { ErrorCodes::ERR_OK, ""};
+    return  {ErrorCodes::ERR_OK, "finish snapshot of bitmap"};
 }
 
-Status ChunkMigrateSender::sendBinlog(){
-    PStore kvstore = _dbWithLock->store;
-    //_endBinlogid = kvstore->getHighestBinlogId(); // idempotent
-    // takenliutest,TODO
-    _endBinlogid = std::numeric_limits<uint64_t >::max();
-    LOG(INFO) << "sendBinlog begin, chunkid:" << _chunkid << " storeid:" << _storeid
-        << " beginBinlogid:" << _curBinlogid << " endBinlogid:" << _endBinlogid;
-    bool beginCatchup = false;
-    while (true) {
-        bool needHeartbeat = false;
-        // todo rate limit.
-        // todo chunkid match only
-        Expected<uint64_t> newPos =
-            masterSendBinlogV2(_client.get(), _storeid, _dstStoreid,
-                    _curBinlogid, needHeartbeat, _svr, _cfg, _chunkid);
-        if (!newPos.ok()) {
-            LOG(ERROR) << "ChunkMigrateSender::sendBinlog to client:"
-                << _client->getRemoteRepr() << " failed:"
-                << newPos.status().toString();
-            return newPos.status();
-        }
 
-        if (newPos.value() >= _endBinlogid || newPos.value() == _curBinlogid) { // lock and catchup
-            if (!beginCatchup) {
-                _svr->lockChunk(_chunkid, "X");
-                _endBinlogid = kvstore->getHighestBinlogId();
-                beginCatchup = true;
-            } else { // over
-                LOG(INFO) << "ChunkMigrateSender::sendBinlog over, remote_addr "
-                    << _client->getRemoteRepr() << ":" <<_client->getRemotePort()
-                    << ",curbinlog:" << _curBinlogid
-                    << " endbinlog:" << _endBinlogid
-                    << " newbinlog:" << newPos.value();
-                break;
-            }
-        }
-        _curBinlogid = newPos.value();
+uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) {
+    uint64_t maxBinlogId ;
+    auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn);
+    if (expBinlogidMax.status().code() == ErrorCodes::ERR_EXHAUST) {
+        maxBinlogId = 0;
+    } else {
+        maxBinlogId = expBinlogidMax.value();
     }
+    return  maxBinlogId;
+}
+
+// catch up binlog from start to end
+Status ChunkMigrateSender::catchupBinlog(uint64_t start, uint64_t end, const std::bitset<CLUSTER_SLOTS> &slots) {
+    bool needHeartbeat = false;
+    auto s =  SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
+            start, end , needHeartbeat, slots,  _svr, _cfg);
+    if (!s.ok()) {
+        LOG(ERROR) << "ChunkMigrateSender::sendBinlog to client:"
+                   << _client->getRemoteRepr() << " failed:"
+                   << s.toString();
+    }
+    return  s;
+}
+
+// catch up for maxTime
+bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog ,
+                                        uint64_t &binlogHigh, Transaction *txn) {
+    uint32_t  distance =  _svr->getParams()->migrateDistance;
+    uint64_t maxBinlogId = 0;
+    bool finishCatchup = true;
+    PStore kvstore = _dbWithLock->store;
+    uint32_t  count = 0;
+    while (maxTime) {
+        auto expectLog = catchupBinlog(startBinLog, binlogHigh , _slots);
+        if (!expectLog.ok()) {
+            return false;
+        }
+        count++;
+        LOG(INFO) << "catch up finish from:" << startBinLog <<"to:" <<binlogHigh;
+        startBinLog = binlogHigh;
+        binlogHigh = kvstore->getHighestBinlogId();
+
+        maxBinlogId = getMaxBinLog(txn);
+        auto diffOffset = maxBinlogId - startBinLog;
+        //reach for distance
+        if (diffOffset < distance) {
+            _endBinlogid = maxBinlogId;
+            finishCatchup = true;
+            break;
+        }
+        maxTime--;
+    }
+    return  finishCatchup;
+}
+
+
+Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
+    PStore kvstore = _dbWithLock->store;
+
+    auto ptxn = kvstore->createTransaction(NULL);
+    auto heighBinlog = kvstore->getHighestBinlogId();
+
+    // if no data come when migrating, no need to send end log
+    if (_curBinlogid < heighBinlog) {
+        bool catchUp = pursueBinLog(maxTime, _curBinlogid , heighBinlog, ptxn.value().get());
+        if (!catchUp) {
+           return {ErrorCodes::ERR_TIMEOUT, "catch up fail"};
+        }
+    }
+
+    Status s = _svr->getMigrateManager()->lockChunks(_slots);
+    if (!s.ok()) {
+        return {ErrorCodes::ERR_CLUSTER, "fail lock slots"};
+    }
+
+    // LOCKs need time, so need recompute max binlog
+    heighBinlog = getMaxBinLog(ptxn.value().get());
+    // last binlog send
+    if (_curBinlogid <  heighBinlog) {
+        auto sLog = catchupBinlog(_curBinlogid, heighBinlog , _slots);
+        if (!sLog.ok()) {
+            return {ErrorCodes::ERR_NETWORK, "send last binglog fail"};
+        }
+    }
+
+    LOG(INFO) << "ChunkMigrateSender::sendBinlog over, remote_addr "
+              << _client->getRemoteRepr() << ":" <<_client->getRemotePort()
+              << " curbinlog:" << _curBinlogid << " endbinlog:" << _endBinlogid;
+
     return { ErrorCodes::ERR_OK, ""};
 }
+
 
 Status ChunkMigrateSender::sendOver() {
-    LOG(INFO) << "sendOver begin, chunkid:" << _chunkid << " storeid:" << _storeid;
     std::stringstream ss2;
     Command::fmtMultiBulkLen(ss2, 3);
     Command::fmtBulk(ss2, "migrateend");
-    Command::fmtBulk(ss2, std::to_string(_chunkid));
+    Command::fmtBulk(ss2, _slots.to_string());
     Command::fmtBulk(ss2, std::to_string(_dstStoreid));
 
     std::string stringtoWrite = ss2.str();
@@ -192,72 +325,98 @@ Status ChunkMigrateSender::sendOver() {
         return s;
     }
 
+    //if check meta data change successfully (gossip msessgae faster than command return message)
+    if (checkSlotsBlongDst(_slots)) {
+        LOG(INFO) << "check meta data change successfully , just return";
+        return { ErrorCodes::ERR_OK, ""};
+    }
+
     uint32_t secs = _cfg->timeoutSecBinlogWaitRsp;
     Expected<std::string> exptOK = _client->readLine(std::chrono::seconds(secs));
+
     if (!exptOK.ok()) {
-        LOG(ERROR) << "chunkid:" << _chunkid << " dst Store:" << _dstStoreid
+        LOG(ERROR) <<  " dst Store:" << _dstStoreid
                      << " readLine failed:" << exptOK.status().toString()
                      << "; Size:" << stringtoWrite.size()
                      << "; Seconds:" << secs;
-        return exptOK.status();
+        // maybe miss message in network
+        return { ErrorCodes::ERR_CLUSTER, "missing package" };
+
     } else if (exptOK.value() != "+OK") { // TODO: two phase commit protocol
-        LOG(ERROR) << "get response of migrateend failed, chunkid:"
-            << _chunkid << " dstStoreid:" << _dstStoreid
+        LOG(ERROR) << "get response of migrateend failed "
+            << "dstStoreid:" << _dstStoreid
             << " rsp:" << exptOK.value();
         return{ ErrorCodes::ERR_NETWORK, "bad return string" };
     }
-    LOG(INFO) << "sendOver end, chunkid:" << _chunkid << " storeid:" << _storeid;
+
+
+ //   auto state = _svr->getClusterMgr()->getClusterState();
+ //   CNodePtr receiverNode = state->clusterLookupNode(_nodeid);
+
+    // set  meta data of source node
+    s = _clusterState->setSlots(_dstNode, _slots);
+    if (!s.ok()) {
+        LOG(ERROR) << "set myself meta data fail on slots";
+        return { ErrorCodes::ERR_CLUSTER, "set slot dstnode fail" };
+    }
+
+    LOG(INFO) << "sendOver end ，storeid:" << _storeid;
+
     return { ErrorCodes::ERR_OK, ""};
 }
 
-Expected<bool> ChunkMigrateSender::deleteChunk(uint32_t maxDeletenum) {
-    std::unique_ptr<Cursor> cursor;
+
+Expected<bool> ChunkMigrateSender::deleteChunk(uint32_t  chunkid) {
     PStore kvstore = _dbWithLock->store;
     auto ptxn = kvstore->createTransaction(NULL);
     if (!ptxn.ok()) {
         return ptxn.status();
     }
-    cursor = std::move(ptxn.value()->createCursor());
- 
-    cursor->seek(encodePrefixPk(_chunkid));
+    auto cursor = std::move(ptxn.value()->createSlotsCursor(chunkid, chunkid+1));
     bool over = false;
-    const uint32_t maxDeleteNum = 1000;
     uint32_t deleteNum = 0;
+
     while (true) {
         Expected<Record> expRcd = cursor->next();
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            over = true;
+            break;
+        }
+
         if (!expRcd.ok()) {
             return expRcd.status();
         }
 
-        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            over = true;
-            LOG(INFO) << "deleteChunk over, chunkid:" << _chunkid
-                      << " deleteNum:" << deleteNum;
-            break;
-        }
         Record &rcd = expRcd.value();
         const RecordKey &rcdKey = rcd.getRecordKey();
-        if (rcdKey.getChunkId() != _chunkid) {
-            over = true;
-            LOG(INFO) << "deleteChunk over, chunkid:" << _chunkid
-               << " deleteNum:" << deleteNum;
-            break;
-        }
-
-        //LOG(INFO) << "takenliutest, deleteKey :" << rcdKey.getPrimaryKey();
-        ptxn.value()->delKV(rcdKey.encode()); // need congurate binlog
+        ptxn.value()->delKV(rcdKey.encode());
         deleteNum++;
-        if (deleteNum >= maxDeleteNum) {
-            break;
-        }
     }
+
     auto s = ptxn.value()->commit();
-    if (!s.ok()) { // todo: retry_times
+    // todo: retry_times
+    if (!s.ok()) {
         return s.status();
     }
-    DLOG(INFO) << "deleteChunk chunkid:" << _chunkid
+    LOG(INFO) << "deleteChunk chunkid:" << chunkid
         << " num:" << deleteNum << " is_over:" << over;
     return over;
 }
+
+bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
+    size_t idx = 0;
+    while (idx < slots.size()) {
+        if (slots.test(idx)) {
+            auto v = deleteChunk(idx);
+            if (!v.value()) {
+                LOG(ERROR) << "delete slot:" << idx << "fail";
+                return false;
+            }
+        }
+        idx++;
+    }
+    return true;
+}
+
 
 } // end namespace

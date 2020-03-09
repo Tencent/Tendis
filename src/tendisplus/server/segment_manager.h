@@ -39,7 +39,7 @@ class SegmentMgr {
             const std::vector<int>& index,
             mgl::LockMode mode) = 0;
     virtual size_t getChunkSize() const = 0;
-
+    virtual  uint32_t getStoreid(uint32_t chunkid)  = 0;
 private:
     const std::string _name;
 };
@@ -62,8 +62,10 @@ class SegmentMgrFnvHash64: public SegmentMgr {
             const std::vector<int>& index,
             mgl::LockMode mode) final;
     size_t getChunkSize() const final { return _chunkSize; }
+    uint32_t getStoreid(uint32_t chunkid);
 private:
     std::vector<PStore> _instances;
+
     size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
     static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;

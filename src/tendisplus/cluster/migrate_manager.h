@@ -7,6 +7,9 @@
 #include "tendisplus/cluster/migrate_sender.h"
 #include "tendisplus/cluster/migrate_receiver.h"
 #include "tendisplus/storage/catalog.h"
+#include <list>
+#include "tendisplus/cluster/cluster_manager.h"
+
 
 namespace tendisplus {
 
@@ -14,7 +17,7 @@ class ServerEntry;
 class StoreMeta;
 class ChunkMeta;
 class ChunkMigrateSender;
-class ChunkMigrateReceiver;
+
 
 // Sender POV
 enum class MigrateSendState {
@@ -24,27 +27,31 @@ enum class MigrateSendState {
     CATCHUP,
     SUCC,
     CLEAR,
+    HALF,
     ERR
 };
 
+using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
+
 class MigrateSendTask {
 public:
-    explicit MigrateSendTask(uint32_t chunk_id, std::shared_ptr<ServerEntry> svr,
-        const std::shared_ptr<ServerParams> cfg) :
-        chunkid(chunk_id),
-        isRunning(false),
-        state(MigrateSendState::WAIT),
-        sender(chunk_id, svr, cfg){
+    explicit MigrateSendTask(const SlotsBitmap& slots_ , std::shared_ptr<ServerEntry> svr,
+                             const std::shared_ptr<ServerParams> cfg) :
+            slots(slots_),
+            isRunning(false),
+            state(MigrateSendState::WAIT){
+                sender = std::make_unique<ChunkMigrateSender>(slots_, svr, cfg);
     }
     void setClient(std::shared_ptr<BlockingTcpClient> client);
 
-    uint32_t chunkid;
+    SlotsBitmap slots;
     uint32_t storeid;
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
     MigrateSendState state;
-    ChunkMigrateSender sender;
+    std::unique_ptr<ChunkMigrateSender> sender;
 };
+
 
 // receiver POV
 enum class MigrateReceiveState {
@@ -55,20 +62,23 @@ enum class MigrateReceiveState {
     ERR
 };
 
+
+class ChunkMigrateReceiver;
+
 class MigrateReceiveTask{
 public:
-    explicit MigrateReceiveTask(uint32_t chunk_id, uint32_t store_id, string& ip, uint16_t port,
+    explicit MigrateReceiveTask(const SlotsBitmap& slots_ , uint32_t store_id, string& ip, uint16_t port,
         std::shared_ptr<ServerEntry> svr,
         const std::shared_ptr<ServerParams> cfg) :
-        chunkid(chunk_id),
+        slots(slots_),
         storeid(store_id),
         srcIp(ip),
         srcPort(port),
         isRunning(false),
-        state(MigrateReceiveState::RECEIVE_SNAPSHOT),
-        receiver(chunk_id, store_id, svr, cfg){
+        state(MigrateReceiveState::RECEIVE_SNAPSHOT){
+            receiver = std::make_unique<ChunkMigrateReceiver>(slots_, store_id, svr, cfg);
     }
-    uint32_t chunkid;
+    SlotsBitmap slots;
     uint32_t storeid;
     string srcIp;
     uint16_t srcPort;
@@ -77,9 +87,11 @@ public:
     SCLOCK::time_point nextSchedTime;
     SCLOCK::time_point lastSyncTime;
     MigrateReceiveState state;
-    ChunkMigrateReceiver receiver;
-    uint64_t sessionId;
+    std::unique_ptr<ChunkMigrateReceiver> receiver;
+
 };
+
+
 
 class MigrateManager {
  public:
@@ -87,40 +99,66 @@ class MigrateManager {
           const std::shared_ptr<ServerParams> cfg);
 
     Status startup();
-    Status stopChunk(uint32_t chunkid);
+    Status stopStoreTask(uint32_t storid);
     void stop();
 
     // sender POV
     bool senderSchedule(const SCLOCK::time_point& now);
-    Status migrating(uint32_t chunkid, string& ip, uint16_t port);
+
+    Status migrating(SlotsBitmap slots, string& ip, uint16_t port, uint32_t storeid );
+
     void dstReadyMigrate(asio::ip::tcp::socket sock,
                          const std::string& chunkidArg,
-                         const std::string& StoreidArg);
+                         const std::string& StoreidArg,
+                         const std::string& nodeidArg);
 
     // receiver POV
     bool receiverSchedule(const SCLOCK::time_point& now);
-    Status importing(uint32_t chunkid, string& ip, uint16_t port);
-    void fullReceive(uint32_t chunkid);
-    void checkMigrateStatus(uint32_t chunkid);
+
+    Status importing(SlotsBitmap slots, string& ip, uint16_t port, uint32_t storeid );
+
+
+    void fullReceive(MigrateReceiveTask* task);
+
+    //void checkMigrateStatus(uint32_t chunkid);
+    void checkMigrateStatus(MigrateReceiveTask* task);
+
+
     Status applyRepllog(Session* sess, uint32_t storeid, uint32_t chunkid,
                        const std::string& logKey, const std::string& logValue);
-    Status supplyMigrateEnd(uint32_t chunkid);
+    Status supplyMigrateEnd(const SlotsBitmap& slots);
+    Status lockXChunk(uint32_t chunkid);
+    Status unlockXChunk(uint32_t chunkid);
+
+    Status lockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
+    Status unlockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
 
  private:
+    std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
+    //std::array<std::unique_ptr<ChunkLock>, > _lockList;
     void controlRoutine();
-    void sendChunk(uint32_t chunkid);
+    void sendSlots(MigrateSendTask* task);
     void deleteChunk(uint32_t chunkid);
-
+    void deleteChunks(MigrateSendTask* task);
+    void unsetSlots(const SlotsBitmap& slots1, SlotsBitmap& slots2);
+    bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
  private:
     const std::shared_ptr<ServerParams> _cfg;
     std::shared_ptr<ServerEntry> _svr;
+  //  std::shared_ptr<ClusterState> _cluster;
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
     mutable std::mutex _mutex;
     std::unique_ptr<std::thread> _controller;
-
+    std::bitset<CLUSTER_SLOTS> _migrateSlots;
+    std::bitset<CLUSTER_SLOTS> _importSlots;
     // sender's pov
-    std::map<uint32_t, std::unique_ptr<MigrateSendTask>> _migrateSendTask;
+    std::list<std::unique_ptr<MigrateSendTask>> _migrateSendTask;
+
+    std::map<uint64_t, std::unique_ptr<MigrateSendTask>> _migrateSendMap;
+    std::map<uint64_t, std::unique_ptr<MigrateReceiveTask>> _migrateReceiveMap;
+
+
     std::unique_ptr<WorkerPool> _migrateSender;
     std::unique_ptr<WorkerPool> _migrateClear;
     std::shared_ptr<PoolMatrix> _migrateSenderMatrix;
@@ -129,7 +167,8 @@ class MigrateManager {
     std::unique_ptr<RateLimiter> _rateLimiter;
 
     // receiver's pov
-    std::map<uint32_t, std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
+    std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
+
     std::unique_ptr<WorkerPool> _migrateReceiver;
     std::unique_ptr<WorkerPool> _migrateChecker;
     std::shared_ptr<PoolMatrix> _migrateReceiverMatrix;

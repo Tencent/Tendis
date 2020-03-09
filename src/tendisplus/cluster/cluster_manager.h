@@ -21,6 +21,7 @@ enum class ConnectState: std::uint8_t;
 enum class ClusterHealth: std::uint8_t {
     CLUSTER_FAIL = 0,
     CLUSTER_OK = 1,
+    CLUSTER_BLOCK = 2,
 };
 
 #define CLUSTER_SLOTS 16384
@@ -105,8 +106,10 @@ using  mstime_t = uint64_t;
 class ClusterSession;
 class ClusterState;
 class ClusterMsg;
-
+class ClusterNodeFailReport;
 using myMutex = std::recursive_mutex;
+
+
 
 class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     friend class ClusterState;
@@ -151,10 +154,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint16_t getSlotNum() const { return  _numSlots; }
     uint16_t getSlaveNum() const { return _numSlaves; }
 
-    bool addFailureReport(std::shared_ptr<ClusterNode> sender);
-    bool delFailureReport(std::shared_ptr<ClusterNode> sender);
     uint32_t getNonFailingSlavesCount() const;
-    uint32_t failureReportsCount();
 
     void markAsFailing();
 
@@ -186,9 +186,10 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     bool getSlotBit(uint32_t slot) const;
 
-    static std::string representClusterNodeFlags(uint32_t flags);
+    static std::string representClusterNodeFlags(uint16_t flags);
     std::string clusterGenNodeDescription();
     ConnectState getConnectState();
+
 
 protected:
     bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -211,7 +212,6 @@ protected:
     uint64_t _nodeCport;  /* Latest known cluster port of this node. */
     std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node, connect success */
     std::shared_ptr<BlockingTcpClient> _nodeClient;  /* try connect to the _node */
-    void cleanupFailureReportsNoLock();
     std::bitset<CLUSTER_SLOTS> _mySlots;
     uint16_t _numSlaves;
 
@@ -232,11 +232,29 @@ protected:
     mstime_t _orphanedTime;
     // FIXME: there is no offset in tendis
     uint64_t _replOffset;  /* Last known repl offset for this node. */
-    std::list<std::shared_ptr<ClusterNode>> _failReport;
+    std::list<std::shared_ptr<ClusterNodeFailReport>> _failReport;
 
     };
 
 using CNodePtr = std::shared_ptr<ClusterNode>;
+using CReportPtr = std::shared_ptr<ClusterNodeFailReport>;
+
+
+class ClusterNodeFailReport : public std::enable_shared_from_this<ClusterNodeFailReport> {
+ public:
+     ClusterNodeFailReport(const std::string& name, mstime_t time);
+     ClusterNodeFailReport(const ClusterNodeFailReport&) = delete;
+     ClusterNodeFailReport(ClusterNodeFailReport&&) = default;
+
+     std::string  getFailNode() const { return _nodeName; }
+     mstime_t getFailTime() const { return _time; }
+
+     void setFailNode(const std::string& name);
+     void setFailTime(mstime_t  time);
+ private:
+     std::string _nodeName;
+     mstime_t  _time;
+};
 
 class ClusterMsgHeader;
 class ClusterMsgData;
@@ -476,7 +494,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void clusterRenameNode(CNodePtr node, const std::string& newname, bool save = false);
     void clusterSaveNodes();
     bool clusterSetNodeAsMaster(CNodePtr node);
-    void clusterSetMaster(CNodePtr node);
+    Status clusterSetMaster(CNodePtr node);
+    Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
     bool clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave);
     bool clusterNodeAddSlave(CNodePtr master, CNodePtr slave);
 
@@ -487,6 +506,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     CNodePtr clusterLookupNode(const std::string& name);
     // Status ClusterState::clusterMaster(CNodePtr n);
     bool clusterAddSlot(CNodePtr n, const uint32_t slot);
+    bool clusterSetSlot(CNodePtr n, const std::bitset<CLUSTER_SLOTS>&  bitmap);
     bool clusterDelSlot(const uint32_t slot);
     uint32_t clusterDelNodeSlots(CNodePtr node);
     void clusterCloseAllSlots();
@@ -515,6 +535,12 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
    // void setSlotBelong(CNodePtr n, const uint32_t slot);
     Status setSlotMyself(const uint32_t slot);
     void setSlotBelongMyself(const uint32_t slot);
+
+    Status setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS>& slots);
+    Status setSlotsMyself(const std::bitset<CLUSTER_SLOTS>& slots);
+    void setSlotsBelongMyself(const std::bitset<CLUSTER_SLOTS>& slots);
+
+
     CNodePtr getNodeBySlot(uint32_t slot) const;
 
     void clusterUpdateSlotsConfigWith(CNodePtr sender,
@@ -555,8 +581,13 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
     void clusterUpdateState();
     bool isContainSlot(uint32_t slotId);
+    void forceFailover(bool force, bool takeover);
 
     Status clusterSaveConfig();
+    void setBlock(mstime_t t);
+    void unsetBlock();
+    bool getBlockState() const { return _blockState; }
+    bool clusterIsOK() const { return  getClusterState()== ClusterHealth::CLUSTER_OK; }
     // TODO(wayenchen)
     // Status clusterReadMeta();
     // Status clusterDelNodeSlots(CNodePtr n);
@@ -564,11 +595,14 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // Status setStateFail();
 
  private:
+
     mutable myMutex _mutex;
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
     uint64_t _lastVoteEpoch;     /* Epoch of the last vote granted. */
     std::shared_ptr<ServerEntry> _server;
+    bool _blockState;
+    mstime_t _blockTime;
     Status clusterSaveNodesNoLock();
     void clusterAddNodeNoLock(CNodePtr node);
     void clusterDelNodeNoLock(CNodePtr node);

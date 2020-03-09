@@ -46,7 +46,7 @@ enum class RecordType {
     RT_ZSET_META,               /* For realtype in RecordValue */
     RT_ZSET_S_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
     RT_ZSET_H_ELE,              /* For zset subkey type in RecordKey and RecordValue  */
-    RT_BINLOG,                  /* For binlog in RecordKey and RecordValue  */
+    RT_BINLOG,                   /* For binlog in RecordKey and RecordValue  */
     RT_TTL_INDEX,               /* For ttl index  in RecordKey and RecordValue  */
     RT_DATA_META,               /* For key type in RecordKey */
 };
@@ -522,6 +522,8 @@ class BinlogWriter {
     uint32_t getCount() const { return _curCnt; }
     uint32_t getSize() const { return _curSize; }
     BinlogFlag getFlag() const { return _flag; }
+    bool writerFull () ;
+    void resetWriter() ;
     void setFlag(BinlogFlag flag) { _flag = flag; }
     std::string getBinlogStr() { return _ss.str(); }
 

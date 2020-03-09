@@ -441,6 +441,13 @@ void WorkLoad::addSlots(const std::string& slotsBuff) {
     EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::replicate(const std::string & nodeName) {
+    _session->setArgs({"cluster", "replicate", nodeName});
+
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
 
 int genRand() {
     int grand = 0;

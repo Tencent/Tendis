@@ -5,35 +5,40 @@
 
 namespace tendisplus {
 
-ChunkMigrateReceiver::ChunkMigrateReceiver (
-    uint32_t chunkid, uint32_t storeid,
+ChunkMigrateReceiver::ChunkMigrateReceiver(
+    const std::bitset<CLUSTER_SLOTS>& slots,
+    uint32_t storeid,
     std::shared_ptr<ServerEntry> svr,
     std::shared_ptr<ServerParams> cfg) :
     _svr(svr),
     _cfg(cfg),
-    _chunkid(chunkid),
-    _storeid(storeid) {
+    _storeid(storeid),
+    _slots(slots) {
 }
 
-Status ChunkMigrateReceiver::receiveSnapshot(){
+Status ChunkMigrateReceiver::receiveSnapshot() {
     std::stringstream ss;
-    ss << "readymigrate " << _chunkid << " " << _storeid;
+    const std::string nodename = _svr->getClusterMgr()->getClusterState()->getMyselfName();
+    std::string bitmapStr = _slots.to_string();
+    ss << "readymigrate " << bitmapStr << " " << _storeid << " " << nodename;
     Status s = _client->writeLine(ss.str());
     if (!s.ok()) {
         LOG(ERROR) << "readymigrate srcDb failed:" << s.toString();
         return s;
     }
 
-    auto expRsp = _client->readLine(std::chrono::seconds(30));
+    auto expRsp = _client->readLine(std::chrono::seconds(50));
     if (!expRsp.ok()) {
         LOG(ERROR) << "readymigrate req srcDb error:"
                      << expRsp.status().toString();
         return expRsp.status();
     }
+    std::string value = expRsp.value();
     if (expRsp.value() != "+OK") {
         LOG(WARNING) << "readymigrate req srcDb failed:" << expRsp.value();
         return {ErrorCodes::ERR_INTERNAL, "readymigrate req srcDb failed"};
     }
+
     LOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
 
     bool over = false;
@@ -41,7 +46,6 @@ Status ChunkMigrateReceiver::receiveSnapshot(){
     uint32_t readNum = 0;
     while (true) {
         SyncReadData(exptData, 1, timeoutSec)
-
         if (exptData.value()[0] == '0') {
             SyncReadData(keylenData, 4, timeoutSec)
             uint32_t keylen = *(uint32_t*)keylenData.value().c_str();
@@ -55,19 +59,17 @@ Status ChunkMigrateReceiver::receiveSnapshot(){
             readNum++;
         } else if (exptData.value()[0] == '1') {
             SyncWriteData("+OK")
-            DLOG(INFO) << "ChunkMigrateReceiver::receiveSnapshot chunk " << _chunkid
-                << " receive one batch, readnum:" << readNum;
         } else if (exptData.value()[0] == '2') {
             over = true;
             SyncWriteData("+OK")
             break;
         }
     }
-    LOG(INFO) << "migrate snapshot chunk:" << _chunkid << " transfer done,readnum:" << readNum;
+    LOG(INFO) << "migrate snapshot  transfer done,readnum:" << readNum;
     return { ErrorCodes::ERR_OK, "" };
 }
 
-Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value){
+Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value) {
     Expected<RecordKey> expRk = RecordKey::decode(key);
     if (!expRk.ok()) {
         return expRk.status();
@@ -76,20 +78,20 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
     if (!expRv.ok()) {
         return expRv.status();
     }
-    uint32_t chunkid = expRk.value().getChunkId();
-    if (chunkid != _chunkid) {
-        LOG(ERROR) << "chunkid not match:" << chunkid << " " << _chunkid
-             << " " << expRk.value().getPrimaryKey();
-        return { ErrorCodes::ERR_INTERNAL, "chunkid not match" };
+
+    uint32_t  slotid = expRk.value().getChunkId();
+    if (!_slots.test(slotid)) {
+        LOG(ERROR) << "slotid:"<< expRk.value().getPrimaryKey()
+                   << "is not a member in bitmap";
+        return { ErrorCodes::ERR_INTERNAL, "slotid not match" };
     }
+
 
     PStore kvstore = _dbWithLock->store;
     auto eTxn = kvstore->createTransaction(nullptr);
     EXPECT_EQ(eTxn.ok(), true);
     std::unique_ptr<Transaction> txn = std::move(eTxn.value());
 
-    //LOG(INFO) << "takenliutest key:" << expRk.value().getPrimaryKey()
-    //    << " value:" << expRv.value().getValue();
     Status s = kvstore->setKV(expRk.value(), expRv.value(), txn.get());
     EXPECT_EQ(s.ok(), true);
 
@@ -116,9 +118,9 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
     return { ErrorCodes::ERR_OK, "" };
 }
 
-Status ChunkMigrateReceiver::applyBinlog( Session* sess, uint32_t storeid, uint32_t chunkid,
-    const std::string& logKey, const std::string& logValue) {
-    //LOG(INFO) << "takenliutest: applyBinlog " << chunkid << " "<<storeid;
+Status ChunkMigrateReceiver::applyBinlog(Session* sess, uint32_t storeid,
+                            uint32_t chunkid, const std::string& logKey,
+                            const std::string& logValue) {
     auto binlog = applySingleTxnV2(sess, storeid,
         logKey, logValue, chunkid);
     if (!binlog.ok()) {
@@ -126,5 +128,7 @@ Status ChunkMigrateReceiver::applyBinlog( Session* sess, uint32_t storeid, uint3
     }
     return { ErrorCodes::ERR_OK, "" };
 }
+
+
 
 } // end namespace

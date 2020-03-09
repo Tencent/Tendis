@@ -95,6 +95,7 @@ StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
         :ILock(NULL,
                                 new mgl::MGLock(mgr), sess),
          _storeId(storeId) {
+    DLOG(INFO) << "begin lock on store:" <<_storeId;
     std::string target = "store_" + std::to_string(storeId);
     if (_sess) {
         _sess->getCtx()->setWaitLock(storeId, 0, "", mode);
@@ -115,6 +116,7 @@ ChunkLock::ChunkLock(uint32_t chunkId, uint32_t storeId, mgl::LockMode mode,
         :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr),
                new mgl::MGLock(mgr), sess),
          _chunkId(chunkId) {
+    DLOG(INFO) << "begin lock on chunk:" <<_chunkId;
     std::string target = "chunk_" + std::to_string(chunkId);
     // a duration of 49 days. If lock still not acquired, fail it
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();

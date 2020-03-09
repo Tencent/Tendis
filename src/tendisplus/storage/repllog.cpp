@@ -557,6 +557,18 @@ bool BinlogWriter::writeRepllogRaw(const ReplLogRawV2& repllog) {
     return false;
 }
 
+void BinlogWriter::resetWriter() {
+    _curSize = 0;
+    _curCnt = 0;
+    _ss.str("");
+    _curSize += Binlog::writeHeader(_ss);
+    _flag = BinlogFlag::NORMAL;
+}
+
+bool BinlogWriter::writerFull() {
+    return (_curSize >= _maxSize || _curCnt >= _maxCnt);
+}
+
 BinlogReader::BinlogReader(const std::string& s)
     : _pos(0), _val(s) {
 }

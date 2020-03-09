@@ -14,6 +14,7 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/lock/lock.h"
 
 
 
@@ -246,7 +247,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _generalLog = cfg->generalLog;
     _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
-    _enableCluster = cfg->enableCluster;
+    _enableCluster = cfg->clusterEnabled;
     _dbNum = cfg->dbNum;
     _cfg = cfg;
 }
@@ -298,7 +299,7 @@ void ServerEntry::logGeneral(Session *sess) {
 }
 //judge store key in slot
 bool  ServerEntry::emptySlot(uint32_t slot) {
-    auto storeId = getStoreid(slot);
+    uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
@@ -325,7 +326,7 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
 }
 
 std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
-    auto storeId = getStoreid(slot);
+    uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
@@ -346,7 +347,8 @@ std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
         }
         if (!expRcd.ok()) {
             LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
-            break;
+            return {};
+        //    break;
         }
         keysList.push_back(expRcd.value());
     }
@@ -360,14 +362,14 @@ uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
 }
 
 std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t count) {
-    auto storeId = getStoreid(slot);
+    uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
     std::vector<std::string> keysList;
 
     if (!expdb.ok()) {
-        LOG(ERROR) << "get db error";
+        LOG(ERROR) << "get db error: keys list is empty";
         return keysList;
     }
     auto kvstore = std::move(expdb.value().store);
@@ -377,9 +379,14 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
     uint32_t n = 0;
     while (true) {
         Expected<Record> expRcd = slotCursor->next();
-        if (!expRcd.ok()) {
-            LOG(ERROR) << "search slot error:" << expRcd.status().toString();
+
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
             break;
+        }
+
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
+            return {};
         }
         std::string keyname = expRcd.value().getRecordKey().getPrimaryKey();
         keysList.push_back(keyname);
@@ -390,14 +397,23 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
     return keysList;
 }
 
- Status ServerEntry::delKeysInSlot(uint32_t slot) {
-    auto storeId = getStoreid(slot);
+
+Status ServerEntry::delKeysInSlot(uint32_t slot) {
+    uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
+
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
-    auto kvstore = std::move(expdb.value().store);
+    if (!expdb.ok()) {
+         LOG(ERROR) << "get db error";
+         return expdb.status();
+     }
+    auto dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
+    auto kvstore = dbWithLock->store;
     auto ptxn = kvstore->createTransaction(NULL);
-
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
     std::vector<Record> list = getKeyList(slot);
 
     for(auto &v: list) {
@@ -407,6 +423,11 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
             return s;
         }
     }
+    auto s = ptxn.value()->commit();
+    if (!s.ok()) {
+        return s.status();
+    }
+
     return  {ErrorCodes::ERR_OK, "finish delte keys in slot"};
 
 }
@@ -596,6 +617,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
             LOG(WARNING) << "start up migrate manager failed!";
             return s;
         }
+
     }
 
     _isRunning.store(true, std::memory_order_relaxed);
@@ -879,8 +901,8 @@ bool ServerEntry::processRequest(Session *sess) {
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
         // we have called precheck, it should have 2 args
-        INVARIANT(args.size() == 3);
-        _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2]);
+        //INVARIANT(args.size() == 4);
+        _migrateMgr->dstReadyMigrate(ns->borrowConn(),args[1], args[2], args[3]);
         return false;
     } else if (expCmdName.value() == "quit") {
         LOG(INFO) << "quit command";
@@ -1108,14 +1130,11 @@ Status ServerEntry::destroyStore(Session *sess,
         return status;
     }
 
-    auto chunkList = getChunkList(storeId);
-    for (auto iter = chunkList.begin(); iter != chunkList.end(); ++iter) {
-        status = _migrateMgr->stopChunk(*iter);
-        if (!status.ok()) {
-            LOG(ERROR) << "migrateMgr stopChunk :" << storeId
+    status = _migrateMgr->stopStoreTask(storeId);
+    if (!status.ok()) {
+        LOG(ERROR) << "migrateMgr stopStore :" << storeId
                    << " failed:" << status.toString();
-            return status;
-        }
+        return status;
     }
 
     if (_indexMgr) {

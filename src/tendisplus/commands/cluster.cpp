@@ -72,75 +72,53 @@ public:
         const std::string arg1 = toLower(args[1]);
         auto argSize = sess->getArgs().size();
 
-        if (arg1 == "setslot" && argSize >= 4) {
-            Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[2]);
-            if (!exptChunkid.ok()) {
-                return exptChunkid.status();
-            }
-            uint32_t chunkid = (uint32_t) exptChunkid.value();
 
-            string ip = args[4];
-            Expected<uint64_t> exptPort = ::tendisplus::stoul(args[5]);
-            if (!exptPort.ok()) {
-                return exptPort.status();
-            }
-            uint16_t port = (uint16_t) exptPort.value();
-
-            auto myself = clusterState->getMyselfNode();
-
-            if (myself->nodeIsSlave()) {
-                return {ErrorCodes::ERR_CLUSTER,
-                        "slave node can not be setslot"};
-            }
+        if (arg1 == "setslot" ) {
+            
+            std::string nodeId = args[3];
             Status s;
-            if (args[3] == "migrating" && argSize == 5) {
-                if (clusterState->_allSlots[chunkid] != myself) {
-                    return {ErrorCodes::ERR_CLUSTER,
-                            "I'm not the owner of hash slot"};
-                }
-                auto setNode = clusterState->clusterLookupNode(args[4]);
-                if (setNode) {
-                    clusterState->_migratingSlots[chunkid] = setNode;
-                } else {
-                    return {ErrorCodes::ERR_CLUSTER,
-                            "setslot migrating not find node!"};
-                }
-                LOG(INFO) << "cluster setslot migrating," << chunkid << " " << ip << ":" << port;
-                s = migrateMgr->migrating(chunkid, ip, port);
-            } else if (args[3] == "importing" && argSize == 5) {
-                if (clusterState->_allSlots[chunkid] != myself) {
-                    return {ErrorCodes::ERR_CLUSTER,
-                            "I'm not the owner of hash slot"};
-                }
-                auto setNode = clusterState->clusterLookupNode(args[4]);
-                if (setNode) {
-                    clusterState->_importingSlots[chunkid] = setNode;
-                } else {
-                    return {ErrorCodes::ERR_CLUSTER,
-                            "setslot importing not find node!"};
-                }
-                LOG(INFO) << "cluster setslot importing," << chunkid << " " << ip << ":" << port;
-                s = migrateMgr->importing(chunkid, ip, port);
-            } else if (args[3] == "stable" && argSize == 4) {
-                clusterState->_importingSlots[chunkid] = nullptr;
-                clusterState->_migratingSlots[chunkid] = nullptr;
-            } else if (args[3] == "node" && argSize == 5) {
-                auto n = clusterState->clusterLookupNode(args[2]);
-                if ( n == nullptr ) {
-                    return  {ErrorCodes::ERR_CLUSTER, "Unknown node"+args[2]};
-                }
-                s = clusterState->setSlot(n, chunkid);
 
+            if (args[2] == "migrating" && argSize >= 5) {
+                 /* CLUSTER SETSLOT MIGRATING nodename chunkid1 ..chunkid2 */
+                Expected<std::unordered_map<uint32_t, std::set<uint32_t>>>
+                                    exptSlotmap = getSlotSet(svr,args);
+                if (!exptSlotmap.ok()) {
+                    return exptSlotmap.status();
+                }
+                auto map = exptSlotmap.value();
+
+                for (const auto &v: map) {
+                    uint32_t storeid = v.first;
+                    auto slotSet = v.second;
+                    s = migrateBitmap(slotSet, storeid, nodeId ,clusterState, migrateMgr);
+                    if (!s.ok()) {
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "migrate send slots fail"};
+                    }
+                }
+                return Command::fmtOK();
+
+            } else if (args[2] == "importing" && argSize >= 5) {
+                /* CLUSTER SETSLOT IMPORTING nodename chunkid */
+                Expected<std::unordered_map<uint32_t, std::set<uint32_t>>>
+                                    exptSlotmap = getSlotSet(svr,args);
+                if (!exptSlotmap.ok()) {
+                    return exptSlotmap.status();
+                }
+                auto map = exptSlotmap.value();
+
+                for (const auto &v: map) {
+                    uint32_t storeid = v.first;
+                    auto slotSet = v.second;
+                    s = importingBitmap(slotSet, storeid, nodeId, clusterState, migrateMgr);
+                    if (!s.ok()) {
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "migrate receive slots  fail"};
+                }
+                }
+               return Command::fmtOK();
             }
-            if (!s.ok()) {
-                return Command::fmtErr(s.toString());
-            }
-            clusterState->clusterUpdateState();
-            clusterState->clusterSaveNodes();
-            return Command::fmtOK();
-
-
-        } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
+        }   else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
             /* CLUSTER MEET <ip> <port> [cport] */
             uint64_t port, cport;
 
@@ -165,7 +143,7 @@ public:
 
             if (!clusterState->clusterStartHandshake(host, port, cport)) {
                 return {ErrorCodes::ERR_CLUSTER,
-                        "Invalid node address specified: " + host + std::to_string(port)};
+                        "Invalid node address specified:" + host + std::to_string(port)};
             }
             return Command::fmtOK();
         } else if (arg1 == "nodes" && argSize == 2) {
@@ -203,10 +181,10 @@ public:
                     }
                     uint32_t start = startSlot.value();
                     uint32_t end = endSlot.value();
-                    Status s = addSlots(start, end, arg1, clusterState, myself);
+                    Status s = changeSlots(start, end, arg1, clusterState, myself);
                     if (!s.ok()) {
                         LOG(ERROR) << "addslots fail from:"
-                            << start << "to:" << end;
+                                   << start << "to:" << end;
                         return s;
                     }
                 } else {
@@ -217,10 +195,10 @@ public:
                                 "Invalid slot  specified " + args[i]};
                     }
                     uint32_t slot = static_cast<uint32_t >(slotInfo.value());
-                    Status s = addSingleSlot(slot, arg1, clusterState, myself);
+                    Status s = changeSlot(slot, arg1, clusterState, myself);
                     if (!s.ok()) {
                         LOG(ERROR) << "addslots:" << slot << "fail";
-                        return s;
+                        continue; //if one fail, just pass
                     }
                 }
             }
@@ -231,9 +209,25 @@ public:
         } else if (arg1 == "replicate" && argSize == 3) {
             auto n = clusterState->clusterLookupNode(args[2]);
             if (!n) {
-                return { ErrorCodes::ERR_CLUSTER, "Unknown node: " + args[2] };
+                return {ErrorCodes::ERR_CLUSTER, "Unknown node: " + args[2]};
             }
-            Status s = replicateNode(n, myself, svr, sess, replMgr, clusterState);
+
+            if (n == myself) {
+                return {ErrorCodes::ERR_CLUSTER, "Can't replicate myself"};
+            }
+            /* Can't replicate a slave. */
+            if (n->nodeIsSlave()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "only replicate a master, not a slave"};
+            }
+            if (myself->nodeIsMaster() &&
+                    (myself->_numSlots != 0 || nodeNotEmpty(svr, myself))) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "To set a master the node must be empty"};
+            }
+
+            Status s = clusterState->clusterSetMaster(n);
+
             if (!s.ok()) {
                 LOG(ERROR) << "replicate node:" << n->getNodeName() << "fail!";
                 return s;
@@ -247,7 +241,7 @@ public:
                 return {ErrorCodes::ERR_CLUSTER,
                         "no slot info"};
             }
-            auto slot =  eslot.value();
+            auto slot = eslot.value();
             if (slot > CLUSTER_SLOTS) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid slot"};
@@ -262,41 +256,42 @@ public:
                         "keyslot invalid!"};
             }
             uint32_t hash = uint32_t(
-                redis_port::keyHashSlot(key.c_str(), key.size()));
-            return  Command::fmtBulk(to_string(hash));
+                    redis_port::keyHashSlot(key.c_str(), key.size()));
+            return Command::fmtBulk(to_string(hash));
         } else if (arg1 == "info" && argSize == 2) {
             std::string clusterInfo = clusterState->clusterGenStateDescription();
-             if (clusterInfo.size() > 0) {
+            if (clusterInfo.size() > 0) {
                 return clusterInfo;
-             } else {
+            } else {
                 return {ErrorCodes::ERR_CLUSTER,
-                    "Invalid cluster info"};
-             }
+                        "Invalid cluster info"};
+            }
         } else if (arg1 == "flushslots" && argSize == 2) {
             //  db not empty
             bool notEmpty = nodeNotEmpty(svr, myself);
             if (notEmpty) {
-                return {ErrorCodes ::ERR_CLUSTER,
+                return {ErrorCodes::ERR_CLUSTER,
                         "DB must be empty to perform CLUSTER FLUSHSLOTS"};
             }
 
             uint32_t expectNum = myself->getSlotNum();
             uint32_t delNum = clusterState->clusterDelNodeSlots(myself);
             if (delNum != expectNum) {
-                LOG(ERROR) << "delslots:" << delNum << "expectedNUM:" << expectNum;
+                LOG(ERROR) << "delslots:" << delNum <<
+                            "expectedNUM:" << expectNum;
                 return {ErrorCodes::ERR_CLUSTER,
                         "del slots num not equal expected num"};
             }
-            return  Command::fmtOK();
+            return Command::fmtOK();
         } else if (arg1 == "forget" && argSize == 3) {
             auto n = clusterState->clusterLookupNode(args[2]);
             if (n == nullptr) {
-                return  {ErrorCodes::ERR_CLUSTER, "forget node unkown"};
+                return {ErrorCodes::ERR_CLUSTER, "forget node unkown"};
             } else if (n == myself) {
-                return {ErrorCodes ::ERR_CLUSTER,
-                            "I tried hard but I can't forget myself..."};
+                return {ErrorCodes::ERR_CLUSTER,
+                        "I tried hard but I can't forget myself..."};
             } else if (myself->nodeIsSlave() && myself->_slaveOf == n) {
-                return {ErrorCodes ::ERR_CLUSTER, "Can't forget my master!"};
+                return {ErrorCodes::ERR_CLUSTER, "Can't forget my master!"};
             }
             clusterState->clusterBlacklistAddNode(n);
             clusterState->clusterDelNode(n, true);
@@ -316,27 +311,28 @@ public:
             }
 
             uint32_t count = ecount.value();
-            if (slot > CLUSTER_SLOTS || count > CLUSTER_SLOTS) {
-                return {ErrorCodes ::ERR_CLUSTER,
-                            "Invalid slot or number of keys"};
+            if (slot >= CLUSTER_SLOTS ) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "Invalid slot or number of keys"};
             }
 
             std::string keysInfo = getKeys(svr, slot, count);
 
-            return  keysInfo;
+            return keysInfo;
         } else if (arg1 == "slaves" && argSize == 3) {
             auto n = clusterState->clusterLookupNode(args[2]);
             if (n == nullptr) {
-                return  {ErrorCodes::ERR_CLUSTER, "Unkown node"+args[2]};
+                return {ErrorCodes::ERR_CLUSTER, "Unkown node" + args[2]};
             } else if (n->nodeIsSlave()) {
-                return {ErrorCodes ::ERR_CLUSTER,
+                return {ErrorCodes::ERR_CLUSTER,
                         "The specified node is not a master"};
             }
             std::stringstream ss;
             uint16_t slavesNum = n->getSlaveNum();
             Command::fmtMultiBulkLen(ss, slavesNum);
-            for (size_t i = 0;  i < slavesNum; i++) {
-                std::string nodeDescription = n->_slaves[i]->clusterGenNodeDescription();
+            for (size_t i = 0; i < slavesNum; i++) {
+                std::string nodeDescription =
+                        n->_slaves[i]->clusterGenNodeDescription();
                 Command::fmtBulk(ss, nodeDescription);
             }
             return ss.str();
@@ -345,7 +341,7 @@ public:
             std::stringstream bumpinfo;
             std::string state = (s.ok()) ? "BUMPED" : "STILL";
             bumpinfo << state << myself->getConfigEpoch();
-            return  Command::fmtBulk(bumpinfo.str());
+            return Command::fmtBulk(bumpinfo.str());
         } else if (arg1 == "set-config-epoch" && argSize == 3) {
             Expected<uint64_t> exptEpoch = ::tendisplus::stoul(args[2]);
             if (!exptEpoch.ok()) {
@@ -354,11 +350,11 @@ public:
             uint64_t configEpoch = exptEpoch.value();
             if (args[2][0] == '-') {
                 return {ErrorCodes::ERR_CLUSTER,
-                    "Invalid config epoch specified:"+args[2]};
+                        "Invalid config epoch specified:" + args[2]};
             } else if (clusterState->_nodes.size() > 1) {
                 return {ErrorCodes::ERR_CLUSTER, "he user can assign a config"
-                                        "epoch only when the node"
-                                        "does not know any other node"};
+                                                 "epoch only when the node"
+                                                 "does not know any other node"};
             } else if (myself->getConfigEpoch() != 0) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "Node config epoch is already non-zero"};
@@ -400,23 +396,63 @@ public:
             auto s = clusterState->clusterSaveConfig();
             if (!s.ok()) {
                 return {ErrorCodes::ERR_CLUSTER,
-                        "error saving the cluster node config"+s.toString()};
+                        "error saving the cluster node config" + s.toString()};
             }
             return Command::fmtOK();
+        } else if (arg1 == "count-failure-reports" && argSize == 3) {
+            auto n = clusterState->clusterLookupNode(args[2]);
+            if (!n) {
+                return {ErrorCodes::ERR_CLUSTER, "Unkown node" + args[2]};
+            }
+            std::uint32_t  failNum = clusterState->clusterNodeFailureReportsCount(n);
+            return  Command::fmtLongLong(failNum);
         } else if (arg1 == "myid" && argSize == 2) {
             std::string nodeName = myself->getNodeName();
             return  Command::fmtBulk(nodeName);
         } else if (arg1 == "slots" && argSize == 2) {
             std::string slotInfo = clusterReplyMultiBulkSlots(clusterState);
-
             return  slotInfo;
+        } else if (arg1 == "failover" && (argSize == 2 || argSize == 3)) {
+            bool force = false;
+            bool takeover = false;
+
+            if (argSize == 3) {
+                if (args[2] == "force") {
+                    force = true;
+                } else if (args[2] == "takeover") {
+                    takeover = true;
+                    force = true;
+                } else {
+                    return Command::fmtErr("must be force or takeover ");
+                }
+            }
+
+            if (myself->nodeIsMaster()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "You should send CLUSTER FAILOVER to a slave"};
+            }
+
+            CNodePtr master = myself->getMaster();
+            if (!master) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "I'm a slave but my master is unknown to me"};
+            } else if (!force &&
+                       (master->nodeFailed() ||
+                        !master->getSession())) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "Master is down or failed, please use CLUSTER FAILOVER FORCE"};
+            }
+
+            clusterState->forceFailover(force, takeover);
+            return Command::fmtOK();
         }
+
         return {ErrorCodes::ERR_CLUSTER,
                 "Invalid cluster command " + args[1]};
     }
 
 private:
-    Status addSlots(uint32_t start, uint32_t end, const std::string &arg,
+    Status changeSlots(uint32_t start, uint32_t end, const std::string &arg,
                     const std::shared_ptr<ClusterState> clusterState,
                     const CNodePtr myself) {
         bool result = false;
@@ -452,7 +488,7 @@ private:
         return {ErrorCodes::ERR_OK, "finish addslots"};
     }
 
-    Status addSingleSlot(uint32_t slot, const std::string &arg,
+    Status changeSlot(uint32_t slot, const std::string &arg,
                          const std::shared_ptr<ClusterState> clusterState,
                          const CNodePtr myself) {
         bool result = false;
@@ -476,52 +512,6 @@ private:
                     "del or add slot fail"};
         }
         return {ErrorCodes::ERR_OK, "finish add sigle slot"};
-    }
-
-    Status replicateNode(CNodePtr n, CNodePtr myself,
-                         ServerEntry *svr, Session *sess, ReplManager *replMgr,
-                         const std::shared_ptr<ClusterState> clusterState) {
-        INVARIANT_D(n != nullptr);
-        if (n == myself) {
-            return {ErrorCodes::ERR_CLUSTER, "Can't replicate myself"};
-        }
-        /* Can't replicate a slave. */
-        if (n->nodeIsSlave()) {
-            return {ErrorCodes::ERR_CLUSTER,
-                    "only replicate a master, not a slave"};
-        }
-        bool notEmpty = false;
-        // slave db not empty
-        std::list<Expected<DbWithLock>> expdbList;
-        auto port = n->getPort();
-        auto ip = n->getNodeIp();
-        for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-            auto expdb = svr->getSegmentMgr()->getDb(sess, i,
-                                                     mgl::LockMode::LOCK_X, true);
-            if (!expdb.ok()) {
-                return expdb.status();
-            }
-            if (!expdb.value().store->isOpen()) {
-                return {ErrorCodes::ERR_CLUSTER, "store not open"};
-            }
-            if (!expdb.value().store->isEmpty(true)) {
-                notEmpty = true;
-            }
-            expdbList.push_back(std::move(expdb));
-        }
-        if (myself->nodeIsMaster() &&(myself->_numSlots != 0 || notEmpty)) {
-            return {ErrorCodes::ERR_CLUSTER,
-                    "To set a master the node must be empty"};
-        }
-        clusterState->clusterSetMaster(n);
-        for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-            Status s = replMgr->changeReplSourceInLock(i, ip, port, i);
-            if (!s.ok()) {
-                return {ErrorCodes::ERR_CLUSTER,
-                        "replicate kvstore fail"};
-            }
-        }
-        return {ErrorCodes::ERR_OK, "finish replicte"+n->getNodeName()};
     }
 
     std::string getKeys(ServerEntry *svr , uint32_t slot, uint32_t count) {
@@ -551,9 +541,33 @@ private:
         return  notEmpty;
     }
 
+    Expected<std::unordered_map<uint32_t, std::set<uint32_t>>> getSlotSet(ServerEntry *svr, const std::vector<std::string>& args){
+        //storeid is key , slots is value
+        std::unordered_map<uint32_t, std::set<uint32_t>> slotSet;
+        for (size_t i= 4 ; i<args.size(); i++) {
+            Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
+            if (!exptSlot.ok()) {
+                return exptSlot.status();
+            }
+            uint32_t slot = (uint32_t) exptSlot.value();
+            uint32_t storeid = svr->getSegmentMgr()->getStoreid(slot);
+
+            std::unordered_map<uint32_t , std::set<uint32_t>>::iterator it;
+            if((it= slotSet.find(storeid)) != slotSet.end()) {
+                slotSet[storeid].insert(slot);
+                LOG(INFO) << "get Slotset : storeid:" << storeid << "slot:" << slot;
+            } else {
+                std::set<uint32_t> temp;
+                temp.insert(slot);
+                slotSet.insert(std::make_pair(storeid, temp));
+            }
+        }
+        return  slotSet;
+
+    }
+
     std::string clusterReplyMultiBulkSlots(const std::shared_ptr<tendisplus::ClusterState> state) {
         std::stringstream ss;
-
         uint32_t nodeNum = 0;
         std::vector<CNodePtr> nodes;
 
@@ -609,6 +623,92 @@ private:
         return ss.str();
     }
 
+    Status migrateBitmap(const std::set<uint32_t>& slots,
+                        uint32_t storeid, const std::string &nodeName,
+                        const std::shared_ptr<ClusterState> clusterState,
+                        MigrateManager* migrateMgr) {
+        std::bitset<CLUSTER_SLOTS> slotsMap;
+        auto myself = clusterState->getMyselfNode();
+        Status s;
+        auto setNode = clusterState->clusterLookupNode(nodeName);
+        if (!setNode) {
+            return  {ErrorCodes ::ERR_CLUSTER, "migrate node not find"};
+        }
+        auto ip = setNode->getNodeIp();
+        auto port = setNode->getPort();
+
+        for (auto it = slots.begin(); it != slots.end(); ++it) {
+
+            if (clusterState->getNodeBySlot(*it) == setNode) {
+                LOG(ERROR) << "slot:" << *it << "has already migrated to:"
+                           << "node:" << nodeName;
+                continue;
+            }
+
+            if (clusterState->_allSlots[*it] != myself) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "I'm not the owner of hash slot" + dtos(*it)};
+            }
+            LOG(INFO) << "commands migrate slots:" << *it << "store is:" << storeid;
+            clusterState->_migratingSlots[*it] = setNode;
+            slotsMap.set(*it);
+        }
+
+        s = migrateMgr->migrating(slotsMap, ip, port, storeid);
+
+        if (!s.ok())  {
+            return  {ErrorCodes ::ERR_CLUSTER,
+                     "migrate send slots fail"};
+        }
+
+        return {ErrorCodes::ERR_OK, "finish"};
+    }
+
+
+    Status importingBitmap(const std::set<uint32_t>& slots,
+                          uint32_t storeid, const std::string &nodeName,
+                          const std::shared_ptr<ClusterState> clusterState,
+                          MigrateManager* migrateMgr) {
+
+        std::bitset<CLUSTER_SLOTS> slotsMap;
+        auto myself = clusterState->getMyselfNode();
+        Status s;
+        auto srcNode = clusterState->clusterLookupNode(nodeName);
+        if (!srcNode) {
+            return  {ErrorCodes ::ERR_CLUSTER, "import node not find"};
+        }
+        auto ip = srcNode->getNodeIp();
+        auto port = srcNode->getPort();
+
+        for (auto it = slots.begin(); it != slots.end(); ++it) {
+
+            if (clusterState->getNodeBySlot(*it) == myself) {
+                LOG(ERROR) << "slot:" << *it << "has already migrated to:"
+                           << "node:" << nodeName;
+                continue;
+            }
+
+            if (clusterState->_allSlots[*it] == myself) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "I'm already the owner of hash slot" + dtos(*it)};
+            }
+
+            LOG(INFO) << "commands import slots:" << *it << "store is:" << storeid;
+            clusterState->_importingSlots[*it] = srcNode;
+            slotsMap.set(*it);
+
+        }
+
+        s = migrateMgr->importing(slotsMap, ip, port, storeid);
+        if (!s.ok()) {
+            return {ErrorCodes::ERR_CLUSTER,
+                    "migrate receive slots  fail"};
+        }
+        return {ErrorCodes::ERR_OK, "finish"};
+
+    }
+
+
 } clusterCmd;
 
 class ReadymigrateCommand: public Command {
@@ -618,7 +718,7 @@ public:
     }
 
     ssize_t arity() const {
-        return 3;
+        return 4;
     }
 
     int32_t firstkey() const {
@@ -673,13 +773,15 @@ public:
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
 
-        Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[1]);
+        //Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[1]);
+        std::bitset<CLUSTER_SLOTS> slots(args[1]);
+        /*
         if (!exptChunkid.ok()) {
             return exptChunkid.status();
         }
         uint32_t chunkid = (uint32_t)exptChunkid.value();
-
-        auto s = migrateMgr->supplyMigrateEnd(chunkid);
+        */
+        auto s = migrateMgr->supplyMigrateEnd(slots);
         if (!s.ok()) {
             return s;
         }

@@ -52,6 +52,8 @@ enum class ErrorCodes {
     ERR_NO_KEY,
     ERR_OUT_OF_RANGE,
     ERR_WRONG_VERSION_EP,
+    ERR_CLUSTER_ERR,
+    ERR_MOVED,
 };
 
 class Status {

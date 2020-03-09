@@ -47,18 +47,19 @@ Expected<ReplLog> BinlogCursor::next() {
     }
 }
 #else
-RepllogCursorV2::RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
-    : _txn(txn),
-    _baseCursor(nullptr),
-    _start(begin),
-    _cur(begin),
-    _end(end) {
+
+RepllogCursorV2::RepllogCursorV2(Transaction *txn, uint64_t begin, uint64_t end)
+        : _txn(txn),
+          _baseCursor(nullptr),
+          _start(begin),
+          _cur(begin),
+          _end(end) {
 }
 
 Status RepllogCursorV2::seekToLast() {
     if (_cur == Transaction::TXNID_UNINITED) {
-        return{ ErrorCodes::ERR_INTERNAL,
-            "RepllogCursorV2 error, detailed at the error log" };
+        return {ErrorCodes::ERR_INTERNAL,
+                "RepllogCursorV2 error, detailed at the error log"};
     }
     if (!_baseCursor) {
         _baseCursor = _txn->createCursor();
@@ -78,9 +79,9 @@ Status RepllogCursorV2::seekToLast() {
             }
 
             _cur = v.value().getBinlogId();
-            return { ErrorCodes::ERR_OK, "" };
+            return {ErrorCodes::ERR_OK, ""};
         } else {
-            return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
+            return {ErrorCodes::ERR_EXHAUST, "no binlog"};
         }
     } else {
         LOG(ERROR) << "RepllogCursorV2::seekToLast() failed, reason:"
@@ -90,10 +91,10 @@ Status RepllogCursorV2::seekToLast() {
     return key.status();
 }
 
-Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
+Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction *txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
-        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
     }
     cursor->seek(RecordKey::prefixReplLogV2());
     // TODO(vinchen): should more fast
@@ -104,17 +105,17 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
 
     if (expRcd.value().getRecordKey().getRecordType()
         != RecordType::RT_BINLOG) {
-        return{ ErrorCodes::ERR_EXHAUST, "" };
+        return {ErrorCodes::ERR_EXHAUST, ""};
     }
 
     // TODO(vinchen): too more copy
     return ReplLogRawV2(expRcd.value());
 }
 
-Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
+Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction *txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
-        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
     }
     cursor->seek(RecordKey::prefixReplLogV2());
     Expected<Record> expRcd = cursor->next();
@@ -124,10 +125,10 @@ Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
 
     if (expRcd.value().getRecordKey().getRecordType()
         != RecordType::RT_BINLOG) {
-        return{ ErrorCodes::ERR_EXHAUST, "" };
+        return {ErrorCodes::ERR_EXHAUST, ""};
     }
 
-    const RecordKey& rk = expRcd.value().getRecordKey();
+    const RecordKey &rk = expRcd.value().getRecordKey();
     auto explk = ReplLogKeyV2::decode(rk);
     if (!explk.ok()) {
         return explk.status();
@@ -161,7 +162,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {
 Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {
-        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
     }
 
     // NOTE(vinchen): it works because binlog has a maximum prefix.
@@ -173,13 +174,13 @@ Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
             auto v = ReplLogKeyV2::decode(key.value());
             if (!v.ok()) {
                 LOG(ERROR) << "ReplLogKeyV2::getMaxBinlogId() failed, reason:"
-                    << v.status().toString();
+                           << v.status().toString();
                 return v.status();
             }
 
             return v.value().getBinlogId();
         } else {
-            return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
+            return {ErrorCodes::ERR_EXHAUST, "no binlog"};
         }
     }
     return key.status();
@@ -187,8 +188,8 @@ Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
 
 Expected<ReplLogRawV2> RepllogCursorV2::next() {
     if (_cur == Transaction::TXNID_UNINITED) {
-        return{ ErrorCodes::ERR_INTERNAL,
-            "RepllogCursorV2 error, detailed at the error log" };
+        return {ErrorCodes::ERR_INTERNAL,
+                "RepllogCursorV2 error, detailed at the error log"};
     }
 
     while (_cur <= _end) {
@@ -202,7 +203,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
             continue;
         } else if (!eval.ok()) {
             LOG(WARNING) << "get binlogid " << _cur << " error:"
-                << eval.status().toString();
+                         << eval.status().toString();
             return eval.status();
         }
 #ifdef TENDIS_DEBUG
@@ -212,13 +213,13 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
         return ReplLogRawV2(keyStr, eval.value());
     }
 
-    return { ErrorCodes::ERR_EXHAUST, "" };
+    return {ErrorCodes::ERR_EXHAUST, ""};
 }
 
 Expected<ReplLogV2> RepllogCursorV2::nextV2() {
     if (_cur == Transaction::TXNID_UNINITED) {
-        return{ ErrorCodes::ERR_INTERNAL,
-            "RepllogCursorV2 error, detailed at the error log" };
+        return {ErrorCodes::ERR_INTERNAL,
+                "RepllogCursorV2 error, detailed at the error log"};
     }
 
     while (_cur <= _end) {
@@ -232,7 +233,7 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
             continue;
         } else if (!eval.ok()) {
             LOG(WARNING) << "get binlogid " << _cur << " error:"
-                << eval.status().toString();
+                         << eval.status().toString();
             return eval.status();
         }
 
@@ -245,17 +246,18 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
         return std::move(v.value());
     }
 
-    return{ ErrorCodes::ERR_EXHAUST, "" };
+    return {ErrorCodes::ERR_EXHAUST, ""};
 }
+
 #endif
 
 TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor,
-    std::uint64_t until)
-  : _until(until), _baseCursor(std::move(cursor)) {
+                               std::uint64_t until)
+        : _until(until), _baseCursor(std::move(cursor)) {
     _baseCursor->seek(RecordKey::prefixTTLIndex());
 }
 
-void TTLIndexCursor::seek(const std::string& target) {
+void TTLIndexCursor::seek(const std::string &target) {
     _baseCursor->seek(target);
 }
 
@@ -270,7 +272,7 @@ Expected<std::string> TTLIndexCursor::key() {
 Expected<TTLIndex> TTLIndexCursor::next() {
     Expected<Record> expRcd = _baseCursor->next();
     if (expRcd.ok()) {
-        const RecordKey& rk = expRcd.value().getRecordKey();
+        const RecordKey &rk = expRcd.value().getRecordKey();
         if (rk.getRecordType() != RecordType::RT_TTL_INDEX) {
             return {ErrorCodes::ERR_EXHAUST, "no more ttl index"};
         }
@@ -291,14 +293,15 @@ Expected<TTLIndex> TTLIndexCursor::next() {
 }
 
 SlotCursor::SlotCursor(std::unique_ptr<Cursor> cursor,
-    uint32_t slot)
-  : _slot(slot), _baseCursor(std::move(cursor)) {
-	RecordKey tmplRk(slot,
-		0,
-		RecordType::RT_DATA_META,
-		"", "");
-	auto prefix = tmplRk.prefixSlotType();
-	_baseCursor->seek(prefix);
+                       uint32_t slot)
+        : _slot(slot), _baseCursor(std::move(cursor)) {
+    RecordKey tmplRk(slot,
+                     0,
+                     RecordType::RT_DATA_META,
+                     "", "");
+    auto prefix = tmplRk.prefixSlotType();
+    _baseCursor->seek(prefix);
+
 }
 
 Expected<Record> SlotCursor::next() {
@@ -314,6 +317,34 @@ Expected<Record> SlotCursor::next() {
         return expRcd.status();
     }
 }
+
+SlotsCursor::SlotsCursor(std::unique_ptr<Cursor> cursor,
+                         uint32_t begin, uint32_t end)
+        : _startSlot(begin), _endSlot(end), _baseCursor(std::move(cursor)) {
+
+    RecordKey tmplRk(begin,
+                     0,
+                     RecordType::RT_KV,
+                     "", "");
+    auto prefix = tmplRk.prefixSlotType();
+    _baseCursor->seek(prefix);
+}
+
+Expected<Record> SlotsCursor::next() {
+    Expected<Record> expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        const RecordKey &rk = expRcd.value().getRecordKey();
+        if (rk.getChunkId() > _endSlot - 1) {
+            return {ErrorCodes::ERR_EXHAUST, "no more primary key"};
+        }
+        return expRcd.value();
+    } else  {
+        return expRcd.status();
+    }
+}
+
+
+
 
 KVStore::KVStore(const std::string& id, const std::string& path)
      :_id(id),

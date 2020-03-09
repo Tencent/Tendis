@@ -159,6 +159,7 @@ class ReplManager {
     uint64_t getLastSyncTime() const;
     uint64_t replicationGetSlaveOffset() const;
     uint64_t replicationGetMasterOffset() const;
+    StoreMeta& getSyncMeta() const { return  *_syncMeta[0]; }
 
  protected:
     void controlRoutine();

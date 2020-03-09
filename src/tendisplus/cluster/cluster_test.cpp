@@ -15,6 +15,7 @@
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
 #include "gtest/gtest.h"
 
@@ -34,7 +35,7 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
     EXPECT_TRUE(setupEnv(mDir));
 
     auto cfg1 = makeServerParam(mport, storeCnt, mDir);
-    cfg1->enableCluster = true;
+    cfg1->clusterEnabled = true;
 
 #ifdef _WIN32
     cfg1->executorThreadNum = 1;
@@ -396,11 +397,64 @@ bool checkSlotInfo(std::shared_ptr<ClusterNode> node , std::string slots) {
     return  false;
 }
 
+void migrate(const std::shared_ptr<ServerEntry>& server1,
+             const std::shared_ptr<ServerEntry>& server2,
+             const std::bitset<CLUSTER_SLOTS>& slots) {
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(server1, ctx1);
+
+
+    std::vector<std::string> args;
+    args.push_back("cluster");
+    args.push_back("setslot");
+    args.push_back("migrating");
+    std::string nodeName1 = server2->getClusterMgr()->getClusterState()->getMyselfName();
+    LOG(INFO) << "migrate node:" <<nodeName1;
+    args.push_back(nodeName1);
+
+
+    for(size_t id = 0 ; id < slots.size(); id++) {
+        if (slots.test(id)) {
+            args.push_back(std::to_string(id));
+        }
+    }
+
+    sess1->setArgs(args);
+    auto expect = Command::runSessionCmd(sess1.get());
+
+    EXPECT_TRUE(expect.ok());
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(server2, ctx2);
+
+    args.clear();
+    args.push_back("cluster");
+    args.push_back("setslot");
+
+    args.push_back("importing");
+    std::string nodeName2 = server1->getClusterMgr()->getClusterState()->getMyselfName();
+    LOG(INFO) << "importing nodes:" << nodeName2;
+    args.push_back(nodeName2);
+
+    for(size_t id = 0 ; id < slots.size(); id++) {
+        if (slots.test(id)) {
+            args.push_back(std::to_string(id));
+        }
+    }
+
+    sess2->setArgs(args);
+    expect = Command::runSessionCmd(sess2.get());
+
+    EXPECT_TRUE(expect.ok());
+}
+
 
 #ifdef _WIN32 
 uint32_t storeCnt = 2;
+uint32_t storeCntx = 6;
 #else 
 uint32_t storeCnt = 2;
+uint32_t storeCntx = 6;
 #endif // 
 
 
@@ -507,6 +561,7 @@ MYTEST(Cluster, Sequence_Meet) {
 
     servers.clear();
 }
+
 
 TEST(Cluster, Random_Meet) {
     //std::vector<std::string> dirs = { "node1", "node2", "node3", "node4", "node5",
@@ -634,6 +689,281 @@ TEST(Cluster, AddSlot) {
     }
 
     
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+
+    servers.clear();
+}
+
+bool nodeIsMySlave(std::shared_ptr<ServerEntry> svr1 , std::shared_ptr<ServerEntry> svr2) {
+    CNodePtr myself = svr1->getClusterMgr()->getClusterState()->getMyselfNode();
+    CNodePtr node2 = svr2->getClusterMgr()->getClusterState()->getMyselfNode();
+
+    std::string ip =  svr2->getReplManager()->getMasterHost();
+
+    LOG(INFO) << "myself name:" <<myself->getNodeName() <<
+        "node2 flag :" << node2->representClusterNodeFlags(node2->getFlags()) <<
+        "node2 master name:" << node2->getMaster()->getNodeName();
+    auto masterName = node2->getMaster()->getNodeName();
+    if (masterName == myself->getNodeName()) {
+        return true;
+    }
+  //  LOG(INFO) << "svr1 name:" << myself->getNodeName()<< "svr2 name:" <<;
+    return false;
+}
+
+bool clusterOk(std::shared_ptr<ClusterState> state) {
+    return  state->getClusterState() == ClusterHealth::CLUSTER_OK;
+}
+
+
+
+TEST(Cluster, failover) {
+    std::vector<std::string> dirs = { "node1", "node2", "node3", "node4", "node5"};
+    uint32_t startPort = 11000;
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCntx)));
+    }
+    // 3 master and 2 slave *, make one master fail
+    auto& node1 = servers[0];
+    auto& node2 = servers[1];
+    auto& node3 = servers[2];
+    auto& node4 = servers[3];
+    auto& node5 = servers[4];
+ //   auto& node6 = servers[5];
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(node1, ctx1);
+    WorkLoad work1(node1, sess1);
+    work1.init();
+
+    work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
+    work1.clusterMeet(node3->getParams()->bindIp, node3->getParams()->port);
+    work1.clusterMeet(node4->getParams()->bindIp, node4->getParams()->port);
+    work1.clusterMeet(node5->getParams()->bindIp, node5->getParams()->port);
+ //   work1.clusterMeet(node6->getParams()->bindIp, node6->getParams()->port);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    std::vector<std::string> slots = { "{0..5000}", "{9001..16383}", "{5001..9000}" };
+
+    work1.addSlots(slots[0]);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(node2, ctx2);
+    WorkLoad work2(node2, sess2);
+    work2.init();
+    work2.addSlots(slots[1]);
+
+    auto ctx5 = std::make_shared<asio::io_context>();
+    auto sess5 = makeSession(node5, ctx5);
+    WorkLoad work5(node5, sess5);
+    work5.init();
+    work5.addSlots(slots[2]);
+
+
+    auto ctx3 = std::make_shared<asio::io_context>();
+    auto sess3 = makeSession(node3, ctx3);
+    WorkLoad work3(node3, sess3);
+    work3.init();
+    auto nodeName1 = node1->getClusterMgr()->getClusterState()->getMyselfName();
+    work3.replicate(nodeName1);
+
+    auto ctx4 = std::make_shared<asio::io_context>();
+    auto sess4 = makeSession(node4, ctx4);
+    WorkLoad work4(node4, sess4);
+    work4.init();
+    auto state = node1->getClusterMgr()->getClusterState();
+    auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+    work4.replicate(nodeName2);
+    auto nodeName3 = node3->getClusterMgr()->getClusterState()->getMyselfName();
+    auto nodeName4 = node4->getClusterMgr()->getClusterState()->getMyselfName();
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+
+    ASSERT_TRUE(nodeIsMySlave(node1,node3));
+    ASSERT_TRUE(nodeIsMySlave(node2,node4));
+
+    // make node2 fail，it is
+    node2->stop();
+
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    CNodePtr node2Ptr = state->clusterLookupNode(nodeName2);
+
+    //master node2 mark fail
+    ASSERT_EQ(node2Ptr->nodeFailed(), true);
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    CNodePtr node4Ptr = state->clusterLookupNode(nodeName4);
+    // slave become master
+    ASSERT_EQ(node4Ptr->nodeIsMaster(), true);
+    // cluster work ok after vote sucessful
+    ASSERT_EQ(clusterOk(state), true);
+
+
+
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+
+    servers.clear();
+
+}
+
+
+bool slotBlongToMe(uint32_t slot, std::shared_ptr<ServerEntry> svr) {
+    auto state = svr->getClusterMgr()->getClusterState();
+    auto myself = state->getMyselfNode();
+    if(state->getNodeBySlot(slot) == myself) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<ServerEntry> svr, std::string nodeid) {
+    auto state = svr->getClusterMgr()->getClusterState();
+    CNodePtr node = state->clusterLookupNode(nodeid);
+
+    for (size_t id =0; id < slots.size(); id++) {
+
+        if (slots.test(id)) {
+            if (state->getNodeBySlot(id) != node) {
+                LOG(ERROR) << "slot:" << id << "not belong to:" << nodeid;
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
+std::bitset<CLUSTER_SLOTS> getBitSet(std::vector<uint32_t> vec) {
+    std::bitset<CLUSTER_SLOTS> slots;
+    for (auto &vs: vec) {
+        slots.set(vs);
+    }
+    return slots;
+}
+
+
+
+TEST(Cluster, migrate) {
+    std::vector<std::string> dirs = { "node1", "node2" };
+    uint32_t startPort = 13000;
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    }
+
+    auto& srcNode = servers[0];
+    auto& dstNode = servers[1];
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(srcNode, ctx1);
+    WorkLoad work1(srcNode, sess1);
+    work1.init();
+
+    work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    std::vector<std::string> slots = { "{0..9300}", "{9301..16383}" };
+
+    work1.addSlots(slots[0]);
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(dstNode, ctx2);
+    WorkLoad work2(dstNode, sess2);
+    work2.init();
+    work2.addSlots(slots[1]);
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
+
+    auto bitmap = getBitSet(slotsList);
+
+    const uint32_t  numData = 5000;
+
+
+    for (size_t j = 0; j < numData; ++j) {
+        std::string cmd = "redis-cli -c ";
+        cmd += " -h " + srcNode->getParams()->bindIp;
+        cmd += " -p " + std::to_string(srcNode->getParams()->port);
+        if (j % 2) {
+            //write to slot 8373
+            cmd += " set " + getUUid(3)+"{12} " + getUUid(7) ;
+        } else {
+            //write to slot 5970
+            cmd += " set " + getUUid(3)+"{123} " + getUUid(7) ;
+        }
+
+        int ret = system(cmd.c_str());
+        EXPECT_EQ(ret, 0);
+        //begin to migate when  half data been writen
+        if (j == numData/2) {
+            uint32_t  keysize = 0;
+            for (auto &vs: slotsList) {
+                keysize += srcNode->countKeysInSlot(vs);
+            }
+            LOG(INFO) <<"before migrate keys num:" << keysize;
+            migrate(srcNode, dstNode, bitmap);
+        }
+    }
+
+    std::this_thread::sleep_for(200s);
+
+    uint32_t  keysize1 = 0;
+    uint32_t  keysize2 = 0;
+    for (auto &vs: slotsList) {
+        LOG(INFO) <<"node1->countKeysInSlot:" << vs <<"is:" << srcNode->countKeysInSlot(vs);
+        keysize1 += srcNode->countKeysInSlot(vs);
+        LOG(INFO) <<"node2->countKeysInSlot:" << vs <<"is:" << dstNode->countKeysInSlot(vs);
+        keysize2 += dstNode->countKeysInSlot(vs);
+    }
+
+    std::this_thread::sleep_for(40s);
+    // bitmap should belong to dstNode
+    ASSERT_EQ(checkSlotsBlong(bitmap, srcNode, srcNode->getClusterMgr()->getClusterState()->getMyselfName()), false);
+    ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), true);
+    // dstNode should contain the keys
+    ASSERT_EQ(keysize1, 0);
+    ASSERT_EQ(keysize2, numData);
+
 #ifndef _WIN32
     for (auto svr : servers) {
         svr->stop();

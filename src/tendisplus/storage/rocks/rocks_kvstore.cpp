@@ -174,6 +174,13 @@ std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
     return std::make_unique<SlotCursor>(std::move(cursor),slot);
 }
 
+unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t end) {
+    auto cursor = createCursor();
+    return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
+}
+
+
+
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
