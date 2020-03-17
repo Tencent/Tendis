@@ -1080,6 +1080,39 @@ TEST(Command, RenameCommandTTL) {
   testRenameCommandTTL(server);
 }
 
+void testRenameCommandDelete(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"zadd", "ss{a}", "10", "a"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"zadd", "zz{a}", "101", "ab"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"rename", "ss{a}", "ss"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"zcount", "zz{a}", "0", "1000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+}
+
+TEST(Command, RenameCommandDelete) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testRenameCommandDelete(server);
+}
+
 /*
 TEST(Command, keys) {
     const auto guard = MakeGuard([] {
