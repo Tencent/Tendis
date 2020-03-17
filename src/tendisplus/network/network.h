@@ -35,15 +35,17 @@ public:
     Atom<uint64_t> invalidPackets{0};
     NetworkMatrix operator -(const NetworkMatrix& right);
     std::string toString() const;
+    void reset();
 };
 
 class RequestMatrix {
 public:
-    Atom<uint64_t> processed{0};
-    Atom<uint64_t> processCost{0};
-    Atom<uint64_t> sendPacketCost{0};
+    Atom<uint64_t> processed{0};        // number of commands
+    Atom<uint64_t> processCost{0};      // time cost for commands (ns)
+    Atom<uint64_t> sendPacketCost{0};   // 
     RequestMatrix operator -(const RequestMatrix& right);
     std::string toString() const;
+    void reset();
 };
 
 class NetworkAsio {

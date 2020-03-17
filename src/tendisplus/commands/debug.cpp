@@ -675,6 +675,36 @@ class ToggleFtmcCommand: public Command {
     }
 } togFtmcCmd;
 
+class ResetServerStatCommand : public Command {
+public:
+    ResetServerStatCommand()
+        :Command("resetserverstat", "a") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        svr->resetServerStat();
+        return Command::fmtOK();
+    }
+} resetServerStatCmd;
+
 class CommandListCommand: public Command {
  public:
     CommandListCommand()
@@ -1476,7 +1506,7 @@ private:
                 << "gcc_version:0.0.0\r\n"
 #endif
                 << "process_id:" << getpid() << "\r\n"
-                //<< "run_id:" << "" << "\r\n" // TODO(takenliu)
+                //<< "run_id:" << "0000000000000000000000000000000000000000" << "\r\n" // TODO(takenliu)
                 << "tcp_port:" << server->getNetwork()->getPort() << "\r\n"
                 << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
                 << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n"
@@ -1536,7 +1566,10 @@ private:
             string used_memory_vir_peak_human;
             string used_memory_rss_human;
             string used_memory_rss_peak_human;
+            size_t rss_human_size = -1;
+            size_t vir_human_size = -1;
 
+#ifndef _WIN32
             ifstream file;
             file.open("/proc/self/status");
             if (file.is_open()) {
@@ -1549,6 +1582,7 @@ private:
                     if (v[0] == "VmSize") { // virtual memory
                         used_memory_vir_human = trim(v[1]);
                         strDelete(used_memory_vir_human, ' ');
+                        vir_human_size = getIntSize(used_memory_vir_human);
                     }
                     else if (v[0] == "VmPeak") { // peak of virtual memory
                         used_memory_vir_peak_human = trim(v[1]);
@@ -1557,6 +1591,7 @@ private:
                     else if (v[0] == "VmRSS") { // physic memory
                         used_memory_rss_human = trim(v[1]);
                         strDelete(used_memory_rss_human, ' ');
+                        rss_human_size = getIntSize(used_memory_rss_human);
                     }
                     else if (v[0] == "VmHWM") { // peak of physic memory
                         used_memory_rss_peak_human = trim(v[1]);
@@ -1564,16 +1599,18 @@ private:
                     }
                 }
             }
+#endif // !_WIN32
+
             ss << "used_memory:" << -1 << "\r\n";
             ss << "used_memory_human:" << -1 << "\r\n";
-            ss << "used_memory_rss:" << getIntSize(used_memory_rss_human) << "\r\n";
+            ss << "used_memory_rss:" << rss_human_size << "\r\n";
             ss << "used_memory_rss_human:" << used_memory_rss_human << "\r\n";
             ss << "used_memory_peak:" << -1 << "\r\n";
             ss << "used_memory_peak_human:" << "-1" << "\r\n";
             ss << "total_system_memory:" << "-1" << "\r\n";
             ss << "total_system_memory_human:" << "-1" << "\r\n";
             ss << "used_memory_lua:" << "-1" << "\r\n";
-            ss << "used_memory_vir:" << getIntSize(used_memory_vir_human) << "\r\n";
+            ss << "used_memory_vir:" << vir_human_size << "\r\n";
             ss << "used_memory_vir_human:" << used_memory_vir_human << "\r\n";
             ss << "used_memory_vir_peak_human:" << used_memory_vir_peak_human << "\r\n";
             ss << "used_memory_rss_peak_human:" << used_memory_rss_peak_human << "\r\n";

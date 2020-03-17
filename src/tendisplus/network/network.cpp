@@ -25,6 +25,12 @@ std::string RequestMatrix::toString() const {
     return ss.str();
 }
 
+void RequestMatrix::reset() {
+    processed = 0;
+    processCost = 0;
+    sendPacketCost = 0;
+}
+
 RequestMatrix RequestMatrix::operator-(const RequestMatrix& right) {
     RequestMatrix result;
     result.processed = processed - right.processed;
@@ -40,6 +46,13 @@ std::string NetworkMatrix::toString() const {
         << "\nconnReleased\t" << connReleased
         << "\ninvalidPackets\t" << invalidPackets;
     return ss.str();
+}
+
+void NetworkMatrix::reset() {
+    stickyPackets = 0;
+    connCreated = 0;
+    connReleased = 0;
+    invalidPackets = 0;
 }
 
 NetworkMatrix NetworkMatrix::operator-(const NetworkMatrix& right) {
@@ -577,9 +590,14 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         return;
     }
 
+    // TODO(vinchen): Is it right when cluster is enable?
+    _server->getServerStat().netInputBytes += actualLen;
+
     if (_first && getServerEntry().get()) {
         uint32_t maxClients = getServerEntry()->getParams()->maxClients;
         if (getServerEntry()->getSessionCount() > maxClients) {
+            ++_server->getServerStat().rejectedConn;
+
             LOG(WARNING) << "-ERR max number of clients reached, clients: " << maxClients;
             setRspAndClose("-ERR max number of clients reached\r\n");
             return;
@@ -734,6 +752,9 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen,
             << ",actualLen:" << actualLen << ",bufsize:" << buf->buffer.size()
             << ",invalid drainRsp len";
     }
+
+    // TODO(vinchen): Is it right when cluster = true
+    _server->getServerStat().netOutputBytes += actualLen;
 
     if (buf->closeAfterThis) {
         endSession();

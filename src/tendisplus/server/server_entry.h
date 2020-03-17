@@ -32,6 +32,46 @@ class Catalog;
 class ReplManager;
 class IndexManager;
 
+/* Instantaneous metrics tracking. */
+#define STATS_METRIC_SAMPLES 16     /* Number of samples per metric. */
+#define STATS_METRIC_COMMAND 0      /* Number of commands executed. */
+#define STATS_METRIC_NET_INPUT 1    /* Bytes read to network .*/
+#define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
+#define STATS_METRIC_COUNT 3
+
+class ServerStat {
+ public:
+    ServerStat();
+    /* Add a sample to the operations per second array of samples. */
+    void trackInstantaneousMetric(int metric, uint64_t current_reading);
+    uint64_t getInstantaneousMetric(int metric) const;
+    void reset();
+
+    Atom<uint64_t> expiredkeys;     /* Number of expired keys */
+    Atom<uint64_t> keyspaceHits;   /* Number of successful lookups of keys */
+    Atom<uint64_t> keyspaceMisses; /* Number of failed lookups of keys */
+    Atom<uint64_t> keyspaceIncorrectEp; /* Number of failed lookups of keys with incorrect versionEp */
+    Atom<uint64_t> rejectedConn;   /* Clients rejected because of maxclients */
+    Atom<uint64_t> syncFull;       /* Number of full resyncs with slaves. */
+    Atom<uint64_t> syncPartialOk; /* Number of accepted PSYNC requests. */
+    Atom<uint64_t> syncPartialErr;/* Number of unaccepted PSYNC requests. */
+    Atom<uint64_t> netInputBytes; /* Bytes read from network. */
+    Atom<uint64_t> netOutputBytes; /* Bytes written to network. */
+
+    /* The following two are used to track instantaneous metrics, like
+     * number of operations per second, network traffic. */
+    struct {
+        uint64_t lastSampleTime; /* Timestamp of last sample in ms */
+        uint64_t lastSampleCount;/* Count in last sample */
+        uint64_t samples[STATS_METRIC_SAMPLES];
+        int idx;
+    } instMetric[STATS_METRIC_COUNT];
+
+
+private:
+    mutable std::mutex _mutex;
+};
+
 class ServerEntry;
 std::shared_ptr<ServerEntry> getGlobalServer();
 
@@ -106,6 +146,8 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&,
                         const std::set<std::string>& sections) const;
     void getStatInfo(std::stringstream& ss) const;
+    ServerStat& getServerStat() const { return (ServerStat&)_serverStat; }
+    void resetServerStat();
     void logGeneral(Session *sess);
     void handleShutdownCmd();
     Status setStoreMode(PStore store, KVStore::StoreMode mode);
@@ -155,7 +197,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
 
  private:
     ServerEntry();
-    void ftmc();
+    void serverCron();
     void replyMonitors(Session* sess);
     void DelMonitorNoLock(uint64_t connId);
 
@@ -185,7 +227,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<PoolMatrix> _poolMatrix;
     std::shared_ptr<RequestMatrix> _reqMatrix;
-    std::unique_ptr<std::thread> _ftmcThd;
+    std::unique_ptr<std::thread> _cronThd;
 
     // NOTE(deyukong):
     // return string's reference have race conditions if changed during
@@ -208,6 +250,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::atomic<uint64_t> _lastBackupFailedTime;
     std::atomic<uint64_t> _backupFailedTimes;
     string _lastBackupFailedErr;
+    ServerStat _serverStat;
 };
 }  // namespace tendisplus
 

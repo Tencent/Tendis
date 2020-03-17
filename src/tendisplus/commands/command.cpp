@@ -656,6 +656,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
         if (!eValue.ok()) {
             // maybe ErrorCodes::ERR_NOTFOUND
+            ++sess->getServerEntry()->getServerStat().keyspaceMisses;
             return eValue.status();
         }
         // TODO(vinchen) : Should it use store->getCurrentTime() instead?
@@ -683,9 +684,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
                 }
                  */
                 if (!pCtx->verifyVersion(eValue.value().getVersionEP())) {
+                    ++sess->getServerEntry()->getServerStat().keyspaceIncorrectEp;
                     return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
                 }
             }
+            ++sess->getServerEntry()->getServerStat().keyspaceHits;
             return eValue.value();
         } else if (txn->isReplOnly()) {
             // NOTE(vinchen): if replOnly, it can't delete record, but return
