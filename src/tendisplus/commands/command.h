@@ -49,6 +49,7 @@ class Command {
     static void setNoExpire(bool cfg);
     static void changeCommand(const string& renameCmdList, string mode);
     int getFlags() const;
+    size_t getFlagsCount() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name
     static Expected<std::string> precheck(Session *sess);

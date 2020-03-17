@@ -42,7 +42,7 @@ namespace tendisplus {
     }\
   } while (0)
 #else
-#define RESET_PERFCONTEXT() 
+#define RESET_PERFCONTEXT()
 #endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
@@ -1576,8 +1576,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
     _isRunning = true;
   }
   {
-    if (needDeleteBinlog)
-    {
+    if (needDeleteBinlog) {
         if (maxBinlogid != Transaction::TXNID_UNINITED)
         {
             Expected<bool> ret = deleteBinlog(maxBinlogid + 1);
@@ -1808,6 +1807,11 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
     if (!backup_meta.ok()) {
         return backup_meta.status();
     }
+
+#ifdef _WIN32
+#undef GetObject
+#endif
+
     uint32_t mode = std::numeric_limits<uint32_t>::max();
     for (auto& o : backup_meta.value().GetObject()) {
         if (o.name == "backupType" && o.value.IsUint()) {

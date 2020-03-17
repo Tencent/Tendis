@@ -158,8 +158,7 @@ Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
         } else {
             return{ ErrorCodes::ERR_EXHAUST, "no binlog" };
         }
-    } 
-
+    }
     return key.status();
 }
 
@@ -299,7 +298,8 @@ uint64_t KVStore::getCurrentTime() {
     return ts;
 }
 
-std::ofstream* KVStore::createBinlogFile(const std::string& name, uint32_t storeId) {
+std::ofstream* KVStore::createBinlogFile(const std::string& name,
+                        uint32_t storeId) {
     std::ofstream* fs = new std::ofstream(name.c_str(),
         std::ios::out | std::ios::app | std::ios::binary);
     if (!fs->is_open()) {
@@ -354,7 +354,7 @@ uint64_t BackupInfo::getStartTimeSec() const {
     return _startTimeSec;
 }
 
-uint64_t BackupInfo::getEndTimeSec() const{
+uint64_t BackupInfo::getEndTimeSec() const {
     return _endTimeSec;
 }
 }  // namespace tendisplus

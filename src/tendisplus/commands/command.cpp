@@ -143,6 +143,21 @@ int Command::getFlags() const {
     return _flags;
 }
 
+size_t Command::getFlagsCount() const {
+    static std::vector<int> flagarr = {CMD_WRITE, CMD_READONLY,CMD_DENYOOM,CMD_MODULE,CMD_ADMIN,CMD_PUBSUB,
+        CMD_NOSCRIPT,CMD_RANDOM,CMD_SORT_FOR_SCRIPT,CMD_LOADING,CMD_STALE,CMD_SKIP_MONITOR,
+        CMD_ASKING,CMD_FAST,CMD_MODULE_GETKEYS,CMD_MODULE_NO_CLUSTER };
+
+    size_t size = 0;
+    for (auto flag : flagarr) {
+        if (_flags & flag) {
+            size++;
+        }
+    }
+
+    return size;
+}
+
 std::vector<std::string> Command::listCommands() {
     std::vector<std::string> lst;
     const auto& v = commandMap();

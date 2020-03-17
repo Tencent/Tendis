@@ -17,6 +17,7 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -905,6 +906,35 @@ void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
   thd1.join();
 }
 
+void testCommandCommand(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "command"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    auto& cmdmap = commandMap();
+    sess.setArgs({ "command", "count" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtLongLong(cmdmap.size()), expect.value());
+
+    sess.setArgs({ "command", "set" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(Command::fmtLongLong(cmdmap.size()), expect.value());
+
+
+    sess.setArgs({ "keys" });
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 0);
+    EXPECT_EQ(ss.str(), expect.value());
+}
+
 TEST(Command, TendisadminCommand) {
   const auto guard = MakeGuard([] {
     destroyEnv();
@@ -1252,7 +1282,7 @@ TEST(Command, renameCommand) {
 
 void testCommandArray(std::shared_ptr<ServerEntry> svr,
     const std::vector<std::vector<std::string>>& arr,
-    bool isError, bool isCmdOk) {
+    bool isError) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -1263,11 +1293,24 @@ void testCommandArray(std::shared_ptr<ServerEntry> svr,
         if (isError) {
             EXPECT_FALSE(expect.ok());
             LOG(INFO) << expect.status().toString();
-        } else if (isCmdOk) {
-            EXPECT_EQ(Command::fmtOK(), expect.value());
         } else {
             EXPECT_TRUE(expect.ok());
         }
+    }
+}
+
+void testCommandArrayResult(std::shared_ptr<ServerEntry> svr,
+    const std::vector<std::pair<std::vector<std::string>, std::string>>& arr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    for (auto& p: arr) {
+        sess.setArgs(p.first);
+        auto expect = Command::runSessionCmd(&sess);
+        INVARIANT_D(expect.ok());
+        auto ret = expect.value();
+        EXPECT_EQ(p.second, ret);
     }
 }
 
@@ -1306,17 +1349,17 @@ TEST(Command, info) {
       {"rocksproperty", "all"},
   };
 
-  std::vector<std::vector<std::string>> okArr = {
-  {"config", "set", "session", "perf_level", "enable_count" },
-  {"config", "set", "session", "perf_level", "enable_time_expect_for_mutex" },
-  {"config", "set", "session", "perf_level", "enable_time_and_cputime_expect_for_mutex" },
-  {"config", "set", "session", "perf_level", "enable_time" },
-  {"config", "resetstat", "all"},
-  {"config", "resetstat", "unseencommands"},
-  {"config", "resetstat", "commandstats"},
-  {"config", "resetstat", "stats"},
-  {"config", "resetstat", "rocksdbstats"},
-  {"config", "resetstat", "invalid"},               // it's ok
+  std::vector<std::pair<std::vector<std::string>, std::string>>  okArr = {
+      {{"config", "set", "session", "perf_level", "enable_count" }, Command::fmtOK()},
+  {{"config", "set", "session", "perf_level", "enable_time_expect_for_mutex" }, Command::fmtOK()},
+  {{"config", "set", "session", "perf_level", "enable_time_and_cputime_expect_for_mutex" }, Command::fmtOK()},
+  {{"config", "set", "session", "perf_level", "enable_time" }, Command::fmtOK()},
+  {{"config", "resetstat", "all"}, Command::fmtOK()},
+  {{"config", "resetstat", "unseencommands"}, Command::fmtOK()},
+  {{"config", "resetstat", "commandstats"}, Command::fmtOK()},
+  {{"config", "resetstat", "stats"}, Command::fmtOK()},
+  {{"config", "resetstat", "rocksdbstats"}, Command::fmtOK()},
+  {{"config", "resetstat", "invalid"},  Command::fmtOK()},              // it's ok
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
@@ -1330,15 +1373,59 @@ TEST(Command, info) {
     {"config", "set", "session", "perf_level"},
   };
 
-  testCommandArray(server, correctArr, false, false);
-  testCommandArray(server, okArr, false, true);
-  testCommandArray(server, wrongArr, true, false);
+  testCommandArray(server, correctArr, false);
+  testCommandArrayResult(server, okArr);
+  testCommandArray(server, wrongArr, true);
 
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
 #endif
 
+}
+
+TEST(Command, command) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+        });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    std::vector<std::vector<std::string>> correctArr = {
+        {"command"},
+        {"command", "info" },
+        {"command", "info", "get" },
+        {"command", "info", "get", "set" },
+        {"command", "info", "get", "set", "wrongcommand" },
+        {"command", "count"},
+        {"command", "getkeys", "get", "a"},
+        {"command", "getkeys", "set", "a", "b"},
+        {"command", "getkeys", "mset", "a", "b", "c", "d"},
+    };
+
+    std::vector<std::vector<std::string>> wrongArr = {
+        {"command", "invalid"},
+        {"command", "count", "invalid"},
+        {"command", "getkeys"},
+        {"command", "getkeys", "get", "a", "c"},
+    };
+
+    std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+        {{"command", "info", "get" }, "*1\r\n*6\r\n$3\r\nget\r\n:2\r\n*2\r\n$8\r\nreadonly\r\n$4\r\nfast\r\n:1\r\n:1\r\n:1\r\n"},
+        {{"command", "getkeys", "get", "a"}, "*1\r\n$1\r\na\r\n"},
+        {{"command", "getkeys", "mset", "a", "b", "c", "d"}, "*2\r\n$1\r\na\r\n$1\r\nc\r\n"},
+    };
+
+    testCommandArray(server, correctArr, false);
+    testCommandArray(server, wrongArr, true);
+    testCommandArrayResult(server, resultArr);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 }  // namespace tendisplus
