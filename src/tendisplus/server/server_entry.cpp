@@ -36,6 +36,15 @@ void ServerStat::reset() {
     memset(&instMetric, 0, sizeof(instMetric));
 }
 
+CompactionStat::CompactionStat() 
+    : curDBid(""), startTime(sinceEpoch()), isRunning(false) {}
+
+void CompactionStat::reset() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    isRunning = false;
+    curDBid = "";
+}
+
 /* Return the mean of all the samples. */
 uint64_t ServerStat::getInstantaneousMetric(int metric) const {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -669,6 +678,49 @@ void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer
         w.Uint64(_poolMatrix->executeTime.get());
         w.EndObject();
     }
+}
+
+bool ServerEntry::getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const {
+    *value = 0;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return false;
+        }
+
+        auto store = expdb.value().store;
+        uint64_t tmp = 0;
+        bool ok = store->getIntProperty(property, &tmp);
+        if (!ok) {
+            return false;
+        }
+        *value += tmp;
+    }
+
+    return true;
+}
+
+bool ServerEntry::getAllProperty(Session* sess, const std::string& property, std::string* value) const {
+    std::stringstream ss;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return false;
+        }
+
+        auto store = expdb.value().store;
+        std::string tmp;
+        bool ok = store->getProperty(property, &tmp);
+        if (!ok) {
+            return false;
+        }
+        ss << "store_" << store->dbId() << ":" << tmp << "\r\n" ;
+    }
+    *value = ss.str();
+
+    return true;
 }
 
 Status ServerEntry::destroyStore(Session *sess,

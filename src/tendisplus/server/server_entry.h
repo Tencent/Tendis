@@ -72,6 +72,18 @@ private:
     mutable std::mutex _mutex;
 };
 
+class CompactionStat {
+public:
+    CompactionStat();
+    std::string curDBid;
+    uint64_t startTime;
+    bool isRunning;
+    void reset();
+
+private:
+    mutable std::mutex _mutex;
+};
+
 class ServerEntry;
 std::shared_ptr<ServerEntry> getGlobalServer();
 
@@ -148,6 +160,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void getStatInfo(std::stringstream& ss) const;
     ServerStat& getServerStat() const { return (ServerStat&)_serverStat; }
     void resetServerStat();
+    CompactionStat& getCompactionStat() const { return (CompactionStat&)_compactionStat; }
     void logGeneral(Session *sess);
     void handleShutdownCmd();
     Status setStoreMode(PStore store, KVStore::StoreMode mode);
@@ -194,6 +207,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         std::lock_guard<std::mutex> lk(_mutex);
         return _lastBackupFailedErr;
     }
+
+    bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
+    bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
  private:
     ServerEntry();
@@ -251,6 +267,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::atomic<uint64_t> _backupFailedTimes;
     string _lastBackupFailedErr;
     ServerStat _serverStat;
+    CompactionStat _compactionStat;
 };
 }  // namespace tendisplus
 

@@ -590,8 +590,10 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
         return;
     }
 
-    // TODO(vinchen): Is it right when cluster is enable?
-    _server->getServerStat().netInputBytes += actualLen;
+    if (_server.get()) {
+        // TODO(vinchen): Is it right when cluster is enable?
+        _server->getServerStat().netInputBytes += actualLen;
+    }
 
     if (_first && getServerEntry().get()) {
         uint32_t maxClients = getServerEntry()->getParams()->maxClients;
@@ -753,8 +755,10 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen,
             << ",invalid drainRsp len";
     }
 
-    // TODO(vinchen): Is it right when cluster = true
-    _server->getServerStat().netOutputBytes += actualLen;
+    if (_server.get()) {
+        // TODO(vinchen): Is it right when cluster = true
+        _server->getServerStat().netOutputBytes += actualLen;
+    }
 
     if (buf->closeAfterThis) {
         endSession();

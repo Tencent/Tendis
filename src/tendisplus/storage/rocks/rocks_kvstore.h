@@ -250,6 +250,10 @@ class RocksKVStore: public KVStore {
     const std::shared_ptr<ServerParams>& getCfg() const {
         return _cfg;
     }
+
+    bool getIntProperty(const std::string& property, uint64_t* value) const;
+    bool getProperty(const std::string& property, std::string* value) const;
+    std::string getAllProperty() const;
  private:
     rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);

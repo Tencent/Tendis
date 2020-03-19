@@ -277,6 +277,9 @@ class KVStore {
     virtual Status pause() = 0;
     virtual Status resume() = 0;
     virtual Status destroy() = 0;
+    virtual bool getIntProperty(const std::string& property, uint64_t* value) const = 0;
+    virtual bool getProperty(const std::string& property, std::string* value) const = 0;
+    virtual std::string getAllProperty() const = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
     virtual KVStore::StoreMode getMode() = 0;

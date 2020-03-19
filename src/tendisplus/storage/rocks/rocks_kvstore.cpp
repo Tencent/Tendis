@@ -2051,6 +2051,47 @@ void RocksKVStore::initRocksProperties()
     }
 }
 
+bool RocksKVStore::getIntProperty(const std::string& property, uint64_t* value) const {
+    bool ok = getBaseDB()->GetIntProperty(property, value);
+    if (!ok) {
+        LOG(WARNING) << "db:" << dbId()
+            << " getProperity:" << property << " failed";
+    }
+    return ok;
+}
+
+bool RocksKVStore::getProperty(const std::string& property, std::string* value) const {
+    bool ok = getBaseDB()->GetProperty(property, value);
+    if (!ok) {
+        LOG(WARNING) << "db:" << dbId()
+            << " getProperity:" << property << " failed";
+    }
+
+    return ok;
+}
+
+std::string RocksKVStore::getAllProperty() const {
+    std::stringstream ss;
+    std::string tmp;
+    for (const auto& kv : _rocksIntProperties) {
+        bool ok = getProperty(kv.first, &tmp);
+        if (!ok) {
+            continue;
+        }
+        ss << kv.first << ":" << tmp << "\r\n";
+    }
+
+    for (const auto& kv : _rocksStringProperties) {
+        bool ok = getProperty(kv.first, &tmp);
+        if (!ok) {
+            continue;
+        }
+        ss << kv.first << ":" << tmp << "\r\n";
+    }
+
+    return ss.str();
+}
+
 void RocksKVStore::appendJSONStat(
             rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     w.Key("id");
@@ -2100,10 +2141,8 @@ void RocksKVStore::appendJSONStat(
     if (_isRunning) {
         for (const auto& kv : _rocksIntProperties) {
             uint64_t tmp;
-            bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
+            bool ok = getIntProperty(kv.first, &tmp);
             if (!ok) {
-                LOG(WARNING) << "db:" << dbId()
-                    << " getProperity:" << kv.first << " failed";
                 continue;
             }
             w.Key(kv.second.c_str());
@@ -2112,10 +2151,8 @@ void RocksKVStore::appendJSONStat(
 
         for (const auto& kv : _rocksStringProperties) {
             string tmp;
-            bool ok = getBaseDB()->GetProperty(kv.first, &tmp);
+            bool ok = getProperty(kv.first, &tmp);
             if (!ok) {
-                LOG(WARNING) << "db:" << dbId()
-                    << " getProperity:" << kv.first << " failed";
                 continue;
             }
             w.Key(kv.second.c_str());
