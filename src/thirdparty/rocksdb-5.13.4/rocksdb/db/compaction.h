@@ -321,5 +321,7 @@ class Compaction {
 
 // Utility function
 extern uint64_t TotalFileSize(const std::vector<FileMetaData*>& files);
+extern uint64_t TotalNumEntries(const std::vector<FileMetaData*>& files);
+extern uint64_t TotalNumDeletions(const std::vector<FileMetaData*>& files);
 
 }  // namespace rocksdb

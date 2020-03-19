@@ -425,6 +425,7 @@ class InternalStats {
   bool HandleNumFilesAtLevel(std::string* value, Slice suffix);
   bool HandleCompressionRatioAtLevelPrefix(std::string* value, Slice suffix);
   bool HandleLevelStats(std::string* value, Slice suffix);
+  bool HandleLevelStatsEx(std::string* value, Slice suffix);
   bool HandleStats(std::string* value, Slice suffix);
   bool HandleCFMapStats(std::map<std::string, std::string>* compaction_stats);
   bool HandleCFStats(std::string* value, Slice suffix);

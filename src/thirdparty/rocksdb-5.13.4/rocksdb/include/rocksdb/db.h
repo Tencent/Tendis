@@ -473,6 +473,11 @@ class DB {
     //  "rocksdb.levelstats" - returns multi-line string containing the number
     //      of files per level and total size of each level (MB).
     static const std::string kLevelStats;
+	    
+    //  "rocksdb.levelstatsex" - returns multi-line string containing the number
+    //      of files per level, total size of each level (MB), total number of
+    //      entires and total number of deletion entries per level
+    static const std::string kLevelStatsEx;
 
     //  "rocksdb.num-immutable-mem-table" - returns number of immutable
     //      memtables that have not yet been flushed.

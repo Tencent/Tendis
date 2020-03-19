@@ -2298,6 +2298,18 @@ uint64_t VersionStorageInfo::NumLevelBytes(int level) const {
   return TotalFileSize(files_[level]);
 }
 
+uint64_t VersionStorageInfo::NumLevelEntires(int level) const {
+  assert(level >= 0);
+  assert(level < num_levels());
+  return TotalNumEntries(files_[level]);
+}
+
+uint64_t VersionStorageInfo::NumLevelDeletions(int level) const {
+  assert(level >= 0);
+  assert(level < num_levels());
+  return TotalNumDeletions(files_[level]);
+}
+
 const char* VersionStorageInfo::LevelSummary(
     LevelSummaryStorage* scratch) const {
   int len = 0;

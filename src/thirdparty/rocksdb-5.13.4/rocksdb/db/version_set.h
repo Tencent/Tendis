@@ -262,6 +262,12 @@ class VersionStorageInfo {
   // Return the combined file size of all files at the specified level.
   uint64_t NumLevelBytes(int level) const;
 
+  // Return the combined entires of all files at the specified level.
+  uint64_t NumLevelEntires(int level) const;
+
+  // Return the combined deleted entires of all files at the specified level.
+  uint64_t NumLevelDeletions(int level) const;
+
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
   const std::vector<FileMetaData*>& LevelFiles(int level) const {
     return files_[level];

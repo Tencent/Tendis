@@ -201,6 +201,7 @@ static const std::string cfstats_no_file_histogram =
 static const std::string cf_file_histogram = "cf-file-histogram";
 static const std::string dbstats = "dbstats";
 static const std::string levelstats = "levelstats";
+static const std::string levelstatsex = "levelstatsex";
 static const std::string num_immutable_mem_table = "num-immutable-mem-table";
 static const std::string num_immutable_mem_table_flushed =
     "num-immutable-mem-table-flushed";
@@ -260,6 +261,7 @@ const std::string DB::Properties::kCFFileHistogram =
     rocksdb_prefix + cf_file_histogram;
 const std::string DB::Properties::kDBStats = rocksdb_prefix + dbstats;
 const std::string DB::Properties::kLevelStats = rocksdb_prefix + levelstats;
+const std::string DB::Properties::kLevelStatsEx = rocksdb_prefix + levelstatsex;
 const std::string DB::Properties::kNumImmutableMemTable =
                       rocksdb_prefix + num_immutable_mem_table;
 const std::string DB::Properties::kNumImmutableMemTableFlushed =
@@ -333,6 +335,8 @@ const std::unordered_map<std::string, DBPropertyInfo>
           nullptr}},
         {DB::Properties::kLevelStats,
          {false, &InternalStats::HandleLevelStats, nullptr, nullptr}},
+        {DB::Properties::kLevelStatsEx,
+         {false, &InternalStats::HandleLevelStatsEx, nullptr, nullptr}},
         {DB::Properties::kStats,
          {false, &InternalStats::HandleStats, nullptr, nullptr}},
         {DB::Properties::kCFStats,
@@ -512,6 +516,28 @@ bool InternalStats::HandleLevelStats(std::string* value, Slice /*suffix*/) {
              vstorage->NumLevelFiles(level),
              vstorage->NumLevelBytes(level) / kMB);
     value->append(buf);
+  }
+  return true;
+}
+
+bool InternalStats::HandleLevelStatsEx(std::string* value, Slice /*suffix*/) {
+  char buf[1000];
+  const auto* vstorage = cfd_->current()->storage_info();
+
+  for (int level = 0; level < number_levels_; level++) {
+    int numFiles = vstorage->NumLevelFiles(level);
+    if (numFiles > 0) {
+      snprintf(buf, sizeof(buf),
+               "rocksdb.level-%d:bytes=%" PRIu64 
+               ",num_entries=%" PRIu64 
+               ",num_deletions=%" PRIu64 
+               ",num_files=%d\n",
+               level, vstorage->NumLevelBytes(level),
+               vstorage->NumLevelEntires(level),
+               vstorage->NumLevelDeletions(level),
+               numFiles);
+      value->append(buf);
+    }
   }
   return true;
 }
