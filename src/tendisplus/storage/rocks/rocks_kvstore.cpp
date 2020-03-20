@@ -2052,19 +2052,25 @@ void RocksKVStore::initRocksProperties()
 }
 
 bool RocksKVStore::getIntProperty(const std::string& property, uint64_t* value) const {
-    bool ok = getBaseDB()->GetIntProperty(property, value);
-    if (!ok) {
-        LOG(WARNING) << "db:" << dbId()
-            << " getProperity:" << property << " failed";
+    bool ok = false;
+    if (_isRunning) {
+        ok = getBaseDB()->GetIntProperty(property, value);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                << " getProperity:" << property << " failed";
+        }
     }
     return ok;
 }
 
 bool RocksKVStore::getProperty(const std::string& property, std::string* value) const {
-    bool ok = getBaseDB()->GetProperty(property, value);
-    if (!ok) {
-        LOG(WARNING) << "db:" << dbId()
-            << " getProperity:" << property << " failed";
+    bool ok = false;
+    if (_isRunning) {
+        ok = getBaseDB()->GetProperty(property, value);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                << " getProperity:" << property << " failed";
+        }
     }
 
     return ok;
@@ -2072,24 +2078,34 @@ bool RocksKVStore::getProperty(const std::string& property, std::string* value) 
 
 std::string RocksKVStore::getAllProperty() const {
     std::stringstream ss;
-    std::string tmp;
-    for (const auto& kv : _rocksIntProperties) {
-        bool ok = getProperty(kv.first, &tmp);
-        if (!ok) {
-            continue;
+    if (_isRunning) {
+        std::string tmp;
+        for (const auto& kv : _rocksIntProperties) {
+            bool ok = getProperty(kv.first, &tmp);
+            if (!ok) {
+                continue;
+            }
+            ss << kv.first << ":" << tmp << "\r\n";
         }
-        ss << kv.first << ":" << tmp << "\r\n";
-    }
 
-    for (const auto& kv : _rocksStringProperties) {
-        bool ok = getProperty(kv.first, &tmp);
-        if (!ok) {
-            continue;
+        for (const auto& kv : _rocksStringProperties) {
+            bool ok = getProperty(kv.first, &tmp);
+            if (!ok) {
+                continue;
+            }
+            ss << kv.first << ":" << tmp << "\r\n";
         }
-        ss << kv.first << ":" << tmp << "\r\n";
     }
 
     return ss.str();
+}
+
+std::string RocksKVStore::getStatistics() const {
+    if (_isRunning) {
+        return _stats->ToString();
+    } else {
+        return "";
+    }
 }
 
 void RocksKVStore::appendJSONStat(

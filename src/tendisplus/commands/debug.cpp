@@ -1544,6 +1544,8 @@ class InfoCommand: public Command {
         infoDataset(allsections, defsections, section, sess, result);
         infoCompaction(allsections, defsections, section, sess, result);
         infoLevelStats(allsections, defsections, section, sess, result);
+        infoRocksdbStats(allsections, defsections, section, sess, result);
+        //infoRocksdbPerfStats(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
@@ -1878,18 +1880,16 @@ private:
 
     void infoCompaction(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "compaction") {
-            std::stringstream ss;
             bool running = sess->getServerEntry()->getCompactionStat().isRunning;
             auto startTime = sess->getServerEntry()->getCompactionStat().startTime;
             auto duration = sinceEpoch() - startTime;
             auto dbid = sess->getServerEntry()->getCompactionStat().curDBid;
 
-            ss << "# Compaction\r\n";
-            ss << "current-compaction-status:" << (running ? "running" : "stopped") << "\r\n";
-            ss << "time-since-lastest-compaction:" << duration << "\r\n";
-            ss << "current-compaction-dbid:" << dbid << "\r\n";
-            ss << "\r\n";
-            result << ss.str();
+            result << "# Compaction\r\n";
+            result << "current-compaction-status:" << (running ? "running" : "stopped") << "\r\n";
+            result << "time-since-lastest-compaction:" << duration << "\r\n";
+            result << "current-compaction-dbid:" << dbid << "\r\n";
+            result << "\r\n";
         }
     }
 
@@ -1897,7 +1897,7 @@ private:
         if (allsections || defsections || section == "levelstats") {
             auto server = sess->getServerEntry();
 
-            ss << "# Levelstats\r\n";
+            result << "# Levelstats\r\n";
             for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
                     mgl::LockMode::LOCK_IS); 
@@ -1917,6 +1917,74 @@ private:
             }
         }
     }
+
+    void infoRocksdbStats(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || section == "rocksdbstats") {
+            auto server = sess->getServerEntry();
+            std::map<std::string, uint64_t> map;
+
+            result << "# Rocksdbstats\r\n";
+            for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return;
+                }
+
+                auto store = expdb.value().store;
+                std::string tmp = store->getStatistics();
+                
+                auto v = stringSplit(tmp, "\n");
+                for (auto one : v) {
+                    // rocksdb1.block.cache.bytes.write COUNT : 0
+                    auto key_value = stringSplit(one, ":");
+                    if (key_value.size() != 2) {
+                        continue;
+                    }
+                    sdstrim(key_value[0], " ");
+                    sdstrim(key_value[1], " ");
+                    if (key_value[0].find("COUNT") == -1) {
+                        continue;
+                    }
+
+                    auto e = tendisplus::stoul(key_value[1]);
+                    if (!e.ok()) {
+                        continue;
+                    }
+
+                    auto iter = map.find(key_value[0]);
+                    if (iter != map.end()) {
+                        iter->second += e.value();
+                    } else {
+                        map[key_value[0]] = e.value();
+                    }
+                }
+
+                std::string prefix = "rocksdb" + store->dbId() + ".";
+                replaceAll(tmp, "rocksdb.", prefix);
+
+                result << tmp;
+            }
+
+            for (auto v : map) {
+                result << v.first << " : " << v.second << "\n";
+            }
+        }
+    }
+
+    void infoRocksdbPerfStats(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || section == "rocksdbperfstats") {
+            result << "# RocksdbPerfstats\r\n";
+            
+            rocksdb::PerfContext* perf_context = rocksdb::get_perf_context();
+            auto tmp = perf_context->ToString();
+            replaceAll(tmp, " = ", ":");
+            replaceAll(tmp, ", ", "\n");
+
+            result << tmp;
+        }
+    }
+
 } infoCmd;
 
 class ObjectCommand: public Command {
