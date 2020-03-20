@@ -181,7 +181,7 @@ TEST(ServerParams, RocksOption) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 51);
+    EXPECT_EQ(cfg->paramsNum(), 53);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -242,5 +242,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->rocksCompressType, "snappy");
     EXPECT_EQ(cfg->rocksStrictCapacityLimit, false);
     EXPECT_EQ(cfg->getRocksdbOptions().size(), 0);
+    EXPECT_EQ(cfg->level0Compress, false);
+    EXPECT_EQ(cfg->level0Compress, false);
 }
 }  // namespace tendisplus
