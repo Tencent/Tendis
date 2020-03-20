@@ -848,10 +848,14 @@ rocksdb::Options RocksKVStore::options() {
     //     new PrefixDeletingCompactionFilterFactory(this));
     options.enable_thread_tracking = true;
     options.compression_per_level.resize(ROCKSDB_NUM_LEVELS);
-    options.compression_per_level[0] = rocksdb::kNoCompression;
-    options.compression_per_level[1] = rocksdb::kNoCompression;
-    for (int i = 2; i < ROCKSDB_NUM_LEVELS; ++i) {
+    for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
         options.compression_per_level[i] = rocksGetCompressType(_cfg->rocksCompressType);
+    }
+    if (_cfg->level0NoCompress) {
+        options.compression_per_level[0] = rocksdb::kNoCompression;
+    }
+    if (_cfg->level1NoCompress) {
+        options.compression_per_level[1] = rocksdb::kNoCompression;
     }
     options.statistics = _stats;
     options.create_if_missing = true;

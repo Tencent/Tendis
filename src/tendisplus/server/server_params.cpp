@@ -141,6 +141,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 
     REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, false);
+    REGISTER_VARS(level0NoCompress);
+    REGISTER_VARS(level1NoCompress);
 };
 
 ServerParams::~ServerParams() {
