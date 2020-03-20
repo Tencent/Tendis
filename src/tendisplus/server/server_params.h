@@ -264,8 +264,8 @@ public:
     // WriteOptions
     bool rocksDisableWAL = false;
     bool rocksFlushLogAtTrxCommit = false;
-    bool level0NoCompress = true;
-    bool level1NoCompress = true;
+    bool level0Compress = false;
+    bool level1Compress = false;
 };
 }  // namespace tendisplus
 

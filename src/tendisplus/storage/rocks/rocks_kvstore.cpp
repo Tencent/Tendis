@@ -851,10 +851,10 @@ rocksdb::Options RocksKVStore::options() {
     for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
         options.compression_per_level[i] = rocksGetCompressType(_cfg->rocksCompressType);
     }
-    if (_cfg->level0NoCompress) {
+    if (!_cfg->level0Compress) {
         options.compression_per_level[0] = rocksdb::kNoCompression;
     }
-    if (_cfg->level1NoCompress) {
+    if (!_cfg->level1Compress) {
         options.compression_per_level[1] = rocksdb::kNoCompression;
     }
     options.statistics = _stats;
