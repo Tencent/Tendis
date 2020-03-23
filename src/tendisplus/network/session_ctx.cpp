@@ -19,6 +19,8 @@ SessionCtx::SessionCtx(Session* sess)
      _processPacketStart(0),
      _timestamp(TSEP_UNINITED),
      _version(VERSIONEP_UNINITED),
+     _perfLevel(PerfLevel::kDisable),
+     _perfLevelFlag(false),
      _txnVersion(-1),
      _extendProtocol(false),
      _replOnly(false),
@@ -87,6 +89,7 @@ void SessionCtx::clearRequestCtx() {
     _argsBrief.clear();
     _timestamp = -1;
     _version = -1;
+    _perfLevelFlag = false;
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
@@ -162,6 +165,42 @@ void SessionCtx::setExtendProtocol(bool v) {
 void SessionCtx::setExtendProtocolValue(uint64_t ts, uint64_t version) {
     _timestamp = ts;
     _version = version;
+}
+
+// reture false, mean error
+bool SessionCtx::setPerfLevel(const std::string& level) {
+    auto l= toLower(level);
+    if (l== "disable") {
+        _perfLevel = PerfLevel::kDisable;
+    } else if (l == "enable_count") {
+        _perfLevel = PerfLevel::kEnableCount;
+    } else if (l == "enable_time_expect_for_mutex") {
+        _perfLevel = PerfLevel::kEnableTimeExceptForMutex;
+    } else if (l == "enable_time_and_cputime_expect_for_mutex") {
+        _perfLevel = PerfLevel::kEnableTimeAndCPUTimeExceptForMutex;
+    } else if (l == "enable_time") {
+        _perfLevel = PerfLevel::kEnableTime;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool SessionCtx::needResetPerLevel() {
+    if (_perfLevelFlag) {
+        return false;
+    }
+
+    // NOTE(vinchen): _perfLevelFlag mean that the the first time
+    // call of SessionCtx::needResetPerLevel(). It would be reset 
+    // when SessionCtx::clearRequestCtx() 
+    _perfLevelFlag = true;
+
+    if (_perfLevel < PerfLevel::kEnableCount) {
+        return false;
+    }
+
+    return true;
 }
 
 uint32_t SessionCtx::getIsMonitor() const {

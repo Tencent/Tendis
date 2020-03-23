@@ -22,6 +22,7 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/iostats_context.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
@@ -676,39 +677,9 @@ class ToggleFtmcCommand: public Command {
     }
 } togFtmcCmd;
 
-class ResetServerStatCommand : public Command {
-public:
-    ResetServerStatCommand()
-        :Command("resetserverstat", "a") {
-    }
-
-    ssize_t arity() const {
-        return 1;
-    }
-
-    int32_t firstkey() const {
-        return 0;
-    }
-
-    int32_t lastkey() const {
-        return 0;
-    }
-
-    int32_t keystep() const {
-        return 0;
-    }
-
-    Expected<std::string> run(Session* sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
-        INVARIANT(svr != nullptr);
-        svr->resetServerStat();
-        return Command::fmtOK();
-    }
-} resetServerStatCmd;
-
-class RocksPropCommand : public Command {
+class RocksPropertyCommand : public Command {
  public:
-    RocksPropCommand()
+     RocksPropertyCommand()
         :Command("rocksproperty", "a") {
     }
 
@@ -1545,7 +1516,7 @@ class InfoCommand: public Command {
         infoCompaction(allsections, defsections, section, sess, result);
         infoLevelStats(allsections, defsections, section, sess, result);
         infoRocksdbStats(allsections, defsections, section, sess, result);
-        //infoRocksdbPerfStats(allsections, defsections, section, sess, result);
+        infoRocksdbPerfStats(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
@@ -1861,6 +1832,7 @@ private:
 
 
             ss << "# Dataset\r\n";
+            ss << "rocksdb.kvstore-count:" << server->getKVStoreCount() << "\r\n";
             ss << "rocksdb.total-sst-files-size:" << total << "\r\n";
             ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
             ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
@@ -1978,6 +1950,12 @@ private:
             
             rocksdb::PerfContext* perf_context = rocksdb::get_perf_context();
             auto tmp = perf_context->ToString();
+            replaceAll(tmp, " = ", ":");
+            replaceAll(tmp, ", ", "\n");
+
+            result << tmp;
+
+            tmp = rocksdb::get_iostats_context()->ToString();
             replaceAll(tmp, " = ", ":");
             replaceAll(tmp, ", ", "\n");
 
@@ -2112,6 +2090,14 @@ class ConfigCommand : public Command {
 
                 if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
+                } else if(toLower(args[3]) == "perf_level") {
+                    if (!sess->getCtx()->setPerfLevel(toLower(args[4]))) {
+                        return{ ErrorCodes::ERR_PARSEOPT,
+                            "invalid argument :\"" + args[4] + "\" for 'config set session perf_level'" };
+                    }
+                } else {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid argument :\"" + args[3] + "\" for 'config set session'" };
                 }
             } else if (configName == "requirepass") {
                 sess->getServerEntry()->setRequirepass(args[3]);
@@ -2130,8 +2116,6 @@ class ConfigCommand : public Command {
             if (args.size() != 3) {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
-            //return Command::fmtLongLong(10000);
-
             auto configName = toLower(args[2]);
             string info;
             if (configName == "requirepass") {
@@ -2161,13 +2145,18 @@ class ConfigCommand : public Command {
                 }
                 _unSeenCmds.clear();
             }
-            if (reset_all || configName == "commandsstat") {
-                LOG(INFO) << "reset commandsstat";
+            if (reset_all || configName == "commandstats") {
+                LOG(INFO) << "reset commandstats";
                 for (const auto& kv : commandMap()) {
                     LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
                     kv.second->resetStatInfo();
                 }
             }
+            if (reset_all || configName == "stats") {
+                auto svr = sess->getServerEntry();
+                svr->resetServerStat();
+            }
+
             return Command::fmtOK();
         }
 

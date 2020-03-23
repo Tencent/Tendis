@@ -14,6 +14,8 @@
 #include "rocksdb/utilities/backupable_db.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/perf_context.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
 #include "tendisplus/utils/sync_point.h"
@@ -27,6 +29,13 @@
 
 namespace tendisplus {
 
+#define RESET_PERFCONTEXT() do {\
+    if (_session && _session->getCtx()->needResetPerLevel()) {\
+        rocksdb::SetPerfLevel(rocksdb::PerfLevel(_session->getCtx()->getPerfLevel()));\
+        rocksdb::get_perf_context()->Reset();\
+        rocksdb::get_iostats_context()->Reset();\
+    }\
+  } while (0)
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
         :Cursor(),
@@ -152,6 +161,7 @@ std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
 
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
+    RESET_PERFCONTEXT();
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
     return std::unique_ptr<Cursor>(
@@ -302,6 +312,8 @@ void RocksTxn::setChunkId(uint32_t chunkId) {
 Expected<std::string> RocksTxn::getKV(const std::string& key) {
     rocksdb::ReadOptions readOpts;
     std::string value;
+
+    RESET_PERFCONTEXT();
     auto s = _txn->Get(readOpts, key, &value);
     if (s.ok()) {
         return value;
@@ -319,6 +331,7 @@ Status RocksTxn::setKV(const std::string& key,
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
 
+    RESET_PERFCONTEXT();
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -361,6 +374,7 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
+    RESET_PERFCONTEXT();
     auto s = _txn->Delete(key);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -488,6 +502,7 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     if (!_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
     }
+    RESET_PERFCONTEXT();
     switch (logEntry.getOp()) {
     case ReplOp::REPL_OP_SET: {
         // TODO(vinchen): RecordKey::validate()
@@ -527,6 +542,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     _store->setNextBinlogSeq(binlogId, this);
     INVARIANT(_binlogId != Transaction::TXNID_UNINITED);
 
+    RESET_PERFCONTEXT();
     auto s = _txn->Put(logKey, logValue);
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
@@ -536,6 +552,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
 }
 
 Status RocksTxn::delBinlog(const ReplLogRawV2& log) {
+    RESET_PERFCONTEXT();
     auto s = _txn->Delete(log.getReplLogKey());
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
