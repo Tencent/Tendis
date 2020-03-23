@@ -255,6 +255,7 @@ class RocksKVStore: public KVStore {
     bool getProperty(const std::string& property, std::string* value) const;
     std::string getAllProperty() const;
     std::string getStatistics() const;
+    void resetStatistics();
  private:
     rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);

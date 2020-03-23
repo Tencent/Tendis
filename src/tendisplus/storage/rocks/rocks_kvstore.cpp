@@ -2125,6 +2125,10 @@ std::string RocksKVStore::getStatistics() const {
     }
 }
 
+void RocksKVStore::resetStatistics() {
+    _stats->Reset();
+}
+
 void RocksKVStore::appendJSONStat(
             rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     w.Key("id");

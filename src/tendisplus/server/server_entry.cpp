@@ -723,6 +723,20 @@ bool ServerEntry::getAllProperty(Session* sess, const std::string& property, std
     return true;
 }
 
+void ServerEntry::resetRocksdbStats(Session* sess) {
+    std::stringstream ss;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            continue;
+        }
+
+        auto store = expdb.value().store;
+        store->resetStatistics();
+    }
+}
+
 Status ServerEntry::destroyStore(Session *sess,
             uint32_t storeId, bool isForce) {
     auto expdb = getSegmentMgr()->getDb(sess, storeId,

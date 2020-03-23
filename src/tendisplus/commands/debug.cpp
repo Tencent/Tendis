@@ -1521,8 +1521,7 @@ class InfoCommand: public Command {
         return  Command::fmtBulk(result.str());
     }
 
-private:
-    void infoServer(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoServer(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "server") {
             auto server = sess->getServerEntry();
             uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
@@ -1566,7 +1565,7 @@ private:
 
     }
 
-    void infoClients(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoClients(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "clients") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1603,7 +1602,7 @@ private:
         return -1;
     }
 
-    void infoMemory(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoMemory(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "memory") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1667,7 +1666,7 @@ private:
         }
     }
 
-    void infoPersistence(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoPersistence(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "persistence") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1694,7 +1693,7 @@ private:
 
     }
 
-    void infoStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "stats") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1706,7 +1705,7 @@ private:
 
     }
 
-    void infoReplication(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoReplication(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "replication") {
             auto server = sess->getServerEntry();
             auto replMgr = server->getReplManager();
@@ -1723,7 +1722,7 @@ private:
 
     }
 
-    void infoCPU(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoCPU(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
 #ifndef _WIN32
         if (allsections || defsections || section == "cpu") {
             auto server = sess->getServerEntry();
@@ -1749,7 +1748,7 @@ private:
 #endif
     }
 
-    void infoCommandStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoCommandStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || section == "commandstats") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1782,7 +1781,7 @@ private:
         }
     }
 
-    void infoKeyspace(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoKeyspace(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "keyspace") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1795,7 +1794,7 @@ private:
         }
     }
 
-    void infoBackup(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoBackup(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "backup") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1812,7 +1811,7 @@ private:
         }
     }
 
-    void infoDataset(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+    static void infoDataset(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "dataset") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1850,7 +1849,7 @@ private:
         }
     }
 
-    void infoCompaction(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+    static void infoCompaction(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "compaction") {
             bool running = sess->getServerEntry()->getCompactionStat().isRunning;
             auto startTime = sess->getServerEntry()->getCompactionStat().startTime;
@@ -1865,7 +1864,7 @@ private:
         }
     }
 
-    void infoLevelStats(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+    static void infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "levelstats") {
             auto server = sess->getServerEntry();
 
@@ -1890,7 +1889,7 @@ private:
         }
     }
 
-    void infoRocksdbStats(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+    static void infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "rocksdbstats") {
             auto server = sess->getServerEntry();
             std::map<std::string, uint64_t> map;
@@ -1944,7 +1943,7 @@ private:
         }
     }
 
-    void infoRocksdbPerfStats(bool allsections, bool defsections, std::string& section, Session* sess, std::stringstream& result) {
+    static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "rocksdbperfstats") {
             result << "# RocksdbPerfstats\r\n";
             
@@ -2128,13 +2127,14 @@ class ConfigCommand : public Command {
             return Command::fmtBulk(info);
         } else if (operation == "resetstat") {
             bool reset_all = false;
-            string configName = "";
-            if (args.size() == 2) {
+            
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect, should be three" };
+            }
+
+            auto configName = toLower(args[2]);
+            if (configName == "all") {
                 reset_all = true;
-            } else if (args.size() == 3) {
-                configName = toLower(args[2]);
-            } else {
-                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
 
             if (reset_all || configName == "unseencommands") {
@@ -2147,17 +2147,30 @@ class ConfigCommand : public Command {
             }
             if (reset_all || configName == "commandstats") {
                 LOG(INFO) << "reset commandstats";
+                std::stringstream ss;
+                InfoCommand::infoCommandStats(true, true, "commandstats", sess, ss);
+                LOG(INFO) << ss.str();
                 for (const auto& kv : commandMap()) {
-                    LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
                     kv.second->resetStatInfo();
                 }
             }
             if (reset_all || configName == "stats") {
+                LOG(INFO) << "reset stats";
+                std::stringstream ss;
+                InfoCommand::infoStats(true, true, "stats", sess, ss);
+                LOG(INFO) << ss.str();
+
                 auto svr = sess->getServerEntry();
                 svr->resetServerStat();
             }
-
-            return Command::fmtOK();
+            if (reset_all || configName == "rocksdbstats") {
+                LOG(INFO) << "reset rocksdbstats";
+                std::stringstream ss;
+                InfoCommand::infoRocksdbStats(true, true, "rocksdbstats", sess, ss);
+                LOG(INFO) << ss.str();
+                auto svr = sess->getServerEntry();
+                svr->resetRocksdbStats(sess);
+            }
         }
 
         return Command::fmtOK();

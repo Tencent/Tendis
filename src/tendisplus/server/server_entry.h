@@ -160,6 +160,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void getStatInfo(std::stringstream& ss) const;
     ServerStat& getServerStat() const { return (ServerStat&)_serverStat; }
     void resetServerStat();
+    void resetRocksdbStats(Session* sess);
     CompactionStat& getCompactionStat() const { return (CompactionStat&)_compactionStat; }
     void logGeneral(Session *sess);
     void handleShutdownCmd();
