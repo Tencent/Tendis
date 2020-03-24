@@ -1577,7 +1577,7 @@ class InfoCommand: public Command {
         }
     }
 
-    int64_t getIntSize(string& str) {
+    static int64_t getIntSize(const string& str) {
         if (str.size() <= 2) {
             LOG(ERROR) << "getIntSize failed:" << str;
             return -1;
@@ -1914,7 +1914,7 @@ class InfoCommand: public Command {
                     }
                     sdstrim(key_value[0], " ");
                     sdstrim(key_value[1], " ");
-                    if (key_value[0].find("COUNT") == -1) {
+                    if (key_value[0].find("COUNT") == string::npos) {
                         continue;
                     }
 

@@ -29,6 +29,7 @@
 
 namespace tendisplus {
 
+#ifndef NO_VERSIONEP
 #define RESET_PERFCONTEXT() do {\
     if (_session && _session->getCtx()->needResetPerLevel()) {\
         rocksdb::SetPerfLevel(rocksdb::PerfLevel(_session->getCtx()->getPerfLevel()));\
@@ -36,6 +37,9 @@ namespace tendisplus {
         rocksdb::get_iostats_context()->Reset();\
     }\
   } while (0)
+#else
+#define RESET_PERFCONTEXT() 
+#endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
         :Cursor(),
