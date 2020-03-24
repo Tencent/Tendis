@@ -176,11 +176,19 @@ TEST(IndexManager, generateIndex) {
     EXPECT_TRUE(setupEnv());
 
     auto cfg = makeServerParam();
-    auto server = makeServerEntry(cfg);
-    auto ctx = std::make_shared<asio::io_context>();
-    auto session = makeSession(server, ctx);
+    auto server = std::make_shared<ServerEntry>(cfg);
+    auto s = server->startup(cfg);
+    ASSERT_TRUE(s.ok());
 
-    testCreateDelIndex(server, session, 1024*4, 1000);
+    {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto session = makeSession(server, ctx);
+
+        testCreateDelIndex(server, session, 1024*4, 1000);
+    }
+
+    server->stop();
+    ASSERT_EQ(server.use_count(), 1);
 }
 
 TEST(IndexManager, scanJobRunning) {

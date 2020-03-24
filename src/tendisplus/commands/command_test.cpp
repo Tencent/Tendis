@@ -149,6 +149,11 @@ TEST(Command, del) {
     auto server = makeServerEntry(cfg);
 
     testDel(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, expire) {
@@ -164,6 +169,11 @@ TEST(Command, expire) {
     testExpire(server);
     testExpire1(server);
     testExpire2(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
@@ -692,6 +702,12 @@ TEST(Command, common) {
     testZset3(server);
     // zremrangebyrank, zremrangebylex, zremrangebyscore
     testZset4(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+
 }
 
 TEST(Command, common_scan) {
@@ -704,6 +720,11 @@ TEST(Command, common_scan) {
     auto server = makeServerEntry(cfg);
 
     testScan(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, tendisex) {
@@ -720,6 +741,11 @@ TEST(Command, tendisex) {
     testExtendProtocol(server);
     testSync(server);
     testMulti(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, checkKeyTypeForSetKV) {
@@ -734,6 +760,11 @@ TEST(Command, checkKeyTypeForSetKV) {
 
     testCheckKeyType(server);
     testMset(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, lockMulti) {
@@ -747,6 +778,10 @@ TEST(Command, lockMulti) {
 
     testLockMulti(server);
 
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, maxClients) {
@@ -759,6 +794,11 @@ TEST(Command, maxClients) {
     auto server = makeServerEntry(cfg);
 
     testMaxClients(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 #ifndef _WIN32
@@ -782,6 +822,11 @@ TEST(Command, slowlog) {
         auto server = makeServerEntry(cfg);
 
         testSlowLog(server);
+
+#ifndef _WIN32
+        server->stop();
+        EXPECT_EQ(server.use_count(), 1);
+#endif
     }
     
     
@@ -870,6 +915,11 @@ TEST(Command, TendisadminCommand) {
   auto server = makeServerEntry(cfg);
 
   testTendisadminSleep(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 
@@ -1068,6 +1118,11 @@ TEST(Command, DelTTLIndex) {
   auto server = makeServerEntry(cfg);
 
   testDelTTLIndex(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, RenameCommandTTL) {
@@ -1078,6 +1133,11 @@ TEST(Command, RenameCommandTTL) {
   auto server = makeServerEntry(cfg);
 
   testRenameCommandTTL(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 void testRenameCommandDelete(std::shared_ptr<ServerEntry> svr) {
@@ -1111,6 +1171,11 @@ TEST(Command, RenameCommandDelete) {
   auto server = makeServerEntry(cfg);
 
   testRenameCommandDelete(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 /*
@@ -1178,6 +1243,11 @@ TEST(Command, renameCommand) {
 
   gRenameCmdList = "";
   gMappingCmdList = "";
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 void testCommandArray(std::shared_ptr<ServerEntry> svr,
@@ -1263,6 +1333,11 @@ TEST(Command, info) {
   testCommandArray(server, correctArr, false, false);
   testCommandArray(server, okArr, false, true);
   testCommandArray(server, wrongArr, true, false);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 
 }
 
