@@ -15,6 +15,8 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/string.h"
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/perf_context.h"
 
 namespace tendisplus {
 
@@ -70,6 +72,8 @@ class SessionCtx {
     uint64_t getVersionEP() const { return _version; }
     PerfLevel getPerfLevel() const { return _perfLevel; }
     bool needResetPerLevel();
+    std::string getPerfContextStr() const;
+    std::string getIOstatsContextStr() const;
     bool isEp() const { return _extendProtocol; }
     bool isReplOnly() const { return _replOnly; }
     void setReplOnly(bool v) { _replOnly = v; }
@@ -123,6 +127,8 @@ class SessionCtx {
     // multi key
     std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
     std::vector<std::string> _argsBrief;
+    rocksdb::PerfContext _perfContext;
+    rocksdb::IOStatsContext _ioContext;
 };
 
 }  // namespace tendisplus

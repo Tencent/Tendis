@@ -1947,14 +1947,13 @@ class InfoCommand: public Command {
         if (allsections || section == "rocksdbperfstats") {
             result << "# RocksdbPerfstats\r\n";
             
-            rocksdb::PerfContext* perf_context = rocksdb::get_perf_context();
-            auto tmp = perf_context->ToString();
+            auto tmp = sess->getCtx()->getPerfContextStr();
             replaceAll(tmp, " = ", ":");
             replaceAll(tmp, ", ", "\n");
 
             result << tmp;
 
-            tmp = rocksdb::get_iostats_context()->ToString();
+            tmp = sess->getCtx()->getIOstatsContextStr();
             replaceAll(tmp, " = ", ":");
             replaceAll(tmp, ", ", "\n");
 

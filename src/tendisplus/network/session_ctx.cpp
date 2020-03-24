@@ -27,6 +27,8 @@ SessionCtx::SessionCtx(Session* sess)
      _session(sess),
      _isMonitor(false),
      _flags(0) {
+    _perfContext.Reset();
+    _ioContext.Reset();
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -89,6 +91,13 @@ void SessionCtx::clearRequestCtx() {
     _argsBrief.clear();
     _timestamp = -1;
     _version = -1;
+    if (_perfLevelFlag && _perfLevel >= PerfLevel::kEnableCount) {
+        // NOTE(vinchen): rocksdb::get_perf_context() is thread local variables,
+        // because of thread pool, "info rocksdbperfstat" can't use
+        // rocksdb::get_perf_context() directly.
+        _perfContext = *rocksdb::get_perf_context();
+        _ioContext = *rocksdb::get_iostats_context();
+    }
     _perfLevelFlag = false;
 }
 
@@ -201,6 +210,14 @@ bool SessionCtx::needResetPerLevel() {
     }
 
     return true;
+}
+
+std::string SessionCtx::getPerfContextStr() const {
+    return _perfContext.ToString();
+}
+
+std::string SessionCtx::getIOstatsContextStr() const {
+    return _ioContext.ToString();
 }
 
 uint32_t SessionCtx::getIsMonitor() const {
