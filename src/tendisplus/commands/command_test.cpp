@@ -1180,4 +1180,93 @@ TEST(Command, renameCommand) {
   gMappingCmdList = "";
 }
 
+void testCommandArray(std::shared_ptr<ServerEntry> svr,
+    const std::vector<std::vector<std::string>>& arr,
+    bool isError, bool isCmdOk) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "set" });
+    auto expect = Command::precheck(&sess);
+    EXPECT_EQ(Command::fmtErr("unknown command 'set'"), expect.status().toString());
+
+    for (auto& args : arr) {
+        sess.setArgs(args);
+        auto expect = Command::runSessionCmd(&sess);
+        if (isError) {
+            EXPECT_FALSE(expect.ok());
+        } else if (isCmdOk) {
+            EXPECT_EQ(Command::fmtOK(), expect.value());
+        } else {
+            EXPECT_TRUE(expect.ok());
+        }
+    }
+}
+
+TEST(Command, info) {
+  const auto guard = MakeGuard([] {
+    destroyEnv();
+  });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  std::vector<std::vector<std::string>> correctArr = {
+      {"info", "all" },
+      {"info", "default" },
+      {"info", "server" },
+      {"info", "clients" },
+      {"info", "memory" },
+      {"info", "persistence" },
+      {"info", "stats" },
+      {"info", "replication" },
+      {"info", "cpu" },
+      {"info", "commandstats" },
+      {"info", "cluster" },
+      {"info", "keyspace" },
+      {"info", "backup" },
+      {"info", "dataset" },
+      {"info", "compaction" },
+      {"info", "levelstats" },
+      {"info", "rocksdbstats" },
+      {"info", "rocksdbperfstats" },
+      {"info", "invalid" },                 // it's ok
+      {"rocksproperty", "rocks.base_level", "0" },
+      {"rocksproperty", "all", "0" },
+      {"rocksproperty", "rocks.base_level" },
+      {"rocksproperty", "all"},
+  };
+
+  std::vector<std::vector<std::string>> okArr = {
+  {"config", "set", "session", "perf_level", "enable_count" },
+  {"config", "set", "session", "perf_level", "enable_time_expect_for_mutex" },
+  {"config", "set", "session", "perf_level", "enable_time_and_cputime_expect_for_mutex" },
+  {"config", "set", "session", "perf_level", "enable_time" },
+  {"config", "resetstat", "all"},
+  {"config", "resetstat", "unseencommands"},
+  {"config", "resetstat", "commandstats"},
+  {"config", "resetstat", "stats"},
+  {"config", "resetstat", "rocksdbstats"},
+  };
+
+  std::vector<std::vector<std::string>> wrongArr = {
+    {"info", "all", "1" },
+    {"rocksproperty", "rocks.base_level", "100" },
+    {"rocksproperty", "all1", "0" },
+    {"rocksproperty", "rocks.base_level1" },
+    {"rocksproperty", "all1"},
+    {"config", "set", "session", "perf_level", "invalid" },
+    {"config", "set", "session", "invalid", "invalid" },
+    {"config", "set", "session", "perf_level"},
+    {"config", "resetstat", "invalid"},
+  };
+
+  testCommandArray(server, correctArr, false, false);
+  testCommandArray(server, okArr, false, true);
+  testCommandArray(server, wrongArr, true, false);
+
+}
+
 }  // namespace tendisplus
