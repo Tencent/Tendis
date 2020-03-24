@@ -1187,15 +1187,12 @@ void testCommandArray(std::shared_ptr<ServerEntry> svr,
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-    sess.setArgs({ "set" });
-    auto expect = Command::precheck(&sess);
-    EXPECT_EQ(Command::fmtErr("unknown command 'set'"), expect.status().toString());
-
     for (auto& args : arr) {
         sess.setArgs(args);
         auto expect = Command::runSessionCmd(&sess);
         if (isError) {
             EXPECT_FALSE(expect.ok());
+            LOG(INFO) << expect.status().toString();
         } else if (isCmdOk) {
             EXPECT_EQ(Command::fmtOK(), expect.value());
         } else {
@@ -1233,9 +1230,9 @@ TEST(Command, info) {
       {"info", "rocksdbstats" },
       {"info", "rocksdbperfstats" },
       {"info", "invalid" },                 // it's ok
-      {"rocksproperty", "rocks.base_level", "0" },
+      {"rocksproperty", "rocksdb.base-level", "0" },
       {"rocksproperty", "all", "0" },
-      {"rocksproperty", "rocks.base_level" },
+      {"rocksproperty", "rocksdb.base-level" },
       {"rocksproperty", "all"},
   };
 
@@ -1249,6 +1246,7 @@ TEST(Command, info) {
   {"config", "resetstat", "commandstats"},
   {"config", "resetstat", "stats"},
   {"config", "resetstat", "rocksdbstats"},
+  {"config", "resetstat", "invalid"},               // it's ok
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
@@ -1260,7 +1258,6 @@ TEST(Command, info) {
     {"config", "set", "session", "perf_level", "invalid" },
     {"config", "set", "session", "invalid", "invalid" },
     {"config", "set", "session", "perf_level"},
-    {"config", "resetstat", "invalid"},
   };
 
   testCommandArray(server, correctArr, false, false);

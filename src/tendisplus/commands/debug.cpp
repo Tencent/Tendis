@@ -1499,6 +1499,10 @@ class InfoCommand: public Command {
         }
         section = toLower(section);
 
+        if (sess->getArgs().size() > 2) {
+            return { ErrorCodes::ERR_PARSEOPT, "invalid args size" };
+        }
+
         bool allsections = (section == "all");
         bool defsections = (section == "default");
 

@@ -2078,7 +2078,7 @@ bool RocksKVStore::getIntProperty(const std::string& property, uint64_t* value) 
         ok = getBaseDB()->GetIntProperty(property, value);
         if (!ok) {
             LOG(WARNING) << "db:" << dbId()
-                << " getProperity:" << property << " failed";
+                << " getProperty:" << property << " failed";
         }
     }
     return ok;
@@ -2090,7 +2090,7 @@ bool RocksKVStore::getProperty(const std::string& property, std::string* value) 
         ok = getBaseDB()->GetProperty(property, value);
         if (!ok) {
             LOG(WARNING) << "db:" << dbId()
-                << " getProperity:" << property << " failed";
+                << " getProperty:" << property << " failed";
         }
     }
 
