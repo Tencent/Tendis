@@ -398,10 +398,10 @@ TEST(Repl, MasterDontSaveBinlog) {
     {
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
-            //destroyEnv(master_dir);
-            //destroyEnv(slave_dir);
-            //destroyEnv(slave1_dir);
-            //destroyEnv(single_dir);
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            destroyEnv(slave1_dir);
+            destroyEnv(single_dir);
             std::this_thread::sleep_for(std::chrono::seconds(5));
         });
 

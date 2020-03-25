@@ -96,12 +96,12 @@ func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
     log.Infof("addOnekeyEveryStore sucess.port:%d", m.Port)
 }
 
-func backup(m *util.RedisServer) {
+func backup(m *util.RedisServer, backup_mode string) {
     cli := createClient(m)
 
     os.RemoveAll("/tmp/back_test")
     os.Mkdir("/tmp/back_test", os.ModePerm)
-    if r, err := cli.Cmd("backup", "/tmp/back_test").Str(); err != nil {
+    if r, err := cli.Cmd("backup", "/tmp/back_test", backup_mode).Str(); err != nil {
         log.Fatalf("do backup failed:%v", err)
         return
     } else if r != "OK" {
@@ -124,10 +124,10 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
     log.Infof("slaveof sucess,mport:%d sport:%d" , m.Port, s.Port)
 }
 
-func restoreBackup(m *util.RedisServer) {
+func restoreBackup(m *util.RedisServer, backup_mode string) {
     cli := createClient(m)
 
-    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", "force").Str(); err != nil {
+    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", backup_mode, "force").Str(); err != nil {
         log.Fatalf("do restorebackup failed:%v", err)
     } else if r != "OK" {
         log.Fatalf("do restorebackup error:%s", r)

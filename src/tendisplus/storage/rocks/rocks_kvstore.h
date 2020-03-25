@@ -229,8 +229,8 @@ class RocksKVStore: public KVStore {
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
-    Expected<std::string> restoreBackup(
-        const std::string& dir, KVStore::BackupMode mode) final;
+    Expected<std::string> restoreBackup(const std::string& dir) final;
+    Expected<std::string> copyCkpt(const std::string& dir) final;
 
     Status releaseBackup() final;
 

@@ -64,8 +64,8 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     waitCatchup(&m1, &s1, kvstorecount)
     waitCatchup(&s1, &s2, kvstorecount)
 
-    backup(&s2)
-    restoreBackup(&m2)
+    backup(&s2, "ckpt")
+    restoreBackup(&m2, "ckpt")
 
     var channel chan int = make(chan int)
     go compareInCoroutine(&m1, &s1, channel)

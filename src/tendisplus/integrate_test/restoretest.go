@@ -7,7 +7,7 @@ import (
     "strconv"
 )
 
-func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int) {
+func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int, backup_mode string) {
     m1 := util.RedisServer{}
     m2 := util.RedisServer{}
     pwd := getCurrentDirectory()
@@ -29,8 +29,8 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     }
 
     addData(&m1, *num1, "aa")
-    backup(&m1)
-    restoreBackup(&m2)
+    backup(&m1, backup_mode)
+    restoreBackup(&m2, backup_mode)
 
     addData(&m1, *num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)
@@ -47,5 +47,7 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 func main(){
     flag.Parse()
     //rand.Seed(time.Now().UTC().UnixNano())
-    testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount)
+    testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount, "copy")
+    // port+100 to avoid TIME_WAIT
+    testRestore(*m1ip, *m1port+100, *m2ip, *m2port+100, *kvstorecount, "ckpt")
 }

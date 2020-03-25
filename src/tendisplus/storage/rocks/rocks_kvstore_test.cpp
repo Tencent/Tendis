@@ -695,7 +695,7 @@ TEST(RocksKVStore, PesCursorVisible) {
     cursorVisibleRoutine(kvstore.get());
 }
 
-TEST(RocksKVStore, Backup) {
+TEST(RocksKVStore, Backup_ckpt_inter) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
@@ -723,7 +723,7 @@ TEST(RocksKVStore, Backup) {
     EXPECT_EQ(exptCommitId.ok(), true);
 
     Expected<BackupInfo> expBk = kvstore->backup(
-        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER);
     EXPECT_TRUE(expBk.ok()) << expBk.status().toString();
     for (auto& bk : expBk.value().getFileList()) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
@@ -731,8 +731,13 @@ TEST(RocksKVStore, Backup) {
 
     // backup failed, set the backup state to false
     Expected<BackupInfo> expBk1 = kvstore->backup(
-        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER);
     EXPECT_FALSE(expBk1.ok());
+
+    // backup failed, set the backup state to false
+    Expected<BackupInfo> expBk2 = kvstore->backup(
+            "wrong_dir", KVStore::BackupMode::BACKUP_CKPT_INTER);
+    EXPECT_FALSE(expBk2.ok());
 
     s = kvstore->stop();
     EXPECT_TRUE(s.ok());
@@ -751,6 +756,146 @@ TEST(RocksKVStore, Backup) {
     Expected<RecordValue> e = kvstore->getKV(
         RecordKey(0, 0, RecordType::RT_KV, "a", ""),
         txn1.get());
+    EXPECT_EQ(e.ok(), true);
+    testMaxBinlogId(kvstore);
+}
+
+TEST(RocksKVStore, backup_ckpt) {
+    auto cfg = genParams();
+    string backup_dir = "backup";
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    //EXPECT_TRUE(filesystem::create_directory(backup_dir));
+
+    const auto guard = MakeGuard([backup_dir] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+        filesystem::remove_all(backup_dir);
+    });
+    auto blockCache =
+            rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+            "0",
+            cfg,
+            blockCache);
+
+    auto eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    Status s = kvstore->setKV(
+            Record(
+                    RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                    RecordValue("txn1", RecordType::RT_KV, -1)),
+            txn1.get());
+    EXPECT_EQ(s.ok(), true);
+    Expected<uint64_t> exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+
+    Expected<BackupInfo> expBk0 = kvstore->backup(
+            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
+    EXPECT_FALSE(expBk0.ok());
+
+    Expected<BackupInfo> expBk1 = kvstore->backup(
+            backup_dir, KVStore::BackupMode::BACKUP_CKPT);
+    EXPECT_TRUE(expBk1.ok()) << expBk1.status().toString();
+    for (auto& bk : expBk1.value().getFileList()) {
+        LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
+    }
+
+    Expected<BackupInfo> expBk2 = kvstore->backup(
+            backup_dir, KVStore::BackupMode::BACKUP_CKPT);
+    EXPECT_FALSE(expBk2.ok());
+
+    s = kvstore->stop();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->clear();
+    EXPECT_TRUE(s.ok());
+
+    Expected<std::string> ret = kvstore->copyCkpt(backup_dir);
+    EXPECT_TRUE(ret.ok());
+
+    uint64_t lastCommitId = exptCommitId.value();
+    exptCommitId = kvstore->restart(false);
+    EXPECT_TRUE(exptCommitId.ok()) << exptCommitId.status().toString();
+    EXPECT_EQ(exptCommitId.value(), lastCommitId);
+
+    eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    txn1 = std::move(eTxn1.value());
+    Expected<RecordValue> e = kvstore->getKV(
+            RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+            txn1.get());
+    EXPECT_EQ(e.ok(), true);
+    testMaxBinlogId(kvstore);
+}
+
+TEST(RocksKVStore, backup_copy) {
+    auto cfg = genParams();
+    string backup_dir = "backup";
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    EXPECT_TRUE(filesystem::create_directory(backup_dir));
+    const auto guard = MakeGuard([backup_dir] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+        filesystem::remove_all(backup_dir);
+    });
+    auto blockCache =
+            rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+            "0",
+            cfg,
+            blockCache);
+
+    auto eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    Status s = kvstore->setKV(
+            Record(
+                    RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                    RecordValue("txn1", RecordType::RT_KV, -1)),
+            txn1.get());
+    EXPECT_EQ(s.ok(), true);
+    Expected<uint64_t> exptCommitId = txn1->commit();
+    EXPECT_EQ(exptCommitId.ok(), true);
+
+    Expected<BackupInfo> expBk0 = kvstore->backup(
+            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_COPY);
+    EXPECT_FALSE(expBk0.ok());
+
+    Expected<BackupInfo> expBk1 = kvstore->backup(
+            backup_dir, KVStore::BackupMode::BACKUP_COPY);
+    EXPECT_TRUE(expBk1.ok());
+    for (auto& bk : expBk1.value().getFileList()) {
+        LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
+    }
+
+    Expected<BackupInfo> expBk2 = kvstore->backup(
+            backup_dir, KVStore::BackupMode::BACKUP_COPY);
+    // BackupEngine will delete dir if not null.
+    EXPECT_TRUE(expBk2.ok());
+
+    s = kvstore->stop();
+    EXPECT_TRUE(s.ok());
+
+    s = kvstore->clear();
+    EXPECT_TRUE(s.ok());
+
+    Expected<std::string> ret = kvstore->restoreBackup(backup_dir);
+    EXPECT_TRUE(ret.ok());
+
+    uint64_t lastCommitId = exptCommitId.value();
+    exptCommitId = kvstore->restart(false);
+    EXPECT_TRUE(exptCommitId.ok()) << exptCommitId.status().toString();
+    EXPECT_EQ(exptCommitId.value(), lastCommitId);
+
+    eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    txn1 = std::move(eTxn1.value());
+    Expected<RecordValue> e = kvstore->getKV(
+            RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+            txn1.get());
     EXPECT_EQ(e.ok(), true);
     testMaxBinlogId(kvstore);
 }
