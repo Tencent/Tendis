@@ -51,6 +51,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
         return{ ErrorCodes::ERR_INTERNAL, ss.str() };
     }
 
+    if (sess && sess->getCtx() &&
+        _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+        sess->getCtx()->setReplOnly(true);
+    }
+
     if (mode != mgl::LockMode::LOCK_NONE) {
         auto elk = KeyLock::AquireKeyLock(segId, key, mode, sess,
             (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
@@ -90,6 +95,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
         std::stringstream ss;
         ss << "store id " << segId << " is paused";
         return{ ErrorCodes::ERR_INTERNAL, ss.str() };
+    }
+
+    if (sess && sess->getCtx() &&
+        _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+        sess->getCtx()->setReplOnly(true);
     }
 
     return DbWithLock {
