@@ -483,14 +483,17 @@ TEST(Repl, SlaveCantModify) {
         const auto guard = MakeGuard([] {
             destroyEnv(master_dir);
             destroyEnv(slave_dir);
+            destroyEnv(slave1_dir);
             std::this_thread::sleep_for(std::chrono::seconds(5));
         });
 
         EXPECT_TRUE(setupEnv(master_dir));
         EXPECT_TRUE(setupEnv(slave_dir));
+        EXPECT_TRUE(setupEnv(slave1_dir));
 
         auto cfg1 = makeServerParam(master_port, i, master_dir);
         auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
@@ -500,9 +503,16 @@ TEST(Repl, SlaveCantModify) {
         s = slave->startup(cfg2);
         INVARIANT(s.ok());
 
+        auto slave1 = std::make_shared<ServerEntry>(cfg3);
+        s = slave1->startup(cfg3);
+        INVARIANT(s.ok());
+
         {
             runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
             // slaveof need about 3 seconds to transfer file.
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            runCmd(slave1, { "slaveof", "127.0.0.1", std::to_string(slave_port) });
             std::this_thread::sleep_for(std::chrono::seconds(5));
 
             auto ctx1 = std::make_shared<asio::io_context>();
@@ -512,6 +522,7 @@ TEST(Repl, SlaveCantModify) {
             EXPECT_TRUE(expect.ok());
 
             waitSlaveCatchup(master, slave);
+            waitSlaveCatchup(slave, slave1);
 
             auto ctx2 = std::make_shared<asio::io_context>();
             auto session2 = makeSession(slave, ctx2);
@@ -521,6 +532,16 @@ TEST(Repl, SlaveCantModify) {
 
             session2->setArgs({ "get", "a"});
             expect = Command::runSessionCmd(session2.get());
+            EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
+
+            auto ctx3 = std::make_shared<asio::io_context>();
+            auto session3 = makeSession(slave1, ctx3);
+            session3->setArgs({ "set", "a", "4" });
+            expect = Command::runSessionCmd(session3.get());
+            EXPECT_EQ(expect.status().toString(), "-ERR:3,msg:txn is replOnly\r\n");
+
+            session3->setArgs({ "get", "a"});
+            expect = Command::runSessionCmd(session3.get());
             EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
         }
 
