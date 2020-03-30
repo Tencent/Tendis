@@ -230,7 +230,7 @@ class RocksKVStore: public KVStore {
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
     Expected<std::string> restoreBackup(const std::string& dir) final;
-    Expected<std::string> copyCkpt(const std::string& dir) final;
+
 
     Status releaseBackup() final;
 
@@ -257,7 +257,9 @@ class RocksKVStore: public KVStore {
     rocksdb::Options options();
     Expected<bool> deleteBinlog(uint64_t start);
     void initRocksProperties();
-
+    Expected<std::string> saveBackupMeta(const std::string& dir, const BackupInfo& result);
+    Expected<std::string> loadCopy(const std::string& dir);
+    Expected<std::string> copyCkpt(const std::string& dir);
 private:
     mutable std::mutex _mutex;
 

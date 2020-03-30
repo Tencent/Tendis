@@ -695,7 +695,7 @@ TEST(RocksKVStore, PesCursorVisible) {
     cursorVisibleRoutine(kvstore.get());
 }
 
-TEST(RocksKVStore, Backup_ckpt_inter) {
+TEST(RocksKVStore, BackupCkptInter) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));
     EXPECT_TRUE(filesystem::create_directory("log"));
@@ -760,7 +760,7 @@ TEST(RocksKVStore, Backup_ckpt_inter) {
     testMaxBinlogId(kvstore);
 }
 
-TEST(RocksKVStore, backup_ckpt) {
+TEST(RocksKVStore, BackupCkpt) {
     auto cfg = genParams();
     string backup_dir = "backup";
     EXPECT_TRUE(filesystem::create_directory("db"));
@@ -793,7 +793,7 @@ TEST(RocksKVStore, backup_ckpt) {
 
     Expected<BackupInfo> expBk0 = kvstore->backup(
             kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
-    EXPECT_FALSE(expBk0.ok());
+    EXPECT_EQ(expBk0.status().toString(), "-ERR:3,msg:BACKUP_CKPT|BACKUP_COPY cant equal dftBackupDir:./db/0_bak\r\n");
 
     Expected<BackupInfo> expBk1 = kvstore->backup(
             backup_dir, KVStore::BackupMode::BACKUP_CKPT);
@@ -804,7 +804,7 @@ TEST(RocksKVStore, backup_ckpt) {
 
     Expected<BackupInfo> expBk2 = kvstore->backup(
             backup_dir, KVStore::BackupMode::BACKUP_CKPT);
-    EXPECT_FALSE(expBk2.ok());
+    EXPECT_EQ(expBk2.status().toString(), "-ERR:3,msg:Invalid argument: Directory exists\r\n");
 
     s = kvstore->stop();
     EXPECT_TRUE(s.ok());
@@ -812,7 +812,7 @@ TEST(RocksKVStore, backup_ckpt) {
     s = kvstore->clear();
     EXPECT_TRUE(s.ok());
 
-    Expected<std::string> ret = kvstore->copyCkpt(backup_dir);
+    Expected<std::string> ret = kvstore->restoreBackup(backup_dir);
     EXPECT_TRUE(ret.ok());
 
     uint64_t lastCommitId = exptCommitId.value();
@@ -830,7 +830,7 @@ TEST(RocksKVStore, backup_ckpt) {
     testMaxBinlogId(kvstore);
 }
 
-TEST(RocksKVStore, backup_copy) {
+TEST(RocksKVStore, BackupCopy) {
     auto cfg = genParams();
     string backup_dir = "backup";
     EXPECT_TRUE(filesystem::create_directory("db"));

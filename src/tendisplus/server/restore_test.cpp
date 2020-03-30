@@ -114,7 +114,7 @@ void backup(const std::shared_ptr<ServerEntry>& server, const string& mode) {
     EXPECT_TRUE(expect.ok());
 }
 
-void restoreBackup(const std::shared_ptr<ServerEntry>& server, const string& mode) {
+void restoreBackup(const std::shared_ptr<ServerEntry>& server) {
     auto ctx = std::make_shared<asio::io_context>();
     auto sess = makeSession(server, ctx);
 
@@ -122,7 +122,6 @@ void restoreBackup(const std::shared_ptr<ServerEntry>& server, const string& mod
     args.push_back("restorebackup");
     args.push_back("all");
     args.push_back("./back_test");
-    args.push_back(mode);
     args.push_back("force");
     sess->setArgs(args);
     auto expect = Command::runSessionCmd(sess.get());
@@ -433,13 +432,13 @@ TEST(Restore, Common) {
         auto allKeys1 = initData(master1, recordSize, "suffix1");
         LOG(INFO) << ">>>>>> master1 initData 1st end;";
         backup(master1, "copy");
-        restoreBackup(master2, "copy");
+        restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
         backup(master1, "ckpt");
-        restoreBackup(master2, "ckpt");
+        restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";

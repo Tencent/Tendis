@@ -25,7 +25,7 @@ class BackupCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 3;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -42,18 +42,26 @@ class BackupCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::string& dir = sess->getArgs()[1];
-        KVStore::BackupMode mode;
-        const std::string& str_mode = toLower(sess->getArgs()[2]);
-        if (str_mode == "ckpt") {
-            mode = KVStore::BackupMode::BACKUP_CKPT;
-        } else if (str_mode == "copy") {
-            mode = KVStore::BackupMode::BACKUP_COPY;
-        } else {
-            return {ErrorCodes::ERR_INTERNAL, "mode error, should be ckpt or copy"};
+        auto mode = KVStore::BackupMode::BACKUP_COPY;
+        if (sess->getArgs().size() >= 3) {
+            const std::string &str_mode = toLower(sess->getArgs()[2]);
+            if (str_mode == "ckpt") {
+                mode = KVStore::BackupMode::BACKUP_CKPT;
+            } else if (str_mode == "copy") {
+                mode = KVStore::BackupMode::BACKUP_COPY;
+            } else {
+                return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
+            }
         }
-
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
+        if (!filesystem::exists(dir)) {
+            return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
+        }
+        if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
+            return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
+        }
+
         for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
             // NOTE(deyukong): here we acquire IS lock
             auto expdb = svr->getSegmentMgr()->getDb(sess, i,
@@ -87,7 +95,7 @@ class RestoreBackupCommand : public Command {
     }
 
     ssize_t arity() const {
-        return -4;
+        return -3;
     }
 
     int32_t firstkey() const {
@@ -102,27 +110,17 @@ class RestoreBackupCommand : public Command {
         return 0;
     }
 
-    // restorebackup "all"|storeId dir ckpt|copy
-    // restorebackup "all"|storeId dir ckpt|copy force
+    // restorebackup "all"|storeId dir
+    // restorebackup "all"|storeId dir force
     Expected<std::string> run(Session *sess) final {
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
 
-        auto mode = KVStore::BackupMode::BACKUP_CKPT;
-        const std::string& str_mode = toLower(sess->getArgs()[3]);
-        if (str_mode == "ckpt") {
-            mode = KVStore::BackupMode::BACKUP_CKPT;
-        } else if (str_mode == "copy") {
-            mode = KVStore::BackupMode::BACKUP_COPY;
-        } else {
-            return {ErrorCodes::ERR_INTERNAL, "mode error, should be ckpt or copy"};
-        }
-
         bool isForce = false;
-        if (sess->getArgs().size() >= 5) {
-            isForce = sess->getArgs()[4] == "force";
+        if (sess->getArgs().size() >= 4) {
+            isForce = sess->getArgs()[3] == "force";
         }
         if (kvstore == "all") {
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
@@ -132,7 +130,7 @@ class RestoreBackupCommand : public Command {
             }
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 std::string storeDir = dir + "/" + std::to_string(i) + "/";
-                auto ret = restoreBackup(svr, sess, i, storeDir, mode);
+                auto ret = restoreBackup(svr, sess, i, storeDir);
                 if (!ret.ok()) {
                     return ret.status();
                 }
@@ -146,7 +144,7 @@ class RestoreBackupCommand : public Command {
             if (!isForce && !isEmpty(svr, sess, storeId)) {
                 return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
             }
-            auto ret = restoreBackup(svr, sess, storeId, dir, mode);
+            auto ret = restoreBackup(svr, sess, storeId, dir);
             if (!ret.ok()) {
                 return ret.status();
             }
@@ -167,7 +165,7 @@ class RestoreBackupCommand : public Command {
     }
 
     Expected<std::string> restoreBackup(std::shared_ptr<ServerEntry> svr,
-        Session *sess, uint32_t storeId, const std::string& dir, KVStore::BackupMode mode) {
+        Session *sess, uint32_t storeId, const std::string& dir) {
         // X lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_X, true);
@@ -197,18 +195,9 @@ class RestoreBackupCommand : public Command {
                 << " failed:" << clearStatus.toString();
         }
 
-        if (mode == KVStore::BackupMode::BACKUP_COPY) {
-            // rocksdb will clear dir too.
-            Expected<std::string> ret = store->restoreBackup(dir);
-            if (!ret.ok()) {
-                return ret.status();
-            }
-        } else if(mode == KVStore::BackupMode::BACKUP_CKPT) {
-            // dir not null will failed.
-            Expected<std::string> ret = store->copyCkpt(dir);
-            if (!ret.ok()) {
-                return ret.status();
-            }
+        Expected<std::string> ret = store->restoreBackup(dir);
+        if (!ret.ok()) {
+            return ret.status();
         }
 
         Expected<uint64_t> restartStatus = store->restart(false);

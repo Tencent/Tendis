@@ -28,9 +28,23 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
         log.Fatalf("setup master2 failed:%v", err)
     }
 
+    // check path cant equal dbPath
+    cli := createClient(&m1)
+    if r, err := cli.Cmd("backup", m1.Path + "//db/", backup_mode).Str();
+        err.Error() != ("ERR:4,msg:dir cant be dbPath:" + m1.Path + "//db/") {
+        log.Fatalf("backup dir cant be dbPath:%v %s", err, r)
+        return
+    }
+    // check path must exist
+    if r, err := cli.Cmd("backup", "dir_not_exist", backup_mode).Str();
+        err.Error() != ("ERR:4,msg:dir not exist:dir_not_exist") {
+        log.Fatalf("backup dir must exist:%v %s", err, r)
+        return
+    }
+
     addData(&m1, *num1, "aa")
     backup(&m1, backup_mode)
-    restoreBackup(&m2, backup_mode)
+    restoreBackup(&m2)
 
     addData(&m1, *num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)

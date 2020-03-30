@@ -124,10 +124,10 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
     log.Infof("slaveof sucess,mport:%d sport:%d" , m.Port, s.Port)
 }
 
-func restoreBackup(m *util.RedisServer, backup_mode string) {
+func restoreBackup(m *util.RedisServer) {
     cli := createClient(m)
 
-    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", backup_mode, "force").Str(); err != nil {
+    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", "force").Str(); err != nil {
         log.Fatalf("do restorebackup failed:%v", err)
     } else if r != "OK" {
         log.Fatalf("do restorebackup error:%s", r)
