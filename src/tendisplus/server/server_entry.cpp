@@ -17,6 +17,63 @@
 
 namespace tendisplus {
 
+ServerStat::ServerStat() {
+    memset(&instMetric, 0, sizeof(instMetric));
+}
+
+void ServerStat::reset() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    expiredkeys = 0;
+    keyspaceHits = 0;
+    keyspaceMisses = 0;
+    keyspaceIncorrectEp = 0;
+    rejectedConn = 0;
+    syncFull = 0;
+    syncPartialOk = 0;
+    syncPartialErr = 0;
+    netInputBytes = 0;
+    netOutputBytes = 0; 
+    memset(&instMetric, 0, sizeof(instMetric));
+}
+
+CompactionStat::CompactionStat() 
+    : curDBid(""), startTime(sinceEpoch()), isRunning(false) {}
+
+void CompactionStat::reset() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    isRunning = false;
+    curDBid = "";
+}
+
+/* Return the mean of all the samples. */
+uint64_t ServerStat::getInstantaneousMetric(int metric) const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    int j;
+    uint64_t sum = 0;
+
+    for (j = 0; j < STATS_METRIC_SAMPLES; j++)
+        sum += instMetric[metric].samples[j];
+    return sum / STATS_METRIC_SAMPLES;
+}
+
+/* Add a sample to the operations per second array of samples. */
+void ServerStat::trackInstantaneousMetric(int metric, uint64_t current_reading) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    uint64_t t = msSinceEpoch() - instMetric[metric].lastSampleTime;
+    uint64_t ops = current_reading -
+        instMetric[metric].lastSampleCount;
+    uint64_t ops_sec;
+
+    ops_sec = t > 0 ? (ops * 1000 / t) : 0;
+
+    instMetric[metric].samples[instMetric[metric].idx] =
+        ops_sec;
+    instMetric[metric].idx++;
+    instMetric[metric].idx %= STATS_METRIC_SAMPLES;
+    instMetric[metric].lastSampleTime = msSinceEpoch();
+    instMetric[metric].lastSampleCount = current_reading;
+}
+
 ServerEntry::ServerEntry()
         :_ftmcEnabled(false),
          _isRunning(false),
@@ -33,7 +90,7 @@ ServerEntry::ServerEntry()
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
          _reqMatrix(std::make_shared<RequestMatrix>()),
-         _ftmcThd(nullptr),
+         _cronThd(nullptr),
          _requirepass(""),
          _masterauth(""),
          _versionIncrease(true),
@@ -61,6 +118,16 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _protoMaxBulkLen = cfg->protoMaxBulkLen;
     _dbNum = cfg->dbNum;
     _cfg = cfg;
+}
+
+void ServerEntry::resetServerStat() {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    _poolMatrix->reset();
+    _netMatrix->reset();
+    _reqMatrix->reset();
+
+    _serverStat.reset();
 }
 
 void ServerEntry::installPessimisticMgrInLock(
@@ -225,7 +292,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
     for (uint32_t i = 0; i < threadnum; ++i) {
-        auto executor = std::make_unique<WorkerPool>("req-exec", _poolMatrix);
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + i, _poolMatrix);
         Status s = executor->startup(1);
         if (!s.ok()) {
             return s;
@@ -273,8 +340,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _isStopped.store(false, std::memory_order_relaxed);
 
     // server stats monitor
-    _ftmcThd = std::make_unique<std::thread>([this] {
-        ftmc();
+    _cronThd = std::make_unique<std::thread>([this] {
+        serverCron();
     });
 
     // init slowlog
@@ -495,6 +562,7 @@ bool ServerEntry::processRequest(Session *sess) {
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 2);
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
+        ++_serverStat.syncFull;
         return false;
     } else if (expCmdName.value() == "incrsync") {
         LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
@@ -503,7 +571,12 @@ bool ServerEntry::processRequest(Session *sess) {
         std::vector<std::string> args = ns->getArgs();
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 6);
-        _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3], args[4], args[5]);
+        bool ret = _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3], args[4], args[5]);
+        if (ret) {
+            ++_serverStat.syncPartialOk;
+        } else {
+            ++_serverStat.syncPartialErr;
+        }
         return false;
     } else if (expCmdName.value() == "quit") {
         LOG(INFO) << "quit command";
@@ -524,19 +597,46 @@ bool ServerEntry::processRequest(Session *sess) {
 }
 
 void ServerEntry::getStatInfo(std::stringstream& ss) const{
-    ss << "sticky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
-    ss << "conn_created:" << _netMatrix->connCreated.get() << "\r\n";
-    ss << "conn_released:" << _netMatrix->connReleased.get() << "\r\n";
-    ss << "invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
+    ss << "total_connections_received:" << _netMatrix->connCreated.get() << "\r\n";
+    ss << "total_connections_released:" << _netMatrix->connReleased.get() << "\r\n";
+    auto executed = _reqMatrix->processed.get();
+    ss << "total_commands_processed:" << executed << "\r\n";
+    ss << "instantaneous_ops_per_sec:" << _serverStat.getInstantaneousMetric(STATS_METRIC_COMMAND) << "\r\n";
 
-    ss << "processed:" << _reqMatrix->processed.get() << "\r\n";
-    ss << "process_cost:" << _reqMatrix->processCost.get() << "\r\n";
-    ss << "send_packet_cost:" << _reqMatrix->sendPacketCost.get() << "\r\n";
+    auto allCost = _poolMatrix->executeTime.get() + _poolMatrix->queueTime.get()
+        + _reqMatrix->sendPacketCost.get();
+    ss << "total_commands_cost(ns):" << allCost << "\r\n";
+    ss << "total_commands_workpool_queue_cost(ns):" << _poolMatrix->queueTime.get() << "\r\n";
+    ss << "total_commands_workpool_execute_cost(ns):" << _poolMatrix->executeTime.get() << "\r\n";
+    ss << "total_commands_send_packet_cost(ns):" << _reqMatrix->sendPacketCost.get() << "\r\n";
+    ss << "total_commands_execute_cost(ns):" << _reqMatrix->processCost.get() << "\r\n";
 
-    ss << "in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
-    ss << "executed:" << _poolMatrix->executed.get() << "\r\n";
-    ss << "queue_time:" << _poolMatrix->queueTime.get() << "\r\n";
-    ss << "execute_time:" << _poolMatrix->executeTime.get() << "\r\n";
+    if (executed == 0) executed = 1;
+    ss << "avg_commands_cost(ns):" << allCost/executed << "\r\n";
+    ss << "avg_commands_workpool_queue_cost(ns):" << _poolMatrix->queueTime.get()/executed << "\r\n";
+    ss << "avg_commands_workpool_execute_cost(ns):" << _poolMatrix->executeTime.get()/executed << "\r\n";
+    ss << "avg_commands_send_packet_cost(ns):" << _reqMatrix->sendPacketCost.get()/executed << "\r\n";
+    ss << "avg_commands_execute_cost(ns):" << _reqMatrix->processCost.get()/executed << "\r\n";
+
+    ss << "commands_in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
+    ss << "commands_executed_in_workpool:" << _poolMatrix->executed.get() << "\r\n";
+ 
+    ss << "total_stricky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
+    ss << "total_invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
+
+    ss << "total_net_input_bytes:" << _serverStat.netInputBytes.get() << "\r\n";
+    ss << "total_net_output_bytes:" << _serverStat.netOutputBytes.get() << "\r\n";
+    ss << "instantaneous_input_kbps:" <<
+        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_INPUT)/1024 << "\r\n";
+    ss << "instantaneous_output_kbps:" <<
+        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_OUTPUT)/1024 << "\r\n";
+    ss << "rejected_connections:" << _serverStat.rejectedConn.get() << "\r\n";
+    ss << "sync_full:" << _serverStat.syncFull.get()  << "\r\n";
+    ss << "sync_partial_ok:" << _serverStat.syncPartialOk.get()  << "\r\n";
+    ss << "sync_partial_err:" << _serverStat.syncPartialErr.get()  << "\r\n";
+    ss << "keyspace_hits:" << _serverStat.keyspaceHits.get() << "\r\n";
+    ss << "keyspace_misses:" << _serverStat.keyspaceMisses.get() << "\r\n";
+    ss << "keyspace_wrong_versionep:" << _serverStat.keyspaceIncorrectEp.get() << "\r\n";
 }
 
 void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>& w,
@@ -577,6 +677,63 @@ void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer
         w.Key("execute_time");
         w.Uint64(_poolMatrix->executeTime.get());
         w.EndObject();
+    }
+}
+
+bool ServerEntry::getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const {
+    *value = 0;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return false;
+        }
+
+        auto store = expdb.value().store;
+        uint64_t tmp = 0;
+        bool ok = store->getIntProperty(property, &tmp);
+        if (!ok) {
+            return false;
+        }
+        *value += tmp;
+    }
+
+    return true;
+}
+
+bool ServerEntry::getAllProperty(Session* sess, const std::string& property, std::string* value) const {
+    std::stringstream ss;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return false;
+        }
+
+        auto store = expdb.value().store;
+        std::string tmp;
+        bool ok = store->getProperty(property, &tmp);
+        if (!ok) {
+            return false;
+        }
+        ss << "store_" << store->dbId() << ":" << tmp << "\r\n" ;
+    }
+    *value = ss.str();
+
+    return true;
+}
+
+void ServerEntry::resetRocksdbStats(Session* sess) {
+    std::stringstream ss;
+    for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        auto expdb = getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            continue;
+        }
+
+        auto store = expdb.value().store;
+        store->resetStatistics();
     }
 }
 
@@ -673,38 +830,57 @@ Status ServerEntry::setStoreMode(PStore store,
     return catalog->setStoreMainMeta(*meta.value());
 }
 
-// full-time matrix collect
-void ServerEntry::ftmc() {
+#define run_with_period(_ms_) if ((_ms_ <= 1000/hz) || !(cronLoop%((_ms_)/(1000/hz))))
+
+void ServerEntry::serverCron() {
     using namespace std::chrono_literals;  // NOLINT(build/namespaces)
-    LOG(INFO) << "server ftmc thread starts";
+
     auto oldNetMatrix = *_netMatrix;
     auto oldPoolMatrix = *_poolMatrix;
     auto oldReqMatrix = *_reqMatrix;
+
+    uint64_t cronLoop = 0;
+    auto interval = 100ms;  // every 100ms execute one time
+    uint64_t hz = 1000ms / interval;
+
+    LOG(INFO) << "serverCron thread starts, hz:" << hz;
     while (_isRunning.load(std::memory_order_relaxed)) {
         std::unique_lock<std::mutex> lk(_mutex);
-        bool ok = _eventCV.wait_for(lk, 1000ms, [this] {
+
+        bool ok = _eventCV.wait_for(lk, interval, [this] {
             return _isRunning.load(std::memory_order_relaxed) == false;
-        });
+            });
         if (ok) {
-            LOG(INFO) << "server ftmc thread exits";
+            LOG(INFO) << "serverCron thread exits";
             return;
         }
 
-
-
-        if (!_ftmcEnabled.load(std::memory_order_relaxed)) {
-            continue;
+        run_with_period(100) {
+            _serverStat.trackInstantaneousMetric(STATS_METRIC_COMMAND,
+                _reqMatrix->processed.get());
+            _serverStat.trackInstantaneousMetric(STATS_METRIC_NET_INPUT,
+                _serverStat.netInputBytes.get());
+            _serverStat.trackInstantaneousMetric(STATS_METRIC_NET_OUTPUT,
+                _serverStat.netOutputBytes.get());
         }
-        auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
-        auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
-        auto tmpReqMatrix = *_reqMatrix - oldReqMatrix;
-        oldNetMatrix = *_netMatrix;
-        oldPoolMatrix = *_poolMatrix;
-        oldReqMatrix = *_reqMatrix;
-        // TODO(vinchen): we should create a view here
-        LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
-        LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
-        LOG(INFO) << "req matrix status:\n" << tmpReqMatrix.toString();
+
+        run_with_period(1000) {
+            // full-time matrix collect
+            if (_ftmcEnabled.load(std::memory_order_relaxed)) {
+                auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
+                auto tmpPoolMatrix = *_poolMatrix - oldPoolMatrix;
+                auto tmpReqMatrix = *_reqMatrix - oldReqMatrix;
+                oldNetMatrix = *_netMatrix;
+                oldPoolMatrix = *_poolMatrix;
+                oldReqMatrix = *_reqMatrix;
+                // TODO(vinchen): we should create a view here
+                LOG(INFO) << "network matrix status:\n" << tmpNetMatrix.toString();
+                LOG(INFO) << "pool matrix status:\n" << tmpPoolMatrix.toString();
+                LOG(INFO) << "req matrix status:\n" << tmpReqMatrix.toString();
+            }
+        }
+
+        cronLoop++;
     }
 }
 
@@ -787,7 +963,7 @@ void ServerEntry::stop() {
         }
     }
 
-    _ftmcThd->join();
+    _cronThd->join();
     _slowLog.close();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);

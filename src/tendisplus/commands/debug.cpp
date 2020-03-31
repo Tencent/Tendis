@@ -22,6 +22,7 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/iostats_context.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
@@ -29,6 +30,7 @@
 #include "tendisplus/commands/release.h"
 #include "tendisplus/commands/version.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
 
@@ -674,6 +676,76 @@ class ToggleFtmcCommand: public Command {
         return Command::fmtOK();
     }
 } togFtmcCmd;
+
+class RocksPropertyCommand : public Command {
+ public:
+     RocksPropertyCommand()
+        :Command("rocksproperty", "a") {
+    }
+
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        uint64_t first = 0, last = svr->getKVStoreCount();
+        const auto& args = sess->getArgs();
+        if (sess->getArgs().size() > 2) {
+            auto e = ::tendisplus::stoll(args[2]);
+            if (!e.ok()) {
+                return e.status();
+            }
+            first = e.value();
+            last = first + 1;
+
+            if (first >= svr->getKVStoreCount()) {
+                return { ErrorCodes::ERR_PARSEOPT, "invalid store id" };
+            }
+        }
+
+        auto property = args[1];
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, last - first);
+        for (; first < last; first++) {
+            auto expdb = svr->getSegmentMgr()->getDb(sess, first, mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore kvstore = expdb.value().store;
+            std::string prefix = "rocksdb" + kvstore->dbId() + ".";
+
+            std::string value;
+            if (property == "all") {
+                value = kvstore->getAllProperty();
+                replaceAll(value, "rocksdb.", prefix);
+                Command::fmtBulk(ss, value);
+            } else {
+                if (!kvstore->getProperty(property, &value)) {
+                    return { ErrorCodes::ERR_PARSEOPT,
+                        "invalid property " + property + " in rocksdb " + kvstore->dbId() };
+                }
+                std::string newproperty = property;
+                replaceAll(newproperty, "rocksdb.", prefix);
+                Command::fmtBulk(ss, newproperty + ":" + value);
+            }
+        }
+
+        return ss.str();
+    }
+} rocksPropCmd;
 
 class CommandListCommand: public Command {
  public:
@@ -1427,6 +1499,10 @@ class InfoCommand: public Command {
         }
         section = toLower(section);
 
+        if (sess->getArgs().size() > 2) {
+            return { ErrorCodes::ERR_PARSEOPT, "invalid args size" };
+        }
+
         bool allsections = (section == "all");
         bool defsections = (section == "default");
 
@@ -1440,12 +1516,16 @@ class InfoCommand: public Command {
         infoCommandStats(allsections, defsections, section, sess, result);
         infoKeyspace(allsections, defsections, section, sess, result);
         infoBackup(allsections, defsections, section, sess, result);
+        infoDataset(allsections, defsections, section, sess, result);
+        infoCompaction(allsections, defsections, section, sess, result);
+        infoLevelStats(allsections, defsections, section, sess, result);
+        infoRocksdbStats(allsections, defsections, section, sess, result);
+        infoRocksdbPerfStats(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
 
-private:
-    void infoServer(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoServer(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "server") {
             auto server = sess->getServerEntry();
             uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
@@ -1476,7 +1556,7 @@ private:
                 << "gcc_version:0.0.0\r\n"
 #endif
                 << "process_id:" << getpid() << "\r\n"
-                //<< "run_id:" << "" << "\r\n" // TODO(takenliu)
+                //<< "run_id:" << "0000000000000000000000000000000000000000" << "\r\n" // TODO(takenliu)
                 << "tcp_port:" << server->getNetwork()->getPort() << "\r\n"
                 << "uptime_in_seconds:" << uptime/1000000000 << "\r\n"
                 << "uptime_in_days:" << uptime/1000000000/(3600*24) << "\r\n"
@@ -1489,7 +1569,7 @@ private:
 
     }
 
-    void infoClients(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoClients(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "clients") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1501,7 +1581,7 @@ private:
         }
     }
 
-    int64_t getIntSize(string& str) {
+    static int64_t getIntSize(const string& str) {
         if (str.size() <= 2) {
             LOG(ERROR) << "getIntSize failed:" << str;
             return -1;
@@ -1526,7 +1606,7 @@ private:
         return -1;
     }
 
-    void infoMemory(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoMemory(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "memory") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1536,7 +1616,10 @@ private:
             string used_memory_vir_peak_human;
             string used_memory_rss_human;
             string used_memory_rss_peak_human;
+            size_t rss_human_size = -1;
+            size_t vir_human_size = -1;
 
+#ifndef _WIN32
             ifstream file;
             file.open("/proc/self/status");
             if (file.is_open()) {
@@ -1549,6 +1632,7 @@ private:
                     if (v[0] == "VmSize") { // virtual memory
                         used_memory_vir_human = trim(v[1]);
                         strDelete(used_memory_vir_human, ' ');
+                        vir_human_size = getIntSize(used_memory_vir_human);
                     }
                     else if (v[0] == "VmPeak") { // peak of virtual memory
                         used_memory_vir_peak_human = trim(v[1]);
@@ -1557,6 +1641,7 @@ private:
                     else if (v[0] == "VmRSS") { // physic memory
                         used_memory_rss_human = trim(v[1]);
                         strDelete(used_memory_rss_human, ' ');
+                        rss_human_size = getIntSize(used_memory_rss_human);
                     }
                     else if (v[0] == "VmHWM") { // peak of physic memory
                         used_memory_rss_peak_human = trim(v[1]);
@@ -1564,16 +1649,18 @@ private:
                     }
                 }
             }
+#endif // !_WIN32
+
             ss << "used_memory:" << -1 << "\r\n";
             ss << "used_memory_human:" << -1 << "\r\n";
-            ss << "used_memory_rss:" << getIntSize(used_memory_rss_human) << "\r\n";
+            ss << "used_memory_rss:" << rss_human_size << "\r\n";
             ss << "used_memory_rss_human:" << used_memory_rss_human << "\r\n";
             ss << "used_memory_peak:" << -1 << "\r\n";
             ss << "used_memory_peak_human:" << "-1" << "\r\n";
             ss << "total_system_memory:" << "-1" << "\r\n";
             ss << "total_system_memory_human:" << "-1" << "\r\n";
             ss << "used_memory_lua:" << "-1" << "\r\n";
-            ss << "used_memory_vir:" << getIntSize(used_memory_vir_human) << "\r\n";
+            ss << "used_memory_vir:" << vir_human_size << "\r\n";
             ss << "used_memory_vir_human:" << used_memory_vir_human << "\r\n";
             ss << "used_memory_vir_peak_human:" << used_memory_vir_peak_human << "\r\n";
             ss << "used_memory_rss_peak_human:" << used_memory_rss_peak_human << "\r\n";
@@ -1583,7 +1670,7 @@ private:
         }
     }
 
-    void infoPersistence(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoPersistence(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "persistence") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1610,7 +1697,7 @@ private:
 
     }
 
-    void infoStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "stats") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1622,7 +1709,7 @@ private:
 
     }
 
-    void infoReplication(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoReplication(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "replication") {
             auto server = sess->getServerEntry();
             auto replMgr = server->getReplManager();
@@ -1639,7 +1726,7 @@ private:
 
     }
 
-    void infoCPU(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoCPU(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
 #ifndef _WIN32
         if (allsections || defsections || section == "cpu") {
             auto server = sess->getServerEntry();
@@ -1665,14 +1752,22 @@ private:
 #endif
     }
 
-    void infoCommandStats(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoCommandStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || section == "commandstats") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
             ss << "# CommandStats\r\n";
             for (const auto& kv : commandMap()) {
-                ss << "cmdstat_" << kv.first << ":calls=" << kv.second->getCallTimes()
-                    << ",usec=" << kv.second->getNanos() / 1000 << "\r\n"; // usec:microsecond
+                auto calls = kv.second->getCallTimes();
+                auto usec = kv.second->getNanos() / 1000;
+                if (calls == 0)
+                    continue;
+                
+                ss << "cmdstat_" << kv.first << ":calls=" << calls 
+                    << ",usec=" << usec 
+                    << ",usec_per_call=" << 
+                    ((calls == 0) ? 0 : ((float)usec / calls))
+                    << "\r\n";
             }
             uint32_t unseenCmdNum = 0;
             uint64_t unseenCmdCalls = 0;
@@ -1690,7 +1785,7 @@ private:
         }
     }
 
-    void infoKeyspace(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoKeyspace(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "keyspace") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1703,7 +1798,7 @@ private:
         }
     }
 
-    void infoBackup(bool allsections, bool defsections, std::string& section, Session *sess, std::stringstream& result) {
+    static void infoBackup(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "backup") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1717,6 +1812,156 @@ private:
             }
             ss << "\r\n";
             result << ss.str();
+        }
+    }
+
+    static void infoDataset(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || defsections || section == "dataset") {
+            auto server = sess->getServerEntry();
+            std::stringstream ss;
+            uint64_t total = 0, live = 0, estimate = 0;
+            server->getTotalIntProperty(sess, "rocksdb.total-sst-files-size", &total);
+            server->getTotalIntProperty(sess, "rocksdb.live-sst-files-size", &live);
+            server->getTotalIntProperty(sess, "rocksdb.estimate-live-data-size", &estimate);
+
+            uint64_t numkeys = 0, memtables = 0, tablereaderMem = 0;
+            uint64_t numCompaction = 0, mem_pending = 0, compaction_pending = 0;
+            server->getTotalIntProperty(sess, "rocksdb.estimate-num-keys", &numkeys);
+            server->getTotalIntProperty(sess, "rocksdb.cur-size-all-mem-tables", &memtables);
+            server->getTotalIntProperty(sess, "rocksdb.estimate-table-readers-mem", &tablereaderMem);
+            server->getTotalIntProperty(sess, "rocksdb.compaction-pending", &numCompaction);
+            server->getTotalIntProperty(sess, "rocksdb.mem-table-flush-pending", &mem_pending);
+            server->getTotalIntProperty(sess, "rocksdb.estimate-pending-compaction-bytes", &compaction_pending);
+
+
+            ss << "# Dataset\r\n";
+            ss << "rocksdb.kvstore-count:" << server->getKVStoreCount() << "\r\n";
+            ss << "rocksdb.total-sst-files-size:" << total << "\r\n";
+            ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
+            ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
+            ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";
+            ss << "rocksdb.total-memory:" << memtables + tablereaderMem +
+                    (uint64_t)server->getParams()->rocksBlockcacheMB * 1024 * 1024 << "\r\n";
+            ss << "rocksdb.cur-size-all-mem-tables:" << memtables << "\r\n";
+            ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
+            ss << "rocksdb.blockcache:" << (uint64_t)server->getParams()->rocksBlockcacheMB*1024*1024 << "\r\n";
+            ss << "rocksdb.mem-table-flush-pending:" << mem_pending << "\r\n";
+            ss << "rocksdb.estimate-pending-compaction-bytes:" << compaction_pending << "\r\n";
+            ss << "rocksdb.compaction-pending:" << numCompaction << "\r\n";
+            ss << "\r\n";
+            result << ss.str();
+        }
+    }
+
+    static void infoCompaction(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || defsections || section == "compaction") {
+            bool running = sess->getServerEntry()->getCompactionStat().isRunning;
+            auto startTime = sess->getServerEntry()->getCompactionStat().startTime;
+            auto duration = sinceEpoch() - startTime;
+            auto dbid = sess->getServerEntry()->getCompactionStat().curDBid;
+
+            result << "# Compaction\r\n";
+            result << "current-compaction-status:" << (running ? "running" : "stopped") << "\r\n";
+            result << "time-since-lastest-compaction:" << duration << "\r\n";
+            result << "current-compaction-dbid:" << dbid << "\r\n";
+            result << "\r\n";
+        }
+    }
+
+    static void infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || defsections || section == "levelstats") {
+            auto server = sess->getServerEntry();
+
+            result << "# Levelstats\r\n";
+            for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS); 
+                if (!expdb.ok()) {
+                    return;
+                }
+ 
+                auto store = expdb.value().store;
+                std::string tmp;
+                if (!store->getProperty("rocksdb.levelstatsex", &tmp)) {
+                    return;
+                }
+                std::string prefix = "rocksdb" + store->dbId() + ".";
+                replaceAll(tmp, "rocksdb.", prefix);
+
+                result << tmp;
+            }
+        }
+    }
+
+    static void infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || section == "rocksdbstats") {
+            auto server = sess->getServerEntry();
+            std::map<std::string, uint64_t> map;
+
+            result << "# Rocksdbstats\r\n";
+            for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return;
+                }
+
+                auto store = expdb.value().store;
+                std::string tmp = store->getStatistics();
+                
+                auto v = stringSplit(tmp, "\n");
+                for (auto one : v) {
+                    // rocksdb1.block.cache.bytes.write COUNT : 0
+                    auto key_value = stringSplit(one, ":");
+                    if (key_value.size() != 2) {
+                        continue;
+                    }
+                    sdstrim(key_value[0], " ");
+                    sdstrim(key_value[1], " ");
+                    if (key_value[0].find("COUNT") == string::npos) {
+                        continue;
+                    }
+
+                    auto e = tendisplus::stoul(key_value[1]);
+                    if (!e.ok()) {
+                        continue;
+                    }
+
+                    auto iter = map.find(key_value[0]);
+                    if (iter != map.end()) {
+                        iter->second += e.value();
+                    } else {
+                        map[key_value[0]] = e.value();
+                    }
+                }
+
+                std::string prefix = "rocksdb" + store->dbId() + ".";
+                replaceAll(tmp, "rocksdb.", prefix);
+
+                result << tmp;
+            }
+
+            for (auto v : map) {
+                result << v.first << " : " << v.second << "\n";
+            }
+        }
+    }
+
+    static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || section == "rocksdbperfstats") {
+            result << "# RocksdbPerfstats\r\n";
+            
+            auto tmp = sess->getCtx()->getPerfContextStr();
+            replaceAll(tmp, " = ", ":");
+            replaceAll(tmp, ", ", "\n");
+
+            result << tmp;
+
+            tmp = sess->getCtx()->getIOstatsContextStr();
+            replaceAll(tmp, " = ", ":");
+            replaceAll(tmp, ", ", "\n");
+
+            result << tmp;
         }
     }
 
@@ -1847,6 +2092,14 @@ class ConfigCommand : public Command {
 
                 if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
+                } else if(toLower(args[3]) == "perf_level") {
+                    if (!sess->getCtx()->setPerfLevel(toLower(args[4]))) {
+                        return{ ErrorCodes::ERR_PARSEOPT,
+                            "invalid argument :\"" + args[4] + "\" for 'config set session perf_level'" };
+                    }
+                } else {
+                    return{ ErrorCodes::ERR_PARSEOPT,
+                        "invalid argument :\"" + args[3] + "\" for 'config set session'" };
                 }
             } else if (configName == "requirepass") {
                 sess->getServerEntry()->setRequirepass(args[3]);
@@ -1865,8 +2118,6 @@ class ConfigCommand : public Command {
             if (args.size() != 3) {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
-            //return Command::fmtLongLong(10000);
-
             auto configName = toLower(args[2]);
             string info;
             if (configName == "requirepass") {
@@ -1879,13 +2130,14 @@ class ConfigCommand : public Command {
             return Command::fmtBulk(info);
         } else if (operation == "resetstat") {
             bool reset_all = false;
-            string configName = "";
-            if (args.size() == 2) {
+            
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect, should be three" };
+            }
+
+            auto configName = toLower(args[2]);
+            if (configName == "all") {
                 reset_all = true;
-            } else if (args.size() == 3) {
-                configName = toLower(args[2]);
-            } else {
-                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
 
             if (reset_all || configName == "unseencommands") {
@@ -1896,14 +2148,32 @@ class ConfigCommand : public Command {
                 }
                 _unSeenCmds.clear();
             }
-            if (reset_all || configName == "commandsstat") {
-                LOG(INFO) << "reset commandsstat";
+            if (reset_all || configName == "commandstats") {
+                LOG(INFO) << "reset commandstats";
+                std::stringstream ss;
+                InfoCommand::infoCommandStats(true, true, "commandstats", sess, ss);
+                LOG(INFO) << ss.str();
                 for (const auto& kv : commandMap()) {
-                    LOG(INFO) << "command:" << kv.first << " call-times:" << kv.second;
                     kv.second->resetStatInfo();
                 }
             }
-            return Command::fmtOK();
+            if (reset_all || configName == "stats") {
+                LOG(INFO) << "reset stats";
+                std::stringstream ss;
+                InfoCommand::infoStats(true, true, "stats", sess, ss);
+                LOG(INFO) << ss.str();
+
+                auto svr = sess->getServerEntry();
+                svr->resetServerStat();
+            }
+            if (reset_all || configName == "rocksdbstats") {
+                LOG(INFO) << "reset rocksdbstats";
+                std::stringstream ss;
+                InfoCommand::infoRocksdbStats(true, true, "rocksdbstats", sess, ss);
+                LOG(INFO) << ss.str();
+                auto svr = sess->getServerEntry();
+                svr->resetRocksdbStats(sess);
+            }
         }
 
         return Command::fmtOK();
@@ -2682,6 +2952,14 @@ public:
     Expected<std::string> run(Session *sess) final {
         const auto server = sess->getServerEntry();
         const auto& args = sess->getArgs();
+        if (server->getCompactionStat().isRunning) {
+            return { ErrorCodes::ERR_INTERNAL, "reshape is already running" };
+        }
+
+        const auto guard = MakeGuard([this, &server] {
+            server->getCompactionStat().reset();
+         });
+
         if (args.size() == 2) {
             auto expStoreId = tendisplus::stoull(args[1]);
             if (!expStoreId.ok()) {
@@ -2697,11 +2975,16 @@ public:
                 return expdb.status();
             }
             PStore kvstore = expdb.value().store;
+            server->getCompactionStat().isRunning = true;
+            server->getCompactionStat().curDBid = kvstore->dbId();
+            server->getCompactionStat().startTime = sinceEpoch();
             auto status = kvstore->fullCompact();
             if (!status.ok()) {
                 return status;
             }
         } else {
+            server->getCompactionStat().isRunning = true;
+            server->getCompactionStat().startTime = sinceEpoch();
             for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
                         mgl::LockMode::LOCK_IS);
@@ -2712,6 +2995,7 @@ public:
                     return expdb.status();
                 }
                 PStore kvstore = expdb.value().store;
+                server->getCompactionStat().curDBid = kvstore->dbId();
                 auto status = kvstore->fullCompact();
                 if (!status.ok()) {
                     return status;

@@ -22,6 +22,7 @@ public:
     Atom<uint64_t> queueTime{0};
     Atom<uint64_t> executeTime{0};
     std::string toString() const;
+    void reset();
 };
 
 // TODO(deyukong): currently only support static thread-num

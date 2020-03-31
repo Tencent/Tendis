@@ -28,7 +28,7 @@
 
 namespace tendisplus {
 
-void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
+bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                         const std::string& storeIdArg) {
     std::shared_ptr<BlockingTcpClient> client =
         std::move(_svr->getNetwork()->createBlockingClient(
@@ -39,20 +39,22 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
     if (isFullSupplierFull()) {
         LOG(WARNING) << "ReplManager::supplyFullSync fullPusher isFull.";
         client->writeLine("-ERR workerpool full");
-        return;
+        return false;
     }
 
     auto expStoreId = tendisplus::stoul(storeIdArg);
     if (!expStoreId.ok()) {
         LOG(ERROR) << "ReplManager::supplyFullSync storeIdArg error:" << storeIdArg;
         client->writeLine("-ERR invalid storeId");
-        return;
+        return false;
     }
     LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg;
     uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
     _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
         supplyFullSyncRoutine(std::move(client), storeId);
     });
+
+    return true;
 }
 
 bool ReplManager::isFullSupplierFull() const {
@@ -367,7 +369,7 @@ Expected<uint64_t> ReplManager::masterSendBinlogV2(BlockingTcpClient* client,
 // NOTE(deyukong): we define binlogPos the greatest id that has been applied.
 // "NOT" the smallest id that has not been applied. keep the same with
 // BackupInfo's setCommitId
-void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
+bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg,
@@ -390,20 +392,20 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::stringstream ss;
         ss << "-ERR parse opts failed:" << ex.what();
         client->writeLine(ss.str());
-        return;
+        return false;
     }
 
     if (storeId >= _svr->getKVStoreCount() ||
             dstStoreId >= _svr->getKVStoreCount()) {
         client->writeLine("-ERR invalid storeId");
-        return;
+        return false;
     }
 
     // NOTE(vinchen): In the cluster view, storeID of source and dest must be
     // same.
     if (storeId != dstStoreId) {
         client->writeLine("-ERR source storeId is different from dstStoreId ");
-        return;
+        return false;
     }
 
     LocalSessionGuard sg(_svr);
@@ -414,7 +416,7 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         ss << "-ERR store " << storeId << " error: "
             << expdb.status().toString();
         client->writeLine(ss.str());
-        return;
+        return false;
     }
 
     uint64_t firstPos = 0;
@@ -440,18 +442,18 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             << ",lastFlushBinlogId:" << lastFlushBinlogId;
         client->writeLine(ss.str());
         LOG(ERROR) << ss.str();
-        return;
+        return false;
     }
     client->writeLine("+OK");
     Expected<std::string> exptPong = client->readLine(std::chrono::seconds(1));
     if (!exptPong.ok()) {
         LOG(WARNING) << "slave incrsync handshake failed:"
                 << exptPong.status().toString();
-        return;
+        return false;
     } else if (exptPong.value() != "+PONG") {
         LOG(WARNING) << "slave incrsync handshake not +PONG:"
                 << exptPong.value();
-        return;
+        return false;
     }
 
     std::string remoteHost = client->getRemoteRepr();
@@ -506,6 +508,8 @@ void ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     }();
     LOG(INFO) << "slave:" << remoteHost
             << " registerIncrSync " << (registPosOk ? "ok" : "failed");
+
+    return registPosOk;
 }
 
 // mpov's network communicate procedure

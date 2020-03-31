@@ -54,6 +54,9 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     if (storeCnt != 0) {
         myfile << "kvStoreCount "<< storeCnt << "\n";
     }
+#ifdef _WIN32
+    myfile << "rocks.compress_type none\n";
+#endif
     myfile.close();
 
     auto cfg = std::make_shared<ServerParams>();
@@ -181,6 +184,16 @@ std::string getBulkValue(const std::string& reply, uint32_t index) {
 }
 
 std::shared_ptr<ServerEntry> makeServerEntry(
+    const std::shared_ptr<ServerParams>& cfg) {
+
+    auto master = std::make_shared<ServerEntry>(cfg);
+    auto s = master->startup(cfg);
+    INVARIANT(s.ok());
+
+    return master;
+}
+
+std::shared_ptr<ServerEntry> makeServerEntryOld(
     const std::shared_ptr<ServerParams>& cfg) {
     auto block_cache =
         rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);

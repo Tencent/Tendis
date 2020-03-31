@@ -14,6 +14,8 @@
 #include "rocksdb/utilities/backupable_db.h"
 #include "rocksdb/utilities/checkpoint.h"
 #include "rocksdb/options.h"
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/perf_context.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
 #include "tendisplus/utils/sync_point.h"
@@ -27,6 +29,17 @@
 
 namespace tendisplus {
 
+#ifndef NO_VERSIONEP
+#define RESET_PERFCONTEXT() do {\
+    if (_session && _session->getCtx()->needResetPerLevel()) {\
+        rocksdb::SetPerfLevel(rocksdb::PerfLevel(_session->getCtx()->getPerfLevel()));\
+        rocksdb::get_perf_context()->Reset();\
+        rocksdb::get_iostats_context()->Reset();\
+    }\
+  } while (0)
+#else
+#define RESET_PERFCONTEXT() 
+#endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
         :Cursor(),
@@ -152,6 +165,7 @@ std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
 
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
+    RESET_PERFCONTEXT();
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
     return std::unique_ptr<Cursor>(
@@ -302,6 +316,8 @@ void RocksTxn::setChunkId(uint32_t chunkId) {
 Expected<std::string> RocksTxn::getKV(const std::string& key) {
     rocksdb::ReadOptions readOpts;
     std::string value;
+
+    RESET_PERFCONTEXT();
     auto s = _txn->Get(readOpts, key, &value);
     if (s.ok()) {
         return value;
@@ -319,6 +335,7 @@ Status RocksTxn::setKV(const std::string& key,
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
 
+    RESET_PERFCONTEXT();
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -361,6 +378,7 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
+    RESET_PERFCONTEXT();
     auto s = _txn->Delete(key);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -488,6 +506,7 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     if (!_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
     }
+    RESET_PERFCONTEXT();
     switch (logEntry.getOp()) {
     case ReplOp::REPL_OP_SET: {
         // TODO(vinchen): RecordKey::validate()
@@ -527,6 +546,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     _store->setNextBinlogSeq(binlogId, this);
     INVARIANT(_binlogId != Transaction::TXNID_UNINITED);
 
+    RESET_PERFCONTEXT();
     auto s = _txn->Put(logKey, logValue);
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
@@ -536,6 +556,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
 }
 
 Status RocksTxn::delBinlog(const ReplLogRawV2& log) {
+    RESET_PERFCONTEXT();
     auto s = _txn->Delete(log.getReplLogKey());
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
@@ -2055,6 +2076,67 @@ void RocksKVStore::initRocksProperties()
     }
 }
 
+bool RocksKVStore::getIntProperty(const std::string& property, uint64_t* value) const {
+    bool ok = false;
+    if (_isRunning) {
+        ok = getBaseDB()->GetIntProperty(property, value);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                << " getProperty:" << property << " failed";
+        }
+    }
+    return ok;
+}
+
+bool RocksKVStore::getProperty(const std::string& property, std::string* value) const {
+    bool ok = false;
+    if (_isRunning) {
+        ok = getBaseDB()->GetProperty(property, value);
+        if (!ok) {
+            LOG(WARNING) << "db:" << dbId()
+                << " getProperty:" << property << " failed";
+        }
+    }
+
+    return ok;
+}
+
+std::string RocksKVStore::getAllProperty() const {
+    std::stringstream ss;
+    if (_isRunning) {
+        std::string tmp;
+        for (const auto& kv : _rocksIntProperties) {
+            bool ok = getProperty(kv.first, &tmp);
+            if (!ok) {
+                continue;
+            }
+            ss << kv.first << ":" << tmp << "\r\n";
+        }
+
+        for (const auto& kv : _rocksStringProperties) {
+            bool ok = getProperty(kv.first, &tmp);
+            if (!ok) {
+                continue;
+            }
+            ss << kv.first << ":" << tmp << "\r\n";
+        }
+    }
+
+    return ss.str();
+}
+
+std::string RocksKVStore::getStatistics() const {
+    if (_isRunning) {
+        return _stats->ToString();
+    } else {
+        return "";
+    }
+}
+
+void RocksKVStore::resetStatistics() {
+    _stats->Reset();
+}
+
 void RocksKVStore::appendJSONStat(
             rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     w.Key("id");
@@ -2104,10 +2186,8 @@ void RocksKVStore::appendJSONStat(
     if (_isRunning) {
         for (const auto& kv : _rocksIntProperties) {
             uint64_t tmp;
-            bool ok = getBaseDB()->GetIntProperty(kv.first, &tmp);
+            bool ok = getIntProperty(kv.first, &tmp);
             if (!ok) {
-                LOG(WARNING) << "db:" << dbId()
-                    << " getProperity:" << kv.first << " failed";
                 continue;
             }
             w.Key(kv.second.c_str());
@@ -2116,10 +2196,8 @@ void RocksKVStore::appendJSONStat(
 
         for (const auto& kv : _rocksStringProperties) {
             string tmp;
-            bool ok = getBaseDB()->GetProperty(kv.first, &tmp);
+            bool ok = getProperty(kv.first, &tmp);
             if (!ok) {
-                LOG(WARNING) << "db:" << dbId()
-                    << " getProperity:" << kv.first << " failed";
                 continue;
             }
             w.Key(kv.second.c_str());

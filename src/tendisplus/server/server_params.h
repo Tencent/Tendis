@@ -199,7 +199,7 @@ private:
 
 public:
     std::string bindIp = "127.0.0.1";
-    uint16_t port = 8903;
+    uint32_t port = 8903;
     std::string logLevel = "";
     std::string logDir = "./";
 

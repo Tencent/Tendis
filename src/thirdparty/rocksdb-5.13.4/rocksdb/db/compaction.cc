@@ -31,6 +31,22 @@ uint64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   return sum;
 }
 
+uint64_t TotalNumEntries(const std::vector<FileMetaData*>& files) {
+  uint64_t sum = 0;
+  for (size_t i = 0; i < files.size() && files[i]; i++) {
+    sum += files[i]->num_entries;
+  }
+  return sum;
+}
+
+uint64_t TotalNumDeletions(const std::vector<FileMetaData*>& files) {
+  uint64_t sum = 0;
+  for (size_t i = 0; i < files.size() && files[i]; i++) {
+    sum += files[i]->num_deletions;
+  }
+  return sum;
+}
+
 void Compaction::SetInputVersion(Version* _input_version) {
   input_version_ = _input_version;
   cfd_ = input_version_->cfd();

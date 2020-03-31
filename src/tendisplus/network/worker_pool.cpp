@@ -17,6 +17,13 @@ std::string PoolMatrix::toString() const {
     return ss.str();
 }
 
+void PoolMatrix::reset() {
+    inQueue = 0;
+    executed = 0;
+    queueTime = 0;
+    executeTime = 0;
+}
+
 PoolMatrix PoolMatrix::operator-(const PoolMatrix& right) {
     PoolMatrix result;
     // inQueue is a state, donot handle it

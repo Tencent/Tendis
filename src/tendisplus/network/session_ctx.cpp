@@ -19,12 +19,16 @@ SessionCtx::SessionCtx(Session* sess)
      _processPacketStart(0),
      _timestamp(TSEP_UNINITED),
      _version(VERSIONEP_UNINITED),
+     _perfLevel(PerfLevel::kDisable),
+     _perfLevelFlag(false),
      _txnVersion(-1),
      _extendProtocol(false),
      _replOnly(false),
      _session(sess),
      _isMonitor(false),
      _flags(0) {
+    _perfContext.Reset();
+    _ioContext.Reset();
 }
 
 void SessionCtx::setProcessPacketStart(uint64_t start) {
@@ -87,6 +91,14 @@ void SessionCtx::clearRequestCtx() {
     _argsBrief.clear();
     _timestamp = -1;
     _version = -1;
+    if (_perfLevelFlag && _perfLevel >= PerfLevel::kEnableCount) {
+        // NOTE(vinchen): rocksdb::get_perf_context() is thread local variables,
+        // because of thread pool, "info rocksdbperfstat" can't use
+        // rocksdb::get_perf_context() directly.
+        _perfContext = *rocksdb::get_perf_context();
+        _ioContext = *rocksdb::get_iostats_context();
+    }
+    _perfLevelFlag = false;
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
@@ -162,6 +174,50 @@ void SessionCtx::setExtendProtocol(bool v) {
 void SessionCtx::setExtendProtocolValue(uint64_t ts, uint64_t version) {
     _timestamp = ts;
     _version = version;
+}
+
+// reture false, mean error
+bool SessionCtx::setPerfLevel(const std::string& level) {
+    auto l= toLower(level);
+    if (l== "disable") {
+        _perfLevel = PerfLevel::kDisable;
+    } else if (l == "enable_count") {
+        _perfLevel = PerfLevel::kEnableCount;
+    } else if (l == "enable_time_expect_for_mutex") {
+        _perfLevel = PerfLevel::kEnableTimeExceptForMutex;
+    } else if (l == "enable_time_and_cputime_expect_for_mutex") {
+        _perfLevel = PerfLevel::kEnableTimeAndCPUTimeExceptForMutex;
+    } else if (l == "enable_time") {
+        _perfLevel = PerfLevel::kEnableTime;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool SessionCtx::needResetPerLevel() {
+    if (_perfLevelFlag) {
+        return false;
+    }
+
+    // NOTE(vinchen): _perfLevelFlag mean that the the first time
+    // call of SessionCtx::needResetPerLevel(). It would be reset 
+    // when SessionCtx::clearRequestCtx() 
+    _perfLevelFlag = true;
+
+    if (_perfLevel < PerfLevel::kEnableCount) {
+        return false;
+    }
+
+    return true;
+}
+
+std::string SessionCtx::getPerfContextStr() const {
+    return _perfContext.ToString();
+}
+
+std::string SessionCtx::getIOstatsContextStr() const {
+    return _ioContext.ToString();
 }
 
 uint32_t SessionCtx::getIsMonitor() const {

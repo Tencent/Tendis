@@ -15,6 +15,8 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/string.h"
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/perf_context.h"
 
 namespace tendisplus {
 
@@ -25,6 +27,18 @@ using SLSP = std::tuple<uint32_t, std::string, mgl::LockMode>;
 
 class ILock;
 class SessionCtx {
+    enum class PerfLevel : unsigned char {
+        kUninitialized = 0,             // unknown setting
+        kDisable = 1,                   // disable perf stats
+        kEnableCount = 2,               // enable only count stats
+        kEnableTimeExceptForMutex = 3,  // Other than count stats, also enable time
+                                        // stats except for mutexes
+        // Other than time, also measure CPU time counters. Still don't measure
+        // time (neither wall time nor CPU time) for mutexes.
+        kEnableTimeAndCPUTimeExceptForMutex = 4,
+        kEnableTime = 5,  // enable count and time stats
+        kOutOfBounds = 6  // N.B. Must always be the last value!
+    };
  public:
     SessionCtx(Session * sess);
     SessionCtx(const SessionCtx&) = delete;
@@ -53,8 +67,13 @@ class SessionCtx {
     Expected<Transaction*> createTransaction(const PStore& kvstore);
     void setExtendProtocol(bool v);
     void setExtendProtocolValue(uint64_t ts, uint64_t version);
+    bool setPerfLevel(const std::string& level);
     uint64_t getTsEP() const { return _timestamp; }
     uint64_t getVersionEP() const { return _version; }
+    PerfLevel getPerfLevel() const { return _perfLevel; }
+    bool needResetPerLevel();
+    std::string getPerfContextStr() const;
+    std::string getIOstatsContextStr() const;
     bool isEp() const { return _extendProtocol; }
     bool isReplOnly() const { return _replOnly; }
     void setReplOnly(bool v) { _replOnly = v; }
@@ -91,6 +110,8 @@ class SessionCtx {
     uint64_t _processPacketStart;
     uint64_t _timestamp;
     uint64_t _version;
+    PerfLevel _perfLevel;
+    bool _perfLevelFlag;
     uint64_t _txnVersion;
     bool _extendProtocol;
     bool _replOnly;
@@ -106,6 +127,8 @@ class SessionCtx {
     // multi key
     std::unordered_map<std::string, std::unique_ptr<Transaction>> _txnMap;
     std::vector<std::string> _argsBrief;
+    rocksdb::PerfContext _perfContext;
+    rocksdb::IOStatsContext _ioContext;
 };
 
 }  // namespace tendisplus
