@@ -80,6 +80,9 @@ class WorkLoad {
     TestSession _session;
     uint32_t _max_key_len;
 };
+
+void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
+        const std::shared_ptr<ServerEntry>& slave);
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_UTILS_TEST_UTIL_H_

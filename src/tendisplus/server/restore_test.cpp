@@ -22,8 +22,11 @@ namespace tendisplus {
 
 std::string master1_dir = "restoretest_master1";
 std::string master2_dir = "restoretest_master2";
+std::string slave1_dir = "restoretest_slave1";
 uint32_t master1_port = 1121;
 uint32_t master2_port = 1122;
+uint32_t slave1_port = 1123;
+
 
 
 AllKeys initData(std::shared_ptr<ServerEntry>& server,
@@ -142,13 +145,13 @@ void flushBinlog(const std::shared_ptr<ServerEntry>& server) {
     }
 }
 
-void restoreBinlog(const std::shared_ptr<ServerEntry>& server,
+void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
     uint64_t end_ts = UINT64_MAX) {
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
         auto kvstore = server->getStores()[i];
         uint64_t binglogPos = kvstore->getHighestBinlogId();
 
-        std::string subpath = "./" + master1_dir + "/dump/" + std::to_string(i) + "/";
+        std::string subpath = "./" + src_binlog_dir + "/dump/" + std::to_string(i) + "/";
         std::vector<std::string> loglist;
         for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
             const filesystem::path& path = p.path();
@@ -461,7 +464,7 @@ TEST(Restore, Common) {
         LOG(INFO) << ">>>>>> master1 initKvData 2st end;";
         // waitBinlogDump(master1);
         flushBinlog(master1);
-        restoreBinlog(master2, ts);
+        restoreBinlog(master1_dir, master2, ts);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 1st end;";
         waitBinlogDump(master2);
         std::vector<uint32_t> m2_keynum1 = getKeyNum(master2);
@@ -469,7 +472,7 @@ TEST(Restore, Common) {
         // the keynum will equal, otherwise the keynum will be one less
         checkNumAllowDiff(m1_keynum1, m2_keynum1);  // check num only
         flushBinlog(master1);
-        restoreBinlog(master2, UINT64_MAX);
+        restoreBinlog(master1_dir, master2, UINT64_MAX);
         LOG(INFO) << ">>>>>> master2 restoreBinlog 2st end;";
         waitBinlogDump(master2);
         std::vector<uint32_t> m2_keynum2 = getKeyNum(master2);
@@ -481,7 +484,7 @@ TEST(Restore, Common) {
         addOneKeyEveryKvstore(master1, "restore_test_key1");
         waitBinlogDump(master1);
         flushBinlog(master1);
-        restoreBinlog(master2, UINT64_MAX);
+        restoreBinlog(master1_dir, master2, UINT64_MAX);
         addOneKeyEveryKvstore(master2, "restore_test_key1");
         waitBinlogDump(master2);
         compareData(master1, master2, false);  // compare data only
@@ -494,5 +497,89 @@ TEST(Restore, Common) {
     }
 }
 
+std::vector<std::shared_ptr<ServerEntry>>
+makeRestoreEnv2(uint32_t storeCnt) {
+    EXPECT_TRUE(setupEnv(master1_dir));
+    EXPECT_TRUE(setupEnv(master2_dir));
+    EXPECT_TRUE(setupEnv(slave1_dir));
+
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
+    auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir);
+    cfg1->minBinlogKeepSec = 60;
+    cfg2->maxBinlogKeepNum = 1;
+    cfg3->maxBinlogKeepNum = 1;
+
+    auto master1 = std::make_shared<ServerEntry>(cfg1);
+    auto s = master1->startup(cfg1);
+    INVARIANT(s.ok());
+
+    auto master2 = std::make_shared<ServerEntry>(cfg2);
+    s = master2->startup(cfg2);
+
+    auto slave1 = std::make_shared<ServerEntry>(cfg3);
+    s = slave1->startup(cfg3);
+    return std::vector<std::shared_ptr<ServerEntry>>({master1, master2, slave1});
+}
+
+TEST(Restore, Common2) {
+#ifdef _WIN32
+    size_t i = 1;
+{
+#else
+    for (size_t i = 0; i < 2; i++) {
+#endif
+        LOG(INFO) << ">>>>>> test store count:" << i;
+
+        const auto guard = MakeGuard([] {
+            destroyEnv(master1_dir);
+            destroyEnv(master2_dir);
+            destroyEnv(slave1_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        });
+
+        auto hosts = makeRestoreEnv2(i);
+        auto& master1 = hosts[0];
+        auto& master2 = hosts[1];
+        auto& slave1 = hosts[2];
+        {
+            auto ctx = std::make_shared<asio::io_context>();
+            auto session = makeSession(slave1, ctx);
+            WorkLoad work(slave1, session);
+            work.init();
+            work.slaveof("127.0.0.1", master1_port);
+        }
+
+        LOG(INFO) << ">>>>>> master1 add data begin.";
+        auto thread = std::thread([this, master1](){
+            testAll(master1); // need about 40 seconds
+        });
+        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        sleep(sleep_time);
+        LOG(INFO) << ">>>>>> master1 backup and master2 restoreBackup.";
+        backup(slave1, "ckpt");
+        restoreBackup(master2);
+        thread.join();
+        LOG(INFO) << ">>>>>> master1 add data end.";
+        addOneKeyEveryKvstore(master1, "restore_test_key1");
+        addOneKeyEveryKvstore(master1, "restore_test_key2");
+        waitSlaveCatchup(master1, slave1);
+        waitBinlogDump(slave1);
+        flushBinlog(slave1);
+        restoreBinlog(slave1_dir, master2, UINT64_MAX);
+        addOneKeyEveryKvstore(master2, "restore_test_key1");
+        addOneKeyEveryKvstore(master2, "restore_test_key2");
+        waitBinlogDump(master2);
+        compareData(master1, master2, false);  // compare data only
+
+        master1->stop();
+        master2->stop();
+        slave1->stop();
+        ASSERT_EQ(master1.use_count(), 1);
+        ASSERT_EQ(master2.use_count(), 1);
+        ASSERT_EQ(slave1.use_count(), 1);
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
 }  // namespace tendisplus
 
