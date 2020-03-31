@@ -25,7 +25,7 @@ class BackupCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 2;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -42,8 +42,26 @@ class BackupCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const std::string& dir = sess->getArgs()[1];
+        auto mode = KVStore::BackupMode::BACKUP_COPY;
+        if (sess->getArgs().size() >= 3) {
+            const std::string &str_mode = toLower(sess->getArgs()[2]);
+            if (str_mode == "ckpt") {
+                mode = KVStore::BackupMode::BACKUP_CKPT;
+            } else if (str_mode == "copy") {
+                mode = KVStore::BackupMode::BACKUP_COPY;
+            } else {
+                return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
+            }
+        }
         std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
+        if (!filesystem::exists(dir)) {
+            return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
+        }
+        if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
+            return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
+        }
+
         for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
             // NOTE(deyukong): here we acquire IS lock
             auto expdb = svr->getSegmentMgr()->getDb(sess, i,
@@ -59,7 +77,7 @@ class BackupCommand: public Command {
             }
             std::string dbdir = dir + "/" + std::to_string(i) + "/";
             Expected<BackupInfo> bkInfo = store->backup(
-                dbdir, KVStore::BackupMode::BACKUP_COPY);
+                dbdir, mode);
             if (!bkInfo.ok()) {
                 svr->onBackupEndFailed(i, bkInfo.status().toString());
                 return bkInfo.status();
@@ -99,6 +117,7 @@ class RestoreBackupCommand : public Command {
         INVARIANT(svr != nullptr);
         const std::string& kvstore = sess->getArgs()[1];
         const std::string& dir = sess->getArgs()[2];
+
         bool isForce = false;
         if (sess->getArgs().size() >= 4) {
             isForce = sess->getArgs()[3] == "force";
@@ -176,10 +195,7 @@ class RestoreBackupCommand : public Command {
                 << " failed:" << clearStatus.toString();
         }
 
-
-        // rocksdb will clear dir too.
-        Expected<std::string> ret = store->restoreBackup(
-            dir, KVStore::BackupMode::BACKUP_COPY);
+        Expected<std::string> ret = store->restoreBackup(dir);
         if (!ret.ok()) {
             return ret.status();
         }

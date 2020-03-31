@@ -96,12 +96,12 @@ func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
     log.Infof("addOnekeyEveryStore sucess.port:%d", m.Port)
 }
 
-func backup(m *util.RedisServer) {
+func backup(m *util.RedisServer, backup_mode string) {
     cli := createClient(m)
 
     os.RemoveAll("/tmp/back_test")
     os.Mkdir("/tmp/back_test", os.ModePerm)
-    if r, err := cli.Cmd("backup", "/tmp/back_test").Str(); err != nil {
+    if r, err := cli.Cmd("backup", "/tmp/back_test", backup_mode).Str(); err != nil {
         log.Fatalf("do backup failed:%v", err)
         return
     } else if r != "OK" {

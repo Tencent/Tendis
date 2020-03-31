@@ -9,6 +9,10 @@
 #include <algorithm>
 #include "glog/logging.h"
 #include "rapidjson/prettywriter.h"
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/error/en.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/utilities/backupable_db.h"
@@ -1655,14 +1659,6 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
         }
         std::lock_guard<std::mutex> lk(_mutex);
         _hasBackup = false;
-        try {
-            if (!filesystem::exists(dir)) {
-                return;
-            }
-            // filesystem::remove_all(dir); // takenliu:it's too dangerous, don't removeall
-        } catch (const std::exception& ex) {
-            LOG(FATAL) << "remove " << dir << " ex:" << ex.what();
-        }
     });
 
     // NOTE(deyukong):
@@ -1672,10 +1668,10 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     // BACKUP_COPY works with arbitory dir except the default one.
     // But if someone feels it necessary to add one more param make it clearer,
     // go ahead.
-    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
-        // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
+    if (mode == KVStore::BackupMode::BACKUP_CKPT_INTER) {
+        // BACKUP_CKPT_INTER works with the default backupdir and _hasBackup flag.
         if (dir != dftBackupDir()) {
-            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT invalid dir"};
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT_INTER invalid dir"};
         }
         std::lock_guard<std::mutex> lk(_mutex);
         if (_hasBackup) {
@@ -1684,7 +1680,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
         _hasBackup = true;
     } else {
         if (dir == dftBackupDir()) {
-            return {ErrorCodes::ERR_INTERNAL, "BACKUP_COPY invalid dir"};
+            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT|BACKUP_COPY cant equal dftBackupDir:" + dir};
         }
     }
 
@@ -1695,8 +1691,9 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
         LOG(WARNING) << "store:" << dbId() << " highVisible still zero";
     }
     result.setBinlogPos(highVisible);
-
-    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
+    result.setStartTimeSec(sinceEpoch());
+    if (mode == KVStore::BackupMode::BACKUP_CKPT ||
+        mode == KVStore::BackupMode::BACKUP_CKPT_INTER) {
         rocksdb::Checkpoint* checkpoint;
         auto s = rocksdb::Checkpoint::Create(getBaseDB(), &checkpoint);
         if (!s.ok()) {
@@ -1739,45 +1736,125 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
-    succ = true;
     result.setFileList(flist);
+    result.setEndTimeSec(sinceEpoch());
+    result.setBackupMode((uint32_t)mode);
+    auto saveret = saveBackupMeta(dir, result);
+    if (!saveret.ok()) {
+        return saveret.status();
+    }
+    succ = true;
     return result;
 }
 
-Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir,
-    KVStore::BackupMode mode) {
-    if (mode == KVStore::BackupMode::BACKUP_CKPT) {
-        // BACKUP_CKPT works with the default backupdir and _hasBackup flag.
-        if (dir != dftBackupDir()) {
-            return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT invalid dir"};
-        }
-        // TODO(takenliu) support CKPT restore.
-        return {ErrorCodes::ERR_INTERNAL, "havn't support."};
-    } else {
-        if (dir == dftBackupDir()) {
-            return {ErrorCodes::ERR_INTERNAL, "BACKUP_COPY invalid dir"};
+Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, const BackupInfo& backup) {
+    rapidjson::StringBuffer sb;
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+    writer.Key("backupType");
+    writer.Uint(backup.getBackupMode());
+    writer.Key("binlogpos");
+    writer.Uint64(backup.getBinlogPos());
+    writer.Key("startTimeSec");
+    writer.Uint64(backup.getStartTimeSec());
+    writer.Key("endTimeSec");
+    writer.Uint64(backup.getEndTimeSec());
+    writer.Key("useTimeSec");
+    writer.Uint64(backup.getEndTimeSec() - backup.getStartTimeSec());
+    writer.EndObject();
+    string data = sb.GetString();
+
+    string filename = dir + "/backup_meta";
+    std::ofstream metafile(filename);
+    if (!metafile.is_open()) {
+        return {ErrorCodes::ERR_INTERNAL, "open file failed:" + filename};
+    }
+    metafile << data;
+    metafile.close();
+    return std::string("ok");
+}
+
+Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
+    string filename = dir + "/backup_meta";
+    std::ifstream metafile(filename);
+    if (!metafile.is_open()) {
+        LOG(ERROR) << "restoreBackup open failed:" << filename;
+        return {ErrorCodes::ERR_INTERNAL, "open file failed:" + filename};
+    }
+    std::stringstream ss;
+    ss << metafile.rdbuf();
+    metafile.close();
+
+    rapidjson::Document doc;
+    doc.Parse(ss.str());
+    if (doc.HasParseError()) {
+        LOG(ERROR) << "restoreBackup parse json failed:" << filename;
+        return {ErrorCodes::ERR_NETWORK,
+                rapidjson::GetParseError_En(doc.GetParseError())};
+    }
+    if (!doc.IsObject()) {
+        LOG(ERROR) << "restoreBackup json IsObject failed:" << filename;
+        return {ErrorCodes::ERR_NOTFOUND, "json parse failed"};
+    }
+    uint32_t mode = std::numeric_limits<uint32_t>::max();
+    for (auto& o : doc.GetObject()) {
+        if (o.name == "backupType" && o.value.IsUint()) {
+            mode = o.value.GetUint();
         }
     }
 
-    if (mode == KVStore::BackupMode::BACKUP_COPY) {
-        rocksdb::BackupEngineReadOnly* backup_engine;
-        rocksdb::Status s = rocksdb::BackupEngineReadOnly::Open(
-            rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir),
-            &backup_engine);
-        if (!s.ok()) {
-            LOG(ERROR) << "BackupEngineReadOnly::Open failed."
-                << s.ToString() << " dir:" << dir;
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
-        }
-        std::unique_ptr<rocksdb::BackupEngineReadOnly> pBkEngine(backup_engine);
+    if (mode == (uint32_t)KVStore::BackupMode::BACKUP_CKPT) {
+        return copyCkpt(dir);
+    } else if (mode == (uint32_t)KVStore::BackupMode::BACKUP_COPY) {
+        return loadCopy(dir);
+    }
+    LOG(ERROR) << "restoreBackup mode failed:" << filename << " mode:" << mode;
+    return {ErrorCodes::ERR_NOTFOUND, "mode error"};
+}
+
+Expected<std::string> RocksKVStore::loadCopy(const std::string& dir) {
+    rocksdb::BackupEngineReadOnly* backup_engine;
+    rocksdb::Status s = rocksdb::BackupEngineReadOnly::Open(
+        rocksdb::Env::Default(), rocksdb::BackupableDBOptions(dir),
+        &backup_engine);
+    if (!s.ok()) {
+        LOG(ERROR) << "BackupEngineReadOnly::Open failed."
+            << s.ToString() << " dir:" << dir;
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    std::unique_ptr<rocksdb::BackupEngineReadOnly> pBkEngine(backup_engine);
+    const std::string path = dbPath() + "/" + dbId();
+    // restore from backup_dir to _dbPath
+    s = pBkEngine->RestoreDBFromLatestBackup(path, path);
+    if (!s.ok()) {
+        LOG(ERROR) << "RestoreDBFromLatestBackup failed."
+            << s.ToString() << " dir:" << dir;
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    LOG(INFO) << "backup sucess. dbpath:" << path << " backup path:" << dir;
+    return std::string("ok");
+}
+
+Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
+    try {
         const std::string path = dbPath() + "/" + dbId();
-        s = pBkEngine->RestoreDBFromLatestBackup(path, path);
-        if (!s.ok()) {
-            LOG(ERROR) << "RestoreDBFromLatestBackup failed."
-                << s.ToString() << " dir:" << dir;
-            return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+        if (filesystem::exists(path)) {
+            std::stringstream ss;
+            ss << "path:" << path
+               << " should not exist when restore";
+            return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
-        LOG(INFO) << "backup sucess. dbpath:" << path << " backup path:" << dir;
+        if (!filesystem::exists(dir)) {
+            std::stringstream ss;
+            ss << "recover path:" << dir
+               << " not exist when restore";
+            return {ErrorCodes::ERR_INTERNAL, ss.str()};
+        }
+        filesystem::copy(dir, path);
+    } catch(std::exception& ex) {
+        LOG(WARNING) << "dbId:" << dbId()
+                     << "restore exception" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
     return std::string("ok");
 }

@@ -94,7 +94,7 @@ void addOneKeyEveryKvstore(const std::shared_ptr<ServerEntry>& server,
     }
 }
 
-void backup(const std::shared_ptr<ServerEntry>& server) {
+void backup(const std::shared_ptr<ServerEntry>& server, const string& mode) {
     auto ctx = std::make_shared<asio::io_context>();
     auto sess = makeSession(server, ctx);
 
@@ -108,6 +108,7 @@ void backup(const std::shared_ptr<ServerEntry>& server) {
     std::vector<std::string> args;
     args.push_back("backup");
     args.push_back(dir);
+    args.push_back(mode);
     sess->setArgs(args);
     auto expect = Command::runSessionCmd(sess.get());
     EXPECT_TRUE(expect.ok());
@@ -430,12 +431,17 @@ TEST(Restore, Common) {
 
         auto allKeys1 = initData(master1, recordSize, "suffix1");
         LOG(INFO) << ">>>>>> master1 initData 1st end;";
-        backup(master1);
+        backup(master1, "copy");
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
+        backup(master1, "ckpt");
+        restoreBackup(master2);
+        LOG(INFO) << ">>>>>> master2 restoreBackup end;";
+        compareData(master1, master2);  // compare data + binlog
+        LOG(INFO) << ">>>>>> compareData 1st end;";
 
         uint32_t part1_num = std::rand() % recordSize;
         part1_num = part1_num == 0 ? 1 : part1_num;

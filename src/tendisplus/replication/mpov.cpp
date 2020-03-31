@@ -552,7 +552,7 @@ void ReplManager::supplyFullSyncRoutine(
     uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup(
         store->dftBackupDir(),
-        KVStore::BackupMode::BACKUP_CKPT);
+        KVStore::BackupMode::BACKUP_CKPT_INTER);
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();

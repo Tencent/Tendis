@@ -398,10 +398,10 @@ TEST(Repl, MasterDontSaveBinlog) {
     {
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
-            //destroyEnv(master_dir);
-            //destroyEnv(slave_dir);
-            //destroyEnv(slave1_dir);
-            //destroyEnv(single_dir);
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            destroyEnv(slave1_dir);
+            destroyEnv(single_dir);
             std::this_thread::sleep_for(std::chrono::seconds(5));
         });
 
@@ -468,6 +468,86 @@ TEST(Repl, MasterDontSaveBinlog) {
         slave->stop();
         slave1->stop();
         single->stop();
+
+        ASSERT_EQ(slave.use_count(), 1);
+#endif
+
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
+
+TEST(Repl, SlaveCantModify) {
+    size_t i = 1;
+    {
+        LOG(INFO) << ">>>>>> test store count:" << i;
+        const auto guard = MakeGuard([] {
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            destroyEnv(slave1_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
+
+        EXPECT_TRUE(setupEnv(master_dir));
+        EXPECT_TRUE(setupEnv(slave_dir));
+        EXPECT_TRUE(setupEnv(slave1_dir));
+
+        auto cfg1 = makeServerParam(master_port, i, master_dir);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
+
+        auto master = std::make_shared<ServerEntry>(cfg1);
+        auto s = master->startup(cfg1);
+        INVARIANT(s.ok());
+
+        auto slave = std::make_shared<ServerEntry>(cfg2);
+        s = slave->startup(cfg2);
+        INVARIANT(s.ok());
+
+        auto slave1 = std::make_shared<ServerEntry>(cfg3);
+        s = slave1->startup(cfg3);
+        INVARIANT(s.ok());
+
+        {
+            runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
+            // slaveof need about 3 seconds to transfer file.
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            runCmd(slave1, { "slaveof", "127.0.0.1", std::to_string(slave_port) });
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            auto ctx1 = std::make_shared<asio::io_context>();
+            auto session1 = makeSession(master, ctx1);
+            session1->setArgs({ "set", "a", "2" });
+            auto expect = Command::runSessionCmd(session1.get());
+            EXPECT_TRUE(expect.ok());
+
+            waitSlaveCatchup(master, slave);
+            waitSlaveCatchup(slave, slave1);
+
+            auto ctx2 = std::make_shared<asio::io_context>();
+            auto session2 = makeSession(slave, ctx2);
+            session2->setArgs({ "set", "a", "3" });
+            expect = Command::runSessionCmd(session2.get());
+            EXPECT_EQ(expect.status().toString(), "-ERR:3,msg:txn is replOnly\r\n");
+
+            session2->setArgs({ "get", "a"});
+            expect = Command::runSessionCmd(session2.get());
+            EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
+
+            auto ctx3 = std::make_shared<asio::io_context>();
+            auto session3 = makeSession(slave1, ctx3);
+            session3->setArgs({ "set", "a", "4" });
+            expect = Command::runSessionCmd(session3.get());
+            EXPECT_EQ(expect.status().toString(), "-ERR:3,msg:txn is replOnly\r\n");
+
+            session3->setArgs({ "get", "a"});
+            expect = Command::runSessionCmd(session3.get());
+            EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
+        }
+
+#ifndef _WIN32
+        master->stop();
+        slave->stop();
 
         ASSERT_EQ(slave.use_count(), 1);
 #endif

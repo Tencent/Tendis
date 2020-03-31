@@ -4,8 +4,8 @@ user=takenliu
 ps axu |grep tendisplus|grep integrate_test| grep $user|awk '{print $2}'|xargs kill -9
 while true
 do
-    a=`ps axu |grep tendisplus|grep $user|wc -l`
-    if [ "$a" == "1" ] || [ "$a" == "0" ]
+    a=`ps axu |grep tendisplus|grep integrate_test|grep $user|grep -v "grep" |wc -l`
+    if [ "$a" == "0" ]
     then
         break
     else

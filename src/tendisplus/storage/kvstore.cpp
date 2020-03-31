@@ -332,8 +332,29 @@ void BackupInfo::setBinlogPos(uint64_t pos) {
     _binlogPos = pos;
 }
 
+void BackupInfo::setBackupMode(uint8_t mode) {
+    _backupMode = mode;
+}
+void BackupInfo::setStartTimeSec(uint64_t time) {
+    _startTimeSec = time;
+}
+void BackupInfo::setEndTimeSec(uint64_t time) {
+    _endTimeSec = time;
+}
+
 uint64_t BackupInfo::getBinlogPos() const {
     return _binlogPos;
 }
 
+uint8_t BackupInfo::getBackupMode() const {
+    return _backupMode;
+}
+
+uint64_t BackupInfo::getStartTimeSec() const {
+    return _startTimeSec;
+}
+
+uint64_t BackupInfo::getEndTimeSec() const{
+    return _endTimeSec;
+}
 }  // namespace tendisplus

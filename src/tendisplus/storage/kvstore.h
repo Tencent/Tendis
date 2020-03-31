@@ -173,10 +173,19 @@ class BackupInfo {
     const std::map<std::string, uint64_t>& getFileList() const;
     void setFileList(const std::map<std::string, uint64_t>&);
     void setBinlogPos(uint64_t);
+    void setBackupMode(uint8_t);
+    void setStartTimeSec(uint64_t);
+    void setEndTimeSec(uint64_t);
     uint64_t getBinlogPos() const;
+    uint8_t getBackupMode() const;
+    uint64_t getStartTimeSec() const;
+    uint64_t getEndTimeSec() const;
  private:
     std::map<std::string, uint64_t> _fileList;
     uint64_t _binlogPos;
+    uint8_t _backupMode;
+    uint64_t _startTimeSec;
+    uint64_t _endTimeSec;
 };
 
 class BinlogObserver {
@@ -221,7 +230,9 @@ class KVStore {
     enum class BackupMode {
         BACKUP_COPY,
         BACKUP_CKPT,
+        BACKUP_CKPT_INTER
     };
+
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
     const std::string& dbPath() const { return _dbPath; }
@@ -296,8 +307,7 @@ class KVStore {
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
     virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
-    virtual Expected<std::string> restoreBackup(const std::string& dir,
-        KVStore::BackupMode mode) = 0;
+    virtual Expected<std::string> restoreBackup(const std::string& dir) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(
