@@ -559,9 +559,7 @@ bool ServerEntry::processRequest(Session *sess) {
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         std::vector<std::string> args = ns->getArgs();
-        // we have called precheck, it should have 2 args
-        INVARIANT(args.size() == 2);
-        _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
+        // we have called precheck, it should have 4 args
         INVARIANT(args.size() == 4);
         _replMgr->supplyFullSync(ns->borrowConn(), args[1], args[2], args[3]);
         ++_serverStat.syncFull;

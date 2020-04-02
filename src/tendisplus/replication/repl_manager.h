@@ -120,11 +120,11 @@ class ReplManager {
             uint32_t sourceStoreId);
     Status changeReplSourceInLock(uint32_t storeId, std::string ip, uint32_t port,
                                   uint32_t sourceStoreId);
-    void supplyFullSync(asio::ip::tcp::socket sock,
+    bool supplyFullSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& slaveIpArg,
             const std::string& slavePortArg);
-    void registerIncrSync(asio::ip::tcp::socket sock,
+    bool registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg,

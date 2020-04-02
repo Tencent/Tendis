@@ -28,7 +28,7 @@
 
 namespace tendisplus {
 
-void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
+bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                         const std::string& storeIdArg,
                         const std::string& slaveIpArg,
                         const std::string& slavePortArg) {
@@ -56,7 +56,7 @@ void ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
     if (!expSlavePort.ok()) {
         LOG(ERROR) << "ReplManager::supplyFullSync expSlavePort error:" << slavePortArg;
         client->writeLine("-ERR invalid expSlavePort");
-        return;
+        return false;
     }
     LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg
         << " " << slaveIpArg << ":" << slavePortArg;
