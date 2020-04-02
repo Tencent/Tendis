@@ -562,6 +562,8 @@ bool ServerEntry::processRequest(Session *sess) {
         // we have called precheck, it should have 2 args
         INVARIANT(args.size() == 2);
         _replMgr->supplyFullSync(ns->borrowConn(), args[1]);
+        INVARIANT(args.size() == 4);
+        _replMgr->supplyFullSync(ns->borrowConn(), args[1], args[2], args[3]);
         ++_serverStat.syncFull;
         return false;
     } else if (expCmdName.value() == "incrsync") {

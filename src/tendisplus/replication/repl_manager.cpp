@@ -53,6 +53,7 @@ Status ReplManager::stopStore(uint32_t storeId) {
     for (auto& mpov : _pushStatus[storeId]) {
         mpov.second->nextSchedTime = SCLOCK::time_point::max();
     }
+    _fullPushStatus[storeId].clear();
 
     return { ErrorCodes::ERR_OK, "" };
 }
@@ -169,7 +170,8 @@ Status ReplManager::startup() {
         _pushStatus.emplace_back(
             std::map<uint64_t, std::unique_ptr<MPovStatus>>());
 #endif
-
+        _fullPushStatus.emplace_back(
+                std::map<string, std::unique_ptr<MPovFullPushStatus>>());
 
         Status status;
 
@@ -421,6 +423,8 @@ void ReplManager::controlRoutine() {
     };
     auto schedMasterInLock = [this](const SCLOCK::time_point& now) {
         // master's POV
+        recycleFullPushStatus();
+
         bool doSth = false;
         for (size_t i = 0; i < _pushStatus.size(); i++) {
             for (auto& mpov : _pushStatus[i]) {
@@ -447,20 +451,11 @@ void ReplManager::controlRoutine() {
                 continue;
             }
             doSth = true;
-
-            bool saveLogs = _syncMeta[i]->syncFromHost != ""; // REPLICATE_ONLY
-            if (_syncMeta[i]->syncFromHost == "" && _pushStatus[i].size() == 0 ) { // single node
-                saveLogs = true;
-            }
             _logRecycStatus[i]->isRunning = true;
-            uint64_t endLogId = std::numeric_limits<uint64_t>::max();
-            uint64_t oldFirstBinlog = _logRecycStatus[i]->firstBinlogId;
-            for (auto& mpov : _pushStatus[i]) {
-                endLogId = std::min(endLogId, mpov.second->binlogPos);
-            }
+
             _logRecycler->schedule(
-                [this, i, oldFirstBinlog, endLogId, saveLogs]() {
-                    recycleBinlog(i, oldFirstBinlog, endLogId, saveLogs);
+                [this, i]() {
+                    recycleBinlog(i);
             });
         }
         return doSth;
@@ -484,6 +479,24 @@ void ReplManager::controlRoutine() {
     LOG(INFO) << "repl controller exits";
 }
 
+void ReplManager::recycleFullPushStatus() {
+    auto now = SCLOCK::now();
+    for (size_t i = 0; i < _fullPushStatus.size(); i++) {
+        for (auto &mpov : _fullPushStatus[i]) {
+            // if timeout, delte it.
+            if (mpov.second->state == FullPushState::SUCESS
+                && now > mpov.second->endTime + std::chrono::seconds(600)) {
+                LOG(ERROR) << "timeout, _fullPushStatus erase,storeId:" << i
+                    << " node:" << mpov.first
+                    << " state:" << mpov.second->state
+                    << " binlogPos:" << mpov.second->binlogPos
+                    << " starttime:" << mpov.second->startTime.time_since_epoch().count()/1000000
+                    << " endtime:" << mpov.second->endTime.time_since_epoch().count()/1000000;
+                _fullPushStatus[i].erase(mpov.first);
+            }
+        }
+    }
+}
 void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
     std::lock_guard<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
@@ -492,12 +505,15 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
         << " binlogid:" << binlogid;
 }
 
-void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
-                            uint64_t end, bool saveLogs) {
+void ReplManager::recycleBinlog(uint32_t storeId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     float randRatio = rand() % 40 / 100.0 + 0.80; // 0.80 to 1.20
     uint32_t nextSchedInterval = _cfg->truncateBinlogIntervalMs * randRatio;
     nextSched = nextSched + std::chrono::milliseconds(nextSchedInterval);
+
+    uint64_t start;
+    uint64_t end;
+    bool saveLogs;
 
     bool hasError = false;
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
@@ -522,11 +538,6 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         // _cv.notify_all();
     });
     LocalSessionGuard sg(_svr);
-    sg.getSession()->setArgs(
-        {"truncatelog",
-         std::to_string(storeId),
-         std::to_string(start),
-         std::to_string(end)});
 
     auto segMgr = _svr->getSegmentMgr();
     INVARIANT(segMgr != nullptr);
@@ -543,6 +554,23 @@ void ReplManager::recycleBinlog(uint32_t storeId, uint64_t start,
         LOG(WARNING) << "dont need do recycleBinlog, kvstore is not running:" << storeId;
         nextSched = SCLOCK::now() + std::chrono::seconds(1);
         return;
+    }
+
+    {
+        std::unique_lock<std::mutex> lk(_mutex);
+
+        saveLogs = _syncMeta[storeId]->syncFromHost != ""; // REPLICATE_ONLY
+        if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0 ) { // single node
+            saveLogs = true;
+        }
+        start = _logRecycStatus[storeId]->firstBinlogId;
+        end = std::numeric_limits<uint64_t>::max();
+        for (auto& mpov : _fullPushStatus[storeId]) {
+            end = std::min(end, mpov.second->binlogPos);
+        }
+        for (auto& mpov : _pushStatus[storeId]) {
+            end = std::min(end, mpov.second->binlogPos);
+        }
     }
 
     auto ptxn = kvstore->createTransaction(sg.getSession());

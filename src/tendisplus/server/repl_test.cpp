@@ -195,6 +195,7 @@ TEST(Repl, Common) {
         auto allKeys = initData(master, recordSize);
 
         waitSlaveCatchup(master, slave);
+        sleep(3); // wait recycle binlog
         compareData(master, slave);
 
         auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port);
@@ -229,6 +230,8 @@ TEST(Repl, Common) {
         LOG(INFO) << "waiting thd1 to exited";
         thd1.join();
         thd2.join();
+
+        sleep(3); // wait recycle binlog
 
         waitSlaveCatchup(master, slave);
         compareData(master, slave);
@@ -507,6 +510,7 @@ TEST(Repl, SlaveCantModify) {
 #ifndef _WIN32
         master->stop();
         slave->stop();
+        slave1->stop();
 
         ASSERT_EQ(slave.use_count(), 1);
 #endif
@@ -515,6 +519,55 @@ TEST(Repl, SlaveCantModify) {
     }
 }
 
+TEST(Repl, slaveofBenchmarkingMaster) {
+    size_t i = 0;
+    {
+        LOG(INFO) << ">>>>>> test store count:" << i;
+        const auto guard = MakeGuard([] {
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
 
+        EXPECT_TRUE(setupEnv(master_dir));
+        EXPECT_TRUE(setupEnv(slave_dir));
+
+        auto cfg1 = makeServerParam(master_port, i, master_dir);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+
+        auto master = std::make_shared<ServerEntry>(cfg1);
+        auto s = master->startup(cfg1);
+        INVARIANT(s.ok());
+
+        auto slave = std::make_shared<ServerEntry>(cfg2);
+        s = slave->startup(cfg2);
+        INVARIANT(s.ok());
+
+        LOG(INFO) << ">>>>>> master add data begin.";
+        auto thread = std::thread([this, master](){
+            testAll(master); // need about 40 seconds
+        });
+        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        sleep(sleep_time);
+
+        LOG(INFO) << ">>>>>> slaveof begin.";
+        runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
+        // slaveof need about 3 seconds to transfer file.
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        thread.join();
+        waitSlaveCatchup(master, slave);
+        sleep(3); // wait recycle binlog
+        compareData(master, slave);
+        LOG(INFO) << ">>>>>> compareData end.";
+#ifndef _WIN32
+        master->stop();
+        slave->stop();
+        ASSERT_EQ(slave.use_count(), 1);
+#endif
+
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
 }  // namespace tendisplus
 

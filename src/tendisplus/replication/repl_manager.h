@@ -46,6 +46,24 @@ struct MPovStatus {
     uint16_t slave_listen_port;
 };
 
+enum FullPushState {
+    PUSHING = 0,
+    SUCESS,
+    ERROR
+};
+
+struct MPovFullPushStatus {
+    FullPushState state;
+    // the greatest id that has been applied
+    uint64_t binlogPos;
+    SCLOCK::time_point startTime;
+    SCLOCK::time_point endTime;
+    std::shared_ptr<BlockingTcpClient> client;
+    uint64_t clientId;
+    string slave_listen_ip;
+    uint16_t slave_listen_port;
+};
+
 struct RecycleBinlogStatus {
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
@@ -102,9 +120,11 @@ class ReplManager {
             uint32_t sourceStoreId);
     Status changeReplSourceInLock(uint32_t storeId, std::string ip, uint32_t port,
                                   uint32_t sourceStoreId);
-    bool supplyFullSync(asio::ip::tcp::socket sock,
-            const std::string& storeIdArg);
-    bool registerIncrSync(asio::ip::tcp::socket sock,
+    void supplyFullSync(asio::ip::tcp::socket sock,
+            const std::string& storeIdArg,
+            const std::string& slaveIpArg,
+            const std::string& slavePortArg);
+    void registerIncrSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& dstStoreIdArg,
             const std::string& binlogPosArg,
@@ -129,7 +149,7 @@ class ReplManager {
  protected:
     void controlRoutine();
     void supplyFullSyncRoutine(std::shared_ptr<BlockingTcpClient> client,
-            uint32_t storeId);
+            uint32_t storeId, const string& slave_listen_ip, uint16_t slave_listen_port);
     bool isFullSupplierFull() const;
 
     std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
@@ -154,7 +174,7 @@ class ReplManager {
     void slaveSyncRoutine(uint32_t  storeId);
 
     // truncate binlog in [start, end]
-    void recycleBinlog(uint32_t storeId, uint64_t start, uint64_t end, bool saveLogs);
+    void recycleBinlog(uint32_t storeId);
 
  private:
     void changeReplState(const StoreMeta& storeMeta, bool persist);
@@ -168,7 +188,9 @@ class ReplManager {
 #endif
     void getReplInfoSimple(std::stringstream& ss, bool show_all) const;
     void getReplInfoDetail(std::stringstream& ss, bool show_all) const;
+    void recycleFullPushStatus();
 
+private:
     const std::shared_ptr<ServerParams> _cfg;
     mutable std::mutex _mutex;
     std::condition_variable _cv;
@@ -191,6 +213,7 @@ class ReplManager {
 #else
     std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
 #endif
+    std::vector<std::map<string, std::unique_ptr<MPovFullPushStatus>>> _fullPushStatus;
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;

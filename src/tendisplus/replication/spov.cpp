@@ -27,9 +27,11 @@
 namespace tendisplus {
 
 Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
-                               const StoreMeta& metaSnapshot) {
+                               const StoreMeta& metaSnapshot,
+                               const string& ip,
+                               uint16_t port) {
     std::stringstream ss;
-    ss << "FULLSYNC " << metaSnapshot.syncFromId;
+    ss << "FULLSYNC " << metaSnapshot.syncFromId << " " << ip << " " << port;
     Status s = client->writeLine(ss.str());
     if (!s.ok()) {
         LOG(WARNING) << "fullSync master failed:" << s.toString();
@@ -156,7 +158,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     changeReplState(*newMeta, false);
 
     // 4) read backupinfo from master
-    auto bkInfo = getBackupInfo(client.get(), metaSnapshot);
+    auto bkInfo = getBackupInfo(client.get(), metaSnapshot, _svr->getParams()->bindIp, _svr->getParams()->port);
     if (!bkInfo.ok()) {
         LOG(WARNING) << "storeId:" << metaSnapshot.id
                      << ",syncMaster:" << metaSnapshot.syncFromHost

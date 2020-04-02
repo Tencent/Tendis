@@ -218,7 +218,7 @@ class FullSyncCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 2;
+        return 4;
     }
 
     int32_t firstkey() const {
