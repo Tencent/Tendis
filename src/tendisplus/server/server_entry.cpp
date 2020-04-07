@@ -162,7 +162,10 @@ void ServerEntry::logGeneral(Session *sess) {
     if (!_generalLog) {
         return;
     }
-
+    if (sess->getArgs().size() >=1
+        && toLower(sess->getArgs()[0]) == "restorebinlogv2") {
+        return;
+    }
     LOG(INFO) << sess->getCmdStr();
 }
 
@@ -283,6 +286,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // request executePool
     size_t cpuNum = std::thread::hardware_concurrency();
     if (cpuNum == 0) {
+        LOG(ERROR) << "ServerEntry::startup failed, cpuNum:" << cpuNum;
         return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
     }
     uint32_t threadnum = std::max(size_t(4), cpuNum/2);
@@ -295,6 +299,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         auto executor = std::make_unique<WorkerPool>("req-exec-" + i, _poolMatrix);
         Status s = executor->startup(1);
         if (!s.ok()) {
+            LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
             return s;
         }
         _executorList.push_back(std::move(executor));
@@ -306,6 +311,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                                              _reqMatrix, cfg);
     Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
+        LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:" << s.toString();
         return s;
     }
 
@@ -315,7 +321,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
     s = _replMgr->startup();
     if (!s.ok()) {
-        LOG(WARNING) << "start up repl manager failed!";
+        LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:" << s.toString();
         return s;
     }
 
@@ -323,6 +329,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
         s = _indexMgr->startup();
         if (!s.ok()) {
+            LOG(ERROR) << "ServerEntry::startup failed, _indexMgr->startup:" << s.toString();
             return s;
         }
     }
@@ -330,6 +337,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // listener should be the lastone to run.
     s = _network->run();
     if (!s.ok()) {
+        LOG(ERROR) << "ServerEntry::startup failed, _network->run:" << s.toString();
         return s;
     } else {
         LOG(WARNING) << "ready to accept connections at "
@@ -346,7 +354,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // init slowlog
     initSlowlog(cfg->slowlogPath);
-
+    LOG(INFO) << "ServerEntry::startup sucess.";
     return {ErrorCodes::ERR_OK, ""};
 }
 
