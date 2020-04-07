@@ -809,7 +809,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
     }
 
     int32_t connected_slaves = 0;
-
+    string  repl_state = "none";
     stringstream ss_slaveinfo;
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
@@ -822,14 +822,26 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss, bool show_all) const 
         uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
         for (auto iter = _pushStatus[i].begin(); iter != _pushStatus[i].end(); ++iter) {
             int64_t binlog_lag = highestBinlogid - iter->second->binlogPos;
-            if (binlog_lag > slave_repl_offset) {
-                slave_repl_offset = binlog_lag;
+            if (binlog_lag > master_repl_offset) {
+                master_repl_offset = binlog_lag;
+            }
+            // if all is incr_sync, set to incr_sync
+            if (repl_state == "none") {
+                repl_state = "incr_sync";
+            }
+        }
+
+        for (auto iter = _fullPushStatus[i].begin(); iter != _fullPushStatus[i].end(); ++iter) {
+            // if one is full_push, set to full_push
+            if (iter->second->state == FullPushState::PUSHING) {
+                repl_state = "full_push";
             }
         }
     }
     ss << "role:" << role << "\r\n";
     ss << "master_repl_offset:" << master_repl_offset << "\r\n";
     ss << "connected_slaves:" << connected_slaves << "\r\n";
+    ss << "repl_state:" << repl_state << "\r\n";
     if (role == "slave") {
         ss << "master_host:" << master_host << "\r\n";
         ss << "master_port:" << master_port << "\r\n";
