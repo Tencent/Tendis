@@ -163,7 +163,6 @@ class SMembersCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         auto server = sess->getServerEntry();
-        // TODO(vinchen): should be LOCK_S
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
@@ -215,8 +214,12 @@ class SMembersCommand: public Command {
             cnt += 1;
             Command::fmtBulk(ss, rcdkey.getSecondaryKey());
         }
-        // TODO(vinchen)
-        INVARIANT(cnt == ssize);
+        INVARIANT_D(cnt == ssize);
+        if (cnt != ssize) {
+            return { ErrorCodes::ERR_DECODE, 
+                rcd_util::makeInvalidErrStr(metaRk.getRecordValueType(),
+                        key, ssize, cnt) };
+        }
         return ss.str();
     }
 } smemberscmd;
@@ -252,7 +255,6 @@ class SIsMemberCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         auto server = sess->getServerEntry();
-        // TODO(vinchen) : should be LOCK_S
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();
@@ -293,7 +295,6 @@ class SIsMemberCommand: public Command {
     }
 } sIsMemberCmd;
 
-// TODO(deyukong): unittest for srandmember
 class SrandMemberCommand: public Command {
  public:
     SrandMemberCommand()
@@ -821,7 +822,6 @@ class SdiffgenericCommand: public Command {
         SessionCtx *pCtx = sess->getCtx();
 
         std::vector<int> index = getKeysFromCommand(args);
-        // TODO(vinchen): should be LOCK_S if _stroe = false
         auto lock = server->getSegmentMgr()->getAllKeysLocked(sess, args, index,
                 _store ? mgl::LockMode::LOCK_X : Command::RdLock());
         if (!lock.ok()) {

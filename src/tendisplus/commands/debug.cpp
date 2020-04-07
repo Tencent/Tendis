@@ -71,7 +71,6 @@ class KeysCommand: public Command {
             allkeys = true;
         }
 
-        // TODO(comboqiu): 30000
         int32_t limit = server->getParams()->keysDefaultLimit;
         if (args.size() > 3) {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
@@ -92,7 +91,6 @@ class KeysCommand: public Command {
 
         auto ts = msSinceEpoch();
 
-        // TODO(vinchen): should use a faster way
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -1414,8 +1412,8 @@ class ShutdownCommand: public Command {
         // INVARIANT(vv != nullptr);
         // vv->setCloseAfterRsp();
 
-        // TODO(vinchen): maybe it should log something here
-        // shutdown asnyc
+        LOG(INFO) << "shutdown command";
+        // shutdown async
         sess->getServerEntry()->handleShutdownCmd();
 
         // avoid compiler complains
@@ -2174,7 +2172,6 @@ class ConfigCommand : public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        // TODO(vinchen): support it later
         auto& args = sess->getArgs();
 
         auto operation = toLower(args[1]);

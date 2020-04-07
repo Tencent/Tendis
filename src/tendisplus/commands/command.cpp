@@ -21,7 +21,6 @@ std::mutex Command::_mutex;
 bool Command::_noexpire = false;
 mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
 
-// TODO(vinchen): limit the size of _unSeenCmds
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
 
 std::map<std::string, Command*>& commandMap() {
@@ -239,7 +238,7 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
         LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
     }
 
-    // TODO(vinchen): here ther is a copy, it is a waste.
+    // TODO(vinchen): here there is a copy, it is a waste.
     sess->getCtx()->setArgsBrief(sess->getArgs());
     it->second->incrCallTimes();
     auto now = nsSinceEpoch();

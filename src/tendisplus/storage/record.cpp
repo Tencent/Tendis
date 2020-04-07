@@ -104,6 +104,34 @@ uint8_t rt2Char(RecordType t) {
     }
 }
 
+std::string rt2Str(RecordType t) {
+    switch (t) {
+    case RecordType::RT_KV:
+        return "STRING";
+
+    case RecordType::RT_LIST_META:
+    case RecordType::RT_LIST_ELE:
+        return "LIST";
+
+    case RecordType::RT_HASH_META:
+    case RecordType::RT_HASH_ELE:
+        return "HASH";
+
+    case RecordType::RT_SET_META:
+    case RecordType::RT_SET_ELE:
+        return "SET";
+
+    case RecordType::RT_ZSET_META:
+    case RecordType::RT_ZSET_H_ELE:
+    case RecordType::RT_ZSET_S_ELE:
+        return "ZSET";
+    default:
+        INVARIANT_D(0);
+        LOG(ERROR) << "invalid recordtype:" << static_cast<uint32_t>(t);
+        return "";
+    }
+}
+
 RecordType char2Rt(uint8_t t) {
     switch (t) {
         case 'M':
@@ -1936,6 +1964,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
             return {ErrorCodes::ERR_INTERNAL, "not support"};
         }
     }
+}
+
+std::string makeInvalidErrStr(RecordType type, const std::string & key,
+         uint64_t metaCnt, uint64_t eleCnt) {
+    return  "Invalid " + rt2Str(type) + ":" + key +
+        ", meta number is " + std::to_string(metaCnt) +
+        ", element number is " + std::to_string(eleCnt);
 }
 }  // namespace rcd_util
 }  // namespace tendisplus

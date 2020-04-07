@@ -246,7 +246,7 @@ Status ReplManager::startup() {
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    // TODO(takenliu) fix the relative logic
+                    // TODO(takenliu): fix the relative logic
                     recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
                     recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
@@ -277,7 +277,6 @@ Status ReplManager::startup() {
 
 void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
                                         bool persist) {
-    // TODO(deyukong): mechanism to INVARIANT mutex held
     if (persist) {
         Catalog *catalog = _svr->getCatalog();
         Status s = catalog->setStoreMeta(storeMeta);

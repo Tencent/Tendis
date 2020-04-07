@@ -658,7 +658,6 @@ class ApplyBinlogsCommandV2 : public Command {
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
-        // TODO(vinchen): should it remove?
         //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IX);

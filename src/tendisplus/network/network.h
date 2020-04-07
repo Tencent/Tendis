@@ -53,7 +53,8 @@ class NetworkAsio {
     NetworkAsio(std::shared_ptr<ServerEntry> server,
             std::shared_ptr<NetworkMatrix> netMatrix,
             std::shared_ptr<RequestMatrix> reqMatrix,
-            std::shared_ptr<ServerParams> cfg);
+            std::shared_ptr<ServerParams> cfg,
+            const std::string& name = "network");
     NetworkAsio(const NetworkAsio&) = delete;
     NetworkAsio(NetworkAsio&&) = delete;
 
@@ -90,6 +91,7 @@ class NetworkAsio {
     uint16_t _port;
     uint32_t _netIoThreadNum;
     std::shared_ptr<ServerParams> _cfg;
+    std::string _name;
 };
 
 struct SendBuffer {

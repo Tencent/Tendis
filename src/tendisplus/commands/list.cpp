@@ -871,7 +871,6 @@ class LIndexCommand: public Command {
 
         SessionCtx *pCtx = sess->getCtx();
         auto server = sess->getServerEntry();
-        // TODO(vinchen): should be LOCK_S
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, Command::RdLock());
         if (!expdb.ok()) {
             return expdb.status();

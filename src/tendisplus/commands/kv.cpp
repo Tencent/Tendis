@@ -41,7 +41,6 @@ struct SetParams {
     int64_t expire;
 };
 
-// TODO(deyukong): unittest of expire
 Expected<std::string> setGeneric(Session *sess, PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             bool checkType, bool endTxn,
@@ -767,7 +766,6 @@ class GetCommand: public GetGenericCmd {
     }
 } getCommand;
 
-// TODO(deyukong): unittest
 class GetRangeGenericCommand: public GetGenericCmd {
  public:
     GetRangeGenericCommand(const std::string& name, const char* sflags)
@@ -1041,7 +1039,6 @@ class AppendCommand: public GetSetGeneral {
     }
 } appendCmd;
 
-// TODO(unittest)
 class SetRangeCommand: public GetSetGeneral {
  public:
     SetRangeCommand()
@@ -1697,7 +1694,6 @@ class BitopCommand: public Command {
         INVARIANT(server != nullptr);
 
         auto index = getKeysFromCommand(args);
-        // TODO(vinchen): should be LOCK_X and LOCK_S
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args,
             index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {

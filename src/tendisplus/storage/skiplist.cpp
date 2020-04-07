@@ -13,7 +13,6 @@ int compareStringObjectsForLexRange(const std::string& a,
     if (a == b) {
         return 0;
     }
-    // TODO(vinchen) what is it?
     if (a == ZLEXMIN || b == ZLEXMAX) return -1;
     if (a == ZLEXMAX || b == ZLEXMIN) return 1;
     return a < b ? -1 : 1;
@@ -78,7 +77,7 @@ SkipList::SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
 uint8_t SkipList::randomLevel() {
     static thread_local std::mt19937 generator(
         std::chrono::system_clock::now().time_since_epoch().count());
-    // TODO(vinchen): which is the beset?
+    // TODO(vinchen): which is the best?
     std::uniform_int_distribution<int> distribution(0, 3);  // ZSKIPLIST_P = 0.25
     uint8_t lvl = 1;
     while (distribution(generator) < 1 && lvl < _maxLevel) {
@@ -143,6 +142,7 @@ Expected<ZSlEleValue*> SkipList::getNode(uint64_t pointer,
                                  Transaction *txn) {
     auto it = cache.find(pointer);
     if (it != cache.end()) {
+        // TODO(vinchen): a global statistics
         ++nGetFromCache;
         return it->second.get();
     }

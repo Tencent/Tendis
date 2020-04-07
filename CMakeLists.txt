@@ -1,10 +1,6 @@
 cmake_minimum_required (VERSION 2.8.0)
 project (TENDIS_PLUS)
 
-#message("TODO(deyukong): currently libsnappy depends on the system provided, integrate it into thirdparty")
-#message("TODO(deyukong): currently jemalloc can only be used by LD_PRELOAD, integrate it into thirdparty \
-# and compile internally")
-
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 option(TENDIS_DEBUG "define TENDIS_DEBUG" ON)

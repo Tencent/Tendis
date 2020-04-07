@@ -450,7 +450,6 @@ class PfCountCommand : public Command {
         auto server = sess->getServerEntry();
         auto index = getKeysFromCommand(args);
 
-        // TODO(vinchen): should be LOCK_S
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
                                 args, index, Command::RdLock());
         if (!locklist.ok()) {
@@ -556,7 +555,6 @@ class PfMergeCommand : public Command {
         SessionCtx *pCtx = sess->getCtx();
         auto index = getKeysFromCommand(args);
 
-        // TODO(vinchen): should be LOCK_X and LOCK_S
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess,
             args, index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {

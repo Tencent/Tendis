@@ -227,7 +227,6 @@ class HExistsCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         auto server = sess->getServerEntry();
-        // TODO(vinchen): should be LOCK_S
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
                         Command::RdLock());
         if (!expdb.ok()) {
@@ -442,7 +441,6 @@ class HGetRecordCommand: public Command {
         INVARIANT(pCtx != nullptr);
 
         auto server = sess->getServerEntry();
-        // TODO(vinchen): should be LOCK_S
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
             Command::RdLock());
         if (!expdb.ok()) {
