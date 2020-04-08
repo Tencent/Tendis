@@ -576,7 +576,7 @@ void ReplManager::supplyFullSyncRoutine(
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, " << iter->second->toString();
-            if (iter->second->state == FullPushState::ERROR) {
+            if (iter->second->state == FullPushState::ERR) {
                 _fullPushStatus[storeId].erase(iter);
             } else {
                 client->writeLine("-ERR already have _fullPushStatus, " + iter->second->toString());
@@ -585,6 +585,18 @@ void ReplManager::supplyFullSyncRoutine(
         }
 
         uint64_t clientId = _clientIdGen.fetch_add(1);
+#if defined(_WIN32) && _MSC_VER > 1900
+        _fullPushStatus[storeId][slaveNode] =
+            new MPovFullPushStatus{ storeId,
+             FullPushState::PUSHING,
+                   highestBinlogid,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   client,
+                   clientId,
+                   slave_listen_ip,
+                   slave_listen_port };
+#else
         _fullPushStatus[storeId][slaveNode] =
             std::move(std::unique_ptr<MPovFullPushStatus>(
             new MPovFullPushStatus{storeId,
@@ -597,6 +609,7 @@ void ReplManager::supplyFullSyncRoutine(
                    slave_listen_ip,
                    slave_listen_port
                    } ));
+#endif
     }
     bool hasError = true;
     auto guard_0 = MakeGuard([this, store, storeId, &hasError, slave_listen_ip, slave_listen_port]() {

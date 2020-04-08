@@ -1823,7 +1823,6 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
 #ifdef _WIN32
 #undef GetObject
 #endif
-
     uint32_t mode = std::numeric_limits<uint32_t>::max();
     for (auto& o : backup_meta.value().GetObject()) {
         if (o.name == "backupType" && o.value.IsUint()) {

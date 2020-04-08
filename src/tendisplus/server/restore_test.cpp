@@ -554,7 +554,7 @@ TEST(Restore, Common2) {
         auto thread = std::thread([this, master1](){
             testAll(master1); // need about 40 seconds
         });
-        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
         sleep(sleep_time);
         LOG(INFO) << ">>>>>> master1 backup and master2 restoreBackup.";
         backup(slave1, "ckpt");
