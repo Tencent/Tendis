@@ -12,7 +12,9 @@ cd src/tendisplus/integrate_test
 cd -
 
 grep -En "\[err|\[exception" redistest.log
-#grep PASSED repl_test.log
-#grep PASSED restore_test.log
-#grep -E 'Expected|FAILED' unittest.log
-#grep "compare " src/tendisplus/integrate_test/gotest.log
+:<<!
+grep PASSED repl_test.log
+grep PASSED restore_test.log
+grep -E 'Expected|FAILED' unittest.log
+grep "compare " src/tendisplus/integrate_test/gotest.log
+!

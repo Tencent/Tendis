@@ -162,10 +162,6 @@ void ServerEntry::logGeneral(Session *sess) {
     if (!_generalLog) {
         return;
     }
-    if (sess->getArgs().size() >=1
-        && toLower(sess->getArgs()[0]) == "restorebinlogv2") {
-        return;
-    }
     LOG(INFO) << sess->getCmdStr();
 }
 

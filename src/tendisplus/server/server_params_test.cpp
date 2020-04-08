@@ -211,7 +211,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->dbNum, CONFIG_DEFAULT_DBNUM);
 
     EXPECT_EQ(cfg->noexpire, false);
-    EXPECT_EQ(cfg->maxBinlogKeepNum, 1);
+    EXPECT_EQ(cfg->maxBinlogKeepNum, 1000000);
     EXPECT_EQ(cfg->minBinlogKeepSec, 0);
 
     EXPECT_EQ(cfg->maxClients, CONFIG_DEFAULT_MAX_CLIENTS);
