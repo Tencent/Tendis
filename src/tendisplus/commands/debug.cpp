@@ -1006,31 +1006,7 @@ class BinlogPosCommand: public Command {
             return expdb.status();
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction(sess);
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-#ifdef BINLOG_V1
-        std::unique_ptr<BinlogCursor> cursor =
-            txn->createBinlogCursor(Transaction::MIN_VALID_TXNID, true);
-        cursor->seekToLast();
-        Expected<ReplLog> explog = cursor->next();
-        if (!explog.ok()) {
-            return explog.status();
-        }
-        return Command::fmtLongLong(explog.value().getReplLogKey().getTxnId());
-#else 
-        auto expBinlogid = RepllogCursorV2::getMaxBinlogId(txn.get());
-        if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
-            return Command::fmtZero();
-        }
-        if (!expBinlogid.ok()) {
-            return expBinlogid.status();
-        }
-
-        return Command::fmtLongLong(expBinlogid.value());
-#endif //
+        return Command::fmtLongLong(kvstore->getHighestBinlogId());
     }
 } binlogPosCommand;
 

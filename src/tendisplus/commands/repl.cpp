@@ -200,7 +200,21 @@ class RestoreBackupCommand : public Command {
             return ret.status();
         }
 
-        Expected<uint64_t> restartStatus = store->restart(false);
+        auto backup_meta = store->getBackupMeta(dir);
+        if (!backup_meta.ok()) {
+            return backup_meta.status();
+        }
+        uint64_t binlogpos = Transaction::TXNID_UNINITED;
+        for (auto& o : backup_meta.value().GetObject()) {
+            if (o.name == "binlogpos" && o.value.IsUint()) {
+                binlogpos = o.value.GetUint64();
+            }
+        }
+        if (binlogpos == Transaction::TXNID_UNINITED) {
+            LOG(ERROR) << "binlogpos is invalid " << dir;
+        }
+
+        Expected<uint64_t> restartStatus = store->restart(false, Transaction::MIN_VALID_TXNID, binlogpos);
         if (!restartStatus.ok()) {
             LOG(FATAL) << "restoreBackup restart store:" << storeId
                    << ",failed:" << restartStatus.status().toString();
