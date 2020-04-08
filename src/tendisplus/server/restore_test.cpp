@@ -177,7 +177,7 @@ void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& s
             std::string cmd = "./build/bin/binlog_tool";
             cmd += " --logfile=" + loglist[j];
             cmd += " --mode=base64";
-            cmd += " --start-position=" + std::to_string(binglogPos);
+            cmd += " --start-position=" + std::to_string(binglogPos + 1);
             cmd += " --end-datetime=" + std::to_string(end_ts);
             cmd += "| ./bin/redis-cli -p " + std::to_string(master2_port);
             LOG(INFO) << cmd;
