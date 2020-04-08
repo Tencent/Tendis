@@ -53,6 +53,10 @@ enum FullPushState {
 };
 
 struct MPovFullPushStatus {
+public:
+    std::string toString();
+public:
+    uint32_t storeid;
     FullPushState state;
     // the greatest id that has been applied
     uint64_t binlogPos;

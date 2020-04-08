@@ -24,6 +24,17 @@
 
 namespace tendisplus {
 
+std::string MPovFullPushStatus::toString(){
+    stringstream ss_state;
+    ss_state << "storeId:" << storeid
+             << " node:" << slave_listen_ip << ":" << slave_listen_port
+             << " state:" << state
+             << " binlogPos:" << binlogPos
+             << " starttime:" << startTime.time_since_epoch().count()/1000000
+             << " endtime:" << endTime.time_since_epoch().count()/1000000;
+    return ss_state.str();
+}
+
 ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
                           const std::shared_ptr<ServerParams> cfg)
     :_cfg(cfg),
@@ -486,12 +497,7 @@ void ReplManager::recycleFullPushStatus() {
             // if timeout, delte it.
             if (mpov.second->state == FullPushState::SUCESS
                 && now > mpov.second->endTime + std::chrono::seconds(600)) {
-                LOG(ERROR) << "timeout, _fullPushStatus erase,storeId:" << i
-                    << " node:" << mpov.first
-                    << " state:" << mpov.second->state
-                    << " binlogPos:" << mpov.second->binlogPos
-                    << " starttime:" << mpov.second->startTime.time_since_epoch().count()/1000000
-                    << " endtime:" << mpov.second->endTime.time_since_epoch().count()/1000000;
+                LOG(ERROR) << "timeout, _fullPushStatus erase," << mpov.second->toString();
                 _fullPushStatus[i].erase(mpov.first);
             }
         }
@@ -564,7 +570,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
             saveLogs = true;
         }
         start = _logRecycStatus[storeId]->firstBinlogId;
-        end = std::numeric_limits<uint64_t>::max();
+        end = kvstore->getHighestBinlogId();
         for (auto& mpov : _fullPushStatus[storeId]) {
             end = std::min(end, mpov.second->binlogPos);
         }

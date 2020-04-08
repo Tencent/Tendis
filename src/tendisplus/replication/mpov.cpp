@@ -493,12 +493,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             _fullPushStatus[storeId].erase(iter);
-            LOG(INFO) << "registerIncrSync erase _fullPushStatus, storeId:" << storeId
-                << " node:" << slaveNode
-                << " state:" << iter->second->state
-                << " binlogPos:" << iter->second->binlogPos
-                << " starttime:" << iter->second->startTime.time_since_epoch().count()/1000000
-                << " endtime:" << iter->second->endTime.time_since_epoch().count()/1000000;
+            LOG(INFO) << "registerIncrSync erase _fullPushStatus, " << iter->second->toString();
         }
 
         uint64_t clientId = _clientIdGen.fetch_add(1);
@@ -580,15 +575,11 @@ void ReplManager::supplyFullSyncRoutine(
         string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
-            LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, storeId:" << storeId
-                << " node:" << slaveNode
-                << " state:" << iter->second->state
-                << " binlogPos:" << iter->second->binlogPos
-                << " starttime:" << iter->second->startTime.time_since_epoch().count()/1000000
-                << " endtime:" << iter->second->endTime.time_since_epoch().count()/1000000;
+            LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, " << iter->second->toString();
             if (iter->second->state == FullPushState::ERROR) {
                 _fullPushStatus[storeId].erase(iter);
             } else {
+                client->writeLine("-ERR already have _fullPushStatus, " + iter->second->toString());
                 return;
             }
         }
@@ -596,7 +587,8 @@ void ReplManager::supplyFullSyncRoutine(
         uint64_t clientId = _clientIdGen.fetch_add(1);
         _fullPushStatus[storeId][slaveNode] =
             std::move(std::unique_ptr<MPovFullPushStatus>(
-            new MPovFullPushStatus{FullPushState::PUSHING,
+            new MPovFullPushStatus{storeId,
+             FullPushState::PUSHING,
                    highestBinlogid,
                    SCLOCK::now(),
                    SCLOCK::time_point::min(),
@@ -614,12 +606,7 @@ void ReplManager::supplyFullSyncRoutine(
         if (iter != _fullPushStatus[storeId].end()) {
             if (hasError) {
                 _fullPushStatus[storeId].erase(iter);
-                LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, storeId:" << storeId
-                    << " node:" << slaveNode
-                    << " state:" << iter->second->state
-                    << " binlogPos:" << iter->second->binlogPos
-                    << " starttime:" << iter->second->startTime.time_since_epoch().count()/1000000
-                    << " endtime:" << iter->second->endTime.time_since_epoch().count()/1000000;
+                LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, " << iter->second->toString();
             } else {
                 iter->second->endTime =  SCLOCK::now();
                 iter->second->state = FullPushState::SUCESS;
