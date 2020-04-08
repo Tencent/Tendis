@@ -230,7 +230,7 @@ class RocksKVStore: public KVStore {
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
     Expected<std::string> restoreBackup(const std::string& dir) final;
-
+    Expected<rapidjson::Document> getBackupMeta(const std::string& dir) final;
 
     Status releaseBackup() final;
 

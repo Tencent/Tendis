@@ -68,25 +68,31 @@ class BinlogScanner{
                 << " chunkid:" << logValue.value().getChunkId()
                 << " ts:" << logValue.value().getTimestamp()
                 << " cmdstr:" << logValue.value().getCmd() << endl;
-            Expected<std::vector<ReplLogValueEntryV2>> logList =
-                logValue.value().getLogList();
-            if (!logList.ok()) {
-                cerr << "decode logList failed." << endl;
-                return;
-            }
-            for (auto oneLog : logList.value()) {
+            size_t offset = logValue.value().getHdrSize();
+            auto data = logValue.value().getData();
+            size_t dataSize = logValue.value().getDataSize();
+            while (offset < dataSize) {
+                size_t size = 0;
+                auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
+                                                         dataSize - offset, &size);
+                if (!entry.ok()) {
+                    cerr << "ReplLogValueEntryV2::decode failed." << endl;
+                    return;
+                }
+                offset += size;
+
                 Expected<RecordKey> opkey =
-                    RecordKey::decode(oneLog.getOpKey());
+                        RecordKey::decode(entry.value().getOpKey());
                 Expected<RecordValue> opvalue =
-                    RecordValue::decode(oneLog.getOpValue());
+                        RecordValue::decode(entry.value().getOpValue());
                 if (!opkey.ok() || !opvalue.ok()) {
                     cerr << "decode opkey or opvalue failed.";
                     return;
                 }
-                cout << "  op:" << (uint32_t)oneLog.getOp()
-                    << " fkey:" << opkey.value().getPrimaryKey()
-                    << " skey:" << opkey.value().getSecondaryKey()
-                    << " opvalue:" << opvalue.value().getValue() << endl;
+                cout << "  op:" << (uint32_t)entry.value().getOp()
+                     << " fkey:" << opkey.value().getPrimaryKey()
+                     << " skey:" << opkey.value().getSecondaryKey()
+                     << " opvalue:" << opvalue.value().getValue() << endl;
             }
         } else if (_mode == TOOL_MODE::BASE64_SHOW) {
             string baseKey =

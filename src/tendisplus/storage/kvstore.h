@@ -308,6 +308,7 @@ class KVStore {
     // backup and return the filename<->filesize pair
     virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
     virtual Expected<std::string> restoreBackup(const std::string& dir) = 0;
+    virtual Expected<rapidjson::Document> getBackupMeta(const std::string& dir) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(

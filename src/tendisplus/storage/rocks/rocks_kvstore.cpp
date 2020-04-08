@@ -1407,7 +1407,11 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
 }
 
 Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, uint64_t maxBinlogid) {
+  // when do backup will get _highestVisible first, and backup later. so the _highestVisible maybe smaller than backup.
+  // so slaveof need the slave delete the binlogs after _highestVisible for safe,
+  // and restorebackup need delete the binlogs after _highestVisible for safe too.
   bool needDeleteBinlog = false;
+
   uint64_t maxCommitId = 0;
   {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -1774,11 +1778,11 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, const
     return std::string("ok");
 }
 
-Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
+Expected<rapidjson::Document> RocksKVStore::getBackupMeta(const std::string& dir) {
     string filename = dir + "/backup_meta";
     std::ifstream metafile(filename);
     if (!metafile.is_open()) {
-        LOG(ERROR) << "restoreBackup open failed:" << filename;
+        LOG(ERROR) << "backup_meta open failed:" << filename;
         return {ErrorCodes::ERR_INTERNAL, "open file failed:" + filename};
     }
     std::stringstream ss;
@@ -1788,16 +1792,24 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
     rapidjson::Document doc;
     doc.Parse(ss.str());
     if (doc.HasParseError()) {
-        LOG(ERROR) << "restoreBackup parse json failed:" << filename;
+        LOG(ERROR) << "backup_meta parse json failed:" << filename;
         return {ErrorCodes::ERR_NETWORK,
                 rapidjson::GetParseError_En(doc.GetParseError())};
     }
     if (!doc.IsObject()) {
-        LOG(ERROR) << "restoreBackup json IsObject failed:" << filename;
+        LOG(ERROR) << "backup_meta json IsObject failed:" << filename;
         return {ErrorCodes::ERR_NOTFOUND, "json parse failed"};
     }
+    return doc;
+}
+
+Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
+    auto backup_meta = getBackupMeta(dir);
+    if (!backup_meta.ok()) {
+        return backup_meta.status();
+    }
     uint32_t mode = std::numeric_limits<uint32_t>::max();
-    for (auto& o : doc.GetObject()) {
+    for (auto& o : backup_meta.value().GetObject()) {
         if (o.name == "backupType" && o.value.IsUint()) {
             mode = o.value.GetUint();
         }
@@ -1808,7 +1820,7 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
     } else if (mode == (uint32_t)KVStore::BackupMode::BACKUP_COPY) {
         return loadCopy(dir);
     }
-    LOG(ERROR) << "restoreBackup mode failed:" << filename << " mode:" << mode;
+    LOG(ERROR) << "restoreBackup mode failed:" << dir << " mode:" << mode;
     return {ErrorCodes::ERR_NOTFOUND, "mode error"};
 }
 
@@ -1831,7 +1843,7 @@ Expected<std::string> RocksKVStore::loadCopy(const std::string& dir) {
             << s.ToString() << " dir:" << dir;
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
-    LOG(INFO) << "backup sucess. dbpath:" << path << " backup path:" << dir;
+    LOG(INFO) << "loadCopy sucess. dbpath:" << path << " backup path:" << dir;
     return std::string("ok");
 }
 

@@ -58,47 +58,6 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server,
     return std::move(all_keys);
 }
 
-void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
-    const std::shared_ptr<ServerEntry>& slave) {
-    auto ctx1 = std::make_shared<asio::io_context>();
-    auto sess1 = makeSession(master, ctx1);
-    WorkLoad work1(master, sess1);
-    work1.init();
-
-    auto ctx2 = std::make_shared<asio::io_context>();
-    auto sess2 = makeSession(slave, ctx2);
-    WorkLoad work2(master, sess2);
-    work2.init();
-
-    INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
-
-    for (size_t i = 0; i < master->getKVStoreCount(); i++) {
-        auto binlogPos1 = work1.getIntResult({ "binlogpos", std::to_string(i) });
-        while (true) {
-            auto binlogPos2 = work2.getIntResult({ "binlogpos", std::to_string(i) });
-            if (!binlogPos2.ok()) {
-                EXPECT_TRUE(binlogPos2.status().code() == ErrorCodes::ERR_EXHAUST);
-                EXPECT_TRUE(binlogPos1.status().code() == ErrorCodes::ERR_EXHAUST);
-                break;
-            }
-            if (binlogPos2.value() < binlogPos1.value()) {
-                LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
-                    << ">" << binlogPos2.value() << ");";
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            } else if (binlogPos1.value() < binlogPos2.value() ) {
-                // NOTE(takenliu): flush command maybe let slave's binlogpos bigger,
-                //     but it will be set to equal master's binlogpos later
-                LOG(WARNING) << "store id " << i << " : binlogpos (" << binlogPos1.value()
-                             << "<" << binlogPos2.value() << ");";
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            } else {
-                EXPECT_EQ(binlogPos1.value(), binlogPos2.value());
-                break;
-            }
-        }
-    }
-}
-
 void compareData(const std::shared_ptr<ServerEntry>& master,
     const std::shared_ptr<ServerEntry>& slave) {
     INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
@@ -236,6 +195,7 @@ TEST(Repl, Common) {
         auto allKeys = initData(master, recordSize);
 
         waitSlaveCatchup(master, slave);
+        sleep(3); // wait recycle binlog
         compareData(master, slave);
 
         auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port);
@@ -270,6 +230,8 @@ TEST(Repl, Common) {
         LOG(INFO) << "waiting thd1 to exited";
         thd1.join();
         thd2.join();
+
+        sleep(3); // wait recycle binlog
 
         waitSlaveCatchup(master, slave);
         compareData(master, slave);
@@ -548,6 +510,7 @@ TEST(Repl, SlaveCantModify) {
 #ifndef _WIN32
         master->stop();
         slave->stop();
+        slave1->stop();
 
         ASSERT_EQ(slave.use_count(), 1);
 #endif
@@ -556,6 +519,55 @@ TEST(Repl, SlaveCantModify) {
     }
 }
 
+TEST(Repl, slaveofBenchmarkingMaster) {
+    size_t i = 0;
+    {
+        LOG(INFO) << ">>>>>> test store count:" << i;
+        const auto guard = MakeGuard([] {
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
 
+        EXPECT_TRUE(setupEnv(master_dir));
+        EXPECT_TRUE(setupEnv(slave_dir));
+
+        auto cfg1 = makeServerParam(master_port, i, master_dir);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+
+        auto master = std::make_shared<ServerEntry>(cfg1);
+        auto s = master->startup(cfg1);
+        INVARIANT(s.ok());
+
+        auto slave = std::make_shared<ServerEntry>(cfg2);
+        s = slave->startup(cfg2);
+        INVARIANT(s.ok());
+
+        LOG(INFO) << ">>>>>> master add data begin.";
+        auto thread = std::thread([this, master](){
+            testAll(master); // need about 40 seconds
+        });
+        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        sleep(sleep_time);
+
+        LOG(INFO) << ">>>>>> slaveof begin.";
+        runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
+        // slaveof need about 3 seconds to transfer file.
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        thread.join();
+        waitSlaveCatchup(master, slave);
+        sleep(3); // wait recycle binlog
+        compareData(master, slave);
+        LOG(INFO) << ">>>>>> compareData end.";
+#ifndef _WIN32
+        master->stop();
+        slave->stop();
+        ASSERT_EQ(slave.use_count(), 1);
+#endif
+
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
 }  // namespace tendisplus
 

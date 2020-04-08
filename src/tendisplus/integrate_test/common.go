@@ -319,7 +319,7 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeI
         commands = append(commands, exec.Command("../../../build/bin/binlog_tool",
             "--logfile=" + files[j],
             "--mode=base64",
-            "--start-position=" + strconv.Itoa(binlogPos),
+            "--start-position=" + strconv.Itoa(binlogPos + 1),
             "--end-datetime=" + strconv.FormatUint(endTs, 10),
             ))
         if *auth == "" {

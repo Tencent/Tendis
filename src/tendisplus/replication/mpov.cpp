@@ -29,7 +29,9 @@
 namespace tendisplus {
 
 bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
-                        const std::string& storeIdArg) {
+                        const std::string& storeIdArg,
+                        const std::string& slaveIpArg,
+                        const std::string& slavePortArg) {
     std::shared_ptr<BlockingTcpClient> client =
         std::move(_svr->getNetwork()->createBlockingClient(
             std::move(sock), 64*1024*1024));
@@ -48,10 +50,19 @@ bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
         client->writeLine("-ERR invalid storeId");
         return false;
     }
-    LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg;
     uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
-    _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
-        supplyFullSyncRoutine(std::move(client), storeId);
+
+    auto expSlavePort = tendisplus::stoul(slavePortArg);
+    if (!expSlavePort.ok()) {
+        LOG(ERROR) << "ReplManager::supplyFullSync expSlavePort error:" << slavePortArg;
+        client->writeLine("-ERR invalid expSlavePort");
+        return false;
+    }
+    LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg
+        << " " << slaveIpArg << ":" << slavePortArg;
+    uint16_t slavePort = static_cast<uint16_t>(expSlavePort.value());
+    _fullPusher->schedule([this, storeId, client(std::move(client)), slaveIpArg, slavePort]() mutable {
+        supplyFullSyncRoutine(std::move(client), storeId, slaveIpArg, slavePort);
     });
 
     return true;
@@ -437,8 +448,8 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     if (firstPos > (binlogPos + 1) && firstPos != lastFlushBinlogId) {
         std::stringstream ss;
         ss << "-ERR invalid binlogPos,storeId:" << storeId
-            << ",firstPos:" << firstPos
-            << ",binlogPos:" << binlogPos
+            << ",master firstPos:" << firstPos
+            << ",slave binlogPos:" << binlogPos
             << ",lastFlushBinlogId:" << lastFlushBinlogId;
         client->writeLine(ss.str());
         LOG(ERROR) << ss.str();
@@ -477,6 +488,14 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             LOG(ERROR) << ss.str();
             return false;
         }
+
+        string slaveNode = listenIpArg + ":" + to_string(listen_port);
+        auto iter = _fullPushStatus[storeId].find(slaveNode);
+        if (iter != _fullPushStatus[storeId].end()) {
+            _fullPushStatus[storeId].erase(iter);
+            LOG(INFO) << "registerIncrSync erase _fullPushStatus, " << iter->second->toString();
+        }
+
         uint64_t clientId = _clientIdGen.fetch_add(1);
 #if defined(_WIN32) && _MSC_VER > 1900
         _pushStatus[storeId][clientId] =
@@ -521,7 +540,8 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 //     read +OK
 // read +OK
 void ReplManager::supplyFullSyncRoutine(
-            std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+            std::shared_ptr<BlockingTcpClient> client, uint32_t storeId,
+            const string& slave_listen_ip, uint16_t slave_listen_port) {
     LocalSessionGuard sg(_svr);
     sg.getSession()->setArgs(
         {"masterfullsync",
@@ -548,6 +568,54 @@ void ReplManager::supplyFullSyncRoutine(
         LOG(ERROR) << "store is not running.";
         return;
     }
+
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        uint64_t highestBinlogid = store->getHighestBinlogId();
+        string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
+        auto iter = _fullPushStatus[storeId].find(slaveNode);
+        if (iter != _fullPushStatus[storeId].end()) {
+            LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, " << iter->second->toString();
+            if (iter->second->state == FullPushState::ERROR) {
+                _fullPushStatus[storeId].erase(iter);
+            } else {
+                client->writeLine("-ERR already have _fullPushStatus, " + iter->second->toString());
+                return;
+            }
+        }
+
+        uint64_t clientId = _clientIdGen.fetch_add(1);
+        _fullPushStatus[storeId][slaveNode] =
+            std::move(std::unique_ptr<MPovFullPushStatus>(
+            new MPovFullPushStatus{storeId,
+             FullPushState::PUSHING,
+                   highestBinlogid,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   client,
+                   clientId,
+                   slave_listen_ip,
+                   slave_listen_port
+                   } ));
+    }
+    bool hasError = true;
+    auto guard_0 = MakeGuard([this, store, storeId, &hasError, slave_listen_ip, slave_listen_port]() {
+        std::lock_guard<std::mutex> lk(_mutex);
+        string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
+        auto iter = _fullPushStatus[storeId].find(slaveNode);
+        if (iter != _fullPushStatus[storeId].end()) {
+            if (hasError) {
+                _fullPushStatus[storeId].erase(iter);
+                LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, " << iter->second->toString();
+            } else {
+                iter->second->endTime =  SCLOCK::now();
+                iter->second->state = FullPushState::SUCESS;
+            }
+        } else {
+            LOG(ERROR) << "supplyFullSyncRoutine, _fullPushStatus find node failed, storeid:"
+                << storeId << " slave node:" << slaveNode;
+        }
+    });
 
     uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup(
@@ -655,8 +723,9 @@ void ReplManager::supplyFullSyncRoutine(
                    << client->getRemoteRepr() << " reply failed:"
                    << reply.status().toString();
     } else {
-        LOG(INFO) << "fullsync done read "
+        LOG(INFO) << "fullsync storeid:" << storeId << " done, read "
                   << client->getRemoteRepr() << " reply:" << reply.value();
+        hasError = false;
     }
 }
 
