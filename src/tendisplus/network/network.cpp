@@ -67,7 +67,8 @@ NetworkMatrix NetworkMatrix::operator-(const NetworkMatrix& right) {
 NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          std::shared_ptr<NetworkMatrix> netMatrix,
                          std::shared_ptr<RequestMatrix> reqMatrix,
-                         std::shared_ptr<ServerParams> cfg)
+                         std::shared_ptr<ServerParams> cfg,
+                         const std::string& name)
     :_connCreated(0),
      _server(server),
      _acceptCtx(std::make_unique<asio::io_context>()),
@@ -76,7 +77,8 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
      _isRunning(false),
      _netMatrix(netMatrix),
      _reqMatrix(reqMatrix),
-     _cfg(cfg) {
+     _cfg(cfg),
+     _name(name) {
 }
 
 std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(){
@@ -206,7 +208,8 @@ void NetworkAsio::stop() {
 Status NetworkAsio::startThread() {
     _isRunning.store(true, std::memory_order_relaxed);
     _acceptThd = std::make_unique<std::thread>([this] {
-        // TODO(deyukong): set threadname for debug/profile
+        std::string threadName = _name + "-ac";
+        pthread_setname_np(pthread_self(), threadName.c_str());
         while (_isRunning.load(std::memory_order_relaxed)) {
             // if no work-gurad, the run() returns immediately if no other tasks
             asio::io_context::work work(*_acceptCtx);
@@ -234,7 +237,8 @@ Status NetworkAsio::startThread() {
     }
     for (size_t i = 0; i < threadnum; ++i) {
         std::thread thd([this, i] {
-            // TODO(deyukong): set threadname for debug/profile
+            std::string threadName = _name + "-rw_" + std::to_string(i);
+            pthread_setname_np(pthread_self(), threadName.c_str());
             while (_isRunning.load(std::memory_order_relaxed)) {
                 // if no workguard, the run() returns immediately if no tasks
                 asio::io_context::work work(*(_rwCtxList[i]));
@@ -565,7 +569,7 @@ void NetSession::processMultibulkBuffer() {
             // not complete
             break;
         } else {
-            // TODO(vinchen): a optimization is not port from redis
+            // TODO(vinchen): There is a optimization is not ported from redis
             _args.push_back(std::string(_queryBuf.data() + pos, _bulkLen));
             pos += _bulkLen+2;
             _bulkLen = -1;

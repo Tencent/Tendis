@@ -1495,7 +1495,6 @@ class ZScoreCommand: public Command {
         const std::string& key = args[1];
         const std::string& subkey = args[2];
 
-        // TODO(vinchen): should be LOCK_S
         auto server = sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
                                 Command::RdLock());

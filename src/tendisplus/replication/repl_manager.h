@@ -46,10 +46,10 @@ struct MPovStatus {
     uint16_t slave_listen_port;
 };
 
-enum FullPushState {
+enum class FullPushState {
     PUSHING = 0,
-    SUCESS,
-    ERROR
+    SUCESS = 1,
+    ERR = 2,
 };
 
 struct MPovFullPushStatus {
@@ -214,10 +214,11 @@ private:
         https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/15bfb88a-5fee-461c-b9c8-dc255148aad9/stdvectorltstdmapltuint64t-stduniqueptrltdoublegtgtgt-compilation-error-in?forum=vcgeneral
 	*/
     std::vector<std::map<uint64_t, MPovStatus*>> _pushStatus;
+    std::vector<std::map<string, MPovFullPushStatus*>> _fullPushStatus;
 #else
     std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
-#endif
     std::vector<std::map<string, std::unique_ptr<MPovFullPushStatus>>> _fullPushStatus;
+#endif
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;

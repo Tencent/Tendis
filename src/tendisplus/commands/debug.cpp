@@ -71,7 +71,6 @@ class KeysCommand: public Command {
             allkeys = true;
         }
 
-        // TODO(comboqiu): 30000
         int32_t limit = server->getParams()->keysDefaultLimit;
         if (args.size() > 3) {
             return{ ErrorCodes::ERR_WRONG_ARGS_SIZE, "" };
@@ -92,7 +91,6 @@ class KeysCommand: public Command {
 
         auto ts = msSinceEpoch();
 
-        // TODO(vinchen): should use a faster way
         std::list<std::string> result;
         for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
             auto expdb = server->getSegmentMgr()->getDb(sess, i,
@@ -679,7 +677,7 @@ class ToggleFtmcCommand: public Command {
 
 class RocksPropertyCommand : public Command {
  public:
-     RocksPropertyCommand()
+    RocksPropertyCommand()
         :Command("rocksproperty", "a") {
     }
 
@@ -735,7 +733,8 @@ class RocksPropertyCommand : public Command {
             } else {
                 if (!kvstore->getProperty(property, &value)) {
                     return { ErrorCodes::ERR_PARSEOPT,
-                        "invalid property " + property + " in rocksdb " + kvstore->dbId() };
+                        "invalid property " + property
+                         + " in rocksdb " + kvstore->dbId() };
                 }
                 std::string newproperty = property;
                 replaceAll(newproperty, "rocksdb.", prefix);
@@ -746,6 +745,138 @@ class RocksPropertyCommand : public Command {
         return ss.str();
     }
 } rocksPropCmd;
+
+class CommandCommand : public Command {
+ public:
+    CommandCommand()
+        :Command("command", "lt") {
+    }
+
+    ssize_t arity() const {
+        return 0;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    /* Helper function for addReplyCommand() to output flags. */
+    size_t addReplyCommandFlag(std::stringstream& ss, Command* cmd, int flag, const std::string& reply) {
+        if (cmd->getFlags() & flag) {
+            Command::fmtBulk(ss, reply);
+            return 1;
+        }
+        return 0;
+    }
+
+    /* Output the representation of a Redis command. Used by the COMMAND command. */
+    void applyCommand(std::stringstream& ss, Command* cmd) {
+        if (!cmd) {
+            ss << Command::fmtNull();
+        } else {
+            /* We are adding: command name, arg count, flags, first, last, offset */
+            Command::fmtMultiBulkLen(ss, 6);
+            Command::fmtBulk(ss, cmd->getName());
+            Command::fmtLongLong(ss, cmd->arity());
+
+            size_t flagcount = 0;
+            std::stringstream ss2;
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_WRITE, "write");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_READONLY, "readonly");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_DENYOOM, "denyoom");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_ADMIN, "admin");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_PUBSUB, "pubsub");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_NOSCRIPT, "noscript");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_RANDOM, "random");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_SORT_FOR_SCRIPT, "sort_for_script");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_LOADING, "loading");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_STALE, "stale");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_SKIP_MONITOR, "skip_monitor");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_ASKING, "asking");
+            flagcount += addReplyCommandFlag(ss2, cmd, CMD_FAST, "fast");
+
+            Command::fmtMultiBulkLen(ss, flagcount);
+            ss << ss2.str();
+
+            Command::fmtLongLong(ss, cmd->firstkey());
+            Command::fmtLongLong(ss, cmd->lastkey());
+            Command::fmtLongLong(ss, cmd->keystep());
+        }
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        auto& args = sess->getArgs();
+
+        std::stringstream ss;
+        auto& cmdmap = commandMap();
+        if (args.size() == 1) {
+            Command::fmtMultiBulkLen(ss, cmdmap.size());
+            for (auto& cmd : cmdmap) {
+                applyCommand(ss, cmd.second);
+            }
+            return ss.str();
+        }
+
+        auto arg1 = toLower(args[1]);
+        if (arg1 == "info") {
+            Command::fmtMultiBulkLen(ss, args.size() - 2);
+            for (size_t i = 2; i < args.size(); i++) {
+                auto iter = cmdmap.find(args[i]);
+                if (iter == cmdmap.end())
+                    applyCommand(ss, nullptr);
+                else
+                    applyCommand(ss, iter->second);
+            }
+        } else if (arg1 == "count" && args.size() == 2) {
+            Command::fmtLongLong(ss, cmdmap.size());
+        } else if (arg1 == "getkeys" && args.size() >= 3) {
+            auto iter = cmdmap.find(args[2]);
+            if (iter == cmdmap.end()) {
+                // error
+		//INVARIANT(0);
+                return { ErrorCodes::ERR_PARSEOPT,
+                            "Invalid command specified: " + args[2] };
+            }
+
+            auto cmd = iter->second;
+            if (!cmd) {
+		//INVARIANT(0);
+                return { ErrorCodes::ERR_PARSEOPT,
+                        "Invalid command specified" };
+            }
+            
+            int arity = cmd->arity();
+            int realsize = args.size() - 2;
+            if ((arity > 0 && arity != realsize) ||
+                (realsize < -arity)) {
+                return { ErrorCodes::ERR_PARSEOPT,
+                    "Invalid number of arguments specified for command" };
+            }
+
+            auto first = args.begin() + 2;
+            auto last = args.end();
+            std::vector<std::string> newVec(first, last);
+
+            auto keys = cmd->getKeysFromCommand(newVec);
+            Command::fmtMultiBulkLen(ss, keys.size());
+            for (auto i : keys) {
+                Command::fmtBulk(ss, newVec[i]);
+            }
+        } else {
+            return { ErrorCodes::ERR_PARSEOPT, "Unknown subcommand or wrong number of arguments." };
+        }
+
+        return ss.str();
+    }
+} commandCmd;
 
 class CommandListCommand: public Command {
  public:
@@ -1283,8 +1414,8 @@ class ShutdownCommand: public Command {
         // INVARIANT(vv != nullptr);
         // vv->setCloseAfterRsp();
 
-        // TODO(vinchen): maybe it should log something here
-        // shutdown asnyc
+        LOG(INFO) << "shutdown command";
+        // shutdown async
         sess->getServerEntry()->handleShutdownCmd();
 
         // avoid compiler complains
@@ -1542,7 +1673,6 @@ class InfoCommand: public Command {
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     static void infoClients(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
@@ -1571,18 +1701,17 @@ class InfoCommand: public Command {
         }
         if (unit == "kB") {
             return size.value() * 1024;
-        }
-        else if (unit == "mB") {
+        } else if (unit == "mB") {
             return size.value() * 1024 * 1024;
-        }
-        else if (unit == "gB") {
+        } else if (unit == "gB") {
             return size.value() * 1024 * 1024 * 1024;
         }
         LOG(ERROR) << "getIntSize failed:" << str;
         return -1;
     }
 
-    static void infoMemory(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
+    static void infoMemory(bool allsections, bool defsections,
+        const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "memory") {
             auto server = sess->getServerEntry();
             std::stringstream ss;
@@ -1605,27 +1734,24 @@ class InfoCommand: public Command {
                     if (v.size() != 2) {
                         continue;
                     }
-                    if (v[0] == "VmSize") { // virtual memory
+                    if (v[0] == "VmSize") {  // virtual memory
                         used_memory_vir_human = trim(v[1]);
                         strDelete(used_memory_vir_human, ' ');
                         vir_human_size = getIntSize(used_memory_vir_human);
-                    }
-                    else if (v[0] == "VmPeak") { // peak of virtual memory
+                    } else if (v[0] == "VmPeak") {  // peak of virtual memory
                         used_memory_vir_peak_human = trim(v[1]);
                         strDelete(used_memory_vir_peak_human, ' ');
-                    }
-                    else if (v[0] == "VmRSS") { // physic memory
+                    } else if (v[0] == "VmRSS") {  // physic memory
                         used_memory_rss_human = trim(v[1]);
                         strDelete(used_memory_rss_human, ' ');
                         rss_human_size = getIntSize(used_memory_rss_human);
-                    }
-                    else if (v[0] == "VmHWM") { // peak of physic memory
+                    } else if (v[0] == "VmHWM") {  // peak of physic memory
                         used_memory_rss_peak_human = trim(v[1]);
                         strDelete(used_memory_rss_peak_human, ' ');
                     }
                 }
             }
-#endif // !_WIN32
+#endif  // !_WIN32
 
             ss << "used_memory:" << -1 << "\r\n";
             ss << "used_memory_human:" << -1 << "\r\n";
@@ -1670,7 +1796,6 @@ class InfoCommand: public Command {
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     static void infoStats(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
@@ -1682,7 +1807,6 @@ class InfoCommand: public Command {
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     static void infoReplication(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
@@ -1690,7 +1814,9 @@ class InfoCommand: public Command {
             auto server = sess->getServerEntry();
             auto replMgr = server->getReplManager();
             bool show_all = false;
-            if (sess->getArgs().size()>=3 && toLower(sess->getArgs()[1]) == "replication" && toLower(sess->getArgs()[2]) == "all") {
+            if (sess->getArgs().size() >= 3 &&
+                toLower(sess->getArgs()[1]) == "replication" &&
+                toLower(sess->getArgs()[2]) == "all") {
                 show_all = true;
             }
             std::stringstream ss;
@@ -1699,7 +1825,6 @@ class InfoCommand: public Command {
             ss << "\r\n";
             result << ss.str();
         }
-
     }
 
     static void infoCPU(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
@@ -1715,13 +1840,13 @@ class InfoCommand: public Command {
             ss << std::fixed << std::setprecision(2);
             ss << "# CPU\r\n"
                << "used_cpu_sys:"
-               << self_ru.ru_stime.tv_sec+(float)self_ru.ru_stime.tv_usec/1000000 << "\r\n"
+               << self_ru.ru_stime.tv_sec+ static_cast<float>(self_ru.ru_stime.tv_usec)/1000000 << "\r\n"
                << "used_cpu_user:"
-               << self_ru.ru_utime.tv_sec+(float)self_ru.ru_utime.tv_usec/1000000 << "\r\n"
+               << self_ru.ru_utime.tv_sec+ static_cast<float>(self_ru.ru_utime.tv_usec)/1000000 << "\r\n"
                << "used_cpu_sys_children:"
-               << c_ru.ru_stime.tv_sec+(float)c_ru.ru_stime.tv_usec/1000000 << "\r\n"
+               << c_ru.ru_stime.tv_sec+ static_cast<float>(c_ru.ru_stime.tv_usec)/1000000 << "\r\n"
                << "used_cpu_user_children:"
-               << c_ru.ru_utime.tv_sec+(float)c_ru.ru_utime.tv_usec/1000000 << "\r\n";
+               << c_ru.ru_utime.tv_sec+ static_cast<float>(c_ru.ru_utime.tv_usec)/1000000 << "\r\n";
             ss << "\r\n";
             result << ss.str();
         }
@@ -1738,11 +1863,11 @@ class InfoCommand: public Command {
                 auto usec = kv.second->getNanos() / 1000;
                 if (calls == 0)
                     continue;
-                
-                ss << "cmdstat_" << kv.first << ":calls=" << calls 
-                    << ",usec=" << usec 
-                    << ",usec_per_call=" << 
-                    ((calls == 0) ? 0 : ((float)usec / calls))
+
+                ss << "cmdstat_" << kv.first << ":calls=" << calls
+                    << ",usec=" << usec
+                    << ",usec_per_call=" <<
+                    ((calls == 0) ? 0 : (static_cast<float>(usec) / calls))
                     << "\r\n";
             }
             uint32_t unseenCmdNum = 0;
@@ -1851,11 +1976,11 @@ class InfoCommand: public Command {
             result << "# Levelstats\r\n";
             for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_IS); 
+                    mgl::LockMode::LOCK_IS);
                 if (!expdb.ok()) {
                     return;
                 }
- 
+
                 auto store = expdb.value().store;
                 std::string tmp;
                 if (!store->getProperty("rocksdb.levelstatsex", &tmp)) {
@@ -1884,7 +2009,7 @@ class InfoCommand: public Command {
 
                 auto store = expdb.value().store;
                 std::string tmp = store->getStatistics();
-                
+
                 auto v = stringSplit(tmp, "\n");
                 for (auto one : v) {
                     // rocksdb1.block.cache.bytes.write COUNT : 0
@@ -1926,7 +2051,7 @@ class InfoCommand: public Command {
     static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "rocksdbperfstats") {
             result << "# RocksdbPerfstats\r\n";
-            
+
             auto tmp = sess->getCtx()->getPerfContextStr();
             replaceAll(tmp, " = ", ":");
             replaceAll(tmp, ", ", "\n");
@@ -1940,7 +2065,6 @@ class InfoCommand: public Command {
             result << tmp;
         }
     }
-
 } infoCmd;
 
 class ObjectCommand: public Command {
@@ -2050,7 +2174,6 @@ class ConfigCommand : public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
-        // TODO(vinchen): support it later
         auto& args = sess->getArgs();
 
         auto operation = toLower(args[1]);
@@ -2068,7 +2191,7 @@ class ConfigCommand : public Command {
 
                 if (toLower(args[3]) == "tendis_protocol_extend") {
                     sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
-                } else if(toLower(args[3]) == "perf_level") {
+                } else if (toLower(args[3]) == "perf_level") {
                     if (!sess->getCtx()->setPerfLevel(toLower(args[4]))) {
                         return{ ErrorCodes::ERR_PARSEOPT,
                             "invalid argument :\"" + args[4] + "\" for 'config set session perf_level'" };
@@ -2106,7 +2229,7 @@ class ConfigCommand : public Command {
             return Command::fmtBulk(info);
         } else if (operation == "resetstat") {
             bool reset_all = false;
-            
+
             if (args.size() != 3) {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect, should be three" };
             }
@@ -2279,9 +2402,9 @@ class FlushdbCommand : public FlushGeneric {
         }
 
         // TODO(vinchen): only support db 0
-        //if (sess->getCtx()->getDbId() != 0) {
+        // if (sess->getCtx()->getDbId() != 0) {
         //    return{ ErrorCodes::ERR_PARSEOPT, "only support db 0" };
-        //}
+        // }
 
         auto s = runGeneric(sess, flags.value());
         if (!s.ok()) {
@@ -2904,7 +3027,7 @@ class slowlogCommand: public Command {
 } slowlogCmd;
 
 class reshapeCommand: public Command {
-public:
+ public:
     reshapeCommand()
             :Command("reshape", "sM") {
     }
@@ -2976,7 +3099,6 @@ public:
                 if (!status.ok()) {
                     return status;
                 }
-
             }
         }
         return Command::fmtOK();
@@ -2984,7 +3106,7 @@ public:
 } reshapeCmd;
 
 class EmptyIntCommand: public Command {
-public:
+ public:
     EmptyIntCommand()
             :Command("emptyint", "rF") {
     }
@@ -3011,7 +3133,7 @@ public:
 } emptyintCmd;
 
 class EmptyOKCommand: public Command {
-public:
+ public:
     EmptyOKCommand()
             :Command("emptyok", "rF") {
     }
@@ -3038,7 +3160,7 @@ public:
 } emptyokCmd;
 
 class EmptyBulkCommand: public Command {
-public:
+ public:
     EmptyBulkCommand()
             :Command("emptybulk", "rF") {
     }
@@ -3067,7 +3189,7 @@ public:
 } emptyBulkCmd;
 
 class EmptyMultiBulkCommand: public Command {
-public:
+ public:
     EmptyMultiBulkCommand()
             :Command("emptymultibulk", "rF") {
     }
@@ -3096,7 +3218,7 @@ public:
 } emptyMultiBulkCmd;
 
 class TendisadminCommand: public Command {
-public:
+ public:
   TendisadminCommand()
     :Command("tendisadmin", "lat") {
   }

@@ -392,8 +392,8 @@ makeRestoreEnv(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master1_dir));
     EXPECT_TRUE(setupEnv(master2_dir));
 
-    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
-    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir, false);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
     cfg1->maxBinlogKeepNum = 1;
     cfg2->maxBinlogKeepNum = 1;
 
@@ -554,7 +554,7 @@ TEST(Restore, Common2) {
         auto thread = std::thread([this, master1](){
             testAll(master1); // need about 40 seconds
         });
-        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
         sleep(sleep_time);
         LOG(INFO) << ">>>>>> master1 backup and master2 restoreBackup.";
         backup(slave1, "ckpt");

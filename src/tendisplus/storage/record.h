@@ -716,6 +716,10 @@ class TTLIndex {
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val);
+
+std::string makeInvalidErrStr(RecordType type, const std::string& key,
+    uint64_t metaCnt, uint64_t eleCnt);
+
 }  // namespace rcd_util
 }  // namespace tendisplus
 

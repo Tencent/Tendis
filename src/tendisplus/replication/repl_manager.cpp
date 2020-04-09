@@ -28,7 +28,7 @@ std::string MPovFullPushStatus::toString(){
     stringstream ss_state;
     ss_state << "storeId:" << storeid
              << " node:" << slave_listen_ip << ":" << slave_listen_port
-             << " state:" << state
+             << " state:" << (int)state
              << " binlogPos:" << binlogPos
              << " starttime:" << startTime.time_since_epoch().count()/1000000
              << " endtime:" << endTime.time_since_epoch().count()/1000000;
@@ -177,12 +177,15 @@ Status ReplManager::startup() {
 #if defined(_WIN32) && _MSC_VER > 1900
         _pushStatus.emplace_back(
 			std::map<uint64_t, MPovStatus*>());
+        _fullPushStatus.emplace_back(
+            std::map<string, MPovFullPushStatus*>());
 #else
         _pushStatus.emplace_back(
             std::map<uint64_t, std::unique_ptr<MPovStatus>>());
-#endif
+
         _fullPushStatus.emplace_back(
                 std::map<string, std::unique_ptr<MPovFullPushStatus>>());
+#endif
 
         Status status;
 
@@ -246,7 +249,7 @@ Status ReplManager::startup() {
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
-                    // TODO(takenliu) fix the relative logic
+                    // TODO(takenliu): fix the relative logic
                     recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
                     recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
@@ -277,7 +280,6 @@ Status ReplManager::startup() {
 
 void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
                                         bool persist) {
-    // TODO(deyukong): mechanism to INVARIANT mutex held
     if (persist) {
         Catalog *catalog = _svr->getCatalog();
         Status s = catalog->setStoreMeta(storeMeta);
@@ -1021,6 +1023,13 @@ void ReplManager::stop() {
             delete mpov.second;
         }
         _pushStatus[i].clear();
+    }
+
+    for (size_t i = 0; i < _fullPushStatus.size(); i++) {
+        for (auto& mpov : _fullPushStatus[i]) {
+            delete mpov.second;
+        }
+        _fullPushStatus[i].clear();
     }
 #endif
 

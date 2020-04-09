@@ -42,7 +42,7 @@ namespace tendisplus {
     }\
   } while (0)
 #else
-#define RESET_PERFCONTEXT() 
+#define RESET_PERFCONTEXT()
 #endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
@@ -225,12 +225,16 @@ Expected<uint64_t> RocksTxn::commit() {
         // NOTE(vinchen): for repl, binlog should be inserted by setBinlogKV()
         INVARIANT_D(!isReplOnly());
 
+        if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
+            LOG(WARNING) << "too big binlog size:", std::to_string(_replLogValues.size());
+        }
+
         _store->assignBinlogIdIfNeeded(this);
         INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
 
         uint32_t chunkId = getChunkId();
 
-        // TODO(vinchen): Now, one transaction one repllog, so the flag is
+        // NOTE(vinchen): Now, one transaction one repllog, so the flag is
         // (START | END)
         uint16_t oriFlag = static_cast<uint16_t>(ReplFlag::REPL_GROUP_START)
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
@@ -364,14 +368,20 @@ Status RocksTxn::setKV(const std::string& key,
     if (_store->enableRepllog()) {
         INVARIANT_D(_store->dbId() != CATALOG_NAME);
         setChunkId(RecordKey::decodeChunkId(key));
-        if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
+        if (_replLogValues.size() == std::numeric_limits<uint16_t>::max()) {
             // TODO(vinchen): if too large, it can flush to rocksdb first,
             // and get another binlogid using assignBinlogIdIfNeeded()
-            LOG(WARNING) << "too big binlog size";
+            auto eKey = RecordKey::decode(key);
+            if (eKey.ok()) {
+                LOG(WARNING) << "setKV too big binlog size, key:" + eKey.value().getPrimaryKey();
+            } else {
+                LOG(WARNING) << "setKV too big binlog size, invalid key:" + key;
+            }
         }
 
         ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_SET, ts ? ts : msSinceEpoch(),
             key, val);
+        // TODO(vinchen): maybe OOM
         _replLogValues.emplace_back(std::move(logVal));
     }
 #endif
@@ -407,13 +417,19 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     if (_store->enableRepllog()) {
         INVARIANT_D(_store->dbId() != CATALOG_NAME);
         setChunkId(RecordKey::decodeChunkId(key));
-        if (_replLogValues.size() >= std::numeric_limits<uint16_t>::max()) {
+        if (_replLogValues.size() == std::numeric_limits<uint16_t>::max()) {
             // TODO(vinchen): if too large, it can flush to rocksdb first,
             // and get another binlogid using assignBinlogIdIfNeeded()
-            LOG(WARNING) << "too big binlog size";
+            auto eKey = RecordKey::decode(key);
+            if (eKey.ok()) {
+                LOG(WARNING) << "delKV too big binlog size, key:" + eKey.value().getPrimaryKey();
+            } else {
+                LOG(WARNING) << "delKV too big binlog size, invalid key:" + key;
+            }
         }
         ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL, ts ? ts : msSinceEpoch(),
             key, "");
+        // TODO(vinchen): maybe OOM
         _replLogValues.emplace_back(std::move(logVal));
     }
 #endif
@@ -868,9 +884,6 @@ rocksdb::Options RocksKVStore::options() {
     // if we have no 'empty reads', we can disable bottom
     // level's bloomfilters
     options.optimize_filters_for_hits = false;
-    // TODO(deyukong): we should have our own compaction factory
-    // options.compaction_filter_factory.reset(
-    //     new PrefixDeletingCompactionFilterFactory(this));
     options.enable_thread_tracking = true;
     options.compression_per_level.resize(ROCKSDB_NUM_LEVELS);
     for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
@@ -1496,7 +1509,6 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
     }
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
-    // TODO(deyukong): use BinlogCursor to rewrite
     RocksKVCursor cursor(std::move(iter));
 
     cursor.seekToLast();
@@ -1576,8 +1588,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
     _isRunning = true;
   }
   {
-    if (needDeleteBinlog)
-    {
+    if (needDeleteBinlog) {
         if (maxBinlogid != Transaction::TXNID_UNINITED)
         {
             Expected<bool> ret = deleteBinlog(maxBinlogid + 1);
@@ -1808,6 +1819,10 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
     if (!backup_meta.ok()) {
         return backup_meta.status();
     }
+
+#ifdef _WIN32
+#undef GetObject
+#endif
     uint32_t mode = std::numeric_limits<uint32_t>::max();
     for (auto& o : backup_meta.value().GetObject()) {
         if (o.name == "backupType" && o.value.IsUint()) {
@@ -1952,7 +1967,6 @@ rocksdb::DB* RocksKVStore::getBaseDB() const {
 }
 
 void RocksKVStore::addUnCommitedTxnInLock(uint64_t txnId) {
-    // TODO(deyukong): need a better mutex mechnism to assert held
     if (_aliveTxns.find(txnId) != _aliveTxns.end()) {
         LOG(FATAL) << "BUG: txnid:" << txnId << " double add uncommitted";
     }

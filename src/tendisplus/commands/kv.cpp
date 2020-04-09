@@ -41,7 +41,6 @@ struct SetParams {
     int64_t expire;
 };
 
-// TODO(deyukong): unittest of expire
 Expected<std::string> setGeneric(Session *sess, PStore store, Transaction *txn,
             int32_t flags, const RecordKey& key, const RecordValue& val,
             bool checkType, bool endTxn,
@@ -767,7 +766,6 @@ class GetCommand: public GetGenericCmd {
     }
 } getCommand;
 
-// TODO(deyukong): unittest
 class GetRangeGenericCommand: public GetGenericCmd {
  public:
     GetRangeGenericCommand(const std::string& name, const char* sflags)
@@ -1041,7 +1039,6 @@ class AppendCommand: public GetSetGeneral {
     }
 } appendCmd;
 
-// TODO(unittest)
 class SetRangeCommand: public GetSetGeneral {
  public:
     SetRangeCommand()
@@ -1697,7 +1694,6 @@ class BitopCommand: public Command {
         INVARIANT(server != nullptr);
 
         auto index = getKeysFromCommand(args);
-        // TODO(vinchen): should be LOCK_X and LOCK_S
         auto locklist = server->getSegmentMgr()->getAllKeysLocked(sess, args,
             index, mgl::LockMode::LOCK_X);
         if (!locklist.ok()) {
@@ -1791,7 +1787,7 @@ class MSetGenericCommand: public Command {
  public:
      MSetGenericCommand(const std::string& name, const char* sflags, int flags)
         :Command(name, sflags),
-        _flags(flags) {
+        _myflags(flags) {
     }
 
     ssize_t arity() const {
@@ -1856,7 +1852,7 @@ class MSetGenericCommand: public Command {
                 auto result = setGeneric(sess,
                                          kvstore,
                                          etxn.value(),
-                                         _flags,
+                                         _myflags,
                                          rk,
                                          rv,
                                          checkKeyTypeForSet,
@@ -1895,10 +1891,10 @@ class MSetGenericCommand: public Command {
         } else {
             pCtx->rollbackAll();
         }
-        if (_flags == REDIS_SET_NO_FLAGS) {
+        if (_myflags == REDIS_SET_NO_FLAGS) {
             // mset
             return Command::fmtOK();
-        } else if (_flags == REDIS_SET_NX) {
+        } else if (_myflags == REDIS_SET_NX) {
             // msetnx
             return failed ? Command::fmtZero() : Command::fmtOne();
         }
@@ -1907,7 +1903,7 @@ class MSetGenericCommand: public Command {
     }
 
  private:
-    int _flags;
+    int _myflags;
 };
 
 class MSetCommand : public MSetGenericCommand {

@@ -414,7 +414,6 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
         return false;
     }
 
-    // TODO(deyukong): max conns
     // NOTE(deyukong): first driving force
     sess->start();
     uint64_t id = sess->id();

@@ -547,7 +547,7 @@ TEST(Repl, slaveofBenchmarkingMaster) {
         auto thread = std::thread([this, master](){
             testAll(master); // need about 40 seconds
         });
-        uint32_t sleep_time = random()%20 + 10; // 10-30 seconds
+        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
         sleep(sleep_time);
 
         LOG(INFO) << ">>>>>> slaveof begin.";
