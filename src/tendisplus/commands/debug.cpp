@@ -841,12 +841,14 @@ class CommandCommand : public Command {
             auto iter = cmdmap.find(args[2]);
             if (iter == cmdmap.end()) {
                 // error
+		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
-                            "Invalid command specified" };
+                            "Invalid command specified: " + args[2] };
             }
 
             auto cmd = iter->second;
             if (!cmd) {
+		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
                         "Invalid command specified" };
             }

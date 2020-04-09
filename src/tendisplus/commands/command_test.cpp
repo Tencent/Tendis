@@ -1253,32 +1253,7 @@ TEST(Command, keys) {
 }
 */
 
-// Note: renameCommand may change command's name or behavior, so put it in the end
-extern string gRenameCmdList;
-extern string gMappingCmdList;
-TEST(Command, renameCommand) {
-  const auto guard = MakeGuard([] {
-    destroyEnv();
-  });
 
-  EXPECT_TRUE(setupEnv());
-  auto cfg = makeServerParam();
-  auto server = makeServerEntry(cfg);
-  gRenameCmdList += ",set set_rename";
-  gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
-  Command::changeCommand(gRenameCmdList, "rename");
-  Command::changeCommand(gMappingCmdList, "mapping");
-
-  testRenameCommand(server);
-
-  gRenameCmdList = "";
-  gMappingCmdList = "";
-
-#ifndef _WIN32
-  server->stop();
-  EXPECT_EQ(server.use_count(), 1);
-#endif
-}
 
 void testCommandArray(std::shared_ptr<ServerEntry> svr,
     const std::vector<std::vector<std::string>>& arr,
@@ -1290,9 +1265,16 @@ void testCommandArray(std::shared_ptr<ServerEntry> svr,
     for (auto& args : arr) {
         sess.setArgs(args);
         auto expect = Command::runSessionCmd(&sess);
+        if (!expect.ok()) {
+            std::stringstream ss;
+            for (auto& str :args) {
+                ss << str << " ";
+            }
+            LOG(INFO) << ss.str() <<"ERROR:" << expect.status().toString();
+        }
+
         if (isError) {
             EXPECT_FALSE(expect.ok());
-            LOG(INFO) << expect.status().toString();
         } else {
             EXPECT_TRUE(expect.ok());
         }
@@ -1425,6 +1407,33 @@ TEST(Command, command) {
 #ifndef _WIN32
     server->stop();
     EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+// NOTE(takenliu): renameCommand may change command's name or behavior, so put it in the end
+extern string gRenameCmdList;
+extern string gMappingCmdList;
+TEST(Command, renameCommand) {
+  const auto guard = MakeGuard([] {
+    destroyEnv();
+  });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+  gRenameCmdList += ",set set_rename";
+  gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
+  Command::changeCommand(gRenameCmdList, "rename");
+  Command::changeCommand(gMappingCmdList, "mapping");
+
+  testRenameCommand(server);
+
+  gRenameCmdList = "";
+  gMappingCmdList = "";
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
 #endif
 }
 
