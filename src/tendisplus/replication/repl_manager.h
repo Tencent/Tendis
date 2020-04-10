@@ -106,6 +106,7 @@ enum class ReplState: std::uint8_t {
     REPL_CONNECT = 1,
     REPL_TRANSFER = 2,  // initialsync, transfer whole db
     REPL_CONNECTED = 3,  // steadysync, transfer binlog steady
+    REPL_ERR_BINLOG_DELETION = 4
 };
 
 class ServerEntry;

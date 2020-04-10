@@ -420,7 +420,8 @@ void ReplManager::controlRoutine() {
                 _fullReceiver->schedule([this, i]() {
                     slaveSyncRoutine(i);
                 });
-            } else if (_syncMeta[i]->replState == ReplState::REPL_CONNECTED) {
+            } else if (_syncMeta[i]->replState == ReplState::REPL_CONNECTED ||
+                    _syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION) {
                 _syncStatus[i]->isRunning = true;
                 _incrChecker->schedule([this, i]() {
                     slaveSyncRoutine(i);
@@ -871,7 +872,9 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
         uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime)/1000000; // ms
         uint64_t now = nsSinceEpoch()/1000000; // ms
         // only display the min store.
-        if (last_sync_time < min_last_sync_time || show_all) {
+        if (_syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION ||
+            last_sync_time < min_last_sync_time ||
+            show_all) {
             min_last_sync_time = last_sync_time;
             if (!show_all) {
                 ss_masterinfo.clear();
@@ -890,6 +893,9 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
             ss_masterinfo << ",sync_time_lag=" << now - last_sync_time;
 
             ss_masterinfo << "\r\n";
+            if (_syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION) {
+                break;
+            }
         }
     }
     ss << ss_masterinfo.str();
