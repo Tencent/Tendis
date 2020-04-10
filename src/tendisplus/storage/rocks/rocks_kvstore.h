@@ -21,6 +21,8 @@
 namespace tendisplus {
 
 class RocksKVStore;
+class RocksdbEnv;
+class BackgroundErrorListener;
 
 class RocksTxn: public Transaction {
  public:
@@ -253,8 +255,9 @@ class RocksKVStore: public KVStore {
 
     bool getIntProperty(const std::string& property, uint64_t* value) const;
     bool getProperty(const std::string& property, std::string* value) const;
-    std::string getAllProperty() const;
-    std::string getStatistics() const;
+    std::string getAllProperty() const override;
+    std::string getStatistics() const override;
+    std::string getBgError() const override;
     void resetStatistics();
  private:
     rocksdb::DB* getBaseDB() const;
@@ -322,9 +325,36 @@ private:
     uint64_t _highestVisible;
 
     std::shared_ptr<BinlogObserver> _logOb;
+    std::shared_ptr<RocksdbEnv> _env;
     std::map<std::string, std::string> _rocksIntProperties;
     std::map<std::string, std::string> _rocksStringProperties;
 
+};
+
+class RocksdbEnv{
+ public:
+    RocksdbEnv();
+    uint64_t getErrorCnt() const { return _errCnt.load(memory_order_relaxed); }
+    std::string getErrorString() const;
+    void resetError();
+    void setError(rocksdb::BackgroundErrorReason reason, rocksdb::Status* error);
+ private:
+    mutable std::mutex _mutex;
+    std::atomic<uint64_t> _errCnt;
+    rocksdb::BackgroundErrorReason _reason;
+    std::string  _bgError;
+    rocksdb::Status* _rocksbgError;
+};
+
+class BackgroundErrorListener : public rocksdb::EventListener {
+private:
+    std::shared_ptr<RocksdbEnv> _env;
+
+public:
+    BackgroundErrorListener(std::shared_ptr<RocksdbEnv> env) : _env(env) {}
+
+    void OnBackgroundError(rocksdb::BackgroundErrorReason reason,
+        rocksdb::Status* bg_error) override;
 };
 
 }  // namespace tendisplus

@@ -577,7 +577,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0 ) { // single node
             saveLogs = true;
         }
-
         for (auto& mpov : _fullPushStatus[storeId]) {
             end = std::min(end, mpov.second->binlogPos);
         }

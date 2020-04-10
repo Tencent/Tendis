@@ -840,19 +840,16 @@ class CommandCommand : public Command {
         } else if (arg1 == "getkeys" && args.size() >= 3) {
             auto iter = cmdmap.find(args[2]);
             if (iter == cmdmap.end()) {
-                // error
-		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
                             "Invalid command specified: " + args[2] };
             }
 
             auto cmd = iter->second;
             if (!cmd) {
-		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
                         "Invalid command specified" };
             }
-            
+
             int arity = cmd->arity();
             int realsize = args.size() - 2;
             if ((arity > 0 && arity != realsize) ||
@@ -1628,6 +1625,7 @@ class InfoCommand: public Command {
         infoLevelStats(allsections, defsections, section, sess, result);
         infoRocksdbStats(allsections, defsections, section, sess, result);
         infoRocksdbPerfStats(allsections, defsections, section, sess, result);
+        infoRocksdbBgError(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
@@ -2063,6 +2061,28 @@ class InfoCommand: public Command {
             replaceAll(tmp, ", ", "\n");
 
             result << tmp;
+        }
+    }
+
+    static void infoRocksdbBgError(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || defsections || section == "rocksdbbgerror") {
+            auto server = sess->getServerEntry();
+
+            result << "# RocksdbBgError\r\n";
+            for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return;
+                }
+
+                auto store = expdb.value().store;
+                auto ret = store->getBgError();
+                if (ret != "") {
+                    result << "rocksdb" << store->dbId() << ":"
+                        << ret << "\n";
+                }
+            }
         }
     }
 } infoCmd;

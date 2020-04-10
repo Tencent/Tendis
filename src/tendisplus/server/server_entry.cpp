@@ -179,7 +179,7 @@ void ServerEntry::logWarning(const std::string& str, Session* sess) {
 void ServerEntry::logError(const std::string& str, Session* sess) {
     std::stringstream ss;
     if (sess) {
-        ss << sess->id() << "cmd:" << sess->getCmdStr();
+        ss << sess->id() << " cmd:" << sess->getCmdStr();
     }
 
     ss << ", error:" << str;

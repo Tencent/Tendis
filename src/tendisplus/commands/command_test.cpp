@@ -1324,6 +1324,7 @@ TEST(Command, info) {
       {"info", "levelstats" },
       {"info", "rocksdbstats" },
       {"info", "rocksdbperfstats" },
+      {"info", "rocksdbbgerror" },
       {"info", "invalid" },                 // it's ok
       {"rocksproperty", "rocksdb.base-level", "0" },
       {"rocksproperty", "all", "0" },
