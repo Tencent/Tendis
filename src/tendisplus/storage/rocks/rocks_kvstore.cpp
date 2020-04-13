@@ -2231,6 +2231,29 @@ std::string RocksKVStore::getBgError() const {
     return _env->getErrorString();
 }
 
+Status RocksKVStore::recoveryFromBgError() {
+    if (getBgError() == "") {
+        return { ErrorCodes::ERR_OK, "" };
+    }
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        // TODO(takenliu): upgrade rocksdb to lastest stable version
+        auto s = getBaseDB()->Resume();
+        if (!s.ok()) {
+            return { ErrorCodes::ERR_INTERNAL, s.ToString() };
+        }
+    }
+    _env->resetError();
+#else
+    // NOTE(vinchen): in rocksdb-5.13.4£¬ there is no DB::Resume().
+    // We can only reset the bg_error_ in rocksdb. 
+    _env->resetError();
+#endif
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
 void RocksKVStore::resetStatistics() {
     _stats->Reset();
 }
@@ -2351,6 +2374,13 @@ void RocksdbEnv::setError(rocksdb::BackgroundErrorReason reason, rocksdb::Status
 void RocksdbEnv::resetError() {
     std::lock_guard<std::mutex> lk(_mutex);
     _bgError = "";
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
+    // do nothing
+#else
+    // TODO(vinchen): in rocksdb-5.13.4£¬ there is no DB::Resume().
+    // We can only reset the bg_error_ in rocksdb. 
+    *_rocksbgError = rocksdb::Status::OK();
+#endif
 }
 
 std::string RocksdbEnv::getErrorString() const {

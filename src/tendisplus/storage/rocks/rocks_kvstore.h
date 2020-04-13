@@ -258,6 +258,7 @@ class RocksKVStore: public KVStore {
     std::string getAllProperty() const override;
     std::string getStatistics() const override;
     std::string getBgError() const override;
+    Status recoveryFromBgError() override;
     void resetStatistics();
  private:
     rocksdb::DB* getBaseDB() const;

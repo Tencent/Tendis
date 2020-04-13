@@ -520,8 +520,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     uint32_t nextSchedInterval = _cfg->truncateBinlogIntervalMs * randRatio;
     nextSched = nextSched + std::chrono::milliseconds(nextSchedInterval);
 
-    uint64_t start;
-    uint64_t end;
+    uint64_t start = Transaction::MIN_VALID_TXNID;
+    uint64_t end = Transaction::MIN_VALID_TXNID;
     bool saveLogs;
 
     bool hasError = false;
@@ -538,7 +538,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         // reset the firstBinlogId
         if (hasError) {
             v->firstBinlogId = Transaction::TXNID_UNINITED;
-        } else {
+        } else if (start != Transaction::MIN_VALID_TXNID) {
             v->firstBinlogId = start;
         }
         DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;

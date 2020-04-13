@@ -293,6 +293,7 @@ class KVStore {
     virtual std::string getAllProperty() const = 0;
     virtual std::string getStatistics() const = 0;
     virtual std::string getBgError() const = 0;
+    virtual Status recoveryFromBgError() = 0;
     virtual void resetStatistics() = 0;
 
     virtual Status setMode(StoreMode mode) = 0;

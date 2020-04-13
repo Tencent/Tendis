@@ -1343,6 +1343,8 @@ TEST(Command, info) {
   {{"config", "resetstat", "stats"}, Command::fmtOK()},
   {{"config", "resetstat", "rocksdbstats"}, Command::fmtOK()},
   {{"config", "resetstat", "invalid"},  Command::fmtOK()},              // it's ok
+  {{"tendisadmin", "sleep", "1"},  Command::fmtOK()}, 
+  {{"tendisadmin", "recovery"},  Command::fmtOK()}, 
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
@@ -1354,6 +1356,10 @@ TEST(Command, info) {
     {"config", "set", "session", "perf_level", "invalid" },
     {"config", "set", "session", "invalid", "invalid" },
     {"config", "set", "session", "perf_level"},
+    {"tendisadmin", "sleep"},
+    {"tendisadmin", "sleep", "1", "2"},
+    {"tendisadmin", "recovery", "1"},
+    {"tendisadmin", "invalid"},
   };
 
   testCommandArray(server, correctArr, false);

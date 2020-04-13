@@ -20,16 +20,16 @@
 
 namespace tendisplus {
 
-std::string master1_dir = "restoretest_master1";
-std::string master2_dir = "restoretest_master2";
-std::string slave1_dir = "restoretest_slave1";
+const char* master1_dir = "restoretest_master1";
+const char* master2_dir = "restoretest_master2";
+const char* slave1_dir = "restoretest_slave1";
 uint32_t master1_port = 1121;
 uint32_t master2_port = 1122;
 uint32_t slave1_port = 1123;
 
 
 
-AllKeys initData(std::shared_ptr<ServerEntry>& server,
+AllKeys initData(std::shared_ptr<ServerEntry> server,
                 uint32_t count, const char* key_suffix) {
     auto ctx1 = std::make_shared<asio::io_context>();
     auto sess1 = makeSession(server, ctx1);
@@ -145,7 +145,7 @@ void flushBinlog(const std::shared_ptr<ServerEntry>& server) {
     }
 }
 
-void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
+void restoreBinlog(const string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
     uint64_t end_ts = UINT64_MAX) {
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
         auto kvstore = server->getStores()[i];
@@ -160,7 +160,9 @@ void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& s
                 continue;
             }
             // assert path with dir prefix
+#ifndef _WIN32
             INVARIANT(path.string().find(subpath) == 0);
+#endif
             std::string relative = path.string().erase(0, subpath.size());
             if (relative.substr(0, 6) != "binlog") {
                 LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
@@ -246,16 +248,20 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!com_binlog && exptRcd1.value().getRecordKey().getRecordType()
-                == RecordType::RT_BINLOG) {
+            INVARIANT(exptRcd1.ok());
+            auto type = exptRcd1.value().getRecordKey().getRecordType();
+            if (!com_binlog && type == RecordType::RT_BINLOG) {
                 continue;
             }
-            INVARIANT(exptRcd1.ok());
             count1++;
 
             // check the binlog together
-            auto exptRcdv2 = kvstore2->getKV(
-                exptRcd1.value().getRecordKey(), txn2.get());
+            auto key = exptRcd1.value().getRecordKey();
+            auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
+            if (!exptRcdv2.ok()) {
+                LOG(INFO) << "key:" << key.getPrimaryKey() << ",type:" << static_cast<int>(type) << " not found!";
+                INVARIANT(0);
+            }
             EXPECT_TRUE(exptRcdv2.ok());
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
@@ -437,12 +443,18 @@ TEST(Restore, Common) {
         backup(master1, "copy");
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
+        // NOTE(vinchen): make sure binlogs of master and slave
+        // have been deleted. But is 1 second enough?
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
         backup(master1, "ckpt");
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
+        // NOTE(vinchen): make sure binlogs of master and slave
+        // have been deleted. But is 1 second enough?
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
@@ -553,9 +565,9 @@ TEST(Restore, Common2) {
 
         LOG(INFO) << ">>>>>> master1 add data begin.";
         auto thread = std::thread([this, master1](){
-            testAll(master1); // need about 40 seconds
+            testAll(master1);  // need about 40 seconds
         });
-        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
+        uint32_t sleep_time = genRand()%20 + 10;  // 10-30 seconds
         sleep(sleep_time);
         LOG(INFO) << ">>>>>> master1 backup and master2 restoreBackup.";
         backup(slave1, "ckpt");

@@ -1989,6 +1989,8 @@ class InfoCommand: public Command {
 
                 result << tmp;
             }
+
+            result << "\r\n";
         }
     }
 
@@ -2043,6 +2045,8 @@ class InfoCommand: public Command {
             for (auto v : map) {
                 result << v.first << " : " << v.second << "\n";
             }
+
+            result << "\r\n";
         }
     }
 
@@ -2058,9 +2062,10 @@ class InfoCommand: public Command {
 
             tmp = sess->getCtx()->getIOstatsContextStr();
             replaceAll(tmp, " = ", ":");
-            replaceAll(tmp, ", ", "\n");
+            replaceAll(tmp, ", ", "\r\n");
 
             result << tmp;
+            result << "\r\n";
         }
     }
 
@@ -2083,6 +2088,7 @@ class InfoCommand: public Command {
                         << ret << "\n";
                 }
             }
+            result << "\r\n";
         }
     }
 } infoCmd;
@@ -3237,56 +3243,78 @@ class EmptyMultiBulkCommand: public Command {
     }
 } emptyMultiBulkCmd;
 
-class TendisadminCommand: public Command {
- public:
-  TendisadminCommand()
-    :Command("tendisadmin", "lat") {
-  }
-
-  ssize_t arity() const {
-    return -2;
-  }
-
-  int32_t firstkey() const {
-    return 0;
-  }
-
-  int32_t lastkey() const {
-    return 0;
-  }
-
-  int32_t keystep() const {
-    return 0;
-  }
-
-  Expected<std::string> run(Session* sess) final {
-    auto& args = sess->getArgs();
-
-    auto operation = toLower(args[1]);
-
-    if (operation == "sleep") {
-      if (args.size() < 3 || args.size() > 4) {
-        return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
-      }
-
-      auto time = tendisplus::stoull(args[2]);
-      if (!time.ok()) {
-        return time.status();
-      }
-
-      std::list<std::unique_ptr<DbWithLock>> result;
-      const auto server = sess->getServerEntry();
-      for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expdb = server->getSegmentMgr()->getDb(sess,
-          i, mgl::LockMode::LOCK_X);
-        result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
-      }
-
-      std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+class TendisadminCommand : public Command {
+public:
+    TendisadminCommand()
+        :Command("tendisadmin", "lat") {
     }
 
-    return Command::fmtOK();
-  }
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        auto& args = sess->getArgs();
+
+        auto operation = toLower(args[1]);
+
+        if (operation == "sleep") {
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            auto time = tendisplus::stoull(args[2]);
+            if (!time.ok()) {
+                return time.status();
+            }
+
+            std::list<std::unique_ptr<DbWithLock>> result;
+            const auto server = sess->getServerEntry();
+            for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                    i, mgl::LockMode::LOCK_X);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+        } else if (operation == "recovery") {
+            if (args.size() != 2) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+            const auto server = sess->getServerEntry();
+            for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                    i, mgl::LockMode::LOCK_IX);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+
+                auto s = expdb.value().store->recoveryFromBgError();
+                if (!s.ok()) {
+                    return s;
+                }
+            }
+        } else {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid operation:" + operation };
+        }
+
+        return Command::fmtOK();
+    }
 } tendisadminCmd;
 
 }  // namespace tendisplus
