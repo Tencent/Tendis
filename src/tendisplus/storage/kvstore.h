@@ -268,7 +268,7 @@ class KVStore {
     virtual uint64_t getNextBinlogSeq() const = 0;
     static std::ofstream* createBinlogFile(const std::string& name, uint32_t storeId);
     virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
-        Transaction *txn, std::ofstream *fs) = 0;
+        Transaction *txn, std::ofstream *fs, bool tailSlave) = 0;
     virtual Expected<uint64_t> getBinlogCnt(Transaction* txn) const = 0;
     virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
 #endif

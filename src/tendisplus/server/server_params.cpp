@@ -109,6 +109,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS(noexpire);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(maxBinlogKeepNum);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
+    REGISTER_VARS_ALLOW_DYNAMIC_SET(slaveBinlogKeepNum);
 
     REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
     REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);

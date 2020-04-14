@@ -231,6 +231,7 @@ public:
     bool noexpire = false;
     uint32_t maxBinlogKeepNum = 1000000;
     uint32_t minBinlogKeepSec = 0;
+    uint32_t slaveBinlogKeepNum = 1;
 
     uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
     std::string slowlogPath = "./slowlog";

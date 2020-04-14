@@ -565,21 +565,49 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         return;
     }
 
+    bool tailSlave = false;
+    uint64_t highest = kvstore->getHighestBinlogId();
+    end = highest;
     {
         std::unique_lock<std::mutex> lk(_mutex);
+
+        start = _logRecycStatus[storeId]->firstBinlogId;
 
         saveLogs = _syncMeta[storeId]->syncFromHost != ""; // REPLICATE_ONLY
         if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0 ) { // single node
             saveLogs = true;
         }
-        start = _logRecycStatus[storeId]->firstBinlogId;
-        end = kvstore->getHighestBinlogId();
+
         for (auto& mpov : _fullPushStatus[storeId]) {
             end = std::min(end, mpov.second->binlogPos);
         }
         for (auto& mpov : _pushStatus[storeId]) {
             end = std::min(end, mpov.second->binlogPos);
         }
+        // NOTE(deyukong): currently, we cant get the exact log count by
+        // _highestVisible - startLogId, because "readonly" txns also
+        // occupy txnIds, and in each txnId, there are more sub operations.
+        // So, maxKeepLogs is not named precisely.
+        // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
+        uint32_t maxKeepLogs = _cfg->maxBinlogKeepNum;
+        if (_syncMeta[storeId]->syncFromHost != "" && _pushStatus[storeId].size() == 0 ) {
+            tailSlave = true;
+        }
+        if (tailSlave) {
+            maxKeepLogs = _cfg->slaveBinlogKeepNum;
+        }
+
+        maxKeepLogs = std::max((uint32_t)1, maxKeepLogs);
+        if (highest >= maxKeepLogs && end > highest - maxKeepLogs) {
+            end = highest - maxKeepLogs;
+        }
+        if (highest < maxKeepLogs) {
+            end = 0;
+        }
+    }
+    DLOG(INFO) << "recycleBinlog port:" << _svr->getParams()->port << " store: " << storeId << " " << start << " " << end;
+    if (start > end) {
+        return;
     }
 
     auto ptxn = kvstore->createTransaction(sg.getSession());
@@ -639,7 +667,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
             }
         }
 
-        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs);
+        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs, tailSlave);
         if (!s.ok()) {
             LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                 << "failed:" << s.status().toString();

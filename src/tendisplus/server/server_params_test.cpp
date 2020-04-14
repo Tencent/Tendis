@@ -181,7 +181,7 @@ TEST(ServerParams, RocksOption) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    EXPECT_EQ(cfg->paramsNum(), 53);
+    EXPECT_EQ(cfg->paramsNum(), 54);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -213,6 +213,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->noexpire, false);
     EXPECT_EQ(cfg->maxBinlogKeepNum, 1000000);
     EXPECT_EQ(cfg->minBinlogKeepSec, 0);
+    EXPECT_EQ(cfg->slaveBinlogKeepNum, 1);
 
     EXPECT_EQ(cfg->maxClients, CONFIG_DEFAULT_MAX_CLIENTS);
     EXPECT_EQ(cfg->slowlogPath, "./slowlog");

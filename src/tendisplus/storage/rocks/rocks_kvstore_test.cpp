@@ -1163,8 +1163,8 @@ TEST(RocksKVStore, PesTruncateBinlog) {
         uint64_t deleten = 0;
         // TODO(takenliu): save binlog
         auto s = kvstore->truncateBinlogV2(firstBinlog,
-            std::numeric_limits<uint64_t>::max(), txn1.get(),
-            nullptr);
+            firstBinlog, txn1.get(),
+            nullptr, false);
         EXPECT_TRUE(s.ok());
         ts = s.value().timestamp;
         written = s.value().written;
@@ -1291,8 +1291,8 @@ TEST(RocksKVStore, PesTruncateBinlog) {
             EXPECT_EQ(eTxn2.ok(), true);
             std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
             // TODO(takenliu): save binlog
-            auto s = kvstore->truncateBinlogV2(firstBinlog, endBinlog,
-                txn2.get(), nullptr);
+            auto s = kvstore->truncateBinlogV2(firstBinlog, endBinlog - keepBinlog,
+                txn2.get(), nullptr, false);
             EXPECT_TRUE(s.ok());
             if (!s.value().deleten) {
                 EXPECT_EQ(s.value().newStart, firstBinlog);
