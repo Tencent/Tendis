@@ -614,7 +614,7 @@ TEST(Repl, BinlogKeepNum_Test) {
         auto cfg2 = makeServerParam(slave_port, i, slave_dir);
         auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
         auto cfg4 = makeServerParam(single_port, i, single_dir);
-        uint32_t masterBinlogNum = 10;
+        uint64_t masterBinlogNum = 10;
         cfg1->maxBinlogKeepNum = masterBinlogNum;
         cfg2->maxBinlogKeepNum = masterBinlogNum;
         cfg2->slaveBinlogKeepNum = 1;

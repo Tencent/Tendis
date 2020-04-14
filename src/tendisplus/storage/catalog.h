@@ -30,6 +30,7 @@ class StoreMeta {
     // catalog. KVStore->getHighestBinlogId() should been more reliable.
     uint64_t binlogId;
     ReplState replState;
+    string replErr;
 };
 
 // store meta

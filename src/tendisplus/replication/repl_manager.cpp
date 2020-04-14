@@ -421,7 +421,7 @@ void ReplManager::controlRoutine() {
                     slaveSyncRoutine(i);
                 });
             } else if (_syncMeta[i]->replState == ReplState::REPL_CONNECTED ||
-                    _syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION) {
+                    _syncMeta[i]->replState == ReplState::REPL_ERR) {
                 _syncStatus[i]->isRunning = true;
                 _incrChecker->schedule([this, i]() {
                     slaveSyncRoutine(i);
@@ -584,12 +584,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         for (auto& mpov : _pushStatus[storeId]) {
             end = std::min(end, mpov.second->binlogPos);
         }
-        // NOTE(deyukong): currently, we cant get the exact log count by
-        // _highestVisible - startLogId, because "readonly" txns also
-        // occupy txnIds, and in each txnId, there are more sub operations.
-        // So, maxKeepLogs is not named precisely.
-        // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
-        uint32_t maxKeepLogs = _cfg->maxBinlogKeepNum;
+        // NOTE(deyukong): we should keep at least 1 binlog
+        uint64_t maxKeepLogs = _cfg->maxBinlogKeepNum;
         if (_syncMeta[storeId]->syncFromHost != "" && _pushStatus[storeId].size() == 0 ) {
             tailSlave = true;
         }
@@ -597,7 +593,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
             maxKeepLogs = _cfg->slaveBinlogKeepNum;
         }
 
-        maxKeepLogs = std::max((uint32_t)1, maxKeepLogs);
+        maxKeepLogs = std::max((uint64_t)1, maxKeepLogs);
         if (highest >= maxKeepLogs && end > highest - maxKeepLogs) {
             end = highest - maxKeepLogs;
         }
@@ -900,7 +896,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
         uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime)/1000000; // ms
         uint64_t now = nsSinceEpoch()/1000000; // ms
         // only display the min store.
-        if (_syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION ||
+        if (_syncMeta[i]->replState == ReplState::REPL_ERR ||
             last_sync_time < min_last_sync_time ||
             show_all) {
             min_last_sync_time = last_sync_time;
@@ -916,12 +912,14 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss, bool show_all) const 
             ss_masterinfo << ",sync_from_id=" << _syncMeta[i]->syncFromId;
             ss_masterinfo << ",binlog_id=" << _syncMeta[i]->binlogId;
             ss_masterinfo << ",repl_state=" << std::to_string(uint8_t(_syncMeta[i]->replState));
+            string repl_err = _syncMeta[i]->replState == ReplState::REPL_ERR ? _syncMeta[i]->replErr : "";
+            ss_masterinfo << ",repl_err=" << repl_err;
 
             ss_masterinfo << ",last_sync_time=" << last_sync_time;
             ss_masterinfo << ",sync_time_lag=" << now - last_sync_time;
 
             ss_masterinfo << "\r\n";
-            if (_syncMeta[i]->replState == ReplState::REPL_ERR_BINLOG_DELETION) {
+            if (!show_all && _syncMeta[i]->replState == ReplState::REPL_ERR) {
                 break;
             }
         }

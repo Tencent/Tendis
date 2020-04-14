@@ -22,6 +22,8 @@ string gMappingCmdList = "";
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
         _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
+    else if (typeid(var) == typeid(int64_t) || typeid(var) == typeid(uint64_t)) \
+        _mapServerParams.insert(make_pair(toLower(str), new Int64Var(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(float)) \
         _mapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(string)) \

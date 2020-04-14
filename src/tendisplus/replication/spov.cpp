@@ -317,13 +317,11 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     }
     if (s.value().size() == 0 || s.value()[0] != '+') {
         LOG(WARNING) << "store:" << metaSnapshot.id
-                << " incrsync master bad return:" << s.value();
-        if (s.value().find("-ERR invalid binlogPos") == 0) {
-            LOG(ERROR) << "store:" << metaSnapshot.id << " REPL_ERR_BINLOG_DELETION";
-            auto newMeta = metaSnapshot.copy();
-            newMeta->replState = ReplState::REPL_ERR_BINLOG_DELETION;
-            changeReplState(*newMeta, false);
-        }
+            << " incrsync master bad return:" << s.value();
+        auto newMeta = metaSnapshot.copy();
+        newMeta->replState = ReplState::REPL_ERR;
+        newMeta->replErr = s.value();
+        changeReplState(*newMeta, false);
         return;
     }
 
@@ -397,14 +395,14 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
     INVARIANT(metaSnapshot->replState == ReplState::REPL_CONNECT ||
         metaSnapshot->replState == ReplState::REPL_CONNECTED ||
-        metaSnapshot->replState == ReplState::REPL_ERR_BINLOG_DELETION);
+        metaSnapshot->replState == ReplState::REPL_ERR);
 
     if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
         slaveStartFullsync(*metaSnapshot);
         nextSched = nextSched + std::chrono::seconds(3);
         return;
     } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED ||
-            metaSnapshot->replState == ReplState::REPL_ERR_BINLOG_DELETION) {
+            metaSnapshot->replState == ReplState::REPL_ERR) {
         slaveChkSyncStatus(*metaSnapshot);
         nextSched = nextSched + std::chrono::seconds(10);
         return;
