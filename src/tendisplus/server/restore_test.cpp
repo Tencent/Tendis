@@ -190,6 +190,7 @@ void restoreBinlog(const string& src_binlog_dir, const std::shared_ptr<ServerEnt
 }
 
 void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
+    INVARIANT(server->getParams()->maxBinlogKeepNum == 1);
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
         auto kvstore = server->getStores()[i];
 
@@ -412,7 +413,6 @@ makeRestoreEnv(uint32_t storeCnt) {
     return std::make_pair(master1, master2);
 }
 
-
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
@@ -438,25 +438,27 @@ TEST(Restore, Common) {
         auto& master1 = hosts.first;
         auto& master2 = hosts.second;
 
+        // make sure no binlog been deleted
+        runCommand(master1, {"config", "set", "maxBinlogKeepNum", "1000000000"});
+        runCommand(master2, {"config", "set", "maxBinlogKeepNum", "1000000000"});
+
         auto allKeys1 = initData(master1, recordSize, "suffix1");
         LOG(INFO) << ">>>>>> master1 initData 1st end;";
         backup(master1, "copy");
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
-        // NOTE(vinchen): make sure binlogs of master and slave
-        // have been deleted. But is 1 second enough?
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
 
         backup(master1, "ckpt");
         restoreBackup(master2);
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
-        // NOTE(vinchen): make sure binlogs of master and slave
-        // have been deleted. But is 1 second enough?
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
+
+        // make sure binlog should been deleted
+        runCommand(master1, {"config", "set", "maxBinlogKeepNum", "1"});
+        runCommand(master2, {"config", "set", "maxBinlogKeepNum", "1"});
 
         uint32_t part1_num = std::rand() % recordSize;
         part1_num = part1_num == 0 ? 1 : part1_num;
@@ -515,9 +517,9 @@ makeRestoreEnv2(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master2_dir));
     EXPECT_TRUE(setupEnv(slave1_dir));
 
-    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
-    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
-    auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir);
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir, false);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
+    auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir, false);
     cfg1->minBinlogKeepSec = 60;
     cfg2->maxBinlogKeepNum = 1;
     cfg3->maxBinlogKeepNum = 1;

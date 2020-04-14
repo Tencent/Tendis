@@ -112,8 +112,8 @@ makeReplEnv(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master_dir));
     EXPECT_TRUE(setupEnv(slave_dir));
 
-    auto cfg1 = makeServerParam(master_port, storeCnt, master_dir);
-    auto cfg2 = makeServerParam(slave_port, storeCnt, slave_dir);
+    auto cfg1 = makeServerParam(master_port, storeCnt, master_dir, false);
+    auto cfg2 = makeServerParam(slave_port, storeCnt, slave_dir, false);
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -140,7 +140,7 @@ makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
 	INVARIANT(port != master_port && port != slave_port);
     EXPECT_TRUE(setupEnv(name));
 
-    auto cfg1 = makeServerParam(port, storeCnt, name);
+    auto cfg1 = makeServerParam(port, storeCnt, name, false);
 
     auto slave = std::make_shared<ServerEntry>(cfg1);
     auto s = slave->startup(cfg1);
@@ -279,8 +279,8 @@ TEST(Repl, SlaveOfNeedEmpty) {
         EXPECT_TRUE(setupEnv(master_dir));
         EXPECT_TRUE(setupEnv(slave_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
@@ -372,10 +372,10 @@ TEST(Repl, MasterDontSaveBinlog) {
         EXPECT_TRUE(setupEnv(slave1_dir));
         EXPECT_TRUE(setupEnv(single_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
-        auto cfg4 = makeServerParam(single_port, i, single_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
+        auto cfg4 = makeServerParam(single_port, i, single_dir, false);
         cfg1->maxBinlogKeepNum = 1;
         cfg2->maxBinlogKeepNum = 1;
         cfg2->slaveBinlogKeepNum = 1;
@@ -455,9 +455,9 @@ TEST(Repl, SlaveCantModify) {
         EXPECT_TRUE(setupEnv(slave_dir));
         EXPECT_TRUE(setupEnv(slave1_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
@@ -534,8 +534,8 @@ TEST(Repl, slaveofBenchmarkingMaster) {
         EXPECT_TRUE(setupEnv(master_dir));
         EXPECT_TRUE(setupEnv(slave_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
