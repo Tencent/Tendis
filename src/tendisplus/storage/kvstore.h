@@ -83,6 +83,7 @@ class RepllogCursorV2 {
     static Expected<uint64_t> getMinBinlogId(Transaction* txn);
     static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
     static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
+    static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
 
  protected:
     Transaction* _txn;

@@ -239,7 +239,7 @@ Expected<uint64_t> RocksTxn::commit() {
         uint16_t oriFlag = static_cast<uint16_t>(ReplFlag::REPL_GROUP_START)
             | static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
-        DLOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << " binlogid:" << _binlogId;
+        // DLOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << " binlogid:" << _binlogId;
 
         ReplLogKeyV2 key(_binlogId);
         ReplLogValueV2 val(chunkId, static_cast<ReplFlag>(oriFlag), _txnId,

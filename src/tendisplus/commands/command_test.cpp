@@ -1314,6 +1314,7 @@ TEST(Command, info) {
       {"info", "persistence" },
       {"info", "stats" },
       {"info", "replication" },
+      {"info", "binloginfo" },
       {"info", "cpu" },
       {"info", "commandstats" },
       {"info", "cluster" },

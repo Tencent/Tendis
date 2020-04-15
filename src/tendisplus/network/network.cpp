@@ -293,7 +293,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
         // TODO(deyukong): keep-alive params
     }
 
-    LOG(INFO) << "net session, id:" << id()
+    DLOG(INFO) << "net session, id:" << id()
         << ",connId:" << _connId
         << " createad";
     _first = true;

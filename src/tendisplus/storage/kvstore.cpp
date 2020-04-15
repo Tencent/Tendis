@@ -135,6 +135,29 @@ Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
     return explk.value().getBinlogId();
 }
 
+Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {
+    auto cursor = txn->createCursor();
+    if (!cursor) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+    }
+
+    // NOTE(vinchen): it works because binlog has a maximum prefix.
+    // see RecordType::RT_BINLOG, plz note that it's tricky.
+    cursor->seekToLast();
+    Expected<Record> expRcd = cursor->next();
+    if (!expRcd.ok()) {
+        return expRcd.status();
+    }
+
+    if (expRcd.value().getRecordKey().getRecordType()
+        != RecordType::RT_BINLOG) {
+        return{ ErrorCodes::ERR_EXHAUST, "" };
+    }
+
+    // TODO(vinchen): too more copy
+    return ReplLogRawV2(expRcd.value());
+}
+
 Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
     auto cursor = txn->createCursor();
     if (!cursor) {

@@ -84,7 +84,7 @@ class WorkLoad {
 void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
         const std::shared_ptr<ServerEntry>& slave);
 
-void runCommand(std::shared_ptr<ServerEntry> svr, std::vector<std::string> args);
+std::string runCommand(std::shared_ptr<ServerEntry> svr, std::vector<std::string> args);
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
