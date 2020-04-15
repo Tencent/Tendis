@@ -295,10 +295,24 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
                 << "," << metaSnapshot.syncFromPort
                 << "," << metaSnapshot.syncFromId;
 
+    bool has_error = true;
+    std::string errStr = "";
+    std::string errPrefix = "store:" + std::to_string(metaSnapshot.id) + " ";
+    auto guard = MakeGuard([this, &metaSnapshot, &has_error, &errStr] {
+        if (has_error) {
+            auto newMeta = metaSnapshot.copy();
+            newMeta->replState = ReplState::REPL_ERR;
+            newMeta->replErr = errStr;
+            LOG(WARNING) << errStr;
+            changeReplState(*newMeta, false);
+        }
+        });
+
+
     std::shared_ptr<BlockingTcpClient> client =
         std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
     if (client == nullptr) {
-        LOG(WARNING) << "store:" << metaSnapshot.id << " reconn master failed";
+        errStr = errPrefix + "reconn master failed";
         return;
     }
 
@@ -311,24 +325,21 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
-        LOG(WARNING) << "store:" << metaSnapshot.id
-                << " psync master failed with error:" << s.status().toString();
+        errStr =  errPrefix
+                + "psync master failed with error:"
+            + s.status().toString();
         return;
     }
     if (s.value().size() == 0 || s.value()[0] != '+') {
-        LOG(WARNING) << "store:" << metaSnapshot.id
-            << " incrsync master bad return:" << s.value();
-        auto newMeta = metaSnapshot.copy();
-        newMeta->replState = ReplState::REPL_ERR;
-        newMeta->replErr = s.value();
-        changeReplState(*newMeta, false);
+        errStr = errPrefix
+            + "incrsync master bad return:" + s.value();
         return;
     }
 
     Status pongStatus  = client->writeLine("+PONG");
     if (!pongStatus.ok()) {
-        LOG(WARNING) << "store:" << metaSnapshot.id
-                << " write pong failed:" << pongStatus.toString();
+        errStr = errPrefix 
+                + "write pong failed:" + pongStatus.toString();
         return;
     }
 
@@ -345,8 +356,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     Expected<uint64_t> expSessionId =
             network->client2Session(std::move(client));
     if (!expSessionId.ok()) {
-        LOG(WARNING) << "client2Session failed:"
-                    << expSessionId.status().toString();
+        errStr = errPrefix + 
+                 "client2Session failed:"
+                    + expSessionId.status().toString();
         return;
     }
     uint64_t sessionId = expSessionId.value();
@@ -363,6 +375,15 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         _syncStatus[metaSnapshot.id]->sessionId = sessionId;
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
+
+    if (metaSnapshot.replState != ReplState::REPL_CONNECTED) {
+        auto newMeta = metaSnapshot.copy();
+        newMeta->replState = ReplState::REPL_CONNECTED;
+        newMeta->replErr = "";
+        changeReplState(*newMeta, false);
+    }
+    has_error = false;
+
     LOG(INFO) << "store:" << metaSnapshot.id
         << ",binlogId:" << metaSnapshot.binlogId
         << " psync master succ."

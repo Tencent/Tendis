@@ -24,14 +24,52 @@
 
 namespace tendisplus {
 
-std::string MPovFullPushStatus::toString(){
+const char* ReplStateStr[] = {
+        "none",
+        "connecting",
+        "send_bulk",
+        "online",
+        "error"
+};
+
+const char* FullPushStateStr[] = {
+    "send_bulk",
+    "send_bulk_success",
+    "send_bulk_err",
+};
+
+template <typename T>
+std::string getEnumStr(T element) {
+    size_t size = 0;
+    const char** arr = nullptr;
+    if (typeid(T) == typeid(FullPushState)) {
+        arr = FullPushStateStr;
+        size = sizeof(FullPushStateStr) / sizeof(FullPushStateStr[0]);
+    } else if (typeid(T) == typeid(ReplState)) {
+        arr = ReplStateStr;
+        size = sizeof(ReplStateStr) / sizeof(ReplStateStr[0]);
+    } else {
+        INVARIANT_D(0);
+        return "not support";
+    }
+
+    uint32_t index = static_cast<uint32_t>(element);
+    if (index >= size) {
+        INVARIANT_D(0);
+        return "not support";
+    }
+
+    return arr[index];
+}
+
+std::string MPovFullPushStatus::toString() {
     stringstream ss_state;
     ss_state << "storeId:" << storeid
-             << " node:" << slave_listen_ip << ":" << slave_listen_port
-             << " state:" << (int)state
-             << " binlogPos:" << binlogPos
-             << " starttime:" << startTime.time_since_epoch().count()/1000000
-             << " endtime:" << endTime.time_since_epoch().count()/1000000;
+        << " node:" << slave_listen_ip << ":" << slave_listen_port
+        << " state:" << getEnumStr(state)
+        << " binlogPos:" << binlogPos
+        << " startTime:" << startTime.time_since_epoch().count() / 1000000
+        << " endTime:" << endTime.time_since_epoch().count() / 1000000;
     return ss_state.str();
 }
 
@@ -176,7 +214,7 @@ Status ReplManager::startup() {
         // init master's pov, incrpush status
 #if defined(_WIN32) && _MSC_VER > 1900
         _pushStatus.emplace_back(
-			std::map<uint64_t, MPovStatus*>());
+            std::map<uint64_t, MPovStatus*>());
         _fullPushStatus.emplace_back(
             std::map<string, MPovFullPushStatus*>());
 #else
@@ -516,7 +554,7 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
 
 void ReplManager::recycleBinlog(uint32_t storeId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
-    float randRatio = rand() % 40 / 100.0 + 0.80; // 0.80 to 1.20
+    float randRatio = redis_port::random() % 40 / 100.0 + 0.80;  // 0.80 to 1.20
     uint32_t nextSchedInterval = _cfg->truncateBinlogIntervalMs * randRatio;
     nextSched = nextSched + std::chrono::milliseconds(nextSchedInterval);
 
@@ -573,8 +611,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
 
         start = _logRecycStatus[storeId]->firstBinlogId;
 
-        saveLogs = _syncMeta[storeId]->syncFromHost != ""; // REPLICATE_ONLY
-        if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0 ) { // single node
+        saveLogs = _syncMeta[storeId]->syncFromHost != "";  // REPLICATE_ONLY
+        if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0) {  // single node
             saveLogs = true;
         }
         for (auto& mpov : _fullPushStatus[storeId]) {
@@ -585,7 +623,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         }
         // NOTE(deyukong): we should keep at least 1 binlog
         uint64_t maxKeepLogs = _cfg->maxBinlogKeepNum;
-        if (_syncMeta[storeId]->syncFromHost != "" && _pushStatus[storeId].size() == 0 ) {
+        if (_syncMeta[storeId]->syncFromHost != "" && _pushStatus[storeId].size() == 0) {
             tailSlave = true;
         }
         if (tailSlave) {
@@ -690,7 +728,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
 
 void ReplManager::flushCurBinlogFs(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
-    // TODO(takenliu):let truncateBinlogV2 return quickly.
+    // TODO(takenliu): let truncateBinlogV2 return quickly.
     updateCurBinlogFs(storeId, 0, 0, true);
 }
 
@@ -829,9 +867,10 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     int64_t master_last_io_seconds_ago = 0;
     int32_t master_sync_in_progress = 0;
     int32_t slave_repl_offset = 0;
-    int32_t slave_priority = 100; 
+    int32_t slave_priority = 100;
     int32_t slave_read_only = 1;
     SCLOCK::time_point minlastSyncTime = SCLOCK::now();
+    SCLOCK::time_point mindownSyncTime = SCLOCK::now();
 
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         std::lock_guard<std::mutex> lk(_mutex);
@@ -846,9 +885,14 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
             master_host = _syncMeta[i]->syncFromHost;
             master_port = _syncMeta[i]->syncFromPort;
             slave_repl_offset += _syncMeta[i]->binlogId;
-            // TODO(takenliu): master_link_status
             if (_syncMeta[i]->replState == ReplState::REPL_TRANSFER) {
                 master_sync_in_progress = 1;
+            } else if (_syncMeta[i]->replState == ReplState::REPL_ERR) {
+                master_link_status = "down";
+
+                if (_syncStatus[i]->lastSyncTime < mindownSyncTime) {
+                    mindownSyncTime = _syncStatus[i]->lastSyncTime;
+                }
             }
         }
     }
@@ -857,20 +901,20 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     if (role == "slave") {
         ss << "master_host:" << master_host << "\r\n";
         ss << "master_port:" << master_port << "\r\n";
-        ss << "master_link_status:" << master_link_status << "\r\n";        // TODO(vinchen)
+        ss << "master_link_status:" << master_link_status << "\r\n";
         ss << "master_last_io_seconds_ago:" << master_last_io_seconds_ago << "\r\n";
         ss << "master_sync_in_progress:" << master_sync_in_progress << "\r\n";
         ss << "slave_repl_offset:" << slave_repl_offset << "\r\n";
 
         if (master_sync_in_progress == 1) {
-            // TODO(takenliu): 
+            // TODO(takenliu):
             ss << "master_sync_left_bytes:" << -1 << "\r\n";
-            ss << "master_sync_last_io_seconds_ago:" << -1 << "\r\n";
+            ss << "master_sync_last_io_seconds_ago:" << master_last_io_seconds_ago << "\r\n";
         }
 
-        // TODO(takenliu)
-        if (0) {
-            ss << "master_link_down_since_seconds" << -1 << "\r\n";
+        if (master_link_status == "down") {
+            auto master_link_down_since_seconds = sinceEpoch() - sinceEpoch(mindownSyncTime);
+            ss << "master_link_down_since_seconds" << master_link_down_since_seconds << "\r\n";
         }
 
         ss << "slave_priority:" << slave_priority << "\r\n";
@@ -883,7 +927,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
         auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
                             mgl::LockMode::LOCK_NONE, true);
         if (!expdb.ok()) {
-            return ;
+            return;
         }
 
         uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
@@ -946,22 +990,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         std::lock_guard<std::mutex> lk(_mutex);
         if (_syncMeta[i]->syncFromHost != "") {
-            std::string state = "";
-            switch (_syncMeta[i]->replState) {
-            case ReplState::REPL_CONNECT:
-                state = "connecting";
-                break;
-            case ReplState::REPL_TRANSFER:
-                state = "send_bulk";
-                break;
-            case ReplState::REPL_CONNECTED:
-                state = "online";
-                break;
-                // TODO(vinchen)
-            default:
-                state = "none";
-                break;
-            }
+            std::string state = getEnumStr(_syncMeta[i]->replState);
 
             ss << "rocksdb" << i << "_master:";
             ss << "ip=" << _syncMeta[i]->syncFromHost;
@@ -970,6 +999,9 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
             ss << ",state=" << state;
             ss << ",binlog_pos=" << _syncMeta[i]->binlogId;
             ss << ",lag=" << (sinceEpoch() - sinceEpoch(_syncStatus[i]->lastSyncTime));
+            if (_syncMeta[i]->replState == ReplState::REPL_ERR) {
+                ss << ",error=" << _syncMeta[i]->replErr;
+            }
             ss << "\r\n";
         }
     }
@@ -981,7 +1013,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
             continue;
         }
         uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
- 
+
         std::lock_guard<std::mutex> lk(_mutex);
         size_t j = 0;
         for (auto iter = _pushStatus[i].begin(); iter != _pushStatus[i].end(); ++iter) {
@@ -998,20 +1030,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
 
         j = 0;
         for (auto iter = _fullPushStatus[i].begin(); iter != _fullPushStatus[i].end(); ++iter) {
-            std::string state = "";
-            switch (iter->second->state) {
-            case FullPushState::SUCESS:
-                state = "send_bulk_success";
-                break;
-            case FullPushState::PUSHING:
-                state = "send_bulk";
-                break;
-            case FullPushState::ERR:
-                state = "send_bulk_err";
-                break;
-            default:
-                break;
-            }
+            std::string state = getEnumStr(iter->second->state);
 
             ss << "rocksdb" << i << "_slave" << j++ << ":";
             ss << ",ip=" << iter->second->slave_listen_ip;
