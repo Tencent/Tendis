@@ -482,8 +482,8 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
             _logRecycStatus[storeId]->firstBinlogId != _logRecycStatus[storeId]->lastFlushBinlogId) {
             std::stringstream ss;
             ss << "-ERR invalid binlogPos,storeId:" << storeId
-                << ",firstPos:" << _logRecycStatus[storeId]->firstBinlogId
-                << ",binlogPos:" << binlogPos
+                << ",master firstPos:" << _logRecycStatus[storeId]->firstBinlogId
+                << ",slave binlogPos:" << binlogPos
                 << ",lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
             LOG(ERROR) << ss.str();
             return false;

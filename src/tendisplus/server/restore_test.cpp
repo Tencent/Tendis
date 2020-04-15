@@ -509,6 +509,7 @@ makeRestoreEnv2(uint32_t storeCnt) {
     cfg1->minBinlogKeepSec = 60;
     cfg2->maxBinlogKeepNum = 1;
     cfg3->maxBinlogKeepNum = 1;
+    cfg3->slaveBinlogKeepNum = 1;
 
     auto master1 = std::make_shared<ServerEntry>(cfg1);
     auto s = master1->startup(cfg1);

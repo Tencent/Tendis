@@ -350,7 +350,7 @@ void checkBinlogFile(string dir, bool hasBinlog, uint32_t storeCount) {
         if (hasBinlog) {
             EXPECT_GT(maxsize, BINLOG_HEADER_V2_LEN);
         } else {
-            EXPECT_EQ(maxsize, BINLOG_HEADER_V2_LEN);
+            EXPECT_TRUE(maxsize == BINLOG_HEADER_V2_LEN || maxsize == 0);
         }
     }
 }
@@ -378,7 +378,9 @@ TEST(Repl, MasterDontSaveBinlog) {
         auto cfg4 = makeServerParam(single_port, i, single_dir);
         cfg1->maxBinlogKeepNum = 1;
         cfg2->maxBinlogKeepNum = 1;
+        cfg2->slaveBinlogKeepNum = 1;
         cfg3->maxBinlogKeepNum = 1;
+        cfg3->slaveBinlogKeepNum = 1;
         cfg4->maxBinlogKeepNum = 1;
 
         auto master = std::make_shared<ServerEntry>(cfg1);
@@ -569,5 +571,126 @@ TEST(Repl, slaveofBenchmarkingMaster) {
         LOG(INFO) << ">>>>>> test store count:" << i << " end;";
     }
 }
+
+void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(svr, ctx);
+    for (size_t i = 0; i < svr->getKVStoreCount(); i++) {
+        session->setArgs({ "binlogpos", to_string(i)});
+        auto expect = Command::runSessionCmd(session.get());
+        uint64_t binlogpos = Command::getInt64FromFmtLongLong(expect.value()).value();
+
+        session->setArgs({ "binlogstart", to_string(i)});
+        expect = Command::runSessionCmd(session.get());
+        uint64_t binlogstart = Command::getInt64FromFmtLongLong(expect.value()).value();
+        LOG(INFO) << "checkBinlogKeepNum, port:" << svr->getParams()->port
+            << " store:" << i
+            << " binlogpos:" << binlogpos
+            << " binlogstart:" << binlogstart
+            << " num:" << num;
+        // if data not full, binlogpos-binlogstart may be smaller than num.
+        EXPECT_TRUE(binlogpos - binlogstart + 1 == num);
+    }
+}
+
+TEST(Repl, BinlogKeepNum_Test) {
+    size_t i = 0;
+    {
+        LOG(INFO) << ">>>>>> test store count:" << i;
+        const auto guard = MakeGuard([] {
+            destroyEnv(master_dir);
+            destroyEnv(slave_dir);
+            destroyEnv(slave1_dir);
+            destroyEnv(single_dir);
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
+
+        EXPECT_TRUE(setupEnv(master_dir));
+        EXPECT_TRUE(setupEnv(slave_dir));
+        EXPECT_TRUE(setupEnv(slave1_dir));
+        EXPECT_TRUE(setupEnv(single_dir));
+
+        auto cfg1 = makeServerParam(master_port, i, master_dir);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
+        auto cfg4 = makeServerParam(single_port, i, single_dir);
+        uint64_t masterBinlogNum = 10;
+        cfg1->maxBinlogKeepNum = masterBinlogNum;
+        cfg2->maxBinlogKeepNum = masterBinlogNum;
+        cfg2->slaveBinlogKeepNum = 1;
+        cfg3->slaveBinlogKeepNum = 1;
+        cfg4->maxBinlogKeepNum = masterBinlogNum;
+
+        auto master = std::make_shared<ServerEntry>(cfg1);
+        auto s = master->startup(cfg1);
+        INVARIANT(s.ok());
+
+        auto slave = std::make_shared<ServerEntry>(cfg2);
+        s = slave->startup(cfg2);
+        INVARIANT(s.ok());
+
+        auto slave1 = std::make_shared<ServerEntry>(cfg3);
+        s = slave1->startup(cfg3);
+        INVARIANT(s.ok());
+
+        auto single = std::make_shared<ServerEntry>(cfg4);
+        s = single->startup(cfg4);
+        INVARIANT(s.ok());
+
+        runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
+        // slaveof need about 3 seconds to transfer file.
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        auto allKeys = initData(master, recordSize);
+        initData(single, recordSize);
+
+        waitSlaveCatchup(master, slave);
+        sleep(3); // wait recycle binlog
+
+        LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+        checkBinlogKeepNum(master, masterBinlogNum);
+        checkBinlogKeepNum(slave, 1);
+        checkBinlogKeepNum(single, masterBinlogNum);
+
+
+        LOG(INFO) << ">>>>>> master add data begin.";
+        auto thread = std::thread([this, master](){
+            testAll(master); // need about 40 seconds
+        });
+        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
+        sleep(sleep_time);
+
+        LOG(INFO) << ">>>>>> slaveof begin.";
+        runCmd(slave1, { "slaveof", "127.0.0.1", std::to_string(slave_port) });
+        // slaveof need about 3 seconds to transfer file.
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        thread.join();
+        initData(master, recordSize); // add data every store
+        waitSlaveCatchup(master, slave);
+        waitSlaveCatchup(slave, slave1);
+        sleep(3); // wait recycle binlog
+        LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+        checkBinlogKeepNum(master, masterBinlogNum);
+        checkBinlogKeepNum(slave, masterBinlogNum);
+        checkBinlogKeepNum(slave1, 1);
+        LOG(INFO) << ">>>>>> checkBinlogKeepNum end.";
+
+#ifndef _WIN32
+        master->stop();
+        slave->stop();
+        slave1->stop();
+        single->stop();
+
+        ASSERT_EQ(slave.use_count(), 1);
+        ASSERT_EQ(master.use_count(), 1);
+        ASSERT_EQ(slave1.use_count(), 1);
+        ASSERT_EQ(single.use_count(), 1);
+#endif
+
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+    }
+}
+
 }  // namespace tendisplus
 

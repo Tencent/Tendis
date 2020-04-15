@@ -117,7 +117,32 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+};
 
+// support:int64_t, uint64_t
+class Int64Var : public BaseVar {
+public:
+    Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
+            : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+    virtual string show() const {
+        return std::to_string(*(int64_t *)value);
+    };
+
+private:
+    bool set(const string& val) {
+        auto v = preProcessFun ? preProcessFun(val) : val;
+        if(!check(v)) return false;
+
+        try {
+            *(int64_t*)value = std::stoll(v);
+        } catch (...) {
+            LOG(ERROR) << "Int64Var stoll err:" << v;
+            return false;
+        }
+
+        if (Onupdate != NULL) Onupdate();
+        return true;
+    }
 };
 
 class FloatVar : public BaseVar {
@@ -229,8 +254,9 @@ public:
     uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
     bool noexpire = false;
-    uint32_t maxBinlogKeepNum = 1000000;
+    uint64_t maxBinlogKeepNum = 1000000;
     uint32_t minBinlogKeepSec = 0;
+    uint64_t slaveBinlogKeepNum = 1;
 
     uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
     std::string slowlogPath = "./slowlog";

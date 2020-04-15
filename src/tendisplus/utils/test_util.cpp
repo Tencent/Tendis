@@ -56,6 +56,8 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     if (storeCnt != 0) {
         myfile << "kvStoreCount "<< storeCnt << "\n";
     }
+    myfile << "maxBinlogKeepNum 1000000\n";
+    myfile << "slaveBinlogKeepNum 1000000\n";
 #ifdef _WIN32
     myfile << "rocks.compress_type none\n";
 #endif

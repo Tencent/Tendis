@@ -1211,7 +1211,7 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
 }
 
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
-    uint64_t end, Transaction *txn, std::ofstream *fs) {
+    uint64_t end, Transaction *txn, std::ofstream *fs, bool tailSlave) {
     DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
         << " getHighestBinlogId:" << getHighestBinlogId()
         << " start:"<<start <<" end:"<< end;
@@ -1228,7 +1228,6 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     }
 #endif
     auto cursor = txn->createRepllogCursorV2(start);
-
     uint64_t max_cnt = _cfg->truncateBinlogNum;
     uint64_t size = 0;
     uint64_t nextStart = start;
@@ -1241,22 +1240,14 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
             }
             return explog.status();
         }
-        nextStart = explog.value().getBinlogId();
 
-        // NOTE(deyukong): currently, we cant get the exact log count by
-        // _highestVisible - startLogId, because "readonly" txns also
-        // occupy txnIds, and in each txnId, there are more sub operations.
-        // So, maxKeepLogs is not named precisely.
-        // NOTE(deyukong): we should keep at least 1 binlog to avoid cornercase
-        uint64_t maxKeepLogs = std::max((uint32_t)1, _cfg->maxBinlogKeepNum);
-        if (nextStart > end ||
-            size >= max_cnt ||
-            getHighestBinlogId() - nextStart <= (maxKeepLogs - 1)) {
+        if (explog.value().getBinlogId() > end ||
+            size >= max_cnt) {
             break;
         }
         ts = explog.value().getTimestamp();
         uint64_t minKeepLogMs = _cfg->minBinlogKeepSec * 1000;
-        if (minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
+        if (!tailSlave && minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
             break;
         }
 
@@ -1276,6 +1267,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
             LOG(ERROR) << "delbinlog error:" << s.toString();
             return s;
         }
+        nextStart = explog.value().getBinlogId() + 1;
         deleten++;
     }
 

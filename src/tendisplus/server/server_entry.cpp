@@ -307,9 +307,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                                              _reqMatrix, cfg);
     Status s = _network->prepare(cfg->bindIp, cfg->port, cfg->netIoThreadNum);
     if (!s.ok()) {
-        LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:" << s.toString();
+        LOG(ERROR) << "ServerEntry::startup failed, _network->prepare:" << s.toString()
+            << " ip:" << cfg->bindIp << " port:" << cfg->port;
         return s;
     }
+    LOG(INFO) << "_network->prepare ok. ip :" << cfg->bindIp << " port:" << cfg->port;
 
     // replication
     // replication relys on blocking-client
