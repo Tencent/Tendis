@@ -245,7 +245,10 @@ class DumpXCommand: public Command {
         std::stringstream ss;
         std::vector<std::string> errorlist;
         std::vector<std::string> bufferlist;
-        INVARIANT(!((args.size() - 1) % 2));
+        INVARIANT_D(!((args.size() - 1) % 2));
+        if (((args.size() - 1) % 2) != 0) {
+            return { ErrorCodes::ERR_PARSEOPT, "invalid args size" };
+        }
         bufferlist.reserve(3 * (args.size() - 1) / 2);
         for (const auto& i : index) {
             auto expDbid = tendisplus::stoul(args[i-1]);
@@ -393,7 +396,10 @@ class ListSerializer: public Serializer {
         uint64_t tail = expListMeta.value().getTail();
         uint64_t head = expListMeta.value().getHead();
         uint64_t len = tail - head;
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid list" };
+        }
 
         auto server = _sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
@@ -467,7 +473,10 @@ class SetSerializer: public Serializer {
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
         Expected<SetMetaValue> expMeta = SetMetaValue::decode(_rv.getValue());
         size_t len = expMeta.value().getCount();
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid set" };
+        }
 
         auto expwr = saveLen(&payload, &_pos, len);
         if (!expwr.ok()) {
@@ -1142,7 +1151,7 @@ class ZsetDeserializer: public Deserializer {
         if (!eMeta.ok() && eMeta.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return eMeta.status();
         }
-        INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
+        INVARIANT_D(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         ZSlMetaValue meta(1, 1, 0);
         RecordValue rv(meta.encode(), RecordType::RT_ZSET_META,
                 _sess->getCtx()->getVersionEP(), _ttl);

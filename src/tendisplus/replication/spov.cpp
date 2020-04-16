@@ -121,7 +121,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                     << " failed:" << stopStatus.toString();
         return;
     }
-    INVARIANT(!store->isRunning());
+    INVARIANT_D(!store->isRunning());
     Status clearStatus =  store->clear();
     if (!clearStatus.ok()) {
         LOG(FATAL) << "Unexpected store:" << metaSnapshot.id << " clear"
@@ -258,10 +258,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     newMeta->replState = ReplState::REPL_CONNECTED;
     newMeta->binlogId = bkInfo.value().getBinlogPos();
 
-    // NOTE(deyukong): the line below is commented, because it can not
-    // hold true all times. since readonly-txns also increases binlogPos
-    // INVARIANT(bkInfo.value().getBinlogPos() <= restartStatus.value());
-
     changeReplState(*newMeta, true);
     resetRecycleState(metaSnapshot.id);
     rollback = false;
@@ -344,7 +340,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     }
 
     NetworkAsio *network = _svr->getNetwork();
-    INVARIANT(network != nullptr);
+    INVARIANT_D(network != nullptr);
 
     // why dare we transfer a client to a session ?
     // 1) the logic gets here, so there wont be any
@@ -394,7 +390,7 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, storeId] {
         std::lock_guard<std::mutex> lk(_mutex);
-        INVARIANT(_syncStatus[storeId]->isRunning);
+        INVARIANT_D(_syncStatus[storeId]->isRunning);
         _syncStatus[storeId]->isRunning = false;
         if (nextSched > _syncStatus[storeId]->nextSchedTime) {
             _syncStatus[storeId]->nextSchedTime = nextSched;
@@ -413,10 +409,6 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
         nextSched = nextSched + std::chrono::seconds(10);
         return;
     }
-
-    INVARIANT(metaSnapshot->replState == ReplState::REPL_CONNECT ||
-        metaSnapshot->replState == ReplState::REPL_CONNECTED ||
-        metaSnapshot->replState == ReplState::REPL_ERR);
 
     if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
         slaveStartFullsync(*metaSnapshot);
@@ -528,7 +520,7 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
     }();
     auto guard = MakeGuard([this, storeId, &idMatch] {
         std::unique_lock<std::mutex> lk(_mutex);
-        INVARIANT(_syncStatus[storeId]->isRunning);
+        INVARIANT_D(_syncStatus[storeId]->isRunning);
         _syncStatus[storeId]->isRunning = false;
         if (idMatch) {
             _syncStatus[storeId]->lastSyncTime = SCLOCK::now();

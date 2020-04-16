@@ -287,7 +287,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     if (initSock) {
         std::error_code ec;
         _sock.non_blocking(true, ec);
-        INVARIANT(ec.value() == 0);
+        INVARIANT_D(ec.value() == 0);
         _sock.set_option(tcp::no_delay(true));
         _sock.set_option(asio::socket_base::keep_alive(true));
         // TODO(deyukong): keep-alive params

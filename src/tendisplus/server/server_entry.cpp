@@ -188,7 +188,6 @@ void ServerEntry::logError(const std::string& str, Session* sess) {
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {
-    INVARIANT_D(_kvstores.size() == _catalog->getKVStoreCount());
     return _catalog->getKVStoreCount();
 }
 extern string gRenameCmdList;
@@ -264,7 +263,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }*/
 
     installStoresInLock(tmpStores);
-    INVARIANT(getKVStoreCount() == kvStoreCount);
+    INVARIANT_D(getKVStoreCount() == kvStoreCount);
 
     // segment mgr
     auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
@@ -791,7 +790,7 @@ Status ServerEntry::destroyStore(Session *sess,
             << " failed:" << status.toString();
         return status;
     }
-    INVARIANT(store->getMode() == KVStore::StoreMode::STORE_NONE);
+    INVARIANT_D(store->getMode() == KVStore::StoreMode::STORE_NONE);
 
     status = _replMgr->stopStore(storeId);
     if (!status.ok()) {

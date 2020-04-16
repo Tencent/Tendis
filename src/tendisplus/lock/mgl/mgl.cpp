@@ -21,7 +21,7 @@ MGLock::MGLock(MGLockMgr* mgr)
 }
 
 MGLock::~MGLock() {
-    INVARIANT(_res == LockRes::LOCKRES_UNINITED);
+    INVARIANT_D(_res == LockRes::LOCKRES_UNINITED);
 }
 
 void MGLock::releaseLockResult() {
@@ -38,21 +38,21 @@ void MGLock::setLockResult(LockRes res, std::list<MGLock*>::iterator iter) {
 
 void MGLock::unlock() {
     LockRes status = getStatus();
-    INVARIANT(status == LockRes::LOCKRES_OK || status == LockRes::LOCKRES_WAIT);
+    INVARIANT_D(status == LockRes::LOCKRES_OK || status == LockRes::LOCKRES_WAIT);
     if (!_lockMgr) {
         MGLockMgr::getInstance().unlock(this);
     } else {
         _lockMgr->unlock(this);
     }
     status = getStatus();
-    INVARIANT(status == LockRes::LOCKRES_UNINITED);
+    INVARIANT_D(status == LockRes::LOCKRES_UNINITED);
 }
 
 LockRes MGLock::lock(const std::string& target, LockMode mode,
                      uint64_t timeoutMs) {
     _target = target;
     _mode = mode;
-    INVARIANT(getStatus() == LockRes::LOCKRES_UNINITED);
+    INVARIANT_D(getStatus() == LockRes::LOCKRES_UNINITED);
     _resIter = _dummyList.end();
     if (_target != "") {
         _targetHash = static_cast<uint64_t>(std::hash<std::string>{}(_target));

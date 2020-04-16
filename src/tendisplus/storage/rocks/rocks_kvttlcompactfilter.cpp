@@ -53,7 +53,7 @@ class KVTtlCompactionFilter : public CompactionFilter {
             break;
         case RecordType::RT_INVALID:
             // TODO(vinchen): make sure
-            INVARIANT(0);
+            INVARIANT_D(0);
             break;
         default:
             break;

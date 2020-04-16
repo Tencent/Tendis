@@ -427,7 +427,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         return s;
     }
     PStore kvstore = expdb.value().store;
-    INVARIANT(mk.getRecordType() == RecordType::RT_DATA_META);
+    INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
     if (valueType == RecordType::RT_KV) {
         s = kvstore->delKV(mk, txn);
         if (!s.ok()) {
@@ -484,7 +484,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                           "");
         prefixes.push_back(fakeEle1.prefixPk());
     } else {
-        INVARIANT(0);
+        INVARIANT_D(0);
     }
 
     std::list<RecordKey> pendingDelete;
@@ -638,7 +638,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         }
     }
     // should never reach here
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -743,7 +743,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         }
     }
     // should never reach here
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -847,7 +847,7 @@ std::vector<int> Command::getKeysFromCommand(
     }
 
     for (int i = first; i <= last; i += keystep()) {
-        INVARIANT(i <= argc);
+        INVARIANT_D(i <= argc);
         keyindex.push_back(i);
     }
 

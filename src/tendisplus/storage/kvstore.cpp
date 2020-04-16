@@ -205,8 +205,9 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
                 << eval.status().toString();
             return eval.status();
         }
-
+#ifdef TENDIS_DEBUG
         INVARIANT_D(ReplLogValueV2::decode(eval.value()).ok());
+#endif
         _cur++;
         return ReplLogRawV2(keyStr, eval.value());
     }

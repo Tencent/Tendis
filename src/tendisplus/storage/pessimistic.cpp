@@ -9,13 +9,13 @@ bool PessimisticShard::isLocked(const std::string& k) const {
 
 void PessimisticShard::lock(const std::string& k) {
     std::lock_guard<std::mutex> lk(_mutex);
-    INVARIANT(_set.find(k) == _set.end());
+    INVARIANT_D(_set.find(k) == _set.end());
     _set.insert(k);
 }
 
 void PessimisticShard::unlock(const std::string& k) {
     std::lock_guard<std::mutex> lk(_mutex);
-    INVARIANT(_set.find(k) != _set.end());
+    INVARIANT_D(_set.find(k) != _set.end());
     _set.erase(k);
 }
 

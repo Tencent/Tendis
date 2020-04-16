@@ -28,7 +28,7 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
     }
     std::error_code ec;
     _socket.non_blocking(true, ec);
-    INVARIANT(ec.value() == 0);
+    INVARIANT_D(ec.value() == 0);
     _socket.set_option(asio::ip::tcp::no_delay(true));
     _socket.set_option(asio::socket_base::keep_alive(true));
 }
@@ -86,7 +86,7 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
         }
         std::error_code ec;
         _socket.non_blocking(true, ec);
-        INVARIANT(ec.value() == 0);
+        INVARIANT_D(ec.value() == 0);
         _socket.set_option(asio::ip::tcp::no_delay(true));
         _socket.set_option(asio::socket_base::keep_alive(true));
         return {ErrorCodes::ERR_OK, ""};
@@ -166,14 +166,14 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
     }
 
     size_t inputBufSize = _inputBuf.size();
-    INVARIANT(inputBufSize >= bufSize);
+    INVARIANT_D(inputBufSize >= bufSize);
 
     std::string result;
     result.resize(bufSize);
     std::istream is(&_inputBuf);
     is.read(&result[0], bufSize);
 
-    INVARIANT(inputBufSize == _inputBuf.size() + bufSize);
+    INVARIANT_D(inputBufSize == _inputBuf.size() + bufSize);
 
     return result;
 }

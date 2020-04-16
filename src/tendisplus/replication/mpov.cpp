@@ -81,7 +81,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         if (mpov.find(clientId) == mpov.end()) {
             return;
         }
-        INVARIANT(mpov[clientId]->isRunning);
+        INVARIANT_D(mpov[clientId]->isRunning);
         mpov[clientId]->isRunning = false;
         if (nextSched > mpov[clientId]->nextSchedTime) {
             mpov[clientId]->nextSchedTime = nextSched;

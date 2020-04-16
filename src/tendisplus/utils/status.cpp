@@ -121,8 +121,8 @@ std::string Status::toString() const {
         } else {
             // redis error
             if (_errmsg[0] == '-') {
-                INVARIANT(_errmsg[_errmsg.size() - 2] == '\r');
-                INVARIANT(_errmsg[_errmsg.size() - 1] == '\n');
+                INVARIANT_D(_errmsg[_errmsg.size() - 2] == '\r');
+                INVARIANT_D(_errmsg[_errmsg.size() - 1] == '\n');
 
                 return _errmsg;
             } else {

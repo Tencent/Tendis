@@ -304,7 +304,7 @@ class SortCommand: public Command {
                 break;
             }
             default:
-                INVARIANT(0);
+                INVARIANT_D(0);
                 break;
         }
 
@@ -406,7 +406,7 @@ class SortCommand: public Command {
                 records.emplace_back(Element{x.second, 0});
             }
         } else {
-            INVARIANT(0);
+            INVARIANT_D(0);
         }
 
         // release key lock.

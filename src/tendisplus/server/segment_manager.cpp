@@ -23,7 +23,7 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                     const std::string& key, mgl::LockMode mode) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
-    INVARIANT(hash < _chunkSize);
+    INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
@@ -75,7 +75,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const std::string& key) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
-    INVARIANT(hash < _chunkSize);
+    INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
@@ -129,7 +129,7 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     for (auto iter = index.begin(); iter != index.end(); iter++) {
         auto key = args[*iter];
         uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
-        INVARIANT(hash < _chunkSize);
+        INVARIANT_D(hash < _chunkSize);
         uint32_t chunkId = hash % _chunkSize;
         uint32_t segId = chunkId % _instances.size();
         segList[segId].push_back(std::move(key));

@@ -566,7 +566,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
-        INVARIANT(v->isRunning);
+        INVARIANT_D(v->isRunning);
         v->isRunning = false;
         // v->nextSchedTime maybe time_point::max()
         if (v->nextSchedTime < nextSched) {
@@ -771,7 +771,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
         return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
     }
     LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
-    INVARIANT(!_syncStatus[storeId]->isRunning);
+    INVARIANT_D(!_syncStatus[storeId]->isRunning);
 
     if (storeId >= _syncMeta.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
@@ -832,7 +832,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
         }
 
         newMeta->syncFromHost = ip;
-        INVARIANT(port == 0 && sourceStoreId == 0);
+        INVARIANT_D(port == 0 && sourceStoreId == 0);
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_NONE;

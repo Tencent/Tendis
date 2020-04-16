@@ -57,7 +57,7 @@ mgl::LockMode ILock::getParentMode(mgl::LockMode mode) {
             parentMode = mgl::LockMode::LOCK_IX;
             break;
         default:
-            INVARIANT(0);
+            INVARIANT_D(0);
     }
     return parentMode;
 }

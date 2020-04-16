@@ -29,7 +29,10 @@ Expected<std::string> genericSRem(Session *sess,
         ttl = rv.value().getTtl();
         Expected<SetMetaValue> exptSm =
             SetMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptSm.ok());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return exptSm.status();
+        }
         sm = std::move(exptSm.value());
     } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
                rv.status().code() != ErrorCodes::ERR_EXPIRED) {
@@ -56,9 +59,14 @@ Expected<std::string> genericSRem(Session *sess,
             return s;
         }
     }
-    INVARIANT(sm.getCount() >= cnt);
+    INVARIANT_D(sm.getCount() >= cnt);
     Status s;
-    if (sm.getCount() == cnt) {
+    if (sm.getCount() <= cnt) {
+        if (sm.getCount() < cnt) {
+            LOG(ERROR) << "invalid set:" << 
+                rcd_util::makeInvalidErrStr(metaRk.getRecordValueType(),
+                    metaRk.getPrimaryKey(), sm.getCount(), cnt);
+        }
         s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn);
     } else {
         sm.setCount(sm.getCount()-cnt);
@@ -90,7 +98,10 @@ Expected<std::string> genericSAdd(Session *sess,
         ttl = rv.value().getTtl();
         Expected<SetMetaValue> exptSm =
             SetMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptSm.ok());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return exptSm.status();
+        }
         sm = std::move(exptSm.value());
     } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED) {
@@ -190,7 +201,10 @@ class SMembersCommand: public Command {
         ssize_t ssize = 0, cnt = 0;
         Expected<SetMetaValue> exptSm =
             SetMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptSm.ok());
+        INVARIANT_D(exptSm.ok());
+        if (!exptSm.ok()) {
+            return exptSm.status();
+        }
         ssize = exptSm.value().getCount();
 
         std::stringstream ss;
@@ -382,6 +396,9 @@ class SrandMemberCommand: public Command {
         }
         ssize = exptSm.value().getCount();
         INVARIANT_D(ssize != 0);
+        if (ssize == 0) {
+            return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
+        }
 
         auto cursor = txn->createCursor();
         uint32_t beginIdx = 0;
@@ -399,9 +416,8 @@ class SrandMemberCommand: public Command {
         } else {
             remain = bulk;
 
-            std::srand((int32_t)msSinceEpoch());
             uint32_t offset = ssize - remain + 1;
-            int r = std::rand();
+            int r = redis_port::random();
             // TODO(vinchen): max scan count should be configable
             beginIdx = r % (offset > 1024 * 16 ? 1024 * 16 : offset);
         }
@@ -434,12 +450,15 @@ class SrandMemberCommand: public Command {
             }
         }
         // TODO(vinchen): vals should be shuffle here
-        INVARIANT(vals.size() != 0);
+        INVARIANT_D(vals.size() != 0);
+        if (vals.size() == 0) {
+            return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
+        }
         if (bulk == 1 && !explictBulk) {
             return Command::fmtBulk(vals[0]);
         } else {
             std::stringstream ss;
-            INVARIANT(remain == vals.size() || negative);
+            INVARIANT_D(remain == vals.size() || negative);
             Command::fmtMultiBulkLen(ss, remain);
             while (remain) {
                 for (auto& v : vals) {
@@ -535,10 +554,11 @@ class SpopCommand: public Command {
         }
 
         bool deleteMeta(false);
-        if (rcds.size() == sm.getCount()) {
+        INVARIANT_D(rcds.size() <= sm.getCount());
+        if (rcds.size() >= sm.getCount()) {
             deleteMeta = true;
         }
-        INVARIANT(rcds.size() == count || rcds.size() == sm.getCount());
+        INVARIANT_D(rcds.size() == count || rcds.size() == sm.getCount());
 
         for (uint32_t i = 0; i < RETRY_CNT; ++i) {
             std::stringstream ss;
@@ -595,7 +615,7 @@ class SpopCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } spopcmd;
@@ -673,7 +693,7 @@ class SaddCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } saddCommand;
@@ -802,7 +822,7 @@ class SRemCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } sremCommand;

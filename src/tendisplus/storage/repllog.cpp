@@ -317,7 +317,7 @@ std::string ReplLogValueV2::encodeHdr() const {
 
     size = lenStrEncode(&header[offset], hdrSize - offset, _cmdStr);
     offset += size;
-    INVARIANT(offset == hdrSize);
+    INVARIANT_D(offset == hdrSize);
 
     return header;
 }
@@ -337,11 +337,11 @@ std::string ReplLogValueV2::encode(
     for (const auto& v : vec) {
         uint8_t* desc = (uint8_t*)val.c_str() + offset;
         size_t len = v.encode(desc, allocSize - offset);
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
         offset += len;
     }
 
-    INVARIANT(offset == allocSize);
+    INVARIANT_D(offset == allocSize);
 
     RecordValue tmpRv(std::move(val), RecordType::RT_BINLOG, -1);
 
@@ -674,7 +674,7 @@ Expected<ReplLogV2> ReplLogV2::decode(const std::string& key,
         size_t size = 0;
         auto entry = ReplLogValueEntryV2::decode((const char*)data + offset,
             dataSize - offset, &size);
-        INVARIANT(entry.ok());
+        INVARIANT_D(entry.ok());
         if (!entry.ok()) {
             return entry.status();
         }

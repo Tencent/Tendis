@@ -122,7 +122,7 @@ Expected<double> doubleDecode(const uint8_t *input, size_t maxSize) {
 }
 
 Expected<double> doubleDecode(const std::string& input) {
-    INVARIANT(input.size() == 8);
+    INVARIANT_D(input.size() == 8);
     return doubleDecode(reinterpret_cast<const uint8_t*>(input.c_str()),
                         input.size());
 }

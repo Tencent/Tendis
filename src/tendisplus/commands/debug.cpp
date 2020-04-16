@@ -461,7 +461,7 @@ class IterAllCommand: public Command {
             Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(vt)));
             switch (t) {
                 case RecordType::RT_DATA_META:
-                    INVARIANT(vt == RecordType::RT_KV);
+                    INVARIANT_D(vt == RecordType::RT_KV);
                     Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, "");
@@ -470,7 +470,7 @@ class IterAllCommand: public Command {
 
                 case RecordType::RT_HASH_ELE:
                 case RecordType::RT_SET_ELE:
-                    INVARIANT(vt == t);
+                    INVARIANT_D(vt == t);
                     Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
@@ -479,7 +479,7 @@ class IterAllCommand: public Command {
 
                 case RecordType::RT_LIST_ELE:
                 {
-                    INVARIANT(vt == t);
+                    INVARIANT_D(vt == t);
                     if (lIdx.count(o.getRecordKey().prefixPk()) < 1) {
                         RecordKey metakey(o.getRecordKey().getChunkId(),
                                 o.getRecordKey().getDbId(),
@@ -512,7 +512,7 @@ class IterAllCommand: public Command {
                 }
                 case RecordType::RT_ZSET_H_ELE:
                 {
-                    INVARIANT(vt == t);
+                    INVARIANT_D(vt == t);
                     Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
                     Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
                     Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
@@ -525,7 +525,7 @@ class IterAllCommand: public Command {
                     break;
                 }
                 default:
-                    INVARIANT(0);
+                    INVARIANT_D(0);
             }
         }
         return ss.str();
@@ -2668,7 +2668,7 @@ class PauseStoreCommand : public Command {
                 << " failed:" << status.toString();
             return status;
         }
-        INVARIANT(store->isRunning() && store->isPaused());
+        INVARIANT_D(store->isRunning() && store->isPaused());
 
         return Command::fmtOK();
     }
@@ -2722,7 +2722,7 @@ class ResumeStoreCommand : public Command {
                 << " failed:" << status.toString();
             return status;
         }
-        INVARIANT(store->isRunning() && !store->isPaused());
+        INVARIANT_D(store->isRunning() && !store->isPaused());
 
         return Command::fmtOK();
     }
