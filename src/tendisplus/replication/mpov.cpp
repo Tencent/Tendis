@@ -492,8 +492,8 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         string slaveNode = listenIpArg + ":" + to_string(listen_port);
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
-            _fullPushStatus[storeId].erase(iter);
             LOG(INFO) << "registerIncrSync erase _fullPushStatus, " << iter->second->toString();
+            _fullPushStatus[storeId].erase(iter);
         }
 
         uint64_t clientId = _clientIdGen.fetch_add(1);

@@ -50,7 +50,7 @@ enum class DumpType: uint8_t {
 
 // utility
 constexpr uint32_t ZLBYTE_LIMIT = 8192;
-constexpr uint32_t ZLLEN_LIMIT = 64;
+constexpr uint32_t ZLLEN_LIMIT = 256;
 
 // this `extern` is a little weird here i think..
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
