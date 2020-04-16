@@ -333,7 +333,7 @@ class ListSerializer: public Serializer {
         size_t zlInitPos(0);
         tmpPos += 8;
         uint32_t zlbytes(10);
-        uint64_t prevlen(0);
+        uint32_t prevlen(0);
         uint16_t zllen = zl.size();
         easyCopy(&ziplist, &tmpPos, zllen);
         for (size_t i = 0; i < zl.size(); i++) {
@@ -410,11 +410,9 @@ class ListSerializer: public Serializer {
 
         /* in this loop we should emulate to build a quicklist(or to say, many ziplists)
          * then compress it using lzf(not implemented), or just write raw to buffer, both can work.*/
-        if (len > UINT16_MAX) {
-            return { ErrorCodes::ERR_INTERNAL, "Currently not support" };
-        }
 
         uint32_t byteSz(0);
+        uint32_t lenSz(0);
         std::vector<std::string> ziplist;
         size_t zlCnt(0);
         for (size_t i = head; i != tail; i++) {
@@ -425,8 +423,9 @@ class ListSerializer: public Serializer {
                 return expNodeVal.status();
             }
             byteSz += expNodeVal.value().getValue().size();
+            lenSz++;
             ziplist.emplace_back(std::move(expNodeVal.value().getValue()));
-            if (byteSz > ZLBYTE_LIMIT || i == tail - 1) {
+            if ((byteSz > ZLBYTE_LIMIT || lenSz > ZLLEN_LIMIT) || i == tail - 1) {
                 ++zlCnt;
                 auto ezlBytes = formatZiplist(payload, _pos,
                         ziplist, byteSz);
@@ -436,6 +435,7 @@ class ListSerializer: public Serializer {
                 qlbytes += ezlBytes.value();
                 ziplist.clear();
                 byteSz = 0;
+                lenSz = 0;
             }
         }
 
