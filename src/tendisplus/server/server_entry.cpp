@@ -290,9 +290,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
-    for (uint32_t i = 0; i < threadnum; ++i) {
+    {
+    //for (uint32_t i = 0; i < threadnum; ++i) {
+        // TODO(takenliu): make sure whether multi worker_pool is ok?
+        // But each size of worker_pool should been not less than 8;
+        uint32_t i = 0;
         auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
-        Status s = executor->startup(1);
+        Status s = executor->startup(threadnum);
         if (!s.ok()) {
             LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
             return s;
@@ -346,6 +350,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // server stats monitor
     _cronThd = std::make_unique<std::thread>([this] {
+        pthread_setname_np(pthread_self(), "server_cron");
         serverCron();
     });
 
@@ -419,7 +424,8 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     sess->start();
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
-        LOG(FATAL) << "add session:" << id << ",session id already exists";
+        INVARIANT_D(0);
+        LOG(ERROR) << "add session:" << id << ",session id already exists";
     }
     // DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
@@ -451,7 +457,8 @@ void ServerEntry::endSession(uint64_t connId) {
     }
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
-        LOG(FATAL) << "destroy conn:" << connId << ",not exists";
+        INVARIANT_D(0);
+        LOG(ERROR) << "destroy conn:" << connId << ",not exists";
     }
     SessionCtx* pCtx = it->second->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -529,9 +536,13 @@ void ServerEntry::replyMonitors(Session* sess) {
     info += "\r\n";
 
     std::lock_guard<std::mutex> lk(_mutex);
-
-    for (auto& it : _monitors) {
-        it->setResponse(info);
+    for (auto iter = _monitors.begin(); iter != _monitors.end(); ) {
+        auto s = (*iter)->setResponse(info);
+        if (!s.ok()) {
+            iter = _monitors.erase(iter);
+        } else {
+            ++iter;
+        }
     }
 }
 
@@ -541,18 +552,14 @@ bool ServerEntry::processRequest(Session *sess) {
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
-    // NOTE(vinchen): process the ExtraProtocol of timestamp and version
-    /*auto s = sess->processExtendProtocol();
-    if (!s.ok()) {
-        sess->setResponse(
-            redis_port::errorReply(s.toString()));
-        return true;
-    }*/
 
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
-        sess->setResponse(
+        auto s = sess->setResponse(
             redis_port::errorReply(expCmdName.status().toString()));
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
 
@@ -587,16 +594,25 @@ bool ServerEntry::processRequest(Session *sess) {
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         ns->setCloseAfterRsp();
-        ns->setResponse(Command::fmtOK());
+        auto s = ns->setResponse(Command::fmtOK());
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
 
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
-        sess->setResponse(Command::fmtErr(expect.status().toString()));
+        auto s = sess->setResponse(Command::fmtErr(expect.status().toString()));
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
-    sess->setResponse(expect.value());
+    auto s = sess->setResponse(expect.value());
+    if (!s.ok()) {
+        return false;
+    }
     return true;
 }
 
@@ -687,8 +703,9 @@ void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer
 bool ServerEntry::getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const {
     *value = 0;
     for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+        // NOTE(vinchen): info should not lock?
         auto expdb = getSegmentMgr()->getDb(sess, i,
-            mgl::LockMode::LOCK_IS);
+            mgl::LockMode::LOCK_NONE);
         if (!expdb.ok()) {
             return false;
         }

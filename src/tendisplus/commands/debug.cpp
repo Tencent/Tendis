@@ -344,6 +344,139 @@ class TimeCommand: public Command {
     }
 } timeCmd;
 
+
+class IterAllKeysCommand : public Command {
+public:
+    IterAllKeysCommand()
+        :Command("iterallkeys", "r") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // @input iterallkeys storeId start_record_hex batchSize
+    // @output next_record_hex + listof(type dbid key)
+    Expected<std::string> run(Session* sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+        Expected<uint64_t> estoreId = ::tendisplus::stoul(args[1]);
+        if (!estoreId.ok()) {
+            return estoreId.status();
+        }
+        Expected<uint64_t> ebatchSize = ::tendisplus::stoul(args[3]);
+        if (!ebatchSize.ok()) {
+            return ebatchSize.status();
+        }
+        if (ebatchSize.value() > 10000) {
+            return { ErrorCodes::ERR_PARSEOPT, "batch exceed lim" };
+        }
+
+        auto server = sess->getServerEntry();
+        if (estoreId.value() >= server->getKVStoreCount()) {
+            return { ErrorCodes::ERR_PARSEOPT, "invalid store id" };
+        }
+        auto expdb = server->getSegmentMgr()->getDb(sess, estoreId.value(),
+            mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        auto ptxn = kvstore->createTransaction(sess);
+        if (!ptxn.ok()) {
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+        auto cursor = txn->createCursor();
+        if (args[2] == "0") {
+            cursor->seek("");
+        }
+        else {
+            auto unhex = unhexlify(args[2]);
+            if (!unhex.ok()) {
+                return unhex.status();
+            }
+            cursor->seek(unhex.value());
+        }
+
+        std::unordered_map<std::string, uint64_t> lIdx;
+        std::list<Record> result;
+        uint64_t currentTs = msSinceEpoch();
+        while (true) {
+            if (result.size() >= ebatchSize.value() + 1) {
+                break;
+            }
+            Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            if (!exptRcd.ok()) {
+                return exptRcd.status();
+            }
+            auto keyType = exptRcd.value().getRecordKey().getRecordType();
+            auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+
+            // NOTE(vinchen):RecordType::RT_TTL_INDEX and RecordType::BINLOG is
+            // always at the last of rocksdb, and the chunkid is very big
+            if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
+                break;
+            }
+
+            auto valueType = exptRcd.value().getRecordValue().getRecordType();
+            if (keyType != RecordType::RT_DATA_META) {
+                continue;
+            }
+            INVARIANT_D(isDataMetaType(valueType));
+
+            uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
+            if (0 != targetTtl
+                && currentTs > targetTtl) {
+                continue;
+            }
+            result.emplace_back(std::move(exptRcd.value()));
+        }
+        std::string nextCursor;
+        if (result.size() == ebatchSize.value() + 1) {
+            nextCursor = hexlify(result.back().getRecordKey().encode());
+            result.pop_back();
+        }
+        else {
+            nextCursor = "0";
+        }
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        Command::fmtBulk(ss, nextCursor);
+        Command::fmtMultiBulkLen(ss, result.size());
+        for (const auto& o : result) {
+            Command::fmtMultiBulkLen(ss, 3);
+            const auto& t = o.getRecordKey().getRecordType();
+            const auto& vt = o.getRecordValue().getRecordType();
+            Command::fmtBulk(ss, std::to_string(static_cast<uint32_t>(vt)));
+            switch (t) {
+            case RecordType::RT_DATA_META:
+                Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
+                Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+                break;
+            default:
+                INVARIANT_D(0);
+            }
+        }
+        return ss.str();
+    }
+} iterAllKeysCmd;
+
+
 class IterAllCommand: public Command {
  public:
     IterAllCommand()
@@ -435,6 +568,8 @@ class IterAllCommand: public Command {
             if (!isRealEleType(keyType, valueType)) {
                 continue;
             }
+            // TODO(vinchen): the ttl isn't correct. Because it isn't meta record
+            // except KV.
             uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
             if (!Command::noExpire()
                 && 0 != targetTtl
@@ -1064,7 +1199,7 @@ class BinlogTimeCommand: public Command {
         }
 
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
-                            mgl::LockMode::LOCK_IS);
+                            mgl::LockMode::LOCK_IS, false, 0);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1129,7 +1264,7 @@ class BinlogPosCommand: public Command {
         }
 
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1173,7 +1308,7 @@ class BinlogStartCommand: public Command {
         }
 
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1616,24 +1751,15 @@ class InfoCommand: public Command {
         infoPersistence(allsections, defsections, section, sess, result);
         infoStats(allsections, defsections, section, sess, result);
         infoReplication(allsections, defsections, section, sess, result);
-        auto s = infoBinlogInfo(allsections, defsections, section, sess, result);
-        if (!s.ok()) {
-            return s;
-        }
+        infoBinlogInfo(allsections, defsections, section, sess, result);
         infoCPU(allsections, defsections, section, sess, result);
         infoCommandStats(allsections, defsections, section, sess, result);
         infoKeyspace(allsections, defsections, section, sess, result);
         infoBackup(allsections, defsections, section, sess, result);
         infoDataset(allsections, defsections, section, sess, result);
         infoCompaction(allsections, defsections, section, sess, result);
-        s = infoLevelStats(allsections, defsections, section, sess, result);
-        if (!s.ok()) {
-            return s;
-        }
-        s = infoRocksdbStats(allsections, defsections, section, sess, result);
-        if (!s.ok()) {
-            return s;
-        }
+        infoLevelStats(allsections, defsections, section, sess, result);
+        infoRocksdbStats(allsections, defsections, section, sess, result);
         infoRocksdbPerfStats(allsections, defsections, section, sess, result);
         infoRocksdbBgError(allsections, defsections, section, sess, result);
 
@@ -1971,22 +2097,23 @@ class InfoCommand: public Command {
         }
     }
 
-    static Status infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+    static void infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "levelstats") {
             auto server = sess->getServerEntry();
 
             result << "# Levelstats\r\n";
             for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
                 if (!expdb.ok()) {
-                    return expdb.status();
+                    continue;
                 }
 
                 auto store = expdb.value().store;
                 std::string tmp;
                 if (!store->getProperty("rocksdb.levelstatsex", &tmp)) {
-                    return { ErrorCodes::ERR_INTERNAL, "rocksdb.levelstatsex not supported" };
+                    LOG(WARNING) << "store id " << i << " rocksdb.levelstatsex not supported";
+                    continue;
                 }
                 std::string prefix = "rocksdb" + store->dbId() + ".";
                 replaceAll(tmp, "rocksdb.", prefix);
@@ -1996,11 +2123,9 @@ class InfoCommand: public Command {
 
             result << "\r\n";
         }
-
-        return { ErrorCodes::ERR_OK, "" };
     }
 
-    static Status infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+    static void infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "rocksdbstats") {
             auto server = sess->getServerEntry();
             std::map<std::string, uint64_t> map;
@@ -2008,9 +2133,9 @@ class InfoCommand: public Command {
             result << "# Rocksdbstats\r\n";
             for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
                 if (!expdb.ok()) {
-                    return expdb.status();
+                    continue;
                 }
 
                 auto store = expdb.value().store;
@@ -2054,7 +2179,6 @@ class InfoCommand: public Command {
 
             result << "\r\n";
         }
-        return { ErrorCodes::ERR_OK, "" };
     }
 
     static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
@@ -2076,21 +2200,21 @@ class InfoCommand: public Command {
         }
     }
 
-    static Status infoBinlogInfo(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+    static void infoBinlogInfo(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "binloginfo") {
             auto server = sess->getServerEntry();
 
             result << "# BinlogInfo\r\n";
             for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
                 if (!expdb.ok()) {
-                    return expdb.status();
+                    continue;
                 }
                 PStore kvstore = expdb.value().store;
                 auto ptxn = kvstore->createTransaction(sess);
                 if (!ptxn.ok()) {
-                    return ptxn.status();
+                    continue;
                 }
                 std::unique_ptr<Transaction> txn = std::move(ptxn.value());
                 auto eMin = RepllogCursorV2::getMinBinlog(txn.get());
@@ -2098,11 +2222,11 @@ class InfoCommand: public Command {
                     if (eMin.status().code() == ErrorCodes::ERR_EXHAUST) {
                         continue;
                     }
-                    return eMin.status();
+                    continue;
                 }
                 auto eMax = RepllogCursorV2::getMaxBinlog(txn.get());
                 if (!eMax.ok()) {
-                    return eMax.status();
+                    continue;
                 }
                 result << "rocksdb" + kvstore->dbId() << ":"
                     << "min=" << eMin.value().getBinlogId()
@@ -2116,8 +2240,6 @@ class InfoCommand: public Command {
 
             result << "\r\n";
         }
-
-        return { ErrorCodes::ERR_OK, "" };
     }
 
     static void infoRocksdbBgError(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
@@ -2127,9 +2249,9 @@ class InfoCommand: public Command {
             result << "# RocksdbBgError\r\n";
             for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
-                    mgl::LockMode::LOCK_IS);
+                    mgl::LockMode::LOCK_IS, false, 0);
                 if (!expdb.ok()) {
-                    return;
+                    continue;
                 }
 
                 auto store = expdb.value().store;

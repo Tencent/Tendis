@@ -262,7 +262,8 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
             auto vv = dynamic_cast<NetSession*>(sess);
             vv->setCloseAfterRsp();
         } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
-                v.status().code() == ErrorCodes::ERR_DECODE) {
+                v.status().code() == ErrorCodes::ERR_DECODE ||
+                v.status().code() == ErrorCodes::ERR_LOCK_TIMEOUT) {
             ServerEntry::logError(v.status().toString(), sess);
         }
     }

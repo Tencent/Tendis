@@ -97,6 +97,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getStartupTimeNs() const;
     template <typename fn>
     void schedule(fn&& task) {
+        // TODO(takenliu): make multi worker pool work?
         _scheduleNum.fetch_add(1, std::memory_order_relaxed);
         int32_t index = _scheduleNum.load(std::memory_order_relaxed) % _executorList.size();
         _executorList[index]->schedule(std::forward<fn>(task));

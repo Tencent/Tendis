@@ -160,7 +160,8 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
                                             mgl::LockMode mode,
-                                            bool canOpenStoreNoneDB) {
+                                            bool canOpenStoreNoneDB,
+                                            uint64_t lock_wait_timeout) {
     if (insId >= _instances.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid instance id"};
     }
@@ -178,8 +179,14 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
 
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
-    if (sess && sess->getServerEntry()) {
-        lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    if (lock_wait_timeout == (uint64_t)-1) {
+        if (sess && sess->getServerEntry()) {
+            lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        }
+    } else {
+        // NOTE(vinchen) : if lock_wait_timeout == 0, it means we don't wait
+        // anything, such as running `info` when kvstore is restarting.
+        lockTimeoutMs = lock_wait_timeout;
     }
 
     std::unique_ptr<StoreLock> lk = nullptr;
@@ -187,6 +194,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         auto elk = StoreLock::AquireStoreLock(insId, mode, sess,
             (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
         if (!elk.ok()) {
+            LOG(WARNING) << "store id " << insId
+                << " can't been opened:" << elk.status().toString();
             return elk.status();
         }
         lk = std::move(elk.value());

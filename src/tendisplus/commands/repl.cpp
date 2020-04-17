@@ -191,8 +191,10 @@ class RestoreBackupCommand : public Command {
         INVARIANT(!store->isRunning());
         Status clearStatus =  store->clear();
         if (!clearStatus.ok()) {
-            LOG(FATAL) << "Unexpected store:" << storeId << " clear"
+            INVARIANT_D(0);		
+            LOG(ERROR) << "Unexpected store:" << storeId << " clear"
                 << " failed:" << clearStatus.toString();
+            return clearStatus;
         }
 
         Expected<std::string> ret = store->restoreBackup(dir);
@@ -216,7 +218,8 @@ class RestoreBackupCommand : public Command {
 
         Expected<uint64_t> restartStatus = store->restart(false, Transaction::MIN_VALID_TXNID, binlogpos);
         if (!restartStatus.ok()) {
-            LOG(FATAL) << "restoreBackup restart store:" << storeId
+            INVARIANT_D(0);
+            LOG(ERROR) << "restoreBackup restart store:" << storeId
                    << ",failed:" << restartStatus.status().toString();
             return {ErrorCodes::ERR_INTERNAL, "restart failed."};
         }
@@ -225,6 +228,7 @@ class RestoreBackupCommand : public Command {
     }
 } restoreBackupCommand;
 
+// fullSync storeId dstStoreId ip port
 class FullSyncCommand: public Command {
  public:
     FullSyncCommand()
@@ -313,7 +317,7 @@ class IncrSyncCommand: public Command {
         return 0;
     }
 
-    // incrSync storeId dstStoreId binlogId
+    // incrSync storeId dstStoreId binlogId ip port
     // binlogId: the last binlog that has been applied
     Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "incrsync should not be called";

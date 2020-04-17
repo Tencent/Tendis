@@ -98,6 +98,7 @@ uint8_t rt2Char(RecordType t) {
         case RecordType::RT_BINLOG:
             return std::numeric_limits<uint8_t>::max();
         default:
+            INVARIANT_D(0);
             LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
             return 0;

@@ -296,11 +296,17 @@ class DumpXCommand: public Command {
         }
         /* we return keys can't be restored first */
         for (const auto& str : errorlist) {
-            sess->setResponse(str);
+            auto s = sess->setResponse(str);
+            if (!s.ok()) {
+                return s;
+            }
         }
 
         for (const auto& str : bufferlist) {
-            sess->setResponse(str);
+            auto s = sess->setResponse(str);
+            if (!s.ok()) {
+                return s;
+            }
         }
         return std::string();
     }
@@ -1481,9 +1487,9 @@ class RestoreMetaCommand: public Command {
         auto server = sess->getServerEntry();
         auto dbId = slotId % (server->getKVStoreCount());
 
-        // TODO: use chunk lock is enough
+        // TODO(takenliu): use chunk lock is enough
         auto expdb = server->getSegmentMgr()->getDb(sess,
-                dbId, mgl::LockMode::LOCK_S);
+                dbId, mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1507,7 +1513,10 @@ class RestoreMetaCommand: public Command {
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, 1);
         Command::fmtBulk(ss, "RESTOREMETASLOT");
-        sess->setResponse(ss.str());
+        auto s = sess->setResponse(ss.str());
+        if (!s.ok()) {
+            return s;
+        }
         ss.str(std::string());
         std::vector<byte> bulkBuf;
         while (true) {
@@ -1563,7 +1572,10 @@ class RestoreMetaCommand: public Command {
                 Command::fmtMultiBulkLen(ss, 1);
                 Command::fmtBulk(ss,
                         std::string(bulkBuf.begin(), bulkBuf.end()));
-                sess->setResponse(ss.str());
+                s = sess->setResponse(ss.str());
+                if (!s.ok()) {
+                    return s;
+                }
                 bulkBuf.clear();
             }
             bulkBuf.insert(bulkBuf.end(), buf.begin(), buf.end());
