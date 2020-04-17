@@ -17,6 +17,7 @@ class BinlogScanner{
     enum TOOL_MODE {
         TEXT_SHOW = 0,
         BASE64_SHOW,
+        TEXT_SHOW_SCOPE
     };
 
     void init(const tendisplus::ParamManager& pm) {
@@ -28,6 +29,8 @@ class BinlogScanner{
         _mode = TOOL_MODE::TEXT_SHOW;
         if (pm.getString("mode") == "base64") {
             _mode = TOOL_MODE::BASE64_SHOW;
+        } else if(pm.getString("mode") == "scope"){
+            _mode = TOOL_MODE::TEXT_SHOW_SCOPE;
         }
     }
 
@@ -101,6 +104,13 @@ class BinlogScanner{
                 Base64::Encode((unsigned char*)value.c_str(), value.size());
             std::cout << "restorebinlogv2 " << storeId
                 << " " << baseKey << " " << baseValue << endl;
+        } else if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
+            if (_firstbinlogid == UINT64_MAX) {
+                _firstbinlogid = logkey.value().getBinlogId();
+                _firstbinlogtime = logValue.value().getTimestamp();
+            }
+            _lastbinlogid = logkey.value().getBinlogId();
+            _lastbinlogtime = logValue.value().getTimestamp();
         }
     }
 
@@ -168,8 +178,18 @@ class BinlogScanner{
 
             process(key, value, storeId);
         }
+
         delete[] buff;
         fclose(pf);
+    }
+    void run() {
+        scan();
+        if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
+            std::cout << "firstbinlogid:" << _firstbinlogid << endl;
+            std::cout << "lastbinlogid:" << _lastbinlogid << endl;
+            std::cout << "firstbinlogtime:" << _firstbinlogtime << endl;
+            std::cout << "lastbinlogtime:" << _lastbinlogtime << endl;
+        }
     }
 
  private:
@@ -179,12 +199,17 @@ class BinlogScanner{
     uint64_t _endDatetime = UINT64_MAX;
     uint64_t _startPosition = 0;
     uint64_t _endPosition = UINT64_MAX;
+
+    uint64_t _firstbinlogid = UINT64_MAX;
+    uint64_t _lastbinlogid = UINT64_MAX;
+    uint64_t _firstbinlogtime = UINT64_MAX;
+    uint64_t _lastbinlogtime = UINT64_MAX;
 };
 
 }  // namespace tendisplus
 
 void usage() {
-    std::cerr << "binlog_tool --logfile=binlog.log --mode=text|base64"
+    std::cerr << "binlog_tool --logfile=binlog.log --mode=text|base64|scope"
         << " --start-datetime=1111 --end-datetime=22222"
         << " --start-position=333333 --end-position=55555"
         << /*" --keys=1,2,4,5,6,7,8,9" <<*/ std::endl;
@@ -200,7 +225,7 @@ int main(int argc, char** argv) {
 
     tendisplus::BinlogScanner bs;
     bs.init(pm);
-    bs.scan();
+    bs.run();
     return 0;
 }
 
