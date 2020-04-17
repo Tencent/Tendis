@@ -20,16 +20,16 @@
 
 namespace tendisplus {
 
-std::string master1_dir = "restoretest_master1";
-std::string master2_dir = "restoretest_master2";
-std::string slave1_dir = "restoretest_slave1";
+const char* master1_dir = "restoretest_master1";
+const char* master2_dir = "restoretest_master2";
+const char* slave1_dir = "restoretest_slave1";
 uint32_t master1_port = 1121;
 uint32_t master2_port = 1122;
 uint32_t slave1_port = 1123;
 
 
 
-AllKeys initData(std::shared_ptr<ServerEntry>& server,
+AllKeys initData(std::shared_ptr<ServerEntry> server,
                 uint32_t count, const char* key_suffix) {
     auto ctx1 = std::make_shared<asio::io_context>();
     auto sess1 = makeSession(server, ctx1);
@@ -145,7 +145,7 @@ void flushBinlog(const std::shared_ptr<ServerEntry>& server) {
     }
 }
 
-void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
+void restoreBinlog(const string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
     uint64_t end_ts = UINT64_MAX) {
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
         auto kvstore = server->getStores()[i];
@@ -160,7 +160,9 @@ void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& s
                 continue;
             }
             // assert path with dir prefix
+#ifndef _WIN32
             INVARIANT(path.string().find(subpath) == 0);
+#endif
             std::string relative = path.string().erase(0, subpath.size());
             if (relative.substr(0, 6) != "binlog") {
                 LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
@@ -188,6 +190,7 @@ void restoreBinlog(string& src_binlog_dir, const std::shared_ptr<ServerEntry>& s
 }
 
 void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
+    INVARIANT(server->getParams()->maxBinlogKeepNum == 1);
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
         auto kvstore = server->getStores()[i];
 
@@ -246,16 +249,20 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!com_binlog && exptRcd1.value().getRecordKey().getRecordType()
-                == RecordType::RT_BINLOG) {
+            INVARIANT(exptRcd1.ok());
+            auto type = exptRcd1.value().getRecordKey().getRecordType();
+            if (!com_binlog && type == RecordType::RT_BINLOG) {
                 continue;
             }
-            INVARIANT(exptRcd1.ok());
             count1++;
 
             // check the binlog together
-            auto exptRcdv2 = kvstore2->getKV(
-                exptRcd1.value().getRecordKey(), txn2.get());
+            auto key = exptRcd1.value().getRecordKey();
+            auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
+            if (!exptRcdv2.ok()) {
+                LOG(INFO) << "key:" << key.getPrimaryKey() << ",type:" << static_cast<int>(type) << " not found!";
+                INVARIANT(0);
+            }
             EXPECT_TRUE(exptRcdv2.ok());
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
@@ -406,7 +413,6 @@ makeRestoreEnv(uint32_t storeCnt) {
     return std::make_pair(master1, master2);
 }
 
-
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
@@ -432,6 +438,10 @@ TEST(Restore, Common) {
         auto& master1 = hosts.first;
         auto& master2 = hosts.second;
 
+        // make sure no binlog been deleted
+        runCommand(master1, {"config", "set", "maxBinlogKeepNum", "1000000000"});
+        runCommand(master2, {"config", "set", "maxBinlogKeepNum", "1000000000"});
+
         auto allKeys1 = initData(master1, recordSize, "suffix1");
         LOG(INFO) << ">>>>>> master1 initData 1st end;";
         backup(master1, "copy");
@@ -445,6 +455,10 @@ TEST(Restore, Common) {
         LOG(INFO) << ">>>>>> master2 restoreBackup end;";
         compareData(master1, master2);  // compare data + binlog
         LOG(INFO) << ">>>>>> compareData 1st end;";
+
+        // make sure binlog should been deleted
+        runCommand(master1, {"config", "set", "maxBinlogKeepNum", "1"});
+        runCommand(master2, {"config", "set", "maxBinlogKeepNum", "1"});
 
         uint32_t part1_num = std::rand() % recordSize;
         part1_num = part1_num == 0 ? 1 : part1_num;
@@ -503,9 +517,9 @@ makeRestoreEnv2(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master2_dir));
     EXPECT_TRUE(setupEnv(slave1_dir));
 
-    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir);
-    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir);
-    auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir);
+    auto cfg1 = makeServerParam(master1_port, storeCnt, master1_dir, false);
+    auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
+    auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir, false);
     cfg1->minBinlogKeepSec = 60;
     cfg2->maxBinlogKeepNum = 1;
     cfg3->maxBinlogKeepNum = 1;
@@ -553,9 +567,9 @@ TEST(Restore, Common2) {
 
         LOG(INFO) << ">>>>>> master1 add data begin.";
         auto thread = std::thread([this, master1](){
-            testAll(master1); // need about 40 seconds
+            testAll(master1);  // need about 40 seconds
         });
-        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
+        uint32_t sleep_time = genRand()%20 + 10;  // 10-30 seconds
         sleep(sleep_time);
         LOG(INFO) << ">>>>>> master1 backup and master2 restoreBackup.";
         backup(slave1, "ckpt");

@@ -18,11 +18,13 @@ namespace tendisplus {
 
 std::string master_dir = "repltest_master";
 std::string slave_dir = "repltest_slave";
+std::string slave_slave_dir = "repltest_slave_slave";
 std::string slave1_dir = "repltest_slave1";
 std::string slave2_dir = "repltest_slave2";
 std::string single_dir = "repltest_single";
 uint32_t master_port = 1111;
 uint32_t slave_port = 1112;
+uint32_t slave_slave_port = 1113;
 uint32_t slave1_port = 2111;
 uint32_t slave2_port = 2112;
 uint32_t single_port = 2113;
@@ -112,8 +114,8 @@ makeReplEnv(uint32_t storeCnt) {
     EXPECT_TRUE(setupEnv(master_dir));
     EXPECT_TRUE(setupEnv(slave_dir));
 
-    auto cfg1 = makeServerParam(master_port, storeCnt, master_dir);
-    auto cfg2 = makeServerParam(slave_port, storeCnt, slave_dir);
+    auto cfg1 = makeServerParam(master_port, storeCnt, master_dir, false);
+    auto cfg2 = makeServerParam(slave_port, storeCnt, slave_dir, false);
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -135,12 +137,12 @@ makeReplEnv(uint32_t storeCnt) {
 }
 
 std::shared_ptr<ServerEntry>
-makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
+makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port, uint32_t mport) {
     INVARIANT(name != master_dir && name != slave_dir);
-	INVARIANT(port != master_port && port != slave_port);
+	INVARIANT(port != mport && port != slave_port);
     EXPECT_TRUE(setupEnv(name));
 
-    auto cfg1 = makeServerParam(port, storeCnt, name);
+    auto cfg1 = makeServerParam(port, storeCnt, name, false);
 
     auto slave = std::make_shared<ServerEntry>(cfg1);
     auto s = slave->startup(cfg1);
@@ -152,7 +154,7 @@ makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port) {
 
         WorkLoad work(slave, session);
         work.init();
-        work.slaveof("127.0.0.1", master_port);
+        work.slaveof("127.0.0.1", mport);
     }
 
     return slave;
@@ -183,6 +185,7 @@ TEST(Repl, Common) {
 
         auto& master = hosts.first;
         auto& slave = hosts.second;
+        bool running = true;
 
         // make sure slaveof is ok
         std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -198,7 +201,29 @@ TEST(Repl, Common) {
         sleep(3); // wait recycle binlog
         compareData(master, slave);
 
-        auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port);
+        auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port, master_port);
+        // chain slave
+        auto slave_slave = makeAnotherSlave(slave_slave_dir, i, slave_slave_port, slave_port);
+
+        std::thread thd0([&master, &slave, &slave1, &slave_slave, &running]() {
+            while (running) {
+                auto s = runCommand(master, { "info", "replication" });
+                LOG(INFO) << s;
+                s = runCommand(slave, { "info", "replication" });
+                LOG(INFO) << s;
+                s = runCommand(slave_slave, { "info", "replication" });
+                LOG(INFO) << s;
+                s = runCommand(slave1, { "info", "replication" });
+                LOG(INFO) << s;
+
+                s = runCommand(master, { "info", "all" });
+                s = runCommand(slave, { "info", "all" });
+                s = runCommand(slave_slave, { "info", "all" });
+                s = runCommand(slave1, { "info", "all" });
+
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        });
 
         // delete all the keys
         for (auto k : allKeys) {
@@ -224,10 +249,13 @@ TEST(Repl, Common) {
 #endif
         });
 
+
         std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
-        auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port);
+        auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port, master_port);
 
         LOG(INFO) << "waiting thd1 to exited";
+        running = false;
+        thd0.join();
         thd1.join();
         thd2.join();
 
@@ -242,14 +270,19 @@ TEST(Repl, Common) {
         waitSlaveCatchup(master, slave2);
         compareData(master, slave2);
 
+        waitSlaveCatchup(slave, slave_slave);
+        compareData(slave, slave_slave);
+
 #ifndef _WIN32
         master->stop();
         slave->stop();
+        slave_slave->stop();
         slave1->stop();
         slave2->stop();
 
         ASSERT_EQ(slave.use_count(), 1);
         //ASSERT_EQ(master.use_count(), 1);
+        ASSERT_EQ(slave_slave.use_count(), 1);
         ASSERT_EQ(slave1.use_count(), 1);
         ASSERT_EQ(slave2.use_count(), 1);
 #endif
@@ -279,8 +312,8 @@ TEST(Repl, SlaveOfNeedEmpty) {
         EXPECT_TRUE(setupEnv(master_dir));
         EXPECT_TRUE(setupEnv(slave_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
@@ -372,10 +405,10 @@ TEST(Repl, MasterDontSaveBinlog) {
         EXPECT_TRUE(setupEnv(slave1_dir));
         EXPECT_TRUE(setupEnv(single_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
-        auto cfg4 = makeServerParam(single_port, i, single_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
+        auto cfg4 = makeServerParam(single_port, i, single_dir, false);
         cfg1->maxBinlogKeepNum = 1;
         cfg2->maxBinlogKeepNum = 1;
         cfg2->slaveBinlogKeepNum = 1;
@@ -455,9 +488,9 @@ TEST(Repl, SlaveCantModify) {
         EXPECT_TRUE(setupEnv(slave_dir));
         EXPECT_TRUE(setupEnv(slave1_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);
@@ -534,8 +567,8 @@ TEST(Repl, slaveofBenchmarkingMaster) {
         EXPECT_TRUE(setupEnv(master_dir));
         EXPECT_TRUE(setupEnv(slave_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
 
         auto master = std::make_shared<ServerEntry>(cfg1);
         auto s = master->startup(cfg1);

@@ -1314,6 +1314,7 @@ TEST(Command, info) {
       {"info", "persistence" },
       {"info", "stats" },
       {"info", "replication" },
+      {"info", "binloginfo" },
       {"info", "cpu" },
       {"info", "commandstats" },
       {"info", "cluster" },
@@ -1324,6 +1325,7 @@ TEST(Command, info) {
       {"info", "levelstats" },
       {"info", "rocksdbstats" },
       {"info", "rocksdbperfstats" },
+      {"info", "rocksdbbgerror" },
       {"info", "invalid" },                 // it's ok
       {"rocksproperty", "rocksdb.base-level", "0" },
       {"rocksproperty", "all", "0" },
@@ -1342,6 +1344,8 @@ TEST(Command, info) {
   {{"config", "resetstat", "stats"}, Command::fmtOK()},
   {{"config", "resetstat", "rocksdbstats"}, Command::fmtOK()},
   {{"config", "resetstat", "invalid"},  Command::fmtOK()},              // it's ok
+  {{"tendisadmin", "sleep", "1"},  Command::fmtOK()}, 
+  {{"tendisadmin", "recovery"},  Command::fmtOK()}, 
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
@@ -1353,6 +1357,10 @@ TEST(Command, info) {
     {"config", "set", "session", "perf_level", "invalid" },
     {"config", "set", "session", "invalid", "invalid" },
     {"config", "set", "session", "perf_level"},
+    {"tendisadmin", "sleep"},
+    {"tendisadmin", "sleep", "1", "2"},
+    {"tendisadmin", "recovery", "1"},
+    {"tendisadmin", "invalid"},
   };
 
   testCommandArray(server, correctArr, false);

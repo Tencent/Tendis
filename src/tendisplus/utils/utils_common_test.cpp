@@ -37,6 +37,21 @@ namespace tendisplus {
         return std::string(reinterpret_cast<const char*>(v.data()), v.size());
     }
 
+TEST(Time, Common) {
+
+    auto t3 = sinceEpoch();
+    auto t4 = nsSinceEpoch();
+
+    auto n = SCLOCK::now();
+    auto t1 = sinceEpoch(n);
+    auto t2 = nsSinceEpoch(n);
+
+    EXPECT_EQ(t1, t2 / 1000000000);
+    EXPECT_TRUE(t1 >= t3);
+    EXPECT_TRUE(t2 >= t4);
+}
+
+
 TEST(String, Common) {
     std::stringstream ss;
     char buf[20000];

@@ -44,6 +44,7 @@ int ld2string(char *buf, size_t len, long double value, int humanfriendly);
 size_t popCount(const void *s, long count); // (NOLINT)
 
 int64_t bitPos(const void *s, size_t count, uint32_t bit);
+int random();
 
 /* Command flags. Please check the command table defined in the redis.c file
 * for more information about the meaning of every flag. */

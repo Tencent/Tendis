@@ -2512,4 +2512,16 @@ void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
     }
 }
 
+std::string runCommand(std::shared_ptr<ServerEntry> svr, std::vector<std::string> args) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs(args);
+    auto expect = Command::runSessionCmd(&sess);
+    INVARIANT_D(expect.ok());
+
+    return expect.value();
+}
+
 }  // namespace tendisplus

@@ -179,7 +179,7 @@ void ServerEntry::logWarning(const std::string& str, Session* sess) {
 void ServerEntry::logError(const std::string& str, Session* sess) {
     std::stringstream ss;
     if (sess) {
-        ss << sess->id() << "cmd:" << sess->getCmdStr();
+        ss << sess->id() << " cmd:" << sess->getCmdStr();
     }
 
     ss << ", error:" << str;
@@ -422,7 +422,7 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     if (_sessions.find(id) != _sessions.end()) {
         LOG(FATAL) << "add session:" << id << ",session id already exists";
     }
-    DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
+    // DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
     return true;
 }
@@ -459,7 +459,7 @@ void ServerEntry::endSession(uint64_t connId) {
     if (pCtx->getIsMonitor()) {
         DelMonitorNoLock(connId);
     }
-    DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
+    // DLOG(INFO) << "ServerEntry endSession id:" << connId << " addr:" << it->second->getRemote();
     _sessions.erase(it);
 }
 

@@ -840,19 +840,16 @@ class CommandCommand : public Command {
         } else if (arg1 == "getkeys" && args.size() >= 3) {
             auto iter = cmdmap.find(args[2]);
             if (iter == cmdmap.end()) {
-                // error
-		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
                             "Invalid command specified: " + args[2] };
             }
 
             auto cmd = iter->second;
             if (!cmd) {
-		//INVARIANT(0);
                 return { ErrorCodes::ERR_PARSEOPT,
                         "Invalid command specified" };
             }
-            
+
             int arity = cmd->arity();
             int realsize = args.size() - 2;
             if ((arity > 0 && arity != realsize) ||
@@ -1619,15 +1616,26 @@ class InfoCommand: public Command {
         infoPersistence(allsections, defsections, section, sess, result);
         infoStats(allsections, defsections, section, sess, result);
         infoReplication(allsections, defsections, section, sess, result);
+        auto s = infoBinlogInfo(allsections, defsections, section, sess, result);
+        if (!s.ok()) {
+            return s;
+        }
         infoCPU(allsections, defsections, section, sess, result);
         infoCommandStats(allsections, defsections, section, sess, result);
         infoKeyspace(allsections, defsections, section, sess, result);
         infoBackup(allsections, defsections, section, sess, result);
         infoDataset(allsections, defsections, section, sess, result);
         infoCompaction(allsections, defsections, section, sess, result);
-        infoLevelStats(allsections, defsections, section, sess, result);
-        infoRocksdbStats(allsections, defsections, section, sess, result);
+        s = infoLevelStats(allsections, defsections, section, sess, result);
+        if (!s.ok()) {
+            return s;
+        }
+        s = infoRocksdbStats(allsections, defsections, section, sess, result);
+        if (!s.ok()) {
+            return s;
+        }
         infoRocksdbPerfStats(allsections, defsections, section, sess, result);
+        infoRocksdbBgError(allsections, defsections, section, sess, result);
 
         return  Command::fmtBulk(result.str());
     }
@@ -1813,15 +1821,9 @@ class InfoCommand: public Command {
         if (allsections || defsections || section == "replication") {
             auto server = sess->getServerEntry();
             auto replMgr = server->getReplManager();
-            bool show_all = false;
-            if (sess->getArgs().size() >= 3 &&
-                toLower(sess->getArgs()[1]) == "replication" &&
-                toLower(sess->getArgs()[2]) == "all") {
-                show_all = true;
-            }
             std::stringstream ss;
             ss << "# Replication\r\n";
-            replMgr->getReplInfo(ss, show_all);
+            replMgr->getReplInfo(ss);
             ss << "\r\n";
             result << ss.str();
         }
@@ -1969,7 +1971,7 @@ class InfoCommand: public Command {
         }
     }
 
-    static void infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+    static Status infoLevelStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || defsections || section == "levelstats") {
             auto server = sess->getServerEntry();
 
@@ -1978,23 +1980,27 @@ class InfoCommand: public Command {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
                     mgl::LockMode::LOCK_IS);
                 if (!expdb.ok()) {
-                    return;
+                    return expdb.status();
                 }
 
                 auto store = expdb.value().store;
                 std::string tmp;
                 if (!store->getProperty("rocksdb.levelstatsex", &tmp)) {
-                    return;
+                    return { ErrorCodes::ERR_INTERNAL, "rocksdb.levelstatsex not supported" };
                 }
                 std::string prefix = "rocksdb" + store->dbId() + ".";
                 replaceAll(tmp, "rocksdb.", prefix);
 
                 result << tmp;
             }
+
+            result << "\r\n";
         }
+
+        return { ErrorCodes::ERR_OK, "" };
     }
 
-    static void infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+    static Status infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
         if (allsections || section == "rocksdbstats") {
             auto server = sess->getServerEntry();
             std::map<std::string, uint64_t> map;
@@ -2004,7 +2010,7 @@ class InfoCommand: public Command {
                 auto expdb = server->getSegmentMgr()->getDb(sess, i,
                     mgl::LockMode::LOCK_IS);
                 if (!expdb.ok()) {
-                    return;
+                    return expdb.status();
                 }
 
                 auto store = expdb.value().store;
@@ -2045,7 +2051,10 @@ class InfoCommand: public Command {
             for (auto v : map) {
                 result << v.first << " : " << v.second << "\n";
             }
+
+            result << "\r\n";
         }
+        return { ErrorCodes::ERR_OK, "" };
     }
 
     static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
@@ -2060,9 +2069,77 @@ class InfoCommand: public Command {
 
             tmp = sess->getCtx()->getIOstatsContextStr();
             replaceAll(tmp, " = ", ":");
-            replaceAll(tmp, ", ", "\n");
+            replaceAll(tmp, ", ", "\r\n");
 
             result << tmp;
+            result << "\r\n";
+        }
+    }
+
+    static Status infoBinlogInfo(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || section == "binloginfo") {
+            auto server = sess->getServerEntry();
+
+            result << "# BinlogInfo\r\n";
+            for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore kvstore = expdb.value().store;
+                auto ptxn = kvstore->createTransaction(sess);
+                if (!ptxn.ok()) {
+                    return ptxn.status();
+                }
+                std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+                auto eMin = RepllogCursorV2::getMinBinlog(txn.get());
+                if (!eMin.ok()) {
+                    if (eMin.status().code() == ErrorCodes::ERR_EXHAUST) {
+                        continue;
+                    }
+                    return eMin.status();
+                }
+                auto eMax = RepllogCursorV2::getMaxBinlog(txn.get());
+                if (!eMax.ok()) {
+                    return eMax.status();
+                }
+                result << "rocksdb" + kvstore->dbId() << ":"
+                    << "min=" << eMin.value().getBinlogId()
+                    << ",minTs=" << eMin.value().getTimestamp()
+                    << ",minRevision=" << (int64_t)eMin.value().getVersionEp()
+                    << ",max=" << eMax.value().getBinlogId()
+                    << ",maxTs=" << eMax.value().getTimestamp()
+                    << ",maxRevision=" << (int64_t)eMax.value().getVersionEp()
+                    << ",highestVisble=" << kvstore->getHighestBinlogId() << "\r\n";
+            }
+
+            result << "\r\n";
+        }
+
+        return { ErrorCodes::ERR_OK, "" };
+    }
+
+    static void infoRocksdbBgError(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
+        if (allsections || defsections || section == "rocksdbbgerror") {
+            auto server = sess->getServerEntry();
+
+            result << "# RocksdbBgError\r\n";
+            for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i,
+                    mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return;
+                }
+
+                auto store = expdb.value().store;
+                auto ret = store->getBgError();
+                if (ret != "") {
+                    result << "rocksdb" << store->dbId() << ":"
+                        << ret << "\n";
+                }
+            }
+            result << "\r\n";
         }
     }
 } infoCmd;
@@ -3217,56 +3294,78 @@ class EmptyMultiBulkCommand: public Command {
     }
 } emptyMultiBulkCmd;
 
-class TendisadminCommand: public Command {
+class TendisadminCommand : public Command {
  public:
-  TendisadminCommand()
-    :Command("tendisadmin", "lat") {
-  }
-
-  ssize_t arity() const {
-    return -2;
-  }
-
-  int32_t firstkey() const {
-    return 0;
-  }
-
-  int32_t lastkey() const {
-    return 0;
-  }
-
-  int32_t keystep() const {
-    return 0;
-  }
-
-  Expected<std::string> run(Session* sess) final {
-    auto& args = sess->getArgs();
-
-    auto operation = toLower(args[1]);
-
-    if (operation == "sleep") {
-      if (args.size() < 3 || args.size() > 4) {
-        return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
-      }
-
-      auto time = tendisplus::stoull(args[2]);
-      if (!time.ok()) {
-        return time.status();
-      }
-
-      std::list<std::unique_ptr<DbWithLock>> result;
-      const auto server = sess->getServerEntry();
-      for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expdb = server->getSegmentMgr()->getDb(sess,
-          i, mgl::LockMode::LOCK_X);
-        result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
-      }
-
-      std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+    TendisadminCommand()
+        :Command("tendisadmin", "lat") {
     }
 
-    return Command::fmtOK();
-  }
+    ssize_t arity() const {
+        return -2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        auto& args = sess->getArgs();
+
+        auto operation = toLower(args[1]);
+
+        if (operation == "sleep") {
+            if (args.size() != 3) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+
+            auto time = tendisplus::stoull(args[2]);
+            if (!time.ok()) {
+                return time.status();
+            }
+
+            std::list<std::unique_ptr<DbWithLock>> result;
+            const auto server = sess->getServerEntry();
+            for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                    i, mgl::LockMode::LOCK_X);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+        } else if (operation == "recovery") {
+            if (args.size() != 2) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+            const auto server = sess->getServerEntry();
+            for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                    i, mgl::LockMode::LOCK_IX);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+
+                auto s = expdb.value().store->recoveryFromBgError();
+                if (!s.ok()) {
+                    return s;
+                }
+            }
+        } else {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid operation:" + operation };
+        }
+
+        return Command::fmtOK();
+    }
 } tendisadminCmd;
 
 }  // namespace tendisplus

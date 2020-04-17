@@ -83,6 +83,7 @@ class RepllogCursorV2 {
     static Expected<uint64_t> getMinBinlogId(Transaction* txn);
     static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
     static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
+    static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
 
  protected:
     Transaction* _txn;
@@ -292,6 +293,8 @@ class KVStore {
     virtual bool getProperty(const std::string& property, std::string* value) const = 0;
     virtual std::string getAllProperty() const = 0;
     virtual std::string getStatistics() const = 0;
+    virtual std::string getBgError() const = 0;
+    virtual Status recoveryFromBgError() = 0;
     virtual void resetStatistics() = 0;
 
     virtual Status setMode(StoreMode mode) = 0;

@@ -34,16 +34,16 @@ struct SPovStatus {
 };
 
 struct MPovStatus {
-    bool isRunning;
-    uint32_t dstStoreId;
+    bool isRunning = false;
+    uint32_t dstStoreId = 0;
     // the greatest id that has been applied
-    uint64_t binlogPos;
+    uint64_t binlogPos = 0;
     SCLOCK::time_point nextSchedTime;
     SCLOCK::time_point lastSendBinlogTime;
     std::shared_ptr<BlockingTcpClient> client;
-    uint64_t clientId;
+    uint64_t clientId = 0;
     string slave_listen_ip;
-    uint16_t slave_listen_port;
+    uint16_t slave_listen_port = 0;
 };
 
 enum class FullPushState {
@@ -148,7 +148,7 @@ class ReplManager {
 #endif
     void flushCurBinlogFs(uint32_t storeId);
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
-    void getReplInfo(std::stringstream& ss, bool show_all) const;
+    void getReplInfo(std::stringstream& ss) const;
     void onFlush(uint32_t storeId, uint64_t binlogid);
 
  protected:
@@ -191,8 +191,8 @@ class ReplManager {
 #ifdef BINLOG_V1
     Status saveBinlogs(uint32_t storeId, const std::list<ReplLog>& logs);
 #endif
-    void getReplInfoSimple(std::stringstream& ss, bool show_all) const;
-    void getReplInfoDetail(std::stringstream& ss, bool show_all) const;
+    void getReplInfoSimple(std::stringstream& ss) const;
+    void getReplInfoDetail(std::stringstream& ss) const;
     void recycleFullPushStatus();
 
 private:
