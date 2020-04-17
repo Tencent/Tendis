@@ -242,11 +242,11 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     sess->getCtx()->setArgsBrief(sess->getArgs());
     it->second->incrCallTimes();
     auto now = nsSinceEpoch();
-    auto guard = MakeGuard([it, now, sess, args] {
+    auto guard = MakeGuard([it, now, sess] {
         sess->getCtx()->clearRequestCtx();
         auto duration = nsSinceEpoch() - now;
         it->second->incrNanos(duration);
-        sess->getServerEntry()->slowlogPushEntryIfNeeded(now, duration, args);
+        sess->getServerEntry()->slowlogPushEntryIfNeeded(now / 1000, duration / 1000, sess);
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
@@ -261,7 +261,8 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 
             auto vv = dynamic_cast<NetSession*>(sess);
             vv->setCloseAfterRsp();
-        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL) {
+        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
+                v.status().code() == ErrorCodes::ERR_DECODE) {
             ServerEntry::logError(v.status().toString(), sess);
         }
     }

@@ -997,18 +997,33 @@ Status ServerEntry::initSlowlog(std::string logPath) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+
+/*
+# Id: 3
+# Timestamp: 1587107891128222
+# Time: 200417 15:18:11
+# Host: 127.0.0.1:51271
+# Db: 0
+# Query_time: 2001014
+tendisadmin sleep 2
+*/
+// in ¦Ìs
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
-            const std::vector<std::string>& args) {
-    if (duration > _cfg->slowlogLogSlowerThan) {
+    Session* sess) {
+    if (sess && duration > _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
-        _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
-        _slowLog << "#Time: " << time << "\n";
-        _slowLog << "#Query_time: " << duration << "\n";
+        _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
+        _slowLog << "# Timestamp: " << time << "\n";
+        _slowLog << "# Time: " << epochToDatetime(time/1000000) << "\n";
+        _slowLog << "# Host: " << sess->getRemote() << "\n";
+        _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
+        _slowLog << "# Query_time: " << duration << "\n";
+
+        auto& args = sess->getArgs();
         for (size_t i = 0; i < args.size(); ++i) {
             _slowLog << args[i] << " ";
         }
-        _slowLog << "\n";
-        _slowLog << "#argc: " << args.size() << "\n\n";
+        _slowLog << "\n\n";
         if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {
             _slowLog.flush();
         }

@@ -643,10 +643,10 @@ TEST(Repl, BinlogKeepNum_Test) {
         EXPECT_TRUE(setupEnv(slave1_dir));
         EXPECT_TRUE(setupEnv(single_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
-        auto cfg4 = makeServerParam(single_port, i, single_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
+        auto cfg4 = makeServerParam(single_port, i, single_dir, false);
         uint64_t masterBinlogNum = 10;
         cfg1->maxBinlogKeepNum = masterBinlogNum;
         cfg2->maxBinlogKeepNum = masterBinlogNum;
