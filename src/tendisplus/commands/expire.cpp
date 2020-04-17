@@ -135,7 +135,7 @@ Expected<std::string> expireGeneric(Session *sess,
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireBeforeNow(sess, type, key);
-            LOG(WARNING) << " expire before " << key << " " << rt2Char(type);
+            DLOG(INFO) << " expire before " << key << " " << rt2Char(type);
             if (!done.ok()) {
                 return done.status();
             }

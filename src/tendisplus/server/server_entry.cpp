@@ -32,11 +32,11 @@ void ServerStat::reset() {
     syncPartialOk = 0;
     syncPartialErr = 0;
     netInputBytes = 0;
-    netOutputBytes = 0; 
+    netOutputBytes = 0;
     memset(&instMetric, 0, sizeof(instMetric));
 }
 
-CompactionStat::CompactionStat() 
+CompactionStat::CompactionStat()
     : curDBid(""), startTime(sinceEpoch()), isRunning(false) {}
 
 void CompactionStat::reset() {
@@ -291,7 +291,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
     for (uint32_t i = 0; i < threadnum; ++i) {
-        auto executor = std::make_unique<WorkerPool>("req-exec-" + i, _poolMatrix);
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
         Status s = executor->startup(1);
         if (!s.ok()) {
             LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
@@ -600,7 +600,7 @@ bool ServerEntry::processRequest(Session *sess) {
     return true;
 }
 
-void ServerEntry::getStatInfo(std::stringstream& ss) const{
+void ServerEntry::getStatInfo(std::stringstream& ss) const {
     ss << "total_connections_received:" << _netMatrix->connCreated.get() << "\r\n";
     ss << "total_connections_released:" << _netMatrix->connReleased.get() << "\r\n";
     auto executed = _reqMatrix->processed.get();
@@ -624,16 +624,16 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const{
 
     ss << "commands_in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
     ss << "commands_executed_in_workpool:" << _poolMatrix->executed.get() << "\r\n";
- 
+
     ss << "total_stricky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
     ss << "total_invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
 
     ss << "total_net_input_bytes:" << _serverStat.netInputBytes.get() << "\r\n";
     ss << "total_net_output_bytes:" << _serverStat.netOutputBytes.get() << "\r\n";
     ss << "instantaneous_input_kbps:" <<
-        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_INPUT)/1024 << "\r\n";
+        static_cast<float>(_serverStat.getInstantaneousMetric(STATS_METRIC_NET_INPUT))/1024 << "\r\n";
     ss << "instantaneous_output_kbps:" <<
-        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_OUTPUT)/1024 << "\r\n";
+        static_cast<float>(_serverStat.getInstantaneousMetric(STATS_METRIC_NET_OUTPUT))/1024 << "\r\n";
     ss << "rejected_connections:" << _serverStat.rejectedConn.get() << "\r\n";
     ss << "sync_full:" << _serverStat.syncFull.get()  << "\r\n";
     ss << "sync_partial_ok:" << _serverStat.syncPartialOk.get()  << "\r\n";
@@ -720,7 +720,7 @@ bool ServerEntry::getAllProperty(Session* sess, const std::string& property, std
         if (!ok) {
             return false;
         }
-        ss << "store_" << store->dbId() << ":" << tmp << "\r\n" ;
+        ss << "store_" << store->dbId() << ":" << tmp << "\r\n";
     }
     *value = ss.str();
 
@@ -997,14 +997,14 @@ Status ServerEntry::initSlowlog(std::string logPath) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
+void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
             const std::vector<std::string>& args) {
-    if(duration > _cfg->slowlogLogSlowerThan) {
+    if (duration > _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
         _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
         _slowLog << "#Time: " << time << "\n";
         _slowLog << "#Query_time: " << duration << "\n";
-        for(size_t i = 0; i < args.size(); ++i) {
+        for (size_t i = 0; i < args.size(); ++i) {
             _slowLog << args[i] << " ";
         }
         _slowLog << "\n";
@@ -1012,7 +1012,7 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
         if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {
             _slowLog.flush();
         }
-        
+
         _slowlogId.fetch_add(1, std::memory_order_relaxed);
     }
 }

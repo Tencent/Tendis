@@ -287,7 +287,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
 
-    LOG(INFO) << "begin delKeyPessimistic key:"
+    DLOG(INFO) << "begin delKeyPessimistic key:"
                 << hexlify(mk.getPrimaryKey());
 
     auto expdb = server->getSegmentMgr()->getDb(

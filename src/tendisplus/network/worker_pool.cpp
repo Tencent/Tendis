@@ -71,7 +71,7 @@ void WorkerPool::consumeTasks(size_t idx) {
 
     while (_isRuning.load(std::memory_order_relaxed)) {
         LOG(INFO) << "WorkerPool consumeTasks work:" << idx;
-        // TODO(takenliu): use run_for to make threads more adaptive
+        // TODO(deyukong): use run_for to make threads more adaptive
         asio::io_context::work work(*_ioCtx);
         _ioCtx->run();
     }

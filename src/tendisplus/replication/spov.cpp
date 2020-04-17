@@ -573,7 +573,7 @@ Expected<uint64_t> ReplManager::applySingleTxnV2(Session* sess, uint32_t storeId
 
     if (binlogId <= store->getHighestBinlogId()) {
         string err = "binlogId:" + to_string(binlogId)
-            + " bigger than highestBinlogId:" + to_string(store->getHighestBinlogId());
+            + " can't be smaller than highestBinlogId:" + to_string(store->getHighestBinlogId());
         LOG(ERROR) << err;
         return {ErrorCodes::ERR_MANUAL, err};
     }

@@ -175,7 +175,7 @@ void NetworkAsio::doAccept() {
         auto sess = std::make_shared<NetSession>(
                     _server, std::move(socket),
                     newConnId, true, _netMatrix, _reqMatrix);
-        LOG(INFO) << "new net session, id:" << sess->id()
+        DLOG(INFO) << "new net session, id:" << sess->id()
                   << ",connId:" << newConnId
                   << ",from:" << sess->getRemoteRepr()
                   << " created";
@@ -589,7 +589,7 @@ void NetSession::processMultibulkBuffer() {
 
 void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     if (ec) {
-        LOG(WARNING) << "drainReqCallback:" << ec.message();
+        DLOG(WARNING) << "drainReqCallback:" << ec.message();
         endSession();
         return;
     }
@@ -787,7 +787,7 @@ void NetSession::endSession() {
     }
     _isEnded = true;
     ++_netMatrix->connReleased;
-    LOG(INFO) << "net session, id:" << id()
+    DLOG(INFO) << "net session, id:" << id()
                   << ",connId:" << _connId
                   << " destroyed";
     _server->endSession(id());

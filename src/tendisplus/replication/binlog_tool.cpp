@@ -128,7 +128,7 @@ class BinlogScanner{
             ret = fread(buff, sizeof(uint32_t), 1, pf);
             if (ret != 1) {
                 if (feof(pf)) {
-                    cerr << "read logfile end." << endl;
+                    // cerr << "read logfile end." << endl;
                     return; // read file end.
                 }
                 cerr << "read keylen failed." << endl;
