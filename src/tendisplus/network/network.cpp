@@ -348,8 +348,13 @@ asio::ip::tcp::socket NetSession::borrowConn() {
     return std::move(_sock);
 }
 
-void NetSession::setResponse(const std::string& s) {
+Status NetSession::setResponse(const std::string& s) {
     std::lock_guard<std::mutex> lk(_mutex);
+    if (_isEnded) {
+        _closeAfterRsp = true;
+        return { ErrorCodes::ERR_NETWORK, "connection is ended" };
+    }
+
     auto v = std::make_shared<SendBuffer>();
     std::copy(s.begin(), s.end(), std::back_inserter(v->buffer));
     v->closeAfterThis = _closeAfterRsp;
@@ -359,6 +364,8 @@ void NetSession::setResponse(const std::string& s) {
         _isSendRunning = true;
         drainRsp(v);
     }
+
+    return { ErrorCodes::ERR_OK, "" };
 }
 
 void NetSession::start() {

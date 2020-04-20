@@ -20,7 +20,7 @@ class Session: public std::enable_shared_from_this<Session> {
     virtual ~Session();
     uint64_t id() const;
 
-    virtual void setResponse(const std::string& s) = 0;
+    virtual Status setResponse(const std::string& s) = 0;
     const std::vector<std::string>& getArgs() const;
     Status processExtendProtocol();
     SessionCtx *getCtx() const;
@@ -56,7 +56,7 @@ class LocalSession: public Session {
     Status cancel() final;
     int getFd() final;
     std::string getRemote() const final;
-    void setResponse(const std::string& s) final;
+    Status setResponse(const std::string& s) final;
     void setArgs(const std::vector<std::string>& args);
     void setArgs(const std::string& cmd);
 

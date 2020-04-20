@@ -116,9 +116,10 @@ std::string LocalSession::getRemote() const {
     return "";
 }
 
-void LocalSession::setResponse(const std::string& s) {
+Status LocalSession::setResponse(const std::string& s) {
     INVARIANT(_respBuf.size() == 0);
     std::copy(s.begin(), s.end(), std::back_inserter(_respBuf));
+    return { ErrorCodes::ERR_OK, "" };
 }
 
 LocalSessionGuard::LocalSessionGuard(std::shared_ptr<ServerEntry> svr) {

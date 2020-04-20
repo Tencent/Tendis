@@ -703,9 +703,8 @@ void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer
 bool ServerEntry::getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const {
     *value = 0;
     for (uint64_t i = 0; i < getKVStoreCount(); i++) {
-        // NOTE(vinchen): info should not lock?
         auto expdb = getSegmentMgr()->getDb(sess, i,
-            mgl::LockMode::LOCK_NONE);
+            mgl::LockMode::LOCK_IS, false, 0);
         if (!expdb.ok()) {
             return false;
         }
