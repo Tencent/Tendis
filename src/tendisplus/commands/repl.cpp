@@ -1023,6 +1023,7 @@ class SlaveofCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
         INVARIANT(args.size() >= size_t(3));
+        LOG(INFO) << "SlaveofCommand, " << sess->getCmdStr();
         if (toLower(args[1]) == "no" && toLower(args[2]) == "one") {
             return runSlaveofNoOne(sess);
         } else {

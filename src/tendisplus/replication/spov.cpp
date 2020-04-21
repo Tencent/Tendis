@@ -142,13 +142,22 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     // 3) necessary pre-conditions all ok, startup a guard to rollback
     // state if failed
     bool rollback = true;
-    auto guard = MakeGuard([this, &rollback, &metaSnapshot]{
+    auto guard = MakeGuard([this, &rollback, &metaSnapshot, &store]{
         std::lock_guard<std::mutex> lk(_mutex);
         if (rollback) {
             auto newMeta = metaSnapshot.copy();
             newMeta->replState = ReplState::REPL_CONNECT;
             newMeta->binlogId = Transaction::TXNID_UNINITED;
             changeReplStateInLock(*newMeta, false);
+
+            LOG(INFO) << "slaveStartFullsync rollback, rm dir:" << store->dftBackupDir();
+            std::error_code ec;
+            filesystem::remove_all(
+                    filesystem::path(store->dftBackupDir()), ec);
+            if (ec) {
+                LOG(ERROR) << "slaveStartFullsync rollback, rm dir:" << store->dftBackupDir()
+                    << " failed:" << ec.message();
+            }
         }
     });
 
@@ -208,6 +217,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         filesystem::path fileDir =
                 filesystem::path(fullFileName).remove_filename();
         if (!filesystem::exists(fileDir)) {
+            LOG(INFO) << "slaveStartFullsync create_directories:" << fileDir;
             filesystem::create_directories(fileDir);
         }
         auto myfile = std::fstream(fullFileName,
