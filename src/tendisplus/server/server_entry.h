@@ -106,6 +106,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         return _cfg;
     }
     bool addSession(std::shared_ptr<Session> sess);
+    std::shared_ptr<Session> getSession(uint64_t id) const;
 
     // NOTE(deyukong): be careful, currently, the callpath of
     // serverEntry::endSession is

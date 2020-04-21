@@ -432,6 +432,16 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     return true;
 }
 
+std::shared_ptr<Session> ServerEntry::getSession(uint64_t id) const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto it = _sessions.find(id);
+    if (it == _sessions.end()) {
+        return nullptr;
+    }
+
+    return it->second;
+}
+
 size_t ServerEntry::getSessionCount() {
     std::lock_guard<std::mutex> lk(_mutex);
     return _sessions.size();
@@ -449,7 +459,7 @@ Status ServerEntry::cancelSession(uint64_t connId) {
     LOG(INFO) << "ServerEntry cancelSession id:" << connId << " addr:" << it->second->getRemote();
     return it->second->cancel();
 }
-
+//
 void ServerEntry::endSession(uint64_t connId) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {

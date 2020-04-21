@@ -2524,4 +2524,10 @@ std::string runCommand(std::shared_ptr<ServerEntry> svr, std::vector<std::string
     return expect.value();
 }
 
+void runBgCommand(std::shared_ptr<ServerEntry> svr) {
+    runCommand(svr, { "info", "all" });
+    runCommand(svr, { "client", "list" });
+    runCommand(svr, { "show", "processlist", "all" });
+}
+
 }  // namespace tendisplus

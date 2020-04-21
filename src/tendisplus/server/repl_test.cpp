@@ -216,10 +216,10 @@ TEST(Repl, Common) {
                 s = runCommand(slave1, { "info", "replication" });
                 LOG(INFO) << s;
 
-                s = runCommand(master, { "info", "all" });
-                s = runCommand(slave, { "info", "all" });
-                s = runCommand(slave_slave, { "info", "all" });
-                s = runCommand(slave1, { "info", "all" });
+                runBgCommand(master);
+                runBgCommand(slave);
+                runBgCommand(slave_slave);
+                runBgCommand(slave1);
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }

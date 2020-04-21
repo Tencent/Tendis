@@ -698,6 +698,7 @@ class ShowCommand: public Command {
         rapidjson::StringBuffer sb;
         rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
         writer.StartArray();
+        auto now = nsSinceEpoch();
         for (const auto& sess : sesses) {
             SessionCtx *ctx = sess->getCtx();
             // TODO(vinchen): Does it has a better way?
@@ -706,6 +707,12 @@ class ShowCommand: public Command {
                 continue;
             }
             writer.StartObject();
+
+            writer.Key("id");
+            writer.Uint64(sess->id());
+
+            writer.Key("host");
+            writer.String(sess->getRemote());
 
             writer.Key("args");
             writer.StartArray();
@@ -722,6 +729,14 @@ class ShowCommand: public Command {
 
             writer.Key("start_time");
             writer.Uint64(ctx->getProcessPacketStart()/1000000);
+
+            writer.Key("duration");
+            uint64_t duration = 0;
+            auto start = ctx->getProcessPacketStart();
+            if (start > 0) {
+                duration = (now - start) / 1000000;
+            }
+            writer.Uint64(duration);
 
             writer.Key("session_ref");
             writer.Uint64(sess.use_count());
@@ -769,7 +784,7 @@ class ShowCommand: public Command {
         }
         return {ErrorCodes::ERR_PARSEOPT, "invalid show param"};
     }
-} plCmd;
+} showCmd;
 
 class ToggleFtmcCommand: public Command {
  public:
@@ -1589,6 +1604,7 @@ class ClientCommand: public Command {
                 continue;
             }
             SessionCtx *ctx = sess->getCtx();
+			// TODO(takenliu) : more information like redis
             ss << "id=" << v->id()
                 << " addr=" << v->getRemote()
                 << " fd=" << v->getFd()
@@ -1673,16 +1689,20 @@ class ClientCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
 
-        if (args[1] == "LIST" || args[1] == "list") {
+        auto arg1 = tendisplus::toLower(args[1]);
+
+        if (arg1 == "id") {
+            return Command::fmtLongLong(sess->id());
+        } else if (arg1 == "list") {
             return listClients(sess);
-        } else if (args[1] == "getname" || args[1] == "GETNAME") {
+        } else if (arg1 == "getname") {
             std::string name = sess->getName();
             if (name == "") {
                 return Command::fmtNull();
             } else {
                 return Command::fmtBulk(name);
             }
-        } else if ((args[1] == "setname" || args[1] == "SETNAME")
+        } else if ((arg1 == "setname")
                         && args.size() == 3) {
             for (auto v : args[2]) {
                 if (v < '!' || v > '~') {
@@ -1693,7 +1713,7 @@ class ClientCommand: public Command {
             }
             sess->setName(args[2]);
             return Command::fmtOK();
-        } else if (args[1] == "KILL" || args[1] == "kill") {
+        } else if (arg1 == "kill") {
             return killClients(sess);
         } else {
             return {ErrorCodes::ERR_PARSEOPT,
