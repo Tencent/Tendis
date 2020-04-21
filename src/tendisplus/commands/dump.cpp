@@ -338,7 +338,7 @@ class ListSerializer: public Serializer {
         easyCopy(&ziplist, &tmpPos, zllen);
         for (size_t i = 0; i < zl.size(); i++) {
             size_t written(0);
-            if (prevlen > 254) {
+            if (prevlen >= 254) {
                 written += easyCopy(&ziplist, &tmpPos,
                         static_cast<unsigned char>(0xfe));
                 written += easyCopy(&ziplist, &tmpPos, prevlen);
@@ -1259,7 +1259,7 @@ class ListDeserializer: public Deserializer {
         zl.reserve(zllen);
         uint32_t prevlen(0);
         while (zllen--) {
-            if (prevlen > 254) {
+            if (prevlen >= 254) {
                 *pos += 5;
             } else {
                 *pos += 1;
