@@ -457,8 +457,11 @@ void ServerEntry::endSession(uint64_t connId) {
     }
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
-        INVARIANT_D(0);
+        // NOTE(vinchen): ServerEntry::endSession() is called by
+        // NetSession::endSession(), but it is not holding NetSession::_mutex
+        // So here is possible now.
         LOG(ERROR) << "destroy conn:" << connId << ",not exists";
+        return;
     }
     SessionCtx* pCtx = it->second->getCtx();
     INVARIANT(pCtx != nullptr);

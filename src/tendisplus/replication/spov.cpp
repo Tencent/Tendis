@@ -358,18 +358,19 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         return;
     }
     uint64_t sessionId = expSessionId.value();
-
+    uint64_t currSessId = std::numeric_limits<uint64_t>::max();
     {
         std::lock_guard<std::mutex> lk(_mutex);
-        uint64_t currSessId = _syncStatus[metaSnapshot.id]->sessionId;
-        if (currSessId != std::numeric_limits<uint64_t>::max()) {
-            Status s = _svr->cancelSession(currSessId);
-            LOG(INFO) << "sess:" << currSessId
-                    << ",discard status:"
-                    << (s.ok() ? "ok" : s.toString());
-        }
+        currSessId = _syncStatus[metaSnapshot.id]->sessionId;
         _syncStatus[metaSnapshot.id]->sessionId = sessionId;
         _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
+    }
+
+    if (currSessId != std::numeric_limits<uint64_t>::max()) {
+        Status s = _svr->cancelSession(currSessId);
+        LOG(INFO) << "sess:" << currSessId
+            << ",discard status:"
+            << (s.ok() ? "ok" : s.toString());
     }
 
     if (metaSnapshot.replState != ReplState::REPL_CONNECTED) {

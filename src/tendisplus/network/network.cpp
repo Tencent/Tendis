@@ -788,15 +788,17 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen,
 }
 
 void NetSession::endSession() {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (_isEnded) {
-        return;
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_isEnded) {
+            return;
+        }
+        _isEnded = true;
+        ++_netMatrix->connReleased;
+        DLOG(INFO) << "net session, id:" << id()
+            << ",connId:" << _connId
+            << " destroyed";
     }
-    _isEnded = true;
-    ++_netMatrix->connReleased;
-    DLOG(INFO) << "net session, id:" << id()
-                  << ",connId:" << _connId
-                  << " destroyed";
     _server->endSession(id());
 }
 

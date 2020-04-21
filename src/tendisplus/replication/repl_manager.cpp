@@ -93,7 +93,7 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
 Status ReplManager::stopStore(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    INVARIANT(storeId < _svr->getKVStoreCount());
+    INVARIANT_D(storeId < _svr->getKVStoreCount());
 
     _syncStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
 
