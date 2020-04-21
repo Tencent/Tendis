@@ -32,11 +32,11 @@ void ServerStat::reset() {
     syncPartialOk = 0;
     syncPartialErr = 0;
     netInputBytes = 0;
-    netOutputBytes = 0; 
+    netOutputBytes = 0;
     memset(&instMetric, 0, sizeof(instMetric));
 }
 
-CompactionStat::CompactionStat() 
+CompactionStat::CompactionStat()
     : curDBid(""), startTime(sinceEpoch()), isRunning(false) {}
 
 void CompactionStat::reset() {
@@ -188,7 +188,6 @@ void ServerEntry::logError(const std::string& str, Session* sess) {
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {
-    INVARIANT_D(_kvstores.size() == _catalog->getKVStoreCount());
     return _catalog->getKVStoreCount();
 }
 extern string gRenameCmdList;
@@ -264,7 +263,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }*/
 
     installStoresInLock(tmpStores);
-    INVARIANT(getKVStoreCount() == kvStoreCount);
+    INVARIANT_D(getKVStoreCount() == kvStoreCount);
 
     // segment mgr
     auto tmpSegMgr = std::unique_ptr<SegmentMgr>(
@@ -291,9 +290,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
-    for (uint32_t i = 0; i < threadnum; ++i) {
-        auto executor = std::make_unique<WorkerPool>("req-exec-" + i, _poolMatrix);
-        Status s = executor->startup(1);
+    {
+    //for (uint32_t i = 0; i < threadnum; ++i) {
+        // TODO(takenliu): make sure whether multi worker_pool is ok?
+        // But each size of worker_pool should been not less than 8;
+        uint32_t i = 0;
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
+        Status s = executor->startup(threadnum);
         if (!s.ok()) {
             LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
             return s;
@@ -347,6 +350,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
     // server stats monitor
     _cronThd = std::make_unique<std::thread>([this] {
+        pthread_setname_np(pthread_self(), "server_cron");
         serverCron();
     });
 
@@ -420,11 +424,22 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     sess->start();
     uint64_t id = sess->id();
     if (_sessions.find(id) != _sessions.end()) {
-        LOG(FATAL) << "add session:" << id << ",session id already exists";
+        INVARIANT_D(0);
+        LOG(ERROR) << "add session:" << id << ",session id already exists";
     }
     // DLOG(INFO) << "ServerEntry addSession id:" << id << " addr:" << sess->getRemote();
     _sessions[id] = std::move(sess);
     return true;
+}
+
+std::shared_ptr<Session> ServerEntry::getSession(uint64_t id) const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto it = _sessions.find(id);
+    if (it == _sessions.end()) {
+        return nullptr;
+    }
+
+    return it->second;
 }
 
 size_t ServerEntry::getSessionCount() {
@@ -444,7 +459,7 @@ Status ServerEntry::cancelSession(uint64_t connId) {
     LOG(INFO) << "ServerEntry cancelSession id:" << connId << " addr:" << it->second->getRemote();
     return it->second->cancel();
 }
-
+//
 void ServerEntry::endSession(uint64_t connId) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (!_isRunning.load(std::memory_order_relaxed)) {
@@ -452,7 +467,11 @@ void ServerEntry::endSession(uint64_t connId) {
     }
     auto it = _sessions.find(connId);
     if (it == _sessions.end()) {
-        LOG(FATAL) << "destroy conn:" << connId << ",not exists";
+        // NOTE(vinchen): ServerEntry::endSession() is called by
+        // NetSession::endSession(), but it is not holding NetSession::_mutex
+        // So here is possible now.
+        LOG(ERROR) << "destroy conn:" << connId << ",not exists";
+        return;
     }
     SessionCtx* pCtx = it->second->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -530,9 +549,13 @@ void ServerEntry::replyMonitors(Session* sess) {
     info += "\r\n";
 
     std::lock_guard<std::mutex> lk(_mutex);
-
-    for (auto& it : _monitors) {
-        it->setResponse(info);
+    for (auto iter = _monitors.begin(); iter != _monitors.end(); ) {
+        auto s = (*iter)->setResponse(info);
+        if (!s.ok()) {
+            iter = _monitors.erase(iter);
+        } else {
+            ++iter;
+        }
     }
 }
 
@@ -542,18 +565,14 @@ bool ServerEntry::processRequest(Session *sess) {
     }
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
-    // NOTE(vinchen): process the ExtraProtocol of timestamp and version
-    /*auto s = sess->processExtendProtocol();
-    if (!s.ok()) {
-        sess->setResponse(
-            redis_port::errorReply(s.toString()));
-        return true;
-    }*/
 
     auto expCmdName = Command::precheck(sess);
     if (!expCmdName.ok()) {
-        sess->setResponse(
+        auto s = sess->setResponse(
             redis_port::errorReply(expCmdName.status().toString()));
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
 
@@ -588,20 +607,29 @@ bool ServerEntry::processRequest(Session *sess) {
         NetSession *ns = dynamic_cast<NetSession*>(sess);
         INVARIANT(ns != nullptr);
         ns->setCloseAfterRsp();
-        ns->setResponse(Command::fmtOK());
+        auto s = ns->setResponse(Command::fmtOK());
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
 
     auto expect = Command::runSessionCmd(sess);
     if (!expect.ok()) {
-        sess->setResponse(Command::fmtErr(expect.status().toString()));
+        auto s = sess->setResponse(Command::fmtErr(expect.status().toString()));
+        if (!s.ok()) {
+            return false;
+        }
         return true;
     }
-    sess->setResponse(expect.value());
+    auto s = sess->setResponse(expect.value());
+    if (!s.ok()) {
+        return false;
+    }
     return true;
 }
 
-void ServerEntry::getStatInfo(std::stringstream& ss) const{
+void ServerEntry::getStatInfo(std::stringstream& ss) const {
     ss << "total_connections_received:" << _netMatrix->connCreated.get() << "\r\n";
     ss << "total_connections_released:" << _netMatrix->connReleased.get() << "\r\n";
     auto executed = _reqMatrix->processed.get();
@@ -625,16 +653,16 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const{
 
     ss << "commands_in_queue:" << _poolMatrix->inQueue.get() << "\r\n";
     ss << "commands_executed_in_workpool:" << _poolMatrix->executed.get() << "\r\n";
- 
+
     ss << "total_stricky_packets:" << _netMatrix->stickyPackets.get() << "\r\n";
     ss << "total_invalid_packets:" << _netMatrix->invalidPackets.get() << "\r\n";
 
     ss << "total_net_input_bytes:" << _serverStat.netInputBytes.get() << "\r\n";
     ss << "total_net_output_bytes:" << _serverStat.netOutputBytes.get() << "\r\n";
     ss << "instantaneous_input_kbps:" <<
-        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_INPUT)/1024 << "\r\n";
+        static_cast<float>(_serverStat.getInstantaneousMetric(STATS_METRIC_NET_INPUT))/1024 << "\r\n";
     ss << "instantaneous_output_kbps:" <<
-        (float)_serverStat.getInstantaneousMetric(STATS_METRIC_NET_OUTPUT)/1024 << "\r\n";
+        static_cast<float>(_serverStat.getInstantaneousMetric(STATS_METRIC_NET_OUTPUT))/1024 << "\r\n";
     ss << "rejected_connections:" << _serverStat.rejectedConn.get() << "\r\n";
     ss << "sync_full:" << _serverStat.syncFull.get()  << "\r\n";
     ss << "sync_partial_ok:" << _serverStat.syncPartialOk.get()  << "\r\n";
@@ -689,7 +717,7 @@ bool ServerEntry::getTotalIntProperty(Session* sess, const std::string& property
     *value = 0;
     for (uint64_t i = 0; i < getKVStoreCount(); i++) {
         auto expdb = getSegmentMgr()->getDb(sess, i,
-            mgl::LockMode::LOCK_IS);
+            mgl::LockMode::LOCK_IS, false, 0);
         if (!expdb.ok()) {
             return false;
         }
@@ -721,7 +749,7 @@ bool ServerEntry::getAllProperty(Session* sess, const std::string& property, std
         if (!ok) {
             return false;
         }
-        ss << "store_" << store->dbId() << ":" << tmp << "\r\n" ;
+        ss << "store_" << store->dbId() << ":" << tmp << "\r\n";
     }
     *value = ss.str();
 
@@ -791,7 +819,7 @@ Status ServerEntry::destroyStore(Session *sess,
             << " failed:" << status.toString();
         return status;
     }
-    INVARIANT(store->getMode() == KVStore::StoreMode::STORE_NONE);
+    INVARIANT_D(store->getMode() == KVStore::StoreMode::STORE_NONE);
 
     status = _replMgr->stopStore(storeId);
     if (!status.ok()) {
@@ -998,22 +1026,37 @@ Status ServerEntry::initSlowlog(std::string logPath) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, 
-            const std::vector<std::string>& args) {
-    if(duration > _cfg->slowlogLogSlowerThan) {
+
+/*
+# Id: 3
+# Timestamp: 1587107891128222
+# Time: 200417 15:18:11
+# Host: 127.0.0.1:51271
+# Db: 0
+# Query_time: 2001014
+tendisadmin sleep 2
+*/
+// in ¦Ìs
+void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
+    Session* sess) {
+    if (sess && duration > _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
-        _slowLog << "#Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
-        _slowLog << "#Time: " << time << "\n";
-        _slowLog << "#Query_time: " << duration << "\n";
-        for(size_t i = 0; i < args.size(); ++i) {
+        _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
+        _slowLog << "# Timestamp: " << time << "\n";
+        _slowLog << "# Time: " << epochToDatetime(time/1000000) << "\n";
+        _slowLog << "# Host: " << sess->getRemote() << "\n";
+        _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
+        _slowLog << "# Query_time: " << duration << "\n";
+
+        auto& args = sess->getArgs();
+        for (size_t i = 0; i < args.size(); ++i) {
             _slowLog << args[i] << " ";
         }
-        _slowLog << "\n";
-        _slowLog << "#argc: " << args.size() << "\n\n";
+        _slowLog << "\n\n";
         if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {
             _slowLog.flush();
         }
-        
+
         _slowlogId.fetch_add(1, std::memory_order_relaxed);
     }
 }

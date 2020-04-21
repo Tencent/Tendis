@@ -178,7 +178,7 @@ std::unique_ptr<Cursor> RocksTxn::createCursor() {
 }
 
 Expected<uint64_t> RocksTxn::commit() {
-    INVARIANT(!_done);
+    INVARIANT_D(!_done);
     _done = true;
 
     uint64_t binlogTxnId = Transaction::TXNID_UNINITED;
@@ -186,7 +186,7 @@ Expected<uint64_t> RocksTxn::commit() {
         _txn.reset();
         // for non-replonly mode, we should have binlogTxnId == _txnId
         if (!_replOnly) {
-            INVARIANT(binlogTxnId == _txnId
+            INVARIANT_D(binlogTxnId == _txnId
                       || binlogTxnId == Transaction::TXNID_UNINITED);
         }
         _store->markCommitted(_txnId, binlogTxnId);
@@ -287,7 +287,7 @@ Expected<uint64_t> RocksTxn::commit() {
 }
 
 Status RocksTxn::rollback() {
-    INVARIANT(!_done);
+    INVARIANT_D(!_done);
     _done = true;
 
     const auto guard = MakeGuard([this] {
@@ -564,7 +564,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     // slave's rocksdb directly, we should change the _nextBinlogSeq.
     // BTW, the txnid of logValue is different from _txnId. But it's ok.
     _store->setNextBinlogSeq(binlogId, this);
-    INVARIANT(_binlogId != Transaction::TXNID_UNINITED);
+    INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
 
     RESET_PERFCONTEXT();
     auto s = _txn->Put(logKey, logValue);
@@ -590,14 +590,14 @@ uint64_t RocksTxn::getBinlogId() const {
 }
 
 void RocksTxn::setBinlogId(uint64_t binlogId) {
-    INVARIANT(_binlogId == Transaction::TXNID_UNINITED);
+    INVARIANT_D(_binlogId == Transaction::TXNID_UNINITED);
     _binlogId = binlogId;
 }
 
 #endif
 
 void RocksTxn::setBinlogTime(uint64_t timestamp) {
-    INVARIANT(_store->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
+    INVARIANT_D(_store->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
 
     _binlogTimeSpov = timestamp > _binlogTimeSpov ?
         timestamp : _binlogTimeSpov;
@@ -632,7 +632,7 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store, uint64_t txnId, bool replOnly,
 }
 
 void RocksOptTxn::ensureTxn() {
-    INVARIANT(!_done);
+    INVARIANT_D(!_done);
     if (_txn != nullptr) {
         return;
     }
@@ -675,7 +675,7 @@ RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
 }
 
 void RocksPesTxn::ensureTxn() {
-    INVARIANT(!_done);
+    INVARIANT_D(!_done);
     if (_txn != nullptr) {
         return;
     }
@@ -1032,7 +1032,7 @@ Status RocksKVStore::setMode(StoreMode mode) {
     uint64_t oldSeq = _nextTxnSeq;
     switch (mode) {
     case KVStore::StoreMode::READ_WRITE:
-        INVARIANT(_mode == KVStore::StoreMode::REPLICATE_ONLY);
+        INVARIANT_D(_mode == KVStore::StoreMode::REPLICATE_ONLY);
         // in READ_WRITE mode, the binlog's key is identified by _nextTxnSeq,
         // in REPLICATE_ONLY mode, the binlog is same as the sync-source's
         // when changing from REPLICATE_ONLY to READ_WRITE mode, we shrink
@@ -1044,10 +1044,10 @@ Status RocksKVStore::setMode(StoreMode mode) {
 
     case KVStore::StoreMode::REPLICATE_ONLY:
     case KVStore::StoreMode::STORE_NONE:
-        INVARIANT(_mode == KVStore::StoreMode::READ_WRITE);
+        INVARIANT_D(_mode == KVStore::StoreMode::READ_WRITE);
         break;
     default:
-        INVARIANT(0);
+        INVARIANT_D(0);
     }
 
     LOG(INFO) << "store:" << dbId()
@@ -1220,8 +1220,6 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     uint64_t ts = 0;
     uint64_t written = 0;
     uint64_t deleten = 0;
-    // INVARIANT_D(RepllogCursorV2::getMinBinlogId(txn).value() == start);
-    // INVARIANT_COMPARE_D(RepllogCursorV2::getMinBinlogId(txn).value(), >=, start);
 #ifdef TENDIS_DEBUG
     Expected<uint64_t> minBinlogid = RepllogCursorV2::getMinBinlogId(txn);
     if (minBinlogid.status().code() != ErrorCodes::ERR_EXHAUST) {
@@ -1564,7 +1562,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
             LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
                 << " have no binlog, set nextSeq to " << _nextTxnSeq;
             _highestVisible = _nextBinlogSeq - 1;
-            INVARIANT(_highestVisible < _nextBinlogSeq);
+            INVARIANT_D(_highestVisible < _nextBinlogSeq);
         }
     } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
         _nextTxnSeq = nextBinlogid;
@@ -1572,7 +1570,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
         LOG(INFO) << "store:" << dbId()
             << " all empty, set nextSeq to " << _nextTxnSeq;
         _highestVisible = _nextBinlogSeq - 1;
-        INVARIANT(_highestVisible < _nextBinlogSeq);
+        INVARIANT_D(_highestVisible < _nextBinlogSeq);
     } else {
         return expRcd.status();
     }
@@ -1909,11 +1907,11 @@ Status RocksKVStore::assignBinlogIdIfNeeded(Transaction* txn) {
         uint64_t binlogId = _nextBinlogSeq++;
 
         txn->setBinlogId(binlogId);
-        INVARIANT(_aliveBinlogs.find(binlogId) == _aliveBinlogs.end());
+        INVARIANT_D(_aliveBinlogs.find(binlogId) == _aliveBinlogs.end());
         _aliveBinlogs.insert({ binlogId, { false, txn->getTxnId() } });
 
         auto it = _aliveTxns.find(txn->getTxnId());
-        INVARIANT(it != _aliveTxns.end() && !it->second.first);
+        INVARIANT_D(it != _aliveTxns.end() && !it->second.first);
 
         it->second.second = binlogId;
     }

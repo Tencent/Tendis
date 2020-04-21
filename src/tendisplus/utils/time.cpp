@@ -54,4 +54,13 @@ uint32_t sinceEpoch(const SCLOCK::time_point& tp) {
     return static_cast<uint32_t>(std::chrono::duration_cast<S>(t.time_since_epoch()).count());
 }
 
+// timestamp in second
+std::string epochToDatetime(const time_t epoch) {
+    struct tm* dt;
+    char buffer[64];
+    dt = localtime(&epoch);
+    strftime(buffer, sizeof(buffer), "%y%m%d %H:%M:%S", dt);
+    return std::string(buffer);
+}
+
 }  // namespace tendisplus

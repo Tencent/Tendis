@@ -145,6 +145,34 @@ void flushBinlog(const std::shared_ptr<ServerEntry>& server) {
     }
 }
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
+bool runShell(const std::string& cmd) {
+    FILE* fstream = NULL;
+    char buff[1024];
+    bool success = true;
+    memset(buff, 0, sizeof(buff));
+
+    if (NULL == (fstream = popen(cmd.c_str(), "r"))) {
+        INVARIANT(0);
+        return false;
+    }
+
+    memset(buff, 0x00, sizeof(buff));
+    while (NULL != fgets(buff, sizeof(buff), fstream)) {
+        if (buff[0] != '\0') {
+            LOG(INFO) << std::string(buff);
+            memset(buff, 0x00, sizeof(buff));
+            success = false;
+        }
+    }
+    pclose(fstream);
+    return success;
+}
+
 void restoreBinlog(const string& src_binlog_dir, const std::shared_ptr<ServerEntry>& server,
     uint64_t end_ts = UINT64_MAX) {
     for (size_t i = 0; i < server->getKVStoreCount(); i++) {
@@ -181,10 +209,14 @@ void restoreBinlog(const string& src_binlog_dir, const std::shared_ptr<ServerEnt
             cmd += " --mode=base64";
             cmd += " --start-position=" + std::to_string(binglogPos + 1);
             cmd += " --end-datetime=" + std::to_string(end_ts);
-            cmd += "| ./bin/redis-cli -p " + std::to_string(master2_port);
+            cmd += "| ./bin/redis-cli --csv -p " + std::to_string(master2_port);
+            cmd += "| grep -v OK";
             LOG(INFO) << cmd;
-            int ret = system(cmd.c_str());
-            EXPECT_EQ(ret, 0);
+
+            EXPECT_TRUE(runShell(cmd));
+            //EXPECT_TRUE(runShell(cmd));
+            //int ret = system(cmd.c_str());
+            //EXPECT_EQ(ret, 0);
         }
     }
 }

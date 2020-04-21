@@ -479,7 +479,7 @@ Expected<uint32_t> SkipList::rank(double score,
             return rank;
         }
     }
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 

@@ -114,7 +114,7 @@ class NetSession: public Session {
     std::string getRemoteRepr() const;
     std::string getLocalRepr() const;
     asio::ip::tcp::socket borrowConn();
-    void setResponse(const std::string& s) final;
+    Status setResponse(const std::string& s) final;
     void setCloseAfterRsp();
     void start() final;
     Status cancel() final;

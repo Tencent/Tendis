@@ -52,7 +52,7 @@ struct MyAllocator {
 
            return result;
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return nullptr;
     }
 
@@ -66,14 +66,14 @@ struct MyAllocator {
 
         T* val = aligned_alloc<T>(a);
         if (!val) {
-            INVARIANT(0);
+            INVARIANT_D(0);
             return val;
         }
 
         // check the left size after
         size_t left = (size_t)(data + allocSize - reinterpret_cast<char*>(val));
         if (left < size) {
-            INVARIANT(0);
+            INVARIANT_D(0);
             return nullptr;
         }
         memcpy(reinterpret_cast<char*>(val), ptr, size);
@@ -148,7 +148,9 @@ class HPLLObject {
 };
 
 HPLLObject::HPLLObject(const std::string& v) {
-    INVARIANT(redis_port::isHLLObject(v.c_str(), v.size()));
+#ifdef TENDIS_DEBUG
+    INVARIANT_D(redis_port::isHLLObject(v.c_str(), v.size()));
+#endif
 
     _buf = std::make_unique<MyAllocator>(v.size()+128);
     INVARIANT(_buf->allocSize >= v.size());
@@ -229,12 +231,14 @@ int HPLLObject::add(const std::string& subkey) {
         case HLL_ERROR_MEMORY:
             _buf->resize<redis_port::hllhdr>(_buf->allocSize + 128);
             _hdr = _buf->getFirstAlignedAddr<redis_port::hllhdr>();
-            INVARIANT(redis_port::isHLLObject((const char*)_hdr, _hdrSize));
+#ifdef TENDIS_DEBUG
+            INVARIANT_D(redis_port::isHLLObject((const char*)_hdr, _hdrSize));
+#endif
             break;
 
         default:
-            INVARIANT(0);
-            break;
+            INVARIANT_D(0);
+            return -1;
         }
     }
 
@@ -267,8 +271,8 @@ int HPLLObject::hllSparseToDense() {
 // -1 : something wrong
 // 1 : success
 int HPLLObject::merge(const HPLLObject* hpll) {
-    INVARIANT(getHdrEncoding() == HLL_RAW);
-    INVARIANT(hpll->getHdrEncoding() != HLL_RAW);
+    INVARIANT_D(getHdrEncoding() == HLL_RAW);
+    INVARIANT_D(hpll->getHdrEncoding() != HLL_RAW);
     int ret = redis_port::hllMerge(_hdr->registers, hpll->_hdr, hpll->_hdrSize);
     if (ret == C_ERR) {
         return -1;
@@ -289,7 +293,7 @@ uint64_t HPLLObject::getHllCount() const {
 uint64_t HPLLObject::getHllCountFast() {
     // NOTE(vinchen): pfcount should be a read only command,
     // so here it should not use hpll->getHllCountFast()
-    INVARIANT(0);
+    INVARIANT_D(0);
     int invalid = 0;
     auto count = redis_port::hllCountFast(_hdr, _hdrSize, &invalid);
     if (invalid) {

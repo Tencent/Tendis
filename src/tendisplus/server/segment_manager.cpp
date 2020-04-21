@@ -23,7 +23,7 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                     const std::string& key, mgl::LockMode mode) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
-    INVARIANT(hash < _chunkSize);
+    INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
@@ -75,7 +75,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const std::string& key) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
-    INVARIANT(hash < _chunkSize);
+    INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
     uint32_t segId = chunkId % _instances.size();
 
@@ -129,7 +129,7 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     for (auto iter = index.begin(); iter != index.end(); iter++) {
         auto key = args[*iter];
         uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
-        INVARIANT(hash < _chunkSize);
+        INVARIANT_D(hash < _chunkSize);
         uint32_t chunkId = hash % _chunkSize;
         uint32_t segId = chunkId % _instances.size();
         segList[segId].push_back(std::move(key));
@@ -160,7 +160,8 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
                                             mgl::LockMode mode,
-                                            bool canOpenStoreNoneDB) {
+                                            bool canOpenStoreNoneDB,
+                                            uint64_t lock_wait_timeout) {
     if (insId >= _instances.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid instance id"};
     }
@@ -178,8 +179,14 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
 
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
-    if (sess && sess->getServerEntry()) {
-        lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    if (lock_wait_timeout == (uint64_t)-1) {
+        if (sess && sess->getServerEntry()) {
+            lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        }
+    } else {
+        // NOTE(vinchen) : if lock_wait_timeout == 0, it means we don't wait
+        // anything, such as running `info` when kvstore is restarting.
+        lockTimeoutMs = lock_wait_timeout;
     }
 
     std::unique_ptr<StoreLock> lk = nullptr;
@@ -187,6 +194,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         auto elk = StoreLock::AquireStoreLock(insId, mode, sess,
             (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
         if (!elk.ok()) {
+            LOG(WARNING) << "store id " << insId
+                << " can't been opened:" << elk.status().toString();
             return elk.status();
         }
         lk = std::move(elk.value());

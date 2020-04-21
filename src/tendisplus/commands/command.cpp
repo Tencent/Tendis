@@ -242,11 +242,11 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
     sess->getCtx()->setArgsBrief(sess->getArgs());
     it->second->incrCallTimes();
     auto now = nsSinceEpoch();
-    auto guard = MakeGuard([it, now, sess, args] {
+    auto guard = MakeGuard([it, now, sess] {
         sess->getCtx()->clearRequestCtx();
         auto duration = nsSinceEpoch() - now;
         it->second->incrNanos(duration);
-        sess->getServerEntry()->slowlogPushEntryIfNeeded(now, duration, args);
+        sess->getServerEntry()->slowlogPushEntryIfNeeded(now / 1000, duration / 1000, sess);
     });
     auto v = it->second->run(sess);
     if (v.ok()) {
@@ -261,7 +261,9 @@ Expected<std::string> Command::runSessionCmd(Session *sess) {
 
             auto vv = dynamic_cast<NetSession*>(sess);
             vv->setCloseAfterRsp();
-        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL) {
+        } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
+                v.status().code() == ErrorCodes::ERR_DECODE ||
+                v.status().code() == ErrorCodes::ERR_LOCK_TIMEOUT) {
             ServerEntry::logError(v.status().toString(), sess);
         }
     }
@@ -287,7 +289,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
     std::string keyEnc = mk.encode();
     auto server = sess->getServerEntry();
 
-    LOG(INFO) << "begin delKeyPessimistic key:"
+    DLOG(INFO) << "begin delKeyPessimistic key:"
                 << hexlify(mk.getPrimaryKey());
 
     auto expdb = server->getSegmentMgr()->getDb(
@@ -427,7 +429,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
         return s;
     }
     PStore kvstore = expdb.value().store;
-    INVARIANT(mk.getRecordType() == RecordType::RT_DATA_META);
+    INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
     if (valueType == RecordType::RT_KV) {
         s = kvstore->delKV(mk, txn);
         if (!s.ok()) {
@@ -484,7 +486,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
                           "");
         prefixes.push_back(fakeEle1.prefixPk());
     } else {
-        INVARIANT(0);
+        INVARIANT_D(0);
     }
 
     std::list<RecordKey> pendingDelete;
@@ -638,7 +640,7 @@ Status Command::delKey(Session *sess, const std::string& key, RecordType tp) {
         }
     }
     // should never reach here
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -743,7 +745,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
         }
     }
     // should never reach here
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -847,7 +849,7 @@ std::vector<int> Command::getKeysFromCommand(
     }
 
     for (int i = first; i <= last; i += keystep()) {
-        INVARIANT(i <= argc);
+        INVARIANT_D(i <= argc);
         keyindex.push_back(i);
     }
 

@@ -175,7 +175,7 @@ void NetworkAsio::doAccept() {
         auto sess = std::make_shared<NetSession>(
                     _server, std::move(socket),
                     newConnId, true, _netMatrix, _reqMatrix);
-        LOG(INFO) << "new net session, id:" << sess->id()
+        DLOG(INFO) << "new net session, id:" << sess->id()
                   << ",connId:" << newConnId
                   << ",from:" << sess->getRemoteRepr()
                   << " created";
@@ -287,7 +287,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     if (initSock) {
         std::error_code ec;
         _sock.non_blocking(true, ec);
-        INVARIANT(ec.value() == 0);
+        INVARIANT_D(ec.value() == 0);
         _sock.set_option(tcp::no_delay(true));
         _sock.set_option(asio::socket_base::keep_alive(true));
         // TODO(deyukong): keep-alive params
@@ -348,8 +348,13 @@ asio::ip::tcp::socket NetSession::borrowConn() {
     return std::move(_sock);
 }
 
-void NetSession::setResponse(const std::string& s) {
+Status NetSession::setResponse(const std::string& s) {
     std::lock_guard<std::mutex> lk(_mutex);
+    if (_isEnded) {
+        _closeAfterRsp = true;
+        return { ErrorCodes::ERR_NETWORK, "connection is ended" };
+    }
+
     auto v = std::make_shared<SendBuffer>();
     std::copy(s.begin(), s.end(), std::back_inserter(v->buffer));
     v->closeAfterThis = _closeAfterRsp;
@@ -359,6 +364,8 @@ void NetSession::setResponse(const std::string& s) {
         _isSendRunning = true;
         drainRsp(v);
     }
+
+    return { ErrorCodes::ERR_OK, "" };
 }
 
 void NetSession::start() {
@@ -589,7 +596,7 @@ void NetSession::processMultibulkBuffer() {
 
 void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     if (ec) {
-        LOG(WARNING) << "drainReqCallback:" << ec.message();
+        DLOG(WARNING) << "drainReqCallback:" << ec.message();
         endSession();
         return;
     }
@@ -781,15 +788,17 @@ void NetSession::drainRspCallback(const std::error_code& ec, size_t actualLen,
 }
 
 void NetSession::endSession() {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (_isEnded) {
-        return;
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_isEnded) {
+            return;
+        }
+        _isEnded = true;
+        ++_netMatrix->connReleased;
+        DLOG(INFO) << "net session, id:" << id()
+            << ",connId:" << _connId
+            << " destroyed";
     }
-    _isEnded = true;
-    ++_netMatrix->connReleased;
-    LOG(INFO) << "net session, id:" << id()
-                  << ",connId:" << _connId
-                  << " destroyed";
     _server->endSession(id());
 }
 

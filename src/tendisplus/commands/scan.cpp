@@ -152,7 +152,7 @@ class ZScanCommand: public ScanGenericCommand {
         for (const auto& v : rcds) {
             Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
             auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
-            INVARIANT(d.ok());
+            INVARIANT_D(d.ok());
             if (!d.ok()) {
                 return d.status();
             }

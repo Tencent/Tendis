@@ -97,6 +97,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint64_t getStartupTimeNs() const;
     template <typename fn>
     void schedule(fn&& task) {
+        // TODO(takenliu): make multi worker pool work?
         _scheduleNum.fetch_add(1, std::memory_order_relaxed);
         int32_t index = _scheduleNum.load(std::memory_order_relaxed) % _executorList.size();
         _executorList[index]->schedule(std::forward<fn>(task));
@@ -105,6 +106,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         return _cfg;
     }
     bool addSession(std::shared_ptr<Session> sess);
+    std::shared_ptr<Session> getSession(uint64_t id) const;
 
     // NOTE(deyukong): be careful, currently, the callpath of
     // serverEntry::endSession is
@@ -174,7 +176,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t getMaxCli();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
-    void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, const std::vector<std::string>& args);
+    void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, Session* sess);
     Status initSlowlog(std::string logPath);
     void resetSlowlogNum() {
         _slowlogId = 0;

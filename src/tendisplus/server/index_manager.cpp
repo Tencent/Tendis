@@ -45,14 +45,14 @@ namespace tendisplus {
   Status IndexManager::startup() {
       Status s;
 
-      _indexScanner = std::make_unique<WorkerPool>("index-scanner",
+      _indexScanner = std::make_unique<WorkerPool>("idx-scan",
                                                    _scannerMatrix);
       s = _indexScanner->startup(_scanPoolSize);
       if (!s.ok()) {
           return s;
       }
 
-      _keyDeleter = std::make_unique<WorkerPool>("index-deleter",
+      _keyDeleter = std::make_unique<WorkerPool>("idx-delete",
                                                  _deleterMatrix);
       s = _keyDeleter->startup(_delPoolSize);
       if (!s.ok()) {
@@ -61,6 +61,7 @@ namespace tendisplus {
 
       _isRunning.store(true, std::memory_order_relaxed);
       _runner = std::thread([this]() {
+          pthread_setname_np(pthread_self(), "index_loop");
           run();
       });
 

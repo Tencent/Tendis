@@ -12,6 +12,7 @@
 #include "tendisplus/utils/param_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "gtest/gtest.h"
+#include "glog/logging.h"
 #include "unistd.h"
 
 namespace tendisplus {
@@ -49,6 +50,12 @@ TEST(Time, Common) {
     EXPECT_EQ(t1, t2 / 1000000000);
     EXPECT_TRUE(t1 >= t3);
     EXPECT_TRUE(t2 >= t4);
+
+    LOG(INFO) << epochToDatetime(t1);
+    LOG(INFO) << epochToDatetime(t3);
+    LOG(INFO) << epochToDatetime(t4/1000000000);
+    LOG(INFO) << epochToDatetime(t2/1000000000);
+
 }
 
 

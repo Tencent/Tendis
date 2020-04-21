@@ -212,7 +212,7 @@ int64_t bitPos(const void *s, size_t count, uint32_t bit) {
 
     /* If we reached this point, there is a bug in the algorithm, since
      * the case of no match is handled as a special case before. */
-    INVARIANT(0);
+    INVARIANT_D(0);
     return 0; /* Just to avoid warnings. */
 }
 
@@ -372,8 +372,8 @@ int string2ll(const char *s, size_t slen, long long *value) { // (NOLINT/int)
 
 std::string errorReply(const std::string& s) {
     if (s[0] == '-') {
-        INVARIANT(s[s.size() - 2] == '\r');
-        INVARIANT(s[s.size() - 1] == '\n');
+        INVARIANT_D(s[s.size() - 2] == '\r');
+        INVARIANT_D(s[s.size() - 1] == '\n');
         return s;
     }
     std::stringstream ss;
@@ -872,7 +872,7 @@ int getCommandFlags(const char* sflags) {
         case 'k': flags |= CMD_ASKING; break;
         case 'F': flags |= CMD_FAST; break;
         default:
-            INVARIANT(0);
+            INVARIANT_D(0);
             break;
         }
         f++;

@@ -37,7 +37,7 @@ Expected<bool> expireAfterNow(Session *sess,
         return rv.status();
     }
 
-    INVARIANT(type == RecordType::RT_DATA_META);
+    INVARIANT_D(type == RecordType::RT_DATA_META);
     // record exists and not expired
     auto server = sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess,
@@ -114,7 +114,7 @@ Expected<bool> expireAfterNow(Session *sess,
         }
     }
 
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -135,7 +135,7 @@ Expected<std::string> expireGeneric(Session *sess,
         bool atLeastOne = false;
         for (auto type : {RecordType::RT_DATA_META}) {
             auto done = expireBeforeNow(sess, type, key);
-            LOG(WARNING) << " expire before " << key << " " << rt2Char(type);
+            DLOG(INFO) << " expire before " << key << " " << rt2Char(type);
             if (!done.ok()) {
                 return done.status();
             }
@@ -143,7 +143,7 @@ Expected<std::string> expireGeneric(Session *sess,
         }
         return atLeastOne ? Command::fmtOne() : Command::fmtZero();
     }
-    INVARIANT(0);
+    INVARIANT_D(0);
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
@@ -186,7 +186,7 @@ class GeneralExpireCommand: public Command {
         } else if (Command::getName() == "pexpireat") {
             millsecs = expt.value();
         } else {
-            INVARIANT(0);
+            INVARIANT_D(0);
         }
         return expireGeneric(sess, millsecs, key);
     }
@@ -251,7 +251,7 @@ class GenericTtlCommand: public Command {
             } else if (Command::getName() == "pttl") {
                 return Command::fmtLongLong(ms);
             } else {
-                INVARIANT(0);
+                INVARIANT_D(0);
             }
         }
         return Command::fmtLongLong(-2);

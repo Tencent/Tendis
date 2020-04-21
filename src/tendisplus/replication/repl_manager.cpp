@@ -93,7 +93,7 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
 Status ReplManager::stopStore(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(_mutex);
 
-    INVARIANT(storeId < _svr->getKVStoreCount());
+    INVARIANT_D(storeId < _svr->getKVStoreCount());
 
     _syncStatus[storeId]->nextSchedTime = SCLOCK::time_point::max();
 
@@ -310,6 +310,7 @@ Status ReplManager::startup() {
 
     _isRunning.store(true, std::memory_order_relaxed);
     _controller = std::make_unique<std::thread>(std::move([this]() {
+        pthread_setname_np(pthread_self(), "repl_loop");
         controlRoutine();
     }));
 
@@ -566,7 +567,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
-        INVARIANT(v->isRunning);
+        INVARIANT_D(v->isRunning);
         v->isRunning = false;
         // v->nextSchedTime maybe time_point::max()
         if (v->nextSchedTime < nextSched) {
@@ -771,7 +772,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
         return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
     }
     LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
-    INVARIANT(!_syncStatus[storeId]->isRunning);
+    INVARIANT_D(!_syncStatus[storeId]->isRunning);
 
     if (storeId >= _syncMeta.size()) {
         return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
@@ -832,7 +833,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
         }
 
         newMeta->syncFromHost = ip;
-        INVARIANT(port == 0 && sourceStoreId == 0);
+        INVARIANT_D(port == 0 && sourceStoreId == 0);
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_NONE;
@@ -925,9 +926,9 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     std::map<std::string, ReplMPovStatus> pstatus;
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
-                            mgl::LockMode::LOCK_NONE, true);
+                            mgl::LockMode::LOCK_IS, true, 0);
         if (!expdb.ok()) {
-            return;
+            continue;
         }
 
         uint64_t highestBinlogid = expdb.value().store->getHighestBinlogId();
@@ -1008,7 +1009,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
 
     for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         auto expdb = _svr->getSegmentMgr()->getDb(nullptr, i,
-                            mgl::LockMode::LOCK_NONE, true);
+                            mgl::LockMode::LOCK_IS, true, 0);
         if (!expdb.ok()) {
             continue;
         }

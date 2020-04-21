@@ -38,12 +38,18 @@ Expected<std::string> genericPop(Session *sess,
     ttl = rv.value().getTtl();
     Expected<ListMetaValue> exptLm =
         ListMetaValue::decode(rv.value().getValue());
-    INVARIANT(exptLm.ok());
+	INVARIANT_D(exptLm.ok());
+    if (!exptLm.ok()) {
+        return exptLm.status();
+    }
     lm = std::move(exptLm.value());
 
     uint64_t head = lm.getHead();
     uint64_t tail = lm.getTail();
-    INVARIANT(head != tail);
+    INVARIANT_D(head != tail);
+	if (head == tail) {
+        return { ErrorCodes::ERR_INTERNAL, "invalid head or tail of list" };
+    }
     uint64_t idx;
     if (pos == ListPos::LP_HEAD) {
         idx = head++;
@@ -94,7 +100,10 @@ Expected<std::string> genericPush(Session *sess,
         ttl = rv.value().getTtl();
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptLm.ok());
+        INVARIANT_D(exptLm.ok());
+        if (!exptLm.ok()) {
+            return exptLm.status();
+        }
         lm = std::move(exptLm.value());
     } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
                 rv.status().code() != ErrorCodes::ERR_EXPIRED) {
@@ -260,7 +269,7 @@ class ListPopWrapper: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 
@@ -363,7 +372,7 @@ class ListPushWrapper: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 
@@ -566,7 +575,7 @@ class RPopLPushCommand: public Command {
                 }
             }
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } rpoplpushCmd;
@@ -701,7 +710,10 @@ class LtrimCommand: public Command {
         uint64_t head = lm.getHead();
         uint64_t tail = lm.getTail();
         int64_t len = tail - head;
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid list" };
+        }
 
         int64_t start = estart.value();
         int64_t end = eend.value();
@@ -790,13 +802,19 @@ class LRangeCommand: public Command {
 
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptLm.ok());
+        INVARIANT_D(exptLm.ok());
+        if (!exptLm.ok()) {
+            return exptLm.status();
+        }
 
         const ListMetaValue& lm = exptLm.value();
         uint64_t head = lm.getHead();
         uint64_t tail = lm.getTail();
         int64_t len = tail - head;
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid list" };
+        }
 
         int64_t start = estart.value();
         int64_t end = eend.value();
@@ -898,7 +916,10 @@ class LIndexCommand: public Command {
 
         Expected<ListMetaValue> exptLm =
             ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(exptLm.ok());
+        INVARIANT_D(exptLm.ok());
+        if (!exptLm.ok()) {
+            return exptLm.status();
+        }
 
         const ListMetaValue& lm = exptLm.value();
         uint64_t head = lm.getHead();
@@ -1036,7 +1057,7 @@ class LSetCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } lsetCmd;
@@ -1096,7 +1117,10 @@ class LRemCommand: public Command {
 
         Expected<ListMetaValue> expLm =
                 ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(expLm.ok());
+        INVARIANT_D(expLm.ok());
+		if (!expLm.ok()) {
+            return expLm.status();
+        }
         ListMetaValue lm = std::move(expLm.value());
         uint64_t head = lm.getHead();
         uint64_t tail = lm.getTail();
@@ -1323,7 +1347,10 @@ class LInsertCommand: public Command {
 
         Expected<ListMetaValue> expLm =
                 ListMetaValue::decode(rv.value().getValue());
-        INVARIANT(expLm.ok());
+        INVARIANT_D(expLm.ok());
+        if (!expLm.ok()) {
+            return expLm.status();
+        }
 
         ListMetaValue lm = std::move(expLm.value());
         uint64_t head = lm.getHead();

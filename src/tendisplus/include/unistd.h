@@ -12,9 +12,12 @@
 typedef int ssize_t;
 #endif
 
+
+void SetThreadName(unsigned long dwThreadID, const char* szThreadName);
+
 #define pthread_self GetCurrentThreadId
 #define pthread_getname_np(id, str, size) strncpy(str, "windows thread name", (size) - 1)
-#define pthread_setname_np(id, str) 
+#define pthread_setname_np(id, str) SetThreadName(id, str)
 
 int gettimeofday(struct timeval *tp, void *tzp);
 

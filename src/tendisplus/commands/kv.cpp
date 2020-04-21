@@ -315,7 +315,7 @@ class SetexGeneralCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
@@ -431,7 +431,7 @@ class SetNxCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } setnxCmd;
@@ -926,7 +926,7 @@ class GetSetGeneral: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 };
@@ -1734,7 +1734,7 @@ class BitopCommand: public Command {
                     case Op::BITOP_OR: output |= byte; break;
                     case Op::BITOP_XOR: output ^= byte; break;
                     default:
-                        INVARIANT(0);
+                        INVARIANT_D(0);
                 }
             }
             result[i] = output;
@@ -1778,7 +1778,7 @@ class BitopCommand: public Command {
                 continue;
             }
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } bitopCmd;
@@ -1898,7 +1898,7 @@ class MSetGenericCommand: public Command {
             // msetnx
             return failed ? Command::fmtZero() : Command::fmtOne();
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return Command::fmtOK();
     }
 

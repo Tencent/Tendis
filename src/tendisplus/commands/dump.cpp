@@ -245,7 +245,10 @@ class DumpXCommand: public Command {
         std::stringstream ss;
         std::vector<std::string> errorlist;
         std::vector<std::string> bufferlist;
-        INVARIANT(!((args.size() - 1) % 2));
+        INVARIANT_D(!((args.size() - 1) % 2));
+        if (((args.size() - 1) % 2) != 0) {
+            return { ErrorCodes::ERR_PARSEOPT, "invalid args size" };
+        }
         bufferlist.reserve(3 * (args.size() - 1) / 2);
         for (const auto& i : index) {
             auto expDbid = tendisplus::stoul(args[i-1]);
@@ -293,11 +296,17 @@ class DumpXCommand: public Command {
         }
         /* we return keys can't be restored first */
         for (const auto& str : errorlist) {
-            sess->setResponse(str);
+            auto s = sess->setResponse(str);
+            if (!s.ok()) {
+                return s;
+            }
         }
 
         for (const auto& str : bufferlist) {
-            sess->setResponse(str);
+            auto s = sess->setResponse(str);
+            if (!s.ok()) {
+                return s;
+            }
         }
         return std::string();
     }
@@ -393,7 +402,10 @@ class ListSerializer: public Serializer {
         uint64_t tail = expListMeta.value().getTail();
         uint64_t head = expListMeta.value().getHead();
         uint64_t len = tail - head;
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid list" };
+        }
 
         auto server = _sess->getServerEntry();
         auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
@@ -467,7 +479,10 @@ class SetSerializer: public Serializer {
     Expected<size_t> dumpObject(std::vector<byte>& payload) {
         Expected<SetMetaValue> expMeta = SetMetaValue::decode(_rv.getValue());
         size_t len = expMeta.value().getCount();
-        INVARIANT(len > 0);
+        INVARIANT_D(len > 0);
+        if (len <= 0) {
+            return { ErrorCodes::ERR_INTERNAL, "invalid set" };
+        }
 
         auto expwr = saveLen(&payload, &_pos, len);
         if (!expwr.ok()) {
@@ -1142,7 +1157,7 @@ class ZsetDeserializer: public Deserializer {
         if (!eMeta.ok() && eMeta.status().code() != ErrorCodes::ERR_NOTFOUND) {
             return eMeta.status();
         }
-        INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
+        INVARIANT_D(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND);
         ZSlMetaValue meta(1, 1, 0);
         RecordValue rv(meta.encode(), RecordType::RT_ZSET_META,
                 _sess->getCtx()->getVersionEP(), _ttl);
@@ -1472,9 +1487,9 @@ class RestoreMetaCommand: public Command {
         auto server = sess->getServerEntry();
         auto dbId = slotId % (server->getKVStoreCount());
 
-        // TODO: use chunk lock is enough
+        // TODO(takenliu): use chunk lock is enough
         auto expdb = server->getSegmentMgr()->getDb(sess,
-                dbId, mgl::LockMode::LOCK_S);
+                dbId, mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }
@@ -1498,7 +1513,10 @@ class RestoreMetaCommand: public Command {
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, 1);
         Command::fmtBulk(ss, "RESTOREMETASLOT");
-        sess->setResponse(ss.str());
+        auto s = sess->setResponse(ss.str());
+        if (!s.ok()) {
+            return s;
+        }
         ss.str(std::string());
         std::vector<byte> bulkBuf;
         while (true) {
@@ -1554,7 +1572,10 @@ class RestoreMetaCommand: public Command {
                 Command::fmtMultiBulkLen(ss, 1);
                 Command::fmtBulk(ss,
                         std::string(bulkBuf.begin(), bulkBuf.end()));
-                sess->setResponse(ss.str());
+                s = sess->setResponse(ss.str());
+                if (!s.ok()) {
+                    return s;
+                }
                 bulkBuf.clear();
             }
             bulkBuf.insert(bulkBuf.end(), buf.begin(), buf.end());

@@ -216,10 +216,10 @@ TEST(Repl, Common) {
                 s = runCommand(slave1, { "info", "replication" });
                 LOG(INFO) << s;
 
-                s = runCommand(master, { "info", "all" });
-                s = runCommand(slave, { "info", "all" });
-                s = runCommand(slave_slave, { "info", "all" });
-                s = runCommand(slave1, { "info", "all" });
+                runBgCommand(master);
+                runBgCommand(slave);
+                runBgCommand(slave_slave);
+                runBgCommand(slave1);
 
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -643,10 +643,10 @@ TEST(Repl, BinlogKeepNum_Test) {
         EXPECT_TRUE(setupEnv(slave1_dir));
         EXPECT_TRUE(setupEnv(single_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir);
-        auto cfg4 = makeServerParam(single_port, i, single_dir);
+        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
+        auto cfg4 = makeServerParam(single_port, i, single_dir, false);
         uint64_t masterBinlogNum = 10;
         cfg1->maxBinlogKeepNum = masterBinlogNum;
         cfg2->maxBinlogKeepNum = masterBinlogNum;

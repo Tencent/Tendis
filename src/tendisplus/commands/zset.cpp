@@ -150,7 +150,7 @@ Expected<std::string> genericZadd(Session *sess,
         }
         meta = eMetaContent.value();
     } else {
-        INVARIANT(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND ||
+        INVARIANT_D(eMeta.status().code() == ErrorCodes::ERR_NOTFOUND ||
                  eMeta.status().code() == ErrorCodes::ERR_EXPIRED);
         // head node also included into the count
         ZSlMetaValue tmp(1/*lvl*/,
@@ -319,7 +319,7 @@ Expected<std::string> genericZRank(Session *sess,
     if (reverse) {
         r = meta.getCount() - 2 - r;
     }
-    INVARIANT(r >= 0);
+    INVARIANT_D(r >= 0);
     return Command::fmtLongLong(r);
 }
 
@@ -340,7 +340,7 @@ class ZRemByRangeGenericCommand: public Command {
         } else if (name == "zremrangebyrank") {
             _type = Type::RANK;
         } else {
-            INVARIANT(0);
+            INVARIANT_D(0);
         }
     }
 
@@ -538,7 +538,7 @@ class ZRemByRangeGenericCommand: public Command {
                 continue;
             }
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 
@@ -639,7 +639,7 @@ class ZRemCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } zremCmd;
@@ -683,7 +683,7 @@ class ZCardCommand: public Command {
             return eMetaContent.status();
         }
         ZSlMetaValue meta = eMetaContent.value();
-        INVARIANT(meta.getCount() > 1);
+        INVARIANT_D(meta.getCount() > 1);
         return Command::fmtLongLong(meta.getCount()-1);
     }
 } zcardCmd;
@@ -867,7 +867,7 @@ class ZIncrCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } zincrbyCommand;
@@ -1682,7 +1682,7 @@ class ZAddCommand: public Command {
             }
         }
 
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "not reachable"};
     }
 } zaddCommand;
@@ -2050,7 +2050,7 @@ class ZUnionInterGenericCommand : public Command {
                 *oldScore = value > *oldScore ? value : *oldScore;
                 break;
             default:
-                INVARIANT(0);
+                INVARIANT_D(0);
         }
     }
     ZsetOp _op;

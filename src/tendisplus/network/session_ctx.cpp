@@ -68,7 +68,7 @@ void SessionCtx::removeLock(ILock *lock) {
             return;
         }
     }
-    INVARIANT(0);
+    INVARIANT_D(0);
 }
 
 std::vector<std::string> SessionCtx::getArgsBrief() const {
@@ -233,7 +233,9 @@ void SessionCtx::setKeylock(const std::string& key, mgl::LockMode mode) {
 }
 
 void SessionCtx::unsetKeylock(const std::string& key) {
-    INVARIANT(_keylockmap.count(key) > 0);
+#ifdef TENDIS_DEBUG
+    INVARIANT_D(_keylockmap.count(key) > 0);
+#endif
     _keylockmap.erase(key);
 }
 
@@ -242,7 +244,7 @@ bool SessionCtx::isLockedByMe(const std::string &key, mgl::LockMode mode) {
         // TODO(comboqiu): Here, lock can't upgrade or downgrade.
         // If a key lock twice in one session , it can't lock a bigger lock.
         // assert temporary.
-        INVARIANT(mgl::enum2Int(mode) <= mgl::enum2Int(_keylockmap[key]));
+        INVARIANT_D(mgl::enum2Int(mode) <= mgl::enum2Int(_keylockmap[key]));
         return true;
     }
     return false;

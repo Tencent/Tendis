@@ -57,7 +57,7 @@ bool isRealEleType(RecordType keyType, RecordType valueType) {
             return false;
 
         default:
-            INVARIANT(0);
+            INVARIANT_D(0);
             return false;
     }
 }
@@ -98,6 +98,7 @@ uint8_t rt2Char(RecordType t) {
         case RecordType::RT_BINLOG:
             return std::numeric_limits<uint8_t>::max();
         default:
+            INVARIANT_D(0);
             LOG(FATAL) << "invalid recordtype:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
             return 0;
@@ -246,7 +247,7 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
     arr->push_back(0);
 
     // NOTE(vinchen): version of key, temporarily useless
-    INVARIANT(_version == 0);
+    INVARIANT_D(_version == 0);
     auto v = varintEncode(_version);
     arr->insert(arr->end(), v.begin(), v.end());
 }
@@ -1552,7 +1553,7 @@ std::string ZSlMetaValue::encode() const {
 
     bytes = varintEncode(_maxLevel);
     value.insert(value.end(), bytes.begin(), bytes.end());
-    INVARIANT(_maxLevel == ZSlMetaValue::MAX_LAYER);
+    INVARIANT_D(_maxLevel == ZSlMetaValue::MAX_LAYER);
 
     bytes = varintEncode(_count);
     value.insert(value.end(), bytes.begin(), bytes.end());
@@ -1587,7 +1588,7 @@ Expected<ZSlMetaValue> ZSlMetaValue::decode(const std::string& val) {
     }
     offset += expt.value().second;
     result._maxLevel = expt.value().first;
-    INVARIANT(result._maxLevel == ZSlMetaValue::MAX_LAYER);
+    INVARIANT_D(result._maxLevel == ZSlMetaValue::MAX_LAYER);
 
     // _count
     expt = varintDecodeFwd(keyCstr + offset, val.size()-offset);
@@ -1686,7 +1687,7 @@ ZSlEleValue::ZSlEleValue(double score, const std::string& subkey,
           _backward(0),
           _changed(false),
           _subKey(subkey) {
-    INVARIANT(maxLevel == ZSlMetaValue::MAX_LAYER);
+    INVARIANT_D(maxLevel == ZSlMetaValue::MAX_LAYER);
     _forward.resize(maxLevel+1);
     _span.resize(maxLevel+1);
     for (size_t i = 0; i < _forward.size(); ++i) {
@@ -1919,7 +1920,7 @@ Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
     RecordType type = decodeType(index);
     std::string priKey = decodePriKey(index);
 
-    INVARIANT(type != RecordType::RT_DATA_META);
+    INVARIANT_D(type != RecordType::RT_DATA_META);
 
     return TTLIndex(priKey, type, dbId, ttl);
 }
@@ -1927,7 +1928,7 @@ Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
 namespace rcd_util {
 Expected<uint64_t> getSubKeyCount(const RecordKey& key,
                                   const RecordValue& val) {
-    INVARIANT(key.getRecordType() == RecordType::RT_DATA_META);
+    INVARIANT_D(key.getRecordType() == RecordType::RT_DATA_META);
      switch (val.getRecordType()) {
         case RecordType::RT_KV: {
             return 1;

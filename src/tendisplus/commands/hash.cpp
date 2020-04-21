@@ -1019,7 +1019,7 @@ class HMCasV2Command: public Command {
                 return Command::fmtOne();
             }
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
     }
 } hmcasV2Cmd;
@@ -1090,7 +1090,7 @@ class HMCasCommand: public Command {
                 return Command::fmtOne();
             }
         }
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
     }
 } hmcasCmd;
@@ -1444,9 +1444,12 @@ class HDelCommand: public Command {
         }
 
         // modify meta data
-        INVARIANT(realDel <= hashMeta.getCount());
+        INVARIANT_D(realDel <= hashMeta.getCount());
         Status s;
-        if (realDel == hashMeta.getCount()) {
+        if (realDel >= hashMeta.getCount()) {
+            if (realDel > hashMeta.getCount()) {
+                LOG(ERROR) << "invalid hashmeta of " << metaKey.getPrimaryKey();
+            }
             s = Command::delKeyAndTTL(sess, metaKey, eValue.value(), txn);
         } else {
             hashMeta.setCount(hashMeta.getCount() - realDel);
@@ -1522,7 +1525,7 @@ class HDelCommand: public Command {
             return Command::fmtLongLong(delCount.value());
         }
         // never reaches here
-        INVARIANT(0);
+        INVARIANT_D(0);
         return {ErrorCodes::ERR_INTERNAL, "never reaches here"};
     }
 } hdelCommand;

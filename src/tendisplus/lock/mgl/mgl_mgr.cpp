@@ -91,17 +91,17 @@ bool LockSchedCtx::unlock(MGLock *core) {
         if (_runningModes != 0) {
             return false;
         }
-        INVARIANT(_runningList.size() == 0);
+        INVARIANT_D(_runningList.size() == 0);
         schedPendingLocks();
     } else if (core->getStatus() == LockRes::LOCKRES_WAIT) {
         _pendingList.erase(core->getLockIter());
         decPendingRef(mode);
         core->releaseLockResult();
         // no need to schedPendingLocks here
-        INVARIANT((_pendingModes == 0 && _pendingList.size() == 0) ||
+        INVARIANT_D((_pendingModes == 0 && _pendingList.size() == 0) ||
                 (_pendingModes != 0 && _pendingList.size() != 0));
     } else {
-        INVARIANT(0);
+        INVARIANT_D(0);
     }
     return _pendingList.empty() && _runningList.empty();
 }
@@ -110,17 +110,17 @@ void LockSchedCtx::incrPendingRef(LockMode mode) {
     auto modeInt = enum2Int(mode);
     ++_pendingRefCnt[modeInt];
     if (_pendingRefCnt[modeInt] == 1) {
-        INVARIANT((_pendingModes&(1 << modeInt)) == 0);
+        INVARIANT_D((_pendingModes&(1 << modeInt)) == 0);
         _pendingModes |= static_cast<uint16_t>((1 << modeInt));
     }
 }
 
 void LockSchedCtx::decPendingRef(LockMode mode) {
     auto modeInt = enum2Int(mode);
-    INVARIANT(_pendingRefCnt[modeInt] != 0);
+    INVARIANT_D(_pendingRefCnt[modeInt] != 0);
     --_pendingRefCnt[modeInt];
     if (_pendingRefCnt[modeInt] == 0) {
-        INVARIANT((_pendingModes&(1 << modeInt)) != 0);
+        INVARIANT_D((_pendingModes&(1 << modeInt)) != 0);
         _pendingModes &= static_cast<uint16_t>(~(1 << modeInt));
     }
 }
@@ -129,17 +129,17 @@ void LockSchedCtx::incrRunningRef(LockMode mode) {
     auto modeInt = enum2Int(mode);
     ++_runningRefCnt[modeInt];
     if (_runningRefCnt[modeInt] == 1) {
-        INVARIANT((_runningModes&(1 << modeInt)) == 0);
+        INVARIANT_D((_runningModes&(1 << modeInt)) == 0);
         _runningModes |= static_cast<uint16_t>((1 << modeInt));
     }
 }
 
 void LockSchedCtx::decRunningRef(LockMode mode) {
     auto modeInt = enum2Int(mode);
-    INVARIANT(_runningRefCnt[modeInt] != 0);
+    INVARIANT_D(_runningRefCnt[modeInt] != 0);
     --_runningRefCnt[modeInt];
     if (_runningRefCnt[modeInt] == 0) {
-        INVARIANT((_runningModes&(1 << modeInt)) != 0);
+        INVARIANT_D((_runningModes&(1 << modeInt)) != 0);
         _runningModes &= static_cast<uint16_t>(~(1 << modeInt));
     }
 }
@@ -170,7 +170,7 @@ void MGLockMgr::unlock(MGLock *core) {
     LockShard& shard = _shards[hash%SHARD_NUM];
     std::lock_guard<std::mutex> lk(shard.mutex);
 
-    INVARIANT(core->getStatus() == LockRes::LOCKRES_WAIT
+    INVARIANT_D(core->getStatus() == LockRes::LOCKRES_WAIT
         || core->getStatus() == LockRes::LOCKRES_OK);
 
     auto iter = shard.map.find(core->getTarget());
