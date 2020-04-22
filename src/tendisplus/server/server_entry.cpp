@@ -1047,6 +1047,7 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
         _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
         _slowLog << "# Query_time: " << duration << "\n";
 
+        auto& args = sess->getArgs();
         uint64_t args_total_length = 0;
         uint64_t args_output_length = 0;
         for (size_t i = 0; i < args.size(); ++i) {
