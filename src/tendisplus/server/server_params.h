@@ -263,6 +263,7 @@ public:
     uint32_t slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN;
     //uint32_t slowlogMaxLen;
     uint32_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
+    uint64_t slowlogMaxLen = 1024;
     uint32_t netIoThreadNum = 0;
     uint32_t executorThreadNum = 0;
 
