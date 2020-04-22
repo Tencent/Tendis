@@ -879,31 +879,45 @@ void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
 }
 
 void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
-  asio::io_context ioContext, ioContext2;
-  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
-  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
-  NetSession sess2(svr, std::move(socket2), 1, false, nullptr, nullptr);
+    asio::io_context ioContext, ioContext2;
+    asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+    NetSession sess2(svr, std::move(socket2), 1, false, nullptr, nullptr);
 
-  int i = 4;
-  std::thread thd1([&sess2, &i]() {
+    int i = 4;
+    std::thread thd1([&sess2, &i]() {
+        uint32_t now = msSinceEpoch();
+        sess2.setArgs({ "tendisadmin", "sleep", std::to_string(i) });
+        auto expect = Command::runSessionCmd(&sess2);
+        auto val = expect.value();
+        EXPECT_TRUE(expect.ok());
+        uint32_t end = msSinceEpoch();
+        EXPECT_TRUE(end - now > (unsigned)(i - 1) * 1000);
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    std::thread thd2([&svr, &i]() {
+        uint32_t now = msSinceEpoch();
+        runCommand(svr, {"ping"});
+        runCommand(svr, {"info"});
+        runCommand(svr, {"info", "replication"});
+        runCommand(svr, {"info", "all"});
+        uint32_t end = msSinceEpoch();
+
+        EXPECT_TRUE(end - now < 500);
+        LOG(INFO) << "info used " << end - now << "ms when running tendisadmin sleep ";
+        });
+
+    sess.setArgs({ "set", "a", "b" });
     uint32_t now = msSinceEpoch();
-    sess2.setArgs({ "tendisadmin", "sleep", std::to_string(i) });
-    auto expect = Command::runSessionCmd(&sess2);
-    auto val = expect.value();
+    auto expect = Command::runSessionCmd(&sess);
+
     EXPECT_TRUE(expect.ok());
     uint32_t end = msSinceEpoch();
-    EXPECT_TRUE(end - now > (unsigned) (i - 1) * 1000);
-  });
-
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  sess.setArgs({ "set", "a", "b" });
-  uint32_t now = msSinceEpoch();
-  auto expect = Command::runSessionCmd(&sess);
-
-  EXPECT_TRUE(expect.ok());
-  uint32_t end = msSinceEpoch();
-  EXPECT_TRUE(end - now > (unsigned) (i - 2) * 1000);
-  thd1.join();
+    EXPECT_TRUE(end - now > (unsigned)(i - 2) * 1000);
+    thd1.join();
+    thd2.join();
 }
 
 void testCommandCommand(std::shared_ptr<ServerEntry> svr) {
@@ -1314,6 +1328,7 @@ TEST(Command, info) {
       {"info", "persistence" },
       {"info", "stats" },
       {"info", "replication" },
+      {"info", "binloginfo" },
       {"info", "cpu" },
       {"info", "commandstats" },
       {"info", "cluster" },
@@ -1324,6 +1339,7 @@ TEST(Command, info) {
       {"info", "levelstats" },
       {"info", "rocksdbstats" },
       {"info", "rocksdbperfstats" },
+      {"info", "rocksdbbgerror" },
       {"info", "invalid" },                 // it's ok
       {"rocksproperty", "rocksdb.base-level", "0" },
       {"rocksproperty", "all", "0" },
@@ -1342,6 +1358,8 @@ TEST(Command, info) {
   {{"config", "resetstat", "stats"}, Command::fmtOK()},
   {{"config", "resetstat", "rocksdbstats"}, Command::fmtOK()},
   {{"config", "resetstat", "invalid"},  Command::fmtOK()},              // it's ok
+  {{"tendisadmin", "sleep", "1"},  Command::fmtOK()},
+  {{"tendisadmin", "recovery"},  Command::fmtOK()},
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
@@ -1353,6 +1371,10 @@ TEST(Command, info) {
     {"config", "set", "session", "perf_level", "invalid" },
     {"config", "set", "session", "invalid", "invalid" },
     {"config", "set", "session", "perf_level"},
+    {"tendisadmin", "sleep"},
+    {"tendisadmin", "sleep", "1", "2"},
+    {"tendisadmin", "recovery", "1"},
+    {"tendisadmin", "invalid"},
   };
 
   testCommandArray(server, correctArr, false);
