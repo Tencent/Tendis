@@ -179,7 +179,7 @@ void ServerEntry::logWarning(const std::string& str, Session* sess) {
 void ServerEntry::logError(const std::string& str, Session* sess) {
     std::stringstream ss;
     if (sess) {
-        ss << sess->id() << " cmd:" << sess->getCmdStr();
+        ss << "sessid:" << sess->id() << " cmd:" << sess->getCmdStr();
     }
 
     ss << ", error:" << str;
@@ -1026,7 +1026,6 @@ Status ServerEntry::initSlowlog(std::string logPath) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-
 /*
 # Id: 3
 # Timestamp: 1587107891128222
@@ -1049,8 +1048,24 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
         _slowLog << "# Query_time: " << duration << "\n";
 
         auto& args = sess->getArgs();
+        uint64_t args_total_length = 0;
+        uint64_t args_output_length = 0;
         for (size_t i = 0; i < args.size(); ++i) {
-            _slowLog << args[i] << " ";
+            args_total_length += args[i].length();
+        }
+        if (args_total_length > _cfg->slowlogMaxLen) {
+            _slowLog << "[" << args_total_length << "] ";
+        } else {
+            _slowLog << "[] ";
+        }
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (args_output_length + args[i].length() <= _cfg->slowlogMaxLen) {
+                _slowLog << args[i] << " ";
+                args_output_length += args[i].length();
+            } else {
+                _slowLog << args[i].substr(0, (_cfg->slowlogMaxLen - args_output_length)) << " ";
+                break;
+            }
         }
         _slowLog << "\n\n";
         if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {

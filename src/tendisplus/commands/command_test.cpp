@@ -839,15 +839,15 @@ TEST(Command, slowlog) {
     }
     
     fgets(line, sizeof(line)-1, fp);
-    EXPECT_STRCASEEQ(line, "config set slowlog-log-slower-than 0 \n");
+    EXPECT_STRCASEEQ(line, "[] config set slowlog-log-slower-than 0 \n");
     fgets(line, sizeof(line)-1, fp);
-    EXPECT_STRCASEEQ(line, "sadd ss a \n");
+    EXPECT_STRCASEEQ(line, "[] sadd ss a \n");
     fgets(line, sizeof(line)-1, fp);
-    EXPECT_STRCASEEQ(line, "set ss b \n");
+    EXPECT_STRCASEEQ(line, "[] set ss b \n");
     fgets(line, sizeof(line)-1, fp);
-    EXPECT_STRCASEEQ(line, "set ss1 b \n");
+    EXPECT_STRCASEEQ(line, "[] set ss1 b \n");
     fgets(line, sizeof(line)-1, fp);
-    EXPECT_STRCASEEQ(line, "config get slowlog-log-slower-than \n");
+    EXPECT_STRCASEEQ(line, "[] config get slowlog-log-slower-than \n");
     pclose(fp);
 }
 #endif // !
@@ -1358,8 +1358,8 @@ TEST(Command, info) {
   {{"config", "resetstat", "stats"}, Command::fmtOK()},
   {{"config", "resetstat", "rocksdbstats"}, Command::fmtOK()},
   {{"config", "resetstat", "invalid"},  Command::fmtOK()},              // it's ok
-  {{"tendisadmin", "sleep", "1"},  Command::fmtOK()}, 
-  {{"tendisadmin", "recovery"},  Command::fmtOK()}, 
+  {{"tendisadmin", "sleep", "1"},  Command::fmtOK()},
+  {{"tendisadmin", "recovery"},  Command::fmtOK()},
   };
 
   std::vector<std::vector<std::string>> wrongArr = {
