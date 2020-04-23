@@ -1038,7 +1038,7 @@ tendisadmin sleep 2
 // in ¦Ìs
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
-    if (sess && duration > _cfg->slowlogLogSlowerThan) {
+    if (sess && duration >= _cfg->slowlogLogSlowerThan) {
         std::unique_lock<std::mutex> lk(_mutex);
         _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
         _slowLog << "# Timestamp: " << time << "\n";
