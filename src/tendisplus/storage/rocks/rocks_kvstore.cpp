@@ -2256,6 +2256,83 @@ void RocksKVStore::resetStatistics() {
     _stats->Reset();
 }
 
+Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta() {
+    return getVersionMeta("version");
+}
+
+Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta(std::string name) {
+    auto result = std::make_unique<VersionMeta>(-1, -1);
+    std::stringstream pkss;
+    pkss << name << "_meta";
+    RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+    auto ptxn = createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    auto expRv = getKV(rk, ptxn.value().get());
+    if (!expRv.ok()) {
+        if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+            return result;
+        }
+
+        return expRv.status();
+    }
+    const auto& rv = expRv.value();
+    const auto& json = rv.getValue();
+
+    DLOG(INFO) << "RocksKVStore::getVersionMeta succ," << json;
+    rapidjson::Document doc;
+    doc.Parse(json);
+    if (doc.HasParseError()) {
+        LOG(ERROR) << "parse version meta failed"
+            << rapidjson::GetParseError_En(doc.GetParseError());
+        return { ErrorCodes::ERR_DECODE, "invalid version meta:" + pkss.str() };
+    }
+    INVARIANT(doc.IsObject());
+
+    INVARIANT(doc.HasMember("timestamp"));
+    INVARIANT(doc["timestamp"].IsUint64());
+    result->timestamp = (uint64_t)doc["timestamp"].GetUint64();
+
+    INVARIANT(doc.HasMember("version"));
+    INVARIANT(doc["version"].IsUint64());
+    result->version = (uint64_t)(doc["version"].GetUint64());
+
+    return result;
+}
+
+
+Status RocksKVStore::setVersionMeta(const std::string& name,
+                uint64_t ts, uint64_t version) {
+
+    std::stringstream pkss;
+    pkss << name << "_meta";
+    RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+    rapidjson::StringBuffer sb;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+    writer.StartObject();
+    writer.Key("timestamp");
+    writer.Uint64(ts);
+    writer.Key("version");
+    writer.Uint64(version);
+    writer.EndObject();
+
+    RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
+
+    auto ptxn = createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        return ptxn.status();
+    }
+    auto txn = std::move(ptxn.value());
+    Status s = setKV(rk, rv, txn.get());
+    if (!s.ok()) {
+        return s;
+    }
+    s = txn->commit().status();
+
+    return s;
+}
+
 void RocksKVStore::appendJSONStat(
             rapidjson::PrettyWriter<rapidjson::StringBuffer>& w) const {
     w.Key("id");

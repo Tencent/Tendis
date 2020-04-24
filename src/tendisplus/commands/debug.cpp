@@ -2983,25 +2983,26 @@ class SyncVersionCommand: public Command {
         const auto& name = args[1];
         const auto server = sess->getServerEntry();
         if (args[2] == "?" && args[3] == "?") {
-            std::stringstream ss;
-            Command::fmtMultiBulkLen(ss, 2);
             uint64_t ts, ver;
-            auto expdb = server->getSegmentMgr()->getDb(sess,
-                    0, mgl::LockMode::LOCK_IX);
-            if (!expdb.ok()) {
-                return expdb.status();
-            }
-            PStore store = expdb.value().store;
-            auto expvm = server->getCatalog()->getVersionMeta(
-                    store, name);
-            if (expvm.status().code() == ErrorCodes::ERR_NOTFOUND) {
-                ts = ver = -1;
-            } else if (!expvm.ok()) {
-                return expvm.status();
+
+            for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess,
+                    i, mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
+                auto meta = store->getVersionMeta(name);
+                if (!meta.ok()) {
+                    return meta.status();
+                }
             } else {
                 ts = expvm.value()->timestamp;
                 ver = expvm.value()->version;
             }
+            
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
             Command::fmtLongLong(ss, static_cast<int64_t>(ts));
             Command::fmtLongLong(ss, static_cast<int64_t>(ver));
             return ss.str();

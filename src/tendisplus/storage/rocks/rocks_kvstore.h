@@ -260,6 +260,12 @@ class RocksKVStore: public KVStore {
     std::string getBgError() const override;
     Status recoveryFromBgError() override;
     void resetStatistics();
+
+    Expected<std::unique_ptr<VersionMeta>> getVersionMeta() override;
+    Expected<std::unique_ptr<VersionMeta>> getVersionMeta(std::string name) override;
+    Status setVersionMeta(const std::string& name,
+        uint64_t ts, uint64_t version) override;
+
  private:
     rocksdb::DB* getBaseDB() const;
     void addUnCommitedTxnInLock(uint64_t txnId);

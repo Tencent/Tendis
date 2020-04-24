@@ -111,7 +111,7 @@ Expected<std::vector<byte>> Serializer::dump(bool prefixVer) {
         Serializer::saveLen(&payload, &_pos, revision);
     }
     Serializer::saveObjectType(&payload, &_pos, _type);
-    INVARIANT(_pos);
+    INVARIANT_D(_pos > 0);
 
     auto expRet = dumpObject(payload);
     if (!expRet.ok()) {
