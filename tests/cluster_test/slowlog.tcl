@@ -9,8 +9,10 @@ start_server {tags {"slowlog"} overrides {slowlog-log-slower-than 1000000}} {
         assert_equal [r slowlog len] 0
         r config set slowlog-log-slower-than 0
         r debug sleep 0.2
+        after 100
         assert_equal [r slowlog len] 2
         r slowlog reset
+        after 100
         assert_equal [r slowlog len] 1
     }
 
