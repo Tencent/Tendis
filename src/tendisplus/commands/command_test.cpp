@@ -510,44 +510,6 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(ss.str(), expect.value());
 }
 
-void testSync(std::shared_ptr<ServerEntry> svr) {
-    auto fmtSyncVerRes = [](std::stringstream& ss,
-        uint64_t ts, uint64_t ver) {
-        ss.str("");
-        Command::fmtMultiBulkLen(ss, 2);
-        Command::fmtLongLong(ss, ts);
-        Command::fmtLongLong(ss, ver);
-    };
-
-    asio::io_context ioCtx;
-    asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
-    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
-
-    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
-    auto expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-
-    sess.setArgs({"syncversion", "unittest", "100", "100", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-
-    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-    std::stringstream ss1;
-    fmtSyncVerRes(ss1, 100, 100);
-    EXPECT_EQ(ss1.str(), expect.value());
-
-   sess.setArgs({"syncversion", "unittest", "105", "102", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-
-    sess.setArgs({"syncversion", "unittest", "?", "?", "v1"});
-    expect = Command::runSessionCmd(&sess);
-    fmtSyncVerRes(ss1, 105, 102);
-    EXPECT_EQ(ss1.str(), expect.value());
-}
-
 void testMulti(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioCtx;
     asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);

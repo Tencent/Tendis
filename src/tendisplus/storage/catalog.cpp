@@ -350,6 +350,5 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     return result;
 #endif
 }
-}
 
 }  // namespace tendisplus

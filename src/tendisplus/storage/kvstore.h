@@ -36,6 +36,7 @@ class Transaction;
 class TTLIndex;
 class RecordKey;
 class RecordValue;
+class VersionMeta;
 enum class RecordType;
 
 #define ROCKSDB_NUM_LEVELS 7
@@ -220,19 +221,6 @@ struct TruncateBinlogResult {
     uint64_t deleten;
 };
 
-class VersionMeta {
-public:
-    VersionMeta() : VersionMeta(0, 0) {}
-    VersionMeta(const VersionMeta&) = default;
-    VersionMeta(VersionMeta&&) = delete;
-    VersionMeta(uint64_t ts, uint64_t v)
-        : timestamp(ts), version(v) {
-    }
-
-    uint64_t timestamp;
-    uint64_t version;
-};
-
 class KVStore {
  public:
     enum class StoreMode {
@@ -311,9 +299,10 @@ class KVStore {
     virtual void resetStatistics() = 0;
 
     virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta() = 0;
-    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta(std::string name) = 0;
-    virtual Status setVersionMeta(const std::string& name,
-        uint64_t ts, uint64_t version) = 0;
+    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta(
+        std::string name) = 0;
+    virtual Status setVersionMeta(const std::string& name, uint64_t ts,
+                                  uint64_t version) = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
     virtual KVStore::StoreMode getMode() = 0;

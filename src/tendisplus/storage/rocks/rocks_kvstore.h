@@ -335,7 +335,6 @@ private:
     std::shared_ptr<RocksdbEnv> _env;
     std::map<std::string, std::string> _rocksIntProperties;
     std::map<std::string, std::string> _rocksStringProperties;
-
 };
 
 class RocksdbEnv{

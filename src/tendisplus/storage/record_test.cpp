@@ -435,4 +435,15 @@ TEST(ZSl, Common) {
     }
 }
 
+TEST(VersionMeta, Compare) {
+  auto meta1 = VersionMeta(0, 0, "sync_1");
+  auto meta2 = VersionMeta(0, -1, "sync_1");
+  auto meta3 = VersionMeta(0, UINT64_MAX, "sync_1");
+  auto meta4 = VersionMeta(0, UINT64_MAX - 1, "sync_1");
+
+  EXPECT_LT(meta2, meta1);
+  EXPECT_LT(meta3, meta1);
+  EXPECT_LT(meta1, meta4);
+}
+
 }  // namespace tendisplus

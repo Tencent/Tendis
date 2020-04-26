@@ -2982,9 +2982,9 @@ class SyncVersionCommand: public Command {
 
         const auto& name = args[1];
         const auto server = sess->getServerEntry();
+        // get ts && version from kvstores
         if (args[2] == "?" && args[3] == "?") {
-            uint64_t ts, ver;
-
+            VersionMeta minMeta(UINT64_MAX - 1, UINT64_MAX - 1, name);
             for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess,
                     i, mgl::LockMode::LOCK_IS);
@@ -2996,15 +2996,13 @@ class SyncVersionCommand: public Command {
                 if (!meta.ok()) {
                     return meta.status();
                 }
-            } else {
-                ts = expvm.value()->timestamp;
-                ver = expvm.value()->version;
+                VersionMeta metaV = *(meta.value().get());
+                minMeta = std::min(metaV, minMeta);
             }
-            
             std::stringstream ss;
             Command::fmtMultiBulkLen(ss, 2);
-            Command::fmtLongLong(ss, static_cast<int64_t>(ts));
-            Command::fmtLongLong(ss, static_cast<int64_t>(ver));
+            Command::fmtLongLong(ss, static_cast<int64_t>(minMeta.getTimeStamp()));
+            Command::fmtLongLong(ss, static_cast<int64_t>(minMeta.getVersion()));
             return ss.str();
         }
 
@@ -3016,40 +3014,17 @@ class SyncVersionCommand: public Command {
         if (!eVersion.ok()) {
             return eVersion.status();
         }
-
-        auto expdb = server->getSegmentMgr()->getDb(sess,
-                0, mgl::LockMode::LOCK_IX);
-        if (!expdb.ok()) {
-            return expdb.status();
-        }
-
-        PStore store = expdb.value().store;
-        auto ptxn = store->createTransaction(sess);
-        if (!ptxn.ok()) {
-            return ptxn.status();
-        }
-        auto txn = std::move(ptxn.value());
-
-        std::stringstream pkss;
-        pkss << name << "_meta";
-        RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
-        rapidjson::StringBuffer sb;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
-        writer.StartObject();
-        writer.Key("timestamp");
-        writer.Uint64(eTs.value());
-        writer.Key("version");
-        writer.Uint64(eVersion.value());
-        writer.EndObject();
-
-        RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
-        Status s = store->setKV(rk, rv, txn.get());
-        if (!s.ok()) {
-            return s;
-        }
-        s = txn->commit().status();
-        if (!s.ok()) {
-            return s;
+        for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
+            auto expdb =
+                server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                return expdb.status();
+            }
+            PStore store = expdb.value().store;
+            auto s = store->setVersionMeta(name, eTs.value(), eVersion.value());
+            if (!s.ok()) {
+                return s;
+            }
         }
         return Command::fmtOK();
     }

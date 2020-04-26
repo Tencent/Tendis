@@ -2261,10 +2261,11 @@ Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta() {
 }
 
 Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta(std::string name) {
-    auto result = std::make_unique<VersionMeta>(-1, -1);
+    auto result = std::make_unique<VersionMeta>(-1, -1, name);
     std::stringstream pkss;
     pkss << name << "_meta";
-    RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+    RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID, RecordType::RT_META,
+                 pkss.str(), "");
     auto ptxn = createTransaction(nullptr);
     if (!ptxn.ok()) {
         return ptxn.status();
@@ -2288,15 +2289,15 @@ Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta(std::string 
             << rapidjson::GetParseError_En(doc.GetParseError());
         return { ErrorCodes::ERR_DECODE, "invalid version meta:" + pkss.str() };
     }
-    INVARIANT(doc.IsObject());
+    INVARIANT_D(doc.IsObject());
 
-    INVARIANT(doc.HasMember("timestamp"));
-    INVARIANT(doc["timestamp"].IsUint64());
-    result->timestamp = (uint64_t)doc["timestamp"].GetUint64();
+    INVARIANT_D(doc.HasMember("timestamp"));
+    INVARIANT_D(doc["timestamp"].IsUint64());
+    result->setTimeStamp((uint64_t)doc["timestamp"].GetUint64());
 
-    INVARIANT(doc.HasMember("version"));
-    INVARIANT(doc["version"].IsUint64());
-    result->version = (uint64_t)(doc["version"].GetUint64());
+    INVARIANT_D(doc.HasMember("version"));
+    INVARIANT_D(doc["version"].IsUint64());
+    result->setVersion((uint64_t)(doc["version"].GetUint64()));
 
     return result;
 }
@@ -2307,7 +2308,8 @@ Status RocksKVStore::setVersionMeta(const std::string& name,
 
     std::stringstream pkss;
     pkss << name << "_meta";
-    RecordKey rk(0, 0, RecordType::RT_META, pkss.str(), "");
+    RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID, RecordType::RT_META,
+                 pkss.str(), "");
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
