@@ -429,7 +429,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
 void ReplManager::supplyFullSyncRoutine(
             std::shared_ptr<BlockingTcpClient> client, uint32_t storeId,
             const string& slave_listen_ip, uint16_t slave_listen_port) {
-    LocalSessionGuard sg(_svr);
+    LocalSessionGuard sg(_svr.get());
     sg.getSession()->setArgs(
         {"masterfullsync",
          client->getRemoteRepr(),

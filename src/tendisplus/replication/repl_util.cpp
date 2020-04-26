@@ -134,7 +134,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     }
 
     std::string stringtoWrite = ss2.str();
-    LOG(INFO) << "apply binlog:" << stringtoWrite;
+    // LOG(INFO) << "apply binlog:" << stringtoWrite;
 
     Status s = client->writeData(stringtoWrite);
     if (!s.ok()) {

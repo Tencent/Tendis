@@ -298,8 +298,6 @@ public:
 
     uint32_t bingLogSendBatch =  256;
     uint32_t bingLogSendBytes =  16 * 1024 * 1024;
-    bool levelCompactionDynamicLevelBytes = true;
-
 
     uint32_t migrateSenderThreadnum = 4;
     uint32_t migrateClearThreadnum = 4;

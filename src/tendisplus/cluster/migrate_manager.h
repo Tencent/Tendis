@@ -132,6 +132,7 @@ class MigrateManager {
 
     Status lockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
     Status unlockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
+    uint64_t getProtectBinlogid(uint32_t storeid);
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

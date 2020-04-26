@@ -36,6 +36,8 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
 
     auto cfg1 = makeServerParam(mport, storeCnt, mDir);
     cfg1->clusterEnabled = true;
+    cfg1->pauseTimeIndexMgr = 1;
+    cfg1->rocksBlockcacheMB = 24;
 
 #ifdef _WIN32
     cfg1->executorThreadNum = 1;
@@ -974,7 +976,191 @@ TEST(Cluster, migrate) {
     servers.clear();
 }
 
+void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
+        uint32_t nodeNum, uint32_t migrateSlot, uint32_t srcNodeIndex, uint32_t dstNodeIndex) {
+    int32_t num = 0;
+    int32_t begin = INT32_MAX;
+    int32_t end = 0;
+    while (num++ < 300) {
+        uint32_t oldNodeNum = 0;
+        uint32_t updatedNodeNum = 0;
+        auto dstNodeName = servers[dstNodeIndex]->getClusterMgr()->getClusterState()->getMyselfName();
+        auto srcNodeName = servers[srcNodeIndex]->getClusterMgr()->getClusterState()->getMyselfName();
+        for (uint32_t i = 0; i < servers.size(); ++i) {
+            auto state = servers[i]->getClusterMgr()->getClusterState();
+            CNodePtr dstNode = state->clusterLookupNode(dstNodeName);
+            CNodePtr srcNode = state->clusterLookupNode(srcNodeName);
 
+            if (dstNode != nullptr && state->getNodeBySlot(migrateSlot) == dstNode) {
+               updatedNodeNum++;
+            } else if (srcNode != nullptr && state->getNodeBySlot(migrateSlot) == srcNode) {
+                oldNodeNum++;
+            }
+        }
+        LOG(INFO) << "checkEpoch, updatedNodeNum:" << updatedNodeNum << " oldNodeNum:" << oldNodeNum;
+        if (updatedNodeNum != 0 && begin == INT32_MAX) {
+            begin = num;
+        }
+        std::map<uint32_t, uint32_t> mapCurrentEpoch;
+        for (uint32_t i = 0; i < servers.size(); ++i) {
+            uint32_t currentEpoch = servers[i]->getClusterMgr()->getClusterState()->getCurrentEpoch();
+            if (mapCurrentEpoch.find(currentEpoch) == mapCurrentEpoch.end()) {
+                mapCurrentEpoch[currentEpoch] = 1;
+            } else {
+                mapCurrentEpoch[currentEpoch]++;
+            }
+        }
+        stringstream ss;
+        for (auto epoch : mapCurrentEpoch) {
+            ss << " " << epoch.first << "|" << epoch.second;
+        }
+        LOG(INFO) << "checkEpoch, currentEpoch|nodeNum pairs:" << ss.str();
+        if (updatedNodeNum == servers.size()) {
+            end = num;
+            LOG(INFO) << "checkEpoch, all updated, time:" << end - begin
+                <<" begin:" << begin << " end:" << end;
+            break;
+        }
+        std::this_thread::sleep_for(1s);
+    }
+    EXPECT_TRUE(begin != INT32_MAX);
+    EXPECT_TRUE(end != 0);
+    EXPECT_LT((end-begin), 60);
+}
+
+// Convergence rate test
+TEST(Cluster, ConvergenceRate) {
+    uint32_t nodeNum = 50;
+    uint32_t migrateSlot = 8373;
+    uint32_t startPort = 14000;
+    uint32_t dstNodeIndex = 0;
+    uint32_t srcNodeIndex = migrateSlot / (CLUSTER_SLOTS / nodeNum);
+
+    LOG(INFO) <<"ConvergenceRate nodeNum:" << nodeNum
+        << " migrateSlot:" << migrateSlot
+        << " srcNodeIndex:" << srcNodeIndex
+        << " dstNodeIndex:" << dstNodeIndex;
+    std::vector<std::string> dirs;
+    for (uint32_t i = 0; i < nodeNum; ++i) {
+        dirs.push_back("node" + to_string(i));
+    }
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    }
+
+    std::thread th1([&servers, nodeNum, migrateSlot, srcNodeIndex, dstNodeIndex](){
+        checkEpoch(servers, nodeNum, migrateSlot, srcNodeIndex, dstNodeIndex);
+    });
+
+    // meet
+    LOG(INFO) <<"begin meet.";
+    for (uint32_t i = 1; i < nodeNum; ++i) {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto sess = makeSession(servers[0], ctx);
+        WorkLoad work(servers[0], sess);
+        work.init();
+        work.clusterMeet(servers[i]->getParams()->bindIp, servers[i]->getParams()->port);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    // addSlots
+    LOG(INFO) <<"begin addSlots.";
+    for (uint32_t i = 0; i < nodeNum; ++i) {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto sess = makeSession(servers[i], ctx);
+        WorkLoad work(servers[i], sess);
+        work.init();
+        uint32_t start = CLUSTER_SLOTS / nodeNum * i;
+        uint32_t end = start + CLUSTER_SLOTS / nodeNum;
+        if (i == nodeNum - 1) {
+            end = CLUSTER_SLOTS - 1;
+        }
+        std::string slots = "{" + to_string(start) + ".." + to_string(end) + "}";
+        work.addSlots(slots);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+
+    auto& srcNode = servers[srcNodeIndex];
+    auto& dstNode = servers[dstNodeIndex];
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(srcNode, ctx1);
+    WorkLoad work1(srcNode, sess1);
+    work1.init();
+
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(dstNode, ctx2);
+    WorkLoad work2(dstNode, sess2);
+    work2.init();
+
+    std::vector<uint32_t> slotsList = {migrateSlot - 1, migrateSlot, migrateSlot + 1};
+    auto bitmap = getBitSet(slotsList);
+
+    LOG(INFO) <<"begin add keys.";
+    const uint32_t  numData = 1000;
+    for (size_t j = 0; j < numData; ++j) {
+        std::string cmd = "redis-cli -c ";
+        cmd += " -h " + srcNode->getParams()->bindIp;
+        cmd += " -p " + std::to_string(srcNode->getParams()->port);
+
+        // write to slot 8373
+        cmd += " set " +to_string(j) + "{12} " + getUUid(7);
+
+        int ret = system(cmd.c_str());
+        EXPECT_EQ(ret, 0);
+        // begin to migrate when half data been writen
+        if (j == numData/2) {
+            uint32_t  keysize = 0;
+            for (auto &vs : slotsList) {
+                keysize += srcNode->countKeysInSlot(vs);
+            }
+            LOG(INFO) <<"before migrate keys num:" << keysize;
+            migrate(srcNode, dstNode, bitmap);
+        }
+    }
+    LOG(INFO) <<"end add keys.";
+
+    th1.join();
+
+    std::this_thread::sleep_for(2s);
+
+    LOG(INFO) << "srdNode MovedNum:" << srcNode->getSegmentMgr()->getMovedNum();
+    uint32_t  keysize1 = 0;
+    uint32_t  keysize2 = 0;
+    for (auto &slot : slotsList) {
+        LOG(INFO) <<"srdNode slot:" << slot <<" keys:" << srcNode->countKeysInSlot(slot);
+        keysize1 += srcNode->countKeysInSlot(slot);
+        LOG(INFO) <<"dstNode slot:" << slot <<" keys:" << dstNode->countKeysInSlot(slot);
+        keysize2 += dstNode->countKeysInSlot(slot);
+    }
+
+    // bitmap should belong to dstNode
+    ASSERT_EQ(checkSlotsBlong(bitmap, srcNode, srcNode->getClusterMgr()->getClusterState()->getMyselfName()), false);
+    ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), true);
+    // dstNode should contain the keys
+    ASSERT_EQ(keysize1, 0);
+    ASSERT_EQ(keysize2, numData);
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+    servers.clear();
+}
 
 }  // namespace tendisplus
 

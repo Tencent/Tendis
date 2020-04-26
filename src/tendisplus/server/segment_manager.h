@@ -17,7 +17,6 @@ struct DbWithLock {
     uint32_t chunkId;
     PStore store;
     std::unique_ptr<StoreLock> dbLock;
-    std::unique_ptr<ChunkLock> chunkLock;
     std::unique_ptr<KeyLock> keyLock;
 };
 
@@ -40,6 +39,7 @@ class SegmentMgr {
             mgl::LockMode mode) = 0;
     virtual size_t getChunkSize() const = 0;
     virtual  uint32_t getStoreid(uint32_t chunkid)  = 0;
+    virtual uint64_t getMovedNum() = 0;
 private:
     const std::string _name;
 };
@@ -63,12 +63,14 @@ class SegmentMgrFnvHash64: public SegmentMgr {
             mgl::LockMode mode) final;
     size_t getChunkSize() const final { return _chunkSize; }
     uint32_t getStoreid(uint32_t chunkid);
+    uint64_t getMovedNum() {return _movedNum;}
 private:
     std::vector<PStore> _instances;
 
     size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
     static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;
+    uint64_t _movedNum;
 };
 
 }  // namespace tendisplus

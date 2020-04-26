@@ -47,6 +47,7 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port, uint32_t storeCnt,
     }
     myfile << "storage rocks\n";
     myfile << "rocks.blockcachemb 4096\n";
+    myfile << "rocks.write_buffer_size 4096000\n";
     if (general_log) {
         myfile << "generallog on\n";
     }

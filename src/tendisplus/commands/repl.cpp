@@ -53,7 +53,7 @@ class BackupCommand: public Command {
                 return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
             }
         }
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        ServerEntry* svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         if (!filesystem::exists(dir)) {
             return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};

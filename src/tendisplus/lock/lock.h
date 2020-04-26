@@ -60,7 +60,7 @@ class StoreLock: public ILock {
 
 class ChunkLock: public ILock {
 public:
-    ChunkLock(uint32_t chunkId, uint32_t storeId, mgl::LockMode mode,
+    ChunkLock(uint32_t storeId, uint32_t chunkId, mgl::LockMode mode,
               Session* sess, mgl::MGLockMgr* mgr);
     uint32_t getStoreId() const final;
     uint32_t getChunkId() const final;
@@ -72,10 +72,10 @@ private:
 
 class KeyLock: public ILock {
  public:
-    static Expected<std::unique_ptr<KeyLock>> AquireKeyLock(uint32_t storeId, const std::string& key,
+    static Expected<std::unique_ptr<KeyLock>> AquireKeyLock(uint32_t storeId, uint32_t chunkId, const std::string& key,
             mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
             uint64_t lockTimeoutMs = 3600000);
-    KeyLock(uint32_t storeId, const std::string& key,
+    KeyLock(uint32_t storeId, uint32_t chunkId, const std::string& key,
             mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
             uint64_t lockTimeoutMs = 3600000);
     uint32_t getStoreId() const final;

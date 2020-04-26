@@ -387,7 +387,7 @@ TEST(Lock, KeyLockTimeout) {
     auto mgr = std::make_unique<mgl::MGLockMgr>();
     auto sess = std::make_shared<LocalSession>(nullptr);
     std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
-        KeyLock v(1, "a", mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
+        KeyLock v(1, 1, "a", mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
         locked1 = true;
         while (runFlag1) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -398,7 +398,7 @@ TEST(Lock, KeyLockTimeout) {
 
     auto sess1 = std::make_shared<LocalSession>(nullptr);
     std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
-        auto elk = KeyLock::AquireKeyLock(1, "a", mgl::LockMode::LOCK_X,
+        auto elk = KeyLock::AquireKeyLock(1, 1, "a", mgl::LockMode::LOCK_X,
             sess1.get(), mgr.get(), 1000);
         if (elk.ok()) {
             locked2 = true;

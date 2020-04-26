@@ -353,7 +353,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     //cluster test
     std::map<std::string, std::string> _nodeName;
     std::map<std::string, std::string> _ip;
-    std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
 
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;

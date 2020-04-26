@@ -246,5 +246,20 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->getRocksdbOptions().size(), 0);
     EXPECT_EQ(cfg->level0Compress, false);
     EXPECT_EQ(cfg->level0Compress, false);
+
+    EXPECT_EQ(cfg->bingLogSendBatch, 256);
+    EXPECT_EQ(cfg->bingLogSendBytes, 16 * 1024 * 1024);
+
+    EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
+    EXPECT_EQ(cfg->migrateClearThreadnum, 4);
+    EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);
+    EXPECT_EQ(cfg->migrateCheckThreadnum, 2);
+    EXPECT_EQ(cfg->clusterEnabled, false);
+    EXPECT_EQ(cfg->migrateDistance, 150);
+    EXPECT_EQ(cfg->clusterNodeTimeout, 15000);
+    EXPECT_EQ(cfg->clusterRequireFullCoverage, true);
+    EXPECT_EQ(cfg->clusterSlaveNoFailover, false);
+    EXPECT_EQ(cfg->clusterMigrationBarrier, 1);
+    EXPECT_EQ(cfg->clusterSlaveValidityFactor, 50);
 }
 }  // namespace tendisplus

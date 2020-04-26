@@ -148,8 +148,6 @@ ServerParams::ServerParams() {
     REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, false);
     REGISTER_VARS_DIFF_NAME("rocks.level0_compress_enabled", level0Compress);
     REGISTER_VARS_DIFF_NAME("rocks.level1_compress_enabled", level1Compress);
-    REGISTER_VARS(levelCompactionDynamicLevelBytes);
-
 
     REGISTER_VARS(migrateSenderThreadnum);
     REGISTER_VARS(migrateClearThreadnum);

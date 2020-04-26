@@ -47,7 +47,10 @@ class ChunkMigrateSender{
     bool checkSlotsBlongDst(const std::bitset<CLUSTER_SLOTS>& slot);
 
     std::bitset<CLUSTER_SLOTS> _slots;
-
+    uint64_t getProtectBinlogid() {
+        // TODO(wayenchen) use atomic
+        return _curBinlogid;
+    }
  private:
     Expected<Transaction*> initTxn();
     Status sendBinlog(uint16_t time);

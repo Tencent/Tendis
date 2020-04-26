@@ -111,7 +111,7 @@ uint32_t StoreLock::getStoreId() const {
     return _storeId;
 }
 
-ChunkLock::ChunkLock(uint32_t chunkId, uint32_t storeId, mgl::LockMode mode,
+ChunkLock::ChunkLock(uint32_t storeId, uint32_t chunkId, mgl::LockMode mode,
                      Session *sess, mgl::MGLockMgr* mgr)
         :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr),
                new mgl::MGLock(mgr), sess),
@@ -145,7 +145,7 @@ Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId, uint
     if (sess->getCtx()->isLockedByMe(key, mode)) {
         return std::unique_ptr<KeyLock>(nullptr);
     } else {
-        auto lock = std::make_unique<KeyLock>(storeId, chunkid, key, mode, sess, mgr, lockTimeoutMs);
+        auto lock = std::make_unique<KeyLock>(storeId, chunkId, key, mode, sess, mgr, lockTimeoutMs);
         if (lock->getLockResult() == mgl::LockRes::LOCKRES_OK) {
             return lock;
         } else if (lock->getLockResult() == mgl::LockRes::LOCKRES_TIMEOUT) {

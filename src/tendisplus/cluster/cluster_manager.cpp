@@ -804,13 +804,13 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
                 }
                 clusterDelSlot(j);
                 clusterAddSlot(sender, j);
-
-                clusterSaveNodes();
-                clusterUpdateState();
             }
-
         }
     }
+    // NOTE(takenliu) save and update once at the last.
+    clusterSaveNodes();
+    clusterUpdateState();
+
     /* If at least one slot was reassigned from a node to another node
      * with a greater configEpoch, it is possible that:
      * 1) We are a master left without slots. This means that we were

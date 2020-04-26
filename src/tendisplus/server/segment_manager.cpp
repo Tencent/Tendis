@@ -18,7 +18,8 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
             const size_t chunkSize)
         :SegmentMgr("fnv_hash_64"),
          _instances(ins),
-         _chunkSize(chunkSize) {
+         _chunkSize(chunkSize),
+         _movedNum(0) {
 }
 
 uint32_t SegmentMgrFnvHash64::getStoreid(uint32_t chunkid) {
@@ -36,12 +37,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
     if (sess && sess->getServerEntry()) {
-        lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
-
+        lockTimeoutMs = (uint64_t) sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+    }
     auto svr = sess->getServerEntry();
-    const std::shared_ptr<tendisplus::ClusterState>
-            &clusterState = svr->getClusterMgr()->getClusterState();
-
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
@@ -67,12 +65,36 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
     }
 
     if (mode != mgl::LockMode::LOCK_NONE) {
-        auto elk = KeyLock::AquireKeyLock(segId, key, mode, sess,
+        auto elk = KeyLock::AquireKeyLock(segId, chunkId, key, mode, sess,
             (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
         if (!elk.ok()) {
             return elk.status();
         }
 
+        if (svr->isClusterEnabled()) {
+            std::stringstream ss;
+            const std::shared_ptr<tendisplus::ClusterState>
+                    &clusterState = svr->getClusterMgr()->getClusterState();
+            if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
+                ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
+                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
+            }
+            if (clusterState->getBlockState()) {
+                ss << "-BLOCK The cluster is block now" << "\r\n";
+                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
+            }
+
+            CNodePtr myself = clusterState->getMyselfNode();
+            // too much cost ?  to do  wayen
+            CNodePtr node = clusterState->getNodeBySlot(chunkId);
+
+            if (node != myself && myself->getMaster() != node) {
+                ss << "-" << "MOVED" << " " << chunkId << " "
+                   << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
+                _movedNum++;
+                return { ErrorCodes::ERR_MOVED, ss.str()};
+            }
+        }
         return DbWithLock{
                 segId, chunkId, _instances[segId], nullptr, std::move(elk.value())
                 };
@@ -91,12 +113,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
     uint32_t segId = chunkId % _instances.size();
 
     auto svr = sess->getServerEntry();
-    const std::shared_ptr<tendisplus::ClusterState>
-            &clusterState = svr->getClusterMgr()->getClusterState();
 
     if (svr->isClusterEnabled()) {
         std::stringstream ss;
-
+        const std::shared_ptr<tendisplus::ClusterState>
+                &clusterState = svr->getClusterMgr()->getClusterState();
         if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
             ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
             return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
@@ -179,7 +200,11 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
                 [](const std::string& a, const std::string& b) { return a < b; });
         for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {
             const std::string& key = *keyIter;
-            auto elk = KeyLock::AquireKeyLock(segId, key, mode, sess,
+            // TODO(takenliu): optimization it.
+            uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
+            INVARIANT(hash < _chunkSize);
+            uint32_t chunkId = hash % _chunkSize;
+            auto elk = KeyLock::AquireKeyLock(segId, chunkId, key, mode, sess,
                 (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
             if (!elk.ok()) {
                 return elk.status();
@@ -242,7 +267,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
         _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
         sess->getCtx()->setReplOnly(true);
     }
-    return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr, nullptr};
+    return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
 }
 
 }  // namespace tendisplus

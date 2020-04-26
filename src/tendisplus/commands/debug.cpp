@@ -850,7 +850,7 @@ class RocksPropertyCommand : public Command {
     }
 
     Expected<std::string> run(Session* sess) final {
-        std::shared_ptr<ServerEntry> svr = sess->getServerEntry();
+        ServerEntry* svr = sess->getServerEntry();
         uint64_t first = 0, last = svr->getKVStoreCount();
         const auto& args = sess->getArgs();
         if (sess->getArgs().size() > 2) {

@@ -184,7 +184,7 @@ Status MigrateManager::lockXChunk(uint32_t chunkid) {
     }
 
     auto lock = std::make_unique<ChunkLock>
-            (chunkid, storeId, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
+            (storeId, chunkid, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
 
     _lockMap[chunkid] = std::move(lock);
     LOG(INFO) << "finish lock chunk on :"<< chunkid << "storeid:" << storeId;
@@ -549,6 +549,18 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
 
 
     return{ ErrorCodes::ERR_OK, "" };
+}
+
+uint64_t MigrateManager::getProtectBinlogid(uint32_t storeid) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    uint64_t minbinlogid = UINT64_MAX;
+    for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
+        uint64_t binlogid = (*it)->sender->getProtectBinlogid();
+        if ((*it)->storeid == storeid && binlogid < minbinlogid) {
+            minbinlogid = binlogid;
+        }
+    }
+    return minbinlogid;
 }
 
 }  // namespace tendisplus
