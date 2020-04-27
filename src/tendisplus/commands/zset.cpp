@@ -937,7 +937,7 @@ class ZCountCommand: public Command {
         if (!f.ok()) {
             return f.status();
         }
-        if (f.value() == SkipList::INVALID_POS) {
+        if (f.value() == SKIPLIST_INVALID_POS) {
             return Command::fmtZero();
         }
         auto first = sl.getCacheNode(f.value());
@@ -954,7 +954,7 @@ class ZCountCommand: public Command {
         if (!l.ok()) {
             return l.status();
         }
-        if (l.value() == SkipList::INVALID_POS) {
+        if (l.value() == SKIPLIST_INVALID_POS) {
             return Command::fmtLongLong(count);
         }
         auto last = sl.getCacheNode(l.value());
@@ -1035,7 +1035,7 @@ class ZlexCountCommand: public Command {
         if (!f.ok()) {
             return f.status();
         }
-        if (f.value() == SkipList::INVALID_POS) {
+        if (f.value() == SKIPLIST_INVALID_POS) {
             return Command::fmtZero();
         }
         auto first = sl.getCacheNode(f.value());
@@ -1052,7 +1052,7 @@ class ZlexCountCommand: public Command {
         if (!l.ok()) {
             return l.status();
         }
-        if (l.value() == SkipList::INVALID_POS) {
+        if (l.value() == SKIPLIST_INVALID_POS) {
             return Command::fmtLongLong(count);
         }
         auto last = sl.getCacheNode(l.value());
