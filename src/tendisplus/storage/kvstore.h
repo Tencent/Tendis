@@ -36,6 +36,7 @@ class Transaction;
 class TTLIndex;
 class RecordKey;
 class RecordValue;
+class VersionMeta;
 enum class RecordType;
 
 #define ROCKSDB_NUM_LEVELS 7
@@ -296,6 +297,12 @@ class KVStore {
     virtual std::string getBgError() const = 0;
     virtual Status recoveryFromBgError() = 0;
     virtual void resetStatistics() = 0;
+
+    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta() = 0;
+    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta(
+        std::string name) = 0;
+    virtual Status setVersionMeta(const std::string& name, uint64_t ts,
+                                  uint64_t version) = 0;
 
     virtual Status setMode(StoreMode mode) = 0;
     virtual KVStore::StoreMode getMode() = 0;

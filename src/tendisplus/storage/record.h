@@ -11,10 +11,19 @@
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
+#define VERSIONMETA_CHUNKID 0XFFFE0000U
+#define TTLINDEX_CHUNKID 0XFFFF0000U
+#define REPLLOGKEY_CHUNKID 0XFFFFFF00U
+#define REPLLOGKEYV2_CHUNKID 0XFFFFFF01U
 
+#define VERSIONMETA_DBID 0XFFFE0000U
+#define TTLINDEX_DBID 0XFFFF0000U
+#define REPLLOGKEY_DBID 0XFFFFFF00U
+#define REPLLOGKEYV2_DBID 0XFFFFFF01U
 
 /* NOTE(vinchen): if you want to add new RecordType, make sure you handle
    the below functions correctly.
@@ -286,8 +295,8 @@ class ReplLogKey {
     ReplFlag getFlag() const { return _flag; }
 
     static std::string prefix(uint64_t commitId);
-    static constexpr uint32_t DBID = 0XFFFFFF00U;
-    static constexpr uint32_t CHUNKID = 0XFFFFFF00U;
+    static constexpr uint32_t DBID = REPLLOGKEY_DBID;
+    static constexpr uint32_t CHUNKID = REPLLOGKEY_CHUNKID;
 
  private:
     uint64_t _txnId;
@@ -352,8 +361,8 @@ class ReplLogKeyV2 {
     ReplLogKeyV2& operator=(const ReplLogKeyV2&);
     uint64_t getBinlogId() const { return _binlogId; }
 
-    static constexpr uint32_t DBID = 0XFFFFFF01U;
-    static constexpr uint32_t CHUNKID = 0XFFFFFF01U;
+    static constexpr uint32_t DBID = REPLLOGKEYV2_DBID;
+    static constexpr uint32_t CHUNKID = REPLLOGKEYV2_CHUNKID;
     static constexpr size_t BINLOG_OFFSET = RecordKey::PK_OFFSET;
     static constexpr size_t BINLOG_SIZE = sizeof(uint64_t);
 
@@ -709,8 +718,48 @@ class TTLIndex {
     uint64_t _ttl;
 
  public:
-    static constexpr uint32_t CHUNKID = 0XFFFF0000U;
-    static constexpr uint32_t DBID = 0XFFFF0000U;
+    static constexpr uint32_t CHUNKID = TTLINDEX_DBID;
+    static constexpr uint32_t DBID = TTLINDEX_CHUNKID;
+};
+
+class VersionMeta {
+public:
+    VersionMeta() : VersionMeta(0, 0, "") {}
+    VersionMeta(const VersionMeta&) = default;
+    VersionMeta(VersionMeta&&) = default;
+    VersionMeta(uint64_t ts, uint64_t v, const std::string& name)
+        : _timestamp(ts), _version(v), _name(name) {}
+    VersionMeta& operator=(const VersionMeta& meta) {
+        if (this != &meta) {
+            _timestamp = meta.getTimeStamp();
+            _version = meta.getVersion();
+            _name = meta.getName();
+        }
+        return *this;
+    }
+    uint64_t getTimeStamp() const { return _timestamp; }
+    uint64_t getVersion() const { return _version; }
+    std::string getName() const { return _name; }
+
+    void setTimeStamp(uint64_t ts) { _timestamp = ts; }
+    void setVersion(uint64_t version) { _version = version; }
+
+    friend bool operator<(const VersionMeta& lhs, const VersionMeta& rhs) {
+        INVARIANT_D(lhs.getName() == rhs.getName());
+        if (lhs.getVersion() == UINT64_MAX) {
+            return true;
+        } else if (rhs.getVersion() == UINT64_MAX) {
+            return false;
+        } else {
+            return lhs.getVersion() < rhs.getVersion();
+        }
+    }
+
+    uint64_t _timestamp;
+    uint64_t _version;
+    std::string _name;
+    static constexpr uint32_t DBID = VERSIONMETA_DBID;
+    static constexpr uint32_t CHUNKID = VERSIONMETA_CHUNKID;
 };
 
 namespace rcd_util {

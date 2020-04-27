@@ -55,6 +55,7 @@ void testZset2(std::shared_ptr<ServerEntry> svr);
 void testHash1(std::shared_ptr<ServerEntry> svr);
 void testHash2(std::shared_ptr<ServerEntry> svr);
 void testList(std::shared_ptr<ServerEntry> svr);
+void testSync(std::shared_ptr<ServerEntry> svr);
 
 void testAll(std::shared_ptr<ServerEntry> svr);
 
