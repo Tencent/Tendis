@@ -17,12 +17,11 @@ namespace tendisplus {
 
 using Zrangespec = redis_port::Zrangespec;
 using Zlexrangespec = redis_port::Zlexrangespec;
-
+const uint64_t SKIPLIST_INVALID_POS = (uint64_t)-1;
 class SkipList {
  public:
     using PSE = std::unique_ptr<ZSlEleValue>;
     using PSE_MAP = std::map<uint64_t, SkipList::PSE>;
-    static constexpr uint64_t INVALID_POS = (uint64_t)-1;
     SkipList(uint32_t chunkId, uint32_t dbId, const std::string& pk,
              const ZSlMetaValue& meta, PStore store);
     Status insert(double score, const std::string& subkey, Transaction* txn);
