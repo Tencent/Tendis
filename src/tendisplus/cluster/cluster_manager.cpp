@@ -902,9 +902,11 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
             if (s) {
                 bool result = clusterAddSlot(n, idx);
                 if (!result) {
+                    LOG(ERROR) << "setSlots addslot fail on slot:" << idx;
                     return {ErrorCodes::ERR_CLUSTER, "setslot add new slot fail"};
                 }
             } else {
+                LOG(ERROR) << "setSlots delslot fail on slot:" << idx;
                 return {ErrorCodes::ERR_CLUSTER, "setslot delete old slot fail!"};
             }
         }
@@ -913,6 +915,7 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
     if (n == _myself ) {
         Status s = clusterBumpConfigEpochWithoutConsensus();
         if (!s.ok()) {
+            LOG(ERROR) << "setSlots BumpConfigEpoch fail";
             return s;
         }
         for (const auto &v: slotLists) {
@@ -1961,8 +1964,9 @@ void ClusterState::clusterFailoverReplaceYourMaster(void) {
     _server->getReplManager()->replicationUnSetMaster();
 
     /* 2) Claim all the slots assigned to our master. */
+
     for (uint32_t j = 0; j < CLUSTER_SLOTS; j++) {
-        if (oldmaster->getSlotBit(j)) {
+        if (getNodeBySlot(j) == oldmaster) {
             clusterDelSlot(j);
             clusterAddSlot(_myself, j);
         }

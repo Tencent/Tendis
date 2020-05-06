@@ -48,6 +48,7 @@ class RocksTxn: public Transaction {
                                       uint64_t until) final;
     std::unique_ptr<SlotCursor> createSlotCursor(uint32_t  slot) final;
     std::unique_ptr<SlotsCursor> createSlotsCursor(uint32_t start, uint32_t end) final;
+
     Expected<uint64_t> commit() final;
     Status rollback() final;
     Expected<std::string> getKV(const std::string&) final;
@@ -88,7 +89,6 @@ class RocksTxn: public Transaction {
     uint64_t _txnId;
     uint64_t _binlogId;
     uint32_t _chunkId;
-
     // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
     std::unique_ptr<rocksdb::Transaction> _txn;
 
@@ -131,6 +131,8 @@ class RocksOptTxn: public RocksTxn {
 
  protected:
     void ensureTxn() final;
+    void SetSnapshot() final;
+
 };
 
 class RocksPesTxn: public RocksTxn {
@@ -143,6 +145,7 @@ class RocksPesTxn: public RocksTxn {
 
  protected:
     void ensureTxn() final;
+    void SetSnapshot() final;
 };
 
 class RocksKVCursor: public Cursor {

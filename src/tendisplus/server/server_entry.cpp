@@ -904,6 +904,17 @@ bool ServerEntry::processRequest(Session *sess) {
         //INVARIANT(args.size() == 4);
         _migrateMgr->dstReadyMigrate(ns->borrowConn(),args[1], args[2], args[3]);
         return false;
+    } else if (expCmdName.value() == "preparemigrate") {
+        LOG(INFO) << "prepare migrate command";
+        NetSession *ns = dynamic_cast<NetSession *>(sess);
+        INVARIANT(ns != nullptr);
+        std::vector<std::string> args = ns->getArgs();
+        auto esNum = ::tendisplus::stoul(args[3]);
+        if (!esNum.ok())
+            LOG(ERROR) << "Invalid store num:" << args[3];
+        uint32_t  storeNum = esNum.value();
+        _migrateMgr->prepareSender(ns->borrowConn(), args[1], args[2], storeNum);
+        return false;
     } else if (expCmdName.value() == "quit") {
         LOG(INFO) << "quit command";
         NetSession *ns = dynamic_cast<NetSession*>(sess);

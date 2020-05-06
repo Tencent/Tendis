@@ -272,7 +272,7 @@ public:
     uint32_t binlogRateLimitMB = 64;
     uint32_t netBatchSize = 1024*1024;
     uint32_t netBatchTimeoutSec = 10;
-    uint32_t timeoutSecBinlogWaitRsp = 10;
+    uint32_t timeoutSecBinlogWaitRsp = 30;
     uint32_t incrPushThreadnum = 4;
     uint32_t fullPushThreadnum = 4;
     uint32_t fullReceiveThreadnum = 4;

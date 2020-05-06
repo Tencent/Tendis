@@ -7,16 +7,23 @@ namespace tendisplus {
 
 std::shared_ptr<BlockingTcpClient> createClient(
     const string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr) {
+    ServerEntry* svrPtr = svr.get();
+    auto client = createClient(ip, port, svrPtr);
+    return  client;
+}
+
+std::shared_ptr<BlockingTcpClient> createClient(
+        const string& ip, uint16_t port, ServerEntry* svr) {
     std::shared_ptr<BlockingTcpClient> client =
-        std::move(svr->getNetwork()->createBlockingClient(64*1024*1024));
+            std::move(svr->getNetwork()->createBlockingClient(64*1024*1024));
     Status s = client->connect(
-        ip,
-        port,
-        std::chrono::seconds(3));
+            ip,
+            port,
+            std::chrono::seconds(3));
     if (!s.ok()) {
         LOG(WARNING) << "connect " << ip
-            << ":" << port << " failed:"
-            << s.toString();
+                     << ":" << port << " failed:"
+                     << s.toString();
         return nullptr;
     }
 
@@ -80,7 +87,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
-            // migrate chunk, need filter by chunkid, and flush command should not be done.
             if (chunkid != Transaction::CHUNKID_UNINITED
                 && explog.value().getChunkId() != chunkid) {
                 continue;
@@ -134,7 +140,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     }
 
     std::string stringtoWrite = ss2.str();
-    // LOG(INFO) << "apply binlog:" << stringtoWrite;
 
     Status s = client->writeData(stringtoWrite);
     if (!s.ok()) {
@@ -306,7 +311,7 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
 
 
 
-Status SendSlotsBinlog(BlockingTcpClient* client,
+Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
                        uint32_t storeId, uint32_t dstStoreId,
                        uint64_t binlogPos, uint64_t  binlogEnd,
                        bool needHeartBeart,
@@ -345,10 +350,14 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     std::unique_ptr<BinlogWriter> writer =
                 std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);
 
+    LOG(INFO) << "begin catch up from:" << binlogPos << "to:" << binlogEnd;
+    uint64_t  logNum = 0;
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (!explog.ok()) {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+                LOG(INFO) << "catch up binlog exhaust" << "binlogPos:" << binlogPos
+                          << "binlogEnd:" << binlogEnd << "Current:" << binlogId;
                 break;
             }
             LOG(ERROR) << "iter binlog failed:"
@@ -368,7 +377,7 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
 
         if (binlogId > binlogEnd) {
             LOG(INFO) << "catch up binlog success:" << "binlogPos:" << binlogPos
-                       << "binlogEnd:" << binlogEnd;
+                       << "binlogEnd:" << binlogEnd << "log num:" << logNum;
             break;
         }
 
@@ -376,19 +385,21 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
         // write slot binlog
         if (slotsMap.test(slot)) {
             bool  writeFull = writer->writeRepllogRaw(explog.value());
+            logNum ++;
 
             if (writeFull || binlogId == binlogEnd || writer->getFlag() == BinlogFlag::FLUSH ) {
                 auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, secs, slot);
                 if (!s.ok()) {
                     LOG(ERROR) << "send writer bulk fail on slot:" << slot;
-                    return  s;
+                    // to do: make sure what logNum is
+                    logNum -= writer->getCount();
+                    return  logNum;
                 }
                 writer->resetWriter();
             }
         }
     }
-    return  {ErrorCodes::ERR_OK , "finish send slots binlog"};
+    return logNum;
 }
-
 
 }  // namespace tendisplus

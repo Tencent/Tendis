@@ -30,6 +30,8 @@ class ChunkMigrateReceiver {
 
     uint32_t getsStoreid() { return  _storeid; }
     std::bitset<CLUSTER_SLOTS> getSlots()  { return  _slots; }
+    uint64_t  getSnapshotNum() { return  _snapshotKeyNum; }
+    uint64_t  getBinlogNum() { return  _binlogNum; }
 
     Status applyBinlog(Session* sess, uint32_t storeid, uint32_t chunkid,
         const std::string& logKey, const std::string& logValue);
@@ -43,6 +45,9 @@ class ChunkMigrateReceiver {
     std::shared_ptr<BlockingTcpClient> _client;
     uint32_t _storeid;
     std::bitset<CLUSTER_SLOTS> _slots;
+
+    uint64_t _snapshotKeyNum;
+    uint64_t  _binlogNum;
 };
 
 }  // namespace tendisplus

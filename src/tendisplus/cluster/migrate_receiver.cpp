@@ -42,7 +42,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     LOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
 
     bool over = false;
-    uint32_t timeoutSec = 60;
+    uint32_t timeoutSec = 200;
     uint32_t readNum = 0;
     while (true) {
         SyncReadData(exptData, 1, timeoutSec)
@@ -60,12 +60,15 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         } else if (exptData.value()[0] == '1') {
             SyncWriteData("+OK")
         } else if (exptData.value()[0] == '2') {
+            SyncWriteData("+OK")
+        } else if (exptData.value()[0] == '3') {
             over = true;
             SyncWriteData("+OK")
             break;
         }
     }
     LOG(INFO) << "migrate snapshot  transfer done,readnum:" << readNum;
+    _snapshotKeyNum  = readNum;
     return { ErrorCodes::ERR_OK, "" };
 }
 
@@ -93,8 +96,9 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
     std::unique_ptr<Transaction> txn = std::move(eTxn.value());
 
     Status s = kvstore->setKV(expRk.value(), expRv.value(), txn.get());
-    EXPECT_EQ(s.ok(), true);
 
+    EXPECT_EQ(s.ok(), true);
+    _binlogNum ++ ;
     // add TTL, what type need ttl ?
     if (expRv.value().getRecordType() == RecordType::RT_DATA_META) { // kv no expire???
         if (!Command::noExpire()) {
@@ -112,6 +116,7 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
     s = commitStatus.status();
     if (s.ok()) {
         return { ErrorCodes::ERR_OK, "" };
+        LOG(INFO) << "receive binlog num is:" << _binlogNum;
     } else if (s.code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return s;
     }

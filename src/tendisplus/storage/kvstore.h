@@ -140,7 +140,6 @@ protected:
     std::unique_ptr<Cursor> _baseCursor;
 };
 
-
 class Transaction {
  public:
     Transaction() = default;
@@ -171,6 +170,8 @@ class Transaction {
     virtual void setBinlogId(uint64_t binlogId) = 0;
     virtual uint32_t getChunkId() const = 0;
     virtual void setChunkId(uint32_t chunkId) = 0;
+    virtual void SetSnapshot() = 0;
+
 #endif
     virtual std::unique_ptr<TTLIndexCursor>
         createTTLIndexCursor(std::uint64_t until) = 0;

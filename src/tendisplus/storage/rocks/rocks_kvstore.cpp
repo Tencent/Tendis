@@ -179,8 +179,6 @@ unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t en
     return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
 }
 
-
-
 std::unique_ptr<Cursor> RocksTxn::createCursor() {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
@@ -683,6 +681,12 @@ void RocksOptTxn::ensureTxn() {
     INVARIANT(_txn != nullptr);
 }
 
+void RocksOptTxn::SetSnapshot() {
+    INVARIANT(_txn != nullptr);
+    _txn->SetSnapshot();
+}
+
+
 RocksPesTxn::RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
             std::shared_ptr<BinlogObserver> ob, Session* sess)
     :RocksTxn(store, txnId, replOnly, migrateOnly, ob, sess) {
@@ -713,6 +717,7 @@ void RocksPesTxn::ensureTxn() {
     // due to server-layer's keylock, RC-level can satisfy our
     // requirements. so here set_snapshot = false
     txnOpts.set_snapshot = false;
+
     auto db = _store->getUnderlayerPesDB();
     if (!db) {
         LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
@@ -879,6 +884,11 @@ rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
         return rocksdb::CompressionType::kNoCompression;
     }
 }
+void RocksPesTxn::SetSnapshot() {
+    INVARIANT(_txn != nullptr);
+    _txn->SetSnapshot();
+}
+
 
 rocksdb::Options RocksKVStore::options() {
     rocksdb::Options options;

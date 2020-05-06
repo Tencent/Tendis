@@ -24,6 +24,10 @@ namespace tendisplus {
 std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
     std::shared_ptr<ServerEntry> svr);
 
+std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
+    ServerEntry* svr);
+
+
 
 Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
     uint32_t storeId, uint32_t dstStoreId,
@@ -45,7 +49,7 @@ Status sendWriter(BinlogWriter* writer,
                     uint32_t secs, uint32_t slot);
 
 
-Status SendSlotsBinlog(BlockingTcpClient*,
+Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient*,
                        uint32_t storeId, uint32_t dstStoreId,
                        uint64_t binlogPos, uint64_t  binglogEnd,
                        bool needHeartBeart,

@@ -23,6 +23,11 @@
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/error/en.h"
 
 namespace tendisplus {
 
@@ -59,6 +64,7 @@ public:
             return {ErrorCodes::ERR_CLUSTER,
                     "This instance has cluster support disabled"};
         }
+
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
@@ -74,51 +80,63 @@ public:
 
 
         if (arg1 == "setslot" ) {
-            
-            std::string nodeId = args[3];
             Status s;
-
-            if (args[2] == "migrating" && argSize >= 5) {
-                 /* CLUSTER SETSLOT MIGRATING nodename chunkid1 ..chunkid2 */
-                Expected<std::unordered_map<uint32_t, std::set<uint32_t>>>
-                                    exptSlotmap = getSlotSet(svr,args);
-                if (!exptSlotmap.ok()) {
-                    return exptSlotmap.status();
-                }
-                auto map = exptSlotmap.value();
-
-                for (const auto &v: map) {
-                    uint32_t storeid = v.first;
-                    auto slotSet = v.second;
-                    s = migrateBitmap(slotSet, storeid, nodeId ,clusterState, migrateMgr);
-                    if (!s.ok()) {
-                        return {ErrorCodes::ERR_CLUSTER,
-                                "migrate send slots fail"};
-                    }
-                }
-                return Command::fmtOK();
-
-            } else if (args[2] == "importing" && argSize >= 5) {
+            if (args[2] == "importing" && argSize >= 5) {
+                std::string nodeId = args[3];
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
-                Expected<std::unordered_map<uint32_t, std::set<uint32_t>>>
-                                    exptSlotmap = getSlotSet(svr,args);
-                if (!exptSlotmap.ok()) {
-                    return exptSlotmap.status();
-                }
-                auto map = exptSlotmap.value();
-
-                for (const auto &v: map) {
-                    uint32_t storeid = v.first;
-                    auto slotSet = v.second;
-                    s = importingBitmap(slotSet, storeid, nodeId, clusterState, migrateMgr);
-                    if (!s.ok()) {
+                std::bitset<CLUSTER_SLOTS> slotsMap;
+                for (size_t i= 4 ; i<args.size(); i++) {
+                    Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
+                    if (!exptSlot.ok()) {
+                        return exptSlot.status();
+                    }
+                    uint32_t slot = (uint32_t) exptSlot.value();
+                    if (slot >= CLUSTER_SLOTS) {
+                        LOG(ERROR) << "slot" << slot << " ERR Invalid or out of range slot ";
                         return {ErrorCodes::ERR_CLUSTER,
-                                "migrate receive slots  fail"};
+                                "Invalid migrate slot position"};
+                    }
+                    //check meta data
+                    if (clusterState->getNodeBySlot(slot) == myself) {
+                        LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "I'm already the owner of hash slot" + dtos(slot)};
+                    }
+                    //check if slot already been migrating
+                    if (migrateMgr->slotInTask(slot)) {
+                        LOG(ERROR) << "migrate task already start on slot:" << slot;
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "already importing" + dtos(slot)};
+                    }
+                    slotsMap.set(slot);
+                    LOG(INFO) << "command send task on slot:" << slot;
                 }
+
+                s = importingBitmap(slotsMap, nodeId, clusterState, svr, migrateMgr);
+                if (!s.ok()) {
+                    return s;
                 }
                return Command::fmtOK();
+
+            } else if (args[2] == "info" && argSize == 3) {
+                Expected<std::string>  migrateInfo = migrateMgr->getMigrateInfo();
+                if (migrateInfo.ok()) {
+                        return  migrateInfo.value();
+                } else {
+                    return {ErrorCodes::ERR_CLUSTER,
+                            "Invalid migrate info"};
+                }
+            } else if (args[2] == "tasks" && argSize == 3) {
+                Expected<std::string>  taskInfo = migrateMgr->getTaskInfo();
+                if (taskInfo.ok()) {
+                    return taskInfo;
+                } else {
+                    return {ErrorCodes::ERR_CLUSTER,
+                            "Invalid migrate info"};
+                }
             }
-        }   else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
+
+        }  else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
             /* CLUSTER MEET <ip> <port> [cport] */
             uint64_t port, cport;
 
@@ -198,7 +216,7 @@ public:
                     Status s = changeSlot(slot, arg1, clusterState, myself);
                     if (!s.ok()) {
                         LOG(ERROR) << "addslots:" << slot << "fail";
-                        continue; //if one fail, just pass
+                        return s;
                     }
                 }
             }
@@ -541,30 +559,6 @@ private:
         return  notEmpty;
     }
 
-    Expected<std::unordered_map<uint32_t, std::set<uint32_t>>> getSlotSet(ServerEntry *svr, const std::vector<std::string>& args){
-        //storeid is key , slots is value
-        std::unordered_map<uint32_t, std::set<uint32_t>> slotSet;
-        for (size_t i= 4 ; i<args.size(); i++) {
-            Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
-            if (!exptSlot.ok()) {
-                return exptSlot.status();
-            }
-            uint32_t slot = (uint32_t) exptSlot.value();
-            uint32_t storeid = svr->getSegmentMgr()->getStoreid(slot);
-
-            std::unordered_map<uint32_t , std::set<uint32_t>>::iterator it;
-            if((it= slotSet.find(storeid)) != slotSet.end()) {
-                slotSet[storeid].insert(slot);
-                LOG(INFO) << "get Slotset : storeid:" << storeid << "slot:" << slot;
-            } else {
-                std::set<uint32_t> temp;
-                temp.insert(slot);
-                slotSet.insert(std::make_pair(storeid, temp));
-            }
-        }
-        return  slotSet;
-
-    }
 
     std::string clusterReplyMultiBulkSlots(const std::shared_ptr<tendisplus::ClusterState> state) {
         std::stringstream ss;
@@ -623,93 +617,157 @@ private:
         return ss.str();
     }
 
-    Status migrateBitmap(const std::set<uint32_t>& slots,
-                        uint32_t storeid, const std::string &nodeName,
-                        const std::shared_ptr<ClusterState> clusterState,
-                        MigrateManager* migrateMgr) {
-        std::bitset<CLUSTER_SLOTS> slotsMap;
-        auto myself = clusterState->getMyselfNode();
-        Status s;
-        auto setNode = clusterState->clusterLookupNode(nodeName);
-        if (!setNode) {
-            return  {ErrorCodes ::ERR_CLUSTER, "migrate node not find"};
-        }
-        auto ip = setNode->getNodeIp();
-        auto port = setNode->getPort();
 
-        for (auto it = slots.begin(); it != slots.end(); ++it) {
+    Status importingBitmap(const std::bitset<CLUSTER_SLOTS>& slotsMap,
+                           const std::string &nodeName,
+                           const std::shared_ptr<ClusterState> clusterState,
+                           ServerEntry* svr,
+                           MigrateManager* migrateMgr) {
 
-            if (clusterState->getNodeBySlot(*it) == setNode) {
-                LOG(ERROR) << "slot:" << *it << "has already migrated to:"
-                           << "node:" << nodeName;
-                continue;
-            }
-
-            if (clusterState->_allSlots[*it] != myself) {
-                return {ErrorCodes::ERR_CLUSTER,
-                        "I'm not the owner of hash slot" + dtos(*it)};
-            }
-            LOG(INFO) << "commands migrate slots:" << *it << "store is:" << storeid;
-            clusterState->_migratingSlots[*it] = setNode;
-            slotsMap.set(*it);
-        }
-
-        s = migrateMgr->migrating(slotsMap, ip, port, storeid);
-
-        if (!s.ok())  {
-            return  {ErrorCodes ::ERR_CLUSTER,
-                     "migrate send slots fail"};
-        }
-
-        return {ErrorCodes::ERR_OK, "finish"};
-    }
-
-
-    Status importingBitmap(const std::set<uint32_t>& slots,
-                          uint32_t storeid, const std::string &nodeName,
-                          const std::shared_ptr<ClusterState> clusterState,
-                          MigrateManager* migrateMgr) {
-
-        std::bitset<CLUSTER_SLOTS> slotsMap;
-        auto myself = clusterState->getMyselfNode();
         Status s;
         auto srcNode = clusterState->clusterLookupNode(nodeName);
         if (!srcNode) {
-            return  {ErrorCodes ::ERR_CLUSTER, "import node not find"};
+            LOG(ERROR) << "import nodeid：" << nodeName
+                        << "not exist in cluster";
+            return {ErrorCodes::ERR_CLUSTER, "import node not find"};
         }
         auto ip = srcNode->getNodeIp();
         auto port = srcNode->getPort();
 
-        for (auto it = slots.begin(); it != slots.end(); ++it) {
+        std::shared_ptr<BlockingTcpClient> client =
+                std::move(createClient(ip, port, svr));
 
-            if (clusterState->getNodeBySlot(*it) == myself) {
-                LOG(ERROR) << "slot:" << *it << "has already migrated to:"
-                           << "node:" << nodeName;
-                continue;
-            }
-
-            if (clusterState->_allSlots[*it] == myself) {
-                return {ErrorCodes::ERR_CLUSTER,
-                        "I'm already the owner of hash slot" + dtos(*it)};
-            }
-
-            LOG(INFO) << "commands import slots:" << *it << "store is:" << storeid;
-            clusterState->_importingSlots[*it] = srcNode;
-            slotsMap.set(*it);
-
+        if (client == nullptr) {
+            LOG(ERROR) << "send message to sender:"
+                       << ip << ":"
+                       << port
+                       << "failed, no valid client";
+            return {ErrorCodes::ERR_NETWORK, "fail send command from receiver"};
+        }
+        std::stringstream ss;
+        const std::string nodename = clusterState->getMyselfName();
+        std::string bitmapStr = slotsMap.to_string();
+        ss << "preparemigrate " << bitmapStr << " " << nodename
+                                << " " << svr->getKVStoreCount();
+        s = client->writeLine(ss.str());
+        if (!s.ok()) {
+            LOG(ERROR) << "preparemigrate srcDb failed:" << s.toString();
+            return s;
+        }
+        uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
+        auto expRsp = client->readLine(std::chrono::seconds(timeoutSecs));
+        if (!expRsp.ok()) {
+            LOG(ERROR) << "preparemigrate  req error:"
+                       << expRsp.status().toString();
+            return expRsp.status();
         }
 
-        s = migrateMgr->importing(slotsMap, ip, port, storeid);
-        if (!s.ok()) {
-            return {ErrorCodes::ERR_CLUSTER,
-                    "migrate receive slots  fail"};
+        const std::string &json = expRsp.value();
+        LOG(INFO) << "json content:" << json;
+        rapidjson::Document doc;
+        doc.Parse(json);
+        if (doc.HasParseError()) {
+            LOG(ERROR) << "parse task failed"
+                       << rapidjson::GetParseError_En(doc.GetParseError());
+            return {ErrorCodes::ERR_NETWORK,
+                    "json parse fail"};
+        }
+        if (!doc.HasMember("errMsg"))
+            return {ErrorCodes::ERR_DECODE,
+                    "json contain no errMsg"};
+
+        std::string errMsg = doc["errMsg"].GetString();
+        if (errMsg != "+OK") {
+            return  {ErrorCodes::ERR_WRONG_TYPE,
+                     "json contain err:"+ errMsg };
+        }
+
+        if (!doc.HasMember("taskinfo"))
+            return  {ErrorCodes::ERR_DECODE,
+                     "json contain no task information!"};
+
+        rapidjson::Value &Array = doc["taskinfo"];
+
+        if (!Array.IsArray())
+            return  {ErrorCodes::ERR_WRONG_TYPE, "information is not array!"};
+
+        uint16_t taskSize = 10;
+
+        if (!doc.HasMember("finishMsg"))
+            return  {ErrorCodes::ERR_DECODE,
+                                "json contain no finishMsg!"};
+
+        std::string finishMsg = doc["finishMsg"].GetString();
+        if (finishMsg != "+OK") {
+            return  {ErrorCodes::ERR_WRONG_TYPE,
+                     "sender task not finish!"};
+        }
+
+        for (rapidjson::SizeType i = 0; i < Array.Size(); i++) {
+            const rapidjson::Value &object = Array[i];
+
+            if (!object.HasMember("storeid") ||
+                        !object.HasMember("migrateSlots")) {
+                return  {ErrorCodes::ERR_DECODE, "json contain no slots info"};
+            }
+            if (!object["storeid"].IsUint64()) {
+                return  {ErrorCodes::ERR_WRONG_TYPE,
+                         "json storeid error type"};
+            }
+            uint32_t storeid = static_cast<uint64_t>(object["storeid"].GetUint64());
+            std::vector<uint32_t> slotsVec;
+            const rapidjson::Value &slotArray = object["migrateSlots"];
+            if (!slotArray.IsArray())
+                return  {ErrorCodes::ERR_WRONG_TYPE,
+                                "json slotArray error type"};
+
+            for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++) {
+                const rapidjson::Value &object = slotArray[i];
+                auto element = static_cast<uint32_t>(object.GetUint64());
+                slotsVec.push_back(element);
+            }
+            s = migrateMgr->startTask(slotsVec, ip, port,
+                                    storeid, true, taskSize);
+            if (!s.ok()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "migrate receive start task fail"};
+            }
         }
         return {ErrorCodes::ERR_OK, "finish"};
-
     }
 
-
 } clusterCmd;
+
+
+class PrepareMigrateCommand: public Command {
+public:
+    PrepareMigrateCommand()
+            :Command("preparemigrate", "a") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        LOG(FATAL) << "prepareSender should not be called";
+        // void compiler complain
+        return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
+    }
+} preparemigrateCommand;
+
 
 class ReadymigrateCommand: public Command {
 public:
@@ -739,6 +797,7 @@ public:
         return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
     }
 } readymigrateCommand;
+
 
 class MigrateendCommand: public Command {
 public:
@@ -775,12 +834,7 @@ public:
 
         //Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[1]);
         std::bitset<CLUSTER_SLOTS> slots(args[1]);
-        /*
-        if (!exptChunkid.ok()) {
-            return exptChunkid.status();
-        }
-        uint32_t chunkid = (uint32_t)exptChunkid.value();
-        */
+
         auto s = migrateMgr->supplyMigrateEnd(slots);
         if (!s.ok()) {
             return s;
