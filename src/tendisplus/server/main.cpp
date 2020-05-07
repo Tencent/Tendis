@@ -10,7 +10,8 @@
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
 #include "glog/logging.h"
-
+#include "tendisplus/commands/version.h"
+#include "tendisplus/commands/release.h"
 namespace tendisplus {
 
 static std::shared_ptr<ServerEntry> gServer(nullptr);
@@ -60,6 +61,14 @@ static void usage() {
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         usage();
+        return 0;
+    }
+    if (strcmp(argv[1], "-v") == 0) {
+        std::cout << "Tendisplus v=" << TENDISPLUS_VERSION
+            << " -dev sha=" << TENDISPLUS_GIT_SHA1
+            << " dirty=" << TENDISPLUS_GIT_DIRTY
+            << " build=" << TENDISPLUS_BUILD_ID
+            << std::endl;
         return 0;
     }
     auto params = std::make_shared<tendisplus::ServerParams>();
