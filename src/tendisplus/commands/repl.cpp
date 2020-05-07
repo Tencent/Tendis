@@ -679,7 +679,7 @@ class ApplyBinlogsCommandV2 : public Command {
 
     static Status runNormal(Session *sess, uint32_t storeId,
                 const std::string& binlogs, size_t binlogCnt,
-                uint32_t chunkid) {
+                BinlogApplyMode mode) {
         auto svr = sess->getServerEntry();
         auto replMgr = svr->getReplManager();
         auto migrateMgr = svr->getMigrateManager();
@@ -691,7 +691,7 @@ class ApplyBinlogsCommandV2 : public Command {
         if (!expdb.ok()) {
             return expdb.status();
         }
-        if (chunkid == Transaction::CHUNKID_UNINITED) {
+        if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
             INVARIANT_D(sess->getCtx()->isReplOnly());
         }
 
@@ -702,18 +702,21 @@ class ApplyBinlogsCommandV2 : public Command {
             if (eLog.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             } else if (!eLog.ok()) {
+                LOG(ERROR) << "reader.next() failed:" << eLog.status().toString();
                 return eLog.status();
             }
             Status s;
             //LOG(INFO) << "takenliutest: applyBinlog " << chunkid;
-            if (chunkid == Transaction::CHUNKID_UNINITED) {
+            if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
                 s = replMgr->applyRepllogV2(sess, storeId,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             } else {
-                s = migrateMgr->applyRepllog(sess, storeId, chunkid,
+                s = migrateMgr->applyRepllog(sess, storeId, mode,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             }
             if (!s.ok()) {
+                LOG(ERROR) << "applyRepllog failed,mode:" << (uint32_t)mode
+                    << " err:" << eLog.status().toString();
                 return s;
             }
             cnt++;
@@ -801,12 +804,11 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         binlogCnt = exptCnt.value();
 
-        uint32_t chunkid;
-        auto exptChunkid = ::tendisplus::stoul(args[5]);
-        if (!exptChunkid.ok()) {
-            return exptChunkid.status();
+        Expected<uint64_t> intMode = ::tendisplus::stoul(args[5]);
+        if (!intMode.ok()) {
+            return intMode.status();
         }
-        chunkid = exptChunkid.value();
+        BinlogApplyMode mode = (BinlogApplyMode)intMode.value();
 
         auto eflag = ::tendisplus::stoul(args[4]);
         if (!eflag.ok()) {
@@ -814,7 +816,7 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         switch ((BinlogFlag)eflag.value()) {
         case BinlogFlag::NORMAL: {
-            auto s = runNormal(sess, storeId, args[2], binlogCnt, chunkid);
+            auto s = runNormal(sess, storeId, args[2], binlogCnt, mode);
             if (!s.ok()) {
                 return s;
             }
@@ -883,7 +885,7 @@ class RestoreBinlogCommandV2 : public Command {
 
         sess->getCtx()->setReplOnly(true);
         Expected<uint64_t> ret =
-            applySingleTxnV2(sess, storeId, key, value);
+            applySingleTxnV2(sess, storeId, key, value, BinlogApplyMode::KEEP_BINLOG_ID);
         if (!ret.ok()) {
             return ret.status();
         }

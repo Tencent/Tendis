@@ -17,6 +17,7 @@ class ServerEntry;
 class StoreMeta;
 class ChunkMeta;
 class ChunkMigrateSender;
+enum class BinlogApplyMode;
 
 
 // Sender POV
@@ -131,7 +132,7 @@ class MigrateManager {
     void checkMigrateStatus(MigrateReceiveTask* task);
 
 
-    Status applyRepllog(Session* sess, uint32_t storeid, uint32_t chunkid,
+    Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
     Status supplyMigrateEnd(const SlotsBitmap& slots);
     Status lockXChunk(uint32_t chunkid);

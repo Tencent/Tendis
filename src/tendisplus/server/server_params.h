@@ -304,6 +304,7 @@ public:
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t migrateCheckThreadnum = 2;
     bool clusterEnabled = false;
+    uint32_t migrateTaskSlotsLimit = 10;
     uint32_t  migrateDistance = 150;
     uint32_t clusterNodeTimeout = 15000;
     bool clusterRequireFullCoverage = true;

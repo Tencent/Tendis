@@ -933,6 +933,8 @@ bool ServerEntry::processRequest(Session *sess) {
         if (!s.ok()) {
             return false;
         }
+        DLOG(ERROR) << "Command::runSessionCmd failed, cmd:" << sess->getCmdStr()
+            << " err:" << expect.status().toString();
         return true;
     }
     auto s = sess->setResponse(expect.value());

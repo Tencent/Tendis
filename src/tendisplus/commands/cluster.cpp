@@ -78,13 +78,13 @@ public:
         const std::string arg1 = toLower(args[1]);
         auto argSize = sess->getArgs().size();
 
-
         if (arg1 == "setslot" ) {
             Status s;
             if (args[2] == "importing" && argSize >= 5) {
                 std::string nodeId = args[3];
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
+                LOG(INFO) << sess->getCmdStr();
                 for (size_t i= 4 ; i<args.size(); i++) {
                     Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
                     if (!exptSlot.ok()) {
@@ -109,14 +109,13 @@ public:
                                 "already importing" + dtos(slot)};
                     }
                     slotsMap.set(slot);
-                    LOG(INFO) << "command send task on slot:" << slot;
                 }
 
                 s = importingBitmap(slotsMap, nodeId, clusterState, svr, migrateMgr);
                 if (!s.ok()) {
                     return s;
                 }
-               return Command::fmtOK();
+                return Command::fmtOK();
 
             } else if (args[2] == "info" && argSize == 3) {
                 Expected<std::string>  migrateInfo = migrateMgr->getMigrateInfo();
@@ -571,11 +570,10 @@ private:
                 continue;
             else {
                 nodes.push_back(node);
-                nodeNum++;
             }
         }
-        Command::fmtMultiBulkLen(ss, nodeNum);
 
+        std::stringstream ssTemp;
         for (const auto &node: nodes) {
             int32_t start = -1;
 
@@ -587,33 +585,35 @@ private:
                 }
                 if (start != -1 && (!bit || j == CLUSTER_SLOTS-1)) {
                     if (bit && j == CLUSTER_SLOTS - 1) j ++;
+                    nodeNum++;
 
-                    Command::fmtMultiBulkLen(ss, slaveNUm+3);
+                    Command::fmtMultiBulkLen(ssTemp, slaveNUm+3);
 
                     if (start == j - 1) {
-                        Command::fmtLongLong(ss, start);
-                        Command::fmtLongLong(ss, start);
+                        Command::fmtLongLong(ssTemp, start);
+                        Command::fmtLongLong(ssTemp, start);
                     } else {
-                        Command::fmtLongLong(ss, start);
-                        Command::fmtLongLong(ss, j - 1);
+                        Command::fmtLongLong(ssTemp, start);
+                        Command::fmtLongLong(ssTemp, j - 1);
                     }
 
-                    Command::fmtMultiBulkLen(ss, 3);
-                    Command::fmtBulk(ss, node->getNodeIp());
-                    Command::fmtLongLong(ss, node->getPort());
-                    Command::fmtBulk(ss, node->getNodeName());
-
+                    Command::fmtMultiBulkLen(ssTemp, 3);
+                    Command::fmtBulk(ssTemp, node->getNodeIp());
+                    Command::fmtLongLong(ssTemp, node->getPort());
+                    Command::fmtBulk(ssTemp, node->getNodeName());
                     for (uint16_t  i = 0; i < slaveNUm; i++) {
-                        Command::fmtMultiBulkLen(ss, 3);
+                        Command::fmtMultiBulkLen(ssTemp, 3);
                         CNodePtr  slave = node->_slaves[i];
-                        Command::fmtBulk(ss, slave->getNodeIp());
-                        Command::fmtLongLong(ss, slave->getPort());
-                        Command::fmtBulk(ss, slave->getNodeName());
+                        Command::fmtBulk(ssTemp, slave->getNodeIp());
+                        Command::fmtLongLong(ssTemp, slave->getPort());
+                        Command::fmtBulk(ssTemp, slave->getNodeName());
                     }
                     start = -1;
-                    }
                 }
             }
+        }
+        Command::fmtMultiBulkLen(ss, nodeNum);
+        ss << ssTemp.str();
         return ss.str();
     }
 
@@ -691,7 +691,7 @@ private:
         if (!Array.IsArray())
             return  {ErrorCodes::ERR_WRONG_TYPE, "information is not array!"};
 
-        uint16_t taskSize = 10;
+        uint16_t taskSize = svr->getParams()->migrateTaskSlotsLimit;
 
         if (!doc.HasMember("finishMsg"))
             return  {ErrorCodes::ERR_DECODE,

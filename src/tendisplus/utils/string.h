@@ -93,16 +93,16 @@ std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
             size_t pos = idx;
             size_t pageLen = 0;
             std::stringstream tempStream;
-            if(bitmap.test(idx+1)) {
+            if(idx >= bitmap.size() - 1 || ! bitmap.test(idx+1)){
+                idx ++;
+                tempStream << pos ;
+            } else {
                 idx++;
                 while (idx < bitmap.size() && bitmap.test(idx)) {
                     pageLen++;
                     idx++;
                 }
                 tempStream << pos <<"-"<< pos + pageLen;
-            } else {
-                idx ++;
-                tempStream << pos ;
             }
             slotStr += tempStream.str() + " ";
         } else {

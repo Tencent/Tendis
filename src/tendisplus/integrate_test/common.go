@@ -28,6 +28,10 @@ var (
     s2ip = flag.String("slave2ip", "127.0.0.1", "slave2 ip")
     m2ip = flag.String("master2ip", "127.0.0.1", "master2 ip")
 
+    clusterPortStart = flag.Int("clusterPortStart", 21000, "clustertest port start")
+    clusterIp = flag.String("clusterIp", "127.0.0.1", "clustertest ip")
+    clusterNodeNum = flag.Int("clusterNodeNum", 5, "clustertest node num")
+
     num1     = flag.Int("num1", 100, "first add data nums")
     num2     = flag.Int("num2", 100, "first add data nums")
     shutdown = flag.Int("shutdown", 1, "whether shutdown the dir")

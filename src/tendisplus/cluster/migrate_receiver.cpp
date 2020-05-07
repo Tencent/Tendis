@@ -123,17 +123,4 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
     return { ErrorCodes::ERR_OK, "" };
 }
 
-Status ChunkMigrateReceiver::applyBinlog(Session* sess, uint32_t storeid,
-                            uint32_t chunkid, const std::string& logKey,
-                            const std::string& logValue) {
-    auto binlog = applySingleTxnV2(sess, storeid,
-        logKey, logValue, chunkid);
-    if (!binlog.ok()) {
-        return binlog.status();
-    }
-    return { ErrorCodes::ERR_OK, "" };
-}
-
-
-
 } // end namespace

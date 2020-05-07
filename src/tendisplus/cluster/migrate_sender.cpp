@@ -20,6 +20,7 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
 
 
 Status ChunkMigrateSender::sendChunk() {
+    LOG(INFO) <<"sendChunk begin on store:" << _storeid;
     Status s = sendSnapshot(_slots);
     if (!s.ok()) {
         return s;
@@ -56,6 +57,7 @@ Status ChunkMigrateSender::sendChunk() {
     }
 
     _sendstate = MigrateSenderStatus::METACHANGE_DONE;
+    LOG(INFO) <<"sendChunk end on store:" << _storeid;
 
     return{ ErrorCodes::ERR_OK, "" };
 }
@@ -94,11 +96,11 @@ Expected<Transaction*> ChunkMigrateSender::initTxn() {
     // snapShot open
     Transaction* txn = ptxn.value().release();
     txn->SetSnapshot();
-
+    LOG(INFO) << "initTxn SetSnapshot";
     return  txn;
 }
 
-Expected<uint64_t>  ChunkMigrateSender::sendRange(Transaction* txn,
+Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                 uint32_t begin, uint32_t end) {
     LOG(INFO) << "snapshot sendRange begin, beginSlot:" << begin
               << " endSlot:" << end;
@@ -164,9 +166,9 @@ Expected<uint64_t>  ChunkMigrateSender::sendRange(Transaction* txn,
         return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
     }
     LOG(INFO) << "snapshot sendRange end, storeid:" << _storeid
-              << " beginSlot:" << begin
-              << " endSlot:" << end
-              << " totalKeynum:" << totalWriteNum;
+        << " beginSlot:" << begin
+        << " endSlot:" << end
+        << " totalKeynum:" << totalWriteNum;
 
     return totalWriteNum;
 }

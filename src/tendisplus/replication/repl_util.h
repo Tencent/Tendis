@@ -18,8 +18,13 @@ namespace tendisplus {
 #define SyncWriteData(data) \
     if (!_client->writeData((data)).ok()) { \
         LOG(ERROR) << "write data failed:" << s.toString(); \
-        return s; \
+        return { ErrorCodes::ERR_INTERNAL, "write failed" }; \
     } \
+
+enum class BinlogApplyMode {
+    KEEP_BINLOG_ID,
+    NEW_BINLOG_ID
+};
 
 std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
     std::shared_ptr<ServerEntry> svr);
@@ -33,20 +38,19 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
     uint32_t storeId, uint32_t dstStoreId,
     uint64_t binlogPos, bool needHeartBeart,
     std::shared_ptr<ServerEntry> svr,
-    const std::shared_ptr<ServerParams> cfg,
-    uint32_t chunkid = Transaction::CHUNKID_UNINITED);
+    const std::shared_ptr<ServerParams> cfg);
 
 
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
-    uint32_t chunkid = Transaction::CHUNKID_UNINITED);
+    BinlogApplyMode mode);
 
 
 
 Status sendWriter(BinlogWriter* writer,
                     BlockingTcpClient*,
                     uint32_t dstStoreId, bool needHeartBeat,
-                    uint32_t secs, uint32_t slot);
+                    uint32_t secs);
 
 
 Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient*,

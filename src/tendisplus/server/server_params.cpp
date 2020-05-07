@@ -155,6 +155,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS(migrateCheckThreadnum);
 
     REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
+    REGISTER_VARS(migrateTaskSlotsLimit);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage", clusterRequireFullCoverage);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-no-failover", clusterSlaveNoFailover);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-node-timeout", clusterNodeTimeout);

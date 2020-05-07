@@ -50,8 +50,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     uint32_t storeId, uint32_t dstStoreId,
     uint64_t binlogPos, bool needHeartBeart,
     std::shared_ptr<ServerEntry> svr,
-    const std::shared_ptr<ServerParams> cfg,
-    uint32_t chunkid) {
+    const std::shared_ptr<ServerParams> cfg) {
 
     uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
     size_t suggestBytes = svr->getParams()->bingLogSendBytes;
@@ -87,10 +86,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (explog.ok()) {
-            if (chunkid != Transaction::CHUNKID_UNINITED
-                && explog.value().getChunkId() != chunkid) {
-                continue;
-            }
             if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
                 // flush binlog should be alone
                 LOG(INFO) << "deal with chunk flush: " <<explog.value().getChunkId();
@@ -136,7 +131,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         Command::fmtBulk(ss2, writer.getBinlogStr());
         Command::fmtBulk(ss2, std::to_string(writer.getCount()));
         Command::fmtBulk(ss2, std::to_string((uint32_t)writer.getFlag()));
-        Command::fmtBulk(ss2, std::to_string(chunkid));
+        Command::fmtBulk(ss2, std::to_string((int)BinlogApplyMode::KEEP_BINLOG_ID));
     }
 
     std::string stringtoWrite = ss2.str();
@@ -175,17 +170,19 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
 
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
-    uint32_t chunkid) {
+    BinlogApplyMode mode) {
     auto svr = sess->getServerEntry();
     auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
                                              mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {
+        LOG(ERROR) << "getDb failed:" << expdb.status().toString();
         return expdb.status();
     }
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
     auto ptxn = store->createTransaction(sess);
     if (!ptxn.ok()) {
+        LOG(ERROR) << "createTransaction failed:" << ptxn.status().toString();
         return ptxn.status();
     }
 
@@ -193,6 +190,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 
     auto key = ReplLogKeyV2::decode(logKey);
     if (!key.ok()) {
+        LOG(ERROR) << "ReplLogKeyV2::decode failed:" << key.status().toString();
         return key.status();
     }
 
@@ -215,7 +213,6 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
         offset += size;
 
         timestamp = entry.value().getTimestamp();
-
         auto s = txn->applyBinlog(entry.value());
         if (!s.ok()) {
             return s;
@@ -227,7 +224,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     }
 
     uint64_t binlogId = 0;
-    if (chunkid == Transaction::CHUNKID_UNINITED) {
+    if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
         binlogId = key.value().getBinlogId();
         if (binlogId <= store->getHighestBinlogId()) {
             string err = "binlogId:" + to_string(binlogId)
@@ -264,7 +261,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 
 Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
                   uint32_t dstStoreId, bool needHeartBeart,
-                  uint32_t secs, uint32_t slot ) {
+                  uint32_t secs) {
     std::stringstream ss2;
 
     if (writer->getCount() >0) {
@@ -274,7 +271,7 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
         Command::fmtBulk(ss2, writer->getBinlogStr());
         Command::fmtBulk(ss2, std::to_string(writer->getCount()));
         Command::fmtBulk(ss2, std::to_string((uint32_t)writer->getFlag()));
-        Command::fmtBulk(ss2, std::to_string(slot));
+        Command::fmtBulk(ss2, std::to_string((int)BinlogApplyMode::NEW_BINLOG_ID));
     } else {
         if (!needHeartBeart) {
             return   {ErrorCodes::ERR_OK, "finish send bulk"};
@@ -351,6 +348,7 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
                 std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);
 
     LOG(INFO) << "begin catch up from:" << binlogPos << "to:" << binlogEnd;
+    uint32_t timeoutSecs = cfg->timeoutSecBinlogWaitRsp;
     uint64_t  logNum = 0;
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
@@ -368,6 +366,7 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         auto slot = explog.value().getChunkId();
         binlogId = explog.value().getBinlogId();
 
+        // TODO(takenliu): finish the logical of FLUSH for migrate
         if (slot == Transaction::CHUNKID_FLUSH) {
             if (writer->getCount() > 0) {
                 writer->resetWriter();
@@ -381,14 +380,13 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
             break;
         }
 
-         uint32_t secs = cfg->timeoutSecBinlogWaitRsp;
         // write slot binlog
         if (slotsMap.test(slot)) {
             bool  writeFull = writer->writeRepllogRaw(explog.value());
             logNum ++;
 
-            if (writeFull || binlogId == binlogEnd || writer->getFlag() == BinlogFlag::FLUSH ) {
-                auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, secs, slot);
+            if (writeFull || writer->getFlag() == BinlogFlag::FLUSH ) {
+                auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
                 if (!s.ok()) {
                     LOG(ERROR) << "send writer bulk fail on slot:" << slot;
                     // to do: make sure what logNum is
@@ -398,6 +396,14 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
                 writer->resetWriter();
             }
         }
+    }
+    if (writer->getCount() != 0) {
+        auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
+        if (!s.ok()) {
+            LOG(ERROR) << "send writer bulk fail, cout:" << writer->getCount();
+            return  s;
+        }
+        writer->resetWriter();
     }
     return logNum;
 }

@@ -1136,12 +1136,13 @@ TEST(Cluster, ConvergenceRate) {
         WorkLoad work(servers[i], sess);
         work.init();
         uint32_t start = CLUSTER_SLOTS / nodeNum * i;
-        uint32_t end = start + CLUSTER_SLOTS / nodeNum;
+        uint32_t end = start + CLUSTER_SLOTS / nodeNum - 1;
         if (i == nodeNum - 1) {
             end = CLUSTER_SLOTS - 1;
         }
         std::string slots = "{" + to_string(start) + ".." + to_string(end) + "}";
         work.addSlots(slots);
+        LOG(INFO) <<"addSlots " << i << " " << slots;
     }
     std::this_thread::sleep_for(std::chrono::seconds(30));
 
@@ -1216,6 +1217,22 @@ TEST(Cluster, ConvergenceRate) {
     servers.clear();
 }
 
+TEST(ClusterMsg, bitsetEncodeSize) {
+    SlotsBitmap  taskmap;
+    taskmap.set(16383);
+    string s = bitsetStrEncode(taskmap);
+    ASSERT_EQ(s, " 16383 ");
+
+    taskmap.set(0);
+    s = bitsetStrEncode(taskmap);
+    ASSERT_EQ(s, " 0 16383 ");
+
+    taskmap.set(100);
+    taskmap.set(101);
+    taskmap.set(102);
+    s = bitsetStrEncode(taskmap);
+    ASSERT_EQ(s, " 0 100-102 16383 ");
+}
 
 }  // namespace tendisplus
 

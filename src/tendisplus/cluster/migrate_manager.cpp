@@ -308,9 +308,10 @@ void MigrateManager::deleteChunks(MigrateSendTask* task) {
 Status MigrateManager::migrating(SlotsBitmap slots, string& ip, uint16_t port, uint32_t storeid) {
     std::lock_guard<std::mutex> lk(_mutex);
     size_t idx = 0;
+    LOG(INFO) << "migrating slot:" << bitsetStrEncode(slots);
     while (idx < slots.size()) {
          if (slots.test(idx)) {
-             LOG(INFO) << "migrating slot:" << idx;
+             // LOG(INFO) << "migrating slot:" << idx;
              if (_migrateSlots.test(idx)) {
                  LOG(ERROR) << "slot:" << idx << "already be migrating" << "bitmap is:" <<_migrateSlots;
                  return {ErrorCodes::ERR_INTERNAL, "already be migrating"};
@@ -442,7 +443,7 @@ void MigrateManager::prepareSender(asio::ip::tcp::socket sock,
         }
     }
     bool startMigate = true;
-    uint16_t  taskSize = 10;
+    uint16_t taskSize = _svr->getParams()->migrateTaskSlotsLimit;
 
     writer.Key("taskinfo");
     writer.StartArray();
@@ -533,8 +534,14 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
             break;
         }
     }
-    if (!findJob)
-        LOG(ERROR) << "fail to start the job on:" << dstStoreid;
+    if (!findJob) {
+        LOG(ERROR) << "findJob failed, store:" << dstStoreid
+                   << " receiveMap:" << bitsetStrEncode(receiveMap);
+        for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
+            LOG(ERROR) << "findJob failed, _migrateSendTask:"
+                << bitsetStrEncode((*it)->sender->_slots);
+        }
+    }
     return;
 }
 
@@ -599,9 +606,10 @@ Status MigrateManager::importing(SlotsBitmap slots, std::string& ip, uint16_t po
     std::lock_guard<std::mutex> lk(_mutex);
     std::size_t idx = 0;
     // set slot flag
+    LOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
     while (idx < slots.size()) {
         if (slots.test(idx)) {
-            LOG(INFO) << "importing slot:" << idx;
+            // LOG(INFO) << "importing slot:" << idx;
             if (_importSlots.test(idx)) {
                 LOG(ERROR) << "slot:" << idx << "already be importing" << _importSlots;
                 return {ErrorCodes::ERR_INTERNAL, "already be importing"};
@@ -629,7 +637,7 @@ Status MigrateManager::startTask(const std::vector<uint32_t> slotsVec,
     for (size_t i = 0; i < slotsSize; i += taskSize) {
         std::vector<uint32_t > vecSmall;
         auto last = std::min(slotsVec.size(), i + taskSize);
-        vecSmall.insert(vecSmall.begin(), slotsVec.begin() + i, slotsVec.begin() + last);
+        vecSmall.insert(vecSmall.end(), slotsVec.begin() + i, slotsVec.begin() + last);
         SlotsBitmap  taskmap = convertMap(vecSmall);
         if (importFlag) {
             s = importing(taskmap, ip, port, storeid);
@@ -713,19 +721,24 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
 }
 
 
-Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, uint32_t chunkid,
+Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
     const std::string& logKey, const std::string& logValue) {
-    if (!_importSlots.test(chunkid)) {
-        LOG(ERROR) << "applyBinlog chunkid err:" << chunkid;
-        return {ErrorCodes::ERR_INTERNAL, "chunk not be migrating"};;
-    }
-
     if (logKey == "") {
         // binlog_heartbeat, do nothing
     } else {
+        auto value = ReplLogValueV2::decode(logValue);
+        if (!value.ok()) {
+            return value.status();
+        }
+        // NOTE(takenliu): use the keys chunkid to check
+        if (!_importSlots.test(value.value().getChunkId())) {
+            LOG(ERROR) << "applyBinlog chunkid err:" << value.value().getChunkId();
+            return {ErrorCodes::ERR_INTERNAL, "chunk not be migrating"};;
+        }
         auto binlog = applySingleTxnV2(sess, storeid,
-                                       logKey, logValue, chunkid);
+                                       logKey, logValue, mode);
         if (!binlog.ok()) {
+            LOG(ERROR) << "applySingleTxnV2 failed:" << binlog.status().toString();
             return binlog.status();
         }
     }
