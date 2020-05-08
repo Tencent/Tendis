@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     }
     if (strcmp(argv[1], "-v") == 0) {
         std::cout << "Tendisplus v=" << TENDISPLUS_VERSION
-            << " -dev sha=" << TENDISPLUS_GIT_SHA1
+            << " sha=" << TENDISPLUS_GIT_SHA1
             << " dirty=" << TENDISPLUS_GIT_DIRTY
             << " build=" << TENDISPLUS_BUILD_ID
             << std::endl;
