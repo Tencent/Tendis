@@ -1356,7 +1356,7 @@ class LInsertCommand: public Command {
         uint64_t head = lm.getHead();
         uint64_t tail = lm.getTail();
         uint64_t len = tail - head;
-        uint64_t index = step < 0 ? tail - 1 : head;
+        uint64_t index = head;
 
         PStore kvstore = expdb.value().store;
         auto ptxn = kvstore->createTransaction(sess);
@@ -1379,7 +1379,7 @@ class LInsertCommand: public Command {
                 break;
             }
             len--;
-            index += step;
+            index++;
         }
         if (len <= 0) {
             return Command::fmtLongLong(-1);

@@ -407,6 +407,48 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
         Command::fmtBulk(ss1, "b");
         Command::fmtBulk(ss1, "c");
         EXPECT_EQ(ss1.str(), expect.value());
+
+        sess.setArgs({"lpush", "list1", "c", "104", "104", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"rpush", "list1", "d", "105", "105", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs(
+            {"linsert", "list1", "after", "c", "f", "106", "106", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs(
+            {"linsert", "list1", "before", "d", "e", "107", "107", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+
+        sess.setArgs({"lrange", "list1", "0", "-1", "108", "108", "v1"});
+        s = sess.processExtendProtocol();
+        EXPECT_TRUE(s.ok());
+        expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        ss1.str("");
+        Command::fmtMultiBulkLen(ss1, 7);
+        Command::fmtBulk(ss1, "c");
+        Command::fmtBulk(ss1, "f");
+        Command::fmtBulk(ss1, "e");
+        Command::fmtBulk(ss1, "d");
+        Command::fmtBulk(ss1, "b");
+        Command::fmtBulk(ss1, "c");
+        Command::fmtBulk(ss1, "d");
+        EXPECT_EQ(ss1.str(), expect.value());
     }
 }
 
