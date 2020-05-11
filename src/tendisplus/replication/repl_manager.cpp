@@ -399,11 +399,41 @@ void ReplManager::changeReplState(const StoreMeta& storeMeta,
     changeReplStateInLock(storeMeta, persist);
 }
 
-void ReplManager::resetRecycleState(uint32_t storeId) {
-    std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
-    _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
-    _logRecycStatus[storeId]->timestamp = 0;
-    _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+Status ReplManager::resetRecycleState(uint32_t storeId) {
+    // set _logRecycStatus::firstBinlogId with MinBinlog get from rocksdb
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeId,
+                                              mgl::LockMode::LOCK_NONE);
+    if (!expdb.ok()) {
+        return expdb.status();
+    }
+    auto store = std::move(expdb.value().store);
+    INVARIANT(store != nullptr);
+    auto exptxn = store->createTransaction(nullptr);
+    if (!exptxn.ok()) {
+        return exptxn.status();
+    }
+
+    Transaction *txn = exptxn.value().get();
+    auto explog = RepllogCursorV2::getMinBinlog(txn);
+    if (explog.ok()) {
+        std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+        _logRecycStatus[storeId]->firstBinlogId = explog.value().getBinlogId();
+        _logRecycStatus[storeId]->timestamp = explog.value().getTimestamp();
+        _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+    } else {
+        if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+            // void compiler ud-link about static constexpr
+            // TODO(takenliu): fix the relative logic
+            std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
+            _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
+            _logRecycStatus[storeId]->timestamp = 0;
+            _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+        } else {
+            LOG(ERROR) << "ReplManager::restart failed, storeid:" << storeId;
+            return {ErrorCodes::ERR_INTERGER, "getMinBinlog failed."};
+        }
+    }
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
@@ -551,6 +581,25 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
     v->lastFlushBinlogId = binlogid;
     LOG(INFO) << "ReplManager::onFlush, storeId:" << storeId
         << " binlogid:" << binlogid;
+}
+
+bool ReplManager::hasSomeSlave(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_pushStatus[storeId].size() != 0) {
+        return true;
+    }
+    if (_fullPushStatus[storeId].size() != 0) {
+        return true;
+    }
+    return false;
+}
+
+bool ReplManager::isSlaveOfSomeone(uint32_t storeId) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_syncMeta[storeId]->syncFromHost != "") {
+        return true;
+    }
+    return false;
 }
 
 void ReplManager::recycleBinlog(uint32_t storeId) {
@@ -915,7 +964,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
 
         if (master_link_status == "down") {
             auto master_link_down_since_seconds = sinceEpoch() - sinceEpoch(mindownSyncTime);
-            ss << "master_link_down_since_seconds" << master_link_down_since_seconds << "\r\n";
+            ss << "master_link_down_since_seconds:" << master_link_down_since_seconds << "\r\n";
         }
 
         ss << "slave_priority:" << slave_priority << "\r\n";

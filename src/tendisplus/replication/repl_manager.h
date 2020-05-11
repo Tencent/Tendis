@@ -150,6 +150,9 @@ class ReplManager {
     void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
     void getReplInfo(std::stringstream& ss) const;
     void onFlush(uint32_t storeId, uint64_t binlogid);
+    bool hasSomeSlave(uint32_t storeId);
+    bool isSlaveOfSomeone(uint32_t storeId);
+    Status resetRecycleState(uint32_t storeId);
 
  protected:
     void controlRoutine();
@@ -184,8 +187,6 @@ class ReplManager {
  private:
     void changeReplState(const StoreMeta& storeMeta, bool persist);
     void changeReplStateInLock(const StoreMeta&, bool persist);
-
-    void resetRecycleState(uint32_t storeId);
 
     Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
 #ifdef BINLOG_V1
