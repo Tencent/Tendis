@@ -269,6 +269,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     newMeta->binlogId = bkInfo.value().getBinlogPos();
 
     changeReplState(*newMeta, true);
+    // NOTE(takenliu):should reset firstBinlogId to the MinBinlog,
+    // otherwise truncateBinlogV2 will use cursor to add from 1, it will cost a long time
     resetRecycleState(metaSnapshot.id);
     rollback = false;
 

@@ -122,10 +122,18 @@ class RestoreBackupCommand : public Command {
         if (sess->getArgs().size() >= 4) {
             isForce = sess->getArgs()[3] == "force";
         }
+        // TODO(takenliu): should lock db first, then check it, and then restore.
+        // otherwise, the state maybe changed when do restore.
         if (kvstore == "all") {
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 if (!isForce && !isEmpty(svr, sess, i)) {
                     return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+                }
+                if (svr->getReplManager()->isSlaveOfSomeone(i)) {
+                    return {ErrorCodes::ERR_INTERNAL, "has master, slaveof no one first"};
+                }
+                if (svr->getReplManager()->hasSomeSlave(i)) {
+                    return {ErrorCodes::ERR_INTERNAL, "has slave, rm slave first"};
                 }
             }
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
@@ -143,6 +151,12 @@ class RestoreBackupCommand : public Command {
             uint32_t storeId = (uint32_t)exptStoreId.value();
             if (!isForce && !isEmpty(svr, sess, storeId)) {
                 return {ErrorCodes::ERR_INTERNAL, "not empty. use force please"};
+            }
+            if (svr->getReplManager()->isSlaveOfSomeone(storeId)) {
+                return {ErrorCodes::ERR_INTERNAL, "has master, slaveof no one first"};
+            }
+            if (svr->getReplManager()->hasSomeSlave(storeId)) {
+                return {ErrorCodes::ERR_INTERNAL, "has slave, rm slave first"};
             }
             auto ret = restoreBackup(svr, sess, storeId, dir);
             if (!ret.ok()) {
@@ -221,6 +235,13 @@ class RestoreBackupCommand : public Command {
             INVARIANT_D(0);
             LOG(ERROR) << "restoreBackup restart store:" << storeId
                    << ",failed:" << restartStatus.status().toString();
+            return {ErrorCodes::ERR_INTERNAL, "restart failed."};
+        }
+        Status s = svr->getReplManager()->resetRecycleState(storeId);
+        if (!s.ok()) {
+            INVARIANT_D(0);
+            LOG(ERROR) << "restoreBackup ReplManager resetRecycleState store:" << storeId
+                       << ",failed:" << s.toString();
             return {ErrorCodes::ERR_INTERNAL, "restart failed."};
         }
 
