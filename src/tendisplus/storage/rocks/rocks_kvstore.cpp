@@ -2188,6 +2188,7 @@ bool RocksKVStore::getProperty(const std::string& property, std::string* value) 
             LOG(WARNING) << "db:" << dbId()
                 << " getProperty:" << property << " failed";
         }
+        replaceAll(*value, "\n", "\r\n");
     }
 
     return ok;
