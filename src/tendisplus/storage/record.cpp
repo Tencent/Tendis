@@ -164,9 +164,9 @@ RecordType char2Rt(uint8_t t) {
         case std::numeric_limits<uint8_t>::max():
             return RecordType::RT_BINLOG;
         default:
-            INVARIANT_D(0);
             LOG(ERROR) << "invalid rcdchr:" << static_cast<uint32_t>(t);
             // never reaches here, void compiler complain
+            INVARIANT_D(0);
             return RecordType::RT_INVALID;
     }
 }
