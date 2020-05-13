@@ -330,7 +330,13 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         << ' ' << metaSnapshot.binlogId
         << ' ' << _cfg->bindIp
         << ' ' << _cfg->port;
-    client->writeLine(ss.str());
+    auto status = client->writeLine(ss.str());
+    if (!status.ok()) {
+        errStr =  errPrefix
+                  + "psync master write failed:"
+                  + status.toString();
+        return;
+    }
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         errStr =  errPrefix
