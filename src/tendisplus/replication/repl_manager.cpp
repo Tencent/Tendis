@@ -652,6 +652,11 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         nextSched = SCLOCK::now() + std::chrono::seconds(1);
         return;
     }
+    if (kvstore->getBgError() != "") {
+        LOG(WARNING) << "dont need do recycleBinlog, " << kvstore->getBgError();
+        nextSched = SCLOCK::now() + std::chrono::seconds(1);
+        return;
+    }
 
     bool tailSlave = false;
     uint64_t highest = kvstore->getHighestBinlogId();
@@ -740,6 +745,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     {
         std::lock_guard<std::mutex> lk(*_logRecycleMutex[storeId].get());
         std::ofstream* fs = nullptr;
+        int64_t maxWriteLen = 0;
         if (saveLogs) {
             fs = getCurBinlogFs(storeId);
             if (!fs) {
@@ -748,16 +754,19 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
                 hasError = true;
                 return;
             }
+            std::unique_lock<std::mutex> lk(_mutex);
+            maxWriteLen = _cfg->binlogFileSizeMB*1024*1024 - _logRecycStatus[storeId]->fileSize;
         }
 
-        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs, tailSlave);
+        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs, maxWriteLen, tailSlave);
         if (!s.ok()) {
             LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                 << "failed:" << s.status().toString();
             hasError = true;
             return;
         }
-        updateCurBinlogFs(storeId, s.value().written, s.value().timestamp);
+        bool changeNewFile = s.value().ret < 0;
+        updateCurBinlogFs(storeId, s.value().written, s.value().timestamp, changeNewFile);
         // TODO(vinchen): stat for binlog deleted
         newStart = s.value().newStart;
     }

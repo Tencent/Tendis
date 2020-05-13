@@ -1146,7 +1146,7 @@ Status RocksKVStore::applyBinlog(const std::list<ReplLog>& txnLog,
 }
 #else
 // keylen(4) + key + vallen(4) + value
-uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
+int64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
                 const ReplLogRawV2& log) {
     uint64_t written = 0;
     INVARIANT_D(fs != nullptr);
@@ -1154,12 +1154,27 @@ uint64_t RocksKVStore::saveBinlogV2(std::ofstream* fs,
     uint32_t keyLen = log.getReplLogKey().size();
     uint32_t keyLenTrans = int32Encode(keyLen);
     fs->write(reinterpret_cast<char*>(&keyLenTrans), sizeof(keyLenTrans));
+    if (!fs->good()) {
+        LOG(INFO) << "fs->write() failed.";
+        return -1;
+    }
     fs->write(log.getReplLogKey().c_str(), keyLen);
-
+    if (!fs->good()) {
+        LOG(INFO) << "fs->write() failed.";
+        return -1;
+    }
     uint32_t valLen = log.getReplLogValue().size();
     uint32_t valLenTrans = int32Encode(valLen);
     fs->write(reinterpret_cast<char*>(&valLenTrans), sizeof(valLenTrans));
+    if (!fs->good()) {
+        LOG(INFO) << "fs->write() failed.";
+        return -1;
+    }
     fs->write(log.getReplLogValue().c_str(), valLen);
+    if (!fs->good()) {
+        LOG(INFO) << "fs->write() failed.";
+        return -1;
+    }
     written += keyLen + valLen + sizeof(keyLen) + sizeof(valLen);
 
     INVARIANT_D(fs->good());
@@ -1212,11 +1227,12 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
 }
 
 Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
-    uint64_t end, Transaction *txn, std::ofstream *fs, bool tailSlave) {
+    uint64_t end, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) {
     DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
         << " getHighestBinlogId:" << getHighestBinlogId()
         << " start:" << start <<" end:" << end;
     TruncateBinlogResult result;
+    int ret = 0;
     uint64_t ts = 0;
     uint64_t written = 0;
     uint64_t deleten = 0;
@@ -1252,8 +1268,19 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
 
         size++;
         if (fs) {
+            if ((int64_t)written >= maxWritelen) {
+                break;
+            }
             // save binlog
-            written += saveBinlogV2(fs, explog.value());
+            int len = saveBinlogV2(fs, explog.value());
+            if (len < 0) {
+                LOG(ERROR) << "saveBinlogV2 failed, break.";
+                // NOTE(takenliu): maybe write part of explog, so the binlog file's last binlog will be error.
+                // then we change a new binlog file.
+                ret = -1;
+                break;
+            }
+            written += len;
         }
 
         // TODO(vinchen): compactrange or compactfilter should be better
@@ -1274,6 +1301,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
     result.written = written;
     result.timestamp = ts;
     result.newStart = nextStart;
+    result.ret = ret;
 
     return result;
 }
@@ -2245,7 +2273,7 @@ Status RocksKVStore::recoveryFromBgError() {
     }
     _env->resetError();
 #else
-    // NOTE(vinchen): in rocksdb-5.13.4£¬ there is no DB::Resume().
+    // NOTE(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
     // We can only reset the bg_error_ in rocksdb. 
     _env->resetError();
 #endif
@@ -2455,7 +2483,7 @@ void RocksdbEnv::resetError() {
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
     // do nothing
 #else
-    // TODO(vinchen): in rocksdb-5.13.4£¬ there is no DB::Resume().
+    // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
     // We can only reset the bg_error_ in rocksdb. 
     *_rocksbgError = rocksdb::Status::OK();
 #endif

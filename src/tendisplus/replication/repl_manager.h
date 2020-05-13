@@ -175,7 +175,7 @@ class ReplManager {
         uint64_t binlogPos, bool needHeartBeart);
     std::ofstream* getCurBinlogFs(uint32_t storeid);
     void updateCurBinlogFs(uint32_t storeId, uint64_t written,
-        uint64_t ts, bool flushFile = false);
+        uint64_t ts, bool changeNewFile = false);
 #endif
 
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
