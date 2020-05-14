@@ -333,7 +333,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     auto status = client->writeLine(ss.str());
     if (!status.ok()) {
         errStr =  errPrefix
-                  + "psync master write failed:"
+                  + "psync master write failed with error:"
                   + status.toString();
         return;
     }
