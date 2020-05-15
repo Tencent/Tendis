@@ -2189,12 +2189,13 @@ class InfoCommand: public Command {
 
                 std::string prefix = "rocksdb" + store->dbId() + ".";
                 replaceAll(tmp, "rocksdb.", prefix);
+                replaceAll(tmp, "\n", "\r\n");
 
                 result << tmp;
             }
 
             for (auto v : map) {
-                result << v.first << " : " << v.second << "\n";
+                result << v.first << " : " << v.second << "\r\n";
             }
 
             result << "\r\n";
@@ -2207,7 +2208,7 @@ class InfoCommand: public Command {
 
             auto tmp = sess->getCtx()->getPerfContextStr();
             replaceAll(tmp, " = ", ":");
-            replaceAll(tmp, ", ", "\n");
+            replaceAll(tmp, ", ", "\r\n");
 
             result << tmp;
 

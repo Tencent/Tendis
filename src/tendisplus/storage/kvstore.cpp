@@ -327,16 +327,22 @@ std::ofstream* KVStore::createBinlogFile(const std::string& name,
     std::ofstream* fs = new std::ofstream(name.c_str(),
         std::ios::out | std::ios::app | std::ios::binary);
     if (!fs->is_open()) {
-        std::stringstream ss;
-        ss << "open:" << name << " failed";
+        LOG(ERROR) << "fs->is_open() failed:" << name;
         return nullptr;
     }
 
     // the header
     fs->write(BINLOG_HEADER_V2, strlen(BINLOG_HEADER_V2));
+    if (!fs->good()) {
+        LOG(ERROR) << "fs->write() failed:" << name;
+        return nullptr;
+    }
     uint32_t storeIdTrans = htobe32(storeId);
     fs->write(reinterpret_cast<char*>(&storeIdTrans), sizeof(storeIdTrans));
-
+    if (!fs->good()) {
+        LOG(ERROR) << "fs->write() failed:" << name;
+        return nullptr;
+    }
     return fs;
 }
 

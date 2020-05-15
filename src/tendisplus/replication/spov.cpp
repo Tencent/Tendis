@@ -330,7 +330,13 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         << ' ' << metaSnapshot.binlogId
         << ' ' << _cfg->bindIp
         << ' ' << _cfg->port;
-    client->writeLine(ss.str());
+    auto status = client->writeLine(ss.str());
+    if (!status.ok()) {
+        errStr =  errPrefix
+                  + "psync master write failed with error:"
+                  + status.toString();
+        return;
+    }
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
         errStr =  errPrefix
@@ -761,7 +767,7 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
 }
 
 void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
-                uint64_t ts, bool flushFile) {
+                uint64_t ts, bool changeNewFile) {
     std::unique_lock<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->fileSize += written;
@@ -769,7 +775,7 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId, uint64_t written,
         || v->fileCreateTime +
         std::chrono::seconds(_cfg->binlogFileSecs)
         <= SCLOCK::now()
-        || flushFile) {
+        || changeNewFile) {
         if (v->fs) {
             v->fs->close();
             v->fs.reset();

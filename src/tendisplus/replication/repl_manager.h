@@ -175,7 +175,7 @@ class ReplManager {
         uint64_t binlogPos, bool needHeartBeart);
     std::ofstream* getCurBinlogFs(uint32_t storeid);
     void updateCurBinlogFs(uint32_t storeId, uint64_t written,
-        uint64_t ts, bool flushFile = false);
+        uint64_t ts, bool changeNewFile = false);
 #endif
 
     void masterPushRoutine(uint32_t storeId, uint64_t clientId);
@@ -224,8 +224,6 @@ private:
 
     // master and slave's pov, smallest binlogId, moves on when truncated
     std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
-    // TODO(takenliu):optimize the _mutex and _logRecycleMutex logic. it's not gracefull now.
-    std::vector<std::unique_ptr<std::mutex>> _logRecycleMutex;
 
     // master's pov, workerpool of pushing full backup
     std::unique_ptr<WorkerPool> _fullPusher;
