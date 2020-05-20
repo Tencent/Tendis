@@ -61,7 +61,7 @@ class BackupCommand: public Command {
         if (filesystem::equivalent(dir, svr->getParams()->dbPath)) {
             return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
         }
-
+        svr->setBackupRunning();
         for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
             // NOTE(deyukong): here we acquire IS lock
             auto expdb = svr->getSegmentMgr()->getDb(sess, i,

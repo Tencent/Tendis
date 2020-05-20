@@ -105,6 +105,7 @@ ServerEntry::ServerEntry()
          _backupTimes(0),
          _lastBackupFailedTime(0),
          _backupFailedTimes(0),
+         _backupRunning(false),
          _lastBackupFailedErr("") {
 }
 
@@ -190,6 +191,12 @@ void ServerEntry::logError(const std::string& str, Session* sess) {
 uint32_t ServerEntry::getKVStoreCount() const {
     return _catalog->getKVStoreCount();
 }
+
+void ServerEntry::setBackupRunning() {
+    _backupRunning.store(true, std::memory_order_relaxed);
+}
+
+
 extern string gRenameCmdList;
 extern string gMappingCmdList;
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
@@ -1035,7 +1042,7 @@ Status ServerEntry::initSlowlog(std::string logPath) {
 # Query_time: 2001014
 tendisadmin sleep 2
 */
-// in ¦Ìs
+// in ï¿½ï¿½s
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {
