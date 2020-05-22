@@ -125,12 +125,11 @@ class MigrateManager {
                     uint16_t port, uint32_t storeid,
                     bool import, uint16_t taskSize);
 
+    void insertNodes(std::vector<uint32_t >slots, std::string nodeid, bool import);
 
     void fullReceive(MigrateReceiveTask* task);
 
-    //void checkMigrateStatus(uint32_t chunkid);
     void checkMigrateStatus(MigrateReceiveTask* task);
-
 
     Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
@@ -145,16 +144,17 @@ class MigrateManager {
     bool slotInTask(uint32_t slot);
     Expected<std::string> getTaskInfo();
     Expected<std::string> getMigrateInfo();
- private:
+
+    Expected<std::string> getMigrateInfoStr(const SlotsBitmap& bitMap);
+    SlotsBitmap getSteadySlots(const SlotsBitmap& bitMap);
+private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
     void controlRoutine();
     void sendSlots(MigrateSendTask* task);
-    void deleteChunk(uint32_t chunkid);
     void deleteChunks(MigrateSendTask* task);
-    void unsetSlots(const SlotsBitmap& slots1, SlotsBitmap& slots2);
     bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
     bool checkSlotOK(const SlotsBitmap& bitMap, const std::string& nodeid, std::vector<uint32_t>& taskSlots);
-    void addSlotsFinish(uint32_t slot, bool fail=false);
+
 
  private:
     const std::shared_ptr<ServerParams> _cfg;
@@ -183,16 +183,11 @@ class MigrateManager {
     // sender's pov
     std::list<std::unique_ptr<MigrateSendTask>> _migrateSendTask;
 
-    std::map<uint64_t, std::unique_ptr<MigrateSendTask>> _migrateSendMap;
-    std::map<uint64_t, std::unique_ptr<MigrateReceiveTask>> _migrateReceiveMap;
-
-
     std::unique_ptr<WorkerPool> _migrateSender;
     std::unique_ptr<WorkerPool> _migrateClear;
     std::shared_ptr<PoolMatrix> _migrateSenderMatrix;
     std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
-    std::unique_ptr<RateLimiter> _rateLimiter;
 
     // receiver's pov
     std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
@@ -203,6 +198,9 @@ class MigrateManager {
     std::shared_ptr<PoolMatrix> _migrateCheckerMatrix;
 
     uint16_t _workload;
+    //mark dst node or source node
+    std::unordered_map<uint32_t, std::string> _migrateNodes;
+    std::unordered_map<uint32_t, std::string> _importNodes;
 };
 
 }  // namespace tendisplus

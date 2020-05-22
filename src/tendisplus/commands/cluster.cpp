@@ -78,7 +78,7 @@ public:
         const std::string arg1 = toLower(args[1]);
         auto argSize = sess->getArgs().size();
 
-        if (arg1 == "setslot" ) {
+        if (arg1 == "setslot" && argSize >=3) {
             Status s;
             if (args[2] == "importing" && argSize >= 5) {
                 std::string nodeId = args[3];
@@ -349,7 +349,7 @@ public:
             Command::fmtMultiBulkLen(ss, slavesNum);
             for (size_t i = 0; i < slavesNum; i++) {
                 std::string nodeDescription =
-                        n->_slaves[i]->clusterGenNodeDescription();
+                        clusterState->clusterGenNodeDescription(n->_slaves[i]);
                 Command::fmtBulk(ss, nodeDescription);
             }
             return ss.str();
@@ -732,6 +732,7 @@ private:
                 return {ErrorCodes::ERR_CLUSTER,
                         "migrate receive start task fail"};
             }
+            migrateMgr->insertNodes(slotsVec, nodeName, true);
         }
         return {ErrorCodes::ERR_OK, "finish"};
     }
@@ -832,7 +833,6 @@ public:
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
 
-        //Expected<uint64_t> exptChunkid = ::tendisplus::stoul(args[1]);
         std::bitset<CLUSTER_SLOTS> slots(args[1]);
 
         auto s = migrateMgr->supplyMigrateEnd(slots);

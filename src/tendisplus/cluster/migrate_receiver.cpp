@@ -13,7 +13,9 @@ ChunkMigrateReceiver::ChunkMigrateReceiver(
     _svr(svr),
     _cfg(cfg),
     _storeid(storeid),
-    _slots(slots) {
+    _slots(slots),
+    _snapshotKeyNum(0),
+    _binlogNum(0) {
 }
 
 Status ChunkMigrateReceiver::receiveSnapshot() {

@@ -142,6 +142,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     //std::vector<std::shared_ptr<ClusterNode>> getSlaves() const { return _slaves; }
     const std::bitset<CLUSTER_SLOTS>& getSlots() const { return _mySlots; }
+
     uint32_t getSlavesCount() const { return _slaves.size(); }
 
     std::string getNodeIp() const {return _nodeIp;}
@@ -186,8 +187,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 
     bool getSlotBit(uint32_t slot) const;
 
-    static std::string representClusterNodeFlags(uint16_t flags);
-    std::string clusterGenNodeDescription();
     ConnectState getConnectState();
 
 
@@ -577,6 +576,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void cronCheckFailState();
 
     std::string clusterGenNodesDescription(uint16_t filter);
+    std::string clusterGenNodeDescription(CNodePtr n);
     std::string clusterGenStateDescription();
 
     void clusterUpdateState();
@@ -593,6 +593,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // Status clusterDelNodeSlots(CNodePtr n);
     // Status clusterDelNode(CNodePtr delnode);
     // Status setStateFail();
+    Expected<std::string> getNodeInfo(CNodePtr n);
+    Expected<std::string> getBackupInfo();
 
  private:
 
@@ -609,7 +611,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool clusterDelSlotNoLock(const uint32_t slot);
     void freeClusterNode(CNodePtr node);
     void clusterBlacklistCleanupNoLock();
-
     uint32_t clusterMastersHaveSlavesNoLock();
 
  public:

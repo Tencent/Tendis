@@ -12,6 +12,10 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _svr(svr),
     _cfg(cfg),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
+    _snapshotKeyNum(0),
+    _binlogNum(0),
+    _delNum(0),
+    _delSlot(0),
     _consistency(false),
     _curBinlogid(UINT64_MAX) {
         _clusterState = _svr->getClusterMgr()->getClusterState();
@@ -271,9 +275,8 @@ bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog
 
         //  reach for distance
         if (diffOffset < distance) {
-            _endBinlogid = maxBinlogId;
             LOG(INFO) << "last distance:" << diffOffset << "_curBingLog" <<
-                _curBinlogid << "_endBinlog:" << _endBinlogid;
+                _curBinlogid;
             finishCatchup = true;
             break;
         }
@@ -441,9 +444,9 @@ bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     LOG(INFO) << "finish del key num: " << _delNum << " del slots num: " << _delSlot;
     if (_delNum != _snapshotKeyNum + _binlogNum) {
         LOG(ERROR) << "del num: " << _delNum
-                   << "is not equal to (snaphotKey+binlog) "
+                   << " is not equal to (snaphotKey+binlog) "
                    << "snapshotKey num: " << _snapshotKeyNum
-                   << "binlog num: " << _binlogNum;
+                   << " binlog num: " << _binlogNum;
     } else {
         _consistency = true;
         LOG(INFO) << "consistent OK on storeid: " << _storeid;

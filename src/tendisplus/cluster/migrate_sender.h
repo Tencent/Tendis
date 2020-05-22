@@ -88,17 +88,15 @@ class ChunkMigrateSender{
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
     std::shared_ptr<ClusterState> _clusterState;
+    MigrateSenderStatus _sendstate;
     uint32_t _storeid;
     uint64_t  _snapshotKeyNum;
-    uint64_t  _snapshotSlots;
     uint64_t  _binlogNum;
     uint64_t  _delNum;
     uint64_t  _delSlot;
-    MigrateSenderStatus _sendstate;
     bool _consistency;
     std::string _nodeid;
     uint64_t _curBinlogid;
-    uint64_t _endBinlogid;
     string _dstIp;
     uint16_t _dstPort;
     uint32_t _dstStoreid;
