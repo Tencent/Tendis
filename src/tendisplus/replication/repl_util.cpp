@@ -239,7 +239,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
             return s;
         }
     } else { // migrating chunk.
-        //LOG(INFO) << "takenliutest: applyBinlog";
+        // use self binlogId to replace sender's binlogId
         auto s = txn->setBinlogKV(logKey, logValue);
         if (!s.ok()) {
             return s;

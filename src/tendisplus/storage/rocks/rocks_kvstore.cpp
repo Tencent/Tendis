@@ -587,10 +587,24 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-Status RocksTxn::setBinlogKV(const std::string& logKey, const std::string& logValue) {
-    auto s = _txn->Put(logKey, logValue);
+Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
+    Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
+    if (!logkey.ok()) {
+        cerr << "decode logkey failed." << endl;
+        return {ErrorCodes::ERR_INTERGER, "ReplLogKeyV2::decode failed"};
+    }
+
+    // NOTE(takenliu) use self _binlogId to replace sender's binlogId.
+    _store->assignBinlogIdIfNeeded(this);
+    INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
+    logkey.value().setBinlogId(_binlogId);
+
+    // TODO(takenliu) in ReplLogValueV2, ReplFlag _txnId timestamp VersionEP cmd use who's ?
+    // TODO(takenliu) when migrating, binlog and set key value, how to set VersionEP ???
+
+    auto s = _txn->Put(logkey.value().encode(), value);
     if (!s.ok()) {
-        return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
+        return { ErrorCodes::ERR_INTERNAL, s.ToString() };
     }
     return{ ErrorCodes::ERR_OK, "" };
 }

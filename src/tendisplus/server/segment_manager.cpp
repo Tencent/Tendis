@@ -92,6 +92,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                 ss << "-" << "MOVED" << " " << chunkId << " "
                    << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
                 _movedNum++;
+                DLOG(INFO) << ss.str();
                 return { ErrorCodes::ERR_MOVED, ss.str()};
             }
         }
@@ -132,7 +133,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
         if ( node != myself && myself->getMaster() != node) {
             ss << "-" << "MOVED" << " " << chunkId << " "
                << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
-
+            DLOG(INFO) << ss.str();
             return { ErrorCodes::ERR_MOVED, ss.str()};
         }
 

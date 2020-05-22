@@ -706,7 +706,6 @@ class ApplyBinlogsCommandV2 : public Command {
                 return eLog.status();
             }
             Status s;
-            //LOG(INFO) << "takenliutest: applyBinlog " << chunkid;
             if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
                 s = replMgr->applyRepllogV2(sess, storeId,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());

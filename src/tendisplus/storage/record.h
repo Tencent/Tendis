@@ -359,6 +359,7 @@ class ReplLogKeyV2 {
     std::string encode() const;
     bool operator==(const ReplLogKeyV2&) const;
     ReplLogKeyV2& operator=(const ReplLogKeyV2&);
+    void setBinlogId(uint64_t id) { _binlogId = id; }
     uint64_t getBinlogId() const { return _binlogId; }
 
     static constexpr uint32_t DBID = REPLLOGKEYV2_DBID;

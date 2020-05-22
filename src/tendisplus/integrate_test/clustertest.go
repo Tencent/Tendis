@@ -129,11 +129,15 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("current pwd:" + pwd)
     kvstorecount := 2
 
-    log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
+    // migrate from node[0, clusterNodeNum-1] to node[clusterNodeNum*2-1]
+    // master:[0, clusterNodeNum-1] slave:[clusterNodeNum, clusterNodeNum*2-1]
+    // dst master:[clusterNodeNum*2], dst slave [clusterNodeNum*2 + 1]
+    dstNodeIndex := clusterNodeNum * 2
     var servers []util.RedisServer
-    dstNodeIndex := clusterNodeNum
-    // migrate from node[0, clusterNodeNum-1] to node[clusterNodeNum]
-    for i := 0; i <= clusterNodeNum; i++ {
+
+    // start server
+    log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
+    for i := 0; i <= clusterNodeNum * 2 + 1; i++ {
         server := util.RedisServer{}
         port := clusterPortStart + i
         server.Init(clusterIp, port, pwd, "m" + strconv.Itoa(i) + "_")
@@ -156,10 +160,23 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // meet
     log.Infof("cluster meet begin")
     cli0 := createClient(&servers[0])
-    for i := 1; i < clusterNodeNum; i++ {
+    for i := 1; i < clusterNodeNum * 2; i++ {
         if r, err := cli0.Cmd("cluster", "meet", servers[i].Ip, servers[i].Port).Str();
             r != ("OK") {
             log.Fatalf("meet failed:%v %s", err, r)
+            return
+        }
+    }
+    time.Sleep(2 * time.Second)
+
+    // slaveof
+    for i := clusterNodeNum; i < clusterNodeNum * 2; i++ {
+        cli := createClient(&servers[i])
+        masterIndex := i - clusterNodeNum
+        masterNodeName := getNodeName(&servers[masterIndex])
+        if r, err := cli.Cmd("cluster", "replicate", masterNodeName).Str();
+            r != ("OK") {
+            log.Fatalf("replicate failed:%v %s", err, r)
             return
         }
     }
@@ -172,7 +189,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         log.Infof("addslot %d %s", i, slots)
         if r, err := cli.Cmd("cluster", "addslots", slots).Str();
             r != ("OK") {
-            log.Fatalf("meet failed:%v %s", err, r)
+            log.Fatalf("addslots failed:%v %s", err, r)
             return
         }
     }
@@ -187,13 +204,28 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         go addDataByClientInCoroutine(&servers[i], *num1, strconv.Itoa(i), channel)
     }
 
-    // add the dst node
+    // meet the dst node
     log.Infof("cluster meet the dst node")
-    if r, err := cli0.Cmd("cluster", "meet", servers[dstNodeIndex].Ip, servers[dstNodeIndex].Port).Str();
-        r != ("OK") {
-        log.Fatalf("meet failed:%v %s", err, r)
-        return
+    for i := dstNodeIndex; i <= dstNodeIndex+1; i++ {
+        if r, err := cli0.Cmd("cluster", "meet", servers[i].Ip, servers[i].Port).Str();
+            r != ("OK") {
+            log.Fatalf("meet failed:%v %s", err, r)
+            return
+        }
     }
+    time.Sleep(2 * time.Second)
+
+    // dst node slaveof
+    {
+        cli := createClient(&servers[dstNodeIndex + 1])
+        masterNodeName := getNodeName(&servers[dstNodeIndex])
+        if r, err := cli.Cmd("cluster", "replicate", masterNodeName).Str();
+            r != ("OK") {
+            log.Fatalf("replicate failed:%v %s", err, r)
+            return
+        }
+    }
+    // if add 10000 key, need about 15s
     time.Sleep(10 * time.Second)
 
     // migrate
@@ -248,24 +280,32 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
                 log.Fatalf("cluster slots data not array:%v", value)
             }
             ret_array2, _ := value.Array()
-            if len(ret_array2) != 3 ||
+            if len(ret_array2) != 4 ||
                 !ret_array2[0].IsType(redis.Int) ||
                 !ret_array2[1].IsType(redis.Int) ||
-                !ret_array2[2].IsType(redis.Array) {
+                !ret_array2[2].IsType(redis.Array) ||
+                !ret_array2[3].IsType(redis.Array) {
                 log.Fatalf("cluster slots value not right:%v", ret_array2)
             }
             startSlot,_ := ret_array2[0].Int()
             endSlot,_ := ret_array2[1].Int()
-            ret_array3, _ := ret_array2[2].Array()
-            if len(ret_array3) != 3 ||
-                !ret_array3[0].IsType(redis.Str) ||
-                !ret_array3[1].IsType(redis.Int) ||
-                !ret_array3[0].IsType(redis.Str){
-                log.Fatalf("cluster slots value not right:%v", ret_array3)
+            ret_array_master, _ := ret_array2[2].Array()
+            ret_array_slave, _ := ret_array2[3].Array()
+            if len(ret_array_master) != 3 ||
+                !ret_array_master[0].IsType(redis.Str) ||
+                !ret_array_master[1].IsType(redis.Int) ||
+                !ret_array_master[0].IsType(redis.Str){
+                log.Fatalf("cluster slots value not right:%v", ret_array_master)
             }
-            ip,_ := ret_array3[0].Str()
-            port,_ := ret_array3[1].Int()
-            nodeName,_ := ret_array3[2].Str()
+            if len(ret_array_slave) != 3 ||
+                !ret_array_slave[0].IsType(redis.Str) ||
+                !ret_array_slave[1].IsType(redis.Int) ||
+                !ret_array_slave[0].IsType(redis.Str){
+                log.Fatalf("cluster slots value not right:%v", ret_array_slave)
+            }
+            ip,_ := ret_array_master[0].Str()
+            port,_ := ret_array_master[1].Int()
+            nodeName,_ := ret_array_master[2].Str()
             log.Infof("startslot:%v endslot:%v ip:%v port:%v nodename:%v", startSlot, endSlot, ip, port, nodeName)
             nodeIndex := port - clusterPortStart
             // check src nodes
@@ -276,13 +316,32 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
                     nodeInfoArray[nodeIndex].startSlot, nodeInfoArray[nodeIndex].migrateStartSlot-1,
                     ret_array2)
             }
+            // check slave port
+            port_slave,_ := ret_array_slave[1].Int()
+            if (nodeIndex != dstNodeIndex && port + clusterNodeNum != port_slave) ||
+                (nodeIndex == dstNodeIndex && port + 1 != port_slave) {
+                log.Fatalf("cluster slots not right,master port:%v slave port:%v ret_array2:%v",
+                    port, port_slave, ret_array2)
+            }
             // TOD(takenliu): check dst node
         }
     }
 
     // check keys num
-    totalKeyNum := 0
-    for i := 0; i <= clusterNodeNum; i++ {
+    masterTotalKeyNum := 0
+    slaveTotalKeyNum := 0
+    var nodesKeyNum []int
+    for i := 0; i <= clusterNodeNum*2 + 1; i++ {
+        beslave := false
+        masterIndex := i
+        if (i >= clusterNodeNum && i < clusterNodeNum*2) {
+            beslave = true
+            masterIndex = i - clusterNodeNum
+        }
+        if i == dstNodeIndex + 1 {
+            beslave = true
+            masterIndex = dstNodeIndex
+        }
         cli := createClient(&servers[i])
         nodeKeyNum := 0
         for j := 0; j < CLUSTER_SLOTS; j++ {
@@ -291,34 +350,49 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
                 log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
                 return
             }
-            log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
+            if r != 0 {
+                log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
+            }
             nodeKeyNum += r
             // check src node migrated slot key num should be 0
-            if i < clusterNodeNum && j < nodeInfoArray[i].startSlot && r != 0 {
+            if i < clusterNodeNum*2 && j < nodeInfoArray[masterIndex].startSlot && r != 0 {
                 log.Fatalf("check keys num failed,server:%v slot:%v keynum:%v",
                     i, j, r)
             }
-            if i < clusterNodeNum && j >= nodeInfoArray[i].migrateStartSlot && r != 0 {
+            if i < clusterNodeNum*2 && j >= nodeInfoArray[masterIndex].migrateStartSlot && r != 0 {
                 log.Fatalf("check keys num failed,server:%v slot:%v keynum:%v",
                     i, j, r)
             }
             // TODO(takenliu): check dst node
         }
-        log.Infof("check keys num server:%d keynum:%d", i, nodeKeyNum)
-        totalKeyNum += nodeKeyNum
+        log.Infof("check keys num server:%d keynum:%d beslave:%v", i, nodeKeyNum, beslave)
+        if beslave {
+            slaveTotalKeyNum += nodeKeyNum
+
+            if nodeKeyNum != nodesKeyNum[masterIndex] {
+                log.Fatalf("check keys num failed,server:%v selfKeyNum:%v masterKeyNum:%v",
+                                i, nodeKeyNum, nodesKeyNum[masterIndex])
+            }
+        } else {
+            masterTotalKeyNum += nodeKeyNum
+        }
+        nodesKeyNum = append(nodesKeyNum, nodeKeyNum)
     }
-    log.Infof("check keys num totalkeynum:%d", totalKeyNum)
-    if totalKeyNum != clusterNodeNum * *num1 {
+    log.Infof("check keys num masterTotalKeyNum:%d slaveTotalKeyNum:%d", masterTotalKeyNum, slaveTotalKeyNum)
+    if masterTotalKeyNum != clusterNodeNum * *num1 {
         for i := 0; i < clusterNodeNum; i++ {
             go checkDataInCoroutine(&servers, *num1, strconv.Itoa(i), channel)
         }
         for i := 0; i < clusterNodeNum; i++ {
             <- channel
         }
-        log.Fatalf("check keys num failed:%d != %d", totalKeyNum, clusterNodeNum * *num1)
+        log.Fatalf("check keys num failed:%d != %d", masterTotalKeyNum, clusterNodeNum * *num1)
+    }
+    if slaveTotalKeyNum != clusterNodeNum * *num1 {
+        log.Fatalf("check keys num failed:%d != %d", slaveTotalKeyNum, clusterNodeNum * *num1)
     }
 
-    for i := 0; i <= clusterNodeNum; i++ {
+    for i := 0; i <= clusterNodeNum*2 + 1; i++ {
         //shutdownServer(&servers[i], *shutdown, *clear);
     }
 }

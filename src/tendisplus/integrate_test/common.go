@@ -364,7 +364,6 @@ func compareInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, channel chan
 }
 
 func compare(m1 *util.RedisServer, m2 *util.RedisServer) {
-    log.Infof("takenliutest2 auth:%s\n", *auth);
     cmd := exec.Command("../../../bin/compare_instances", "-addr1", fmt.Sprintf("%s:%d", m1.Ip, m1.Port), "-addr2", fmt.Sprintf("%s:%d", m2.Ip, m2.Port),
         "-password1", *auth, "-password2", *auth)
     cmd.Stderr = os.Stderr

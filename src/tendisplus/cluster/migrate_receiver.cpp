@@ -92,18 +92,27 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
 
     PStore kvstore = _dbWithLock->store;
     auto eTxn = kvstore->createTransaction(nullptr);
-    EXPECT_EQ(eTxn.ok(), true);
+    if (!eTxn.ok()) {
+        LOG(ERROR) << "createTransaction failed:" << eTxn.status().toString();
+        return eTxn.status();
+    }
     std::unique_ptr<Transaction> txn = std::move(eTxn.value());
 
     Status s = kvstore->setKV(expRk.value(), expRv.value(), txn.get());
 
-    EXPECT_EQ(s.ok(), true);
-    _binlogNum ++ ;
-    // add TTL, what type need ttl ?
-    if (expRv.value().getRecordType() == RecordType::RT_DATA_META) { // kv no expire???
-        if (!Command::noExpire()) {
+    if (!s.ok()) {
+        LOG(ERROR) << "setKV failed:" << s.toString();
+        return s;
+    }
+    // NOTE(takenliu) TTLIndex's chunkid is diffrent from key's chunkid, so need to recover TTLIndex.
+    // only RT_*_META need recover, it's saved as RT_DATA_META in RecordKey
+    // if RecordValue's type is RT_KV need ignore recovering.
+    if (expRk.value().getRecordType() == RecordType::RT_DATA_META) {
+        if (!Command::noExpire() &&
+            expRv.value().getTtl() > 0 &&
+            expRv.value().getRecordType() != RecordType::RT_KV) {
             // add new index entry
-            TTLIndex n_ictx(expRk.value().getPrimaryKey(), expRv.value().getRecordType(), _storeid, expRv.value().getTtl());
+            TTLIndex n_ictx(expRk.value().getPrimaryKey(), expRv.value().getRecordType(), expRk.value().getDbId(), expRv.value().getTtl());
             s = txn->setKV(n_ictx.encode(),
                 RecordValue(RecordType::RT_TTL_INDEX).encode());
             if (!s.ok()) {
@@ -112,11 +121,10 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
         }
     }
 
-    auto commitStatus = txn->commit(); // todo, all commit need retry???
+    auto commitStatus = txn->commit();  // TODO(takenliu) all commit need retry ???
     s = commitStatus.status();
     if (s.ok()) {
         return { ErrorCodes::ERR_OK, "" };
-        LOG(INFO) << "receive binlog num is:" << _binlogNum;
     } else if (s.code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return s;
     }

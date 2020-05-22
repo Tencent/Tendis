@@ -403,6 +403,9 @@ Expected<uint64_t> WorkLoad::getIntResult(
 std::string WorkLoad::getStringResult(const std::vector<std::string>& args) {
     _session->setArgs(args);
     auto expect = Command::runSessionCmd(_session.get());
+    if (!expect.ok()) {
+        LOG(ERROR) << expect.status().toString();
+    }
     EXPECT_TRUE(expect.ok());
 
     return expect.value();

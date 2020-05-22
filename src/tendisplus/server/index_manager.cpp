@@ -126,7 +126,7 @@ namespace tendisplus {
               cursor->next();
           }
       }
-
+      // TODO(takenliu) _scanPoints has error, _expiredKeys[storeId] will be pushed back twice
       while (true) {
           auto record = cursor->next();
           if (!record.ok()) {
@@ -197,7 +197,6 @@ namespace tendisplus {
               }
               index = _expiredKeys[storeId].front();
           }
-
           LocalSessionGuard sg(_svr.get());
           auto sess = sg.getSession();
           sess->getCtx()->setAuthed();

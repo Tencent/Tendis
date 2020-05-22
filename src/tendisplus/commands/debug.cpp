@@ -170,7 +170,7 @@ class DbsizeCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 1;
+        return -1;
     }
 
     int32_t firstkey() const {
@@ -191,7 +191,16 @@ class DbsizeCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         auto server = sess->getServerEntry();
-
+        const std::vector<std::string>& args = sess->getArgs();
+        bool containSubkey = false;
+        bool containExpire = false;
+        for (uint32_t i = 1; i < args.size(); ++i) {
+            if (args[i] == "containsubkey") {
+                containSubkey = true;
+            } else if (args[i] == "containexpire") {
+                containExpire = true;
+            }
+        }
         int64_t size = 0;
         auto currentDbid = sess->getCtx()->getDbId();
         auto ts = msSinceEpoch();
@@ -233,13 +242,17 @@ class DbsizeCommand: public Command {
                 if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
                     break;
                 }
+
                 auto dbid = exptRcd.value().getRecordKey().getDbId();
                 if (dbid != currentDbid) {
                     continue;
                 }
+                if (!containSubkey && keyType != RecordType::RT_DATA_META) {
+                    continue;
+                }
                 auto ttl = exptRcd.value().getRecordValue().getTtl();
-                if (keyType != RecordType::RT_DATA_META ||
-                    (!Command::noExpire() && ttl != 0 && ttl < ts)) {      // skip the expired key
+                if (!containExpire &&
+                    (!Command::noExpire() && ttl != 0 && ttl < ts)) {  // skip the expired key
                     continue;
                 }
 

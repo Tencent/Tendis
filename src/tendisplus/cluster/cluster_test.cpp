@@ -1217,6 +1217,107 @@ TEST(Cluster, ConvergenceRate) {
     servers.clear();
 }
 
+TEST(Cluster, MigrateTTLIndex) {
+    uint32_t nodeNum = 2;
+    uint32_t migrateSlot = 8373;
+    uint32_t startPort = 15000;
+
+    LOG(INFO) <<"MigrateTTLIndex begin.";
+    std::vector<std::string> dirs;
+    for (uint32_t i = 0; i < nodeNum; ++i) {
+        dirs.push_back("node" + to_string(i));
+    }
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    }
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(servers[0], ctx1);
+    WorkLoad work1(servers[0], sess1);
+    work1.init();
+    auto ctx2 = std::make_shared<asio::io_context>();
+    auto sess2 = makeSession(servers[1], ctx2);
+    WorkLoad work2(servers[1], sess2);
+    work2.init();
+
+    // meet
+    LOG(INFO) <<"begin meet.";
+    work1.clusterMeet(servers[1]->getParams()->bindIp, servers[1]->getParams()->port);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // addSlots
+    LOG(INFO) <<"begin addSlots.";
+    work1.addSlots("{0..16382}");
+    work2.addSlots("16383");
+    // TODO(takenliu): why need 5 seconds for cluster state change to ok, "CLUSTERDOWN" ???
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    LOG(INFO) <<"begin add keys.";
+    const uint32_t  numData = 10;
+    std::string cmd = "redis-cli -c ";
+    cmd += " -h " + servers[0]->getParams()->bindIp;
+    cmd += " -p " + std::to_string(servers[0]->getParams()->port);
+    for (size_t j = 0; j < numData; ++j) {
+        // write to slot 8373
+        string key = to_string(j) + "{12}";
+        string listkey = "list" + to_string(j) + "{12}";
+
+        auto ret = work1.getStringResult({ "set", key, "value" });
+        EXPECT_EQ(ret, "+OK\r\n");
+
+        ret = work1.getStringResult({ "expire", key, "10" });
+        EXPECT_EQ(ret, ":1\r\n");
+
+        ret = work1.getStringResult({ "lpush", listkey, "1", "2", "3" });
+        EXPECT_EQ(ret, ":3\r\n");
+
+        ret = work1.getStringResult({ "expire", listkey, "10" });
+        EXPECT_EQ(ret, ":1\r\n");
+    }
+    LOG(INFO) <<"end add keys.";
+
+    // migrate
+    std::vector<uint32_t> slotsList = {migrateSlot - 1, migrateSlot, migrateSlot + 1};
+    auto bitmap = getBitSet(slotsList);
+    auto s = migrate(servers[0], servers[1], bitmap);
+    std::this_thread::sleep_for(2s);
+
+    auto dbsize = work2.getIntResult({ "dbsize", "containexpire", "containsubkey" });
+    // {key, list_meta, list_ele * 3} * numData
+    EXPECT_EQ(dbsize.value(), numData + numData * 4);
+
+    // tryDelExpiredKeysJob() is called every 10s
+    std::this_thread::sleep_for(12s);
+
+    dbsize = work2.getIntResult({ "dbsize", "containexpire", "containsubkey" });
+    // RT_LIST_META and RT_LIST_ELE will be deleted.
+    EXPECT_EQ(dbsize.value(), numData);
+
+    dbsize = work2.getIntResult({ "dbsize" });
+    // all is expired.
+    EXPECT_EQ(dbsize.value(), 0);
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+    servers.clear();
+}
+
 TEST(ClusterMsg, bitsetEncodeSize) {
     SlotsBitmap  taskmap;
     taskmap.set(16383);
