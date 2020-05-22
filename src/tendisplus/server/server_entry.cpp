@@ -828,11 +828,13 @@ Status ServerEntry::destroyStore(Session *sess,
         return status;
     }
 
-    status = _indexMgr->stopStore(storeId);
-    if (!status.ok()) {
-        LOG(ERROR) << "indexMgr stopStore :" << storeId
-            << " failed:" << status.toString();
-        return status;
+    if (_indexMgr) {
+        status = _indexMgr->stopStore(storeId);
+        if (!status.ok()) {
+            LOG(ERROR) << "indexMgr stopStore :" << storeId
+                << " failed:" << status.toString();
+            return status;
+        }
     }
 
     return status;
@@ -960,7 +962,8 @@ void ServerEntry::stop() {
         executor->stop();
     }
     _replMgr->stop();
-    _indexMgr->stop();
+    if (_indexMgr) 
+        _indexMgr->stop();
     _sessions.clear();
 
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
@@ -971,7 +974,8 @@ void ServerEntry::stop() {
             executor.reset();
         }
         _replMgr.reset();
-        _indexMgr.reset();
+        if (_indexMgr) 
+            _indexMgr.reset();
         _pessimisticMgr.reset();
         _mgLockMgr.reset();
         _segmentMgr.reset();
