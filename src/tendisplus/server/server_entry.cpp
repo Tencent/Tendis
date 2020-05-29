@@ -1042,7 +1042,7 @@ Status ServerEntry::initSlowlog(std::string logPath) {
 # Query_time: 2001014
 tendisadmin sleep 2
 */
-// in Â¦ÃŒs
+// in ¦Ìs
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {
