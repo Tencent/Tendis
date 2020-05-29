@@ -4,7 +4,7 @@
 # instances.
 #
 # Copyright (C) 2014 Salvatore Sanfilippo antirez@gmail.com
-# This softare is released under the BSD License. See the COPYING file for
+# This software is released under the BSD License. See the COPYING file for
 # more information.
 
 package require Tcl 8.5
@@ -16,8 +16,10 @@ source ../support/server.tcl
 source ../support/test.tcl
 
 set ::verbose 0
+set ::valgrind 0
 set ::pause_on_error 0
 set ::simulate_error 0
+set ::failed 0
 set ::sentinel_instances {}
 set ::redis_instances {}
 set ::sentinel_base_port 20000
@@ -40,21 +42,30 @@ proc spawn_instance {type base_port count {conf {}}} {
         puts "Starting $type #$j at port $port"
 
         # Create a directory for this instance.
-        set dirname "${type}_${j}"
+        set dirname "../tmp/tendisplus_${j}"
         lappend ::dirs $dirname
         catch {exec rm -rf $dirname}
         file mkdir $dirname
+        file mkdir $dirname/db
 
         # Write the instance config file.
-        set cfgfile [file join $dirname $type.conf]
+        set cfgfile [file join $dirname tendisplus.conf]
         set cfg [open $cfgfile w]
+        set pidfile $dirname/tendisplus.pid
         puts $cfg "port $port"
         puts $cfg "dir ./$dirname"
-        puts $cfg "logfile log.txt"
+        # puts $cfg "logfile log.txt"
+        puts $cfg "dir $dirname/db"
+        puts $cfg "dumpdir $dirname/dump"
+        puts $cfg "pidfile $pidfile"
+        puts $cfg "logdir $dirname"
+        puts $cfg "cluster-enabled on"
+        
         # Add additional config files
         foreach directive $conf {
             puts $cfg $directive
         }
+
         close $cfg
 
         # Finally exec it and remember the pid for later cleanup.
@@ -65,7 +76,22 @@ proc spawn_instance {type base_port count {conf {}}} {
         } else {
             error "Unknown instance type."
         }
-        set pid [exec ../../../src/${prgname} $cfgfile &]
+        
+        set prgname tendisplus
+        set stdout [format "%s/%s" $dirname "stdout"]
+        set stderr [format "%s/%s" $dirname "stderr"]
+
+        exec ../../../build/bin/tendisplus $cfgfile > $stdout 2> $stderr &
+        # find out the pid
+        
+        after 100
+        wait_for_condition 100 500 {
+            [file exists $pidfile] == 1
+        } else {
+            fail "Unable to create a master-slaves cluster."
+        }
+
+        set pid [exec cat $pidfile]
         lappend ::pids $pid
 
         # Check availability
@@ -239,6 +265,17 @@ proc run_tests {} {
         if {[file isdirectory $test]} continue
         puts [colorstr yellow "Testing unit: [lindex [file split $test] end]"]
         source $test
+    }
+}
+
+# Print a message and exists with 0 / 1 according to zero or more failures.
+proc end_tests {} {
+    if {$::failed == 0} {
+        puts "GOOD! No errors."
+        exit 0
+    } else {
+        puts "WARNING $::failed test(s) failed."
+        exit 1
     }
 }
 
