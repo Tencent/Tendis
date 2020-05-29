@@ -186,13 +186,13 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     }
     void onBackupEnd() {
         _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
-        _backupRunning.store(false, std::memory_order_relaxed);
+        _backupRunning.fetch_sub(1, std::memory_order_relaxed);
         _backupTimes.fetch_add(1, std::memory_order_relaxed);
     }
     void onBackupEndFailed(uint32_t storeid, const string& errinfo) {
         _lastBackupFailedTime.store(sinceEpoch(), std::memory_order_relaxed);
         _backupFailedTimes.fetch_add(1, std::memory_order_relaxed);
-        _backupRunning.store(false, std::memory_order_relaxed);
+        _backupRunning.fetch_sub(1, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lk(_mutex);
         _lastBackupFailedErr = "storeid " + std::to_string(storeid) + ",err:" + errinfo;
     }
@@ -212,7 +212,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         std::lock_guard<std::mutex> lk(_mutex);
         return _lastBackupFailedErr;
     }
-    bool getBackupRunning() {
+    uint64_t  getBackupRunning() {
         return  _backupRunning.load(std::memory_order_relaxed);
     }
     void setBackupRunning();
@@ -274,7 +274,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::atomic<uint64_t> _backupTimes;
     std::atomic<uint64_t> _lastBackupFailedTime;
     std::atomic<uint64_t> _backupFailedTimes;
-    std::atomic<bool> _backupRunning;
+    std::atomic<uint64_t> _backupRunning;
     string _lastBackupFailedErr;
     ServerStat _serverStat;
     CompactionStat _compactionStat;

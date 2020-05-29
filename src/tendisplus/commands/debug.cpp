@@ -2050,7 +2050,7 @@ class InfoCommand: public Command {
     static void infoBackup(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "backup") {
             auto server = sess->getServerEntry();
-            std::string runStr = server->getBackupRunning() ? "yes" : "no";
+            std::string runStr = server->getBackupRunning() > 0 ? "yes" : "no";
             std::stringstream ss;
             ss << "# Backup\r\n";
             ss << "backup-count:" << server->getBackupTimes() << "\r\n";

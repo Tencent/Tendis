@@ -105,7 +105,7 @@ ServerEntry::ServerEntry()
          _backupTimes(0),
          _lastBackupFailedTime(0),
          _backupFailedTimes(0),
-         _backupRunning(false),
+         _backupRunning(0),
          _lastBackupFailedErr("") {
 }
 
@@ -193,7 +193,7 @@ uint32_t ServerEntry::getKVStoreCount() const {
 }
 
 void ServerEntry::setBackupRunning() {
-    _backupRunning.store(true, std::memory_order_relaxed);
+    _backupRunning.fetch_add(1, std::memory_order_relaxed);
 }
 
 
@@ -1042,7 +1042,7 @@ Status ServerEntry::initSlowlog(std::string logPath) {
 # Query_time: 2001014
 tendisadmin sleep 2
 */
-// in ��s
+// in ¦Ìs
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {
