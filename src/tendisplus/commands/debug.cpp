@@ -863,7 +863,7 @@ class RocksPropertyCommand : public Command {
     }
 
     Expected<std::string> run(Session* sess) final {
-        ServerEntry* svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         uint64_t first = 0, last = svr->getKVStoreCount();
         const auto& args = sess->getArgs();
         if (sess->getArgs().size() > 2) {
@@ -3545,5 +3545,72 @@ class TendisadminCommand : public Command {
         return Command::fmtOK();
     }
 } tendisadminCmd;
+
+class DExecCommand : public Command {
+public:
+    DExecCommand()
+        :Command("dexec", "lat") {
+    }
+
+    ssize_t arity() const {
+        return -3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    std::string RET_COMMAND = "dreturn";
+
+    std::string getReturnStr(int64_t client_id, const std::string& ret) {
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 3);
+        Command::fmtBulk(ss, RET_COMMAND);
+        Command::fmtBulk(ss, std::to_string(client_id));
+        Command::fmtBulk(ss, ret);
+
+        return ss.str();
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        auto& args = sess->getArgs();
+
+        auto eid = tendisplus::stoll(args[1]);
+        if (!eid.ok()) {
+            return eid.status();
+        }
+        int64_t id = eid.value();
+
+        LocalSessionGuard sg(sess->getServerEntry());
+        auto lsess = sg.getSession();
+        std::vector<std::string> newargs;
+        for (uint32_t i = 2; i < args.size(); i++) {
+            newargs.push_back(args[i]);
+        }
+        lsess->setArgs(newargs);
+
+        std::string ret_value;
+        auto expCmdName = Command::precheck(lsess);
+        if (!expCmdName.ok()) {
+            return getReturnStr(id,
+                redis_port::errorReply(expCmdName.status().toString())
+            );
+        }
+
+        auto expect = Command::runSessionCmd(lsess);
+        if (!expect.ok()) {
+            return getReturnStr(id, expect.status().toString());
+        }
+        return getReturnStr(id, expect.value());
+    }
+} directExecCmd;
 
 }  // namespace tendisplus

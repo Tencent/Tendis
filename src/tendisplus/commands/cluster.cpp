@@ -627,7 +627,7 @@ private:
         Status s;
         auto srcNode = clusterState->clusterLookupNode(nodeName);
         if (!srcNode) {
-            LOG(ERROR) << "import nodeid：" << nodeName
+            LOG(ERROR) << "import nodeid:" << nodeName
                         << "not exist in cluster";
             return {ErrorCodes::ERR_CLUSTER, "import node not find"};
         }

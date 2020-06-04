@@ -1530,6 +1530,31 @@ TEST(Command, command) {
 #endif
 }
 
+TEST(Command, dexec) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+        });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+        {{"set", "a", "b"}, Command::fmtOK()},
+        {{"dexec", "2", "get", "a"}, "*3\r\n$7\r\ndreturn\r\n$1\r\n2\r\n$7\r\n$1\r\nb\r\n\r\n"},
+        {{"dexec", "-1", "set", "a", "c"}, "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$5\r\n+OK\r\n\r\n"},
+        {{"dexec", "-1", "cluster", "nodes"}, "*3\r\n$7\r\ndreturn\r\n$2\r\n-1\r\n$56\r\n-ERR:18,msg:This instance has cluster support disabled\r\n\r\n"},
+        {{"dexec", "1", "dexec", "2", "get", "a"}, "*3\r\n$7\r\ndreturn\r\n$1\r\n1\r\n$37\r\n*3\r\n$7\r\ndreturn\r\n$1\r\n2\r\n$7\r\n$1\r\nc\r\n\r\n\r\n"},
+      };
+
+    testCommandArrayResult(server, resultArr);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put it in the end
 extern string gRenameCmdList;
 extern string gMappingCmdList;

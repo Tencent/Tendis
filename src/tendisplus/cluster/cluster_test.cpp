@@ -432,9 +432,9 @@ uint32_t storeCnt = 2;
 uint32_t storeCntx = 6;
 #else
 uint32_t storeCnt = 2;
+#endif //
 uint32_t storeCnt1 = 6;
 uint32_t storeCnt2 = 10;
-#endif //
 
 
 MYTEST(Cluster, Simple_MEET) {
