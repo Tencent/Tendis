@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"syscall"
 )
 
 type RedisServer struct {
@@ -39,6 +40,8 @@ func FileExist(path string) (bool, error) {
 	}
 	return true, err
 }
+
+type CheckFuncType func(string, time.Duration) (int, error)
 
 func CheckPidFile(pidPath string, timeout time.Duration) (int, error) {
 	done := make(chan int, 1)
@@ -71,15 +74,23 @@ func CheckPidFile(pidPath string, timeout time.Duration) (int, error) {
 	}
 }
 
-func StartProcess(command []string, env []string, pidPath string, timeout time.Duration) (int, error) {
+func StartProcess(command []string, env []string, pidPath string, timeout time.Duration,
+    inShell bool, checkFunc CheckFuncType) (int, error) {
 	if len(command) == 0 {
 		log.Errorf("null command to start !!!")
 		return -1, errors.New("null command to start")
 	}
 	log.Infof("command:%+v, env:%+v", command, env)
 	done := make(chan bool, 1)
-	go func() {
-		cmd := exec.Command(command[0], command[1:]...)
+    var cmd *exec.Cmd
+    go func() {
+        if inShell {
+            cmd = exec.Command("/bin/sh", "-c", command[0])
+            // NOTE(takenliu) set pgid = pid, then SIGKILL can kill the group process
+            cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+        } else {
+            cmd = exec.Command(command[0], command[1:]...)
+        }
 		if len(env) > 0 {
 			cmd.Env = []string{}
 			for _, e := range env {
@@ -98,15 +109,23 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	select {
 	case success := <-done:
 		if success {
-			log.Debugf("start process success")
+			log.Debugf("start process success:%d", cmd.Process.Pid)
 			// maybe the daemon process start failed ,check the pid file
-			return CheckPidFile(pidPath, timeout)
+            if checkFunc != nil {
+			    return checkFunc(pidPath, timeout)
+			} else {
+			    return cmd.Process.Pid, nil
+			}
 		} else {
 			return -1, errors.New("start process failed")
 		}
 	case <-time.After(timeout):
 		// maybe the fork logic error, mongod has started already
-		return CheckPidFile(pidPath, timeout)
+        if checkFunc != nil {
+            return checkFunc(pidPath, timeout)
+        } else {
+            return cmd.Process.Pid, nil
+        }
 		//return -1, errors.New("start process timeout")
 	}
 }
@@ -148,11 +167,99 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 
 	args := []string{}
 	if valgrind {
-		args = append(args, "./valgrind", "--tool=memcheck", "--leak-check=full",
-			"../../../build/bin/tendisplus", cfgFilePath)
+	    log.Infof("start by valgrind %d", s.Port)
+	    // NOTE(takenliu) cmd cant be multi line.
+        cmd := fmt.Sprintf("nohup ./valgrind --tool=memcheck --leak-check=full ../../../build/bin/tendisplus %s >valgrind_Tendis_%d.log 2>&1 &",
+            cfgFilePath, s.Port)
+        args = append(args, cmd)
+        inShell := true
+        _, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
+        return err
 	} else {
+	    log.Infof("start normal %d", s.Port)
 		args = append(args, "../../../build/bin/tendisplus", cfgFilePath)
+
+	    inShell := false
+	    _, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
+        return err
 	}
-	_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second)
+}
+
+type Predixy struct {
+	Port int
+	Path string
+	Ip string
+	RedisIp string
+	RedisPort int
+	Pid int
+}
+
+func (s *Predixy) Init(ip string, port int, redisIp string, redisPort int, pwd string, path string) {
+	s.Ip = ip
+	s.Port = port
+	s.RedisIp = redisIp
+	s.RedisPort = redisPort
+	s.Path = pwd + "/" + path + RandStrAlpha(6)
+}
+
+func (s *Predixy) Destroy() {
+    os.RemoveAll(s.Path)
+}
+
+func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
+    log.Debugf("mkdir " + s.Path)
+	os.MkdirAll(s.Path, os.ModePerm)
+	cfgFilePath := fmt.Sprintf("%s/predixy.cfg", s.Path)
+	logFilePath := fmt.Sprintf("%s/predixy.log", s.Path)
+
+	cfg := "Name PredixyExample\n"
+    cfg = cfg + fmt.Sprintf("Bind %s:%d\n", s.Ip, s.Port)
+    cfg = cfg + "WorkerThreads 1\n"
+    cfg = cfg + "ClientTimeout 300\n"
+    cfg = cfg + "LogVerbSample 1\n"
+    cfg = cfg + "LogDebugSample 1\n"
+    cfg = cfg + "LogInfoSample 1\n"
+    cfg = cfg + "LogNoticeSample 1\n"
+    cfg = cfg + "LogWarnSample 1\n"
+    cfg = cfg + "LogErrorSample 1\n"
+
+    cfg = cfg + "ClusterServerPool {\n"
+    cfg = cfg + "    Password tendis+test\n"
+    cfg = cfg + "    MasterReadPriority 60\n"
+    cfg = cfg + "    StaticSlaveReadPriority 0\n"
+    cfg = cfg + "    DynamicSlaveReadPriority 0\n"
+    cfg = cfg + "    RefreshInterval 1\n"
+    cfg = cfg + "    ServerTimeout 1000000\n"
+    cfg = cfg + "    ServerFailureLimit 100\n"
+    cfg = cfg + "    ServerRetryTimeout 1000000\n"
+    cfg = cfg + "    KeepAlive 120\n"
+    cfg = cfg + "    Servers {\n"
+    cfg = cfg + fmt.Sprintf("        + %s:%d\n", s.RedisIp, s.RedisPort)
+    cfg = cfg + "    }\n"
+    cfg = cfg + "}\n"
+
+    if cfgArgs != nil {
+        for arg := range *cfgArgs {
+             cfg = cfg + fmt.Sprintf("%s %s\n",arg, (*cfgArgs)[arg])
+        }
+    }
+
+	if err := ioutil.WriteFile(cfgFilePath, []byte(cfg), 0600); err != nil {
+		return err
+	}
+
+	var cmd string
+	if valgrind {
+        // NOTE(takenliu) cmd cant be multi line.
+		cmd = fmt.Sprintf("nohup ./valgrind --tool=memcheck --leak-check=full ../../../bin/predixy %s > %s 2>&1 &",
+		    cfgFilePath, logFilePath)
+	} else {
+		cmd = fmt.Sprintf("nohup ../../../bin/predixy %s > %s 2>&1 &", cfgFilePath, logFilePath)
+	}
+    args := []string{}
+    args = append(args, cmd)
+    inShell := true
+	pid, err := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
+	s.Pid = pid
 	return err
 }

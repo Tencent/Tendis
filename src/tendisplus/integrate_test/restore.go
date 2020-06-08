@@ -64,8 +64,8 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     waitCatchup(&m1, &s1, kvstorecount)
     waitCatchup(&s1, &s2, kvstorecount)
 
-    backup(&s2, "ckpt")
-    restoreBackup(&m2)
+    backup(&s2, "ckpt", "/tmp/back_test")
+    restoreBackup(&m2, "/tmp/back_test")
 
     var channel chan int = make(chan int)
     go compareInCoroutine(&m1, &s1, channel)
@@ -83,7 +83,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     waitDumpBinlog(&s2, kvstorecount)
     flushBinlog(&s2)
-    restoreBinlog(&s2, &m2, kvstorecount)
+    restoreBinlog(&s2, &m2, kvstorecount, math.MaxUint64)
     addOnekeyEveryStore(&m2, kvstorecount)
     compare(&m1, &m2)
 

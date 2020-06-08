@@ -257,7 +257,8 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_NONE = 0,
     REPL_OP_SET = 1,
     REPL_OP_DEL = 2,
-    REPL_OP_STMT = 3,
+    REPL_OP_STMT = 3,  // statement
+    REPL_OP_SPEC = 4,  // special
 };
 
 #ifdef BINLOG_V1
@@ -500,6 +501,12 @@ class ReplLogV2 {
 enum class BinlogFlag {
     NORMAL = 0,
     FLUSH = 1,
+    MIGRATE = 2,
+};
+
+enum class BinlogApplyMode {
+    KEEP_BINLOG_ID,
+    NEW_BINLOG_ID
 };
 
 class Binlog {

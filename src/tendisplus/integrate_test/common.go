@@ -5,7 +5,6 @@ import (
     "fmt"
     "github.com/mediocregopher/radix.v2/redis"
     "github.com/ngaut/log"
-    "math"
     "tendisplus/integrate_test/util"
     "time"
     "os"
@@ -15,6 +14,7 @@ import (
     "os/exec"
     "strconv"
     "sort"
+    "syscall"
 )
 
 var (
@@ -44,6 +44,7 @@ var (
     keyprefix2 = flag.String("keyprefix2", "bb", "keyprefix2")
     // "set,incr,lpush,lpop,sadd,spop,hset,mset"
     benchtype = flag.String("benchtype", "set,incr,lpush,sadd,hset", "benchmark data type")
+    valgrind = flag.Bool("valgrind", false, "whether valgrind")
 )
 
 func getCurrentDirectory() string {
@@ -62,14 +63,27 @@ func addDataInCoroutine(m *util.RedisServer, num int, prefixkey string, channel 
 func addData(m *util.RedisServer, num int, prefixkey string) {
     log.Infof("addData begin. %s:%d", m.Ip, m.Port)
 
-    cmd := exec.Command("../../../bin/redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
+    /*cmd := exec.Command("../../../bin/redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
         "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey,
         "-t", *benchtype, "-a", *auth)
     _, err := cmd.Output()
     //fmt.Print(string(output))
     if err != nil {
         fmt.Print(err)
+    }*/
+    logFilePath := fmt.Sprintf("benchmark_%d.log", m.Port)
+    var cmd string
+    cmd = fmt.Sprintf("../../../bin/redis-benchmark -h %s -p %d -c 20 -n %d -r 8 -i -f %s -t %s -a %s > %s 2>&1",
+        m.Ip, m.Port, num, prefixkey, *benchtype, *auth, logFilePath)
+    args := []string{}
+    args = append(args, cmd)
+    inShell := true
+    _, err := util.StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
+    if err != nil {
+        log.Fatalf("addData failed:%v", err)
+        return
     }
+
     log.Infof("addData sucess. %s:%d num:%d", m.Ip, m.Port, num)
 }
 
@@ -100,19 +114,23 @@ func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
     log.Infof("addOnekeyEveryStore sucess.port:%d", m.Port)
 }
 
-func backup(m *util.RedisServer, backup_mode string) {
+func backup(m *util.RedisServer, backup_mode string, dir string) {
     cli := createClient(m)
 
-    os.RemoveAll("/tmp/back_test")
-    os.Mkdir("/tmp/back_test", os.ModePerm)
-    if r, err := cli.Cmd("backup", "/tmp/back_test", backup_mode).Str(); err != nil {
+    if !strings.Contains(dir, "back") {
+        log.Fatalf("dirname need contain back for safe.")
+        return
+    }
+    os.RemoveAll(dir)
+    os.Mkdir(dir, os.ModePerm)
+    if r, err := cli.Cmd("backup", dir, backup_mode).Str(); err != nil {
         log.Fatalf("do backup failed:%v", err)
         return
     } else if r != "OK" {
         log.Fatalf("do backup error:%s", r)
         return
     }
-    log.Infof("backup sucess,port:%d" , m.Port)
+    log.Infof("backup sucess,port:%d dir:%v" , m.Port, dir)
 }
 
 func slaveof(m *util.RedisServer, s *util.RedisServer) {
@@ -128,10 +146,10 @@ func slaveof(m *util.RedisServer, s *util.RedisServer) {
     log.Infof("slaveof sucess,mport:%d sport:%d" , m.Port, s.Port)
 }
 
-func restoreBackup(m *util.RedisServer) {
+func restoreBackup(m *util.RedisServer, dir string) {
     cli := createClient(m)
 
-    if r, err := cli.Cmd("restorebackup", "all", "/tmp/back_test", "force").Str(); err != nil {
+    if r, err := cli.Cmd("restorebackup", "all", dir, "force").Str(); err != nil {
         log.Fatalf("do restorebackup failed:%v", err)
     } else if r != "OK" {
         log.Fatalf("do restorebackup error:%s", r)
@@ -288,10 +306,10 @@ func pipeRun(commands []*exec.Cmd) {
     }
 }
 
-func restoreBinlog(m1 *util.RedisServer, m2 *util.RedisServer, kvstorecount int) {
+func restoreBinlog(m1 *util.RedisServer, m2 *util.RedisServer, kvstorecount int, endTs uint64) {
     var channel chan int = make(chan int)
     for i := 0; i < kvstorecount; i++ {
-        go restoreBinlogInCoroutine(m1, m2, i, channel)
+        go restoreBinlogInCoroutine(m1, m2, i, endTs, channel)
     }
     for i := 0; i < kvstorecount; i++ {
         <- channel
@@ -299,7 +317,8 @@ func restoreBinlog(m1 *util.RedisServer, m2 *util.RedisServer, kvstorecount int)
     log.Infof("restoreBinlog sucess,port:%d" , m2.Port)
 }
 
-func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeId int, channel chan int) {
+func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer,
+    storeId int, endTs uint64, channel chan int) {
     cli := createClient(m2)
 
     var binlogPos int
@@ -317,7 +336,6 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeI
     }
     sort.Strings(files)
 
-    var endTs uint64 = math.MaxUint64
     for j := 0; j < len(files); j++ {
         var commands []*exec.Cmd
         commands = append(commands, exec.Command("../../../build/bin/binlog_tool",
@@ -341,9 +359,21 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, storeI
     channel <- 0
 }
 
+func restoreBinlogEnd(m *util.RedisServer, kvstorecount int) {
+    cli := createClient(m)
+    for i := 0; i < kvstorecount; i++ {
+        if r, err := cli.Cmd("restoreend", i).Str(); err != nil {
+            log.Fatalf("do restoreend failed:%v", err)
+        } else if r != "OK" {
+            log.Fatalf("do restoreend error:%s", r)
+        }
+    }
+    log.Infof("restoreBinlogEnd sucess,port:%d" , m.Port)
+}
+
 func shutdownServer(m *util.RedisServer, shutdown int, clear int) {
     if (shutdown <= 0) {
-        return;
+        return
     }
     cli := createClient(m)
 
@@ -353,9 +383,22 @@ func shutdownServer(m *util.RedisServer, shutdown int, clear int) {
         log.Fatalf("do shutdown error:%s", r)
     }
     if (clear > 0) {
-        m.Destroy();
+        m.Destroy()
     }
     log.Infof("shutdownServer server,port:%d", m.Port)
+}
+
+func shutdownPredixy(m *util.Predixy, shutdown int, clear int) {
+    if (shutdown <= 0) {
+        return
+    }
+
+    // NOTE(takenliu) -pgid will kill the group process
+    syscall.Kill(-m.Pid, syscall.SIGKILL)
+    if (clear > 0) {
+        m.Destroy()
+    }
+    log.Infof("shutdownPredixy server,port:%d pid:%d", m.Port, m.Pid)
 }
 
 func compareInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer, channel chan int) {

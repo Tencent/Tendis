@@ -31,12 +31,23 @@ enum class MigrateSendState {
     ERR
 };
 
+enum MigrateBinlogType {
+    RECEIVE_START,
+    RECEIVE_END,
+    SEND_START,
+    SEND_END
+};
+
 using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
+
+Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type, string slots, uint32_t storeid,
+        ServerEntry* svr, const string& nodeName);
 
 class MigrateSendTask {
 public:
-    explicit MigrateSendTask(const SlotsBitmap& slots_ , std::shared_ptr<ServerEntry> svr,
+    explicit MigrateSendTask(uint32_t storeId, const SlotsBitmap& slots_ , std::shared_ptr<ServerEntry> svr,
                              const std::shared_ptr<ServerParams> cfg) :
+            storeid(storeId),
             slots(slots_),
             isRunning(false),
             state(MigrateSendState::WAIT){
@@ -44,8 +55,8 @@ public:
     }
     void setClient(std::shared_ptr<BlockingTcpClient> client);
 
-    SlotsBitmap slots;
     uint32_t storeid;
+    SlotsBitmap slots;
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
     MigrateSendState state;
@@ -147,7 +158,15 @@ class MigrateManager {
 
     Expected<std::string> getMigrateInfoStr(const SlotsBitmap& bitMap);
     SlotsBitmap getSteadySlots(const SlotsBitmap& bitMap);
-private:
+    Expected<uint64_t> applyMigrateBinlog(ServerEntry* svr, PStore store, MigrateBinlogType type, string slots, string& nodeName);
+    Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
+    Status onRestoreEnd(uint32_t storeId);
+    //Status deleteChunksWithLock(const SlotsBitmap& slots);
+    Status asyncDeleteChunks(uint32_t storeid, const SlotsBitmap& slots);
+    Status asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitmap& slots);
+    //Expected<uint64_t> deleteChunkInLock(uint32_t  chunkid);
+
+ private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
     void controlRoutine();
     void sendSlots(MigrateSendTask* task);
@@ -179,6 +198,8 @@ private:
 
     std::vector<std::string> _succReceTask;
     std::vector<std::string> _failReceTask;
+
+    std::map<uint32_t, std::list<SlotsBitmap>> _restoreMigrateTask;
 
     // sender's pov
     std::list<std::unique_ptr<MigrateSendTask>> _migrateSendTask;

@@ -87,18 +87,27 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         if (explog.ok()) {
             if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
                 // flush binlog should be alone
-                LOG(INFO) << "deal with chunk flush: " << explog.value().getChunkId();
+                LOG(INFO) << "masterSendBinlogV2 deal with chunk flush: " <<explog.value().getChunkId();
                 if (writer.getCount() > 0)
                     break;
 
                 writer.setFlag(BinlogFlag::FLUSH);
-                LOG(INFO) << "send flush binlog to slave, store:" << storeId;
+                LOG(INFO) << "masterSendBinlogV2 send flush binlog to slave, store:" << storeId;
+            } else if (explog.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
+                // migrate binlog should be alone
+                LOG(INFO) << "masterSendBinlogV2 deal with chunk migrate: " <<explog.value().getChunkId();
+                if (writer.getCount() > 0)
+                    break;
+
+                writer.setFlag(BinlogFlag::MIGRATE);
+                LOG(INFO) << "masterSendBinlogV2 send migrate binlog to slave, store:" << storeId;
             }
 
 
             binlogId = explog.value().getBinlogId();
             if (writer.writeRepllogRaw(explog.value()) ||
-                writer.getFlag() == BinlogFlag::FLUSH) {
+                writer.getFlag() == BinlogFlag::FLUSH ||
+                writer.getFlag() == BinlogFlag::MIGRATE) {
                 // full or flush
                 break;
             }
@@ -342,15 +351,19 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
     std::unique_ptr<BinlogWriter> writer =
                 std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);
 
-    LOG(INFO) << "begin catch up from:" << binlogPos << "to:" << binlogEnd;
+    LOG(INFO) << "begin catch up from:" << binlogPos << " to:" << binlogEnd
+            << " storeid:" << storeId
+            << " slots:" << bitsetStrEncode(slotsMap);
     uint32_t timeoutSecs = cfg->timeoutSecBinlogWaitRsp;
     uint64_t  logNum = 0;
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (!explog.ok()) {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-                LOG(INFO) << "catch up binlog exhaust" << "binlogPos:" << binlogPos
-                          << "binlogEnd:" << binlogEnd << "Current:" << binlogId;
+                LOG(INFO) << "catch up binlog exhaust,binlogPos:" << binlogPos
+                          << " binlogEnd:" << binlogEnd << " Current:" << binlogId
+                          << " logNum:" << logNum << " storeid:" << storeId
+                          << " slots:" << bitsetStrEncode(slotsMap);
                 break;
             }
             LOG(ERROR) << "iter binlog failed:"
@@ -369,9 +382,18 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
             writer->setFlag(BinlogFlag::FLUSH);
         }
 
+        // NOTE(takenliu) migrate binlog dont send to dst node
+        if (slot == Transaction::CHUNKID_MIGRATE) {
+            // migrate binlog should be alone
+            LOG(INFO) << "deal with chunk migrate: " <<explog.value().getChunkId();
+            continue;
+        }
+
         if (binlogId > binlogEnd) {
-            LOG(INFO) << "catch up binlog success:" << "binlogPos:" << binlogPos
-                       << "binlogEnd:" << binlogEnd << "log num:" << logNum;
+            LOG(INFO) << "catch up binlog success, binlogPos:" << binlogPos
+                       << " binlogEnd:" << binlogEnd << " logNum:" << logNum
+                       << " storeid:" << storeId
+                       << " slots:" << bitsetStrEncode(slotsMap);
             break;
         }
 

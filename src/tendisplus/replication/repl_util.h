@@ -21,11 +21,6 @@ namespace tendisplus {
         return { ErrorCodes::ERR_INTERNAL, "write failed" }; \
     } \
 
-enum class BinlogApplyMode {
-    KEEP_BINLOG_ID,
-    NEW_BINLOG_ID
-};
-
 std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
     std::shared_ptr<ServerEntry> svr);
 

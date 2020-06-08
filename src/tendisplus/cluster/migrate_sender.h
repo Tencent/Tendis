@@ -64,6 +64,7 @@ class ChunkMigrateSender{
     std::bitset<CLUSTER_SLOTS> _slots;
     uint64_t getProtectBinlogid() {
         // TODO(wayenchen) use atomic
+        std::lock_guard<std::mutex> lk(_mutex);
         return _curBinlogid;
     }
     std::string getInfo();
@@ -82,6 +83,7 @@ class ChunkMigrateSender{
     Status sendOver();
 
  private:
+    mutable std::mutex _mutex;
 
     std::shared_ptr<ServerEntry> _svr;
     const std::shared_ptr<ServerParams> _cfg;

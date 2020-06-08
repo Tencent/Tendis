@@ -156,6 +156,8 @@ class Transaction {
     virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
 #else
     virtual Status flushall() = 0;
+    virtual Status migrate(const std::string& logKey, const std::string& logValue) = 0;
+
     virtual std::unique_ptr<RepllogCursorV2>
         createRepllogCursorV2(uint64_t begin,
                              bool ignoreReadBarrier = false) = 0;
@@ -201,6 +203,7 @@ class Transaction {
     static constexpr uint32_t CHUNKID_UNINITED = 0xFFFFFFFF;
     static constexpr uint32_t CHUNKID_MULTI = 0xFFFFFFFE;
     static constexpr uint32_t CHUNKID_FLUSH = 0xFFFFFFFD;
+    static constexpr uint32_t CHUNKID_MIGRATE = 0xFFFFFFFC;
 };
 
 class BackupInfo {

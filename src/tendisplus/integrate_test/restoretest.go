@@ -43,14 +43,14 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     }
 
     addData(&m1, *num1, "aa")
-    backup(&m1, backup_mode)
-    restoreBackup(&m2)
+    backup(&m1, backup_mode, "/tmp/back_test")
+    restoreBackup(&m2, "/tmp/back_test")
 
     addData(&m1, *num2, "bb")
     addOnekeyEveryStore(&m1, kvstorecount)
     waitDumpBinlog(&m1, kvstorecount)
     flushBinlog(&m1)
-    restoreBinlog(&m1, &m2, kvstorecount)
+    restoreBinlog(&m1, &m2, kvstorecount, math.MaxUint64)
     addOnekeyEveryStore(&m2, kvstorecount)
     compare(&m1, &m2)
 

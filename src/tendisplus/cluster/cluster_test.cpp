@@ -1264,7 +1264,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
 
 // Convergence rate test
 TEST(Cluster, ConvergenceRate) {
-    uint32_t nodeNum = 20;
+    uint32_t nodeNum = 30;
     uint32_t migrateSlot = 8373;
     uint32_t startPort = 14000;
     uint32_t dstNodeIndex = 0;

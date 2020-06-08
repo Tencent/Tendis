@@ -869,6 +869,8 @@ Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
 }
 
 Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slots) {
+    serverLog(LL_VERBOSE, "setSlots node:%s slots:%s",
+        n->getNodeName().c_str(), bitsetStrEncode(slots).c_str());
     size_t idx = 0;
     while (idx < slots.size()) {
         if (slots.test(idx)) {
@@ -1187,7 +1189,8 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
         _nodes[nodeName] = node;
     } else {
         _nodes.insert(std::make_pair(nodeName, node));
-        LOG(INFO) << "first add nodes:" << nodeName;
+        serverLog(LL_VERBOSE, "clusterAddNodeNoLock node:%s ip:%s port:%lu ",
+            node->getNodeName().c_str(), node->getNodeIp().c_str(), node->getPort());
     }
 }
 
@@ -1198,8 +1201,8 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter) {
         if (node->getFlags() & filter)  {
             continue;
         }
-        std::string nodeDescription = clusterGenNodeDescription(node);
-        ss << nodeDescription << "\r\n";
+        std::string nodeDescription = node->clusterGenNodeDescription();
+        ss << nodeDescription << "\n";
     }
     return Command::fmtBulk(ss.str());
 }

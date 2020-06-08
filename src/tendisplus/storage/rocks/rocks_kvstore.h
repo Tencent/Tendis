@@ -61,6 +61,8 @@ class RocksTxn: public Transaction {
     Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
 #else
     Status flushall() final;
+    Status migrate(const std::string& logKey, const std::string& logValue) final;
+
     Status applyBinlog(const ReplLogValueEntryV2& logEntry) final;
     Status setBinlogKV(uint64_t binlogId,
                 const std::string& logKey,

@@ -534,6 +534,25 @@ Status RocksTxn::flushall() {
     return{ ErrorCodes::ERR_OK, "" };
 }
 
+Status RocksTxn::migrate(const std::string& logKey, const std::string& logVal) {
+    if (_replOnly) {
+        return{ ErrorCodes::ERR_INTERNAL, "txn is replOnly" };
+    }
+    if (!_store->enableRepllog()) {
+        return{ ErrorCodes::ERR_INTERNAL, "repllog is not enable" };
+    }
+
+    INVARIANT_D(_store->dbId() != CATALOG_NAME);
+    setChunkId(Transaction::CHUNKID_MIGRATE);
+    INVARIANT_D(_replLogValues.size() == 0);
+
+    // it's no use
+    ReplLogValueEntryV2 logEntry(ReplOp::REPL_OP_SPEC, _store->getCurrentTime(),
+                               "", "");
+    _replLogValues.emplace_back(std::move(logEntry));
+    return{ ErrorCodes::ERR_OK, "" };
+}
+
 Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     if (!_migrateOnly && !_replOnly) {
         return{ ErrorCodes::ERR_INTERNAL, "txn is not replOnly" };
@@ -556,6 +575,9 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
         break;
     }
     case ReplOp::REPL_OP_STMT: {
+        INVARIANT_D(0);
+    }
+    case ReplOp::REPL_OP_SPEC: {
         INVARIANT_D(0);
     }
     default:

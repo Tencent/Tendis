@@ -14,6 +14,7 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/base64.h"
+#include "tendisplus/utils/string.h"
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
@@ -683,6 +684,8 @@ class ApplyBinlogsCommand: public Command {
     }
 } applyBinlogsCommand;
 #else
+// TODO(takenliu) binlog_tool need send every applybinlogsv2 command and wait response, then send the next one,
+//     because applybinlogsv2 will be processed by multi thread, so the squence will be disorder
 class ApplyBinlogsCommandV2 : public Command {
  public:
     ApplyBinlogsCommandV2()
@@ -806,6 +809,96 @@ class ApplyBinlogsCommandV2 : public Command {
         replMgr->onFlush(storeId, eflush.value());
         return{ ErrorCodes::ERR_OK, "" };
     }
+
+    static Status runMigrate(Session *sess, uint32_t storeId,
+                           const std::string& binlogs, size_t binlogCnt) {
+        auto svr = sess->getServerEntry();
+        auto migrateMgr = svr->getMigrateManager();
+        INVARIANT(migrateMgr != nullptr);
+
+        if (binlogCnt != 1) {
+            LOG(ERROR) << "runMigrate binlogCnt != 1:";
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog count" };
+        }
+
+        BinlogReader reader(binlogs);
+        auto eLog = reader.next();
+        if (!eLog.ok()) {
+            return eLog.status();
+        }
+
+        if (reader.nextV2().status().code() != ErrorCodes::ERR_EXHAUST) {
+            return{ ErrorCodes::ERR_PARSEOPT, "too big migrate binlog" };
+        }
+        const string& logKey = eLog.value().getReplLogKey();
+        const string& logValue = eLog.value().getReplLogValue();
+        auto key = ReplLogKeyV2::decode(logKey);
+        if (!key.ok()) {
+            LOG(ERROR) << "ReplLogKeyV2::decode failed:" << key.status().toString();
+            return key.status();
+        }
+        auto value = ReplLogValueV2::decode(logValue);
+        if (!value.ok()) {
+            return value.status();
+        }
+
+        // LOG(INFO) << "runMigrate: " << eLog.value().getReplLogValue().getCmd();
+
+        auto splits = stringSplit(value.value().getCmd(), "_");
+
+        // args: type storeid slots nodename
+        if (splits.size() != 4) {
+            LOG(ERROR) << "runMigrate args err:" << value.value().getCmd();
+            return{ ErrorCodes::ERR_PARSEOPT, "args error" };
+        }
+
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+                                                 mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        auto store = std::move(expdb.value().store);
+        INVARIANT(store != nullptr);
+
+        Expected<int64_t> etype = ::tendisplus::stoll(splits[0]);
+        if (!etype.ok()
+            || etype.value() < MigrateBinlogType::RECEIVE_START || etype.value() > MigrateBinlogType::SEND_END
+            || splits[2].size() != CLUSTER_SLOTS) {
+            LOG(ERROR) << "runMigrate args err:" << value.value().getCmd();
+            return etype.status();
+        }
+        MigrateBinlogType type = static_cast<MigrateBinlogType>(etype.value());
+
+        auto ret = migrateMgr->applyMigrateBinlog(svr, store, type, splits[2], splits[3]);
+        if (!ret.ok()) {
+            LOG(ERROR) << "applyMigrateBinlog failed:" << ret.status().toString();
+            return{ ErrorCodes::ERR_INTERGER, "applyMigrateBinlog failed" };
+        }
+
+        // add binlog
+        auto ptxn = store->createTransaction(sess);
+        if (!ptxn.ok()) {
+            LOG(ERROR) << "createTransaction failed:" << ptxn.status().toString();
+            return ptxn.status();
+        }
+        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+        uint64_t binlogId = key.value().getBinlogId();
+        // store the binlog directly, same as master
+        auto s = txn->setBinlogKV(binlogId, logKey, logValue);
+        if (!s.ok()) {
+            return s;
+        }
+        Expected<uint64_t> expCmit = txn->commit();
+        if (!expCmit.ok()) {
+            return expCmit.status();
+        }
+        // TODO(takenliu) runFlush() called store->setBinlogTime(), runMigrate wheter need ???
+        // store->setBinlogTime(timestamp);
+
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
     // applybinlogsv2 storeId binlogs cnt flag
     // why is there no storeId ? storeId is contained in this
     // session in fact.
@@ -860,6 +953,13 @@ class ApplyBinlogsCommandV2 : public Command {
             }
             break;
         }
+        case BinlogFlag::MIGRATE: {
+            auto s = runMigrate(sess, storeId, args[2], binlogCnt);
+            if (!s.ok()) {
+                return s;
+            }
+            break;
+        }
         }
         return Command::fmtOK();
     }
@@ -887,6 +987,127 @@ class RestoreBinlogCommandV2 : public Command {
         return 0;
     }
 
+    Status runNormal(Session *sess, uint32_t storeId,
+                     const std::string& key, const std::string& value) {
+        auto svr = sess->getServerEntry();
+        // LOCK_IX first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+                                                 mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+
+        sess->getCtx()->setReplOnly(true);
+        Expected<uint64_t> ret =
+                applySingleTxnV2(sess, storeId, key, value, BinlogApplyMode::KEEP_BINLOG_ID);
+        if (!ret.ok()) {
+            return ret.status();
+        }
+        return {ErrorCodes::ERR_OK, ""};
+    }
+
+    static Status runFlush(Session *sess, uint32_t storeId,
+                           const std::string& key, const std::string& value) {
+        auto svr = sess->getServerEntry();
+        auto replMgr = svr->getReplManager();
+        INVARIANT(replMgr != nullptr);
+
+        auto logKey = ReplLogKeyV2::decode(key);
+        if (!logKey.ok()) {
+            return logKey.status();
+        }
+        auto logValue = ReplLogValueV2::decode(value);
+        if (!logValue.ok()) {
+            return logValue.status();
+        }
+
+        LOG(INFO) << "doing flush " << logValue.value().getCmd();
+
+        LocalSessionGuard sg(svr);
+        sg.getSession()->setArgs({ logValue.value().getCmd() });
+
+        auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
+                                                 mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        // fake the session to be not replonly!
+        sg.getSession()->getCtx()->setReplOnly(false); // set true ??
+
+        // set binlog time before flush,
+        // because the flush binlog is logical, not binary
+        expdb.value().store->setBinlogTime(
+                logValue.value().getTimestamp());
+        auto eflush = expdb.value().store->flush(sg.getSession(),
+                                                 logKey.value().getBinlogId());
+        if (!eflush.ok()) {
+            return eflush.status();
+        }
+        INVARIANT_D(eflush.value() ==
+                            logKey.value().getBinlogId());
+
+        replMgr->onFlush(storeId, eflush.value());
+        return{ ErrorCodes::ERR_OK, "" };
+    }
+
+    Status runMigrate(Session *sess, uint32_t storeId,
+                      const std::string& logKey, const std::string& logValue) {
+        auto svr = sess->getServerEntry();
+        auto migrateMgr = svr->getMigrateManager();
+        INVARIANT(migrateMgr != nullptr);
+
+        auto key = ReplLogKeyV2::decode(logKey);
+        if (!key.ok()) {
+            LOG(ERROR) << "ReplLogKeyV2::decode failed:" << key.status().toString();
+            return key.status();
+        }
+
+        auto value = ReplLogValueV2::decode(logValue);
+        if (!value.ok()) {
+            return value.status();
+        }
+
+        auto splits = stringSplit(value.value().getCmd(), "_");
+
+        // args: type storeid slots nodename
+        if (splits.size() != 4) {
+            LOG(ERROR) << "runMigrate args err:" << value.value().getCmd();
+            return{ ErrorCodes::ERR_PARSEOPT, "args error" };
+        }
+
+        LocalSessionGuard sg(svr);
+        auto expdb = svr->getSegmentMgr()->getDb(sg.getSession(), storeId,
+                mgl::LockMode::LOCK_IX);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        // fake the session to be not replonly!
+        // sg.getSession()->getCtx()->setReplOnly(false);
+
+        // why runFlush() need call store->setBinlogTime() ???
+        Expected<int64_t> etype = ::tendisplus::stoll(splits[0]);
+        if (!etype.ok()
+            || etype.value() < MigrateBinlogType::RECEIVE_START || etype.value() > MigrateBinlogType::SEND_END
+            || splits[2].size() != CLUSTER_SLOTS) {
+            LOG(ERROR) << "runMigrate args err:" << value.value().getCmd();
+            return etype.status();
+        }
+        MigrateBinlogType type = static_cast<MigrateBinlogType>(etype.value());
+
+        Expected<uint64_t> cmdStoreId = ::tendisplus::stoul(splits[1]);
+        if (!cmdStoreId.ok()) {
+            return cmdStoreId.status();
+        }
+        if (storeId != cmdStoreId.value()) {
+            LOG(ERROR) << "runMigrate storeid err, storeId:" << storeId
+                << " cmdStoreId:" << cmdStoreId.value();
+            return{ ErrorCodes::ERR_INTERGER, "storeid not match" };
+        }
+
+        return migrateMgr->restoreMigrateBinlog(type, storeId, splits[2]);
+        // TODO(takenliu) runFlush() called store->setBinlogTime(), runMigrate wether need ???
+    }
+
     // restorebinlogv2 storeId key(binlogid) value([op key value]*) checksum
     Expected<std::string> run(Session *sess) final {
         const std::vector<std::string>& args = sess->getArgs();
@@ -907,23 +1128,79 @@ class RestoreBinlogCommandV2 : public Command {
         std::string key = Base64::Decode(args[2].c_str(), args[2].size());
         std::string value = Base64::Decode(args[3].c_str(), args[3].size());
 
-        // LOCK_IX first
-        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
-            mgl::LockMode::LOCK_IX);
-        if (!expdb.ok()) {
-            return expdb.status();
+        auto logValue = ReplLogValueV2::decode(value);
+        if (!logValue.ok()) {
+            return logValue.status();
         }
-
-        sess->getCtx()->setReplOnly(true);
-        Expected<uint64_t> ret =
-            applySingleTxnV2(sess, storeId, key, value, BinlogApplyMode::KEEP_BINLOG_ID);
-        if (!ret.ok()) {
-            return ret.status();
+        if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+            // TODO(takenliu) finish logical and add gtest for restorebinlog flush
+            auto s = runFlush(sess, storeId, key, value);
+            if (!s.ok()) {
+                return s;
+            }
+        } else if (logValue.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
+            auto s = runMigrate(sess, storeId, key, value);
+            if (!s.ok()) {
+                return s;
+            }
+        } else {
+            auto s = runNormal(sess, storeId, key, value);
+            if (!s.ok()) {
+                return s;
+            }
         }
-
         return Command::fmtOK();
     }
 } restoreBinlogV2Command;
+
+class restoreEndCommand : public Command {
+public:
+    restoreEndCommand()
+            :Command("restoreend", "aw") {
+    }
+
+    ssize_t arity() const {
+        return 2;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // restoreend storeId
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (storeId >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        auto migrateMgr = svr->getMigrateManager();
+        INVARIANT(migrateMgr != nullptr);
+
+        auto ret = migrateMgr->onRestoreEnd(storeId);
+        if (!ret.ok()) {
+            return ret;
+        }
+        return Command::fmtOK();
+    }
+} restoreEndCmd;
 
 
 class BinlogHeartbeatCommand : public Command {
