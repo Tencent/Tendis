@@ -353,7 +353,8 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer,
         }
         pipeRun(commands)
 
-        log.Infof("restoreBinlog sucess store:%d binlogPos:%d file:%s" , storeId, binlogPos, path.Base(files[j]))
+        log.Infof("restoreBinlog sucess store:%d binlogPos:%d endtimestamp:%v file:%s",
+            storeId, binlogPos, strconv.FormatUint(endTs, 10), path.Base(files[j]))
     }
     log.Infof("restoreBinlog sucess,port:%d storeid:%d" , m2.Port, storeId)
     channel <- 0

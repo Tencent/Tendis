@@ -50,7 +50,12 @@ func cluster_slaveof(m *util.RedisServer, s *util.RedisServer) {
 
 func cluster_addslots(m *util.RedisServer, startSlot int, endSlot int) {
     cli := createClient(m)
-    slots := "{" + strconv.Itoa(startSlot) + ".." + strconv.Itoa(endSlot) + "}"
+    var slots string
+    if startSlot == endSlot {
+        slots = strconv.Itoa(startSlot)
+    } else {
+        slots = "{" + strconv.Itoa(startSlot) + ".." + strconv.Itoa(endSlot) + "}"
+    }
     if r, err := cli.Cmd("cluster", "addslots", slots).Str(); err != nil {
         log.Fatalf("do addslots failed:%v", err)
         return

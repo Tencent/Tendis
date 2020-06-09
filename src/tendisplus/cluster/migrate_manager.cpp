@@ -1314,8 +1314,8 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
         }
     }
     LOG(INFO) << "onRestoreEnd deletechunks:" << dontContainSlots.to_string();
-    // TODO(takenliu) add it
-    // asyncDeleteChunksWithLock(storeId, dontContainSlots);
+    // TODO(takenliu) check the logical of locking the chunks
+    asyncDeleteChunks(storeId, dontContainSlots);
     return {ErrorCodes::ERR_OK, ""};
 }
 
