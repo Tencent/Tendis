@@ -2050,15 +2050,18 @@ class InfoCommand: public Command {
     static void infoBackup(bool allsections, bool defsections, const std::string& section, Session *sess, std::stringstream& result) {
         if (allsections || defsections || section == "backup") {
             auto server = sess->getServerEntry();
+            std::string runStr = server->getBackupRunning() > 0 ? "yes" : "no";
             std::stringstream ss;
             ss << "# Backup\r\n";
             ss << "backup-count:" << server->getBackupTimes() << "\r\n";
             ss << "last-backup-time:" << server->getLastBackupTime() << "\r\n";
+            ss << "current-backup-running:" << runStr << "\r\n";
             if (server->getBackupFailedTimes() > 0) {
                 ss << "backup-failed-count:" << server->getBackupFailedTimes() << "\r\n";
                 ss << "last-backup-failed-time:" << server->getLastBackupFailedTime() << "\r\n";
                 ss << "last-backup-failed-reason:" << server->getLastBackupFailedErr() << "\r\n";
             }
+
             ss << "\r\n";
             result << ss.str();
         }

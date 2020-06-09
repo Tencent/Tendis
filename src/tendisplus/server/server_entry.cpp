@@ -105,6 +105,7 @@ ServerEntry::ServerEntry()
          _backupTimes(0),
          _lastBackupFailedTime(0),
          _backupFailedTimes(0),
+         _backupRunning(0),
          _lastBackupFailedErr("") {
 }
 
@@ -190,6 +191,12 @@ void ServerEntry::logError(const std::string& str, Session* sess) {
 uint32_t ServerEntry::getKVStoreCount() const {
     return _catalog->getKVStoreCount();
 }
+
+void ServerEntry::setBackupRunning() {
+    _backupRunning.fetch_add(1, std::memory_order_relaxed);
+}
+
+
 extern string gRenameCmdList;
 extern string gMappingCmdList;
 Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
