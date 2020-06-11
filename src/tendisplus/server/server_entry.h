@@ -122,7 +122,6 @@ private:
 };
 
 class ServerEntry;
-std::shared_ptr<ServerEntry> getGlobalServer();
 
 class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
  public:
@@ -170,8 +169,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void installCatalog(std::unique_ptr<Catalog>);
     void installPessimisticMgrInLock(std::unique_ptr<PessimisticMgr>);
     void installMGLockMgrInLock(std::unique_ptr<mgl::MGLockMgr> o);
-  //  void installClusterNode(const string::name, uint8_t flag);
- 
 
     void stop();
     void waitStopComplete();
@@ -214,8 +211,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void setTsEp(uint64_t timestamp);
     uint64_t getTsEp() const;
     void AddMonitor(uint64_t sessId);
-    void setMaxCli(uint32_t max);
-    uint32_t getMaxCli();
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, Session* sess);
@@ -262,6 +257,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status delKeysInSlot(uint32_t slot);
 
     bool isClusterEnabled() const { return _enableCluster; }
+    // TODO(wayenchen)  takenliu add, delete all codes not be used
 
  private:
     ServerEntry();
@@ -299,7 +295,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::shared_ptr<RequestMatrix> _reqMatrix;
     std::unique_ptr<std::thread> _cronThd;
 
-    std::string _myselfName;
     bool _enableCluster;
     // NOTE(deyukong):
     // return string's reference have race conditions if changed during
@@ -312,9 +307,12 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
+<<<<<<< HEAD
     //cluster test
     std::map<std::string, std::string> _nodeName;
     std::map<std::string, std::string> _ip;
+=======
+>>>>>>> ade6dcb... 1. add some TODO
 
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;

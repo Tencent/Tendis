@@ -32,9 +32,14 @@ class ChunkMigrateSender{
 
     explicit ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
         std::shared_ptr<ServerEntry> svr,
-        std::shared_ptr<ServerParams> cfg);
+        std::shared_ptr<ServerParams> cfg,
+        bool is_fake = false);
 
     Status sendChunk();
+
+    const std::bitset<CLUSTER_SLOTS>& getSlots() {
+        return _slots;
+    }
 
     void setStoreid(uint32_t storeid) {
         _storeid = storeid;
@@ -58,12 +63,12 @@ class ChunkMigrateSender{
     const std::string getNodeid() { return  _nodeid ; }
 
     Expected<uint64_t> deleteChunk(uint32_t chunkid);
+    // TODO(wayenchen)  takenliu add, delete the slots param for all interface, use _slots
     bool deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
     bool checkSlotsBlongDst(const std::bitset<CLUSTER_SLOTS>& slot);
 
-    std::bitset<CLUSTER_SLOTS> _slots;
     uint64_t getProtectBinlogid() {
-        // TODO(wayenchen) use atomic
+        // TODO(wayenchen)  takenliu add, use atomic
         std::lock_guard<std::mutex> lk(_mutex);
         return _curBinlogid;
     }
@@ -81,12 +86,18 @@ class ChunkMigrateSender{
 
     Expected<uint64_t> catchupBinlog(uint64_t start, uint64_t end, const std::bitset<CLUSTER_SLOTS>& slots);
     Status sendOver();
+    Status lockChunks();
+    Status unlockChunks();
 
- private:
+
+private:
     mutable std::mutex _mutex;
 
+    std::bitset<CLUSTER_SLOTS> _slots;
     std::shared_ptr<ServerEntry> _svr;
     const std::shared_ptr<ServerParams> _cfg;
+    bool _isFake;
+
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
     std::shared_ptr<ClusterState> _clusterState;
@@ -104,6 +115,7 @@ class ChunkMigrateSender{
     uint32_t _dstStoreid;
     std::shared_ptr<ClusterNode>  _dstNode;
     uint64_t getMaxBinLog(Transaction * ptxn);
+    std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
 
 };
 

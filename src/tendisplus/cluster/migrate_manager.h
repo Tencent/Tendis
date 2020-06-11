@@ -46,12 +46,13 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type, string slots, uint32
 class MigrateSendTask {
 public:
     explicit MigrateSendTask(uint32_t storeId, const SlotsBitmap& slots_ , std::shared_ptr<ServerEntry> svr,
-                             const std::shared_ptr<ServerParams> cfg) :
+                             const std::shared_ptr<ServerParams> cfg, bool is_fake = false) :
             storeid(storeId),
             slots(slots_),
             isRunning(false),
-            state(MigrateSendState::WAIT){
-                sender = std::make_unique<ChunkMigrateSender>(slots_, svr, cfg);
+            state(MigrateSendState::WAIT),
+            isFake(is_fake) {
+                sender = std::make_unique<ChunkMigrateSender>(slots_, svr, cfg, is_fake);
     }
     void setClient(std::shared_ptr<BlockingTcpClient> client);
 
@@ -60,6 +61,7 @@ public:
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
     MigrateSendState state;
+    bool isFake;
     std::unique_ptr<ChunkMigrateSender> sender;
 };
 
@@ -161,10 +163,8 @@ class MigrateManager {
     Expected<uint64_t> applyMigrateBinlog(ServerEntry* svr, PStore store, MigrateBinlogType type, string slots, string& nodeName);
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
-    //Status deleteChunksWithLock(const SlotsBitmap& slots);
     Status asyncDeleteChunks(uint32_t storeid, const SlotsBitmap& slots);
     Status asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitmap& slots);
-    //Expected<uint64_t> deleteChunkInLock(uint32_t  chunkid);
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

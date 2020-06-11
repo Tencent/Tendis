@@ -253,7 +253,8 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
         } else if ((*it)->state == MigrateSendState::HALF) {
             // middle state
             // check if metadata change
-            if ((*it)->sender->checkSlotsBlongDst((*it)->sender->_slots)) {
+            // TODO(wayenchen)  takenliu add, dont use member variable as param.
+            if ((*it)->sender->checkSlotsBlongDst((*it)->sender->getSlots())) {
                 (*it)->sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
                 auto s = _svr->getMigrateManager()->unlockChunks((*it)->slots);
                 if (!s.ok()) {
@@ -271,6 +272,7 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
     return doSth;
 }
 
+// TODO(wayenchen)  takenliu add, delete this interface
 Status MigrateManager::lockXChunk(uint32_t chunkid) {
     uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
     if (_lockMap.count(chunkid)) {
@@ -302,6 +304,7 @@ Status MigrateManager::lockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     return  {ErrorCodes::ERR_OK, "finish bitmap lock"};
 }
 
+// TODO(wayenchen)  takenliu add, delete this interface
 Status MigrateManager::unlockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     std::lock_guard<std::mutex> lk(_mutex);
     size_t idx = 0;
@@ -351,7 +354,7 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
         } else  {
             task->state = MigrateSendState::ERR;
             nextSched = SCLOCK::now();
-            LOG(ERROR) << "Send slots failed, bitmap is:" << task->sender->_slots.to_string();
+            LOG(ERROR) << "Send slots failed, bitmap is:" << task->sender->getSlots().to_string();
         }
     } else {
         task->sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
@@ -614,7 +617,7 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
     // find the sender job and set start, just do once
     bool findJob = false;
     for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
-        if ((*it)->sender->_slots == receiveMap) {
+        if ((*it)->sender->getSlots() == receiveMap) {
             findJob = true;
             (*it)->state = MigrateSendState::START;
             (*it)->sender->setClient(client);
@@ -628,7 +631,7 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
                    << " receiveMap:" << bitsetStrEncode(receiveMap);
         for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
             LOG(ERROR) << "findJob failed, _migrateSendTask:"
-                << bitsetStrEncode((*it)->sender->_slots);
+                << bitsetStrEncode((*it)->sender->getSlots());
         }
     }
     return;
@@ -660,6 +663,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             ++it;
         } else if ((*it)->state == MigrateReceiveState::SUCC
                     || (*it)->state == MigrateReceiveState::ERR) {
+            // TODO(wayenchen)  takenliu add, if receive failed, need deleteChunks.
             std::string slot = bitsetStrEncode((*it)->slots);
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
                 if ((*it)->slots.test(i)) {
@@ -1283,9 +1287,8 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type, uint32_t sto
                 }
             }
         }
-        // lockchunk
+
         asyncDeleteChunks(storeid, slotsMap);
-        // unlockchunk
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -1325,12 +1328,10 @@ Status MigrateManager::asyncDeleteChunks(uint32_t storeid, const SlotsBitmap& sl
 }
 
 Status MigrateManager::asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitmap& slots) {
-    // TODO(takenliu) should lock first, then thread process, unlock when callback.
-
     // TODO(takenliu) 1.add slots to _migrateSlots
-    //     2._importSlots nedd add too, avoid import request
+    //     2._importSlots need add too, avoid import request
     //     3.ChunkMigrateReceiver need deleteChunk when migrate failed.
-    auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg);
+    auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg, true);
     sendTask->nextSchedTime = SCLOCK::now();
     sendTask->sender->setStoreid(storeid);
     sendTask->state = MigrateSendState::CLEAR;
@@ -1340,81 +1341,4 @@ Status MigrateManager::asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitm
     return {ErrorCodes::ERR_OK, ""};
 }
 
-/*
-Status MigrateManager::deleteChunksWithLock(const SlotsBitmap& slots) {
-    // NOTE(takenliu) need lock all chunk first.
-    std::list<std::unique_ptr<ChunkLock>> locklist;
-    for (size_t chunkid = 0; chunkid < CLUSTER_SLOTS; ++chunkid) {
-        uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
-        auto lock = std::make_unique<ChunkLock>
-                (storeId, chunkid, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
-        locklist.push_back(std::move(lock));
-    }
-    uint64_t deleteNum = 0;
-    for (size_t chunkid = 0; chunkid < CLUSTER_SLOTS; ++chunkid) {
-        if (slots.test(chunkid)) {
-            auto v = deleteChunkInLock(chunkid);
-            if (!v.ok()) {
-                LOG(ERROR) << "delete slot:" << chunkid << "fail";
-                return {ErrorCodes::ERR_INTERGER, "deleteChunkInLock failed"};
-            }
-            deleteNum += v.value();
-        }
-    }
-    LOG(INFO) << "deleteChunksWithLock deleteNum:" << deleteNum << " slots:" << bitsetStrEncode(slots);
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-Expected<uint64_t> MigrateManager::deleteChunkInLock(uint32_t  chunkid) {
-    uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
-    LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid << " storeId:" << storeId;
-
-    auto expdb = _svr->getSegmentMgr()->getDb(NULL, storeId,
-  mgl::LockMode::LOCK_IX);
-    if (!expdb.ok()) {
-        LOG(ERROR) << "deleteChunkInLock getDb failed, chunkid:" << chunkid << " storeId:" << storeId;
-        return expdb.status();
-    }
-    PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(NULL);
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    auto cursor = std::move(ptxn.value()->createSlotsCursor(chunkid, chunkid+1));
-    bool over = false;
-    uint32_t deleteNum = 0;
-
-    while (true) {
-        Expected<Record> expRcd = cursor->next();
-        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            over = true;
-            break;
-        }
-
-        if (!expRcd.ok()) {
-            LOG(ERROR) << "delete cursor error on chunkid:" << chunkid;
-            return false;
-        }
-
-        Record &rcd = expRcd.value();
-        const RecordKey &rcdKey = rcd.getRecordKey();
-
-        auto s = ptxn.value()->delKV(rcdKey.encode());
-        if (!s.ok()) {
-            LOG(ERROR) << "delete key fail";
-            continue;
-        }
-        deleteNum++;
-    }
-
-    auto s = ptxn.value()->commit();
-    // todo: retry_times
-    if (!s.ok()) {
-        return s.status();
-    }
-    LOG(INFO) << "deleteChunk chunkid:" << chunkid
-              << " num:" << deleteNum << " is_over:" << over;
-    return deleteNum;
-}
-*/
 }  // namespace tendisplus

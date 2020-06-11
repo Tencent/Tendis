@@ -740,8 +740,11 @@ class ApplyBinlogsCommandV2 : public Command {
                 s = replMgr->applyRepllogV2(sess, storeId,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             } else {
+                if (!svr->isClusterEnabled()) {
+                    LOG(ERROR) << "not ClusterEnabled.";
+                    return{ ErrorCodes::ERR_INTERNAL, "not ClusterEnabled" };
+                }
                 auto migrateMgr = svr->getMigrateManager();
-                INVARIANT_D(migrateMgr != nullptr);
                 s = migrateMgr->applyRepllog(sess, storeId, mode,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             }
@@ -813,6 +816,10 @@ class ApplyBinlogsCommandV2 : public Command {
     static Status runMigrate(Session *sess, uint32_t storeId,
                            const std::string& binlogs, size_t binlogCnt) {
         auto svr = sess->getServerEntry();
+        if (!svr->isClusterEnabled()) {
+            LOG(ERROR) << "not ClusterEnabled.";
+            return{ ErrorCodes::ERR_INTERNAL, "not ClusterEnabled" };
+        }
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
 
@@ -893,8 +900,8 @@ class ApplyBinlogsCommandV2 : public Command {
         if (!expCmit.ok()) {
             return expCmit.status();
         }
-        // TODO(takenliu) runFlush() called store->setBinlogTime(), runMigrate wheter need ???
-        // store->setBinlogTime(timestamp);
+
+        store->setBinlogTime(value.value().getTimestamp());
 
         return{ ErrorCodes::ERR_OK, "" };
     }
@@ -1053,6 +1060,10 @@ class RestoreBinlogCommandV2 : public Command {
     Status runMigrate(Session *sess, uint32_t storeId,
                       const std::string& logKey, const std::string& logValue) {
         auto svr = sess->getServerEntry();
+        if (!svr->isClusterEnabled()) {
+            LOG(ERROR) << "not ClusterEnabled.";
+            return{ ErrorCodes::ERR_INTERNAL, "not ClusterEnabled" };
+        }
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
 
@@ -1081,10 +1092,7 @@ class RestoreBinlogCommandV2 : public Command {
         if (!expdb.ok()) {
             return expdb.status();
         }
-        // fake the session to be not replonly!
-        // sg.getSession()->getCtx()->setReplOnly(false);
 
-        // why runFlush() need call store->setBinlogTime() ???
         Expected<int64_t> etype = ::tendisplus::stoll(splits[0]);
         if (!etype.ok()
             || etype.value() < MigrateBinlogType::RECEIVE_START || etype.value() > MigrateBinlogType::SEND_END
@@ -1104,8 +1112,9 @@ class RestoreBinlogCommandV2 : public Command {
             return{ ErrorCodes::ERR_INTERGER, "storeid not match" };
         }
 
+        expdb.value().store->setBinlogTime(value.value().getTimestamp());
+
         return migrateMgr->restoreMigrateBinlog(type, storeId, splits[2]);
-        // TODO(takenliu) runFlush() called store->setBinlogTime(), runMigrate wether need ???
     }
 
     // restorebinlogv2 storeId key(binlogid) value([op key value]*) checksum
@@ -1191,12 +1200,14 @@ public:
         if (storeId >= svr->getKVStoreCount()) {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
         }
-        auto migrateMgr = svr->getMigrateManager();
-        INVARIANT(migrateMgr != nullptr);
+        if (svr->isClusterEnabled()) {
+            auto migrateMgr = svr->getMigrateManager();
+            INVARIANT(migrateMgr != nullptr);
 
-        auto ret = migrateMgr->onRestoreEnd(storeId);
-        if (!ret.ok()) {
-            return ret;
+            auto ret = migrateMgr->onRestoreEnd(storeId);
+            if (!ret.ok()) {
+                return ret;
+            }
         }
         return Command::fmtOK();
     }

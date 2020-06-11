@@ -122,6 +122,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         }
     }
 
+    // TODO(wayenchen)  takenliu add, call sendWriter(), avoid code copy.
     std::stringstream ss2;
     if (writer.getCount() == 0) {
         if (!needHeartBeart) {

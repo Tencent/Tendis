@@ -10,7 +10,8 @@ go build repl.go
 go build repltest.go common.go
 go build restore.go common.go
 go build restoretest.go common.go
-go build clustertest.go common.go
+go build clustertest.go common.go common_cluster.go
+go build clustertestRestore.go common.go common_cluster.go
 
 ./clear.sh
 echo "###### repl begin ######" >> $logfile

@@ -71,6 +71,15 @@ class BinlogScanner{
                 << " chunkid:" << logValue.value().getChunkId()
                 << " ts:" << logValue.value().getTimestamp()
                 << " cmdstr:" << logValue.value().getCmd() << endl;
+
+            if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+                cout << "  op:" << "FLUSH"
+                     << " cmd:" << logValue.value().getCmd() << endl;
+            } else if (logValue.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
+                cout << "  op:" << "MIGRATE"
+                     << " cmd:" << logValue.value().getCmd() << endl;
+            }
+
             size_t offset = logValue.value().getHdrSize();
             auto data = logValue.value().getData();
             size_t dataSize = logValue.value().getDataSize();

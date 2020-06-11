@@ -7,10 +7,12 @@ namespace tendisplus {
 
 ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     std::shared_ptr<ServerEntry> svr,
-    std::shared_ptr<ServerParams> cfg) :
+    std::shared_ptr<ServerParams> cfg,
+    bool is_fake) :
     _slots(slots),
     _svr(svr),
     _cfg(cfg),
+    _isFake(is_fake),
 
     _storeid(0),
     _snapshotKeyNum(0),
@@ -66,7 +68,7 @@ Status ChunkMigrateSender::sendChunk() {
     }
 
     /* unlock after receive package */
-    // TODO(takenliu) deleteChunk() should be protected.
+    // TODO(wayenchen)  takenliu add, use ChunkMigrateSender::unlockChunks
     s = _svr->getMigrateManager()->unlockChunks(_slots);
     if (!s.ok()) {
         LOG(ERROR) << "unlock fail on slots:"+ _slots.to_string();
@@ -113,8 +115,10 @@ Expected<Transaction*> ChunkMigrateSender::initTxn() {
     }
     // snapShot open
     Transaction* txn = ptxn.value().release();
+    // TODO(takenliu) add a gtest for SI-level
     txn->SetSnapshot();
     LOG(INFO) << "initTxn SetSnapshot";
+    // TODO(wayenchen)  takenliu add, use std::unique_ptr
     return  txn;
 }
 
@@ -287,7 +291,7 @@ bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog
         LOG(INFO) << "pursueBinLog " << catchupTimes << " times finish from:" << startBinLog <<" to:" <<binlogHigh
                   << " storeid:" << _storeid << " slots:" << bitsetStrEncode(_slots);
         {
-            // TODO(takenliu) binlogHigh maybe not send over
+            // TODO(wayenchen)  takenliu add, binlogHigh maybe not send over
             std::lock_guard<std::mutex> lk(_mutex);
             startBinLog = binlogHigh;
             binlogHigh = kvstore->getHighestBinlogId();
@@ -319,6 +323,7 @@ Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
 
     // if no data come when migrating, no need to send end log
     if (_curBinlogid < heighBinlog) {
+        // TODO(wayenchen)  takenliu add, use _curBinlogid as reference is not clear
         bool catchUp = pursueBinLog(maxTime, _curBinlogid ,
                                 heighBinlog, ptxn.value().get());
         if (!catchUp) {
@@ -326,6 +331,8 @@ Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
            return {ErrorCodes::ERR_TIMEOUT, "catch up fail"};
         }
     }
+    // TODO(wayenchen)  takenliu add, lockChunks shouldn't be processed by MigrateManager, only processed in ChunkMigrateSender
+    //    use ChunkMigrateSender::lockChunks
     Status s = _svr->getMigrateManager()->lockChunks(_slots);
     if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER, "fail lock slots"};
@@ -360,6 +367,8 @@ Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
 
 
 Status ChunkMigrateSender::sendOver() {
+    // TODO(takenliu) if one of the follow steps failed, do what ???
+
     auto ret = addMigrateBinlog(MigrateBinlogType::SEND_END, _slots.to_string(), _storeid, _svr.get(),
         _dstNode->getNodeName());
     if (!ret.ok()) {
@@ -419,7 +428,7 @@ Status ChunkMigrateSender::sendOver() {
 Expected<uint64_t> ChunkMigrateSender::deleteChunk(uint32_t  chunkid) {
     LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
     // NOTE(takenliu) for fake task, maybe only call deleteChunk(), so _dbWithLock maybe null.
-    if (_dbWithLock == nullptr) {
+    if (_isFake) {
         auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
                                                   mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
@@ -472,6 +481,8 @@ Expected<uint64_t> ChunkMigrateSender::deleteChunk(uint32_t  chunkid) {
 }
 
 bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
+    lockChunks();
+
     size_t idx = 0;
     while (idx < slots.size()) {
         if (slots.test(idx)) {
@@ -486,20 +497,49 @@ bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
         idx++;
     }
     LOG(INFO) << "finish del key num: " << _delNum << " del slots num: " << _delSlot;
-    if (_delNum != _snapshotKeyNum + _binlogNum) {
+    if (!_isFake && _delNum != _snapshotKeyNum + _binlogNum) {
         LOG(ERROR) << "deleteChunks delNum: " << _delNum
                    << "is not equal to (snaphotKey+binlog) "
                    << "snapshotKey num: " << _snapshotKeyNum
                    << " binlog num: " << _binlogNum;
     } else {
         _consistency = true;
-        LOG(INFO) << "deleteChunks OK, delNum: " << _delNum
+        LOG(INFO) << "deleteChunks OK, isFake:" << _isFake
+            << " delNum: " << _delNum
             << " snapshotKeyNum: " << _snapshotKeyNum
             << " binlogNum: " << _binlogNum
             << " , storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
     }
+
+    unlockChunks();
     return true;
 }
 
+Status ChunkMigrateSender::lockChunks(){
+    // NOTE(takenliu) if need multi thread in the future, _slotsLockList need be protected by mutex.
+    LOG(INFO) << "lockChunks begin, slots:" << bitsetStrEncode(_slots);
+    size_t chunkid = 0;
+    Status s;
+    while (chunkid < _slots.size()) {
+        if (_slots.test(chunkid)) {
+            uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
+
+            auto lock = std::make_unique<ChunkLock>
+                    (storeId, chunkid, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
+
+            _slotsLockList.push_back(std::move(lock));
+            LOG(INFO) << "lockChunks one sucess, chunkid:" << chunkid << " storeid:" << storeId;
+        }
+        chunkid++;
+    }
+    LOG(INFO) << "lockChunks end, slots:" << bitsetStrEncode(_slots);
+    return  {ErrorCodes::ERR_OK, ""};
+}
+
+Status ChunkMigrateSender::unlockChunks(){
+    LOG(INFO) << "unlockChunks slots:" << bitsetStrEncode(_slots);
+    _slotsLockList.clear();
+    return  {ErrorCodes::ERR_OK, ""};
+}
 
 } // end namespace

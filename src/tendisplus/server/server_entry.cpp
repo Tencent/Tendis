@@ -295,6 +295,8 @@ void ServerEntry::logGeneral(Session *sess) {
     }
     LOG(INFO) << sess->getCmdStr();
 }
+
+// TODO(wayenchen)  takenliu add, move this interface to clustermanager
 //judge store key in slot
 bool  ServerEntry::emptySlot(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
@@ -323,7 +325,7 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
     return true;
 }
 
-// TODO(vinchen): remove !
+// TODO(wayenchen)  takenliu add, delete this function, it cost too much memory.
 std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
@@ -353,7 +355,7 @@ std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
     return keysList;
 }
 
-
+// TODO(wayenchen)  takenliu add, move this interface to clustermanager.
 uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
     std::vector<Record> records = getKeyList(slot);
     return records.size();
@@ -395,7 +397,7 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
     return keysList;
 }
 
-
+// TODO(wayenchen)  takenliu add, delete this interface. use clusterManager's function
 Status ServerEntry::delKeysInSlot(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);

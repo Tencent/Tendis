@@ -214,7 +214,7 @@ protected:
     std::bitset<CLUSTER_SLOTS> _mySlots;
     uint16_t _numSlaves;
 
-// TODO(wayenchen): make it private
+// TODO(wayenchen) takenliu add, make it private
  public:
     mstime_t _ctime;
     uint16_t _flags;
@@ -232,8 +232,7 @@ protected:
     // FIXME: there is no offset in tendis
     uint64_t _replOffset;  /* Last known repl offset for this node. */
     std::list<std::shared_ptr<ClusterNodeFailReport>> _failReport;
-
-    };
+};
 
 using CNodePtr = std::shared_ptr<ClusterNode>;
 using CReportPtr = std::shared_ptr<ClusterNodeFailReport>;
