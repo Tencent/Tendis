@@ -184,6 +184,8 @@ class MigrateManager {
     std::atomic<bool> _isRunning;
     mutable std::mutex _mutex;
     std::unique_ptr<std::thread> _controller;
+
+    // TODO(wayenchen) takenliu add, change all std::bitset<CLUSTER_SLOTS> to SlotsBitmap
     std::bitset<CLUSTER_SLOTS> _migrateSlots;
     std::bitset<CLUSTER_SLOTS> _importSlots;
 

@@ -141,6 +141,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void setNodeCport(uint64_t cport);
 
     //std::vector<std::shared_ptr<ClusterNode>> getSlaves() const { return _slaves; }
+    // TODO(wayenchen) takenliu add, need be protected by mutex.
     const std::bitset<CLUSTER_SLOTS>& getSlots() const { return _mySlots; }
 
     uint32_t getSlavesCount() const { return _slaves.size(); }
@@ -734,6 +735,7 @@ class ClusterManager {
     // Status run();
     bool isRunning() const;
     Status clusterReset(uint16_t hard);
+    bool hasDirtyKey(uint32_t storeid);
  protected:
     void controlRoutine();
 

@@ -1359,13 +1359,30 @@ class SlaveofCommand: public Command {
             if (storeId >= svr->getKVStoreCount()) {
                 return {ErrorCodes::ERR_PARSEPKT, "invalid storeId"};
             }
-
+            // TODO(takenliu) add a command to delete dirty keys.
+            if (svr->isClusterEnabled()) {
+                auto clustermgr = svr->getClusterMgr();
+                if (clustermgr->hasDirtyKey(storeId)) {
+                    return {ErrorCodes::ERR_INTERNAL,
+                            "slots not belong to me has some key, delete it please."};
+                }
+            }
             Status s = replMgr->changeReplSource(sess, storeId, "", 0, 0);
             if (!s.ok()) {
                 return s;
             }
             return Command::fmtOK();
         } else {
+            // TODO(takenliu) add a command to delete dirty keys.
+            if (svr->isClusterEnabled()) {
+                auto clustermgr = svr->getClusterMgr();
+                for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+                    if (clustermgr->hasDirtyKey(i)) {
+                        return {ErrorCodes::ERR_INTERNAL,
+                                "slots not belong to me has some key, delete it please."};
+                    }
+                }
+            }
             for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
                 Status s = replMgr->changeReplSource(sess, i, "", 0, 0);
                 if (!s.ok()) {

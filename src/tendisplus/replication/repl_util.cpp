@@ -375,12 +375,14 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         auto slot = explog.value().getChunkId();
         binlogId = explog.value().getBinlogId();
 
-        // TODO(takenliu): finish the logical of FLUSH for migrate
+        // NOTE(takenliu): FLUSH when migrate, it will generate ambiguous result! it cant send to dst node.
         if (slot == Transaction::CHUNKID_FLUSH) {
-            if (writer->getCount() > 0) {
+            /*if (writer->getCount() > 0) {
                 writer->resetWriter();
                 }
-            writer->setFlag(BinlogFlag::FLUSH);
+            writer->setFlag(BinlogFlag::FLUSH);*/
+            LOG(WARNING) << "FLUSH when migrate, it will generate ambiguous result! slots:" << bitsetStrEncode(slotsMap);
+            continue;
         }
 
         // NOTE(takenliu) migrate binlog dont send to dst node

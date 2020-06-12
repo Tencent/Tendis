@@ -3675,6 +3675,19 @@ Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(s
     return sess.value();
 }
 
+bool ClusterManager::hasDirtyKey(uint32_t storeid) {
+    auto node = _clusterState->getMyselfNode();
+    for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
+        if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid
+            && !node->getSlotBit(chunkid)
+            && !_svr->emptySlot(chunkid)) {
+            LOG(WARNING) << "hasDirtyKey storeid:" << storeid << " chunkid:" << chunkid;
+            return true;
+        }
+    }
+    return false;
+}
+
 ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
     asio::ip::tcp::socket sock,
     uint64_t connid,
