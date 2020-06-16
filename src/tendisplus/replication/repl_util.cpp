@@ -45,7 +45,6 @@ std::shared_ptr<BlockingTcpClient> createClient(
     return std::move(client);
 }
 
-
 Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     uint32_t storeId, uint32_t dstStoreId,
     uint64_t binlogPos, bool needHeartBeart,
@@ -88,7 +87,7 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         if (explog.ok()) {
             if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
                 // flush binlog should be alone
-                LOG(INFO) << "deal with chunk flush: " <<explog.value().getChunkId();
+                LOG(INFO) << "deal with chunk flush: " << explog.value().getChunkId();
                 if (writer.getCount() > 0)
                     break;
 
@@ -125,13 +124,12 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
     } else {
         // TODO(vinchen): too more copy
-        Command::fmtMultiBulkLen(ss2, 6);
+        Command::fmtMultiBulkLen(ss2, 5);
         Command::fmtBulk(ss2, "applybinlogsv2");
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
         Command::fmtBulk(ss2, writer.getBinlogStr());
         Command::fmtBulk(ss2, std::to_string(writer.getCount()));
         Command::fmtBulk(ss2, std::to_string((uint32_t)writer.getFlag()));
-        Command::fmtBulk(ss2, std::to_string((int)BinlogApplyMode::KEEP_BINLOG_ID));
     }
 
     std::string stringtoWrite = ss2.str();
@@ -166,7 +164,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         return binlogId;
     }
 }
-
 
 Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     const std::string& logKey, const std::string& logValue,
@@ -256,8 +253,6 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
     store->setBinlogTime(timestamp);
     return binlogId;
 }
-
-
 
 Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
                   uint32_t dstStoreId, bool needHeartBeart,

@@ -53,7 +53,7 @@ class BackupCommand: public Command {
                 return {ErrorCodes::ERR_MANUAL, "mode error, should be ckpt or copy"};
             }
         }
-        ServerEntry* svr = sess->getServerEntry();
+        auto svr = sess->getServerEntry();
         INVARIANT(svr != nullptr);
         if (!filesystem::exists(dir)) {
             return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
@@ -687,7 +687,7 @@ class ApplyBinlogsCommandV2 : public Command {
     }
 
     ssize_t arity() const {
-        return 6;
+        return -5;
     }
 
     int32_t firstkey() const {
@@ -707,7 +707,6 @@ class ApplyBinlogsCommandV2 : public Command {
                 BinlogApplyMode mode) {
         auto svr = sess->getServerEntry();
         auto replMgr = svr->getReplManager();
-        auto migrateMgr = svr->getMigrateManager();
         INVARIANT(replMgr != nullptr);
         // TODO(vinchen): should it remove?
         //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
@@ -735,6 +734,8 @@ class ApplyBinlogsCommandV2 : public Command {
                 s = replMgr->applyRepllogV2(sess, storeId,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             } else {
+                auto migrateMgr = svr->getMigrateManager();
+                INVARIANT_D(migrateMgr != nullptr);
                 s = migrateMgr->applyRepllog(sess, storeId, mode,
                     eLog.value().getReplLogKey(), eLog.value().getReplLogValue());
             }
@@ -828,11 +829,14 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         binlogCnt = exptCnt.value();
 
-        Expected<uint64_t> intMode = ::tendisplus::stoul(args[5]);
-        if (!intMode.ok()) {
-            return intMode.status();
+        auto mode = BinlogApplyMode::KEEP_BINLOG_ID;
+        if (sess->getArgs().size() > 5) {
+            Expected<uint64_t> intMode = ::tendisplus::stoul(args[5]);
+            if (!intMode.ok()) {
+                return intMode.status();
+            }
+            mode = (BinlogApplyMode)intMode.value();
         }
-        BinlogApplyMode mode = (BinlogApplyMode)intMode.value();
 
         auto eflag = ::tendisplus::stoul(args[4]);
         if (!eflag.ok()) {

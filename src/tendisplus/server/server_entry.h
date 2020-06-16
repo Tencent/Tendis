@@ -254,40 +254,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
-    // TODO(takenliu): finish it
-
-    std::vector<uint32_t> getChunkList(uint32_t storeid) {
-        std::vector<uint32_t> result;
-        if (getKVStoreCount() == 1) {
-            result.push_back(15495);
-            result.push_back(3300);
-            return result;
-        }
-        if (storeid == 5) {
-            result.push_back(15495); 
-        } else if (storeid == 0) {
-            result.push_back(3300);
-        } else {
-            result.push_back(storeid);
-        }
-        return result;
-    }
-
-    bool isContainChunk(uint32_t chunkid) {
-        return true;
-    }
-
-    Status updateChunkInfo(uint32_t chunkid, string mode) {
-        return {ErrorCodes::ERR_OK, ""};
-    }
-    Status gossipBroadcast(uint32_t chunkid, string ip, uint32_t port) {
-        return {ErrorCodes::ERR_OK, ""};
-    }
-
-    Status deleteChunk(uint32_t chunkid) {
-        return {ErrorCodes::ERR_OK, ""};
-    }
-
     std::vector<Record> getKeyList(uint32_t  slot);
     bool emptySlot(uint32_t slot) ;
     uint64_t countKeysInSlot(uint32_t slot);
@@ -296,7 +262,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     Status delKeysInSlot(uint32_t slot);
 
     bool isClusterEnabled() const { return _enableCluster; }
-    void updateClusterFromMeta();
 
  private:
     ServerEntry();
@@ -347,9 +312,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
-    mutable std::shared_timed_mutex _rwlock;
-    std::map<std::string, uint64_t> _cfrmTs;
-    std::map<std::string, uint64_t> _cfrmVersion;
     //cluster test
     std::map<std::string, std::string> _nodeName;
     std::map<std::string, std::string> _ip;

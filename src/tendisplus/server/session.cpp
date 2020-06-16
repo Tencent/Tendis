@@ -13,13 +13,7 @@ std::atomic<uint64_t> Session::_aliveCnt(0);
 thread_local Session* curSession = nullptr;
 
 Session::Session(std::shared_ptr<ServerEntry> svr, Type type)
-        :_args(std::vector<std::string>()),
-         _server(svr.get()),
-         _ctx(std::make_unique<SessionCtx>(this)),
-         _type(type),
-         _timestamp(msSinceEpoch()),
-         _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
-    _aliveCnt.fetch_add(1, std::memory_order_relaxed);
+        : Session(svr.get(), type) {
 }
 
 Session::Session(ServerEntry* svr, Type type)

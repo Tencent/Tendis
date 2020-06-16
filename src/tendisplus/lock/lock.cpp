@@ -119,6 +119,7 @@ ChunkLock::ChunkLock(uint32_t storeId, uint32_t chunkId, mgl::LockMode mode,
     DLOG(INFO) << "begin lock on chunk:" <<_chunkId;
     std::string target = "chunk_" + std::to_string(chunkId);
     // a duration of 49 days. If lock still not acquired, fail it
+	// TODO(vinchen)
     uint64_t timeoutMs = std::numeric_limits<uint32_t>::max();
     if (_sess) {
         _sess->getCtx()->setWaitLock(storeId, chunkId, "", mode);

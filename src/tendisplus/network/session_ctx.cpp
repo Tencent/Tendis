@@ -236,9 +236,7 @@ void SessionCtx::setKeylock(const std::string& key, mgl::LockMode mode) {
 }
 
 void SessionCtx::unsetKeylock(const std::string& key) {
-#ifdef TENDIS_DEBUG
     INVARIANT_D(_keylockmap.count(key) > 0);
-#endif
     _keylockmap.erase(key);
 }
 

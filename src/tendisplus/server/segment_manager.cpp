@@ -116,6 +116,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
     auto svr = sess->getServerEntry();
 
     if (svr->isClusterEnabled()) {
+		// TODO(vinchen): one interface
         std::stringstream ss;
         const std::shared_ptr<tendisplus::ClusterState>
                 &clusterState = svr->getClusterMgr()->getClusterState();
@@ -197,6 +198,7 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     for (auto& element : segList) {
         uint32_t segId = element.first;
         auto keysvec = element.second;
+		// TODO(vinchen): deadlock
         std::sort(std::begin(keysvec), std::end(keysvec),
                 [](const std::string& a, const std::string& b) { return a < b; });
         for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {

@@ -60,6 +60,7 @@ class StoreLock: public ILock {
 
 class ChunkLock: public ILock {
 public:
+    // TODO(vinchen): AquireChunkLock
     ChunkLock(uint32_t storeId, uint32_t chunkId, mgl::LockMode mode,
               Session* sess, mgl::MGLockMgr* mgr);
     uint32_t getStoreId() const final;

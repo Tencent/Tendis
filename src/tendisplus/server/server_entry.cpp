@@ -16,8 +16,6 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/lock/lock.h"
 
-
-
 namespace tendisplus {
 
 ServerStat::ServerStat() {
@@ -325,6 +323,7 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
     return true;
 }
 
+// TODO(vinchen): remove !
 std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
@@ -348,7 +347,6 @@ std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
         if (!expRcd.ok()) {
             LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
             return {};
-        //    break;
         }
         keysList.push_back(expRcd.value());
     }
@@ -358,7 +356,7 @@ std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
 
 uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
     std::vector<Record> records = getKeyList(slot);
-    return  records.size();
+    return records.size();
 }
 
 std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t count) {
@@ -428,7 +426,7 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
         return s.status();
     }
 
-    return  {ErrorCodes::ERR_OK, "finish delte keys in slot"};
+    return {ErrorCodes::ERR_OK, "finish delte keys in slot"};
 
 }
 
@@ -580,7 +578,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:" << s.toString();
         return s;
     }
-
 
     if (!cfg->noexpire) {
         _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
@@ -1291,7 +1288,6 @@ void ServerEntry::stop() {
         _migrateMgr->stop();
     if (_indexMgr) 
         _indexMgr->stop();
-    _clusterMgr->stop();
     _sessions.clear();
 
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
@@ -1367,6 +1363,4 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
 }
 
 }  // namespace tendisplus
-
-
 

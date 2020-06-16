@@ -2,6 +2,7 @@
 #include <utility>
 #include <memory>
 #include <string>
+#include <vector>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -29,7 +30,7 @@ StoreMeta::StoreMeta(uint32_t id_, const std::string& syncFromHost_,
                 uint64_t binlogId_, ReplState replState_)
     :id(id_),
      syncFromHost(syncFromHost_),
-     syncFromPort(syncFromPort_), 
+     syncFromPort(syncFromPort_),
      syncFromId(syncFromId_),
      binlogId(binlogId_),
      replState(replState_) {
@@ -74,20 +75,20 @@ std::unique_ptr<MainMeta> MainMeta::copy() const {
         new MainMeta(*this)));
 }
 
-//server first start in cluster mode
-//c1780cb48b3398452e3fd8b162b60246213e3379 127.0.0.1 0 myself,master - 0 0 0 connected
+// server first start in cluster mode
+// c1780cb48b3398452e3fd8b162b60246213e3379 127.0.0.1 0 myself,master - 0 0 0 connected
 ClusterMeta::ClusterMeta()
     :ClusterMeta(getUUid(20), "", 0, 0,
                 CLUSTER_NODE_MYSELF|CLUSTER_NODE_MASTER, "-", 0, 0, 0, {}) {
     // get clustermeta , if not exit ,create uuid
 }
 
-
 ClusterMeta::ClusterMeta(const std::string& name)
     :nodeName(name),
-     ip(),
+     ip(""),
      port(0),
-     nodeFlag("myself,master"),
+     cport(0),
+     nodeFlag(CLUSTER_NODE_MYSELF|CLUSTER_NODE_MASTER),
      masterName("-"),
      pingTime(0),
      pongTime(0),
@@ -96,7 +97,7 @@ ClusterMeta::ClusterMeta(const std::string& name)
 
 /*
 ClusterMeta::ClusterMeta()
-    :ClusterMeta("TendisNode-57731f1f4f95c376b22f59bb3728a413216573c01e3329d7a2a4357e0e5baaf81a89e476073fe2a6","",0,"myself,master","-",0,0,0,ConnectState::CONNECTED,{}){
+    :ClusterMeta("57731f1f4f95c376b22f59bb3728a413216573c01e3329d7a2a4357e0e5baaf81a89e476073fe2a6","",0,"myself,master","-",0,0,0,ConnectState::CONNECTED,{}){
     //get clustermeta , if not exit ,create uuid
 }
 */
@@ -108,6 +109,7 @@ ClusterMeta::ClusterMeta(const std::string& nodeName_, const std::string& ip_,
     :nodeName(nodeName_),
      ip(ip_),
      port(port_),
+     cport(cport_),
      nodeFlag(nodeFlag_),
      masterName(masterName_),
      pingTime(pingTime_),
@@ -122,13 +124,13 @@ std::unique_ptr<ClusterMeta> ClusterMeta::copy() const {
         new ClusterMeta(*this)));
 }
 
-
-//get prefix with "store_cluster"
-std::string& ClusterMeta::getClusterPrefix(){
-    
+// get prefix with "store_cluster_"
+std::string& ClusterMeta::getClusterPrefix() {
     static std::string realPrefix = []() {
-        RecordKey rk(0, 0, RecordType::RT_META, std::string(ClusterMeta::clusterPrefix), "");   
-        std::string prefix  = rk.prefixPk().substr(0,21);
+        RecordKey rk(0, 0, RecordType::RT_META, std::string(ClusterMeta::CLUSTER_PREFIX), "");
+        // CHUNKID(4) + TYPE(1) + DBID(4) + ClusterMeta::CLUSTER_PREFIX
+        auto prefixPk = rk.prefixPk();
+        std::string prefix  = prefixPk.substr(0, 9 + strlen(ClusterMeta::CLUSTER_PREFIX));
         return prefix;
     }();
     return realPrefix;
@@ -166,8 +168,6 @@ Catalog::Catalog(std::unique_ptr<KVStore> store,
             INVARIANT(0);
     }
 }
-
-
 
 Status Catalog::setStoreMeta(const StoreMeta& meta) {
     std::stringstream ss;
@@ -270,11 +270,7 @@ Expected<std::unique_ptr<StoreMeta>> Catalog::getStoreMeta(uint32_t idx) {
     INVARIANT(doc["replState"].IsUint64());
     result->replState = static_cast<ReplState>(doc["replState"].GetUint64());
 
-#ifdef _WIN32
-    return std::move(result);
-#else
     return result;
-#endif
 }
 
 Status Catalog::stop() {
@@ -355,11 +351,7 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
     result->storeMode = static_cast<KVStore::StoreMode>(
                         doc["storeMode"].GetUint64());
 
-#ifdef _WIN32
-    return std::move(result);
-#else
     return result;
-#endif
 }
 
 Status Catalog::setMainMeta(const MainMeta& meta) {
@@ -439,25 +431,18 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     INVARIANT(doc["chunkSize"].IsUint64());
     result->chunkSize = (uint32_t)doc["chunkSize"].GetUint64();
 
-#ifdef _WIN32
-    return std::move(result);
-#else
     return result;
-#endif
 }
 
 Status Catalog::setClusterMeta(const ClusterMeta& meta) {
- 
     std::stringstream ss;
-    ss << "store_cluster_" << meta.nodeName;
+    ss << ClusterMeta::CLUSTER_PREFIX << meta.nodeName;
 
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
 
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
-    
     writer.StartObject();
-    
     writer.Key("Version");
     writer.String("1");
 
@@ -470,14 +455,16 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
     writer.Key("port");
     writer.Uint64(meta.port);
 
+    writer.Key("cport");
+    writer.Uint64(meta.cport);
+
     writer.Key("nodeFlag");
-    writer.String(meta.nodeFlag);
+    writer.Uint64(meta.nodeFlag);
 
     writer.Key("masterName");
     writer.String(meta.masterName);
 
     writer.Key("pingTime");
-   // writer.Uint64(static_cast<uint8_t>(meta.pingTime));
     writer.Uint64(meta.pingTime);
 
     writer.Key("pongTime");
@@ -494,7 +481,6 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
     writer.EndArray();
 
     writer.EndObject();
-        
     RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
 
     auto exptxn = _store->createTransaction(nullptr);
@@ -516,58 +502,47 @@ Status Catalog::setClusterMeta(const ClusterMeta& meta) {
     return txn->commit().status();
 }
 
-//get all cluster data , use cursor
-Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
-    
-    vector<std::unique_ptr<ClusterMeta>> resultList;
+// get all cluster data , use cursor
+Expected<std::vector<std::unique_ptr<ClusterMeta>>> Catalog::getAllClusterMeta() {
+    std::vector<std::unique_ptr<ClusterMeta>> resultList;
     const std::string prefix = ClusterMeta::getClusterPrefix();
-  //  const std::string prefix = "store_cluster";
     auto exptxn = _store->createTransaction(nullptr);
 
     if (!exptxn.ok()) {
         return exptxn.status();
     }
 
+    auto keyprefix = std::string(ClusterMeta::CLUSTER_PREFIX);
     Transaction *txn = exptxn.value().get();
     auto bcursor = txn->createCursor();
-   // bcursor->seek(prefix);
-
     bcursor->seek(prefix);
-    
     while (true) {
         auto result = std::make_unique<ClusterMeta>();
 
         auto v = bcursor->next();
-        LOG(INFO) << "get ClusterMeta next" ;
-           
         if (!v.ok()) {
-            if (v.status().code() == ErrorCodes::ERR_EXHAUST)
-            {
-                LOG(INFO) << "get ClusterMeta ErrorCodes::ERR_EXHAUST" ;                             
-                return {ErrorCodes::ERR_NOTFOUND,"wrong meta"};
+            if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
+                return resultList;
             }
             LOG(ERROR) << "get ClusterMeta error: " << v.status().toString();
             return v.status();
-        }     
+        }
         const auto& nodeRecord = v.value();
         const auto key = nodeRecord.getRecordKey();
-    
-        auto primaryKey = key.getPrimaryKey(); 
-        
-        //judge if prefix begin with "store_cluster"
-        if(primaryKey.compare(0,12,std::string(ClusterMeta::clusterPrefix)) != 0) {
+        auto primaryKey = key.getPrimaryKey();
+
+        // judge if prefix begin with "store_cluster"
+        if (primaryKey.compare(0, keyprefix.length(), keyprefix) != 0) {
             break;
         }
-             
-        const auto& rv = nodeRecord.getRecordValue();
-        
-        const std::string& json = rv.getValue();        
 
+        const auto& rv = nodeRecord.getRecordValue();
+        const std::string& json = rv.getValue();
         rapidjson::Document doc;
         doc.Parse(json);
         if (doc.HasParseError()) {
             LOG(FATAL) << "parse meta failed"
-                << rapidjson::GetParseError_En(doc.GetParseError());    
+                << rapidjson::GetParseError_En(doc.GetParseError());
         }
 
         INVARIANT(doc.IsObject());
@@ -596,7 +571,7 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
         INVARIANT(doc.HasMember("masterName"));
         INVARIANT(doc["masterName"].IsString());
         result->masterName = doc["masterName"].GetString();
-    
+
         INVARIANT(doc.HasMember("pingTime"));
         INVARIANT(doc["pingTime"].IsUint64());
         result->pingTime = static_cast<uint64_t>(
@@ -614,59 +589,46 @@ Expected<vector<std::unique_ptr<ClusterMeta>>> Catalog::getClusterMeta() {
 
         INVARIANT(doc.HasMember("slots"));
         INVARIANT(doc["slots"].IsArray());
-        
+
         rapidjson::Value &slotArray = doc["slots"];
-        result->slots.clear();        
-        for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++)
-        {
+        result->slots.clear();
+        for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++) {
             const rapidjson::Value& object = slotArray[i];
             auto element = static_cast<uint16_t>(object.GetUint64());
             result->slots.push_back(element);
         }
+
         LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName
                 << "ip address is "<< result->ip << "node Flag is"
                 << result->nodeFlag;
 
         resultList.emplace_back(std::move(result));
-        
     }
-#ifdef _WIN32
-    if(resultList.size() ==0){
-        return {ErrorCodes::ERR_NOTFOUND,"wrong meta"};
-    }else{
-        return std::move(resultList);
-    }
-#else
-    if(resultList.size() ==0){
-        return {ErrorCodes::ERR_NOTFOUND,"wrong meta"};
-    }else{
-        return resultList;
-    }
-#endif    
+
+    return resultList;
 }
 
-//get one cluster node data
+// get one cluster node data
 Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string& nodeName) {
     auto result = std::make_unique<ClusterMeta>();
-    
     std::stringstream ss;
 
     ss << "store_cluster_" << nodeName;
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
-   
+
     auto exptxn = _store->createTransaction(nullptr);
     if (!exptxn.ok()) {
         LOG(ERROR) << "ERROR Get createTransaction status"<< exptxn.status().toString();
         return exptxn.status();
     }
-  
+
     Transaction *txn = exptxn.value().get();
     Expected<RecordValue> exprv = _store->getKV(rk, txn);
     if (!exprv.ok()) {
         return exprv.status();
-        LOG(INFO)<<"ERROR Get getKV status"<< exprv.status().toString();
+        LOG(INFO) << "ERROR Get getKV status"<< exprv.status().toString();
     }
- 
+
     RecordValue rv = exprv.value();
     const std::string& json = rv.getValue();
     rapidjson::Document doc;
@@ -700,7 +662,7 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
     INVARIANT(doc.HasMember("masterName"));
     INVARIANT(doc["masterName"].IsString());
     result->masterName = doc["masterName"].GetString();
-    
+
     INVARIANT(doc.HasMember("pingTime"));
     INVARIANT(doc["pingTime"].IsUint64());
     result->pingTime = static_cast<uint64_t>(
@@ -721,8 +683,7 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
 
     rapidjson::Value &slotArray = doc["slots"];
     result->slots.clear();
-    for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++)
-    {
+    for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++) {
         const rapidjson::Value& object = slotArray[i];
         auto element = static_cast<uint16_t>(object.GetUint64());
         result->slots.push_back(element);
@@ -810,7 +771,6 @@ Expected<std::unique_ptr<EpochMeta>> Catalog::getEpochMeta() {
 
     INVARIANT(doc.HasMember("lastVoteEpoch"));
     INVARIANT(doc["lastVoteEpoch"].IsUint64());
-    
     result->lastVoteEpoch = static_cast<uint64_t>(
             doc["lastVoteEpoch"].GetUint64());
 
