@@ -3562,8 +3562,8 @@ void ClusterState::clusterUpdateState() {
             if (_allSlots[j] == nullptr ||
                 _allSlots[j]->getFlags() & (CLUSTER_NODE_FAIL)) {
                 if(_allSlots[j] == nullptr) {
-                    LOG(ERROR) <<"clusterstate turn to fail: slot"
-                        << j << "belong to no node";
+                    LOG(ERROR) <<"clusterstate turn to fail: slot "
+                        << j << " belong to no node";
                 } else {
                     LOG(ERROR) << "state turn fail: node" << _allSlots[j]->getNodeName()
                                << "is marked as fail on slot:" << j;

@@ -895,7 +895,6 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
         }
 
         newMeta->syncFromHost = ip;
-        INVARIANT_D(port == 0 && sourceStoreId == 0);
         newMeta->syncFromPort = port;
         newMeta->syncFromId = sourceStoreId;
         newMeta->replState = ReplState::REPL_NONE;

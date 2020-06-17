@@ -62,27 +62,30 @@ class BackupCommand: public Command {
             return {ErrorCodes::ERR_MANUAL, "dir cant be dbPath:" + dir};
         }
 
-        auto state = svr->getClusterMgr()->getClusterState();
-        Expected<std::string> eptNodeInfo = state->getBackupInfo();
-        if (!eptNodeInfo.ok()) {
-            LOG(ERROR) << "fail get info of my master:"
-                       << state->getMyselfNode()->getMaster()->getNodeName();
-            return  {ErrorCodes::ERR_CLUSTER, "get info fail"};
-        }
-
-        std::string myNodeInfo = eptNodeInfo.value();
-        LOG(INFO) << "myself Node info is:" << myNodeInfo;
-        ofstream outfile( dir+"/"+"clustermeta.txt", fstream::out );
-        if (outfile.is_open()) {
-            outfile << myNodeInfo << std::endl;
-            if (!outfile.good()) {
-                LOG(ERROR) << "write node backup info fail";
-                return  {ErrorCodes::ERR_MANUAL, "write fail"};
+        if (svr->isClusterEnabled()) {
+            auto state = svr->getClusterMgr()->getClusterState();
+            Expected<std::string> eptNodeInfo = state->getBackupInfo();
+            if (!eptNodeInfo.ok()) {
+                LOG(ERROR) << "fail get info of my master:"
+                    << state->getMyselfNode()->getMaster()->getNodeName();
+                return  { ErrorCodes::ERR_CLUSTER, "get info fail" };
             }
-        } else {
-            LOG(ERROR) << "write master node in fail";
+
+            std::string myNodeInfo = eptNodeInfo.value();
+            LOG(INFO) << "myself Node info is:" << myNodeInfo;
+            ofstream outfile(dir + "/" + "clustermeta.txt", fstream::out);
+            if (outfile.is_open()) {
+                outfile << myNodeInfo << std::endl;
+                if (!outfile.good()) {
+                    LOG(ERROR) << "write node backup info fail";
+                    return  { ErrorCodes::ERR_MANUAL, "write fail" };
+                }
+            }
+            else {
+                LOG(ERROR) << "write master node in fail";
+            }
+            //TODO(wayenchen) find path to write to file
         }
-        //TODO(wayenchen) find path to write to file
 
         // TODO(wayenchen): use make guard to unset backupruning when backup failed!
         svr->setBackupRunning();
