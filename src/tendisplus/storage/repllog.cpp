@@ -219,10 +219,8 @@ std::string ReplLogValueEntryV2::encode() const {
     std::string val;
     val.resize(encodeSize());
 
-#ifdef TENDIS_DEBUG
     size_t offset = encode((uint8_t*)(val.c_str()), val.size());
     INVARIANT_D(offset == encodeSize());
-#endif
 
     return val;
 }
