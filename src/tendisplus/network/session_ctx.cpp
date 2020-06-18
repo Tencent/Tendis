@@ -25,7 +25,6 @@ SessionCtx::SessionCtx(Session* sess)
      _txnVersion(-1),
      _extendProtocol(false),
      _replOnly(false),
-     _migrateOnly(false),
      _session(sess),
      _isMonitor(false),
      _flags(0) {

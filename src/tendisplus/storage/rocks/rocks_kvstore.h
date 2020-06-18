@@ -26,7 +26,7 @@ class BackgroundErrorListener;
 
 class RocksTxn: public Transaction {
  public:
-    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
+    RocksTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
         std::shared_ptr<BinlogObserver> logob,
         Session* sess,
         uint64_t binlogId = Transaction::TXNID_UNINITED,
@@ -82,8 +82,6 @@ class RocksTxn: public Transaction {
     const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
         return _txn;
     }
-    void setMigrateOnly(bool v) { _migrateOnly = v; }
-    bool isMigrateOnly() { return _migrateOnly; }
 
  protected:
     virtual void ensureTxn() {}
@@ -108,7 +106,6 @@ class RocksTxn: public Transaction {
     bool _done;
 
     bool _replOnly;
-    bool _migrateOnly;
 
     std::shared_ptr<BinlogObserver> _logOb;
     Session * _session;
@@ -125,7 +122,7 @@ class RocksTxn: public Transaction {
 // Do not use one RocksOptTxn to do parallel things.
 class RocksOptTxn: public RocksTxn {
  public:
-    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
+    RocksOptTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
         std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksOptTxn(const RocksOptTxn&) = delete;
     RocksOptTxn(RocksOptTxn&&) = delete;
@@ -139,7 +136,7 @@ class RocksOptTxn: public RocksTxn {
 
 class RocksPesTxn: public RocksTxn {
  public:
-    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly, bool migrateOnly,
+    RocksPesTxn(RocksKVStore *store, uint64_t txnId, bool replOnly,
         std::shared_ptr<BinlogObserver> logob, Session* sess);
     RocksPesTxn(const RocksPesTxn&) = delete;
     RocksPesTxn(RocksPesTxn&&) = delete;

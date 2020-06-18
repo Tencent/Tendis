@@ -77,8 +77,6 @@ class SessionCtx {
     bool isEp() const { return _extendProtocol; }
     bool isReplOnly() const { return _replOnly; }
     void setReplOnly(bool v) { _replOnly = v; }
-    bool isMigrateOnly() const { return _migrateOnly; }
-    void setMigrateOnly(bool v) { _migrateOnly = v; }
 
     void setKeylock(const std::string& key, mgl::LockMode mode);
     void unsetKeylock(const std::string& key);
@@ -118,8 +116,6 @@ class SessionCtx {
     uint64_t _txnVersion;
     bool _extendProtocol;
     bool _replOnly;
-	// TODO(vinchen)
-    bool _migrateOnly;
     Session* _session;
     std::unordered_map<std::string, mgl::LockMode> _keylockmap;
     bool _isMonitor;

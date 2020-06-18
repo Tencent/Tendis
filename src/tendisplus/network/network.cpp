@@ -166,7 +166,7 @@ Expected<uint64_t> NetworkAsio::client2Session(
         << ",from:" << sess->getRemoteRepr()
         << " client2Session";
     sess->getCtx()->setAuthed();
-    sess->getCtx()->setMigrateOnly(migrateOnly);
+    sess->getCtx()->setReplOnly(migrateOnly);
     _server->addSession(sess);
     ++_netMatrix->connCreated;
     return sess->id();
