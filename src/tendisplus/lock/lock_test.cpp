@@ -425,7 +425,238 @@ TEST(Lock, KeyLockTimeout) {
     thd2.join();
 }
 
-// TODO(vinchen)
+TEST(Lock, ChunkLockTimeout) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+    bool timeout = false;
+
+    auto mgr = std::make_unique<mgl::MGLockMgr>();
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+        ChunkLock v(1, 1, mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
+        auto elk = ChunkLock::AquireChunkLock(1, 1, mgl::LockMode::LOCK_X,
+            sess1.get(), mgr.get(), 1000);
+        if (elk.ok()) {
+            locked2 = true;
+        } else {
+            timeout = true;
+        }
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_FALSE(timeout);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_TRUE(timeout);
+
+    runFlag1 = false;
+    thd1.join();
+
+    runFlag2 = false;
+    thd2.join();
+}
+
+TEST(Lock, KeyAndChunkLock) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+    bool timeout = false;
+
+    auto mgr = std::make_unique<mgl::MGLockMgr>();
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+        KeyLock v(1, 1, "a", mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
+        auto elk = ChunkLock::AquireChunkLock(1, 1, mgl::LockMode::LOCK_X,
+            sess1.get(), mgr.get(), 1000);
+        if (elk.ok()) {
+            locked2 = true;
+        } else {
+            timeout = true;
+        }
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_FALSE(timeout);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_TRUE(timeout);
+
+    runFlag1 = false;
+    thd1.join();
+
+    runFlag2 = false;
+    thd2.join();
+}
+
+TEST(Lock, ChunkAndKeyLock) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+    bool timeout = false;
+
+    auto mgr = std::make_unique<mgl::MGLockMgr>();
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+        ChunkLock v(1, 1, mgl::LockMode::LOCK_S, sess.get(), mgr.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_TRUE(locked1); 
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
+        auto elk = KeyLock::AquireKeyLock(1, 1, "a", mgl::LockMode::LOCK_X,
+            sess1.get(), mgr.get(), 1000);
+        if (elk.ok()) {
+            locked2 = true;
+        } else {
+            timeout = true;
+        }
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_FALSE(timeout);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_TRUE(timeout);
+
+    runFlag1 = false;
+    thd1.join();
+
+    runFlag2 = false;
+    thd2.join();
+}
+
+TEST(Lock, StoreAndKeyLock) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+    bool timeout = false;
+
+    auto mgr = std::make_unique<mgl::MGLockMgr>();
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+        StoreLock v(1, mgl::LockMode::LOCK_S, sess.get(), mgr.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_TRUE(locked1);
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
+        auto elk = KeyLock::AquireKeyLock(1, 1, "a", mgl::LockMode::LOCK_X,
+            sess1.get(), mgr.get(), 1000);
+        if (elk.ok()) {
+            locked2 = true;
+        } else {
+            timeout = true;
+        }
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_FALSE(timeout);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_TRUE(timeout);
+
+    runFlag1 = false;
+    thd1.join();
+
+    runFlag2 = false;
+    thd2.join();
+}
+
+TEST(Lock, StoreAndChunkLock) {
+    bool runFlag1 = true, runFlag2 = true;
+    bool locked1 = false, locked2 = false;
+    bool timeout = false;
+
+    auto mgr = std::make_unique<mgl::MGLockMgr>();
+    auto sess = std::make_shared<LocalSession>(nullptr);
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+        StoreLock v(1, mgl::LockMode::LOCK_S, sess.get(), mgr.get());
+        locked1 = true;
+        while (runFlag1) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_TRUE(locked1);
+
+    auto sess1 = std::make_shared<LocalSession>(nullptr);
+    std::thread thd2([&runFlag2, &timeout, &locked2, sess1, &mgr]() {
+        auto elk = ChunkLock::AquireChunkLock(1, 1, mgl::LockMode::LOCK_X,
+            sess1.get(), mgr.get(), 1000);
+        if (elk.ok()) {
+            locked2 = true;
+        } else {
+            timeout = true;
+        }
+        while (runFlag2) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        });
+
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_FALSE(timeout);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    EXPECT_TRUE(locked1);
+    EXPECT_FALSE(locked2);
+    EXPECT_TRUE(timeout);
+
+    runFlag1 = false;
+    thd1.join();
+
+    runFlag2 = false;
+    thd2.join();
+}
 
 }  // namespace tendisplus
 

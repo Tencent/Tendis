@@ -47,7 +47,8 @@ class StoresLock: public ILock {
 class StoreLock: public ILock {
  public:
     static Expected<std::unique_ptr<StoreLock>> AquireStoreLock(uint32_t storeId,
-         mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs);
+         mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
+        uint64_t lockTimeoutMs = 3600000);
     StoreLock(uint32_t storeId, mgl::LockMode mode,
               Session* sess, mgl::MGLockMgr* mgr,
               uint64_t lockTimeoutMs = 3600000);
@@ -60,9 +61,12 @@ class StoreLock: public ILock {
 
 class ChunkLock: public ILock {
 public:
-    // TODO(vinchen): AquireChunkLock
+    static Expected<std::unique_ptr<ChunkLock>> AquireChunkLock(uint32_t storeId, uint32_t chunkId,
+        mgl::LockMode mode, Session* sess, mgl::MGLockMgr* mgr,
+        uint64_t lockTimeoutMs = 3600000);
     ChunkLock(uint32_t storeId, uint32_t chunkId, mgl::LockMode mode,
-              Session* sess, mgl::MGLockMgr* mgr);
+              Session* sess, mgl::MGLockMgr* mgr,
+              uint64_t lockTimeoutMs = 3600000);
     uint32_t getStoreId() const final;
     uint32_t getChunkId() const final;
     virtual ~ChunkLock() = default;
