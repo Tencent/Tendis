@@ -686,26 +686,13 @@ class ApplyBinlogsCommand: public Command {
 #else
 // TODO(takenliu) binlog_tool need send every applybinlogsv2 command and wait response, then send the next one,
 //     because applybinlogsv2 will be processed by multi thread, so the squence will be disorder
-class ApplyBinlogsCommandV2 : public Command {
+class ApplyBinlogsGeneric : public Command {
+ private:
+    BinlogApplyMode _mode;
  public:
-    ApplyBinlogsCommandV2()
-        :Command("applybinlogsv2", "aw") {
-    }
-
-    ssize_t arity() const {
-        return -5;
-    }
-
-    int32_t firstkey() const {
-        return 0;
-    }
-
-    int32_t lastkey() const {
-        return 0;
-    }
-
-    int32_t keystep() const {
-        return 0;
+    ApplyBinlogsGeneric(const std::string& name,
+        const char* sflags, BinlogApplyMode mode)
+        :Command(name, sflags), _mode(mode) {
     }
 
     static Status runNormal(Session *sess, uint32_t storeId,
@@ -932,22 +919,13 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         binlogCnt = exptCnt.value();
 
-        auto mode = BinlogApplyMode::KEEP_BINLOG_ID;
-        if (sess->getArgs().size() > 5) {
-            Expected<uint64_t> intMode = ::tendisplus::stoul(args[5]);
-            if (!intMode.ok()) {
-                return intMode.status();
-            }
-            mode = (BinlogApplyMode)intMode.value();
-        }
-
         auto eflag = ::tendisplus::stoul(args[4]);
         if (!eflag.ok()) {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid binlog flags" };
         }
         switch ((BinlogFlag)eflag.value()) {
         case BinlogFlag::NORMAL: {
-            auto s = runNormal(sess, storeId, args[2], binlogCnt, mode);
+            auto s = runNormal(sess, storeId, args[2], binlogCnt, _mode);
             if (!s.ok()) {
                 return s;
             }
@@ -970,7 +948,55 @@ class ApplyBinlogsCommandV2 : public Command {
         }
         return Command::fmtOK();
     }
+};
+
+class ApplyBinlogsCommandV2 : public ApplyBinlogsGeneric {
+public:
+    ApplyBinlogsCommandV2()
+        :ApplyBinlogsGeneric("applybinlogsv2", "aw",
+                BinlogApplyMode::KEEP_BINLOG_ID) {
+    }
+
+    ssize_t arity() const {
+        return 5;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
 } applyBinlogsV2Command;
+
+class MigrateBinlogsCommand : public ApplyBinlogsGeneric {
+public:
+    MigrateBinlogsCommand()
+        :ApplyBinlogsGeneric("migratebinlogs", "aw",
+            BinlogApplyMode::NEW_BINLOG_ID) {
+    }
+
+    ssize_t arity() const {
+        return 5;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+} migrateBinlogsCommand;
 
 class RestoreBinlogCommandV2 : public Command {
  public:

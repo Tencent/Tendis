@@ -270,13 +270,12 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
     std::stringstream ss2;
 
     if (writer->getCount() >0) {
-        Command::fmtMultiBulkLen(ss2, 6);
-        Command::fmtBulk(ss2, "applybinlogsv2");
+        Command::fmtMultiBulkLen(ss2, 5);
+        Command::fmtBulk(ss2, "migratebinlogs");
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
         Command::fmtBulk(ss2, writer->getBinlogStr());
         Command::fmtBulk(ss2, std::to_string(writer->getCount()));
         Command::fmtBulk(ss2, std::to_string((uint32_t)writer->getFlag()));
-        Command::fmtBulk(ss2, std::to_string((int)BinlogApplyMode::NEW_BINLOG_ID));
     } else {
         if (!needHeartBeart) {
             return   {ErrorCodes::ERR_OK, "finish send bulk"};
