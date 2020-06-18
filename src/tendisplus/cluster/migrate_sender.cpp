@@ -14,13 +14,8 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _cfg(cfg),
     _isFake(is_fake),
 
-    _storeid(0),
-    _snapshotKeyNum(0),
-    _snapshotSlots(0),
-    _binlogNum(0),
-    _delNum(0),
-    _delSlot(0),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
+    _storeid(0),
     _snapshotKeyNum(0),
     _binlogNum(0),
     _delNum(0),
@@ -28,7 +23,6 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _consistency(false),
     _nodeid(""),
     _curBinlogid(UINT64_MAX),
-    _endBinlogid(0),
     _dstIp(""),
     _dstPort(0),
     _dstStoreid(0),
@@ -301,9 +295,8 @@ bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog
 
         //  reach for distance
         if (diffOffset < distance) {
-            _endBinlogid = maxBinlogId;
-            LOG(INFO) << "pursueBinLog lag is small enough, distance:" << diffOffset << " _curBingLog:" <<
-                _curBinlogid << " _endBinlog:" << _endBinlogid;
+            LOG(INFO) << "pursueBinLog lag is small enough, distance:" << diffOffset << " startBinLog:" <<
+                startBinLog << " maxBinlogId:" << maxBinlogId;
             finishCatchup = true;
             break;
         }

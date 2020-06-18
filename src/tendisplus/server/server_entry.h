@@ -307,12 +307,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
-<<<<<<< HEAD
-    //cluster test
-    std::map<std::string, std::string> _nodeName;
-    std::map<std::string, std::string> _ip;
-=======
->>>>>>> ade6dcb... 1. add some TODO
 
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;

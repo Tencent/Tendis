@@ -1201,7 +1201,7 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter) {
         if (node->getFlags() & filter)  {
             continue;
         }
-        std::string nodeDescription = node->clusterGenNodeDescription();
+        std::string nodeDescription = clusterGenNodeDescription(node);
         ss << nodeDescription << "\n";
     }
     return Command::fmtBulk(ss.str());
