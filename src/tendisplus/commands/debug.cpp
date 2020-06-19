@@ -3519,8 +3519,23 @@ class TendisadminCommand : public Command {
                 }
                 result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
             }
+            if (server->isClusterEnabled()) {
+                auto cstate = server->getClusterMgr()->getClusterState();
+                if(cstate->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
+                    return {ErrorCodes::ERR_CLUSTER_ERR, "cluste is fail"};
+                }
+                if(cstate->getBlockState()) {
+                    return {ErrorCodes::ERR_CLUSTER_ERR, "cluster node already block"};
+                }
+                LOG(INFO) << "gossip begin sleep" << msSinceEpoch() << ":" << time.value();
+                cstate->setGossipBlock(time.value()*1000);
+                std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+                cstate->setGossipUnBlock();
+                LOG(INFO) << "gossip end sleep" << msSinceEpoch();
+            } else {
+                std::this_thread::sleep_for(std::chrono::seconds(time.value()));
+            }
 
-            std::this_thread::sleep_for(std::chrono::seconds(time.value()));
         } else if (operation == "recovery") {
             if (args.size() != 2) {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };

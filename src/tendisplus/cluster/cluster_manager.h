@@ -131,36 +131,40 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void prepareToFree();
 
     // get node name
-    std::string getNodeName() const { return _nodeName; }
+    std::string getNodeName() const;
+    std::string getNodeNameNolock() const;
     void setNodeName(const std::string& name);
 
-    uint64_t getPort() const { return _nodePort; }
+    uint64_t getPort() const;
     void setNodePort(uint64_t port);
 
     uint64_t getCport() const { return _nodeCport; }
     void setNodeCport(uint64_t cport);
 
     //std::vector<std::shared_ptr<ClusterNode>> getSlaves() const { return _slaves; }
-    // TODO(wayenchen) takenliu add, need be protected by mutex.
-    const std::bitset<CLUSTER_SLOTS>& getSlots() const { return _mySlots; }
+    std::bitset<CLUSTER_SLOTS> getSlots() const;
 
-    uint32_t getSlavesCount() const { return _slaves.size(); }
+    uint32_t getSlavesCount() const;
 
-    std::string getNodeIp() const {return _nodeIp;}
+    std::string getNodeIp() const;
     void setNodeIp(const std::string& name);
 
-    uint64_t getConfigEpoch() const { return _configEpoch; }
+    uint64_t getConfigEpoch() const;
     void setConfigEpoch(uint64_t epoch);
 
-    uint16_t getFlags() const { return _flags; }
-    uint16_t getSlotNum() const { return  _numSlots; }
+    uint16_t getFlags();
+    uint32_t getSlotNum();
     uint16_t getSlaveNum() const { return _numSlaves; }
 
     uint32_t getNonFailingSlavesCount() const;
+    std::list<std::shared_ptr<ClusterNodeFailReport>> getFailReport() const;
+
+    void addFailureReport(std::shared_ptr<ClusterNodeFailReport> n);
+    std::string getFlagStr();
 
     void markAsFailing();
 
-    std::shared_ptr<ClusterNode> getMaster() const { return _slaveOf; }
+    std::shared_ptr<ClusterNode> getMaster() const;
     void setMaster(std::shared_ptr<ClusterNode> master);
     void setAsMaster();
 
@@ -187,9 +191,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void freeClusterSession();
 
     bool getSlotBit(uint32_t slot) const;
-
     ConnectState getConnectState();
-
 
 protected:
     bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -197,8 +199,8 @@ protected:
     uint32_t delAllSlots();
     uint32_t delAllSlotsNoLock();
 
+
  public:
-    Status addSlot(uint32_t slot);
     bool addSlave(std::shared_ptr<ClusterNode> slave);
     bool removeSlave(std::shared_ptr<ClusterNode> slave);
     void setSlots(const std::bitset<CLUSTER_SLOTS>& slots);
@@ -210,17 +212,19 @@ protected:
     std::string _nodeIp;  /* Latest known IP address of this node */
     uint64_t _nodePort;  /* Latest known clients port of this node */
     uint64_t _nodeCport;  /* Latest known cluster port of this node. */
-    std::shared_ptr<ClusterSession> _nodeSession; /* TCP/IP session with this node, connect success */
-    std::shared_ptr<BlockingTcpClient> _nodeClient;  /* try connect to the _node */
+    /* TCP/IP session with this node, connect success */
+    std::shared_ptr<ClusterSession> _nodeSession;
+    /* try connect to the _node */
+    std::shared_ptr<BlockingTcpClient> _nodeClient;
+    /* slots handled by this node */
     std::bitset<CLUSTER_SLOTS> _mySlots;
     uint16_t _numSlaves;
-
-// TODO(wayenchen) takenliu add, make it private
+    uint32_t _numSlots;
+    Status addSlot(uint32_t slot, uint32_t masterSlavesCount);
+// TODO(wayenchen): make it private
  public:
     mstime_t _ctime;
     uint16_t _flags;
-    /* slots handled by this node */
-    uint16_t _numSlots;
 
     std::vector<std::shared_ptr<ClusterNode>> _slaves;
     std::shared_ptr<ClusterNode> _slaveOf;
@@ -485,6 +489,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // get myself
     CNodePtr  getMyselfNode() const { return _myself;}
     std::string getMyselfName() const { return _myself->getNodeName();}
+    // get nodes
+    std::unordered_map<std::string, CNodePtr> getNodes();
     // set myself
     void setMyselfNode(CNodePtr node);
     // addNode
@@ -493,23 +499,33 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void clusterRenameNode(CNodePtr node, const std::string& newname, bool save = false);
     void clusterSaveNodes();
     bool clusterSetNodeAsMaster(CNodePtr node);
+    bool clusterSetNodeAsMasterNoLock(CNodePtr node);
     Status clusterSetMaster(CNodePtr node);
+    Status clusterSetMasterNoLock(CNodePtr node);
+
+
     Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
     bool clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave);
+    bool clusterNodeRemoveSlaveNolock(CNodePtr master, CNodePtr slave);
     bool clusterNodeAddSlave(CNodePtr master, CNodePtr slave);
-
+    bool clusterNodeAddSlaveNolock(CNodePtr master, CNodePtr slave);
     void clusterBlacklistAddNode(CNodePtr node);
     bool clusterBlacklistExists(const std::string& nodeid);
 
     CNodePtr getRandomNode() const;
     CNodePtr clusterLookupNode(const std::string& name);
+    CNodePtr clusterLookupNodeNoLock(const std::string& name);
     // Status ClusterState::clusterMaster(CNodePtr n);
     bool clusterAddSlot(CNodePtr n, const uint32_t slot);
+    bool clusterAddSlotNoLock(CNodePtr n, const uint32_t slot);
+
     bool clusterSetSlot(CNodePtr n, const std::bitset<CLUSTER_SLOTS>&  bitmap);
     bool clusterDelSlot(const uint32_t slot);
     uint32_t clusterDelNodeSlots(CNodePtr node);
     void clusterCloseAllSlots();
 
+    uint64_t  getFailAuthEpoch () const ;
+    void addFailVoteNum();
     bool clusterNodeAddFailureReport(CNodePtr faling, CNodePtr sender);
     void clusterNodeCleanupFailureReports(CNodePtr node);
     bool clusterNodeDelFailureReport(CNodePtr node, CNodePtr sender);
@@ -518,11 +534,13 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterCountNonFailingSlaves(CNodePtr node);
     void manualFailoverCheckTimeout();
     void resetManualFailover();
+    void  resetManualFailoverNoLock();
     void clusterHandleManualFailover();
     void clusterHandleSlaveMigration(uint32_t max_slaves);
 
-	void clusterHandleSlaveFailover(void);
-	void clusterFailoverReplaceYourMaster(void);
+	Status clusterHandleSlaveFailover();
+    Status clusterFailoverReplaceYourMaster(void);
+    Status clusterFailoverReplaceYourMasterV2(void);
 	void clusterLogCantFailover(int reason);
 	uint32_t clusterGetSlaveRank(void);
 	void clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request);
@@ -531,7 +549,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 	void clusterRequestFailoverAuth(void);
 
     Status setSlot(CNodePtr n, const uint32_t slot);
-   // void setSlotBelong(CNodePtr n, const uint32_t slot);
     Status setSlotMyself(const uint32_t slot);
     void setSlotBelongMyself(const uint32_t slot);
 
@@ -547,7 +564,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void clusterHandleConfigEpochCollision(CNodePtr sender);
 
     void clusterBroadcastPong(int target);
-    //void clusterSendPublish(std::shared_ptr<ClusterSession> sess, const ClusterMsgDataP)
     void clusterSendFail(CNodePtr node);
     // TODO(vinchen): make it const reference
     void clusterBroadcastMessage(ClusterMsg& msg);
@@ -565,6 +581,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool clusterProcessGossipSection(std::shared_ptr<ClusterSession> sess, const ClusterMsg& msg);
     Status clusterSendUpdate(std::shared_ptr<ClusterSession> sess, CNodePtr node);
     Status clusterSendPing(std::shared_ptr<ClusterSession> sess, ClusterMsg::Type type);
+    Status clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess, ClusterMsg::Type type);
     bool clusterStartHandshake(const std::string& host, uint32_t port, uint32_t cport);
     bool clusterHandshakeInProgress(const std::string& host, uint32_t port, uint32_t cport);
     Status clusterBumpConfigEpochWithoutConsensus();
@@ -581,43 +598,78 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
     void clusterUpdateState();
     bool isContainSlot(uint32_t slotId);
-    void forceFailover(bool force, bool takeover);
-
+    Status forceFailover(bool force, bool takeover);
     Status clusterSaveConfig();
-    void setBlock(mstime_t t);
-    void unsetBlock();
-    bool getBlockState() const { return _blockState; }
-    bool clusterIsOK() const { return  getClusterState()== ClusterHealth::CLUSTER_OK; }
+    Status unsetMaster();
+
+    bool getBlockState() {
+        return _blockState.load(std::memory_order_relaxed);
+    }
+    bool isClientBlock() {
+        return  _isCliBlocked.load(std::memory_order_relaxed);
+    }
+
+    Status setClientUnBlock();
+
+    uint64_t getBlockTime() const { return  _blockTime.load(std::memory_order_relaxed);}
+
+    void setGossipBlock();
+    void setGossipBlock(uint64_t time);
+    void setGossipUnBlock();
+
+    bool clusterIsOK() const ;
     // TODO(wayenchen)
-    // Status clusterReadMeta();
-    // Status clusterDelNodeSlots(CNodePtr n);
-    // Status clusterDelNode(CNodePtr delnode);
     // Status setStateFail();
     Expected<std::string> getNodeInfo(CNodePtr n);
     Expected<std::string> getBackupInfo();
+    mstime_t getMfEnd() const;
+    void setMfEnd(uint64_t x);
+    void setMfSlave(CNodePtr n);
+    void setMfStart();
+    Status forgetNodes();
 
  private:
-
     mutable myMutex _mutex;
+    mutable std::mutex _mutex2;
+    std::condition_variable _cv;
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
     uint64_t _lastVoteEpoch;     /* Epoch of the last vote granted. */
     std::shared_ptr<ServerEntry> _server;
-    bool _blockState;
-    mstime_t _blockTime;
+    std::atomic<bool>  _blockState;
+    std::atomic<uint64_t> _blockTime;
+    /* Manual failover state in common. */
+    mstime_t _mfEnd;            /* Manual failover time limit (ms unixtime).
+                                It is zero if there is no MF in progress. */
+    /* Manual failover state of master. */
+    CNodePtr _mfSlave;          /* Slave performing the manual failover. */
+    /* Manual failover state of slave. */
+    uint64_t _mfMasterOffset;   /* Master offset the slave needs to start MF
+                                or zero if stil not received. */
+    uint32_t _mfCanStart;       /* If non-zero signal that the manual failover
+                                can start requesting masters vote. */
+
+    std::unique_ptr<std::thread> _manualLockThead;
+    std::atomic<bool> _lockRunning;
+    std::atomic<bool> _isCliBlocked;
+    std::unordered_map<std::string, CNodePtr> _nodes;
     Status clusterSaveNodesNoLock();
+
     void clusterAddNodeNoLock(CNodePtr node);
     void clusterDelNodeNoLock(CNodePtr node);
     bool clusterDelSlotNoLock(const uint32_t slot);
-    void freeClusterNode(CNodePtr node);
+    Status freeClusterNode(CNodePtr node);
     void clusterBlacklistCleanupNoLock();
-    uint32_t clusterMastersHaveSlavesNoLock();
 
- public:
+    uint32_t clusterMastersHaveSlavesNoLock();
+    std::unordered_map<uint32_t, std::unique_ptr<StoreLock>> _lockMap;
+    void readOnlyAsync(uint64_t t);
+    void mcontrolRoutine(uint64_t max);
+
+public:
     ClusterHealth _state;
     uint16_t _size;
-    std::unordered_map<std::string, CNodePtr> _nodes;
-  //  std::unordered_map<std::string, CNodePtr> _nodesBackList;
+
     std::unordered_map<std::string, uint64_t> _nodesBlackList;
     std::array<CNodePtr, CLUSTER_SLOTS> _migratingSlots;
     std::array<CNodePtr, CLUSTER_SLOTS> _importingSlots;
@@ -636,23 +688,13 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint64_t _updateStateCallTime;
     uint64_t _amongMinorityTime;
 
-                                /* Manual failover state in common. */
-    mstime_t _mfEnd;            /* Manual failover time limit (ms unixtime).
-                                It is zero if there is no MF in progress. */
-                                /* Manual failover state of master. */
-    CNodePtr _mfSlave;          /* Slave performing the manual failover. */
-                                /* Manual failover state of slave. */
-    // TODO(vinchen): _mfMasterOffset should be the binlogid of first store?
-    uint64_t _mfMasterOffset;   /* Master offset the slave needs to start MF
-                                or zero if stil not received. */
-    uint32_t _mfCanStart;       /* If non-zero signal that the manual failover
-                                can start requesting masters vote. */
                                 /* The followign fields are used by masters to take state on elections. */
     uint8_t _todoBeforeSleep; /* Things to do in clusterBeforeSleep(). */
     /* Messages received and sent by type. */
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
     uint64_t _statsPfailNodes;    /* Number of nodes in PFAIL status */
+
 };
 
 
@@ -746,7 +788,6 @@ class ClusterManager {
     std::shared_ptr<ClusterNode> _clusterNode;
     std::shared_ptr<ClusterState> _clusterState;
     std::unique_ptr<NetworkAsio> _clusterNetwork;
-
     uint16_t _megPoolSize;
 
     // controller
@@ -754,6 +795,10 @@ class ClusterManager {
 
     std::shared_ptr<NetworkMatrix> _netMatrix;
     std::shared_ptr<RequestMatrix> _reqMatrix;
+    Status clusterDelNodeMeta(const std::string& key);
+    Status clusterDelNodesMeta();
+
+    bool  clusterMetaExist(const std::string& key);
 };
 
 }  // namespace tendisplus

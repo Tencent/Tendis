@@ -20,7 +20,7 @@ test "Each master should have at least two replicas attached" {
     foreach_redis_id id {
         if {$id < 5} {
             wait_for_condition 1000 50 {
-                [llength [lindex [R 0 role] 2]] >= 2
+                [RI $id connected_slaves] >= 2
             } else {
                 fail "Master #$id does not have 2 slaves as expected"
             }
@@ -28,17 +28,14 @@ test "Each master should have at least two replicas attached" {
     }
 }
 
-set master0_id [dict get [get_myself 0] id]
 test "Resharding all the master #0 slots away from it" {
-    set output [exec \
-        ../../../src/redis-trib.rb rebalance \
-        --weight ${master0_id}=0 \
-        127.0.0.1:[get_instance_attrib redis 0 port] >@ stdout]
+    set output [exec ../migrate.sh >@ stdout]
+    after 10000
 }
 
 test "Master #0 should lose its replicas" {
     wait_for_condition 1000 50 {
-        [llength [lindex [R 0 role] 2]] == 0
+        [RI 0 connected_slaves] == 0
     } else {
         fail "Master #0 still has replicas"
     }
@@ -47,17 +44,13 @@ test "Master #0 should lose its replicas" {
 test "Resharding back some slot to master #0" {
     # Wait for the cluster config to propagate before attempting a
     # new resharding.
-    after 10000
-    set output [exec \
-        ../../../src/redis-trib.rb rebalance \
-        --weight ${master0_id}=.01 \
-        --use-empty-masters \
-        127.0.0.1:[get_instance_attrib redis 0 port] >@ stdout]
+    after 30000
+    set output [exec ../migrate-back.sh >@ stdout]
 }
 
 test "Master #0 should re-acquire one or more replicas" {
     wait_for_condition 1000 50 {
-        [llength [lindex [R 0 role] 2]] >= 1
+        [RI 0 connected_slaves] >= 1
     } else {
         fail "Master #0 has no has replicas"
     }

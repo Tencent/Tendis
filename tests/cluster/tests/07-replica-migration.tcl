@@ -18,7 +18,7 @@ test "Each master should have two replicas attached" {
     foreach_redis_id id {
         if {$id < 5} {
             wait_for_condition 1000 50 {
-                [llength [lindex [R 0 role] 2]] == 2
+                [string match {*2*} [RI 0 connected_slaves]]
             } else {
                 fail "Master #$id does not have 2 slaves as expected"
             }
@@ -35,10 +35,10 @@ test "Killing all the slaves of master #0 and #1" {
 }
 
 foreach_redis_id id {
-    if {$id < 5} {
+    if {$id < 5 } {
         test "Master #$id should have at least one replica" {
             wait_for_condition 1000 50 {
-                [llength [lindex [R $id role] 2]] >= 1
+                [RI $id connected_slaves] >= 1
             } else {
                 fail "Master #$id has no replicas"
             }
@@ -96,7 +96,7 @@ test "Instance 12 is now a master without slaves" {
 
 test "Master #12 should get at least one migrated replica" {
     wait_for_condition 1000 50 {
-        [llength [lindex [R 12 role] 2]] >= 1
+         [RI 12 connected_slaves] >= 1
     } else {
         fail "Master #12 has no replicas"
     }

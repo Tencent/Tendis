@@ -66,12 +66,12 @@ class SegmentMgrFnvHash64: public SegmentMgr {
     uint64_t getMovedNum() {return _movedNum;}
 private:
     std::vector<PStore> _instances;
-
     size_t _chunkSize;
     static constexpr uint64_t FNV_64_INIT = 0xcbf29ce484222325ULL;
     static constexpr uint64_t FNV_64_PRIME = 0x100000001b3ULL;
     uint64_t _movedNum;
 };
+
 
 }  // namespace tendisplus
 

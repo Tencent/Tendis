@@ -124,7 +124,7 @@ class ReplManager {
     Status changeReplSource(Session* sess, uint32_t storeId, std::string ip, uint32_t port,
             uint32_t sourceStoreId);
     Status changeReplSourceInLock(uint32_t storeId, std::string ip, uint32_t port,
-                                  uint32_t sourceStoreId);
+                                  uint32_t sourceStoreId, bool checkEmpty = true);
     bool supplyFullSync(asio::ip::tcp::socket sock,
             const std::string& storeIdArg,
             const std::string& slaveIpArg,
@@ -135,7 +135,7 @@ class ReplManager {
             const std::string& binlogPosArg,
             const std::string& listenIpArg,
             const std::string& listenPortArg);
-    Status replicationSetMaster(std::string ip, uint32_t port);
+    Status replicationSetMaster(std::string ip, uint32_t port, bool checkEmpty=true);
     Status replicationUnSetMaster();
 #ifdef BINLOG_V1
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,

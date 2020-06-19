@@ -45,10 +45,13 @@ test "Instance #5, #6, #7 are now masters" {
 }
 
 test "Restarting the previously killed master nodes" {
+    after 2000
     restart_instance redis 0
     restart_instance redis 1
     restart_instance redis 2
 }
+
+
 
 test "Instance #0, #1, #2 gets converted into a slaves" {
     wait_for_condition 1000 50 {

@@ -265,7 +265,14 @@ Expected<uint64_t> RocksTxn::commit() {
             nullptr, 0);
 
         binlogTxnId = _txnId;
-        auto s = _txn->Put(key.encode(), val.encode(_replLogValues));
+
+        auto keyStr = key.encode();
+        auto valStr =  val.encode(_replLogValues);
+        LOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << " binlogid:" << _binlogId
+                << "key" << keyStr << "val:" << valStr;
+
+        auto s = _txn->Put(keyStr,valStr);
+        //auto s = _txn->Put(key.encode(), val.encode(_replLogValues));
         if (!s.ok()) {
             binlogTxnId = Transaction::TXNID_UNINITED;
             return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
@@ -1778,6 +1785,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
             return {ErrorCodes::ERR_INTERNAL, "already have backup"};
         }
         _hasBackup = true;
+        LOG(INFO) <<  "set backup true";
     } else {
         if (dir == dftBackupDir()) {
             return {ErrorCodes::ERR_INTERNAL, "BACKUP_CKPT|BACKUP_COPY cant equal dftBackupDir:" + dir};

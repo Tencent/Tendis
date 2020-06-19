@@ -160,7 +160,10 @@ class Catalog {
     Expected<std::unique_ptr<StoreMainMeta>> getStoreMainMeta(uint32_t idx);
     Status setStoreMainMeta(const StoreMainMeta& meta);
     // cluster meta
+    bool clusterMetaExist(Transaction* txn, const std::string& nodeName);
+    Status delClusterMeta(const std::string& nodeName);
     Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(const string& nodeName);
+
     Expected<std::vector<std::unique_ptr<ClusterMeta>>> getAllClusterMeta();
     Status setClusterMeta(const ClusterMeta& meta);
     // epoch meta

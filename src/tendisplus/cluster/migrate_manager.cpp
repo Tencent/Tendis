@@ -321,7 +321,6 @@ Status MigrateManager::unlockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     return  {ErrorCodes::ERR_OK, "finish bitmap unlock"};
 }
 
-
 Status MigrateManager::unlockXChunk(uint32_t chunkid) {
     auto it = _lockMap.find(chunkid);
     if (it != _lockMap.end()) {

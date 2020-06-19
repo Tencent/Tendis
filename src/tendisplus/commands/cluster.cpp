@@ -84,7 +84,7 @@ public:
                 std::string nodeId = args[3];
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
-                LOG(INFO) << sess->getCmdStr();
+
                 for (size_t i= 4 ; i<args.size(); i++) {
                     Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
                     if (!exptSlot.ok()) {
@@ -96,6 +96,11 @@ public:
                         return {ErrorCodes::ERR_CLUSTER,
                                 "Invalid migrate slot position"};
                     }
+                    if (!svr->emptySlot(slot)) {
+                        LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "slot not empty"};
+                    }            
                     //check meta data
                     if (clusterState->getNodeBySlot(slot) == myself) {
                         LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
@@ -238,7 +243,9 @@ public:
                         "only replicate a master, not a slave"};
             }
             if (myself->nodeIsMaster() &&
-                    (myself->_numSlots != 0 || nodeNotEmpty(svr, myself))) {
+                    (myself->getSlotNum() != 0 || nodeNotEmpty(svr, myself))) {
+                LOG(INFO) << "nodeNotEmpty(svr, myself):" << nodeNotEmpty(svr, myself)
+                    << "myself slots:" << bitsetStrEncode(myself->getSlots());
                 return {ErrorCodes::ERR_CLUSTER,
                         "To set a master the node must be empty"};
             }
@@ -368,7 +375,7 @@ public:
             if (args[2][0] == '-') {
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid config epoch specified:" + args[2]};
-            } else if (clusterState->_nodes.size() > 1) {
+            } else if (clusterState->getNodeCount() > 1) {
                 return {ErrorCodes::ERR_CLUSTER, "he user can assign a config"
                                                  "epoch only when the node"
                                                  "does not know any other node"};
@@ -397,7 +404,8 @@ public:
             }
             /* Slaves can be reset while containing data, but not master nodes
                 * that must be empty. */
-            if (myself->nodeIsMaster() && !nodeNotEmpty(svr, myself)) {
+            if (myself->nodeIsMaster() &&
+                                nodeNotEmpty(svr, myself)) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "CLUSTER RESET can't be called with "
                         "master nodes containing keys"};
@@ -460,7 +468,10 @@ public:
                         "Master is down or failed, please use CLUSTER FAILOVER FORCE"};
             }
 
-            clusterState->forceFailover(force, takeover);
+            auto s = clusterState->forceFailover(force, takeover);
+            if (!s.ok()) {
+                return  s;
+            }
             return Command::fmtOK();
         }
 
@@ -478,7 +489,7 @@ private:
                 uint32_t index = static_cast<uint32_t>(i);
                 if (arg == "addslots") {
                     if (clusterState->_allSlots[index] != nullptr) {
-                        LOG(WARNING) << "slot" << index
+                        LOG(ERROR) << "slot" << index
                                      << "already busy";
                         continue;
                     }
@@ -486,7 +497,7 @@ private:
                                                           index);
                 } else {
                     if (clusterState->_allSlots[index] == nullptr) {
-                        LOG(WARNING) << "slot" << index
+                        LOG(ERROR) << "slot" << index
                                      << "already delete";
                         continue;
                     }
@@ -564,7 +575,7 @@ private:
         uint32_t nodeNum = 0;
         std::vector<CNodePtr> nodes;
 
-        for (const auto &v: state->_nodes) {
+        for (const auto &v: state->getNodes()) {
             CNodePtr node = v.second;
             if (!node->nodeIsMaster() || node->getSlotNum() == 0)
                 continue;

@@ -41,7 +41,7 @@ while {[incr iterations -1]} {
     if {$role eq {master}} {
         test "Wait for slave of #$tokill to sync" {
             wait_for_condition 1000 50 {
-                [string match {*state=online*} [RI $tokill slave0]]
+                [string match {*is_running=0*} [RI $tokill slave0]]
             } else {
                 fail "Slave of node #$tokill is not ok"
             }
@@ -57,7 +57,8 @@ while {[incr iterations -1]} {
         # Wait for the write to propagate to the slave if we
         # are going to kill a master.
         if {$role eq {master}} {
-            R $tokill wait 1 20000
+           # R $tokill wait 1 20000
+           after 20000
         }
     }
 
@@ -113,3 +114,5 @@ test "Post condition: current_epoch >= my_epoch everywhere" {
         assert {[CI $id cluster_current_epoch] >= [CI $id cluster_my_epoch]}
     }
 }
+
+

@@ -608,6 +608,52 @@ Expected<std::vector<std::unique_ptr<ClusterMeta>>> Catalog::getAllClusterMeta()
     return resultList;
 }
 
+
+bool Catalog::clusterMetaExist(Transaction* txn, const std::string & nodeName) {
+    auto result = std::make_unique<ClusterMeta>();
+    std::stringstream ss;
+
+    ss << "store_cluster_" << nodeName;
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+
+    Expected<RecordValue> exprv = _store->getKV(rk, txn);
+    if (!exprv.ok()) {
+        return false;
+    }
+    return true;
+}
+
+//delete cluster node data
+Status Catalog::delClusterMeta(const std::string & nodeName) {
+    std::stringstream ss;
+    ss << "store_cluster_" << nodeName;
+    RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
+
+    auto exptxn = _store->createTransaction(nullptr);
+    if (!exptxn.ok()) {
+        LOG(ERROR) << "ERROR Get createTransaction status"<< exptxn.status().toString();
+        return exptxn.status();
+    }
+    std::unique_ptr<Transaction> txn = std::move(exptxn.value());
+    bool existKey = clusterMetaExist(txn.get(), nodeName);
+
+    if (!existKey) {
+        LOG(ERROR) << "delteMeta data:" << nodeName << "not found";
+        return  {ErrorCodes::ERR_UNKNOWN, "no this key"};
+    }
+
+    Status s  = _store->delKV(rk, txn.get());
+    if(!s.ok()) {
+        return s;
+    }
+
+    Expected<uint64_t> commitStatus = txn->commit();
+    if (!s.ok()) {
+        return commitStatus.status();
+    }
+    return  s;
+}
+
 // get one cluster node data
 Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string& nodeName) {
     auto result = std::make_unique<ClusterMeta>();
@@ -691,6 +737,8 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
 
     return result;
 }
+
+
 
 
 Status Catalog::setEpochMeta(const EpochMeta& meta) {

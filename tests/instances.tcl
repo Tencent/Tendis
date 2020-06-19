@@ -396,16 +396,22 @@ proc get_instance_id_by_port {type port} {
 #
 # The instance can be restarted with restart-instance.
 proc kill_instance {type id} {
+
     set pid [get_instance_attrib $type $id pid]
+    set port [get_instance_attrib $type $id port]
+
     if {$pid == -1} {
         error "You tried to kill $type $id twice."
     }
+
     exec kill -9 $pid
     set_instance_attrib $type $id pid -1
-    set_instance_attrib $type $id link you_tried_to_talk_with_killed_instance
+   # set_instance_attrib $type $id link you_tried_to_talk_with_killed_instance
 
     # Remove the PID from the list of pids to kill at exit.
     set ::pids [lsearch -all -inline -not -exact $::pids $pid]
+ 
+
 }
 
 # Return true of the instance of the specified type/id is killed.
@@ -416,18 +422,26 @@ proc instance_is_killed {type id} {
 
 # Restart an instance previously killed by kill_instance
 proc restart_instance {type id} {
-    set dirname "${type}_${id}"
-    set cfgfile [file join $dirname $type.conf]
+
+    set dirname "tendisplus_${id}"
+    set cfgfile [file join $dirname tendisplus.conf]
     set port [get_instance_attrib $type $id port]
 
-    # Execute the instance with its old setup and append the new pid
-    # file for cleanup.
-    if {$type eq "redis"} {
-        set prgname redis-server
+    set pidfile $dirname/tendisplus.pid
+    set prgname tendisplus
+    set stdout [format "%s/%s" $dirname "stdout"]
+    set stderr [format "%s/%s" $dirname "stderr"]
+    exec ../../../build/bin/tendisplus $cfgfile > $stdout 2> $stderr &
+    # find out the pid
+        
+    after 1000
+    wait_for_condition 100 500 {
+        [file exists $pidfile] == 1
     } else {
-        set prgname redis-sentinel
+        fail "Unable to create a master-slaves cluster."
     }
-    set pid [exec ../../../src/${prgname} $cfgfile &]
+    set pid [exec cat $pidfile]
+
     set_instance_attrib $type $id pid $pid
     lappend ::pids $pid
 

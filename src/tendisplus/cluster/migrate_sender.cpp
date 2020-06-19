@@ -207,10 +207,12 @@ Status ChunkMigrateSender::sendSnapshot(const SlotsBitmap& slots) {
     LOG(INFO) << "sendSnapshot begin, storeid:" << _storeid
               <<" _curBinlogid:" << _curBinlogid
               <<" slots:" << bitsetStrEncode(slots);
+
     auto eTxn = initTxn();
     if (!eTxn.ok()) {
         return eTxn.status();
     }
+
     Transaction * txn = eTxn.value();
     uint32_t timeoutSec = 160;
     uint32_t sendSlotNum = 0;

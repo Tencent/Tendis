@@ -308,21 +308,24 @@ bool  ServerEntry::emptySlot(uint32_t slot) {
         return true;
     }
     auto kvstore = std::move(expdb.value().store);
-
-    auto ptxn = kvstore->createTransaction(NULL);
-
+    auto ptxn = kvstore->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+        LOG(ERROR) << "create transaction fail";
+        return false;
+    }
     auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
     auto v = slotCursor->next();
+
     if (!v.ok()) {
         if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
             return true;
+       } else{
+            LOG(ERROR)<< "slot not empty beacause get slot:"
+                     << slot << "cusror fail";
+            return false;
         }
-        LOG(ERROR) << "get slot cursor errror: " << v.status().toString();
-        return true;
-    } else {
-        return false;
     }
-    return true;
+    return false;
 }
 
 // TODO(wayenchen)  takenliu add, delete this function, it cost too much memory.
@@ -379,7 +382,6 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
     uint32_t n = 0;
     while (true) {
         Expected<Record> expRcd = slotCursor->next();
-
         if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
             break;
         }
@@ -401,7 +403,8 @@ std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t coun
 Status ServerEntry::delKeysInSlot(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
     LocalSessionGuard g(this);
-
+   //lock chunk x
+   //get db ix
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
@@ -869,7 +872,6 @@ bool ServerEntry::processRequest(Session *sess) {
     }
 
     replyMonitors(sess);
-
     if (expCmdName.value() == "fullsync") {
         LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
         NetSession *ns = dynamic_cast<NetSession*>(sess);
@@ -1356,7 +1358,7 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
 # Query_time: 2001014
 tendisadmin sleep 2
 */
-// in ¦Ìs
+// in ï¿½ï¿½s
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {

@@ -61,16 +61,21 @@ proc CI {n field} {
 # Only the first 'n' nodes are used.
 proc cluster_allocate_slots {n} {
     set slot 16383
+    set avg [expr 16383/$n]
+    set node 0
     while {$slot >= 0} {
         # Allocate successive slots to random nodes.
-        set node [randomInt $n]
         lappend slots_$node $slot
         incr slot -1
+        if {[expr $slot%$avg] == 0} {
+            incr node
+            set node [expr $node%$n]
+        }
     }
     for {set j 0} {$j < $n} {incr j} {
         R $j cluster addslots {*}[set slots_${j}]
     }
-}
+}    
 
 # Check that cluster nodes agree about "state", or raise an error.
 proc assert_cluster_state {state} {
