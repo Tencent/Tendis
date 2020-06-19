@@ -28,6 +28,25 @@ namespace tendisplus {
 //    return grand;
 //}
 
+void testCommandArrayResult(std::shared_ptr<ServerEntry> svr,
+    const std::vector<std::pair<std::vector<std::string>, std::string>>& arr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    for (auto& p : arr) {
+        sess.setArgs(p.first);
+        auto expect = Command::runSessionCmd(&sess);
+        if (expect.ok()) {
+            auto ret = expect.value();
+            EXPECT_EQ(p.second, ret);
+        } else {
+            auto ret = expect.status().toString();
+            EXPECT_EQ(p.second, ret);
+        }
+    }
+}
+
 std::shared_ptr<ServerEntry> 
 makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
     auto mDir = dir;
@@ -58,6 +77,71 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
     INVARIANT(s.ok());
 
     return master;
+}
+
+std::vector<std::shared_ptr<ServerEntry>>
+#ifdef _WIN32
+makeCluster(uint32_t startPort, uint32_t nodeNum = 3, uint32_t storeCnt = 1) {
+#else
+makeCluster(uint32_t startPort, uint32_t nodeNum = 3, uint32_t storeCnt = 10) {
+#endif
+    LOG(INFO) << "Make Cluster begin.";
+    std::vector<std::string> dirs;
+    for (uint32_t i = 0; i < nodeNum; ++i) {
+        dirs.push_back("node" + to_string(i));
+    }
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    for (auto dir : dirs) {
+        // TODO(wayenchen): find a available port
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    }
+
+    auto node0 = servers[0];
+    auto ctx0 = std::make_shared<asio::io_context>();
+    auto sess0 = makeSession(node0, ctx0);
+    WorkLoad work0(node0, sess0);
+    work0.init();
+
+    for (auto node : servers) {
+        work0.clusterMeet(node->getParams()->bindIp, node->getParams()->port);
+    }
+
+    uint32_t step = CLUSTER_SLOTS / nodeNum;
+    uint32_t firstslot = 0;
+    uint32_t idx = 0;
+
+    // addSlots
+    for (auto node : servers) {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto sess = makeSession(node, ctx);
+        WorkLoad work(node, sess);
+        work.init();
+
+        uint32_t lastslot = firstslot + step;
+        if (idx == nodeNum - 1) {
+            lastslot = CLUSTER_SLOTS - 1;
+        }
+        char buf[128];
+        sprintf(buf, "{%u..%u}", firstslot, lastslot);
+
+        std::string slotstr(buf);
+        work.addSlots(slotstr);
+
+        idx++;
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    return std::move(servers);
+}
+
+void destroyCluster(uint32_t nodeNum) {
+    for (uint32_t i = 0; i < nodeNum; ++i) {
+        destroyEnv("node" + to_string(i));
+    }
 }
 
 uint16_t randomNodeFlag() {
@@ -1207,8 +1291,6 @@ TEST(Cluster, ErrStoreNum) {
     servers.clear();
 }
 
-
-
 void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
         uint32_t nodeNum, uint32_t migrateSlot, uint32_t srcNodeIndex, uint32_t dstNodeIndex) {
     int32_t num = 0;
@@ -1494,6 +1576,37 @@ TEST(Cluster, MigrateTTLIndex) {
     for (auto svr : servers) {
         svr->stop();
         LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+    servers.clear();
+}
+
+TEST(Cluster, CrossSlot) {
+    uint32_t nodeNum = 2;
+    uint32_t startPort = 15000;
+
+
+    const auto guard = MakeGuard([&nodeNum] {
+        destroyCluster(nodeNum);
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
+
+
+    auto servers = makeCluster(startPort, nodeNum);
+    auto server = servers[0];
+
+    std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+    {{"set", "a{1}", "b"}, "-MOVED 5649 127.0.0.1:15001\r\n"},
+    {{"mset", "a{1}", "b", "c{2}", "d"}, "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"mset", "a{1}", "b", "c{1}", "d"}, Command::fmtOK()},
+    };
+
+    testCommandArrayResult(server, resultArr);
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " << svr->getParams()->port << " success";
     }
 #endif
     servers.clear();

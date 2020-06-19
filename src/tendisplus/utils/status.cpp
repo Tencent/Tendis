@@ -100,6 +100,13 @@ std::string Status::getErrStr(ErrorCodes code) {
         return "-ERR index out of range\r\n";
     case ErrorCodes::ERR_WRONG_VERSION_EP:
         return "-WRONGVERSION\r\n";
+    case ErrorCodes::ERR_CLUSTER_REDIR_CROSS_SLOT:
+        return "-CROSSSLOT Keys in request don't hash to the same slot\r\n";
+    case ErrorCodes::ERR_CLUSTER_REDIR_DOWN_STATE:
+        return "-CLUSTERDOWN The cluster is down\r\n";
+    case ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND:
+        return "-CLUSTERDOWN Hash slot not served\r\n";
+
     default:
         break;
     }

@@ -453,14 +453,15 @@ void testExtendProtocol(std::shared_ptr<ServerEntry> svr) {
 }
 
 void testLockMulti(std::shared_ptr<ServerEntry> svr) {
-
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 10; i++) {
         std::vector<std::string> vec;
         std::vector<int> index;
+        
+        LOG(INFO) << "testLockMulti " << i;
 
         for (int j = 0; j < 100; j++) {
             // different string
@@ -476,17 +477,22 @@ void testLockMulti(std::shared_ptr<ServerEntry> svr) {
             EXPECT_TRUE(locklist.ok());
 
             uint32_t id = 0;
+            uint32_t chunkid = 0;
             std::string key = "";
             auto list = std::move(locklist.value());
             for (auto& l : list) {
                 if (l->getStoreId() == id) {
-                    EXPECT_TRUE(l->getKey() > key);
+                    EXPECT_TRUE(l->getChunkId() >= chunkid);
+                    if (l->getChunkId() == chunkid) {
+                        EXPECT_TRUE(l->getKey() > key);
+                    }
                 }
 
                 EXPECT_TRUE(l->getStoreId() >= id);
 
                 key = l->getKey();
                 id = l->getStoreId();
+                chunkid = l->getChunkId();
             }
         }
     }

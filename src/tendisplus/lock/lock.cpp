@@ -95,7 +95,6 @@ StoreLock::StoreLock(uint32_t storeId, mgl::LockMode mode,
         //:ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
         :ILock(NULL, new mgl::MGLock(mgr), sess),
          _storeId(storeId) {
-    DLOG(INFO) << "begin lock on store:" <<_storeId;
     std::string target = "store_" + std::to_string(storeId);
     if (_sess) {
         _sess->getCtx()->setWaitLock(storeId, 0, "", mode);

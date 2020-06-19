@@ -936,6 +936,27 @@ CNodePtr ClusterState::getNodeBySlot(uint32_t slot) const {
     return _allSlots[slot];
 }
 
+Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot) const {
+    std::lock_guard<myMutex> lk(_mutex);
+    if (_state == ClusterHealth::CLUSTER_FAIL) {
+        return { ErrorCodes::ERR_CLUSTER_REDIR_DOWN_STATE, "" };
+    }
+
+    auto node = getNodeBySlot(slot);
+    if (!node) {
+        return { ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND, "" };
+    }
+
+    if (node != _myself) {
+        std::stringstream ss;
+        ss << "-" << "MOVED" << " " << slot << " "
+            << node->getNodeIp() << ":" << node->getPort() << "\r\n";
+        return { ErrorCodes::ERR_MOVED, ss.str() };
+    }
+
+    return node;
+}
+
 bool ClusterState::isContainSlot(uint32_t slotId) {
     std::lock_guard<myMutex> lk(_mutex);
     return  getNodeBySlot(slotId)==_myself;

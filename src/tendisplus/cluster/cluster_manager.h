@@ -539,7 +539,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     Status setSlotsMyself(const std::bitset<CLUSTER_SLOTS>& slots);
     void setSlotsBelongMyself(const std::bitset<CLUSTER_SLOTS>& slots);
 
-
+    Expected<CNodePtr> clusterHandleRedirect(uint32_t slot) const;
     CNodePtr getNodeBySlot(uint32_t slot) const;
 
     void clusterUpdateSlotsConfigWith(CNodePtr sender,

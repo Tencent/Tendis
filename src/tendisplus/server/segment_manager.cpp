@@ -36,10 +36,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+    bool cluster_enabled = false;
     if (sess && sess->getServerEntry()) {
         lockTimeoutMs = (uint64_t) sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        cluster_enabled = sess->getServerEntry()->isClusterEnabled();
     }
-    auto svr = sess->getServerEntry();
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
@@ -71,29 +72,14 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             return elk.status();
         }
 
-        if (svr->isClusterEnabled()) {
-            std::stringstream ss;
+        if (cluster_enabled) {
+            auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>
                     &clusterState = svr->getClusterMgr()->getClusterState();
-            if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-                ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
-                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
-            }
-            if (clusterState->getBlockState()) {
-                ss << "-BLOCK The cluster is block now" << "\r\n";
-                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
-            }
 
-            CNodePtr myself = clusterState->getMyselfNode();
-            // too much cost ?  to do  wayen
-            CNodePtr node = clusterState->getNodeBySlot(chunkId);
-
-            if (node != myself && myself->getMaster() != node) {
-                ss << "-" << "MOVED" << " " << chunkId << " "
-                   << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
-                _movedNum++;
-                DLOG(INFO) << ss.str();
-                return { ErrorCodes::ERR_MOVED, ss.str()};
+            auto node = clusterState->clusterHandleRedirect(chunkId);
+            if (!node.ok()) {
+                return node.status();
             }
         }
         return DbWithLock{
@@ -116,28 +102,14 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
     auto svr = sess->getServerEntry();
 
     if (svr->isClusterEnabled()) {
-		// TODO(vinchen): one interface
-        std::stringstream ss;
+        auto svr = sess->getServerEntry();
         const std::shared_ptr<tendisplus::ClusterState>
-                &clusterState = svr->getClusterMgr()->getClusterState();
-        if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-            ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
-            return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
-        }
-        if (clusterState->getBlockState()) {
-            ss << "-BLOCK The cluster is block now" << "\r\n";
-            return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
-        }
-        CNodePtr myself = clusterState->getMyselfNode();
-        CNodePtr node = clusterState->getNodeBySlot(chunkId);
+            & clusterState = svr->getClusterMgr()->getClusterState();
 
-        if ( node != myself && myself->getMaster() != node) {
-            ss << "-" << "MOVED" << " " << chunkId << " "
-               << node->getNodeIp() << ":" <<node->getPort()<< "\r\n";
-            DLOG(INFO) << ss.str();
-            return { ErrorCodes::ERR_MOVED, ss.str()};
+        auto node = clusterState->clusterHandleRedirect(chunkId);
+        if (!node.ok()) {
+            return node.status();
         }
-
     }
 
     if (!_instances[segId]->isOpen()) {
@@ -174,40 +146,51 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     std::list<std::unique_ptr<KeyLock>> locklist;
 
     if (mode == mgl::LockMode::LOCK_NONE) {
-#ifdef _WIN32
-        return std::move(locklist);
-#else
         return locklist;
-#endif
     }
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+    bool cluster_enabled = false;
     if (sess && sess->getServerEntry()) {
         lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        cluster_enabled = sess->getServerEntry()->isClusterEnabled();
     }
-    std::map<uint32_t, std::vector<std::string>> segList;
+    std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
+    uint32_t last_chunkId = -1;
     for (auto iter = index.begin(); iter != index.end(); iter++) {
         auto key = args[*iter];
         uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
         INVARIANT_D(hash < _chunkSize);
         uint32_t chunkId = hash % _chunkSize;
         uint32_t segId = chunkId % _instances.size();
-        segList[segId].push_back(std::move(key));
+        segList[segId].emplace_back(std::make_pair(chunkId, std::move(key)));
+
+        if (last_chunkId == (uint32_t)-1) {
+            last_chunkId = chunkId;
+        } else if (last_chunkId != chunkId) {
+            if (cluster_enabled) {
+                return { ErrorCodes::ERR_CLUSTER_REDIR_CROSS_SLOT, ""};
+            }
+            last_chunkId = chunkId;
+        }
     }
 
+    /* NOTE(vinchen): lock sequence
+        lock kvstores from small to big(kvstore id)
+            lock chunks from small to big(chunk id) in kvstore
+                lock keys from small to big(key name) in chunk
+    */
     for (auto& element : segList) {
         uint32_t segId = element.first;
         auto keysvec = element.second;
-		// TODO(vinchen): deadlock
         std::sort(std::begin(keysvec), std::end(keysvec),
-                [](const std::string& a, const std::string& b) { return a < b; });
+                [](const std::pair<uint32_t, std::string>& a,
+                   const std::pair<uint32_t, std::string>& b) 
+                    { return a.first < b.first || (a.first == b.first && a.second < b.second); });
         for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {
-            const std::string& key = *keyIter;
-            // TODO(takenliu): optimization it.
-            uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
-            INVARIANT(hash < _chunkSize);
-            uint32_t chunkId = hash % _chunkSize;
-            auto elk = KeyLock::AquireKeyLock(segId, chunkId, key, mode, sess,
+            const auto& pair = *keyIter;
+            uint32_t chunkId = pair.first;
+            auto elk = KeyLock::AquireKeyLock(segId, chunkId, pair.second, mode, sess,
                 (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
             if (!elk.ok()) {
                 return elk.status();
@@ -216,11 +199,7 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
         }
     }
 
-#ifdef _WIN32
-    return std::move(locklist);
-#else
     return locklist;
-#endif
 }
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
