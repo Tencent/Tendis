@@ -2149,7 +2149,7 @@ class InfoCommand: public Command {
     }
 
     static void infoRocksdbStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
-        if (allsections || section == "rocksdbstats") {
+        if (section == "rocksdbstats") {
             auto server = sess->getServerEntry();
             std::map<std::string, uint64_t> map;
 
@@ -2206,7 +2206,7 @@ class InfoCommand: public Command {
     }
 
     static void infoRocksdbPerfStats(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
-        if (allsections || section == "rocksdbperfstats") {
+        if (section == "rocksdbperfstats") {
             result << "# RocksdbPerfstats\r\n";
 
             auto tmp = sess->getCtx()->getPerfContextStr();
@@ -2225,7 +2225,7 @@ class InfoCommand: public Command {
     }
 
     static void infoBinlogInfo(bool allsections, bool defsections, const std::string& section, Session* sess, std::stringstream& result) {
-        if (allsections || section == "binloginfo") {
+        if (section == "binloginfo") {
             auto server = sess->getServerEntry();
 
             result << "# BinlogInfo\r\n";
