@@ -633,7 +633,13 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     uint32_t i = 30;
     sess.setArgs({ "config", "get", "maxclients"});
     auto expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(Command::fmtBulk("10000"), expect.value());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "maxclients");
+    Command::fmtBulk(ss, "10000");
+    EXPECT_EQ(ss.str(), expect.value());
+    ss.clear();
+    ss.str("");
 
     sess.setArgs({ "config", "set", "maxclients", std::to_string(i)});
     expect = Command::runSessionCmd(&sess);
@@ -642,7 +648,12 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "config", "get", "maxclients"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(Command::fmtBulk(std::to_string(i)), expect.value());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "maxclients");
+    Command::fmtBulk(ss, std::to_string(i));
+    EXPECT_EQ(ss.str(), expect.value());
+    ss.clear();
+    ss.str("");
 
     sess.setArgs({ "config", "set", "masterauth", "testauth"});
     expect = Command::runSessionCmd(&sess);
@@ -650,7 +661,10 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "config", "get", "masterauth"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ("$8\r\ntestauth\r\n", expect.value());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "masterauth");
+    Command::fmtBulk(ss, "testauth");
+    EXPECT_EQ(ss.str(), expect.value());
 }
 
 void testSlowLog(std::shared_ptr<ServerEntry> svr) {
@@ -677,10 +691,14 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
 
     sess.setArgs({ "config", "get", "slowlog-log-slower-than"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(Command::fmtBulk(std::to_string(i)), expect.value());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "slowlog-log-slower-than");
+    Command::fmtBulk(ss, std::to_string(i));
+    EXPECT_EQ(ss.str(), expect.value());
 }
 
-void testWildcardCharacter(std::shared_ptr<ServerEntry> svr) {
+void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;
     asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
@@ -704,9 +722,11 @@ void testWildcardCharacter(std::shared_ptr<ServerEntry> svr) {
         , expect.value());
     sess.setArgs({"config", "get", "?lowlog"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(
-        "$11\r\n\"./slowlog\"\r\n"
-        , expect.value());    
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "slowlog");
+    Command::fmtBulk(ss, "\"./slowlog\"");
+    EXPECT_EQ(ss.str(), expect.value());
 
     sess.setArgs({"config", "get", "a", "b"});
     expect = Command::runSessionCmd(&sess);
@@ -889,7 +909,7 @@ TEST(Command, slowlog) {
 }
 #endif // !
 
-TEST(Command, wildcardcharacter) {
+TEST(Command, testGlobStylePattern) {
     const auto guard = MakeGuard([] {
         destroyEnv();
     });
@@ -898,7 +918,7 @@ TEST(Command, wildcardcharacter) {
     auto cfg = makeServerParam();
     auto server = makeServerEntry(cfg);
 
-    testWildcardCharacter(server);
+    testGlobStylePattern(server);
 
 #ifndef _WIN32
     server->stop();

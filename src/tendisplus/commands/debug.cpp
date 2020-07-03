@@ -2441,28 +2441,23 @@ class ConfigCommand : public Command {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
             auto configName = toLower(args[2]);
-            string info;
-            vector<string> info2;
+            vector<string> info;
             if (configName == "requirepass") {
-                info = sess->getServerEntry()->requirepass();
+                info.push_back("requirepass");
+                info.push_back(sess->getServerEntry()->requirepass());
             } else if (configName == "masterauth") {
-                info = sess->getServerEntry()->masterauth();
-            } else if (!sess->getServerEntry()->getParams()->showVar(configName, info2)) {
+                info.push_back("masterauth");
+                info.push_back(sess->getServerEntry()->masterauth());
+            } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
                 return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
             }
-            if(!info2.empty()) {
-                int size = info2.size();
-                if(size == 2) {
-                    return Command::fmtBulk(info2[1]);
-                }
-                std::stringstream ss;
-                Command::fmtMultiBulkLen(ss, size);
-                for(int i = 0; i < size; i++) {
-                    Command::fmtBulk(ss, info2[i]);
-                }
-                return ss.str();
+            int size = info.size();
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, size);
+            for(int i = 0; i < size; i++) {
+                Command::fmtBulk(ss, info[i]);
             }
-            return Command::fmtBulk(info);
+            return ss.str();
         } else if (operation == "resetstat") {
             bool reset_all = false;
 
