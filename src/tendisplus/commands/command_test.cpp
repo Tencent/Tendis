@@ -680,6 +680,39 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(Command::fmtBulk(std::to_string(i)), expect.value());
 }
 
+void testWildcardCharacter(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "config", "set", "slowlog-flush-interval",  "1"});
+    auto expect = Command::runSessionCmd(&sess);;
+    EXPECT_TRUE(expect.ok());    
+
+    sess.setArgs({ "config", "set", "slowlog-log-slower-than",  "100000"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "config", "set", "slowlogmaxlen",  "1024"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"config", "get", "*slow*"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(
+        "*8\r\n$7\r\nslowlog\r\n$11\r\n\"./slowlog\"\r\n$22\r\nslowlog-flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$6\r\n100000\r\n$13\r\nslowlogmaxlen\r\n$4\r\n1024\r\n"
+        , expect.value());
+    sess.setArgs({"config", "get", "?lowlog"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(
+        "$11\r\n\"./slowlog\"\r\n"
+        , expect.value());    
+
+    sess.setArgs({"config", "get", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
+}
+
 TEST(Command, common) {
     const auto guard = MakeGuard([] {
         destroyEnv();
@@ -855,6 +888,23 @@ TEST(Command, slowlog) {
     pclose(fp);
 }
 #endif // !
+
+TEST(Command, wildcardcharacter) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testWildcardCharacter(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+}
 
 void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;

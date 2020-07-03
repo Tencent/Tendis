@@ -2442,12 +2442,25 @@ class ConfigCommand : public Command {
             }
             auto configName = toLower(args[2]);
             string info;
+            vector<string> info2;
             if (configName == "requirepass") {
                 info = sess->getServerEntry()->requirepass();
             } else if (configName == "masterauth") {
                 info = sess->getServerEntry()->masterauth();
-            } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
+            } else if (!sess->getServerEntry()->getParams()->showVar(configName, info2)) {
                 return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
+            }
+            if(!info2.empty()) {
+                int size = info2.size();
+                if(size == 2) {
+                    return Command::fmtBulk(info2[1]);
+                }
+                std::stringstream ss;
+                Command::fmtMultiBulkLen(ss, size);
+                for(int i = 0; i < size; i++) {
+                    Command::fmtBulk(ss, info2[i]);
+                }
+                return ss.str();
             }
             return Command::fmtBulk(info);
         } else if (operation == "resetstat") {

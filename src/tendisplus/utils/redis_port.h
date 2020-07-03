@@ -141,6 +141,7 @@ int zslParseRange(const char *min, const char *max, Zrangespec *spec);
 int zslParseLexRange(const char *min, const char *max, Zlexrangespec *spec);
 int stringmatchlen(const char *pattern, int patternLen,
     const char *string, int stringLen, int nocase);
+int stringmatch(const char *pattern, const char *string, int nocase);
 unsigned int keyHashSlot(const char *key, size_t keylen);
 unsigned int keyHashTwemproxy(const std::string& key);
 

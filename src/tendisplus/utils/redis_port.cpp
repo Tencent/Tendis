@@ -135,6 +135,11 @@ int stringmatchlen(const char *pattern, int patternLen,
   return 0;
 }
 
+int stringmatch(const char *pattern, const char *string, int nocase) {
+    return stringmatchlen(pattern,strlen(pattern),string,strlen(string),nocase);
+}
+
+
 int64_t bitPos(const void *s, size_t count, uint32_t bit) {
     unsigned long *l;       // NOLINT:runtime/int
     unsigned char *c;

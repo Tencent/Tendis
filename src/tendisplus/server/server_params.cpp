@@ -272,5 +272,17 @@ bool ServerParams::showVar(const string& key, string& info) const {
     info = iter->second->show();
     return true;
 }
+
+bool ServerParams::showVar(const string& key, vector<string>& info) const {
+    for(auto iter = _mapServerParams.begin(); iter != _mapServerParams.end(); iter++) {
+        if(redis_port::stringmatch(key.c_str(), iter->first.c_str(), 1)){
+            info.push_back(iter->first);
+            info.push_back(iter->second->show());
+        }
+    }
+    if(info.empty())
+        return false;
+    return true;
+}
 }  // namespace tendisplus
 
