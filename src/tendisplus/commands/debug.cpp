@@ -3200,7 +3200,7 @@ class slowlogCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 2;
+        return -2;
     }
 
     int32_t firstkey() const {
@@ -3217,16 +3217,54 @@ class slowlogCommand: public Command {
 
     Expected<std::string> run(Session *sess) final {
         const auto& args = sess->getArgs();
-
         const auto server = sess->getServerEntry();
+        auto& slowlog_stats = server->getSlowlogStat();
+
         if (toLower(args[1]) == "len") {
             std::stringstream ss;
-            uint64_t num = server->getSlowlogNum();
+            uint64_t num = slowlog_stats.getSlowlogLen();
+            //uint64_t num = server->getSlowlogNum();
             Command::fmtLongLong(ss, static_cast<uint64_t>(num));
             return ss.str();
         } else if (toLower(args[1]) == "reset") {
-            server->resetSlowlogNum();
+            //server->resetSlowlogNum();
+            slowlog_stats.resetSlowlogData();
             return Command::fmtOK();
+        } else if (toLower(args[1]) == "get" &&
+                   (args.size() == 2 || args.size() == 3)) {  // slowlog get
+            std::stringstream ss;
+            uint64_t count_num;
+            if (args.size() == 3) {  
+                Expected<uint64_t> count = tendisplus::stoull(args[2]);
+                if(!count.ok())	
+                    return Command::fmtErr("not invalid num");
+                count_num = count.value();
+            }else {
+                count_num = 10; 
+            }
+            auto cfgs = server->getParams();
+            if (count_num > cfgs->slowlogMaxLen) {
+                count_num = cfgs->slowlogMaxLen;
+            }
+            auto slow_log_list = slowlog_stats.getSlowlogData(count_num);
+            std::list<SlowlogEntry>::iterator it = slow_log_list.begin();
+            Command::fmtMultiBulkLen(ss, std::min(slow_log_list.size(), count_num));
+            while (count_num > 0 && it != slow_log_list.end()) {
+                SlowlogEntry slow_log_node = *it;
+                Command::fmtMultiBulkLen(ss, 6);
+                Command::fmtLongLong(ss, slow_log_node.id);
+                Command::fmtLongLong(ss, slow_log_node.unix_time);
+                Command::fmtLongLong(ss, slow_log_node.duration);
+                Command::fmtMultiBulkLen(ss, slow_log_node.argc);
+                for (int i = 0; i < slow_log_node.argc; i++)
+                    Command::fmtBulk(ss, slow_log_node.argv[i]);
+                Command::fmtBulk(ss, slow_log_node.peerID);
+                Command::fmtBulk(ss, slow_log_node.cname);
+
+                it++;
+                count_num--;
+            }
+            return ss.str();
         } else {
             return { ErrorCodes::ERR_PARSEPKT, "unkown args" };
         }

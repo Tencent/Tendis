@@ -116,9 +116,9 @@ ServerParams::ServerParams() {
     REGISTER_VARS_ALLOW_DYNAMIC_SET(maxClients);
     REGISTER_VARS_DIFF_NAME("slowlog", slowlogPath);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-log-slower-than", slowlogLogSlowerThan);
-    //REGISTER_VARS(slowlogMaxLen);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-max-len", slowlogMaxLen);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-flush-interval", slowlogFlushInterval);
-    REGISTER_VARS_ALLOW_DYNAMIC_SET(slowlogMaxLen);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
     REGISTER_VARS(netIoThreadNum);
     REGISTER_VARS(executorThreadNum);
 
