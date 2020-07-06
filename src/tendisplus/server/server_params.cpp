@@ -275,7 +275,7 @@ bool ServerParams::showVar(const string& key, string& info) const {
 
 bool ServerParams::showVar(const string& key, vector<string>& info) const {
     for(auto iter = _mapServerParams.begin(); iter != _mapServerParams.end(); iter++) {
-        if(redis_port::stringmatch(key.c_str(), iter->first.c_str(), 1)){
+        if(redis_port::stringmatchlen(key.c_str(), key.size(), iter->first.c_str(), iter->first.size(), 1)) {
             info.push_back(iter->first);
             info.push_back(iter->second->show());
         }

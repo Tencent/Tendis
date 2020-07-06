@@ -720,6 +720,7 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(
         "*8\r\n$7\r\nslowlog\r\n$11\r\n\"./slowlog\"\r\n$22\r\nslowlog-flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$6\r\n100000\r\n$13\r\nslowlogmaxlen\r\n$4\r\n1024\r\n"
         , expect.value());
+    
     sess.setArgs({"config", "get", "?lowlog"});
     expect = Command::runSessionCmd(&sess);
     std::stringstream ss;
@@ -727,6 +728,10 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, "slowlog");
     Command::fmtBulk(ss, "\"./slowlog\"");
     EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({"config", "get", "no_exist_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtZeroBulkLen(), expect.value());
 
     sess.setArgs({"config", "get", "a", "b"});
     expect = Command::runSessionCmd(&sess);

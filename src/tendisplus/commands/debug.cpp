@@ -2449,7 +2449,7 @@ class ConfigCommand : public Command {
                 info.push_back("masterauth");
                 info.push_back(sess->getServerEntry()->masterauth());
             } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
+                return Command::fmtZeroBulkLen();
             }
             int size = info.size();
             std::stringstream ss;
