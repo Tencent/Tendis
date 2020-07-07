@@ -2441,15 +2441,23 @@ class ConfigCommand : public Command {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
             auto configName = toLower(args[2]);
-            string info;
+            vector<string> info;
             if (configName == "requirepass") {
-                info = sess->getServerEntry()->requirepass();
+                info.push_back("requirepass");
+                info.push_back(sess->getServerEntry()->requirepass());
             } else if (configName == "masterauth") {
-                info = sess->getServerEntry()->masterauth();
+                info.push_back("masterauth");
+                info.push_back(sess->getServerEntry()->masterauth());
             } else if (!sess->getServerEntry()->getParams()->showVar(configName, info)) {
-                return{ ErrorCodes::ERR_PARSEOPT, "arg not found:" + configName};
+                return Command::fmtZeroBulkLen();
             }
-            return Command::fmtBulk(info);
+            int size = info.size();
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, size);
+            for(int i = 0; i < size; i++) {
+                Command::fmtBulk(ss, info[i]);
+            }
+            return ss.str();
         } else if (operation == "resetstat") {
             bool reset_all = false;
 

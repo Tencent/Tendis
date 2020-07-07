@@ -633,7 +633,13 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     uint32_t i = 30;
     sess.setArgs({ "config", "get", "maxclients"});
     auto expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(Command::fmtBulk("10000"), expect.value());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "maxclients");
+    Command::fmtBulk(ss, "10000");
+    EXPECT_EQ(ss.str(), expect.value());
+    ss.clear();
+    ss.str("");
 
     sess.setArgs({ "config", "set", "maxclients", std::to_string(i)});
     expect = Command::runSessionCmd(&sess);
@@ -642,7 +648,12 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "config", "get", "maxclients"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(Command::fmtBulk(std::to_string(i)), expect.value());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "maxclients");
+    Command::fmtBulk(ss, std::to_string(i));
+    EXPECT_EQ(ss.str(), expect.value());
+    ss.clear();
+    ss.str("");
 
     sess.setArgs({ "config", "set", "masterauth", "testauth"});
     expect = Command::runSessionCmd(&sess);
@@ -650,7 +661,10 @@ void testMaxClients(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({ "config", "get", "masterauth"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ("$8\r\ntestauth\r\n", expect.value());
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "masterauth");
+    Command::fmtBulk(ss, "testauth");
+    EXPECT_EQ(ss.str(), expect.value());
 }
 
 void testSlowLog(std::shared_ptr<ServerEntry> svr) {
@@ -677,7 +691,51 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
 
     sess.setArgs({ "config", "get", "slowlog-log-slower-than"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(Command::fmtBulk(std::to_string(i)), expect.value());
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "slowlog-log-slower-than");
+    Command::fmtBulk(ss, std::to_string(i));
+    EXPECT_EQ(ss.str(), expect.value());
+}
+
+void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({ "config", "set", "slowlog-flush-interval",  "1"});
+    auto expect = Command::runSessionCmd(&sess);;
+    EXPECT_TRUE(expect.ok());    
+
+    sess.setArgs({ "config", "set", "slowlog-log-slower-than",  "100000"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({ "config", "set", "slowlogmaxlen",  "1024"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"config", "get", "*slow*"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(
+        "*8\r\n$7\r\nslowlog\r\n$11\r\n\"./slowlog\"\r\n$22\r\nslowlog-flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$6\r\n100000\r\n$13\r\nslowlogmaxlen\r\n$4\r\n1024\r\n"
+        , expect.value());
+    
+    sess.setArgs({"config", "get", "?lowlog"});
+    expect = Command::runSessionCmd(&sess);
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, "slowlog");
+    Command::fmtBulk(ss, "\"./slowlog\"");
+    EXPECT_EQ(ss.str(), expect.value());
+
+    sess.setArgs({"config", "get", "no_exist_key"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtZeroBulkLen(), expect.value());
+
+    sess.setArgs({"config", "get", "a", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(!expect.ok());
 }
 
 TEST(Command, common) {
@@ -855,6 +913,23 @@ TEST(Command, slowlog) {
     pclose(fp);
 }
 #endif // !
+
+TEST(Command, testGlobStylePattern) {
+    const auto guard = MakeGuard([] {
+        destroyEnv();
+    });
+
+    EXPECT_TRUE(setupEnv());
+    auto cfg = makeServerParam();
+    auto server = makeServerEntry(cfg);
+
+    testGlobStylePattern(server);
+
+#ifndef _WIN32
+    server->stop();
+    EXPECT_EQ(server.use_count(), 1);
+#endif
+}
 
 void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
     asio::io_context ioContext;

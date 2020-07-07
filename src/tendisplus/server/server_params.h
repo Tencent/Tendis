@@ -205,6 +205,7 @@ public:
     bool registerOnupdate(const string& name, funptr ptr);
     string showAll() const;
     bool showVar(const string& key, string& info) const;
+    bool showVar(const string& key, vector<string>& info) const;
     bool setVar(const string& name, const string& value, string* errinfo, bool force = true);
     uint32_t paramsNum() const {
         return _mapServerParams.size();
