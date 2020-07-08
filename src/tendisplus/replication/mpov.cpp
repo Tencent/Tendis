@@ -135,7 +135,6 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         }
 #endif
         // it is safe to remove a non-exist key
-        LOG(INFO) << "erase push staus on store:" << storeId;
         _pushStatus[storeId].erase(clientId);
         return;
     } else {
@@ -167,13 +166,11 @@ Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
          std::to_string(dstStoreId),
          std::to_string(binlogPos)});
 
-    LOG(INFO) << "send binlog get db begin";
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
                     storeId, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
         return expdb.status();
     }
-    LOG(INFO) << "send binlog get db end";
     auto store = std::move(expdb.value().store);
     INVARIANT(store != nullptr);
 
@@ -280,7 +277,6 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::move(_svr->getNetwork()->createBlockingClient(
             std::move(sock), 64*1024*1024));
 
-    LOG(INFO) << "register incr sync:" << "storeid1:" << storeIdArg <<  "storeid2:" << dstStoreIdArg;
     uint32_t storeId;
     uint32_t  dstStoreId;
     uint64_t binlogPos;
@@ -314,7 +310,6 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
         storeId, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
-        LOG(INFO) <<  "store err:" << "on store:" << storeIdArg;
         std::stringstream ss;
         ss << "-ERR store " << storeId << " error: "
             << expdb.status().toString();
@@ -414,7 +409,6 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                      clientId,
                      listenIpArg,
                      listen_port}));
-        LOG(INFO) << "push status add on store:" << storeId;
 #endif
         return true;
     }();

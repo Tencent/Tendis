@@ -244,7 +244,7 @@ public:
             }
             if (myself->nodeIsMaster() &&
                     (myself->getSlotNum() != 0 || nodeNotEmpty(svr, myself))) {
-                LOG(INFO) << "nodeNotEmpty(svr, myself):" << nodeNotEmpty(svr, myself)
+                DLOG(INFO) << "nodeNotEmpty(svr, myself):" << nodeNotEmpty(svr, myself)
                     << "myself slots:" << bitsetStrEncode(myself->getSlots());
                 return {ErrorCodes::ERR_CLUSTER,
                         "To set a master the node must be empty"};

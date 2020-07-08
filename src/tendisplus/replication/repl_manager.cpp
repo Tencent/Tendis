@@ -165,7 +165,7 @@ Status ReplManager::startup() {
 
     _incrChecker = std::make_unique<WorkerPool>(
             "repl-scheck", _incrCheckMatrix);
-    s = _incrChecker->startup(11);
+    s = _incrChecker->startup(2);
     if (!s.ok()) {
         return s;
     }
@@ -488,14 +488,12 @@ void ReplManager::controlRoutine() {
             // different pools.
             if (_syncMeta[i]->replState == ReplState::REPL_CONNECT) {
                 _syncStatus[i]->isRunning = true;
-                LOG(INFO) << "_sync checker:" << i;
                 _fullReceiver->schedule([this, i]() {
                     slaveSyncRoutine(i);
                 });
             } else if (_syncMeta[i]->replState == ReplState::REPL_CONNECTED ||
                     _syncMeta[i]->replState == ReplState::REPL_ERR) {
                 _syncStatus[i]->isRunning = true;
-                LOG(INFO) << "_incr checker:" << i;
                 _incrChecker->schedule([this, i]() {
                     slaveSyncRoutine(i);
                 });
@@ -517,7 +515,6 @@ void ReplManager::controlRoutine() {
             for (auto& mpov : _pushStatus[i]) {
                 if (mpov.second->isRunning
                         || now < mpov.second->nextSchedTime) {
-                    LOG(INFO) << "pass store:" << i;
                     continue;
                 }
 
@@ -525,7 +522,6 @@ void ReplManager::controlRoutine() {
                 mpov.second->isRunning = true;
                 uint64_t clientId = mpov.first;
                 _incrPusher->schedule([this, i, clientId]() {
-                    LOG(INFO) << "push store:" << i;
                     masterPushRoutine(i, clientId);
                 });
             }
@@ -575,9 +571,6 @@ void ReplManager::recycleFullPushStatus() {
             // if timeout, delte it.
             if (mpov.second->state == FullPushState::SUCESS
                 && now > mpov.second->endTime + std::chrono::seconds(600)) {
-                if ( now > mpov.second->endTime + std::chrono::seconds(600)) {
-                    LOG(ERROR) << "now:"<< now.time_since_epoch().count()/1000000 << "end time" << mpov.second->endTime.time_since_epoch().count()/1000000;
-                }
                 LOG(ERROR) << "timeout, _fullPushStatus erase," << mpov.second->toString();
                 _fullPushStatus[i].erase(mpov.first);
             }
@@ -881,7 +874,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId, std::string ip,
     } else {  // ip == ""
         if (newMeta->syncFromHost == "") {
             return {ErrorCodes::ERR_OK, ""};
-            }
+        }
         LOG(INFO) << "change store:" << storeId
                   << " syncSrc:" << newMeta->syncFromHost
                   << " to no one";
@@ -925,11 +918,6 @@ Status ReplManager::replicationSetMaster(std::string ip, uint32_t port, bool che
             return { ErrorCodes::ERR_INTERNAL, "store not open" };
         }
 
-        // TODO(vinchen): check whether a empty master or a slave?
-        //if (ip != "" && !expdb.value().store->isEmpty(true)) {
-        //	return { ErrorCodes::ERR_MANUAL, "store not empty" };
-        //}
-
         expdbList.push_back(std::move(expdb));
     }
 
@@ -945,7 +933,6 @@ Status ReplManager::replicationSetMaster(std::string ip, uint32_t port, bool che
     return { ErrorCodes::ERR_OK, "" };
 }
 
-
 Status ReplManager::replicationUnSetMaster() {
     LocalSessionGuard sg(_svr.get());
     // NOTE(takenliu): ensure automic operation for all store
@@ -959,6 +946,7 @@ Status ReplManager::replicationUnSetMaster() {
         if (!expdb.value().store->isOpen()) {
             return { ErrorCodes::ERR_INTERNAL, "store not open" };
         }
+
         expdbList.push_back(std::move(expdb));
     }
     INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
@@ -970,7 +958,6 @@ Status ReplManager::replicationUnSetMaster() {
     }
     return { ErrorCodes::ERR_OK, "" };
 }
-
 
 std::string ReplManager::getMasterHost() const {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -1012,7 +999,7 @@ uint64_t ReplManager::getLastSyncTime() const {
 	return min;
 }
 
-uint64_t ReplManager::replicationGetSlaveOffset() const {
+uint64_t ReplManager::replicationGetOffset() const {
     uint64_t totalBinlog = 0;
     LocalSessionGuard sg(_svr.get());
 
@@ -1020,30 +1007,30 @@ uint64_t ReplManager::replicationGetSlaveOffset() const {
         auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
                                                   mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
-            LOG(ERROR) << "slave offset get db error";
+            LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
             continue;
         }
         auto kvstore = std::move(expdb.value().store);
         auto ptxn = kvstore->createTransaction(nullptr);
 
         if (!ptxn.ok()) {
-            LOG(FATAL) <<  "offset create transaction fail";
+            LOG(FATAL) <<  "offset create transaction fail:" << ptxn.status().toString();
         }
-        uint64_t maxBinlog;
+        uint64_t maxBinlog = 0;
         auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn.value().get());
-        if (expBinlogidMax.status().code() == ErrorCodes::ERR_EXHAUST) {
-            maxBinlog = 0;
+        if (!expBinlogidMax.ok()) {
+            if (expBinlogidMax.status().code() != ErrorCodes::ERR_EXHAUST) {
+                LOG(ERROR) << "slave offset getMaxBinlogId error:" << expBinlogidMax.status().toString();
+            }
         } else {
             maxBinlog = expBinlogidMax.value();
         }
-        LOG(INFO) << "get slave binlog:" << maxBinlog <<  "store:" << i;
         totalBinlog += maxBinlog;
     }
-    LOG(INFO) << "slave offset is:" << totalBinlog;
     return totalBinlog;
 }
 
-uint64_t ReplManager::replicationGetMasterOffset() const {
+uint64_t ReplManager::replicationGetHighestBinlogId() const {
     uint64_t totalBinlog = 0;
     LocalSessionGuard sg(_svr.get());
 
@@ -1051,7 +1038,7 @@ uint64_t ReplManager::replicationGetMasterOffset() const {
         auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
                                                   mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
-            LOG(ERROR) << "slave offset get db error";
+            LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
             continue;
         }
 

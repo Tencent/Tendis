@@ -150,11 +150,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
             }
 
             auto s = store->restart();
-            LOG(INFO) << "123 restart";
             if (!s.ok()) {
-                LOG(ERROR) << "restart store fail in guard";
+                LOG(ERROR) << "restart store fail in guard" << s.status().toString();
             }
-
         }
     });
 
@@ -416,43 +414,34 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
 void ReplManager::slaveSyncRoutine(uint32_t storeId) {
     SCLOCK::time_point nextSched = SCLOCK::now();
     auto guard = MakeGuard([this, &nextSched, storeId] {
-        LOG(INFO) << "AXX";
         std::lock_guard<std::mutex> lk(_mutex);
         INVARIANT_D(_syncStatus[storeId]->isRunning);
         _syncStatus[storeId]->isRunning = false;
         if (nextSched > _syncStatus[storeId]->nextSchedTime) {
-            LOG(INFO) << "nextSced" << nextSched.time_since_epoch().count()/1000000
-                    <<  "storeId:" << storeId << ":"  << _syncStatus[storeId]->nextSchedTime.time_since_epoch().count()/1000000;
             _syncStatus[storeId]->nextSchedTime = nextSched;
         }
-        LOG(INFO) <<"over1:" << storeId;
         _cv.notify_all();
-        LOG(INFO) <<"over2:" << storeId;
     });
-    LOG(INFO) << "123";
+
     std::unique_ptr<StoreMeta> metaSnapshot = [this, storeId]() {
         std::lock_guard<std::mutex> lk(_mutex);
-        LOG(INFO) <<"XXX" << storeId;
         return std::move(_syncMeta[storeId]->copy());
     }();
-    LOG(INFO) << "456";
+
     if (metaSnapshot->syncFromHost == "") {
         // if master is nil, try sched after 1 second
         LOG(WARNING) << "metaSnapshot->syncFromHost is nil, sleep 10 seconds";
         nextSched = nextSched + std::chrono::seconds(10);
         return;
     }
+
     if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
-        LOG(INFO) << "start full sync:" << metaSnapshot->id;
         slaveStartFullsync(*metaSnapshot);
-        LOG(INFO) << "end full sync:" << metaSnapshot->id;
         nextSched = nextSched + std::chrono::seconds(3);
-        LOG(INFO) << "delay full sync:" << metaSnapshot->id;
         return;
     } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED ||
             metaSnapshot->replState == ReplState::REPL_ERR) {
         slaveChkSyncStatus(*metaSnapshot);
-        LOG(INFO) << "end sync:" << metaSnapshot->id;
         nextSched = nextSched + std::chrono::seconds(10);
         return;
     } else {
@@ -575,7 +564,6 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         if (!binlog.ok()) {
             return binlog.status();
         } else {
-            LOG(INFO) << "apply binlog finish" << binlog.value() << "storeid:" << storeId;
             std::lock_guard<std::mutex> lk(_mutex);
             // NOTE(vinchen): store the binlogId without changeReplState()
             // If it's shutdown, we can get the largest binlogId from rocksdb.

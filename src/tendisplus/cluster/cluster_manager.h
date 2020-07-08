@@ -128,8 +128,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     ClusterNode(ClusterNode&&) = delete;
     bool operator==(const ClusterNode& other) const;
 
-    void prepareToFree();
-
     // get node name
     std::string getNodeName() const;
     std::string getNodeNameNolock() const;
@@ -540,7 +538,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
 	Status clusterHandleSlaveFailover();
     Status clusterFailoverReplaceYourMaster(void);
-    Status clusterFailoverReplaceYourMasterV2(void);
+    Status clusterFailoverReplaceYourMasterMeta(void);
 	void clusterLogCantFailover(int reason);
 	uint32_t clusterGetSlaveRank(void);
 	void clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request);

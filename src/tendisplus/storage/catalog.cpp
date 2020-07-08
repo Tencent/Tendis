@@ -635,12 +635,13 @@ Status Catalog::delClusterMeta(const std::string & nodeName) {
         return exptxn.status();
     }
     std::unique_ptr<Transaction> txn = std::move(exptxn.value());
+#ifdef TENDIS_DEBUG
     bool existKey = clusterMetaExist(txn.get(), nodeName);
-
     if (!existKey) {
+        INVARIANT_D(0);
         LOG(ERROR) << "delteMeta data:" << nodeName << "not found";
-        return  {ErrorCodes::ERR_UNKNOWN, "no this key"};
     }
+#endif
 
     Status s  = _store->delKV(rk, txn.get());
     if(!s.ok()) {
@@ -737,9 +738,6 @@ Expected<std::unique_ptr<ClusterMeta>> Catalog::getClusterMeta(const std::string
 
     return result;
 }
-
-
-
 
 Status Catalog::setEpochMeta(const EpochMeta& meta) {
     std::stringstream ss;

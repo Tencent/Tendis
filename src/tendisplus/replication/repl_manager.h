@@ -157,8 +157,8 @@ class ReplManager {
     std::string getMasterHost() const;
     uint32_t getMasterPort() const;
     uint64_t getLastSyncTime() const;
-    uint64_t replicationGetSlaveOffset() const;
-    uint64_t replicationGetMasterOffset() const;
+    uint64_t replicationGetOffset() const;
+    uint64_t replicationGetHighestBinlogId() const;
     StoreMeta& getSyncMeta() const { return  *_syncMeta[0]; }
 
  protected:

@@ -103,8 +103,8 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
                 LOG(INFO) << "masterSendBinlogV2 send migrate binlog to slave, store:" << storeId;
             }
 
+
             binlogId = explog.value().getBinlogId();
-            LOG(INFO) << "send binlog:" << binlogId << "store:" << storeId;
             if (writer.writeRepllogRaw(explog.value()) ||
                 writer.getFlag() == BinlogFlag::FLUSH ||
                 writer.getFlag() == BinlogFlag::MIGRATE) {

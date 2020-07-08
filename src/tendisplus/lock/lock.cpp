@@ -151,7 +151,6 @@ Expected<std::unique_ptr<ChunkLock>> ChunkLock::AquireChunkLock(uint32_t storeId
     }
 }
 
-
 uint32_t ChunkLock::getStoreId() const {
     return _parent->getStoreId();
 }
@@ -159,7 +158,6 @@ uint32_t ChunkLock::getStoreId() const {
 uint32_t ChunkLock::getChunkId() const {
     return _chunkId;
 }
-
 
 Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId, uint32_t chunkId,
         const std::string &key, mgl::LockMode mode,
