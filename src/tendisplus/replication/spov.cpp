@@ -387,7 +387,6 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
         std::lock_guard<std::mutex> lk(_mutex);
         currSessId = _syncStatus[metaSnapshot.id]->sessionId;
         _syncStatus[metaSnapshot.id]->sessionId = sessionId;
-        _syncStatus[metaSnapshot.id]->lastSyncTime = SCLOCK::now();
     }
 
     if (currSessId != std::numeric_limits<uint64_t>::max()) {

@@ -1,5 +1,5 @@
-#ifndef SRC_TENDISPLUS_SERVER_CLUSTER_MANAGER_H_
-#define SRC_TENDISPLUS_SERVER_CLUSTER_MANAGER_H_
+#ifndef SRC_TENDISPLUS_CLUSTER_CLUSTER_MANAGER_H_
+#define SRC_TENDISPLUS_CLUSTER_CLUSTER_MANAGER_H_
 
 #include <string>
 #include <vector>
@@ -114,7 +114,6 @@ using myMutex = std::recursive_mutex;
 class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     friend class ClusterState;
  public:
-
     ClusterNode(const std::string& name, const uint16_t flags,
                         std::shared_ptr<ClusterState> cstate,
                    //     const std::bitset<CLUSTER_SLOTS>& slots_,
@@ -139,7 +138,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     uint64_t getCport() const { return _nodeCport; }
     void setNodeCport(uint64_t cport);
 
-    //std::vector<std::shared_ptr<ClusterNode>> getSlaves() const { return _slaves; }
     std::bitset<CLUSTER_SLOTS> getSlots() const;
 
     uint32_t getSlavesCount() const;
@@ -191,12 +189,11 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     bool getSlotBit(uint32_t slot) const;
     ConnectState getConnectState();
 
-protected:
+ protected:
     bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
     bool clearSlotBit(uint32_t slot);
     uint32_t delAllSlots();
     uint32_t delAllSlotsNoLock();
-
 
  public:
     bool addSlave(std::shared_ptr<ClusterNode> slave);
@@ -306,8 +303,7 @@ class ClusterMsg{
 
     bool isMaster() const;
 
-    // void clusterSetGossipEntry(int i, clusterNode *n)
-    std::string msgEncode() ;
+    std::string msgEncode();
     static Expected<ClusterMsg> msgDecode(const std::string& key);
 
     std::shared_ptr<ClusterMsgHeader> getHeader() const { return _header; }
@@ -332,7 +328,7 @@ class ClusterMsg{
 #define CLUSTERMSG_FLAG0_PAUSED (1<<0) /* Master paused for manual failover. */
 #define CLUSTERMSG_FLAG0_FORCEACK (1<<1) /* Give ACK to AUTH_REQUEST even if master is up. */
 
-using headerPair = std::pair<Expected<ClusterMsgHeader>, size_t>;    
+using headerPair = std::pair<Expected<ClusterMsgHeader>, size_t>;
 class ClusterMsgHeader{
  public:
     ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
@@ -342,7 +338,7 @@ class ClusterMsgHeader{
                 const uint64_t offset , const std::string& sender,
                 const std::bitset<CLUSTER_SLOTS>& slots,
                 const std::string& slaveOf, const std::string& myIp,
-                const uint16_t cport, const uint16_t flags, 
+                const uint16_t cport, const uint16_t flags,
                 const ClusterHealth state);
 
     ClusterMsgHeader(const ClusterMsgHeader&) = default;
@@ -380,11 +376,11 @@ class ClusterMsgData{
         FAIL = 2,
         PUBLIC = 3,
     };
-    ClusterMsgData(Type type) : _type(type) {}
+    explicit ClusterMsgData(Type type) : _type(type) {}
     virtual std::string dataEncode() const = 0;
     virtual bool clusterNodeIsInGossipSection(const CNodePtr& node) const { return 0; }
     virtual void addGossipEntry(const CNodePtr& node) {}
-    virtual ~ClusterMsgData() {} 
+    virtual ~ClusterMsgData() {}
     virtual Type getType() const { return _type; }
 
  private:
@@ -410,7 +406,7 @@ class ClusterMsgDataUpdate: public ClusterMsgData {
     std::string getNodeName() const { return  _nodeName; }
     const std::bitset<CLUSTER_SLOTS>& getSlots()  const { return  _slots; }
 
-private:
+ private:
     uint64_t _configEpoch;
     std::string _nodeName;
     std::bitset<CLUSTER_SLOTS> _slots;
@@ -418,14 +414,14 @@ private:
 
 class ClusterMsgDataFail : public ClusterMsgData {
  public:
-    ClusterMsgDataFail(const std::string& nodename)
+    explicit ClusterMsgDataFail(const std::string& nodename)
         : ClusterMsgData(ClusterMsgData::Type::FAIL),
           _nodeName(nodename) {}
     ClusterMsgDataFail(const ClusterMsgDataFail&) = delete;
     ClusterMsgDataFail(ClusterMsgDataFail&&) = default;
     std::string getNodeName() const { return  _nodeName; }
-	std::string dataEncode() const override;
-	static Expected<ClusterMsgDataFail>  dataDecode(const std::string& msg);
+    std::string dataEncode() const override;
+    static Expected<ClusterMsgDataFail>  dataDecode(const std::string & msg);
  private:
      std::string _nodeName;
 };
@@ -435,7 +431,7 @@ class NetworkMatrix;
 class RequestMatrix;
 
 class ClusterSession : public NetSession {
-public:
+ public:
     ClusterSession(std::shared_ptr<ServerEntry> server,
         asio::ip::tcp::socket sock,
         uint64_t connid,
@@ -458,7 +454,7 @@ public:
         return std::dynamic_pointer_cast<ClusterSession>(Session::shared_from_this());
     }
 
-private:
+ private:
     // read data from socket
     virtual void drainReqNet();
     virtual void drainReqCallback(const std::error_code& ec, size_t actualLen);
@@ -476,7 +472,7 @@ private:
 class ClusterState: public std::enable_shared_from_this<ClusterState> {
     friend class ClusterNode;
  public:
-    ClusterState(std::shared_ptr<ServerEntry> server);
+    explicit ClusterState(std::shared_ptr<ServerEntry> server);
     ClusterState(const ClusterState&) = delete;
     ClusterState(ClusterState&&) = delete;
     // get epoch
@@ -522,7 +518,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterDelNodeSlots(CNodePtr node);
     void clusterCloseAllSlots();
 
-    uint64_t  getFailAuthEpoch () const ;
+    uint64_t getFailAuthEpoch() const;
     void addFailVoteNum();
     bool clusterNodeAddFailureReport(CNodePtr faling, CNodePtr sender);
     void clusterNodeCleanupFailureReports(CNodePtr node);
@@ -532,19 +528,19 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterCountNonFailingSlaves(CNodePtr node);
     void manualFailoverCheckTimeout();
     void resetManualFailover();
-    void  resetManualFailoverNoLock();
+    void resetManualFailoverNoLock();
     void clusterHandleManualFailover();
     void clusterHandleSlaveMigration(uint32_t max_slaves);
 
-	Status clusterHandleSlaveFailover();
+    Status clusterHandleSlaveFailover();
     Status clusterFailoverReplaceYourMaster(void);
     Status clusterFailoverReplaceYourMasterMeta(void);
-	void clusterLogCantFailover(int reason);
-	uint32_t clusterGetSlaveRank(void);
-	void clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request);
-	void clusterSendMFStart(CNodePtr node);
-	void clusterSendFailoverAuth(CNodePtr node);
-	void clusterRequestFailoverAuth(void);
+    void clusterLogCantFailover(int reason);
+    uint32_t clusterGetSlaveRank(void);
+    void clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterMsg& request);
+    void clusterSendMFStart(CNodePtr node);
+    void clusterSendFailoverAuth(CNodePtr node);
+    void clusterRequestFailoverAuth(void);
 
     Status setSlot(CNodePtr n, const uint32_t slot);
     Status setSlotMyself(const uint32_t slot);
@@ -615,7 +611,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void setGossipBlock(uint64_t time);
     void setGossipUnBlock();
 
-    bool clusterIsOK() const ;
+    bool clusterIsOK() const;
     // TODO(wayenchen)
     // Status setStateFail();
     Expected<std::string> getNodeInfo(CNodePtr n);
@@ -637,15 +633,12 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     std::atomic<bool>  _blockState;
     std::atomic<uint64_t> _blockTime;
     /* Manual failover state in common. */
-    mstime_t _mfEnd;            /* Manual failover time limit (ms unixtime).
-                                It is zero if there is no MF in progress. */
+    mstime_t _mfEnd;            /* Manual failover time limit (ms unixtime).  It is zero if there is no MF in progress. */
     /* Manual failover state of master. */
     CNodePtr _mfSlave;          /* Slave performing the manual failover. */
     /* Manual failover state of slave. */
-    uint64_t _mfMasterOffset;   /* Master offset the slave needs to start MF
-                                or zero if stil not received. */
-    uint32_t _mfCanStart;       /* If non-zero signal that the manual failover
-                                can start requesting masters vote. */
+    uint64_t _mfMasterOffset;   /* Master offset the slave needs to start MF or zero if stil not received. */
+    uint32_t _mfCanStart;       /* If non-zero signal that the manual failover can start requesting masters vote. */
 
     std::unique_ptr<std::thread> _manualLockThead;
     std::atomic<bool> _lockRunning;
@@ -664,7 +657,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void readOnlyAsync(uint64_t t);
     void mcontrolRoutine(uint64_t max);
 
-public:
+ public:
     ClusterHealth _state;
     uint16_t _size;
 
@@ -692,7 +685,6 @@ public:
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
     uint64_t _statsPfailNodes;    /* Number of nodes in PFAIL status */
-
 };
 
 
@@ -700,12 +692,12 @@ class ClusterGossip;
 class ClusterMsgDataGossip: public ClusterMsgData {
  public:
     ClusterMsgDataGossip();
-    ClusterMsgDataGossip(std::vector<ClusterGossip>&& gossipMsg);
+    explicit ClusterMsgDataGossip(std::vector<ClusterGossip>&& gossipMsg);
     ClusterMsgDataGossip(const ClusterMsgDataGossip&) = delete;
     ClusterMsgDataGossip(ClusterMsgDataGossip&&) = default;
 
     virtual ~ClusterMsgDataGossip() = default;
-    virtual std::string dataEncode() const override;
+    std::string dataEncode() const override;
 
     static Expected<ClusterMsgDataGossip> dataDecode(const std::string& key,
             uint16_t count);
@@ -715,7 +707,7 @@ class ClusterMsgDataGossip: public ClusterMsgData {
     Status addGossipMsg(const ClusterGossip& msg);
     const std::vector<ClusterGossip>& getGossipList() const  { return _gossipMsg; }
 
-private:
+ private:
     std::vector<ClusterGossip> _gossipMsg;
 };
 
@@ -776,6 +768,7 @@ class ClusterManager {
     bool isRunning() const;
     Status clusterReset(uint16_t hard);
     bool hasDirtyKey(uint32_t storeid);
+
  protected:
     void controlRoutine();
 
@@ -801,4 +794,4 @@ class ClusterManager {
 
 }  // namespace tendisplus
 
-#endif  // SRC_TENDISPLUS_SERVER_CLUSTER_MANAGER_H_
+#endif  // SRC_TENDISPLUS_CLUSTER_CLUSTER_MANAGER_H_
