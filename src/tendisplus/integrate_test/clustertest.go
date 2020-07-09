@@ -385,7 +385,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
                 return
             }
             if r != 0 {
-                log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
+                // log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
             }
             nodeKeyNum += r
             // check src node migrated slot key num should be 0

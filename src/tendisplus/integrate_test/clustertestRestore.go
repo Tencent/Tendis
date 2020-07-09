@@ -302,10 +302,13 @@ func testRestore(portStart int, num int, testFun int) {
     shutdownServer(&src_restore, *shutdown, *clear)
     shutdownServer(&dst_restore, *shutdown, *clear)
     shutdownPredixy(&predixy, *shutdown, *clear)
+    log.Infof("testRestore sucess")
 }
 
 func main(){
     flag.Parse()
     testRestore(53000, 100000, 1)
     testRestore(53100, 100000, 2)
+    log.Infof("clustertestRestore sucess")
 }
+    

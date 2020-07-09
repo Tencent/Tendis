@@ -904,11 +904,13 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
             }
             bool s = clusterDelSlot(idx);
             if (s) {
+                LOG(INFO) << "del slot:" << idx << " finished";
                 bool result = clusterAddSlot(n, idx);
                 if (!result) {
                     LOG(ERROR) << "setSlots addslot fail on slot:" << idx;
                     return {ErrorCodes::ERR_CLUSTER, "setslot add new slot fail"};
                 }
+                LOG(INFO) << "add slot:" << idx << "on:" << n->getNodeName() << " finished";
             } else {
                 LOG(ERROR) << "setSlots delslot fail on slot:" << idx;
                 return {ErrorCodes::ERR_CLUSTER, "setslot delete old slot fail!"};

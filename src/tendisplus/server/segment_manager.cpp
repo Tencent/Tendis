@@ -76,6 +76,15 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>
                     &clusterState = svr->getClusterMgr()->getClusterState();
+            if (clusterState->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
+                ss << "-CLUSTERDOWN The cluster is down" << "\r\n";
+                LOG(WARNING) << "getDbWithKeyLock failed because cluster is down, key:" << key;
+                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
+            }
+            if (clusterState->getBlockState()) {
+                ss << "-BLOCK The cluster is block now" << "\r\n";
+                return {ErrorCodes::ERR_CLUSTER_ERR, ss.str()};
+            }
 
             auto node = clusterState->clusterHandleRedirect(chunkId);
             if (!node.ok()) {
