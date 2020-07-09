@@ -5,6 +5,7 @@ import (
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "strconv"
+    "math"
 )
 
 func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int, backup_mode string) {
