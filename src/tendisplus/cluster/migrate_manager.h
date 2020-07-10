@@ -155,6 +155,7 @@ class MigrateManager {
     uint64_t getProtectBinlogid(uint32_t storeid);
 
     bool slotInTask(uint32_t slot);
+    bool slotsInTask(const SlotsBitmap& bitMap);
     Expected<std::string> getTaskInfo();
     Expected<std::string> getMigrateInfo();
 

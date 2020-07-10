@@ -1596,9 +1596,9 @@ TEST(Cluster, CrossSlot) {
     auto server = servers[0];
 
     std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
-    {{"set", "a{1}", "b"}, "-MOVED 5649 127.0.0.1:15001\r\n"},
+    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
     {{"mset", "a{1}", "b", "c{2}", "d"}, "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
-    {{"mset", "a{1}", "b", "c{1}", "d"}, Command::fmtOK()},
+    {{"mset", "a{1}", "b", "c{1}", "d"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
     };
 
     testCommandArrayResult(server, resultArr);

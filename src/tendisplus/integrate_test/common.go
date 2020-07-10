@@ -332,7 +332,9 @@ func restoreBinlogInCoroutine(m1 *util.RedisServer, m2 *util.RedisServer,
     subpath := m1.Path + "/dump/" + strconv.Itoa(storeId) + "/";
     files, _ := filepath.Glob(subpath + "binlog*.log")
     if len(files) <= 0 {
-        return;
+        log.Infof("restoreBinlogInCoroutine skip because no binlog file, path:%d" , subpath)
+	    channel <- 0
+	    return;
     }
     sort.Strings(files)
 

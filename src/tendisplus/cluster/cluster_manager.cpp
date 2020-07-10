@@ -600,7 +600,6 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
      _mfSlave(nullptr),
      _mfMasterOffset(0),
      _mfCanStart(0),
-     _lockRunning(false),
      _isCliBlocked(false),
      _state(ClusterHealth::CLUSTER_FAIL),
      _size(1),
@@ -743,7 +742,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
 
     bool needReconfigure;
     bool masterNotFail;
-    bool inMigrateTask = false;
     {
         std::lock_guard<myMutex> lk(_mutex);
         CNodePtr myself = getMyselfNode();
@@ -755,9 +753,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
         for (size_t j = 0; j < CLUSTER_SLOTS; j++) {
             if (slots.test(j)) {
                 if (_allSlots[j] == sender) continue;
-                if (_server->getMigrateManager()->slotInTask(j)) {
-                    inMigrateTask = true;
-                }
                // if (_importingSlots[j] != nullptr) continue;
 
                 /* We rebind the slot to the new node claiming it if:
@@ -789,7 +784,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
     }
     // NOTE(takenliu) save and update once at the last.
     clusterUpdateState();
-
+    bool inMigrateTask = _server->getMigrateManager()->slotsInTask(slots);
     /* If at least one slot was reassigned from a node to another node
      * with a greater configEpoch, it is possible that:
      * 1) We are a master left without slots. This means that we were
@@ -895,7 +890,8 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
     while (idx < slots.size()) {
         if (slots.test(idx)) {
             // already set
-            if (getNodeBySlot(idx) == n) {
+            if (_allSlots[idx] == n) {
+                ++idx;
                 continue;
             }
             bool s = clusterDelSlot(idx);
@@ -1126,21 +1122,16 @@ Status ClusterState::clusterSaveConfig() {
 }
 
 Status ClusterState::setClientUnBlock() {
-    DLOG(INFO) << "unBlock chunk lock";
-    _lockRunning.store(false, std::memory_order_relaxed);
-    // ensure unlock finished
-    size_t waitTime = 10;
-    while (_isCliBlocked.load(std::memory_order_relaxed)) {
-        std::this_thread::sleep_for(10ms);
-        if ((--waitTime) == 0) {
-            break;
-        }
-    }
+    _cv.notify_one();
+
     if (_isCliBlocked.load(std::memory_order_relaxed)) {
-        return {ErrorCodes::ERR_INTERNAL, "unlock fail"};
+        std::this_thread::sleep_for(500ms);
     }
+    //if _isCliBlocked == false , return ERR?
+
     return  {ErrorCodes ::ERR_OK, ""};
 }
+
 Status ClusterState::forceFailover(bool force, bool takeover) {
     std::lock_guard<myMutex> lk(_mutex);
     resetManualFailoverNoLock();
@@ -1217,14 +1208,14 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
                            << "as my master failed";
                 return s;
             }
-            DLOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
+            LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
         }
         if (isClientBlock()) {
-            // unblock in 100ms
             s = setClientUnBlock();
             if (!s.ok()) {
-                LOG(ERROR) << "set client unblock fail";;
+                LOG(ERROR) << "slots unblock fail";
             }
+            INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
         }
     }
     // how to enable chunk lock release here?
@@ -1237,7 +1228,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
         LOG(ERROR) << "relication set master fail:"  << s.toString();
         return  s;
     }
-    DLOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
+    LOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
               << "port:" << node->getPort();
 
     resetManualFailover();
@@ -1757,7 +1748,6 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
 
 void ClusterState::manualFailoverCheckTimeout() {
     std::lock_guard<myMutex> lk(_mutex);
-
     if (_mfEnd && _mfEnd < msSinceEpoch()) {
         serverLog(LL_WARNING, "Manual failover timed out.");
         resetManualFailoverNoLock();
@@ -2269,7 +2259,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
     int needed_quorum = (_size / 2) + 1;
     int manual_failover = _mfEnd != 0 && _mfCanStart;
-    DLOG(INFO) << "clusterHandleSlaveFailover manual_failover flag:" << manual_failover;
+
     mstime_t auth_timeout, auth_retry_time;
 
     /* Compute the failover timeout (the max time we have to send votes
@@ -2304,7 +2294,6 @@ Status ClusterState::clusterHandleSlaveFailover() {
     /* Set data_age to the number of seconds we are disconnected from
      * the master. */
     auto replMgr = _server->getReplManager();
-    auto replState = replMgr->getSyncMeta().replState;
 
     uint64_t syncTime = replMgr->getLastSyncTime();
     data_age = msSinceEpoch() - syncTime;
@@ -3768,7 +3757,7 @@ void ClusterState::cronCheckFailState() {
                 /* Timeout reached. Set the node as possibly failing if it is
                  * not already in this state. */
                 if (!(node->getFlags() & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL))) {
-                    serverLog(LL_DEBUG, "*** NODE %.40s possibly failing",
+                    serverLog(LL_NOTICE, "*** NODE %.40s possibly failing",
                                       node->getNodeName().c_str());
                     node->_flags |= CLUSTER_NODE_PFAIL;
                     updateState = true;
@@ -3805,7 +3794,7 @@ void ClusterState::cronCheckFailState() {
         auto s1 = clusterHandleSlaveFailover();
         if (s1.ok()) {
             /* Take responsability for the cluster slots. */
-            LOG(INFO) << "vote success:";
+            LOG(INFO) << "node" << getMyselfName() << "vote success:";
             auto s2 = clusterFailoverReplaceYourMaster();
             if (!s2.ok()) {
                 LOG(ERROR) << "replace master fail";
@@ -3816,8 +3805,6 @@ void ClusterState::cronCheckFailState() {
         * the orphaned masters. Note that it does not make sense to try
         * a migration if there is no master with at least *two* working
         * slaves. */
-        DLOG(INFO) <<  "orphaned_masters" << orphaned_masters << "master slave: "
-                   <<  max_slaves << " " << this_slaves;
         if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
             clusterHandleSlaveMigration(max_slaves);
     }
@@ -3943,18 +3930,18 @@ void ClusterState::readOnlyAsync(uint64_t time) {
         LOG(WARNING) << "aleady block!";
         setClientUnBlock();
     }
-    _lockRunning.store(true, std::memory_order_relaxed);
 
     _manualLockThead = std::make_unique<std::thread>(std::move([this, time]() {
-        mcontrolRoutine(time+msSinceEpoch());
+        mfLockChunks(time);
     }));
 }
 
 // chunk lock order by storeid
-void ClusterState::mcontrolRoutine(uint64_t max) {
+void ClusterState::mfLockChunks(uint64_t max) {
     std::list<std::unique_ptr<ChunkLock>> lockList;
-
+    std::unique_lock<std::mutex> lk(_failMutex);
     std::unordered_map<uint32_t, std::set<uint32_t>> slotsMap;
+
     auto slots = _myself->getSlots();
     size_t idx = 0;
     while (idx < CLUSTER_SLOTS) {
@@ -3967,7 +3954,6 @@ void ClusterState::mcontrolRoutine(uint64_t max) {
 
     uint64_t  lockNum = 0;
     std::bitset<CLUSTER_SLOTS> slotsDone;
-
     uint32_t  storeNum = _server->getKVStoreCount();
     for (uint32_t i = 0; i < storeNum; i++) {
        std::unordered_map<uint32_t , std::set<uint32_t>>::iterator it;
@@ -3975,11 +3961,6 @@ void ClusterState::mcontrolRoutine(uint64_t max) {
        if ((it= slotsMap.find(i)) != slotsMap.end()) {
             auto slotSet = it->second;
             for (auto iter = slotSet.begin(); iter != slotSet.end(); ++iter) {
-                /*
-                auto lock =std::make_unique<ChunkLock>(i, *iter,
-                              mgl::LockMode::LOCK_S,
-                               nullptr, _server->getMGLockMgr());
-                               */
                 auto lock = ChunkLock::AquireChunkLock(i, *iter,
                         mgl::LockMode::LOCK_S,
                         nullptr, _server->getMGLockMgr());
@@ -3991,23 +3972,14 @@ void ClusterState::mcontrolRoutine(uint64_t max) {
                 lockNum++;
                 slotsDone.set(*iter);
 
-                LOG(INFO) <<  "finish lock on slot:" << *iter << "store:" << i;
             }
         }
     }
-
     _isCliBlocked.store(true, std::memory_order_relaxed);
     LOG(INFO) << "finish lock on:" << bitsetStrEncode(slotsDone) << "Lock num:" << lockNum
               << "time:" << msSinceEpoch();
-
-    while (_lockRunning.load(std::memory_order_relaxed)) {
-        // if timeout or switch to slave , should unlock
-        if (max < msSinceEpoch() || _myself->nodeIsSlave()) {
-            break;
-        }
-        this_thread::sleep_for(10ms);
-    }
-    LOG(INFO) << "unblock:" << "time:" <<  msSinceEpoch();
+    _cv.wait_for(lk, std::chrono::milliseconds(max));
+    DLOG(INFO) << "unblock:" << "time:" <<  msSinceEpoch();
     _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 

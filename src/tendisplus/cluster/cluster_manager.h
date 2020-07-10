@@ -611,9 +611,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void setGossipBlock(uint64_t time);
     void setGossipUnBlock();
 
-    bool clusterIsOK() const;
-    // TODO(wayenchen)
-    // Status setStateFail();
+    bool clusterIsOK() const ;
+
     Expected<std::string> getNodeInfo(CNodePtr n);
     Expected<std::string> getBackupInfo();
     mstime_t getMfEnd() const;
@@ -624,7 +623,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
  private:
     mutable myMutex _mutex;
-    mutable std::mutex _mutex2;
+    mutable std::mutex _failMutex;
     std::condition_variable _cv;
     CNodePtr _myself; /* This node */
     uint64_t _currentEpoch;
@@ -641,7 +640,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t _mfCanStart;       /* If non-zero signal that the manual failover can start requesting masters vote. */
 
     std::unique_ptr<std::thread> _manualLockThead;
-    std::atomic<bool> _lockRunning;
     std::atomic<bool> _isCliBlocked;
     std::unordered_map<std::string, CNodePtr> _nodes;
     Status clusterSaveNodesNoLock();
@@ -655,7 +653,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     uint32_t clusterMastersHaveSlavesNoLock();
     std::unordered_map<uint32_t, std::unique_ptr<StoreLock>> _lockMap;
     void readOnlyAsync(uint64_t t);
-    void mcontrolRoutine(uint64_t max);
+    void mfLockChunks(uint64_t max);
 
  public:
     ClusterHealth _state;

@@ -49,22 +49,13 @@ test "Break master-slave link and prevent further reconnections" {
     # Stop the slave with a multi/exec transaction so that the master will
     # be killed as soon as it can accept writes again.
 
-    #R 5 multi
-    #R 5 client kill 127.0.0.1:$port0
-
     # here we should sleep 6 or more seconds (node_timeout * slave_validity)
     # but the actual validity time is actually incremented by the
     # repl-ping-slave-period value which is 10 seconds by default. So we
     # need to wait more than 16 seconds.
 
-    #R 5 deferred 1
-    #R 5 tendisadmin sleep 20
-    #R 5 exec
-
     # Prevent the master from accepting new slaves.
     # Use a large pause value since we'll kill it anyway.
-    
-    #R 0 CLIENT PAUSE 60000
     
     set port0 [get_instance_attrib redis 0 port]
     exec redis-cli -p $port0 tendisadmin sleep 30000 > /dev/null 2> /dev/null & 
@@ -74,7 +65,6 @@ test "Break master-slave link and prevent further reconnections" {
 
     R 5 deferred 0
     assert {[R 5 read] eq {OK}}
-    R 5 config set cluster-node-timeout 3000
 
     # Kill the master so that a reconnection will not be possible.
     kill_instance redis 0

@@ -342,6 +342,19 @@ bool MigrateManager::slotInTask(uint32_t slot) {
     return false;
 }
 
+bool MigrateManager::slotsInTask(const SlotsBitmap & bitMap) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    size_t idx = 0;
+    while (idx < bitMap.size()) {
+        if (bitMap.test(idx)) {
+            if (_migrateSlots.test(idx) || _importSlots.test(idx)) {
+                return true;
+            }
+        }
+        ++idx;
+    }
+    return false;
+}
 
 void MigrateManager::sendSlots(MigrateSendTask* task) {
     auto s = task->sender->sendChunk();

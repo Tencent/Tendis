@@ -41,7 +41,7 @@ while {[incr iterations -1]} {
     if {$role eq {master}} {
         test "Wait for slave of #$tokill to sync" {
             wait_for_condition 1000 50 {
-                [string match {*is_running=0*} [RI $tokill slave0]]
+                [string match {*state=online*} [RI $tokill slave0]]
             } else {
                 fail "Slave of node #$tokill is not ok"
             }

@@ -87,7 +87,6 @@ test "Instance #0 gets converted into a slave" {
     }
 }
 
-
 test "kill all nodes" {
     foreach_redis_id id {
         if { $id < 11 } {
@@ -95,7 +94,6 @@ test "kill all nodes" {
         }
     }
 }
-
 
 ## Check that manual failover does not happen if we can't talk with the master.
 source "../tests/includes/init-tests.tcl"
@@ -136,6 +134,7 @@ test "Instance #5 synced with the master" {
 test "Make instance #0 unreachable without killing it" {
    R 0 deferred 1
    R 0 tendisadmin sleep 10
+   after 2000
 }
 
 test "Send CLUSTER FAILOVER to instance #5" {
@@ -176,7 +175,6 @@ test "set nodes time out 11 s" {
     after 5000
 }
 
-
 test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
 }
@@ -189,7 +187,6 @@ test "Instance #5 synced with the master" {
     }
 }
 
-
 test "Make instance #0 unreachable without killing it" {
    R 0 deferred 1
    R 0 tendisadmin sleep 10
@@ -198,7 +195,6 @@ test "Make instance #0 unreachable without killing it" {
 test "Send CLUSTER FAILOVER to instance #5" {
     R 5 cluster failover force
 }
-
 
 test "Instance #5 is a master after some time" {
     wait_for_condition 1000 50 {
@@ -212,3 +208,6 @@ test "Wait for instance #0 to return back alive" {
     R 0 deferred 0
     assert {[R 0 read] eq {OK}}
 }
+
+
+
