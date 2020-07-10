@@ -22,6 +22,9 @@
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 
+#define SLOWLOG_ENTRY_MAX_ARGC 32;
+#define SLOWLOG_ENTRY_MAX_STRING 128;
+
 namespace tendisplus {
 class Session;
 class NetworkAsio;
@@ -82,6 +85,35 @@ public:
 
 private:
     mutable std::mutex _mutex;
+};
+
+struct SlowlogEntry {
+    std::vector<string> argv;
+    int argc;
+    long long id;       /* Unique entry identifier. */
+    long long duration; /* Time spent by the query, in microseconds. */
+    uint64_t unix_time; /* Unix time at which the query was executed. */
+    std::string cname;
+    std::string peerID;
+};
+
+class SlowlogStat {
+public:
+    SlowlogStat();
+    uint64_t getSlowlogNum();
+    uint64_t getSlowlogLen();
+    void resetSlowlogData();
+    void slowlogDataPushEntryIfNeeded(uint64_t time, uint64_t duration,
+                                      Session* sess);
+    std::list<SlowlogEntry> getSlowlogData(uint64_t count);
+    Status initSlowlogFile(std::string logPath);
+    void closeSlowlogFile();
+
+private:
+    std::list<SlowlogEntry> _slowlogData;
+    std::ofstream _slowLog;
+    std::atomic<uint64_t> _slowlogId;
+    mutable std::mutex _mutex;   
 };
 
 class ServerEntry;
@@ -164,6 +196,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void resetServerStat();
     void resetRocksdbStats(Session* sess);
     CompactionStat& getCompactionStat() const { return (CompactionStat&)_compactionStat; }
+    SlowlogStat& getSlowlogStat() const { return (SlowlogStat&)_slowlogStat; }
     void logGeneral(Session *sess);
     void handleShutdownCmd();
     Status setStoreMode(PStore store, KVStore::StoreMode mode);
@@ -177,13 +210,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     static void logWarning(const std::string& str, Session* sess = nullptr);
     static void logError(const std::string& str, Session* sess = nullptr);
     void slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration, Session* sess);
-    Status initSlowlog(std::string logPath);
-    void resetSlowlogNum() {
-        _slowlogId = 0;
-    }
-    uint64_t getSlowlogNum() {
-        return _slowlogId.load(std::memory_order_relaxed);
-    }
     void onBackupEnd() {
         _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
         _backupRunning.fetch_sub(1, std::memory_order_relaxed);
@@ -212,11 +238,10 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
         std::lock_guard<std::mutex> lk(_mutex);
         return _lastBackupFailedErr;
     }
-    uint64_t  getBackupRunning() {
+    uint64_t getBackupRunning() {
         return  _backupRunning.load(std::memory_order_relaxed);
     }
     void setBackupRunning();
-
     bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
@@ -264,8 +289,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool _checkKeyTypeForSet;
     uint32_t _protoMaxBulkLen;
     uint32_t _dbNum;
-    std::ofstream _slowLog;
-    std::atomic<uint64_t> _slowlogId;
     std::atomic<uint64_t> _tsFromExtendedProtocol;
     std::list<std::shared_ptr<Session>> _monitors;
     std::atomic<uint64_t> _scheduleNum;
@@ -278,6 +301,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     string _lastBackupFailedErr;
     ServerStat _serverStat;
     CompactionStat _compactionStat;
+    SlowlogStat _slowlogStat;
 };
 }  // namespace tendisplus
 

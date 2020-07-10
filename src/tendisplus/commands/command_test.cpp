@@ -673,29 +673,41 @@ void testSlowLog(std::shared_ptr<ServerEntry> svr) {
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     uint32_t i = 0;
-    sess.setArgs({ "config", "set", "slowlog-log-slower-than",  std::to_string(i)});
+    sess.setArgs({"config", "set", "slowlog-log-slower-than", std::to_string(i)});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    
-    sess.setArgs({ "sadd", "ss", "a"});
+
+    sess.setArgs({"sadd", "ss", "a"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
-    sess.setArgs({ "set", "ss", "b"});
+    sess.setArgs({"set", "ss", "b"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
-    sess.setArgs({ "set", "ss1", "b"});
+    sess.setArgs({"set", "ss1", "b"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
-    sess.setArgs({ "config", "get", "slowlog-log-slower-than"});
+    sess.setArgs({"config", "get", "slowlog-log-slower-than"});
     expect = Command::runSessionCmd(&sess);
-    std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, 2);
-    Command::fmtBulk(ss, "slowlog-log-slower-than");
-    Command::fmtBulk(ss, std::to_string(i));
-    EXPECT_EQ(ss.str(), expect.value());
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"config", "set", "slowlog-file-enabled", "0"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"set", "ss2", "a"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"config", "set", "slowlog-file-enabled", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"set", "ss2", "b"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
 }
 
 void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
@@ -711,14 +723,17 @@ void testGlobStylePattern(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
-    sess.setArgs({ "config", "set", "slowlogmaxlen",  "1024"});
+    sess.setArgs({ "config", "set", "slowlog-max-len",  "1024"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
 
     sess.setArgs({"config", "get", "*slow*"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_EQ(
-        "*8\r\n$7\r\nslowlog\r\n$11\r\n\"./slowlog\"\r\n$22\r\nslowlog-flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$6\r\n100000\r\n$13\r\nslowlogmaxlen\r\n$4\r\n1024\r\n"
+        "*10\r\n$7\r\nslowlog\r\n$11\r\n\"./"
+        "slowlog\"\r\n$20\r\nslowlog-file-enabled\r\n$1\r\n1\r\n$22\r\nslowlog-"
+        "flush-interval\r\n$1\r\n1\r\n$23\r\nslowlog-log-slower-than\r\n$"
+        "6\r\n100000\r\n$15\r\nslowlog-max-len\r\n$4\r\n1024\r\n"
         , expect.value());
     
     sess.setArgs({"config", "get", "?lowlog"});
@@ -900,16 +915,20 @@ TEST(Command, slowlog) {
         return;
     }
     
-    fgets(line, sizeof(line)-1, fp);
+    fgets(line, sizeof(line) - 1, fp);
     EXPECT_STRCASEEQ(line, "[] config set slowlog-log-slower-than 0 \n");
-    fgets(line, sizeof(line)-1, fp);
+    fgets(line, sizeof(line) - 1, fp);
     EXPECT_STRCASEEQ(line, "[] sadd ss a \n");
-    fgets(line, sizeof(line)-1, fp);
+    fgets(line, sizeof(line) - 1, fp);
     EXPECT_STRCASEEQ(line, "[] set ss b \n");
-    fgets(line, sizeof(line)-1, fp);
+    fgets(line, sizeof(line) - 1, fp);
     EXPECT_STRCASEEQ(line, "[] set ss1 b \n");
-    fgets(line, sizeof(line)-1, fp);
+    fgets(line, sizeof(line) - 1, fp);
     EXPECT_STRCASEEQ(line, "[] config get slowlog-log-slower-than \n");
+    fgets(line, sizeof(line) - 1, fp);
+    EXPECT_STRCASEEQ(line, "[] config set slowlog-file-enabled 1 \n");
+    fgets(line, sizeof(line) - 1, fp);
+    EXPECT_STRCASEEQ(line, "[] set ss2 b \n");
     pclose(fp);
 }
 #endif // !

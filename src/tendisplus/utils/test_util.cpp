@@ -251,7 +251,8 @@ std::shared_ptr<ServerEntry> makeServerEntryOld(
     auto tmpMGLockMgr = std::make_unique <mgl::MGLockMgr>();
     server->installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
-    server->initSlowlog(cfg->slowlogPath);
+    //server->initSlowlog(cfg->slowlogPath);
+    server->getSlowlogStat().initSlowlogFile(cfg->slowlogPath);
 
     return server;
 }

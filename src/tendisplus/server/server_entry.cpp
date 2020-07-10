@@ -74,6 +74,132 @@ void ServerStat::trackInstantaneousMetric(int metric, uint64_t current_reading) 
     instMetric[metric].lastSampleCount = current_reading;
 }
 
+SlowlogStat::SlowlogStat() {
+    _slowlogId.store(0, std::memory_order_relaxed);
+}
+
+uint64_t SlowlogStat::getSlowlogNum() {
+    return _slowlogId.load(std::memory_order_relaxed);
+}
+
+uint64_t SlowlogStat::getSlowlogLen() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _slowlogData.size();
+}
+
+void SlowlogStat::resetSlowlogData() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _slowlogData.clear();
+}
+
+std::list<SlowlogEntry> SlowlogStat::getSlowlogData(uint64_t count) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    std::list<SlowlogEntry> result;
+    int size;
+    size = std::min(count, _slowlogData.size());
+    std::list<SlowlogEntry>::iterator it = _slowlogData.begin();
+    for (int i = 0; i < size; i++) {
+        result.push_back(*it);
+        it++;
+    }
+    return result;
+}
+
+Status SlowlogStat::initSlowlogFile(std::string logPath) {
+    _slowLog.open(logPath, std::ofstream::app);
+    if (!_slowLog.is_open()) {
+        std::stringstream ss;
+        ss << "open:" << logPath << " failed";
+        return { ErrorCodes::ERR_INTERNAL, ss.str() };
+    }
+
+    return { ErrorCodes::ERR_OK, "" };
+}
+
+void SlowlogStat::closeSlowlogFile() {
+    _slowLog.close();
+}
+
+void SlowlogStat::slowlogDataPushEntryIfNeeded(uint64_t time, uint64_t duration,
+                                               Session* sess) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto server = sess->getServerEntry();
+    auto& args = sess->getArgs();
+    auto& cfgs = server->getParams();
+    size_t max_argc = SLOWLOG_ENTRY_MAX_ARGC;
+    size_t max_string = SLOWLOG_ENTRY_MAX_STRING;
+
+    if (cfgs->slowlogFileEnabled) {
+        _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed)<< "\n";
+        _slowLog << "# Timestamp: " << time << "\n";
+        _slowLog << "# Time: " << epochToDatetime(time / 1000000) << "\n";
+        _slowLog << "# Host: " << sess->getRemote() << "\n";
+        _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
+        _slowLog << "# Query_time: " << duration << "\n";
+
+        uint64_t args_total_length = 0;
+        uint64_t args_output_length = 0;
+        for (size_t i = 0; i < args.size(); ++i) {
+            args_total_length += args[i].length();
+        }
+        if (args_total_length > cfgs->slowlogMaxLen) {
+            _slowLog << "[" << args_total_length << "] ";
+        } else {
+            _slowLog << "[] ";
+        }
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (args_output_length + args[i].length() <= max_string) {
+                _slowLog << args[i] << " ";
+                args_output_length += args[i].length();
+            } else {
+                _slowLog << args[i].substr(0, (max_string - args_output_length)) << " ";
+                break;
+            }
+        }
+        _slowLog << "\n\n";
+        if ((_slowlogId.load(std::memory_order_relaxed) % cfgs->slowlogFlushInterval) == 0) {
+            _slowLog.flush();
+        }
+    }
+
+    SlowlogEntry new_entry;
+    size_t slargc = std::min(args.size(), max_argc);
+    new_entry.argc = slargc;
+    for (size_t i = 0; i < slargc; i++) {
+        if (slargc != args.size() && i == slargc - 1) {
+            std::string remain_arg = "... (";
+            remain_arg.append(to_string(args.size() - max_argc + 1));
+            remain_arg.append(" more arguments)");
+            new_entry.argv.push_back(std::move(remain_arg));
+        }
+        else {
+            if (args[i].size() > max_string) {
+                std::string brief_arg = std::move(args[i].substr(0, max_string));
+                brief_arg.append("... (");
+                brief_arg.append(to_string(args[i].size() - max_string));
+                brief_arg.append(" more bytes)");
+                new_entry.argv.push_back(std::move(brief_arg));
+            }
+            else {
+                new_entry.argv.push_back(std::move(args[i]));
+            }
+        }
+    }
+    new_entry.peerID = sess->getRemote();
+    new_entry.id = _slowlogId.load(std::memory_order_relaxed);
+    new_entry.duration = duration;
+    new_entry.cname = sess->getName();
+    new_entry.unix_time = time;
+    _slowlogData.push_front(new_entry);
+
+    while (_slowlogData.size() > cfgs->slowlogMaxLen) {
+        _slowlogData.pop_back();
+    }
+
+    _slowlogId.fetch_add(1, std::memory_order_relaxed);
+
+}
+
 ServerEntry::ServerEntry()
         :_ftmcEnabled(false),
          _isRunning(false),
@@ -98,7 +224,6 @@ ServerEntry::ServerEntry()
          _checkKeyTypeForSet(false),
          _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
          _dbNum(CONFIG_DEFAULT_DBNUM),
-         _slowlogId(0),
          _scheduleNum(0),
          _cfg(nullptr),
          _lastBackupTime(0),
@@ -362,7 +487,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     });
 
     // init slowlog
-    initSlowlog(cfg->slowlogPath);
+    _slowlogStat.initSlowlogFile(cfg->slowlogPath);
     LOG(INFO) << "ServerEntry::startup sucess.";
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -1008,7 +1133,7 @@ void ServerEntry::stop() {
     }
 
     _cronThd->join();
-    _slowLog.close();
+    _slowlogStat.closeSlowlogFile();
     LOG(INFO) << "server stops complete...";
     _isStopped.store(true, std::memory_order_relaxed);
     _eventCV.notify_all();
@@ -1026,17 +1151,6 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
     _tsFromExtendedProtocol.store(timestamp, std::memory_order_relaxed);
 }
 
-Status ServerEntry::initSlowlog(std::string logPath) {
-    _slowLog.open(logPath, std::ofstream::app);
-    if (!_slowLog.is_open()) {
-        std::stringstream ss;
-        ss << "open:" << logPath << " failed";
-        return {ErrorCodes::ERR_INTERNAL, ss.str()};
-    }
-
-    return {ErrorCodes::ERR_OK, ""};
-}
-
 /*
 # Id: 3
 # Timestamp: 1587107891128222
@@ -1050,40 +1164,7 @@ tendisadmin sleep 2
 void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     Session* sess) {
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {
-        std::unique_lock<std::mutex> lk(_mutex);
-        _slowLog << "# Id: " << _slowlogId.load(std::memory_order_relaxed) << "\n";
-        _slowLog << "# Timestamp: " << time << "\n";
-        _slowLog << "# Time: " << epochToDatetime(time/1000000) << "\n";
-        _slowLog << "# Host: " << sess->getRemote() << "\n";
-        _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
-        _slowLog << "# Query_time: " << duration << "\n";
-
-        auto& args = sess->getArgs();
-        uint64_t args_total_length = 0;
-        uint64_t args_output_length = 0;
-        for (size_t i = 0; i < args.size(); ++i) {
-            args_total_length += args[i].length();
-        }
-        if (args_total_length > _cfg->slowlogMaxLen) {
-            _slowLog << "[" << args_total_length << "] ";
-        } else {
-            _slowLog << "[] ";
-        }
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (args_output_length + args[i].length() <= _cfg->slowlogMaxLen) {
-                _slowLog << args[i] << " ";
-                args_output_length += args[i].length();
-            } else {
-                _slowLog << args[i].substr(0, (_cfg->slowlogMaxLen - args_output_length)) << " ";
-                break;
-            }
-        }
-        _slowLog << "\n\n";
-        if ((_slowlogId.load(std::memory_order_relaxed)%_cfg->slowlogFlushInterval) == 0) {
-            _slowLog.flush();
-        }
-
-        _slowlogId.fetch_add(1, std::memory_order_relaxed);
+        _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, sess);
     }
 }
 
