@@ -249,11 +249,6 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     bool getTotalIntProperty(Session* sess, const std::string& property, uint64_t* value) const;
     bool getAllProperty(Session* sess, const std::string& property, std::string* value) const;
 
-    std::vector<Record> getKeyList(uint32_t  slot);
-    bool emptySlot(uint32_t slot) ;
-    uint64_t countKeysInSlot(uint32_t slot);
-
-    std::vector<std::string> getKeyBySlot(uint32_t  slot, uint32_t count);
     Status delKeysInSlot(uint32_t slot);
 
     bool isClusterEnabled() const { return _enableCluster; }

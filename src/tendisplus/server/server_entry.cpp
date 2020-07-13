@@ -296,109 +296,6 @@ void ServerEntry::logGeneral(Session *sess) {
     LOG(INFO) << sess->getCmdStr();
 }
 
-// TODO(wayenchen)  takenliu add, move this interface to clustermanager
-//judge store key in slot
-bool  ServerEntry::emptySlot(uint32_t slot) {
-    uint32_t storeId = _segmentMgr->getStoreid(slot);
-    LocalSessionGuard g(this);
-    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
-                                    mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-        LOG(ERROR) << "get db error";
-        return true;
-    }
-    auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction(nullptr);
-    if (!ptxn.ok()) {
-        LOG(ERROR) << "create transaction fail";
-        return false;
-    }
-    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
-    auto v = slotCursor->next();
-
-    if (!v.ok()) {
-        if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
-            return true;
-       } else {
-            LOG(ERROR)<< "slot not empty beacause get slot:"
-                     << slot << "cusror fail";
-            return false;
-        }
-    }
-    return false;
-}
-
-// TODO(wayenchen)  takenliu add, delete this function, it cost too much memory.
-std::vector<Record> ServerEntry::getKeyList(uint32_t slot) {
-    uint32_t storeId = _segmentMgr->getStoreid(slot);
-    LocalSessionGuard g(this);
-    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
-                                    mgl::LockMode::LOCK_IS);
-
-    std::vector<Record> keysList;
-    if (!expdb.ok()) {
-        LOG(ERROR) << "get db error";
-        return keysList;
-    }
-    auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction(NULL);
-    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
-
-    while (true) {
-        Expected<Record> expRcd = slotCursor->next();
-        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            break;
-        }
-        if (!expRcd.ok()) {
-            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
-            return {};
-        }
-        keysList.push_back(expRcd.value());
-    }
-    return keysList;
-}
-
-// TODO(wayenchen)  takenliu add, move this interface to clustermanager.
-uint64_t  ServerEntry::countKeysInSlot(uint32_t slot) {
-    std::vector<Record> records = getKeyList(slot);
-    return records.size();
-}
-
-std::vector<std::string> ServerEntry::getKeyBySlot(uint32_t  slot, uint32_t count) {
-    uint32_t storeId = _segmentMgr->getStoreid(slot);
-    LocalSessionGuard g(this);
-    auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
-                                    mgl::LockMode::LOCK_IS);
-    std::vector<std::string> keysList;
-
-    if (!expdb.ok()) {
-        LOG(ERROR) << "get db error: keys list is empty";
-        return keysList;
-    }
-    auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction(NULL);
-    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
-
-    uint32_t n = 0;
-    while (true) {
-        Expected<Record> expRcd = slotCursor->next();
-        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            break;
-        }
-
-        if (!expRcd.ok()) {
-            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
-            return {};
-        }
-        std::string keyname = expRcd.value().getRecordKey().getPrimaryKey();
-        keysList.push_back(keyname);
-        n++;
-        if (n >= count)
-            break;
-    }
-    return keysList;
-}
-
 // TODO(wayenchen)  takenliu add, delete this interface. use clusterManager's function
 Status ServerEntry::delKeysInSlot(uint32_t slot) {
     uint32_t storeId = _segmentMgr->getStoreid(slot);
@@ -407,7 +304,6 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
     auto expdb = _segmentMgr->getDb(g.getSession(), storeId,
                                     mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
-         LOG(ERROR) << "get db error";
          return expdb.status();
      }
     auto dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
@@ -416,13 +312,23 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
     if (!ptxn.ok()) {
         return ptxn.status();
     }
-    std::vector<Record> list = getKeyList(slot);
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+    while (true) {
+        Expected<Record> expRcd = slotCursor->next();
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "delete cursor error on chunkid:" << slot;
+            return {ErrorCodes::ERR_CLUSTER, "delete Cursor error"};
+        }
 
-    for(auto &v: list) {
-        RecordKey key = v.getRecordKey();
-        Status s = kvstore->delKV(key, ptxn.value().get());
-        if(!s.ok()) {
-            return s;
+        Record &rcd = expRcd.value();
+        const RecordKey &rcdKey = rcd.getRecordKey();
+        auto s = ptxn.value()->delKV(rcdKey.encode());
+        if (!s.ok()) {
+            LOG(ERROR) << "delete key fail";
+            continue;
         }
     }
     auto s = ptxn.value()->commit();
@@ -431,7 +337,6 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
     }
 
     return {ErrorCodes::ERR_OK, "finish delte keys in slot"};
-
 }
 
 void ServerEntry::logWarning(const std::string& str, Session* sess) {

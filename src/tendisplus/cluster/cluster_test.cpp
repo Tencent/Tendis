@@ -996,7 +996,7 @@ TEST(Cluster, migrate) {
         if (j == numData/2) {
             uint32_t  keysize = 0;
             for (auto &vs: slotsList) {
-                keysize += srcNode->countKeysInSlot(vs);
+                keysize += srcNode->getClusterMgr()->countKeysInSlot(vs);
             }
             LOG(INFO) <<"before migrate keys num:" << keysize;
             auto s = migrate(srcNode, dstNode, bitmap);
@@ -1009,10 +1009,10 @@ TEST(Cluster, migrate) {
     uint32_t  keysize1 = 0;
     uint32_t  keysize2 = 0;
     for (auto &vs: slotsList) {
-        LOG(INFO) <<"node1->countKeysInSlot:" << vs <<"is:" << srcNode->countKeysInSlot(vs);
-        keysize1 += srcNode->countKeysInSlot(vs);
-        LOG(INFO) <<"node2->countKeysInSlot:" << vs <<"is:" << dstNode->countKeysInSlot(vs);
-        keysize2 += dstNode->countKeysInSlot(vs);
+        LOG(INFO) <<"node1->getClusterMgr()->countKeysInSlot:" << vs <<"is:" << srcNode->getClusterMgr()->countKeysInSlot(vs);
+        keysize1 += srcNode->getClusterMgr()->countKeysInSlot(vs);
+        LOG(INFO) <<"node2->getClusterMgr()->countKeysInSlot:" << vs <<"is:" << dstNode->getClusterMgr()->countKeysInSlot(vs);
+        keysize2 += dstNode->getClusterMgr()->countKeysInSlot(vs);
     }
 
     std::this_thread::sleep_for(20s);
@@ -1051,8 +1051,8 @@ TEST(Cluster, migrate) {
     }
 
     for (auto &vs: slotsList) {
-        keysize1 += dstNode->countKeysInSlot(vs);
-        keysize2 += srcNode->countKeysInSlot(vs);
+        keysize1 += dstNode->getClusterMgr()->countKeysInSlot(vs);
+        keysize2 += srcNode->getClusterMgr()->countKeysInSlot(vs);
     }
 
     std::this_thread::sleep_for(60s);
@@ -1157,7 +1157,7 @@ TEST(Cluster, migrateAndImport) {
         if (j == numData/2) {
             uint32_t  keysize = 0;
             for (auto &vs: slotsList1) {
-                keysize += srcNode->countKeysInSlot(vs);
+                keysize += srcNode->getClusterMgr()->countKeysInSlot(vs);
             }
             LOG(INFO) <<"before first migrate keys num:" << keysize;
             auto s1 = migrate(srcNode, dstNode1, bitmap1);
@@ -1166,7 +1166,7 @@ TEST(Cluster, migrateAndImport) {
             std::this_thread::sleep_for(1s);
             uint32_t  keysize2 = 0;
             for (auto &vs: slotsList2) {
-                keysize2 += dstNode1->countKeysInSlot(vs);
+                keysize2 += dstNode1->getClusterMgr()->countKeysInSlot(vs);
             }
             LOG(INFO) <<"before second migrate keys num:" << keysize;
             auto s2 = migrate(dstNode1, dstNode2, bitmap2);
@@ -1179,10 +1179,10 @@ TEST(Cluster, migrateAndImport) {
     uint32_t  keysize1 = 0;
     uint32_t  keysize2 = 0;
     for (auto &vs: slotsList1) {
-        LOG(INFO) <<"first migrate src slot:" << vs <<"is:" << srcNode->countKeysInSlot(vs);
-        keysize1 += srcNode->countKeysInSlot(vs);
-        LOG(INFO) <<"first migrate dst slot:" << vs <<"is:" << dstNode1->countKeysInSlot(vs);
-        keysize2 += dstNode1->countKeysInSlot(vs);
+        LOG(INFO) <<"first migrate src slot:" << vs <<"is:" << srcNode->getClusterMgr()->countKeysInSlot(vs);
+        keysize1 += srcNode->getClusterMgr()->countKeysInSlot(vs);
+        LOG(INFO) <<"first migrate dst slot:" << vs <<"is:" << dstNode1->getClusterMgr()->countKeysInSlot(vs);
+        keysize2 += dstNode1->getClusterMgr()->countKeysInSlot(vs);
     }
 
     std::this_thread::sleep_for(40s);
@@ -1196,10 +1196,10 @@ TEST(Cluster, migrateAndImport) {
     keysize1 = 0;
     keysize2 = 0;
     for (auto &vs: slotsList2) {
-        LOG(INFO) <<"second migrate src slot:" << vs <<"is:" << dstNode1->countKeysInSlot(vs);
-        keysize1 += dstNode1->countKeysInSlot(vs);
-        LOG(INFO) <<"second migrate dst slot:" << vs <<"is:" << dstNode2->countKeysInSlot(vs);
-        keysize2 += dstNode2->countKeysInSlot(vs);
+        LOG(INFO) <<"second migrate src slot:" << vs <<"is:" << dstNode1->getClusterMgr()->countKeysInSlot(vs);
+        keysize1 += dstNode1->getClusterMgr()->countKeysInSlot(vs);
+        LOG(INFO) <<"second migrate dst slot:" << vs <<"is:" << dstNode2->getClusterMgr()->countKeysInSlot(vs);
+        keysize2 += dstNode2->getClusterMgr()->countKeysInSlot(vs);
     }
 
     // bitmap should belong to dstNode
@@ -1441,7 +1441,7 @@ TEST(Cluster, ConvergenceRate) {
         if (j == numData/2) {
             uint32_t  keysize = 0;
             for (auto &vs : slotsList) {
-                keysize += srcNode->countKeysInSlot(vs);
+                keysize += srcNode->getClusterMgr()->countKeysInSlot(vs);
             }
             LOG(INFO) <<"before migrate keys num:" << keysize;
             auto s = migrate(srcNode, dstNode, bitmap);
@@ -1458,10 +1458,10 @@ TEST(Cluster, ConvergenceRate) {
     uint32_t  keysize1 = 0;
     uint32_t  keysize2 = 0;
     for (auto &slot : slotsList) {
-        LOG(INFO) <<"srdNode slot:" << slot <<" keys:" << srcNode->countKeysInSlot(slot);
-        keysize1 += srcNode->countKeysInSlot(slot);
-        LOG(INFO) <<"dstNode slot:" << slot <<" keys:" << dstNode->countKeysInSlot(slot);
-        keysize2 += dstNode->countKeysInSlot(slot);
+        LOG(INFO) <<"srdNode slot:" << slot <<" keys:" << srcNode->getClusterMgr()->countKeysInSlot(slot);
+        keysize1 += srcNode->getClusterMgr()->countKeysInSlot(slot);
+        LOG(INFO) <<"dstNode slot:" << slot <<" keys:" << dstNode->getClusterMgr()->countKeysInSlot(slot);
+        keysize2 += dstNode->getClusterMgr()->countKeysInSlot(slot);
     }
 
     // bitmap should belong to dstNode
@@ -1597,6 +1597,7 @@ TEST(Cluster, CrossSlot) {
 
     std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
     {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
+    {{"mset", "a{2}", "b", "c{2}", "d"}, Command::fmtOK()},
     {{"mset", "a{1}", "b", "c{2}", "d"}, "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
     {{"mset", "a{1}", "b", "c{1}", "d"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
     };

@@ -577,16 +577,22 @@ std::shared_ptr<ClusterSession> ClusterNode::getSession() const {
 
 
 void ClusterNode::freeClusterSession() {
-    std::lock_guard<myMutex> lk(_mutex);
-    if (!_nodeSession) {
-        return;
+    std::shared_ptr<ClusterSession> tmpSession = nullptr;
+    {
+        std::lock_guard<myMutex> lk(_mutex);
+        if (!_nodeSession) {
+            return;
+        }
+
+        tmpSession = std::move(_nodeSession);
+        _nodeSession = nullptr;
     }
 
-    _nodeSession->setCloseAfterRsp();
-    _nodeSession->setNode(nullptr);
+    tmpSession->setCloseAfterRsp();
+    tmpSession->setNode(nullptr);
     // TODO(vinchen): check it carefully
-    _nodeSession->endSession();
-    _nodeSession = nullptr;
+    tmpSession->endSession();
+    tmpSession = nullptr;
 }
 
 ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
@@ -746,7 +752,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
         std::lock_guard<myMutex> lk(_mutex);
         CNodePtr myself = getMyselfNode();
         auto curmaster = myself->nodeIsMaster() ? myself : myself->_slaveOf;
-        if (sender == myself) {
+        if (sender ==    myself) {
             LOG(INFO) << "Discarding UPDATE message about myself.";
             return;
         }
@@ -763,8 +769,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
                 if (_allSlots[j] == nullptr ||
                     _allSlots[j]->getConfigEpoch() < senderConfigEpoch) {
                     if (_allSlots[j] == myself &&
-                        // get db lock here
-                        !_server->emptySlot(j) &&
                         sender != myself) {
                         dirty_slots[dirty_slots_count] = j;
                         dirty_slots_count++;
@@ -813,8 +817,12 @@ void ClusterState::clusterUpdateSlotsConfigWith(CNodePtr sender,
         }
     } else if (dirty_slots_count && !inMigrateTask) {
         // TODO(wayenchen): use thread to delete slots
-        for (uint32_t  j = 0; j < dirty_slots_count; j++)
-             _server->delKeysInSlot(dirty_slots[j]);
+        for (uint32_t  j = 0; j < dirty_slots_count; j++) {
+            // NOTE(wayenchen) get db lock here
+            if (!_server->getClusterMgr()->emptySlot(j)) {
+                _server->delKeysInSlot(dirty_slots[j]);
+            }
+        }
         LOG(INFO) << "finish del key in slot, num is:" << dirty_slots_count;
      }
 }
@@ -858,7 +866,7 @@ void ClusterState::setLastVoteEpoch(uint64_t epoch) {
 
 Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
     std::lock_guard<myMutex> lk(_mutex);
-    if (_migratingSlots[slot] && _server->emptySlot(slot)) {
+    if (_migratingSlots[slot] && _server->getClusterMgr()->emptySlot(slot)) {
         _migratingSlots[slot] = nullptr;
     }
     bool s = clusterDelSlot(slot);
@@ -1121,15 +1129,9 @@ Status ClusterState::clusterSaveConfig() {
     return  s;
 }
 
-Status ClusterState::setClientUnBlock() {
+void ClusterState::setClientUnBlock() {
     _cv.notify_one();
-
-    if (_isCliBlocked.load(std::memory_order_relaxed)) {
-        std::this_thread::sleep_for(500ms);
-    }
-    //if _isCliBlocked == false , return ERR?
-
-    return  {ErrorCodes ::ERR_OK, ""};
+    _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
 Status ClusterState::forceFailover(bool force, bool takeover) {
@@ -1211,11 +1213,9 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
             LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
         }
         if (isClientBlock()) {
-            s = setClientUnBlock();
-            if (!s.ok()) {
-                LOG(ERROR) << "slots unblock fail";
-            }
+            setClientUnBlock();
             INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
+            LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
         }
     }
     // how to enable chunk lock release here?
@@ -1761,10 +1761,8 @@ void ClusterState::resetManualFailover() {
 
 void ClusterState::resetManualFailoverNoLock() {
     if (isClientBlock()) {
-        auto s = setClientUnBlock();
-        if (!s.ok()) {
-            LOG(ERROR) << "set client unblock fail";;
-        }
+        setClientUnBlock();
+        INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
     }
     _mfEnd = 0;
     _mfCanStart = 0;
@@ -3925,21 +3923,27 @@ void ClusterState::setMfStart() {
     _mfCanStart = 1;
 }
 
-void ClusterState::readOnlyAsync(uint64_t time) {
+void ClusterState::clusterBlockMyself(uint64_t locktime) {
     if (isClientBlock()) {
         LOG(WARNING) << "aleady block!";
         setClientUnBlock();
+        INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
+    }
+    auto exptLockList = clusterLockMySlots();
+    if (!exptLockList.ok()) {
+        LOG(ERROR) << "fail lock slots on:" << getMyselfName();
     }
 
-    _manualLockThead = std::make_unique<std::thread>(std::move([this, time]() {
-        mfLockChunks(time);
-    }));
+    _manualLockThead = std::make_unique<std::thread>([this](
+            uint64_t time,
+            std::list<std::unique_ptr<ChunkLock>> && locklist) {
+        std::unique_lock<std::mutex> lk(_failMutex);
+        _cv.wait_for(lk, std::chrono::milliseconds(time));
+    }, locktime, std::move(exptLockList.value()));
 }
 
-// chunk lock order by storeid
-void ClusterState::mfLockChunks(uint64_t max) {
+Expected<std::list<std::unique_ptr<ChunkLock>>> ClusterState::clusterLockMySlots() {
     std::list<std::unique_ptr<ChunkLock>> lockList;
-    std::unique_lock<std::mutex> lk(_failMutex);
     std::unordered_map<uint32_t, std::set<uint32_t>> slotsMap;
 
     auto slots = _myself->getSlots();
@@ -3952,36 +3956,37 @@ void ClusterState::mfLockChunks(uint64_t max) {
         idx++;
     }
 
-    uint64_t  lockNum = 0;
+    uint64_t  lockNum =0;
     std::bitset<CLUSTER_SLOTS> slotsDone;
     uint32_t  storeNum = _server->getKVStoreCount();
-    for (uint32_t i = 0; i < storeNum; i++) {
-       std::unordered_map<uint32_t , std::set<uint32_t>>::iterator it;
 
-       if ((it= slotsMap.find(i)) != slotsMap.end()) {
+    for (uint32_t i = 0; i < storeNum; i++){
+        std::unordered_map<uint32_t , std::set<uint32_t>>::iterator it;
+        if((it= slotsMap.find(i)) != slotsMap.end()) {
             auto slotSet = it->second;
             for (auto iter = slotSet.begin(); iter != slotSet.end(); ++iter) {
-                auto lock = ChunkLock::AquireChunkLock(i, *iter,
-                        mgl::LockMode::LOCK_S,
-                        nullptr, _server->getMGLockMgr());
-                if (lock.ok()) {
-                    lockList.push_back(std::move(lock.value()));
+                auto lock = ChunkLock::AquireChunkLock(i,*iter,
+                                                       mgl::LockMode::LOCK_S,
+                                                       nullptr, _server->getMGLockMgr());
+                if (!lock.ok()) {
+                    LOG(ERROR) << "lock chunk fail on :" << *iter;
                 } else {
-                    LOG(ERROR) << "lock chunk fail";
+                    lockList.push_back(std::move(lock.value()));
+                    lockNum++;
+                    slotsDone.set(*iter);
                 }
-                lockNum++;
-                slotsDone.set(*iter);
-
             }
         }
     }
     _isCliBlocked.store(true, std::memory_order_relaxed);
     LOG(INFO) << "finish lock on:" << bitsetStrEncode(slotsDone) << "Lock num:" << lockNum
               << "time:" << msSinceEpoch();
-    _cv.wait_for(lk, std::chrono::milliseconds(max));
-    DLOG(INFO) << "unblock:" << "time:" <<  msSinceEpoch();
-    _isCliBlocked.store(false, std::memory_order_relaxed);
+    if (lockNum == 0) {
+        return {ErrorCodes::ERR_INTERNAL, "no lock finish"};
+    }
+    return lockList;
 }
+
 
 void ClusterManager::controlRoutine() {
     uint64_t iteration = 0;
@@ -4031,13 +4036,103 @@ bool ClusterManager::hasDirtyKey(uint32_t storeid) {
     for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
         if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid
             && !node->getSlotBit(chunkid)
-            && !_svr->emptySlot(chunkid)) {
+            && !emptySlot(chunkid)) {
             LOG(WARNING) << "hasDirtyKey storeid:" << storeid << " chunkid:" << chunkid;
             return true;
         }
     }
     return false;
 }
+
+uint64_t  ClusterManager::countKeysInSlot(uint32_t slot) {
+    uint32_t storeId = _svr->getSegmentMgr()->getStoreid(slot);
+    LocalSessionGuard g(_svr.get());
+    auto expdb = _svr->getSegmentMgr()->getDb(g.getSession(), storeId,
+                                              mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        return 0;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(nullptr);
+    INVARIANT_D(ptxn.ok());
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+
+    uint64_t  keyNum = 0;
+    while (true) {
+        Expected<Record> expRcd = slotCursor->next();
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
+            return keyNum;
+        }
+        keyNum++;
+    }
+    return keyNum;
+}
+
+std::vector<std::string> ClusterManager::getKeyBySlot(uint32_t  slot, uint32_t count) {
+    uint32_t storeId = _svr->getSegmentMgr()->getStoreid(slot);
+    LocalSessionGuard g(_svr.get());
+    auto expdb = _svr->getSegmentMgr()->getDb(g.getSession(), storeId,
+                                              mgl::LockMode::LOCK_IS);
+    std::vector<std::string> keysList;
+
+    if (!expdb.ok()) {
+        return keysList;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(nullptr);
+    INVARIANT_D(ptxn.ok());
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+
+    uint32_t n = 0;
+    while (true) {
+        Expected<Record> expRcd = slotCursor->next();
+        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            break;
+        }
+
+        if (!expRcd.ok()) {
+            LOG(ERROR) << "get slot cursor error:" << expRcd.status().toString();
+            return {};
+        }
+        std::string keyname = expRcd.value().getRecordKey().getPrimaryKey();
+        keysList.push_back(keyname);
+        n++;
+        if (n >= count)
+            break;
+    }
+    return keysList;
+}
+
+bool ClusterManager::emptySlot(uint32_t slot) {
+    uint32_t storeId = _svr->getSegmentMgr()->getStoreid(slot);
+    LocalSessionGuard g(_svr.get());
+    auto expdb = _svr->getSegmentMgr()->getDb(g.getSession(), storeId,
+                                              mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        return true;
+    }
+    auto kvstore = std::move(expdb.value().store);
+    auto ptxn = kvstore->createTransaction(nullptr);
+    INVARIANT_D(ptxn.ok());
+    auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
+    auto v = slotCursor->next();
+
+    if (!v.ok()) {
+        if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
+            return true;
+        } else {
+            LOG(ERROR)<< "slot not empty beacause get slot:"
+                      << slot << "cusror fail";
+            return false;
+        }
+    }
+    return false;
+}
+
 
 ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
     asio::ip::tcp::socket sock,
@@ -4265,11 +4360,9 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
     bool update = false;
     if (getBlockState()) {
         // sleep or return OK?
-        LOG(INFO) << "packet begin block at:" << msSinceEpoch();
-
+        DLOG(INFO) << "packet begin block at:" << msSinceEpoch();
         std::this_thread::sleep_for(chrono::milliseconds(getBlockTime()));
-
-        LOG(INFO) << "packet begin receive at:" << msSinceEpoch();
+        DLOG(INFO) << "packet begin receive at:" << msSinceEpoch();
     }
 
     const auto guard = MakeGuard([&] {
@@ -4679,10 +4772,10 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         * accordingly. */
         resetManualFailover();
         setMfSlave(sender);
-        setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
-        DLOG(INFO) <<  "set mf_end:" << getMfEnd();
-        readOnlyAsync(2*CLUSTER_MF_TIMEOUT);
+        clusterBlockMyself(2*CLUSTER_MF_TIMEOUT);
 
+        LOG(INFO) <<  "set mf_end:" << getMfEnd();
+        setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
         serverLog(LL_WARNING, "Manual failover requested by slave %.40s.",
                     sender->getNodeName().c_str());
     } else if (type == ClusterMsg::Type::UPDATE) {

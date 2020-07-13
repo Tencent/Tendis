@@ -466,8 +466,7 @@ class ClusterSession : public NetSession {
 
     uint64_t _pkgSize;
     CNodePtr _node;
-    mstime_t  _ctime;
-};
+    };
 
 class ClusterState: public std::enable_shared_from_this<ClusterState> {
     friend class ClusterNode;
@@ -602,8 +601,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     bool isClientBlock() {
         return  _isCliBlocked.load(std::memory_order_relaxed);
     }
-
-    Status setClientUnBlock();
+    Expected<std::list<std::unique_ptr<ChunkLock>>> clusterLockMySlots();
+    void setClientUnBlock();
 
     uint64_t getBlockTime() const { return  _blockTime.load(std::memory_order_relaxed);}
 
@@ -652,8 +651,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
     uint32_t clusterMastersHaveSlavesNoLock();
     std::unordered_map<uint32_t, std::unique_ptr<StoreLock>> _lockMap;
-    void readOnlyAsync(uint64_t t);
-    void mfLockChunks(uint64_t max);
+    void clusterBlockMyself(uint64_t time);
 
  public:
     ClusterHealth _state;
@@ -766,6 +764,9 @@ class ClusterManager {
     bool isRunning() const;
     Status clusterReset(uint16_t hard);
     bool hasDirtyKey(uint32_t storeid);
+    uint64_t  countKeysInSlot(uint32_t slot);
+    std::vector<std::string> getKeyBySlot(uint32_t  slot, uint32_t count);
+    bool emptySlot(uint32_t slot);
 
  protected:
     void controlRoutine();

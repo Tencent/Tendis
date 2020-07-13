@@ -346,7 +346,7 @@ bool MigrateManager::slotsInTask(const SlotsBitmap & bitMap) {
     std::lock_guard<std::mutex> lk(_mutex);
     size_t idx = 0;
     while (idx < bitMap.size()) {
-        if (bitMap.test(idx)) {
+        if(bitMap.test(idx)) {
             if (_migrateSlots.test(idx) || _importSlots.test(idx)) {
                 return true;
             }
@@ -1214,11 +1214,15 @@ Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr, PStore s
                 }
             }
         }
-
+        // NOTE(wayenchen): slave of sender setslots will cause error
+        // when srcnode has no slots after migrating, and setslots finish before receive gossip
+        //then gossip is unable change the this slave to set dstnode as a new master
+        /*
         auto s = _cluster->setSlots(dstnode, slotsMap);
         if (!s.ok()) {
             LOG(ERROR) << "setSlots error:" << s.toString();
         }
+         */
     }
     return {ErrorCodes::ERR_OK, ""};
 }

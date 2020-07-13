@@ -80,7 +80,8 @@ public:
 
         if (arg1 == "setslot" && argSize >=3) {
             Status s;
-            if (args[2] == "importing" && argSize >= 5) {
+            const std::string arg2 = toLower(args[2]);
+            if (arg2 == "importing" && argSize >= 5) {
                 std::string nodeId = args[3];
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
@@ -96,7 +97,7 @@ public:
                         return {ErrorCodes::ERR_CLUSTER,
                                 "Invalid migrate slot position"};
                     }
-                    if (!svr->emptySlot(slot)) {
+                    if (!svr->getClusterMgr()->emptySlot(slot)) {
                         LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
                         return {ErrorCodes::ERR_CLUSTER,
                                 "slot not empty"};
@@ -122,7 +123,7 @@ public:
                 }
                 return Command::fmtOK();
 
-            } else if (args[2] == "info" && argSize == 3) {
+            } else if (arg2 == "info" && argSize == 3) {
                 Expected<std::string>  migrateInfo = migrateMgr->getMigrateInfo();
                 if (migrateInfo.ok()) {
                         return  migrateInfo.value();
@@ -130,7 +131,7 @@ public:
                     return {ErrorCodes::ERR_CLUSTER,
                             "Invalid migrate info"};
                 }
-            } else if (args[2] == "tasks" && argSize == 3) {
+            } else if (arg2 == "tasks" && argSize == 3) {
                 Expected<std::string>  taskInfo = migrateMgr->getTaskInfo();
                 if (taskInfo.ok()) {
                     return taskInfo;
@@ -270,7 +271,7 @@ public:
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid slot"};
             }
-            uint64_t keyNum = svr->countKeysInSlot(slot);
+            uint64_t keyNum = svr->getClusterMgr()->countKeysInSlot(slot);
             return Command::fmtBulk(to_string(keyNum));
 
         } else if (arg1 == "keyslot" && argSize == 3) {
@@ -333,13 +334,17 @@ public:
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid key num " + args[3]};
             }
-
             uint32_t count = ecount.value();
+            //NOTE(wayenchen) count should be limited in case cost too mush memory
+            if (count > 5000) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "key num should be less than 5000"};
+            }
             if (slot >= CLUSTER_SLOTS ) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid slot or number of keys"};
             }
-
+            
             std::string keysInfo = getKeys(svr, slot, count);
 
             return keysInfo;
@@ -543,7 +548,7 @@ private:
     }
 
     std::string getKeys(ServerEntry *svr , uint32_t slot, uint32_t count) {
-        std::vector<std::string> keysList = svr->getKeyBySlot(slot, count);
+        std::vector<std::string> keysList = svr->getClusterMgr()->getKeyBySlot(slot, count);
         std::stringstream keysInfo;
         uint32_t n = keysList.size();
 
@@ -560,7 +565,7 @@ private:
         auto slots = node->getSlots();
         size_t idx = 0;
         while (idx < slots.size()) {
-            if (slots.test(idx) && !svr->emptySlot(idx)) {
+            if (slots.test(idx) && !svr->getClusterMgr()->emptySlot(idx)) {
                 notEmpty = true;
                 break;
             }
