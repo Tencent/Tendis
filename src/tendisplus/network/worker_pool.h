@@ -18,6 +18,7 @@ class PoolMatrix {
 public:
     PoolMatrix operator-(const PoolMatrix& right);
     Atom<uint64_t> inQueue{0};
+    Atom<uint64_t> executing{0};
     Atom<uint64_t> executed{0};
     Atom<uint64_t> queueTime{0};
     Atom<uint64_t> executeTime{0};
@@ -25,7 +26,7 @@ public:
     void reset();
 };
 
-// TODO(deyukong): currently only support static thread-num
+// TODO(pecochen): currently only support static thread-num
 // It's better to adaptively resize thread-pool by pressure
 class WorkerPool {
  public:
@@ -42,8 +43,10 @@ class WorkerPool {
         auto taskWrap = [this, mytask = std::move(task), enQueueTs] () mutable {
             int64_t outQueueTs = nsSinceEpoch();
             _matrix->queueTime += outQueueTs - enQueueTs;
-            --_matrix->inQueue;
+            ++_matrix->executing;
             mytask();
+            --_matrix->inQueue;
+            --_matrix->executing;
             int64_t endExeTs = nsSinceEpoch();
             _matrix->executeTime += endExeTs - outQueueTs;
             ++_matrix->executed;
@@ -61,7 +64,6 @@ class WorkerPool {
     void consumeTasks(size_t idx);
     mutable std::mutex _mutex;
     std::atomic<bool> _isRuning;
-    // TODO(deyukong): single or multiple _ioCtx, which is better?
     std::unique_ptr<asio::io_context> _ioCtx;
     const std::string _name;
     std::shared_ptr<PoolMatrix> _matrix;

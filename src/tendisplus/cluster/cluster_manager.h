@@ -478,7 +478,7 @@ class ClusterSession : public NetSession {
 
     uint64_t _pkgSize;
     CNodePtr _node;
-    };
+};
 
 class ClusterState: public std::enable_shared_from_this<ClusterState> {
     friend class ClusterNode;
@@ -497,8 +497,6 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // get myself
     CNodePtr  getMyselfNode() const;
     std::string getMyselfName() const;
-    // get nodes
-    std::unordered_map<std::string, CNodePtr> getNodes();
     // set myself
     void setMyselfNode(CNodePtr node);
     bool isMyselfMaster();
@@ -627,7 +625,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void setGossipBlock(uint64_t time);
     void setGossipUnBlock();
 
-    bool clusterIsOK() const ;
+    bool clusterIsOK() const;
 
     Expected<std::string> getNodeInfo(CNodePtr n);
     Expected<std::string> getBackupInfo();
@@ -638,7 +636,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void setMfStart();
     Status forgetNodes();
 
-    //FAILOVER
+    // FAILOVER
     uint64_t getPfailNodeNum() const;
     void incrPfailNodeNum();
     void setPfailNodeNum(uint64_t);
@@ -662,7 +660,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
         return  _failoverAuthEpoch.load(std::memory_order_relaxed);
     }
 
-private:
+ private:
     mutable myMutex _mutex;
     mutable std::mutex _failMutex;
     std::condition_variable _cv;
@@ -716,7 +714,6 @@ private:
     /* Messages received and sent by type. */
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
     std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
-
 };
 
 

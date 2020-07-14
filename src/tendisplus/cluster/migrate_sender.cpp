@@ -78,7 +78,7 @@ Status ChunkMigrateSender::sendChunk() {
         }
         return s;
     }
-    // check the meta data of source node
+    /* check the meta data of source node */
     if (!checkSlotsBlongDst()) {
         s = _clusterState->setSlots(_dstNode, _slots);
         if (!s.ok()) {
@@ -197,7 +197,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
             SyncReadData(exptData, 3, timeoutSec)
             if (exptData.value() != "+OK") {
                 LOG(ERROR) << "read data is not +OK."
-                           << "totalWriteNum:"<<totalWriteNum
+                           << "totalWriteNum:" << totalWriteNum
                            << " curWriteNum:" << curWriteNum
                            << " data:" << exptData.value();
                 return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
@@ -257,7 +257,6 @@ Status ChunkMigrateSender::sendSnapshot() {
             }
             _snapshotKeyNum += ret.value();
         }
-
     }
     SyncWriteData("3");  // send over of all
     SyncReadData(exptData, 3, timeoutSec)
@@ -268,14 +267,14 @@ Status ChunkMigrateSender::sendSnapshot() {
     }
     uint32_t endTime = sinceEpoch();
     LOG(INFO) << "sendSnapshot finished, storeid:" << _storeid
-              <<" sendSlotNum:" << sendSlotNum
-              <<" totalWriteNum:" << _snapshotKeyNum
-              <<" useTime:" << endTime - startTime
-              <<" slots:" << bitsetStrEncode(_slots);
+              << " sendSlotNum:" << sendSlotNum
+              << " totalWriteNum:" << _snapshotKeyNum
+              << " useTime:" << endTime - startTime
+              << " slots:" << bitsetStrEncode(_slots);
     return  {ErrorCodes::ERR_OK, "finish snapshot of bitmap"};
 }
 
-uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const{
+uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
     uint64_t maxBinlogId = 0;
     auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn);
     if (!expBinlogidMax.ok()) {
@@ -286,7 +285,7 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const{
     } else {
         maxBinlogId = expBinlogidMax.value();
     }
-    return  maxBinlogId;
+    return maxBinlogId;
 }
 
 // catch up binlog from start to end
@@ -300,9 +299,9 @@ Expected<uint64_t> ChunkMigrateSender::catchupBinlog(uint64_t start,
         LOG(ERROR) << "ChunkMigrateSender::sendBinlog fail to client"
                    << _client->getRemoteRepr()
                    << s.status().toString();
-        return  s;
+        return s.status();
     }
-    return  s.value();
+    return s.value();
 }
 
 // catch up for tryNum
@@ -324,7 +323,7 @@ Status ChunkMigrateSender::pursueBinLog(uint64_t *startBinLog) {
         *startBinLog = binlogHigh;
 
         binlogHigh = kvstore->getHighestBinlogId();
-        //judge if reach for distance
+        // judge if reach for distance
         auto diffOffset = binlogHigh - *startBinLog;
         if (diffOffset <= distance) {
             LOG(INFO) << "last distance:" << diffOffset << "on" << bitsetStrEncode(_slots);
@@ -334,7 +333,6 @@ Status ChunkMigrateSender::pursueBinLog(uint64_t *startBinLog) {
         DLOG(INFO) << "pursueBinLog finish iteration time:" << catchupTimes
                   << "on slots:" << bitsetStrEncode(_slots)
                   << "from:" << *startBinLog  << "to" << binlogHigh;
-
     }
     if (!finishCatchup) {
         return  {ErrorCodes::ERR_INTERNAL, "pursue binlog not finish"};
@@ -453,7 +451,6 @@ Status ChunkMigrateSender::deleteChunkRange(uint32_t  chunkidStart, uint32_t chu
         LOG(ERROR) << "getDb failed:" << _storeid;
         return expdb.status();
     }
-
     PStore kvstore = expdb.value().store;
     RecordKey rkStart(chunkidStart, 0, RecordType::RT_INVALID, "", "");
     RecordKey rkEnd(chunkidEnd + 1, 0, RecordType::RT_INVALID, "", "");
@@ -472,8 +469,9 @@ Status ChunkMigrateSender::deleteChunkRange(uint32_t  chunkidStart, uint32_t chu
 }
 
 Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
-    // NOTE(wayenchen) check if chunk not belong to me，make sure MOVE work well before delete
-    if (!_isFake && !checkSlotsBlongDst()){
+    /* NOTE(wayenchen) check if chunk not belong to me,
+     * make sure MOVE work well before delete */
+    if (!_isFake && !checkSlotsBlongDst()) {
         return  {ErrorCodes::ERR_CLUSTER, "slots not belongs to dstNodes"};
     }
     lockChunks();
@@ -563,4 +561,4 @@ Status ChunkMigrateSender::unlockChunks() {
     return  {ErrorCodes::ERR_OK, ""};
 }
 
-} // end namespace
+}  // namespace tendisplus

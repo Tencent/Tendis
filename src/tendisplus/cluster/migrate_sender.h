@@ -33,7 +33,6 @@ enum class MigrateSenderStatus {
 
 class ChunkMigrateSender{
  public:
-
     explicit ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
         std::shared_ptr<ServerEntry> svr,
         std::shared_ptr<ServerParams> cfg,

@@ -143,7 +143,7 @@ class MigrateManager {
                     uint16_t port, uint32_t storeid,
                     bool import, uint16_t taskSize);
 
-    void insertNodes(std::vector<uint32_t >slots, std::string nodeid, bool import);
+    void insertNodes(const std::vector<uint32_t>& slots, const std::string& nodeid, bool import);
 
     void fullReceive(MigrateReceiveTask* task);
 

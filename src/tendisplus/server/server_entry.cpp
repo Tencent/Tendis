@@ -1047,6 +1047,13 @@ Status ServerEntry::destroyStore(Session *sess,
         return status;
     }
 
+    status = _migrateMgr->stopStoreTask(storeId);
+    if (!status.ok()) {
+        LOG(ERROR) << "migrateMgr stopStore :" << storeId
+                   << " failed:" << status.toString();
+        return status;
+    }
+
     status = store->destroy();
     if (!status.ok()) {
         LOG(ERROR) << "destroy store :" << storeId
@@ -1059,13 +1066,6 @@ Status ServerEntry::destroyStore(Session *sess,
     if (!status.ok()) {
         LOG(ERROR) << "replMgr stopStore :" << storeId
             << " failed:" << status.toString();
-        return status;
-    }
-
-    status = _migrateMgr->stopStoreTask(storeId);
-    if (!status.ok()) {
-        LOG(ERROR) << "migrateMgr stopStore :" << storeId
-                   << " failed:" << status.toString();
         return status;
     }
 
