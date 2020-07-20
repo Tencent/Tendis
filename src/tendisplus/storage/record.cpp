@@ -1011,7 +1011,7 @@ uint64_t RecordValue::decodeTtl(const char* value, size_t size) {
     if (!expt.ok()) {
         return 0;
     }
-    uint64_t ttl = expt.value().first;;
+    uint64_t ttl = expt.value().first;
 
     return ttl;
 }

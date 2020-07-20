@@ -340,7 +340,7 @@ Status Command::delKeyPessimisticInLock(Session *sess, uint32_t storeId,
 Expected<std::pair<std::string, std::list<Record>>>
 Command::scan(const std::string& pk, const std::string& from,
               uint64_t cnt, Transaction *txn) {
-    auto cursor = txn->createCursor();
+    auto cursor = txn->createDataCursor();
     if (from == "0") {
         cursor->seek(pk);
     } else {
@@ -475,7 +475,7 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
 
     std::list<RecordKey> pendingDelete;
     for (const auto& prefix : prefixes) {
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         cursor->seek(prefix);
 
         while (true) {

@@ -137,11 +137,12 @@ std::string& ClusterMeta::getClusterPrefix() {
 }
 
 
-Catalog::Catalog(std::unique_ptr<KVStore> store,
-        uint32_t kvStoreCount, uint32_t chunkSize)
+Catalog::Catalog(std::unique_ptr<KVStore> store, uint32_t kvStoreCount,
+                 uint32_t chunkSize, bool binlogUsingDefaultCF)
     :_store(std::move(store)),
     _kvStoreCount(kvStoreCount),
-    _chunkSize(chunkSize) {
+    _chunkSize(chunkSize),
+    _binlogUsingDefaultCF(binlogUsingDefaultCF) {
     auto mainMeta = getMainMeta();
     if (mainMeta.ok()) {
         if (_kvStoreCount != mainMeta.value()->kvStoreCount ||
@@ -153,6 +154,17 @@ Catalog::Catalog(std::unique_ptr<KVStore> store,
                 << ") not equal";
             INVARIANT(0);
         }
+        _binlogVersion = mainMeta.value()->binlogVersion;
+        // set the mainmeta of new version to replace the outdated mainmeta
+        /*if (mainMeta.value()->binlogVersion == "1") {
+            auto pMeta =
+                std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
+            Status s = setMainMeta(*pMeta);
+            if (!s.ok()) {
+                LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
+                INVARIANT(0);
+            }
+        }*/
     } else if (mainMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
         auto pMeta = std::unique_ptr<MainMeta>(
             new MainMeta(kvStoreCount, chunkSize));
@@ -162,10 +174,12 @@ Catalog::Catalog(std::unique_ptr<KVStore> store,
                 << s.toString();
             INVARIANT(0);
         }
+        auto tempMainMeta = getMainMeta();
+        _binlogVersion = tempMainMeta.value()->binlogVersion;
     } else {
-       LOG(FATAL) << "catalog getMainMeta error:"
-                << mainMeta.status().toString();
-            INVARIANT(0);
+        LOG(FATAL) << "catalog getMainMeta error:"
+                   << mainMeta.status().toString();
+        INVARIANT(0);
     }
 }
 
@@ -371,6 +385,14 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
     writer.Key("chunkSize");
     writer.Uint64(meta.chunkSize);
 
+    if (_binlogUsingDefaultCF == true) {
+        writer.Key("binlogVersion");
+        writer.String("1");
+    } else {
+        writer.Key("binlogVersion");
+        writer.String("2");
+    }
+
     writer.EndObject();
 
     RecordValue rv(sb.GetString(), RecordType::RT_META, -1);
@@ -430,6 +452,16 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     INVARIANT(doc.HasMember("chunkSize"));
     INVARIANT(doc["chunkSize"].IsUint64());
     result->chunkSize = (uint32_t)doc["chunkSize"].GetUint64();
+
+    //old version may not have binlog version. 
+    //if one version have binlog version, it's bigger than 1.
+    if (doc.HasMember("binlogVersion")) {
+        INVARIANT(doc["binlogVersion"].IsString());
+        result->binlogVersion = doc["binlogVersion"].GetString();
+    } else {
+        result->binlogVersion = "1";
+    }
+    
 
     return result;
 }
@@ -514,7 +546,7 @@ Expected<std::vector<std::unique_ptr<ClusterMeta>>> Catalog::getAllClusterMeta()
 
     auto keyprefix = std::string(ClusterMeta::CLUSTER_PREFIX);
     Transaction *txn = exptxn.value().get();
-    auto bcursor = txn->createCursor();
+    auto bcursor = txn->createDataCursor();
     bcursor->seek(prefix);
     while (true) {
         auto result = std::make_unique<ClusterMeta>();

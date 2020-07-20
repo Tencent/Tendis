@@ -44,6 +44,11 @@ enum class RecordType;
 
 using PStore = std::shared_ptr<KVStore>;
 
+enum class ColumnFamilyNumber { 
+    ColumnFamily_Default, 
+    ColumnFamily_Binlog 
+};
+
 class Cursor {
  public:
     Cursor() = default;
@@ -97,6 +102,51 @@ class RepllogCursorV2 {
     const uint64_t _end;
 };
 #endif
+
+class BasicDataCursor {
+ public:
+    BasicDataCursor() = delete;
+    BasicDataCursor(std::unique_ptr<Cursor>);
+    ~BasicDataCursor() = default;
+    void seek(const std::string& prefix);
+    //void seekToLast();
+    Expected<Record> next();
+    Status prev();
+    Expected<std::string> key();
+
+ protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
+
+class AllDataCursor {
+ public:
+    AllDataCursor() = delete;
+    AllDataCursor(std::unique_ptr<Cursor>);
+    ~AllDataCursor() = default;
+    void seek(const std::string& prefix);
+    void seekToLast();
+    Expected<Record> next();
+    Status prev();
+    Expected<std::string> key();
+
+ protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
+
+class BinlogCursor {
+ public:
+    BinlogCursor() = delete;
+    BinlogCursor(std::unique_ptr<Cursor>);
+    ~BinlogCursor() = default;
+    void seek(const std::string& prefix);
+    void seekToLast();
+    Expected<Record> next();
+    Status prev();
+    Expected<std::string> key();
+
+ protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
 
 class TTLIndexCursor {
  public:
@@ -164,7 +214,9 @@ class Transaction {
     virtual ~Transaction() = default;
     virtual Expected<uint64_t> commit() = 0;
     virtual Status rollback() = 0;
-    virtual std::unique_ptr<Cursor> createCursor(const std::string* iterate_upper_bound = NULL) = 0;
+    virtual std::unique_ptr<Cursor> createCursor(
+        ColumnFamilyNumber cf,
+        const std::string* iterate_upper_bound = NULL) = 0;
 #ifdef BINLOG_V1
     virtual std::unique_ptr<BinlogCursor>
         createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
@@ -199,6 +251,10 @@ class Transaction {
     virtual std::unique_ptr<SlotsCursor>
         createSlotsCursor(uint32_t start, uint32_t end) = 0;
     virtual std::unique_ptr<VersionMetaCursor> createVersionMetaCursor() = 0;
+    virtual std::unique_ptr<BasicDataCursor> createDataCursor() = 0;
+    virtual std::unique_ptr<AllDataCursor> createAllDataCursor() = 0;
+    virtual std::unique_ptr<BinlogCursor> createBinlogCursor() = 0;
+
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val,
@@ -338,7 +394,7 @@ class KVStore {
     virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
 #endif
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
-    virtual Status compactRange(const std::string* begin,
+    virtual Status compactRange(ColumnFamilyNumber cf, const std::string* begin,
                                 const std::string* end) = 0;
     virtual Status fullCompact() = 0;
 

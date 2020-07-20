@@ -16,6 +16,7 @@
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/scopeguard.h"
 
+
 namespace tendisplus {
 
   IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
@@ -120,7 +121,7 @@ namespace tendisplus {
           prefix = _scanPoints[storeId];
       }
 
-      if (prefix.size() > 0) {
+      if (prefix.size() > 0) {        
           cursor->seek(prefix);
           auto key = cursor->key();
           if (!key.ok()) {
@@ -129,7 +130,10 @@ namespace tendisplus {
           if (!prefix.compare(key.value())) {
               cursor->next();
           }
+          // we need to firstly check whether there is ttl index in the 
+          // defalut colum_family
       }
+
       // TODO(takenliu) _scanPoints has error, _expiredKeys[storeId] will be pushed back twice
       while (true) {
           auto record = cursor->next();

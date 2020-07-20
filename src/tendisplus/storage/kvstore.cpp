@@ -62,7 +62,7 @@ Status RepllogCursorV2::seekToLast() {
                 "RepllogCursorV2 error, detailed at the error log"};
     }
     if (!_baseCursor) {
-        _baseCursor = _txn->createCursor();
+        _baseCursor = _txn->createCursor(ColumnFamilyNumber::ColumnFamily_Binlog);
     }
 
     // NOTE(vinchen): it works because binlog has a maximum prefix.
@@ -92,9 +92,9 @@ Status RepllogCursorV2::seekToLast() {
 }
 
 Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction *txn) {
-    auto cursor = txn->createCursor();
+    auto cursor = txn->createBinlogCursor();
     if (!cursor) {
-        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
+        return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
     }
     cursor->seek(RecordKey::prefixReplLogV2());
     // TODO(vinchen): should more fast
@@ -103,19 +103,19 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction *txn) {
         return expRcd.status();
     }
 
-    if (expRcd.value().getRecordKey().getRecordType()
+    /*if (expRcd.value().getRecordKey().getRecordType()
         != RecordType::RT_BINLOG) {
         return {ErrorCodes::ERR_EXHAUST, ""};
-    }
+    }*/
 
     // TODO(vinchen): too more copy
     return ReplLogRawV2(expRcd.value());
 }
 
 Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction *txn) {
-    auto cursor = txn->createCursor();
+    auto cursor = txn->createBinlogCursor();
     if (!cursor) {
-        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
+        return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
     }
     cursor->seek(RecordKey::prefixReplLogV2());
     Expected<Record> expRcd = cursor->next();
@@ -123,10 +123,10 @@ Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction *txn) {
         return expRcd.status();
     }
 
-    if (expRcd.value().getRecordKey().getRecordType()
+    /*if (expRcd.value().getRecordKey().getRecordType()
         != RecordType::RT_BINLOG) {
         return {ErrorCodes::ERR_EXHAUST, ""};
-    }
+    }*/
 
     const RecordKey &rk = expRcd.value().getRecordKey();
     auto explk = ReplLogKeyV2::decode(rk);
@@ -137,9 +137,9 @@ Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction *txn) {
 }
 
 Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {
-    auto cursor = txn->createCursor();
+    auto cursor = txn->createBinlogCursor();
     if (!cursor) {
-        return{ ErrorCodes::ERR_INTERNAL, "txn->createCursor() error" };
+        return{ ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error" };
     }
 
     // NOTE(vinchen): it works because binlog has a maximum prefix.
@@ -150,19 +150,20 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {
         return expRcd.status();
     }
 
-    if (expRcd.value().getRecordKey().getRecordType()
+
+    /*if (expRcd.value().getRecordKey().getRecordType()
         != RecordType::RT_BINLOG) {
         return{ ErrorCodes::ERR_EXHAUST, "" };
-    }
+    }*/
 
     // TODO(vinchen): too more copy
     return ReplLogRawV2(expRcd.value());
 }
 
 Expected<uint64_t> RepllogCursorV2::getMaxBinlogId(Transaction* txn) {
-    auto cursor = txn->createCursor();
+    auto cursor = txn->createBinlogCursor();
     if (!cursor) {
-        return {ErrorCodes::ERR_INTERNAL, "txn->createCursor() error"};
+        return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
     }
 
     // NOTE(vinchen): it works because binlog has a maximum prefix.
@@ -249,6 +250,144 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
 }
 
 #endif
+
+BasicDataCursor::BasicDataCursor(std::unique_ptr<Cursor> cursor)
+    : _baseCursor(std::move(cursor)) {
+    _baseCursor->seek("");
+}
+
+void BasicDataCursor::seek(const std::string& prefix) {
+    _baseCursor->seek(prefix);
+}
+
+// can't be used currently
+/*void BasicDataCursor::seekToLast() { 
+    _baseCursor->seekToLast(); 
+}*/
+
+Expected<Record> BasicDataCursor::next() {
+    auto expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        Record dataRecord(expRcd.value());
+        if (dataRecord.getRecordKey().getChunkId() <= 16383) {
+            return dataRecord;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more basic data"};
+        }
+    } else {
+        return expRcd.status();
+    }
+}
+
+Status BasicDataCursor::prev() { 
+    return _baseCursor->prev(); 
+}
+
+Expected<std::string> BasicDataCursor::key() {
+    auto expKey = _baseCursor->key();
+    if (expKey.ok()) {
+        std::string dataKey = expKey.value();
+        if (RecordKey::decodeChunkId(dataKey) <= 16383) {
+            return dataKey;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more basic data"};
+        }
+    } else {
+        return expKey.status();
+    }
+}
+
+AllDataCursor::AllDataCursor(std::unique_ptr<Cursor> cursor)
+    : _baseCursor(std::move(cursor)) {
+    _baseCursor->seek("");
+}
+
+void AllDataCursor::seek(const std::string& prefix) {
+    _baseCursor->seek(prefix);
+}
+
+// can't be used if binlogUsingDefaultCF is true
+void AllDataCursor::seekToLast() { 
+    _baseCursor->seekToLast(); 
+}
+
+Expected<Record> AllDataCursor::next() {
+    auto expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        Record dataRecord(expRcd.value());
+        if (dataRecord.getRecordKey().getRecordType() != RecordType::RT_BINLOG) {
+            return dataRecord;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more AllData"};
+        }
+    } else {
+        return expRcd.status();
+    }
+}
+
+Status AllDataCursor::prev() { 
+    return _baseCursor->prev(); 
+}
+
+Expected<std::string> AllDataCursor::key() {
+    auto expKey = _baseCursor->key();
+    if (expKey.ok()) {
+        std::string dataKey = expKey.value();
+        if (RecordKey::decodeType(dataKey) != RecordType::RT_BINLOG) {
+            return dataKey;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more AllData"};
+        }
+    } else {
+        return expKey.status();
+    }
+}
+
+BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor)
+    : _baseCursor(std::move(cursor)) {
+    _baseCursor->seek(RecordKey::prefixReplLogV2());
+}
+
+void BinlogCursor::seek(const std::string& prefix) {
+    _baseCursor->seek(prefix);
+}
+
+void BinlogCursor::seekToLast() { 
+    _baseCursor->seekToLast(); 
+}
+
+Expected<Record> BinlogCursor::next() {
+    auto expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        Record binlogRecord(expRcd.value());
+        if (binlogRecord.getRecordKey().getRecordType() ==
+            RecordType::RT_BINLOG) {
+            return binlogRecord;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more binlog"};
+        }
+    } else {
+        return expRcd.status();
+    }
+}
+
+Status BinlogCursor::prev() { 
+    return _baseCursor->prev();
+}
+
+Expected<std::string> BinlogCursor::key() {
+    auto expKey = _baseCursor->key();
+    if (expKey.ok()) {
+        std::string binlogKey = expKey.value();
+        if (RecordKey::decodeType(binlogKey) == RecordType::RT_BINLOG) {
+            return binlogKey;
+        } else {
+            return {ErrorCodes::ERR_EXHAUST, "no more binlog"};
+        }
+    } else {
+        return expKey.status();
+    }
+}
 
 TTLIndexCursor::TTLIndexCursor(std::unique_ptr<Cursor> cursor,
                                std::uint64_t until)

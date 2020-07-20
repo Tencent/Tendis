@@ -256,7 +256,7 @@ TEST(RocksKVStore, BinlogRightMost) {
         blockCache);
 
     // default values
-    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 4);
+    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 2);
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size, 64 * 1024 * 1024);
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing, true);
 
@@ -626,7 +626,7 @@ void cursorVisibleRoutine(RocksKVStore* kvstore) {
         txn1.get());
     EXPECT_EQ(s.ok(), true);
 
-    std::unique_ptr<Cursor> cursor = txn1->createCursor();
+    std::unique_ptr<BasicDataCursor> cursor = txn1->createDataCursor();
     int32_t cnt = 0;
     while (true) {
         auto v = cursor->next();
@@ -735,7 +735,8 @@ TEST(RocksKVStore, CursorUpperBound) {
     std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
     RecordKey upper(1, 0, RecordType::RT_INVALID, "", "");
     string upperBound = upper.prefixChunkid();
-    std::unique_ptr<Cursor> cursor = txn2->createCursor(&upperBound);
+    std::unique_ptr<Cursor> cursor = txn2->createCursor(
+        ColumnFamilyNumber::ColumnFamily_Default, &upperBound);
 
     RecordKey start(0, 0, RecordType::RT_INVALID, "", "");
     cursor->seek(start.prefixChunkid());
@@ -1448,21 +1449,31 @@ TEST(RocksKVStore, Compaction) {
                     msSinceEpoch() + waitSec * 1000, true);
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    auto status = kvstore->fullCompact();
+    // compact data in the default column family
+    auto status = kvstore->compactRange(
+        ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
     EXPECT_TRUE(status.ok());
     EXPECT_TRUE(hasCalled);
-    // because there are repl_log for each set(), it should * 2 here
-    EXPECT_EQ(totalFilter, 3000*2);
+    
+    if (cfg->binlogUsingDefaultCF == true) {
+        EXPECT_EQ(totalFilter, 3000 * 2);
+    } else {
+        EXPECT_EQ(totalFilter, 3000);
+    }
     EXPECT_EQ(totalExpired, kvCount);
 
     std::this_thread::sleep_for(std::chrono::seconds(waitSec));
 
-    status = kvstore->fullCompact();
+    status = kvstore->compactRange(ColumnFamilyNumber::ColumnFamily_Default,
+                                   nullptr, nullptr);
     EXPECT_TRUE(status.ok());
     EXPECT_TRUE(hasCalled);
-    // because there are repl_log for each set(), it should * 2 here
-    EXPECT_EQ(totalFilter, 3000*2 - kvCount);
+    
+    if (cfg->binlogUsingDefaultCF == true) {
+        EXPECT_EQ(totalFilter, 3000 * 2 - kvCount);
+    } else {
+        EXPECT_EQ(totalFilter, 3000 - kvCount);
+    }
     EXPECT_EQ(totalExpired, kvCount2);
 
     testMaxBinlogId(kvstore);

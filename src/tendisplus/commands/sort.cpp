@@ -374,7 +374,7 @@ class SortCommand: public Command {
                 pos += sign;
             }
         } else if (keyType == RecordType::RT_SET_META) {
-            auto cursor = txn->createCursor();
+            auto cursor = txn->createDataCursor();
             RecordKey fakeRk = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
             cursor->seek(fakeRk.prefixPk());
             while (true) {

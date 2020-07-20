@@ -325,7 +325,7 @@ class HAllCommand: public Command {
                           metaRk.getPrimaryKey(),
                           "");
         std::string prefix = fakeEle.prefixPk();
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         cursor->seek(prefix);
 
         std::list<Record> result;

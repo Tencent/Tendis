@@ -391,8 +391,27 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         std::move(std::unique_ptr<KVStore>(
             new RocksKVStore(CATALOG_NAME, cfg, nullptr, false,
                 KVStore::StoreMode::READ_WRITE, RocksKVStore::TxnMode::TXN_PES))),
-          kvStoreCount, chunkSize);
+          kvStoreCount, chunkSize, cfg->binlogUsingDefaultCF);
     installCatalog(std::move(catalog));
+    // forward compatibilty : binlogVersion is used to check whether binlog
+    // column_family exists
+    // ToDo : while starting server, if we process data produced by older
+    // version, we need to migrate binlog from default columnf to binlog columnf
+    if (_catalog->getBinlogVersion() == "1") {
+        if (cfg->binlogUsingDefaultCF == false) {
+            // if data is produced by one-clolumn db, we want to start it with
+            // two-column db, we need to transfer binlog from default_CF to binlog_CF
+            LOG(FATAL) << "binlogVersion is " << _catalog->getBinlogVersion()
+                       << ",we need to set binlogUsingDefaultCF to true";
+            INVARIANT(0);
+        }
+    } else if (_catalog->getBinlogVersion() == "2") {
+        if (cfg->binlogUsingDefaultCF == true) {
+            LOG(FATAL) << "binlogVersion is " << _catalog->getBinlogVersion()
+                       << ",we need to set binlogUsingDefaultCF to false";
+            INVARIANT(0);
+        }
+    }
 
     // kvstore init
     auto blockCache =

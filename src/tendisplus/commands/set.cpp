@@ -209,7 +209,7 @@ class SMembersCommand: public Command {
 
         std::stringstream ss;
         Command::fmtMultiBulkLen(ss, ssize);
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
         cursor->seek(fake.prefixPk());
         while (true) {
@@ -400,7 +400,7 @@ class SrandMemberCommand: public Command {
             return{ ErrorCodes::ERR_DECODE, "invalid set meta" + key };
         }
 
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         uint32_t beginIdx = 0;
         uint32_t cnt = 0;
         uint32_t peek = 0;
@@ -871,7 +871,7 @@ class SdiffgenericCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto cursor = txn->createCursor();
+            auto cursor = txn->createDataCursor();
             RecordKey fake = {expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], ""};
             cursor->seek(fake.prefixPk());
             while (true) {
@@ -1071,7 +1071,7 @@ class SintergenericCommand: public Command {
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
             if (i == 0) {
-                auto cursor = txn->createCursor();
+                auto cursor = txn->createDataCursor();
                 RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, "");
                 cursor->seek(fakeRk.prefixPk());
                 while (true) {
@@ -1389,7 +1389,7 @@ class SuniongenericCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto cursor = txn->createCursor();
+            auto cursor = txn->createDataCursor();
             RecordKey fakeRk(expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, args[i], "");
             cursor->seek(fakeRk.prefixPk());
             while (true) {

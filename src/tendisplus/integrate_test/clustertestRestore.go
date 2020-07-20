@@ -7,6 +7,7 @@ import (
     "strconv"
     "time"
     "math"
+    //"os/exec"
 )
 
 func checkSlotKeyNum(servers *util.RedisServer, slot int, expKeynum int) {
@@ -35,9 +36,9 @@ func checkSlotEmpty(servers *util.RedisServer, slot int, expectEmpty bool) {
         log.Fatalf("checkSlotEmpty by countkeysinslot failed, server:%d slot:%d num:%d expectEmpty:%v",
             servers.Port, slot, r, expectEmpty)
     } else if !expectEmpty && r == 0 {
-         log.Fatalf("checkSlotEmpty by countkeysinslot failed, server:%d slot:%d num:%d expectEmpty:%v",
-             servers.Port, slot, r, expectEmpty)
-     }
+        log.Fatalf("checkSlotEmpty by countkeysinslot failed, server:%d slot:%d num:%d expectEmpty:%v",
+            servers.Port, slot, r, expectEmpty)
+    }
     log.Infof("checkSlotEmpty by countkeysinslot success, server:%d slot:%d num:%d expectEmpty:%v",
                 servers.Port, slot, r, expectEmpty)
 }
@@ -89,6 +90,8 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     <- channel
     log.Infof("cluster adddata end")
 
+    //expire key
+    expireKey(src_master, 100, "{12}")
 
     // meet new cluster
     log.Infof("cluster meet begin")
@@ -99,7 +102,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     log.Infof("cluster addslots begin")
     cluster_addslots(src_restore, 0, 10000)
     cluster_addslots(dst_restore, 10001, 16383)
-    time.Sleep(10 * time.Second)
+    time.Sleep(20 * time.Second)
 
 
     // restore
@@ -125,6 +128,12 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     checkDbsize(src_slave, 0)
     checkDbsize(dst_master, num)
     checkDbsize(dst_slave, num)
+
+    // wait until keys are expired
+    time.Sleep(40 * time.Second)
+    //checkData(dst_master, 100, "{12}", "redis-benchmark", false)
+    checkDbsize(dst_master, num - 100)
+    checkDbsize(dst_slave, num - 100)
 }
 
 func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
@@ -210,7 +219,8 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
     checkDbsize(dst_restore, num-1)
 }
 
-func testRestore(portStart int, num int, testFun int) {
+func testRestore(portStart int, num int, testFun int, commandType string) {
+    *benchtype = commandType
     ip := "127.0.0.1"
     kvstorecount := 2
     backup_mode := "copy"
@@ -225,14 +235,19 @@ func testRestore(portStart int, num int, testFun int) {
 
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
+    portStart0 := findAvailablePort(portStart)
+    src_master.Init(ip, portStart0, pwd, "src_master_")
+    portStart1 := findAvailablePort(portStart + 1)
+    src_slave.Init(ip, portStart1, pwd, "src_slave_")
+    portStart2 := findAvailablePort(portStart + 2)
+    dst_master.Init(ip, portStart2, pwd, "dst_master_")
+    portStart3 := findAvailablePort(portStart + 3)
+    dst_slave.Init(ip, portStart3, pwd, "dst_slave_")
 
-    src_master.Init(ip, portStart, pwd, "src_master_")
-    src_slave.Init(ip, portStart+1, pwd, "src_slave_")
-    dst_master.Init(ip, portStart+2, pwd, "dst_master_")
-    dst_slave.Init(ip, portStart+3, pwd, "dst_slave_")
-
-    src_restore.Init(ip, portStart+4, pwd, "src_restore_")
-    dst_restore.Init(ip, portStart+5, pwd, "dst_restore_")
+    portStart4 := findAvailablePort(portStart + 4)
+    src_restore.Init(ip, portStart4, pwd, "src_restore_")
+    portStart5 := findAvailablePort(portStart + 5)
+    dst_restore.Init(ip, portStart5, pwd, "dst_restore_")
 
     cfgArgs := make(map[string]string)
     cfgArgs["maxBinlogKeepNum"] = "1"
@@ -262,7 +277,7 @@ func testRestore(portStart int, num int, testFun int) {
     if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
         log.Fatalf("setup failed:%v", err)
     }
-    time.Sleep(15 * time.Second)
+    time.Sleep(20  * time.Second)
 
     // meet
     log.Infof("cluster meet begin")
@@ -313,8 +328,43 @@ func testRestore(portStart int, num int, testFun int) {
 
 func main(){
     flag.Parse()
-    testRestore(53000, 100000, 1)
-    testRestore(53100, 100000, 2)
-    log.Infof("clustertestRestore.go passed.")
+    testRestore(30000, 100000, 1, "set")
+    testRestore(30100, 100000, 2, "set")
+    //log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+    
+    /*cmd1 := exec.Command("netstat", "-an|grep", "30200")
+    data1, err1 := cmd1.Output()
+    log.Infof("netstat -an |grep 30200 : %s , err: %v", string(data1), err1)
+    cmd11 := exec.Command("netstat", "-an|grep", "30300")
+    data11, err11 := cmd11.Output()
+    log.Infof("netstat -an |grep 30300 : %s , err: %v", string(data11), err11)
+
+    testRestore(30200, 100000, 1, "sadd")
+    testRestore(30300, 100000, 2, "sadd")
+    log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+
+    cmd2 := exec.Command("netstat", "-an|grep", "30400")
+    data2, err2 := cmd2.Output()
+    log.Infof("netstat -an |grep 30400 : %s, err: %v", string(data2), err2)
+    cmd21 := exec.Command("netstat", "-an|grep", "30500")
+    data21, err21 := cmd21.Output()
+    log.Infof("netstat -an |grep 30500 : %s, err: %v", string(data21), err21)
+
+    testRestore(30400, 100000, 1, "hmset")
+    testRestore(30500, 100000, 2, "hmset")
+    log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+
+    cmd3 := exec.Command("netstat", "-an|grep", "59600")
+    data3, err3 := cmd3.Output()
+    log.Infof("netstat -an |grep 59600 : %s, err: %v", string(data3), err3)
+
+    testRestore(30600, 100000, 1, "rpush")
+    testRestore(30700, 100000, 2, "rpush")
+    log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
+
+    testRestore(30800, 100000, 1, "zadd")
+    testRestore(30900, 100000, 2, "zadd")*/
+    //log.Infof("clustertestRestore.go passed.")
+    log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
 }
     

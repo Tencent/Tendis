@@ -34,7 +34,9 @@ class RocksTxn: public Transaction {
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
-    std::unique_ptr<Cursor> createCursor(const std::string* iterate_upper_bound = NULL) final;
+    std::unique_ptr<Cursor> createCursor(
+        ColumnFamilyNumber cf,
+        const std::string* iterate_upper_bound = NULL) final;
 #ifdef BINLOG_V1
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
@@ -49,10 +51,14 @@ class RocksTxn: public Transaction {
     std::unique_ptr<SlotCursor> createSlotCursor(uint32_t  slot) final;
     std::unique_ptr<SlotsCursor> createSlotsCursor(uint32_t start, uint32_t end) final;
     std::unique_ptr<VersionMetaCursor> createVersionMetaCursor() final;
+    std::unique_ptr<BasicDataCursor> createDataCursor() final;
+    std::unique_ptr<AllDataCursor> createAllDataCursor() final;
+    std::unique_ptr<BinlogCursor> createBinlogCursor() final;
 
     Expected<uint64_t> commit() final;
     Status rollback() final;
-    Expected<std::string> getKV(const std::string&) final;
+    //getKV: get data from chosen column family
+    Expected<std::string> getKV(const std::string& key) final;
     Status setKV(const std::string& key,
                  const std::string& val,
                  const uint64_t ts = 0) final;
@@ -219,7 +225,8 @@ class RocksKVStore: public KVStore {
     Expected<bool> validateAllBinlog(Transaction* txn) const final;
 #endif
     Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
-    Status compactRange(const std::string* begin, const std::string* end) final;
+    Status compactRange(ColumnFamilyNumber cf, const std::string* begin,
+                        const std::string* end) final;
     Status fullCompact() final;
     Status clear() final;
     bool isRunning() const final;
@@ -284,6 +291,16 @@ class RocksKVStore: public KVStore {
     Expected<VersionMeta> getVersionMeta(const std::string& name) override;
     Status setVersionMeta(const std::string& name,
         uint64_t ts, uint64_t version) override;
+    rocksdb::ColumnFamilyHandle* getDataColumnFamilyHandle() {
+        return _cfHandles[0];
+    }
+    rocksdb::ColumnFamilyHandle* getBinlogColumnFamilyHandle() {
+        if (_cfg->binlogUsingDefaultCF == true) {
+            return _cfHandles[0];      
+        } else {
+            return _cfHandles[1];
+        }
+    }
 
  private:
     rocksdb::DB* getBaseDB() const;
@@ -354,6 +371,7 @@ private:
     std::shared_ptr<RocksdbEnv> _env;
     std::map<std::string, std::string> _rocksIntProperties;
     std::map<std::string, std::string> _rocksStringProperties;
+    std::vector<rocksdb::ColumnFamilyHandle*> _cfHandles;
 };
 
 class RocksdbEnv{

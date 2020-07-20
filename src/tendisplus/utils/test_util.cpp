@@ -211,7 +211,7 @@ std::shared_ptr<ServerEntry> makeServerEntryOld(
     auto catalog = std::make_unique<Catalog>(
         std::move(std::unique_ptr<KVStore>(
             new RocksKVStore(CATALOG_NAME, cfg, nullptr, false))),
-        kvStoreCount, chunkSize);
+        kvStoreCount, chunkSize, cfg->binlogUsingDefaultCF);
     server->installCatalog(std::move(catalog));
 
     std::vector<PStore> tmpStores;
