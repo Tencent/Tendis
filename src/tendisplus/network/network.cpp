@@ -94,11 +94,12 @@ void NetworkAsio::releaseForWin() {
 #endif
 
 std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx() {
-    if (_rwCtxList.size() != _rwThreads.size() || _rwCtxList.size() == 0) {
+    // if (_rwCtxList.size() != _rwThreads.size() || _rwCtxList.size() == 0) {
+    if (_rwThreads.size() == 0 || _rwCtxList.size() == 0) {
         return NULL;
     }
     int rand = std::rand();
-    int index = rand % _rwThreads.size();
+    int index = rand % _rwCtxList.size();
     return _rwCtxList[index];
 }
 
@@ -267,26 +268,48 @@ Status NetworkAsio::startThread() {
         threadnum = _netIoThreadNum;
     }
     LOG(INFO) << "NetworkAsio::run netIO thread num:" << threadnum << " _netIoThreadNum:" << _netIoThreadNum;
-    for (size_t i = 0; i < threadnum; ++i) {
-        _rwCtxList.push_back(std::make_shared<asio::io_context>());
-    }
-    for (size_t i = 0; i < threadnum; ++i) {
-        std::thread thd([this, i] {
-            std::string threadName = _name + "-rw_" + std::to_string(i);
-            pthread_setname_np(pthread_self(), threadName.c_str());
-            while (_isRunning.load(std::memory_order_relaxed)) {
-                // if no workguard, the run() returns immediately if no tasks
-                asio::io_context::work work(*(_rwCtxList[i]));
-                try {
-                    _rwCtxList[i]->run();
-                } catch (const std::exception& ex) {
-                    LOG(FATAL) << "read/write thd failed:" << ex.what();
-                } catch (...) {
-                    LOG(FATAL) << "unknown exception";
+    if (_server->getParams()->netIoMultiIoContext) {
+        for (size_t i = 0; i < threadnum; ++i) {
+            _rwCtxList.push_back(std::make_shared<asio::io_context>());
+        }
+        for (size_t i = 0; i < threadnum; ++i) {
+            std::thread thd([this, i] {
+                std::string threadName = _name + "-rw_" + std::to_string(i);
+                pthread_setname_np(pthread_self(), threadName.c_str());
+                while (_isRunning.load(std::memory_order_relaxed)) {
+                    // if no workguard, the run() returns immediately if no tasks
+                    asio::io_context::work work(*(_rwCtxList[i]));
+                    try {
+                        _rwCtxList[i]->run();
+                    } catch (const std::exception& ex) {
+                        LOG(FATAL) << "read/write thd failed:" << ex.what();
+                    } catch (...) {
+                        LOG(FATAL) << "unknown exception";
+                    }
                 }
-            }
-        });
-        _rwThreads.emplace_back(std::move(thd));
+            });
+            _rwThreads.emplace_back(std::move(thd));
+        }
+    } else {
+        _rwCtxList.push_back(std::make_shared<asio::io_context>());
+        for (size_t i = 0; i < threadnum; ++i) {
+            std::thread thd([this, i] {
+                std::string threadName = _name + "-rw_" + std::to_string(i);
+                pthread_setname_np(pthread_self(), threadName.c_str());
+                while (_isRunning.load(std::memory_order_relaxed)) {
+                    // if no workguard, the run() returns immediately if no tasks
+                    asio::io_context::work work(*(_rwCtxList[0]));
+                    try {
+                        _rwCtxList[0]->run();
+                    } catch (const std::exception& ex) {
+                        LOG(FATAL) << "read/write thd failed:" << ex.what();
+                    } catch (...) {
+                        LOG(FATAL) << "unknown exception";
+                    }
+                }
+            });
+            _rwThreads.emplace_back(std::move(thd));
+        }
     }
     return {ErrorCodes::ERR_OK, ""};
 }

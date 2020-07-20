@@ -669,6 +669,7 @@ RocksTxn::~RocksTxn() {
     INVARIANT_D(_replLogValues.size() == 0);
 #endif
 
+    _txn.get()->ClearSnapshot();
     _txn.reset();
     _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
 }

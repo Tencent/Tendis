@@ -73,9 +73,11 @@ class ChunkMigrateSender{
         return _curBinlogid;
     }
     std::string getInfo();
+    Status lockChunks();
+    Status unlockChunks();
 
  private:
-    Expected<Transaction*> initTxn();
+    Expected<std::unique_ptr<Transaction>> initTxn();
     Status sendBinlog(uint16_t time);
     Expected<uint64_t> sendEndBinLog(uint64_t start , uint64_t end);
     Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
@@ -86,8 +88,6 @@ class ChunkMigrateSender{
 
     Expected<uint64_t> catchupBinlog(uint64_t start, uint64_t end, const std::bitset<CLUSTER_SLOTS>& slots);
     Status sendOver();
-    Status lockChunks();
-    Status unlockChunks();
 
 
 private:

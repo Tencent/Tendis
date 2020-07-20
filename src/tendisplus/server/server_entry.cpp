@@ -452,12 +452,25 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
-    {
-    //for (uint32_t i = 0; i < threadnum; ++i) {
-        // TODO(takenliu): make sure whether multi worker_pool is ok?
-        // But each size of worker_pool should been not less than 8;
-        uint32_t i = 0;
-        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
+    //{
+    if (_cfg->executorMultiIoContext) {
+        for (uint32_t i = 0; i < threadnum; i += _cfg->executorWookPoolSize) {
+            // TODO(takenliu): make sure whether multi worker_pool is ok?
+            // But each size of worker_pool should been not less than 8;
+            //uint32_t i = 0;
+            uint32_t curNum = i + _cfg->executorWookPoolSize < threadnum ?
+                    _cfg->executorWookPoolSize : threadnum - i;
+            LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
+            auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
+            Status s = executor->startup(curNum);
+            if (!s.ok()) {
+                LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
+                return s;
+            }
+            _executorList.push_back(std::move(executor));
+        }
+    } else {
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(0), _poolMatrix);
         Status s = executor->startup(threadnum);
         if (!s.ok()) {
             LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
@@ -465,7 +478,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
         _executorList.push_back(std::move(executor));
     }
-
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
@@ -891,6 +903,7 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const {
     ss << "keyspace_hits:" << _serverStat.keyspaceHits.get() << "\r\n";
     ss << "keyspace_misses:" << _serverStat.keyspaceMisses.get() << "\r\n";
     ss << "keyspace_wrong_versionep:" << _serverStat.keyspaceIncorrectEp.get() << "\r\n";
+    ss << "scheduleNum:" << _scheduleNum << "\r\n";
 }
 
 void ServerEntry::appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>& w,

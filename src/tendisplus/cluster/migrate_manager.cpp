@@ -229,13 +229,13 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
                 if ((*it)->slots.test(i)) {
                     if((*it)->state == MigrateSendState::SUCC) {
-                        LOG(INFO) << "_migrateSendTask SUCC, erase it, slots" << i;
+                        //LOG(INFO) << "_migrateSendTask SUCC, erase it, slots" << i;
                         _succMigrateSlots.set(i);
                         if (_failMigrateSlots.test(i)) {
                             _failMigrateSlots.reset(i);
                         }
                     } else {
-                        LOG(INFO) << "_migrateSendTask ERROR, erase it, slots" << i;
+                        //LOG(INFO) << "_migrateSendTask ERROR, erase it, slots" << i;
                         _failMigrateSlots.set(i);
                     }
                     _migrateNodes.erase(i);
@@ -246,7 +246,8 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             } else {
                 _failSenderTask.push_back(slot);
             }
-            LOG(INFO) << "erase sender task on slots:" << bitsetStrEncode((*it)->slots);
+            LOG(INFO) << "erase sender task state:" << sendTaskTypeString((*it)->state)
+                << " slots:" << bitsetStrEncode((*it)->slots);
             _migrateSlots ^= ((*it)->slots);
             _migrateSendTask.erase(it++);
             continue;
@@ -284,7 +285,7 @@ Status MigrateManager::lockXChunk(uint32_t chunkid) {
             (storeId, chunkid, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
 
     _lockMap[chunkid] = std::move(lock);
-    LOG(INFO) << "lock chunk sucess, chunkid:"<< chunkid << " storeid:" << storeId;
+    //LOG(INFO) << "lock chunk sucess, chunkid:"<< chunkid << " storeid:" << storeId;
     return  {ErrorCodes::ERR_OK, "finish chunk:"+ dtos(chunkid)+"lock"};
 }
 
@@ -301,6 +302,7 @@ Status MigrateManager::lockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
         }
         idx++;
     }
+    LOG(INFO) << "lockChunks sucess, slots:"<< bitsetStrEncode(slots);
     return  {ErrorCodes::ERR_OK, "finish bitmap lock"};
 }
 
@@ -318,6 +320,7 @@ Status MigrateManager::unlockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
         }
         idx++;
     }
+    LOG(INFO) << "unlockChunks sucess, slots:" << bitsetStrEncode(slots);
     return  {ErrorCodes::ERR_OK, "finish bitmap unlock"};
 }
 
@@ -330,7 +333,7 @@ Status MigrateManager::unlockXChunk(uint32_t chunkid) {
         LOG(ERROR) << "chunk" + chunkid << "lock not find in map";
         return {ErrorCodes::ERR_CLUSTER, "lock already find"};
     }
-    LOG(INFO) << "unlock chunk sucess, chunkid:"<< chunkid;
+    //LOG(INFO) << "unlock chunk sucess, chunkid:"<< chunkid;
     return  {ErrorCodes::ERR_OK, "finish chunk:"+  dtos(chunkid) +"unlock"};
 }
 
@@ -791,9 +794,6 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
     // 2) require a blocking-clients
     std::shared_ptr<BlockingTcpClient> client =
             std::move(createClient(task->srcIp, task->srcPort, _svr));
-
-    LOG(INFO) << " full receive remote_addr " << client->getRemoteRepr() << ":"<< client->getRemotePort()
-              << "on slots:" << bitsetStrEncode(task->slots);
     if (client == nullptr) {
         LOG(ERROR) << "fullReceive with: "
                    << task->srcIp << ":"
@@ -801,6 +801,9 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
                    << " failed, no valid client";
         return;
     }
+    LOG(INFO) << " full receive remote_addr " << client->getRemoteRepr() << ":"<< client->getRemotePort()
+              << "on slots:" << bitsetStrEncode(task->slots);
+
     task->receiver->setClient(client);
 
     LocalSessionGuard sg(_svr.get());
@@ -929,8 +932,28 @@ uint64_t MigrateManager::getProtectBinlogid(uint32_t storeid) {
     return minbinlogid;
 }
 
-//pass cluster node slots to check
 Expected<std::string> MigrateManager::getMigrateInfoStr(const SlotsBitmap& slots) {
+    std::stringstream stream1;
+    std::stringstream stream2;
+    std::lock_guard<std::mutex> lk(_mutex);
+    for (auto iter = _migrateNodes.begin(); iter != _migrateNodes.end(); ++iter) {
+        if (slots.test(iter->first)) {
+            stream1 << "[" << iter->first
+                    << "-<-" << iter->second << "]" << " ";
+        }
+    }
+    for (auto iter = _importNodes.begin(); iter != _importNodes.end(); ++iter) {
+        stream2 << "[" << iter->first
+                << "->-" << iter->second << "]" << " ";
+    }
+    if (stream1.str().size() == 0 && stream2.str().size() == 0) {
+        return {ErrorCodes::ERR_WRONG_TYPE, "no migrate or import slots"};
+    }
+    return stream1.str() + " " + stream2.str();
+}
+
+//pass cluster node slots to check
+Expected<std::string> MigrateManager::getMigrateInfoStrSimple(const SlotsBitmap& slots) {
     std::stringstream stream1;
     std::stringstream stream2;
     std::unordered_map<std::string, std::bitset<CLUSTER_SLOTS>> importSlots;
@@ -973,7 +996,6 @@ Expected<std::string> MigrateManager::getMigrateInfoStr(const SlotsBitmap& slots
     }
     return stream1.str() + " " + stream2.str();
 }
-
 
 SlotsBitmap MigrateManager::getSteadySlots(const SlotsBitmap& slots) {
     std::lock_guard<std::mutex> lk(_mutex);

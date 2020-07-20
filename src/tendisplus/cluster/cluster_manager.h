@@ -585,8 +585,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     void cronPingSomeNodes();
     void cronCheckFailState();
 
-    std::string clusterGenNodesDescription(uint16_t filter);
-    std::string clusterGenNodeDescription(CNodePtr n);
+    std::string clusterGenNodesDescription(uint16_t filter, bool simple);
+    std::string clusterGenNodeDescription(CNodePtr n, bool simple = false);
     std::string clusterGenStateDescription();
 
     void clusterUpdateState();

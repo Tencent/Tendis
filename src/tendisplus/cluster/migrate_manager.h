@@ -160,6 +160,7 @@ class MigrateManager {
     Expected<std::string> getMigrateInfo();
 
     Expected<std::string> getMigrateInfoStr(const SlotsBitmap& bitMap);
+    Expected<std::string> getMigrateInfoStrSimple(const SlotsBitmap& bitMap);
     SlotsBitmap getSteadySlots(const SlotsBitmap& bitMap);
     Expected<uint64_t> applyMigrateBinlog(ServerEntry* svr, PStore store, MigrateBinlogType type, string slots, string& nodeName);
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);

@@ -122,6 +122,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
     REGISTER_VARS(netIoThreadNum);
     REGISTER_VARS(executorThreadNum);
+    REGISTER_VARS(executorWookPoolSize);
 
     REGISTER_VARS(binlogRateLimitMB);
     REGISTER_VARS(netBatchSize);
@@ -165,6 +166,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier", clusterMigrationBarrier);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor", clusterSlaveValidityFactor);
 
+    REGISTER_VARS(netIoMultiIoContext);
+    REGISTER_VARS(executorMultiIoContext);
 };
 
 ServerParams::~ServerParams() {

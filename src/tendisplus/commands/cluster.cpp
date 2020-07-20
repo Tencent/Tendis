@@ -169,9 +169,13 @@ public:
                         "Invalid node address specified:" + host + std::to_string(port)};
             }
             return Command::fmtOK();
-        } else if (arg1 == "nodes" && argSize == 2) {
-            std::string eNodeInfo = clusterState->clusterGenNodesDescription
-                    (CLUSTER_NODE_HANDSHAKE);
+        } else if (arg1 == "nodes" && argSize <= 3) {
+            bool simple = false;
+            if (argSize == 3 && args[2] == "simple") {
+                simple = true;
+            }
+            std::string eNodeInfo = clusterState->clusterGenNodesDescription(
+                    CLUSTER_NODE_HANDSHAKE, simple);
 
             if (eNodeInfo.size() > 0) {
                 return eNodeInfo;
