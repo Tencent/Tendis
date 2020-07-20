@@ -2514,8 +2514,19 @@ class ConfigCommand : public Command {
                 auto svr = sess->getServerEntry();
                 svr->resetRocksdbStats(sess);
             }
+        } else if (operation == "rewrite") {
+            if (args.size() > 2) {
+                return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
+            }
+            if(sess->getServerEntry()->getParams()->getConfFile().empty()) {
+                return{ ErrorCodes::ERR_PARSEOPT, "The server is running without a config file!" };
+            }
+            Status s;
+            s = sess->getServerEntry()->getParams()->rewriteConfig();
+            if(!s.ok()) {
+                return s;
+            }
         }
-
         return Command::fmtOK();
     }
 } configCmd;

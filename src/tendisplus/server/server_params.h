@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <atomic>
+#include <list>
 #include "glog/logging.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
@@ -22,7 +23,7 @@ typedef bool (*checkfunptr) (const string&);
 typedef string (*preProcess) (const string&);
 
 string removeQuotes(const string& v);
-string  removeQuotesAndToLower(const string& v);
+string removeQuotesAndToLower(const string& v);
 
 class BaseVar {
 public:
@@ -45,13 +46,19 @@ public:
         return set(value);
     }
     virtual string show() const = 0;
-    void setUpdate(funptr f){
+    virtual string default_show() const = 0;
+    void setUpdate(funptr f) {
         Onupdate = f;
     }
 
     string getName() const{
         return name;
     }
+
+    bool isallowDynamicSet() const{
+        return allowDynamicSet;
+    }
+
 protected:
     virtual bool set(const string& value) = 0;
     virtual bool check(const string& value) {
@@ -72,13 +79,17 @@ protected:
 class StringVar : public BaseVar {
 public:
     StringVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet){
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(string*)value) {
         if (!preProcessFun) {
             preProcessFun = removeQuotes;
         }
     };
     virtual string show() const {
         return "\"" + *(string*)value + "\"";
+    };
+
+    virtual string default_show() const {
+        return "\"" + _defaultValue + "\"";
     };
 
 private:
@@ -91,17 +102,20 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+    std::string _defaultValue;
 };
 
 // support:int, uint32_t
 class IntVar : public BaseVar {
 public:
     IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int*)value){};
     virtual string show() const {
         return std::to_string(*(int*)value);
     };
-
+    virtual string default_show() const {
+        return std::to_string(_defaultValue);
+    };
 private:
     bool set(const string& val) {
         auto v = preProcessFun ? preProcessFun(val) : val;
@@ -117,15 +131,19 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+    int _defaultValue;
 };
 
 // support:int64_t, uint64_t
 class Int64Var : public BaseVar {
 public:
     Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-            : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t*)value){};
     virtual string show() const {
         return std::to_string(*(int64_t *)value);
+    };
+    virtual string default_show() const {
+        return std::to_string(_defaultValue);
     };
 
 private:
@@ -143,16 +161,19 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+    int64_t _defaultValue;
 };
 
 class FloatVar : public BaseVar {
 public:
     FloatVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(float*)value){};
     virtual string show() const {
         return std::to_string(*(float*)value);
     };
-
+    virtual string default_show() const {
+        return std::to_string(_defaultValue);
+    };
 private:
     bool set(const string& val) {
         auto v = preProcessFun ? preProcessFun(val) : val;
@@ -166,14 +187,18 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+    float _defaultValue;
 };
 
 class BoolVar : public BaseVar {
 public:
     BoolVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet){};
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(bool*)value){};
     virtual string show() const {
-        return std::to_string(*(bool*)value);
+        return value ? "yes" : "no";
+    };
+    virtual string default_show() const {
+        return _defaultValue ? "yes" : "no";
     };
 
 private:
@@ -186,14 +211,28 @@ private:
         if (Onupdate != NULL) Onupdate();
         return true;
     }
+    bool _defaultValue;
+};
 
-    bool isOptionOn(const std::string& s) {
-        auto x = toLower(s);
-        if (x == "on" || x == "1" || x == "true") {
-            return true;
-        }
-        return false;
-    }
+class rewriteConfigState {
+public:
+    rewriteConfigState()
+        : _hasTail(false){};
+    ~rewriteConfigState(){};
+    Status rewriteConfigReadOldFile(const std::string& confFile);
+    void rewriteConfigOption(const std::string& option, const std::string& value, const std::string& defvalue);
+    void rewriteConfigRewriteLine(const std::string& option, const std::string& line, bool force);
+    std::string rewriteConfigFormatMemory(uint64_t bytes);
+    void rewriteConfigRemoveOrphaned();
+    std::string rewriteConfigGetContentFromState();
+    Status rewriteConfigOverwriteFile(const std::string& confFile, const std::string& content);
+
+private:
+    std::unordered_map<std::string, std::list<uint64_t>> _optionToLine;
+    std::unordered_map<std::string, std::list<uint64_t>> _rewritten;
+    std::vector<std::string> _lines;
+    bool _hasTail;
+    const std::string _fixInfo = "# Generated by CONFIG REWRITE";
 };
 
 class ServerParams{
@@ -207,6 +246,7 @@ public:
     bool showVar(const string& key, string& info) const;
     bool showVar(const string& key, vector<string>& info) const;
     bool setVar(const string& name, const string& value, string* errinfo, bool force = true);
+    Status rewriteConfig() const;
     uint32_t paramsNum() const {
         return _mapServerParams.size();
     }
@@ -217,6 +257,7 @@ public:
     const std::unordered_map<string, int64_t>& getRocksdbOptions() const {
         return _rocksdbOptions;
     }
+
 private:
     map<string, BaseVar*> _mapServerParams;
     std::unordered_map<string, int64_t> _rocksdbOptions;
@@ -287,7 +328,7 @@ public:
     uint32_t lockWaitTimeOut = 3600;
 
     // parameter for rocksdb
-    uint32_t  rocksBlockcacheMB = 4096;
+    uint32_t rocksBlockcacheMB = 4096;
     bool rocksStrictCapacityLimit = false;
     std::string rocksWALDir = "";
     string rocksCompressType = "snappy";
