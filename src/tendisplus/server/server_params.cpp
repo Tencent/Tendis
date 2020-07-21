@@ -161,6 +161,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-no-failover", clusterSlaveNoFailover);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-node-timeout", clusterNodeTimeout);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migrate-distance", migrateDistance);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migrate-binlog-iters", migrateBinlogIter);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-batch", bingLogSendBatch);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", bingLogSendBytes);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier", clusterMigrationBarrier);

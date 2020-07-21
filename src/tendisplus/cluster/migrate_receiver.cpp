@@ -42,7 +42,6 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
 
     LOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
 
-    bool over = false;
     uint32_t timeoutSec = 200;
     uint32_t readNum = 0;
     while (true) {
@@ -63,7 +62,6 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         } else if (exptData.value()[0] == '2') {
             SyncWriteData("+OK")
         } else if (exptData.value()[0] == '3') {
-            over = true;
             SyncWriteData("+OK")
             break;
         }
@@ -89,7 +87,6 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
                    << "is not a member in bitmap";
         return { ErrorCodes::ERR_INTERNAL, "slotid not match" };
     }
-
 
     PStore kvstore = _dbWithLock->store;
     auto eTxn = kvstore->createTransaction(nullptr);

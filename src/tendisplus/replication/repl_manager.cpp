@@ -1012,17 +1012,34 @@ uint64_t ReplManager::replicationGetOffset() const {
             continue;
         }
         auto kvstore = std::move(expdb.value().store);
+        auto nextBinlog = kvstore->getNextBinlogSeq() -1;
+        totalBinlog += nextBinlog;
+    }
+    return totalBinlog;
+}
+
+uint64_t ReplManager::replicationGetMaxBinlogId() const {
+    uint64_t totalBinlog = 0;
+    LocalSessionGuard sg(_svr.get());
+
+    for (uint64_t i = 0; i < _svr->getKVStoreCount(); i++) {
+        auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
+                                                  mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
+            continue;
+        }
+        auto kvstore = std::move(expdb.value().store);
         auto ptxn = kvstore->createTransaction(nullptr);
 
         if (!ptxn.ok()) {
-            LOG(FATAL) <<  "offset create transaction fail:" << ptxn.status().toString();
+            LOG(ERROR) <<  "offset create transaction fail:" << ptxn.status().toString();
         }
         uint64_t maxBinlog = 0;
         auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn.value().get());
         if (!expBinlogidMax.ok()) {
             if (expBinlogidMax.status().code() != ErrorCodes::ERR_EXHAUST) {
-                LOG(ERROR) << "slave offset getMaxBinlogId error:"
-                    << expBinlogidMax.status().toString();
+                LOG(ERROR) << "slave offset getMaxBinlogId error:" << expBinlogidMax.status().toString();
             }
         } else {
             maxBinlog = expBinlogidMax.value();

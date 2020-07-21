@@ -23,9 +23,9 @@ namespace tendisplus {
 const char* master1_dir = "restoretest_master1";
 const char* master2_dir = "restoretest_master2";
 const char* slave1_dir = "restoretest_slave1";
-uint32_t master1_port = 1121;
-uint32_t master2_port = 1122;
-uint32_t slave1_port = 1123;
+uint32_t master1_port = 12001;
+uint32_t master2_port = 12002;
+uint32_t slave1_port = 12003;
 
 
 
