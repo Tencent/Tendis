@@ -28,7 +28,7 @@ uint32_t chunkid1 = 3300;
 uint32_t chunkid2 = 15495;
 
 
-AllKeys initData(std::shared_ptr<ServerEntry>& server,
+AllKeys initData(const std::shared_ptr<ServerEntry>& server,
                 uint32_t count, const char* key_suffix) {
     auto ctx1 = std::make_shared<asio::io_context>();
     auto sess1 = makeSession(server, ctx1);
@@ -65,7 +65,7 @@ void migrate(const std::shared_ptr<ServerEntry>& server1,
              uint32_t chunkid) {
     auto ctx1 = std::make_shared<asio::io_context>();
     auto sess1 = makeSession(server1, ctx1);
-    //migrating command change,not work here
+    // migrating command change,not work here
     /*
     auto expect = server1->getMigrateManager()->migrating(chunkid,
             server2->getParams()->bindIp, server2->getParams()->port);
@@ -130,12 +130,14 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             count1++;
             if (exptRcd1.value().getRecordKey().getChunkId() == chunkid1 ||
                 exptRcd1.value().getRecordKey().getChunkId() == chunkid2) {
-                LOG(ERROR) << "migrate error happen. " << (int)exptRcd1.value().getRecordKey().getRecordType()
+                LOG(ERROR) << "migrate error happen. "
+                    << static_cast<int>(exptRcd1.value().getRecordKey().getRecordType())
                     << " " << exptRcd1.value().getRecordKey().getChunkId()
                     << " " << exptRcd1.value().getRecordKey().getPrimaryKey()
                     << " " << exptRcd1.value().getRecordKey().getDbId();
             }
-           // LOG(INFO) << "exptRcd1.value().getRecordKey().getChunkId() is:" << exptRcd1.value().getRecordKey().getChunkId();
+            // LOG(INFO) << "exptRcd1.value().getRecordKey().getChunkId() is:"
+            //     << exptRcd1.value().getRecordKey().getChunkId();
             INVARIANT(exptRcd1.value().getRecordKey().getChunkId() != chunkid1);
             INVARIANT(exptRcd1.value().getRecordKey().getChunkId() != chunkid2);
 
@@ -249,7 +251,7 @@ TEST(Migrate, Common) {
         LOG(INFO) << ">>>>>> master1 initData 1st end;";
         migrate(master1, master2, chunkid1);
         migrate(master1, master2, chunkid2);
-        //auto allKeys2 = initData(master1, recordSize, "suffix2");
+        // auto allKeys2 = initData(master1, recordSize, "suffix2");
         waitMigrateEnd(master1, master2, chunkid1);
         waitMigrateEnd(master1, master2, chunkid2);
         LOG(INFO) << ">>>>>> waitMigrateEnd success;";
@@ -269,11 +271,11 @@ TEST(Migrate, Common) {
     uint32_t storeCnt = 2;
 #else
     uint32_t storeCnt = 2;
-#endif //
+#endif  //
 
 
-std::shared_ptr<ServerEntry> 
-makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
+std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
+        uint32_t port, uint32_t storeCnt = 10) {
     auto mDir = dir;
     auto mport = port;
     EXPECT_TRUE(setupEnv(mDir));

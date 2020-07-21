@@ -1,7 +1,8 @@
+#include <utility>
 #include "glog/logging.h"
-#include "tendisplus/replication/repl_util.h"
 #include "tendisplus/cluster/migrate_sender.h"
 #include "tendisplus/commands/command.h"
+#include "tendisplus/replication/repl_util.h"
 #include "tendisplus/utils/invariant.h"
 namespace tendisplus {
 
@@ -37,7 +38,8 @@ Status ChunkMigrateSender::sendChunk() {
     if (!s.ok()) {
         return s;
     }
-    // LOG(INFO) <<"sendSnapshot finish on store:" << _storeid << " slots:" << bitsetStrEncode(_slots);
+    // LOG(INFO) <<"sendSnapshot finish on store:"
+    //     << _storeid << " slots:" << bitsetStrEncode(_slots);
     // define max time to catch up binlog
     _sendstate = MigrateSenderStatus::SNAPSHOT_DONE;
 
@@ -68,7 +70,8 @@ Status ChunkMigrateSender::sendChunk() {
         LOG(ERROR) << "unlock fail on slots:"+ _slots.to_string();
         return  {ErrorCodes::ERR_CLUSTER, "unlock fail on slots"};
     }
-    // LOG(INFO) <<"sendChunk unlockChunks store:" << _storeid << " slots:" << bitsetStrEncode(_slots);
+    // LOG(INFO) <<"sendChunk unlockChunks store:" << _storeid
+    //    << " slots:" << bitsetStrEncode(_slots);
 
     _sendstate = MigrateSenderStatus::METACHANGE_DONE;
     LOG(INFO) <<"sendChunk end and unlockChunks on store:" << _storeid << " slots:" << bitsetStrEncode(_slots);
@@ -147,12 +150,12 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
         SyncWriteData("0");
 
         uint32_t keylen = key.size();
-        SyncWriteData(string((char*)&keylen, sizeof(uint32_t)));
+        SyncWriteData(string(reinterpret_cast<char*>(&keylen), sizeof(uint32_t)));
 
         SyncWriteData(key);
 
         uint32_t valuelen = value.size();
-        SyncWriteData(string((char*)&valuelen, sizeof(uint32_t)));
+        SyncWriteData(string(reinterpret_cast<char*>(&valuelen), sizeof(uint32_t)));
         SyncWriteData(value);
 
         curWriteNum++;
@@ -172,7 +175,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
             curWriteLen = 0;
         }
     }
-    //send over of one slot
+    // send over of one slot
     SyncWriteData("2");
     SyncReadData(exptData, 3, timeoutSec)
 
@@ -269,8 +272,8 @@ Expected<uint64_t> ChunkMigrateSender::catchupBinlog(uint64_t start, uint64_t en
 }
 
 // catch up for maxTime
-bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog ,
-                                        uint64_t &binlogHigh, Transaction *txn) {
+bool ChunkMigrateSender::pursueBinLog(uint16_t maxTime , uint64_t &startBinLog,
+        uint64_t &binlogHigh, Transaction *txn) {
     uint32_t  distance =  _svr->getParams()->migrateDistance;
     uint64_t maxBinlogId = 0;
     bool finishCatchup = false;
@@ -285,8 +288,9 @@ bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog
         _binlogNum += sendNum;
 
         catchupTimes++;
-        LOG(INFO) << "pursueBinLog " << catchupTimes << " times finish from:" << startBinLog <<" to:" <<binlogHigh
-                  << " storeid:" << _storeid << " slots:" << bitsetStrEncode(_slots);
+        LOG(INFO) << "pursueBinLog " << catchupTimes << " times finish from:"
+                << startBinLog <<" to:" <<binlogHigh
+                << " storeid:" << _storeid << " slots:" << bitsetStrEncode(_slots);
         {
             // TODO(wayenchen)  takenliu add, binlogHigh maybe not send over
             std::lock_guard<std::mutex> lk(_mutex);
@@ -298,8 +302,9 @@ bool ChunkMigrateSender::pursueBinLog(uint16_t  maxTime , uint64_t  &startBinLog
 
         //  reach for distance
         if (diffOffset < distance) {
-            LOG(INFO) << "pursueBinLog lag is small enough, distance:" << diffOffset << " startBinLog:" <<
-                startBinLog << " maxBinlogId:" << maxBinlogId << " storeid:" << _storeid;
+            LOG(INFO) << "pursueBinLog lag is small enough, distance:" << diffOffset
+                << " startBinLog:" << startBinLog << " maxBinlogId:" << maxBinlogId
+                << " storeid:" << _storeid;
             finishCatchup = true;
             break;
         }
@@ -328,20 +333,24 @@ Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
            return {ErrorCodes::ERR_TIMEOUT, "catch up fail"};
         }
     }
-    // TODO(wayenchen)  takenliu add, lockChunks shouldn't be processed by MigrateManager, only processed in ChunkMigrateSender
-    //    use ChunkMigrateSender::lockChunks
-    LOG(INFO) << "sendBinlog lockChunks begin, storeid:" << _storeid << " slots:" << bitsetStrEncode(_slots);
+    // TODO(wayenchen)  takenliu add, lockChunks shouldn't be processed by MigrateManager,
+    //    only processed in ChunkMigrateSender use ChunkMigrateSender::lockChunks
+    LOG(INFO) << "sendBinlog lockChunks begin, storeid:" << _storeid
+        << " slots:" << bitsetStrEncode(_slots);
     Status s = _svr->getMigrateManager()->lockChunks(_slots);
     if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER, "fail lock slots"};
     }
-    LOG(INFO) << "sendBinlog lockChunks sucess, storeid:" << _storeid << " slots:" << bitsetStrEncode(_slots);
+    LOG(INFO) << "sendBinlog lockChunks sucess, storeid:" << _storeid
+        << " slots:" << bitsetStrEncode(_slots);
+
     // LOCKs need time, so need recompute max binlog
     heighBinlog = getMaxBinLog(ptxn.value().get());
     // last binlog send
     if (_curBinlogid <  heighBinlog) {
         LOG(INFO) << "sendBinlog last catchupBinlog on store:" << _storeid << " _curBinglogid:"
-                   << _curBinlogid << " heighBinglog:" << heighBinlog << " slots:" << bitsetStrEncode(_slots);
+                   << _curBinlogid << " heighBinglog:" << heighBinlog
+                   << " slots:" << bitsetStrEncode(_slots);
         auto sLogNum = catchupBinlog(_curBinlogid, heighBinlog , _slots);
         if (!sLogNum.ok()) {
             LOG(ERROR) << "last catchup fail on store:" << _storeid;
@@ -369,7 +378,8 @@ Status ChunkMigrateSender::sendBinlog(uint16_t maxTime) {
 Status ChunkMigrateSender::sendOver() {
     // TODO(takenliu) if one of the follow steps failed, do what ???
 
-    auto ret = addMigrateBinlog(MigrateBinlogType::SEND_END, _slots.to_string(), _storeid, _svr.get(),
+    auto ret = addMigrateBinlog(MigrateBinlogType::SEND_END,
+        _slots.to_string(), _storeid, _svr.get(),
         _dstNode->getNodeName());
     if (!ret.ok()) {
         LOG(ERROR) << "addMigrateBinlog failed:" << ret.status().toString()
@@ -407,7 +417,7 @@ Status ChunkMigrateSender::sendOver() {
         // maybe miss message in network
         return { ErrorCodes::ERR_CLUSTER, "missing package" };
 
-    } else if (exptOK.value() != "+OK") { // TODO: two phase commit protocol
+    } else if (exptOK.value() != "+OK") {  // TODO(takenliu): two phase commit protocol
         LOG(ERROR) << "get response of migrateend failed "
             << "dstStoreid:" << _dstStoreid
             << " rsp:" << exptOK.value();
@@ -493,7 +503,7 @@ bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
                 return false;
             }
             _delNum += v.value();
-            _delSlot ++;
+            _delSlot++;
         }
         idx++;
     }
@@ -517,7 +527,7 @@ bool ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     return true;
 }
 
-Status ChunkMigrateSender::lockChunks(){
+Status ChunkMigrateSender::lockChunks() {
     // NOTE(takenliu) if need multi thread in the future, _slotsLockList need be protected by mutex.
     LOG(INFO) << "lockChunks begin, slots:" << bitsetStrEncode(_slots);
     size_t chunkid = 0;
@@ -539,7 +549,7 @@ Status ChunkMigrateSender::lockChunks(){
     return  {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::unlockChunks(){
+Status ChunkMigrateSender::unlockChunks() {
     LOG(INFO) << "unlockChunks slots:" << bitsetStrEncode(_slots);
     _slotsLockList.clear();
     return  {ErrorCodes::ERR_OK, ""};

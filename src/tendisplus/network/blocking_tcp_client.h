@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 #include "asio.hpp"
+#include "glog/logging.h"
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {

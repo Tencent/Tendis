@@ -1,6 +1,5 @@
 #include "glog/logging.h"
 #include "tendisplus/cluster/migrate_receiver.h"
-#include "tendisplus/replication/repl_util.h"
 #include "tendisplus/commands/command.h"
 
 namespace tendisplus {
@@ -50,11 +49,11 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         SyncReadData(exptData, 1, timeoutSec)
         if (exptData.value()[0] == '0') {
             SyncReadData(keylenData, 4, timeoutSec)
-            uint32_t keylen = *(uint32_t*)keylenData.value().c_str();
+            uint32_t keylen = *reinterpret_cast<const uint32_t*>(keylenData.value().c_str());
             SyncReadData(keyData, keylen, timeoutSec)
 
             SyncReadData(valuelenData, 4, timeoutSec)
-            uint32_t valuelen = *(uint32_t*)valuelenData.value().c_str();
+            uint32_t valuelen = *reinterpret_cast<const uint32_t*>(valuelenData.value().c_str());
             SyncReadData(valueData, valuelen, timeoutSec)
 
             supplySetKV(keyData.value(), valueData.value());
@@ -106,7 +105,8 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
         LOG(ERROR) << "setKV failed:" << s.toString();
         return s;
     }
-    // NOTE(takenliu) TTLIndex's chunkid is diffrent from key's chunkid, so need to recover TTLIndex.
+    // NOTE(takenliu) TTLIndex's chunkid is diffrent from key's chunkid,
+    // so need to recover TTLIndex.
     // only RT_*_META need recover, it's saved as RT_DATA_META in RecordKey
     // if RecordValue's type is RT_KV need ignore recovering.
     if (expRk.value().getRecordType() == RecordType::RT_DATA_META) {
@@ -114,7 +114,8 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
             expRv.value().getTtl() > 0 &&
             expRv.value().getRecordType() != RecordType::RT_KV) {
             // add new index entry
-            TTLIndex n_ictx(expRk.value().getPrimaryKey(), expRv.value().getRecordType(), expRk.value().getDbId(), expRv.value().getTtl());
+            TTLIndex n_ictx(expRk.value().getPrimaryKey(), expRv.value().getRecordType(),
+                    expRk.value().getDbId(), expRv.value().getTtl());
             s = txn->setKV(n_ictx.encode(),
                 RecordValue(RecordType::RT_TTL_INDEX).encode());
             if (!s.ok()) {
