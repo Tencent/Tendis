@@ -1312,7 +1312,8 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
                     _cluster->clusterAddSlot(myself, slot);
                     // NOTE(takenliu): the clusterState change to CLUSTER_OK will need a long time.
                 } else {
-                    // TODO(takenliu): do what ?
+                    // TODO(takenliu): if dba set slots first restore second.and set slot to dst_restore node,
+                    //   it will be node==myself
                     LOG(ERROR) << "restoreMigrateBinlog error, slot:" << slot
                                << " myself:" << myself->getNodeName()
                                << " node:" << node->getNodeName()

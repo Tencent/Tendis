@@ -49,7 +49,11 @@ func checkDbsize(servers *util.RedisServer, expKeynum int) {
         log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
         return
     }
+
     if r != expKeynum {
+        var channel chan int = make(chan int)
+        go checkDataInCoroutine(servers, expKeynum, "{12}", "redis-benchmark", true, channel)
+        <- channel
         log.Fatalf("checkDbsize failed, server:%d num:%d expKeynum:%d",
             servers.Port, r, expKeynum)
     }
