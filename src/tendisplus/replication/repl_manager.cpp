@@ -1,29 +1,28 @@
-#include <list>
-#include <chrono>
 #include <algorithm>
+#include <chrono>
 #include <fstream>
-#include <string>
-#include <set>
-#include <map>
 #include <limits>
+#include <list>
+#include <map>
+#include <set>
+#include <string>
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/error/en.h"
 #include "glog/logging.h"
-#include "tendisplus/replication/repl_manager.h"
-#include "tendisplus/storage/record.h"
+#include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/network/network.h"
-#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/server/session.h"
+#include "tendisplus/storage/record.h"
+#include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/rate_limiter.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -631,7 +630,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         } else if (start != Transaction::MIN_VALID_TXNID) {
             v->firstBinlogId = start;
         }
-        //DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
+        // DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
 
         // currently nothing waits for recycleBinlog's complete
         // _cv.notify_all();
@@ -669,7 +668,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         start = _logRecycStatus[storeId]->firstBinlogId;
 
         saveLogs = _syncMeta[storeId]->syncFromHost != "";  // REPLICATE_ONLY
-        if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].size() == 0) {  // single node
+        // single node
+        if (_syncMeta[storeId]->syncFromHost == "" && _pushStatus[storeId].empty()) {
             saveLogs = true;
         }
         for (auto& mpov : _fullPushStatus[storeId]) {
@@ -699,7 +699,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     if (_svr->isClusterEnabled() && _svr->getMigrateManager() != nullptr) {
         end = std::min(end, _svr->getMigrateManager()->getProtectBinlogid(storeId));
     }
-    //DLOG(INFO) << "recycleBinlog port:" << _svr->getParams()->port << " store: " << storeId << " " << start << " " << end;
+    // DLOG(INFO) << "recycleBinlog port:" << _svr->getParams()->port
+    //      << " store: " << storeId << " " << start << " " << end;
     if (start > end) {
         return;
     }
@@ -783,7 +784,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         hasError = true;
         return;
     }
-    //DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
+    // DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
     //    << " to end:" << newStart << " success."
     //    << "addr:" << _svr->getNetwork()->getIp()
     //    << ":" << _svr->getNetwork()->getPort();
@@ -798,7 +799,7 @@ void ReplManager::flushCurBinlogFs(uint32_t storeId) {
 Status ReplManager::changeReplSource(Session* sess, uint32_t storeId, std::string ip,
         uint32_t port, uint32_t sourceStoreId) {
     auto expdb = _svr->getSegmentMgr()->getDb(sess, storeId,
-                                             mgl::LockMode::LOCK_X, true);
+            mgl::LockMode::LOCK_X, true);
     if (!expdb.ok()) {
         return expdb.status();
     }
@@ -924,9 +925,9 @@ Status ReplManager::replicationSetMaster(std::string ip, uint32_t port, bool che
     INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
    
     for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-		Status s = changeReplSourceInLock(i, ip, port, i, checkEmpty);
-		if (!s.ok()) {
-			return s;
+        Status s = changeReplSourceInLock(i, ip, port, i, checkEmpty);
+        if (!s.ok()) {
+            return s;
 		}
 	}
 
@@ -986,17 +987,17 @@ uint32_t ReplManager::getMasterPort() const {
 uint64_t ReplManager::getLastSyncTime() const {
 	std::lock_guard<std::mutex> lk(_mutex);
     uint64_t min = 0;
-	for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
         if (_syncMeta[i]->syncFromHost != "") {
             // it is a slave
-			uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime) / 1000000;  // ms
-			if (last_sync_time < min || min == 0) {
-				min = last_sync_time;
+            uint64_t last_sync_time = nsSinceEpoch(_syncStatus[i]->lastSyncTime) / 1000000;  // ms
+            if (last_sync_time < min || min == 0) {
+                min = last_sync_time;
 			}
         }
 	}
 
-	return min;
+    return min;
 }
 
 uint64_t ReplManager::replicationGetOffset() const {
@@ -1020,7 +1021,8 @@ uint64_t ReplManager::replicationGetOffset() const {
         auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn.value().get());
         if (!expBinlogidMax.ok()) {
             if (expBinlogidMax.status().code() != ErrorCodes::ERR_EXHAUST) {
-                LOG(ERROR) << "slave offset getMaxBinlogId error:" << expBinlogidMax.status().toString();
+                LOG(ERROR) << "slave offset getMaxBinlogId error:"
+                    << expBinlogidMax.status().toString();
             }
         } else {
             maxBinlog = expBinlogidMax.value();
@@ -1215,7 +1217,8 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
             ss << ",dest_store_id=" << iter->second->dstStoreId;
             ss << ",state=" << "online";        // TODO(vinchen)
             ss << ",binlog_pos=" << iter->second->binlogPos;
-            ss << ",lag=" << (nsSinceEpoch() - nsSinceEpoch(iter->second->lastSendBinlogTime)) / 1000000000;
+            ss << ",lag="
+               << (nsSinceEpoch() - nsSinceEpoch(iter->second->lastSendBinlogTime)) / 1000000000;
             ss << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
             ss << "\r\n";
         }
@@ -1228,7 +1231,8 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
             ss << ",dest_store_id=" << iter->second->storeid;
             ss << ",state=" << state;
             ss << ",binlog_pos=" << iter->second->binlogPos;
-            ss << ",duration=" << (nsSinceEpoch() - nsSinceEpoch(iter->second->startTime)) / 1000000000;
+            ss << ",duration="
+               << (nsSinceEpoch() - nsSinceEpoch(iter->second->startTime)) / 1000000000;
             ss << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
             ss << "\r\n";
         }

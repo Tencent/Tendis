@@ -87,6 +87,47 @@ func addData(m *util.RedisServer, num int, prefixkey string) {
     log.Infof("addData sucess. %s:%d num:%d", m.Ip, m.Port, num)
 }
 
+// format=="redis-benchmark": "key:{12}0000000001"
+func checkDataInCoroutine(m *util.RedisServer, num int, prefixkey string, keyformat string,
+    onlyMyself bool, channel chan int) {
+    checkData(m, num, prefixkey, keyformat, onlyMyself)
+    channel <- 0
+}
+
+func checkData(m *util.RedisServer, num int, prefixkey string, keyformat string,
+    onlyMyself bool) {
+    log.Infof("checkData begin. num:%d prefixkey:%s keyformat:%s", num, prefixkey, keyformat)
+
+    for i := 1; i <= num; i++ {
+        var args []string
+        args = append(args,  "-h", (*m).Ip, "-p", strconv.Itoa((*m).Port),
+            "-a", *auth)
+        if !onlyMyself {
+            args = append(args, "-c")
+        }
+
+        key := ""
+        value := ""
+        if keyformat == "redis-benchmark" {
+            //"key:{12}0000000001"
+            key = fmt.Sprintf("key:%04s%010d", prefixkey, i)
+            value = "xxx"
+        } else {
+            // add if needed
+        }
+        args = append(args, "get", key)
+
+        cmd := exec.Command("../../../bin/redis-cli", args...)
+        data, err := cmd.Output()
+
+        retValue := strings.Replace(string(data), "\n", "", -1)
+        if retValue != value {
+            log.Infof("find failed, key:%v data:%s value:%s err:%v", key, retValue, value, err)
+        }
+    }
+    log.Infof("checkData end. num:%d prefixkey:%s keyformat:%s", num, prefixkey, keyformat)
+}
+
 func createClient(m *util.RedisServer) *redis.Client {
     cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), 10*time.Second)
     if err != nil {

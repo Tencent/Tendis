@@ -1,23 +1,23 @@
 #ifndef SRC_TENDISPLUS_REPLICATION_REPL_MANAGER_H_
 #define SRC_TENDISPLUS_REPLICATION_REPL_MANAGER_H_
 
-#include <memory>
-#include <vector>
-#include <utility>
+#include <fstream>
+#include <iostream>
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
-#include <iostream>
-#include <fstream>
+#include <utility>
+#include <vector>
 
 #include "rapidjson/document.h"
-#include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+#include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/replication/repl_util.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/storage/catalog.h"
-#include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/utils/rate_limiter.h"
-#include "tendisplus/replication/repl_util.h"
 
 namespace tendisplus {
 
@@ -54,9 +54,9 @@ enum class FullPushState {
 };
 
 struct MPovFullPushStatus {
-public:
+ public:
     std::string toString();
-public:
+ public:
     uint32_t storeid;
     FullPushState state;
     // the greatest id that has been applied
@@ -75,7 +75,7 @@ struct RecycleBinlogStatus {
     uint64_t firstBinlogId;
     uint64_t lastFlushBinlogId;
     uint32_t fileSeq;
-	// the timestamp of last binlog in prev file or the first binlog in cur file
+    // the timestamp of last binlog in prev file or the first binlog in cur file
     uint64_t timestamp;
     SCLOCK::time_point fileCreateTime;
     uint64_t fileSize;
@@ -115,7 +115,7 @@ class StoreMeta;
 
 class ReplManager {
  public:
-    explicit ReplManager(std::shared_ptr<ServerEntry> svr, 
+    explicit ReplManager(std::shared_ptr<ServerEntry> svr,
           const std::shared_ptr<ServerParams> cfg);
     Status startup();
     Status stopStore(uint32_t storeId);
@@ -135,7 +135,7 @@ class ReplManager {
             const std::string& binlogPosArg,
             const std::string& listenIpArg,
             const std::string& listenPortArg);
-    Status replicationSetMaster(std::string ip, uint32_t port, bool checkEmpty=true);
+    Status replicationSetMaster(std::string ip, uint32_t port, bool checkEmpty = true);
     Status replicationUnSetMaster();
 #ifdef BINLOG_V1
     Status applyBinlogs(uint32_t storeId, uint64_t sessionId,
@@ -167,8 +167,8 @@ class ReplManager {
             uint32_t storeId, const string& slave_listen_ip, uint16_t slave_listen_port);
     bool isFullSupplierFull() const;
 
-	std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
-		uint64_t timeoutMs = 1000);
+    std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
+        uint64_t timeoutMs = 1000);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
 
@@ -201,7 +201,7 @@ class ReplManager {
     void getReplInfoDetail(std::stringstream& ss) const;
     void recycleFullPushStatus();
 
-private:
+ private:
     const std::shared_ptr<ServerParams> _cfg;
     mutable std::mutex _mutex;
     std::condition_variable _cv;

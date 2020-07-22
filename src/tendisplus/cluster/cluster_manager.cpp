@@ -904,11 +904,13 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
             }
             bool s = clusterDelSlot(idx);
             if (s) {
+                //LOG(INFO) << "del slot:" << idx << " finished";
                 bool result = clusterAddSlot(n, idx);
                 if (!result) {
                     LOG(ERROR) << "setSlots addslot fail on slot:" << idx;
                     return {ErrorCodes::ERR_CLUSTER, "setslot add new slot fail"};
                 }
+                //LOG(INFO) << "add slot:" << idx << "on:" << n->getNodeName() << " finished";
             } else {
                 LOG(ERROR) << "setSlots delslot fail on slot:" << idx;
                 return {ErrorCodes::ERR_CLUSTER, "setslot delete old slot fail!"};
@@ -1086,7 +1088,7 @@ Expected<std::string> ClusterState::getNodeInfo(CNodePtr n) {
     std::string nodeName = n->getNodeName();
 
     if (n->nodeIsMyself()) {
-        auto emigrStr = _server->getMigrateManager()->getMigrateInfoStr(slots);
+        auto emigrStr = _server->getMigrateManager()->getMigrateInfoStrSimple(slots);
         if (emigrStr.ok()) {
             stream << "migrateSlots:" << emigrStr.value() << "\n";
         } else {
@@ -1323,20 +1325,20 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
     }
 }
 
-std::string ClusterState::clusterGenNodesDescription(uint16_t filter) {
+std::string ClusterState::clusterGenNodesDescription(uint16_t filter, bool simple) {
     std::stringstream ss;
     for (const auto &v : _nodes) {
         CNodePtr node = v.second;
         if (node->getFlags() & filter)  {
             continue;
         }
-        std::string nodeDescription = clusterGenNodeDescription(node);
+        std::string nodeDescription = clusterGenNodeDescription(node, simple);
         ss << nodeDescription << "\n";
     }
     return Command::fmtBulk(ss.str());
 }
 
-std::string ClusterState::clusterGenNodeDescription(CNodePtr n) {
+std::string ClusterState::clusterGenNodeDescription(CNodePtr n, bool simple) {
     std::stringstream stream;
     std::string masterName = n->_slaveOf ? " " + n->_slaveOf->getNodeName() + " " : " - ";
     std::string flags = representClusterNodeFlags(n->_flags);
@@ -1359,9 +1361,14 @@ std::string ClusterState::clusterGenNodeDescription(CNodePtr n) {
 
         if (n->nodeIsMyself()) {
             std::string migrateStr;
-            auto emigrStr = migrateMgr->getMigrateInfoStr(slots);
-            if (emigrStr.ok()) {
-                migrateStr = emigrStr.value();
+            Expected<std::string> eMigrStr("");
+            if (simple) {
+                eMigrStr = migrateMgr->getMigrateInfoStrSimple(slots);
+            } else {
+                eMigrStr = migrateMgr->getMigrateInfoStr(slots);
+            }
+            if (eMigrStr.ok()) {
+                migrateStr = eMigrStr.value();
                 stream << " " << migrateStr;
             }
         }
@@ -1496,7 +1503,6 @@ Status ClusterState::freeClusterNode(CNodePtr delnode) {
     if (delNum < 1) {
         LOG(ERROR) << "delete this node from nodelist fail ";
     }
-
     delnode->freeClusterSession();
 
     return  {ErrorCodes::ERR_OK , ""};
@@ -3717,6 +3723,8 @@ void ClusterState::cronCheckFailState() {
                 /* and we are waiting for the pong more than timeout/2 */
                 now - node->_pingSent > nodeTimeout / 2) {
                 /* Disconnect the link, it will be reconnected automatically. */
+                LOG(WARNING)<< "cronCheckFailState wait pong timeout, ip:" << node->getNodeIp()
+                    << " Cport:" << node->getCport() << " node:" << node->getNodeName();
                 node->freeClusterSession();
             }
 
@@ -4232,6 +4240,8 @@ void ClusterSession::processReq() {
     _queryBufPos = 0;
     if (!status.ok()) {
         if (_node) {
+            LOG(ERROR)<< "clusterProcessPacket failed, freeClusterSession ip:" << _node->getNodeIp()
+                << " Cport:" << _node->getCport();
             _node->freeClusterSession();
         } else {
             setCloseAfterRsp();
@@ -4331,9 +4341,11 @@ bool ClusterState::clusterProcessGossipSection(std::shared_ptr<ClusterSession> s
                     node->getCport() != g._gossipCport)) {
                 // is it possiable that node is _myself?
                 INVARIANT(node != _myself);
+                LOG(WARNING)<< "clusterProcessGossipSection node info update,ip:" << g._gossipIp
+                    << " port:" << g._gossipPort << " Cport:" << g._gossipCport;
                 node->freeClusterSession();
                 node->setNodeIp(g._gossipIp);
-                node->setNodePort(g._gossipCport);
+                node->setNodePort(g._gossipPort);
                 node->setNodeCport(g._gossipCport);
                 node->_flags &= ~CLUSTER_NODE_NOADDR;
             }

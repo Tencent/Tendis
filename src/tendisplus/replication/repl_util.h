@@ -1,11 +1,16 @@
 #ifndef SRC_TENDISPLUS_REPLICATION_REPL_UTIL_H_
 #define SRC_TENDISPLUS_REPLICATION_REPL_UTIL_H_
 
-#include "tendisplus/server/server_entry.h"
-#include "tendisplus/network/blocking_tcp_client.h"
+#include <memory>
+#include <string>
 #include "tendisplus/cluster/cluster_manager.h"
+#include "tendisplus/network/blocking_tcp_client.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
+
+#define CLUSTER_SLOTS 16384
+
 #define SyncReadData(data, len, timeout) \
     Expected<std::string> (data) = \
         _client->read((len), std::chrono::seconds((timeout))); \
@@ -54,7 +59,7 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient*,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slots,
                        std::shared_ptr<ServerEntry> svr,
-                       const std::shared_ptr<ServerParams> cfg);
+                       std::shared_ptr<ServerParams> cfg);
 
 }  // namespace tendisplus
 

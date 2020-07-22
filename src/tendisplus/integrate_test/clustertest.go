@@ -54,12 +54,12 @@ func addDataByClient(m *util.RedisServer, num int, prefixkey string) {
     log.Infof("addData sucess. %s:%d num:%d", m.Ip, m.Port, num)
 }
 
-func checkDataInCoroutine(m *[]util.RedisServer, num int, prefixkey string, channel chan int) {
-    checkData(m, num, prefixkey)
+func checkDataInCoroutine2(m *[]util.RedisServer, num int, prefixkey string, channel chan int) {
+    checkData2(m, num, prefixkey)
     channel <- 0
 }
 
-func checkData(m *[]util.RedisServer, num int, prefixkey string) {
+func checkData2(m *[]util.RedisServer, num int, prefixkey string) {
     log.Infof("checkData begin. prefixkey:%s", prefixkey)
 
     for i := 0; i < num; i++ {
@@ -385,7 +385,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
                 return
             }
             if r != 0 {
-                log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
+                // log.Infof("cluster countkeysinslot, server:%d slot:%d num:%d", i, j, r)
             }
             nodeKeyNum += r
             // check src node migrated slot key num should be 0
@@ -415,7 +415,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("check keys num masterTotalKeyNum:%d slaveTotalKeyNum:%d", masterTotalKeyNum, slaveTotalKeyNum)
     if masterTotalKeyNum != clusterNodeNum * *num1 {
         for i := 0; i < clusterNodeNum; i++ {
-            go checkDataInCoroutine(&servers, *num1, strconv.Itoa(i), channel)
+            go checkDataInCoroutine2(&servers, *num1, strconv.Itoa(i), channel)
         }
         for i := 0; i < clusterNodeNum; i++ {
             <- channel

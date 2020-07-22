@@ -1,7 +1,8 @@
+#include <memory>
+#include <string>
+#include <utility>
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/replication/repl_util.h"
 
 namespace tendisplus {
 
@@ -87,7 +88,8 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
         if (explog.ok()) {
             if (explog.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
                 // flush binlog should be alone
-                LOG(INFO) << "masterSendBinlogV2 deal with chunk flush: " <<explog.value().getChunkId();
+                LOG(INFO) << "masterSendBinlogV2 deal with chunk flush: "
+                    <<explog.value().getChunkId();
                 if (writer.getCount() > 0)
                     break;
 
@@ -95,7 +97,8 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
                 LOG(INFO) << "masterSendBinlogV2 send flush binlog to slave, store:" << storeId;
             } else if (explog.value().getChunkId() == Transaction::CHUNKID_MIGRATE) {
                 // migrate binlog should be alone
-                LOG(INFO) << "masterSendBinlogV2 deal with chunk migrate: " <<explog.value().getChunkId();
+                LOG(INFO) << "masterSendBinlogV2 deal with chunk migrate: "
+                    <<explog.value().getChunkId();
                 if (writer.getCount() > 0)
                     break;
 
@@ -235,7 +238,8 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
         binlogId = key.value().getBinlogId();
         if (binlogId <= store->getHighestBinlogId()) {
             string err = "binlogId:" + to_string(binlogId)
-                + " can't be smaller than highestBinlogId:" + to_string(store->getHighestBinlogId());
+                + " can't be smaller than highestBinlogId:"
+                + to_string(store->getHighestBinlogId());
             LOG(ERROR) << err;
             return { ErrorCodes::ERR_MANUAL, err };
         }
@@ -245,7 +249,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
         if (!s.ok()) {
             return s;
         }
-    } else { // migrating chunk.
+    } else {  // migrating chunk.
         // use self binlogId to replace sender's binlogId
         auto s = txn->setBinlogKV(logKey, logValue);
         if (!s.ok()) {
@@ -374,13 +378,15 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         auto slot = explog.value().getChunkId();
         binlogId = explog.value().getBinlogId();
 
-        // NOTE(takenliu): FLUSH when migrate, it will generate ambiguous result! it cant send to dst node.
+        // NOTE(takenliu): FLUSH when migrate, it will generate ambiguous result!
+        //     it cant send to dst node.
         if (slot == Transaction::CHUNKID_FLUSH) {
             /*if (writer->getCount() > 0) {
                 writer->resetWriter();
                 }
             writer->setFlag(BinlogFlag::FLUSH);*/
-            LOG(WARNING) << "FLUSH when migrate, it will generate ambiguous result! slots:" << bitsetStrEncode(slotsMap);
+            LOG(WARNING) << "FLUSH when migrate, it will generate ambiguous result! slots:"
+                << bitsetStrEncode(slotsMap);
             continue;
         }
 
@@ -404,7 +410,7 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
             bool  writeFull = writer->writeRepllogRaw(explog.value());
             logNum ++;
 
-            if (writeFull || writer->getFlag() == BinlogFlag::FLUSH ) {
+            if (writeFull || writer->getFlag() == BinlogFlag::FLUSH) {
                 auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
                 if (!s.ok()) {
                     LOG(ERROR) << "send writer bulk fail on slot:" << slot;

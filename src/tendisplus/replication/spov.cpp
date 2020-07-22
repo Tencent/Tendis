@@ -1,28 +1,28 @@
-#include <list>
-#include <chrono>
 #include <algorithm>
+#include <chrono>
 #include <fstream>
-#include <string>
-#include <set>
-#include <map>
 #include <limits>
+#include <list>
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 #include <utility>
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/error/en.h"
+#include <endian.h>
 #include "glog/logging.h"
+#include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/writer.h"
+#include "tendisplus/commands/command.h"
+#include "tendisplus/lock/lock.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/record.h"
-#include "tendisplus/commands/command.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
-#include "tendisplus/lock/lock.h"
-#include <endian.h>
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -173,7 +173,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     changeReplState(*newMeta, false);
 
     // 4) read backupinfo from master
-    auto bkInfo = getBackupInfo(client.get(), metaSnapshot, _svr->getParams()->bindIp, _svr->getParams()->port);
+    auto bkInfo = getBackupInfo(client.get(), metaSnapshot,
+            _svr->getParams()->bindIp, _svr->getParams()->port);
     if (!bkInfo.ok()) {
         LOG(WARNING) << "storeId:" << metaSnapshot.id
                      << ",syncMaster:" << metaSnapshot.syncFromHost
@@ -264,7 +265,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     client->writeLine("+OK");
 
     // 5) restart store, change to stready-syncing mode
-    Expected<uint64_t> restartStatus = store->restart(true, Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
+    Expected<uint64_t> restartStatus = store->restart(true,
+            Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
                    << ",failed:" << restartStatus.status().toString();
@@ -358,7 +360,7 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
 
     Status pongStatus  = client->writeLine("+PONG");
     if (!pongStatus.ok()) {
-        errStr = errPrefix 
+        errStr = errPrefix
                 + "write pong failed:" + pongStatus.toString();
         return;
     }
@@ -376,9 +378,9 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     Expected<uint64_t> expSessionId =
             network->client2Session(std::move(client));
     if (!expSessionId.ok()) {
-        errStr = errPrefix + 
+        errStr = errPrefix +
                  "client2Session failed:"
-                    + expSessionId.status().toString();
+                 + expSessionId.status().toString();
         return;
     }
     uint64_t sessionId = expSessionId.value();
@@ -559,7 +561,8 @@ Status ReplManager::applyRepllogV2(Session* sess, uint32_t storeId,
         // binlog_heartbeat
         // do nothing
     } else {
-        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue, BinlogApplyMode::KEEP_BINLOG_ID);
+        auto binlog = applySingleTxnV2(sess, storeId, logKey, logValue,
+                BinlogApplyMode::KEEP_BINLOG_ID);
         if (!binlog.ok()) {
             return binlog.status();
         } else {

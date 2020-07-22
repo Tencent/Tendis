@@ -76,7 +76,6 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>
                     &clusterState = svr->getClusterMgr()->getClusterState();
-
             auto node = clusterState->clusterHandleRedirect(chunkId);
             if (!node.ok()) {
                 return node.status();

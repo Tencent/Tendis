@@ -1,30 +1,14 @@
 #include <list>
 #include <chrono>
-#include <algorithm>
 #include <fstream>
 #include <string>
-#include <set>
-#include <map>
-#include <limits>
-#include <utility>
 #include <memory>
-#include <vector>
 
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/error/en.h"
 #include "glog/logging.h"
 #include "tendisplus/replication/repl_manager.h"
-#include "tendisplus/storage/record.h"
-#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/utils/redis_port.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/time.h"
-#include "tendisplus/lock/lock.h"
-#include "tendisplus/storage/varint.h"
-#include "tendisplus/utils/string.h"
 
 namespace tendisplus {
 
@@ -61,8 +45,9 @@ bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
     LOG(INFO) << "ReplManager::supplyFullSync storeId:" << storeIdArg
         << " " << slaveIpArg << ":" << slavePortArg;
     uint16_t slavePort = static_cast<uint16_t>(expSlavePort.value());
-    _fullPusher->schedule([this, storeId, client(std::move(client)), slaveIpArg, slavePort]() mutable {
-        supplyFullSyncRoutine(std::move(client), storeId, slaveIpArg, slavePort);
+    _fullPusher->schedule(
+        [this, storeId, client(std::move(client)), slaveIpArg, slavePort]() mutable {
+            supplyFullSyncRoutine(std::move(client), storeId, slaveIpArg, slavePort);
     });
 
     return true;
@@ -366,7 +351,8 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
         std::lock_guard<std::mutex> lk(_mutex);
         // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
         if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos+1) &&
-            _logRecycStatus[storeId]->firstBinlogId != _logRecycStatus[storeId]->lastFlushBinlogId) {
+            _logRecycStatus[storeId]->firstBinlogId !=
+            _logRecycStatus[storeId]->lastFlushBinlogId) {
             std::stringstream ss;
             ss << "-ERR invalid binlogPos,storeId:" << storeId
                 << ",master firstPos:" << _logRecycStatus[storeId]->firstBinlogId
@@ -462,7 +448,8 @@ void ReplManager::supplyFullSyncRoutine(
         string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
-            LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, " << iter->second->toString();
+            LOG(INFO) << "supplyFullSyncRoutine already have _fullPushStatus, "
+                << iter->second->toString();
             if (iter->second->state == FullPushState::ERR) {
                 _fullPushStatus[storeId].erase(iter);
             } else {
@@ -499,14 +486,16 @@ void ReplManager::supplyFullSyncRoutine(
 #endif
     }
     bool hasError = true;
-    auto guard_0 = MakeGuard([this, store, storeId, &hasError, slave_listen_ip, slave_listen_port]() {
+    auto guard_0 = MakeGuard([this, store, storeId, &hasError,
+                              slave_listen_ip, slave_listen_port]() {
         std::lock_guard<std::mutex> lk(_mutex);
         string slaveNode = slave_listen_ip + ":" + to_string(slave_listen_port);
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             if (hasError) {
                 _fullPushStatus[storeId].erase(iter);
-                LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, " << iter->second->toString();
+                LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, "
+                    << iter->second->toString();
             } else {
                 iter->second->endTime =  SCLOCK::now();
                 iter->second->state = FullPushState::SUCESS;
@@ -549,7 +538,8 @@ void ReplManager::supplyFullSyncRoutine(
                    << " fullsync send binlogpos failed:" << s.toString();
         return;
     }
-    LOG(INFO) << "fullsync " << storeId << " send binlogPos success:" << bkInfo.value().getBinlogPos();
+    LOG(INFO) << "fullsync " << storeId << " send binlogPos success:"
+        << bkInfo.value().getBinlogPos();
 
     // send fileList
     rapidjson::StringBuffer sb;
@@ -561,7 +551,8 @@ void ReplManager::supplyFullSyncRoutine(
     }
     writer.EndObject();
     uint32_t secs = 10;
-    s = client->writeLine(sb.GetString()); // NOTE(takenliu):change timeout 1000s to 10s
+    // NOTE(takenliu):change timeout 1000s to 10s
+    s = client->writeLine(sb.GetString());
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
                    << " fullsync send filelist failed:" << s.toString();
@@ -603,7 +594,7 @@ void ReplManager::supplyFullSyncRoutine(
                 LOG(ERROR) << "write bulk to client failed:" << s.toString();
                 return;
             }
-            secs = _cfg->timeoutSecBinlogWaitRsp; // 10
+            secs = _cfg->timeoutSecBinlogWaitRsp;  // 10
             auto rpl = client->readLine(std::chrono::seconds(secs));
             if (!rpl.ok() || rpl.value() != "+OK") {
                 LOG(ERROR) << "send client:" << client->getRemoteRepr()
@@ -616,7 +607,7 @@ void ReplManager::supplyFullSyncRoutine(
         }
         LOG(INFO) << "fulsync send file success:" << fname;
     }
-    secs = _cfg->timeoutSecBinlogWaitRsp; // 10
+    secs = _cfg->timeoutSecBinlogWaitRsp;  // 10
     Expected<std::string> reply = client->readLine(std::chrono::seconds(secs));
     if (!reply.ok()) {
         LOG(ERROR) << "fullsync done read "
@@ -624,7 +615,8 @@ void ReplManager::supplyFullSyncRoutine(
                    << reply.status().toString();
     } else {
         LOG(INFO) << "fullsync storeid:" << storeId << " done, read "
-                  << client->getRemoteRepr() << "port" <<  slave_listen_port << " reply:" << reply.value();
+                  << client->getRemoteRepr() << "port" <<  slave_listen_port
+                  << " reply:" << reply.value();
         hasError = false;
     }
 }

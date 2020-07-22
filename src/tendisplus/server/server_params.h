@@ -268,6 +268,7 @@ public:
     bool slowlogFileEnabled = true;
     uint32_t netIoThreadNum = 0;
     uint32_t executorThreadNum = 0;
+    uint32_t executorWookPoolSize = 8;
 
     uint32_t binlogRateLimitMB = 64;
     uint32_t netBatchSize = 1024*1024;
@@ -305,13 +306,16 @@ public:
     uint32_t migrateCheckThreadnum = 2;
     bool clusterEnabled = false;
     uint32_t migrateTaskSlotsLimit = 10;
-    uint32_t  migrateDistance = 150;
+    uint32_t  migrateDistance = 100000;
     uint32_t clusterNodeTimeout = 15000;
     bool clusterRequireFullCoverage = true;
     bool clusterSlaveNoFailover = false;
     uint32_t clusterMigrationBarrier = 1;
     uint32_t clusterSlaveValidityFactor = 50;
 
+    // TODO(takenliu) delete this two parm after performance test.
+    bool netIoMultiIoContext = false;
+    bool executorMultiIoContext = false;
 };
 }  // namespace tendisplus
 

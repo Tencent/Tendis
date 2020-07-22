@@ -181,7 +181,7 @@ TEST(ServerParams, RocksOption) {
 TEST(ServerParams, DefaultValue) {
     auto cfg = std::make_unique<ServerParams>();
     // NOTO(takenliu): add new param or change default value, please change here.
-    //EXPECT_EQ(cfg->paramsNum(), 56);
+    // EXPECT_EQ(cfg->paramsNum(), 72);
 
     EXPECT_EQ(cfg->bindIp, "127.0.0.1");
     EXPECT_EQ(cfg->port, 8903);
@@ -222,6 +222,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->slowlogMaxLen, 128);
     EXPECT_EQ(cfg->netIoThreadNum, 0);
     EXPECT_EQ(cfg->executorThreadNum, 0);
+    EXPECT_EQ(cfg->executorWookPoolSize, 8);
 
     EXPECT_EQ(cfg->binlogRateLimitMB, 64);
     EXPECT_EQ(cfg->netBatchSize, 1024*1024);
@@ -256,11 +257,14 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->migrateCheckThreadnum, 2);
     EXPECT_EQ(cfg->clusterEnabled, false);
     EXPECT_EQ(cfg->migrateTaskSlotsLimit, 10);
-    EXPECT_EQ(cfg->migrateDistance, 150);
+    EXPECT_EQ(cfg->migrateDistance, 100000);
     EXPECT_EQ(cfg->clusterNodeTimeout, 15000);
     EXPECT_EQ(cfg->clusterRequireFullCoverage, true);
     EXPECT_EQ(cfg->clusterSlaveNoFailover, false);
     EXPECT_EQ(cfg->clusterMigrationBarrier, 1);
     EXPECT_EQ(cfg->clusterSlaveValidityFactor, 50);
+
+    EXPECT_EQ(cfg->netIoMultiIoContext, false);
+    EXPECT_EQ(cfg->executorMultiIoContext, false);
 }
 }  // namespace tendisplus
