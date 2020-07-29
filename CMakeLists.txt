@@ -171,6 +171,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson-1.1.0/include")
 
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)

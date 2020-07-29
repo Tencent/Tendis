@@ -297,4 +297,5 @@ func main() {
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
 	testRepl(*mport, *sport, *kvstorecount)
+	log.Infof("repl.go passed.")
 }

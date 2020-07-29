@@ -171,8 +171,7 @@ class MigrateManager {
             MigrateBinlogType type, string slots, const string& nodeName);
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
-    Status asyncDeleteChunks(uint32_t storeid, const SlotsBitmap& slots);
-    Status asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitmap& slots);
+    Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

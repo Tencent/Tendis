@@ -177,10 +177,17 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
         return err
 	} else {
 	    log.Infof("start normal %d", s.Port)
-		args = append(args, "../../../build/bin/tendisplus", cfgFilePath)
+		//args = append(args, "../../../build/bin/tendisplus", cfgFilePath)
+	    //inShell := false
+	    //_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
+	    logFilePath := fmt.Sprintf("%s/stdout.log", s.Path)
+	    var cmd string
+	    cmd = fmt.Sprintf("nohup ../../../build/bin/tendisplus %s > %s 2>&1 &", cfgFilePath, logFilePath)
+        args := []string{}
+        args = append(args, cmd)
+        inShell := true
+	    _, err := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
 
-	    inShell := false
-	    _, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
         return err
 	}
 }

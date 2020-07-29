@@ -64,12 +64,11 @@ class ChunkMigrateSender{
     uint32_t  getStoreid() const { return  _storeid; }
     uint64_t  getSnapshotNum() const { return  _snapshotKeyNum; }
     uint64_t  getBinlogNum() const { return  _binlogNum; }
-    uint64_t  getDelNum() const { return  _delNum; }
     bool getConsistentInfo() const { return _consistency; }
     MigrateSenderStatus getSenderState() { return _sendstate;}
     void setSenderStatus(MigrateSenderStatus s);
 
-    Expected<uint64_t> deleteChunk(uint32_t chunkid);
+    Status deleteChunk(uint32_t chunkidStart, uint32_t chunkidEnd);
     // TODO(wayenchen)  takenliu add, delete the slots param for all interface, use _slots
     Status deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
     bool checkSlotsBlongDst();
@@ -111,7 +110,6 @@ private:
     uint32_t _storeid;
     uint64_t  _snapshotKeyNum;
     uint64_t  _binlogNum;
-    uint64_t  _delNum;
     uint64_t  _delSlot;
     bool _consistency;
     std::string _nodeid;

@@ -62,4 +62,5 @@ func main(){
     flag.Parse()
     //rand.Seed(time.Now().UTC().UnixNano())
     testRestore(*m1ip, *m1port, *s1ip, *s1port, *kvstorecount)
+    log.Infof("repltest.go passed.")
 }

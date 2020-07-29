@@ -19,7 +19,6 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _storeid(0),
     _snapshotKeyNum(0),
     _binlogNum(0),
-    _delNum(0),
     _delSlot(0),
     _consistency(false),
     _nodeid(""),
@@ -129,9 +128,10 @@ Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
 
 Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                 uint32_t begin, uint32_t end) {
-    LOG(INFO) << "snapshot send begin, store:"
+    LOG(INFO) << "snapshot sendRange send begin, store:"
               << _storeid << " beginSlot:" << begin
               << " endSlot:" << end;
+    // need add IS lock for chunks ???
     auto cursor = std::move(txn->createSlotsCursor(begin, end));
     uint32_t totalWriteNum = 0;
     uint32_t curWriteLen = 0;
@@ -420,56 +420,33 @@ Status ChunkMigrateSender::sendOver() {
     return { ErrorCodes::ERR_OK, ""};
 }
 
-Expected<uint64_t> ChunkMigrateSender::deleteChunk(uint32_t  chunkid) {
-    LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
-    // NOTE(wayenchen) always get new dblock here
-    auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
-                                              mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-        LOG(ERROR) << "getDb failed:" << _storeid;
-        return expdb.status();
-    }
-    
-    PStore  kvstore= expdb.value().store;
-    auto ptxn = kvstore->createTransaction(NULL);
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-    auto cursor = std::move(ptxn.value()->createSlotsCursor(chunkid, chunkid+1));
-    if (cursor == nullptr) {
-        LOG(ERROR) << "createSlotsCursor failed";
-        return {ErrorCodes::ERR_INTERGER, "createSlotsCursor failed"};
-    }
-    bool over = false;
-    uint32_t deleteNum = 0;
-    while (true) {
-        Expected<Record> expRcd = cursor->next();
-        if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            over = true;
-            break;
+Status ChunkMigrateSender::deleteChunk(uint32_t  chunkidStart, uint32_t chunkidEnd) {
+    // LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
+    // NOTE(takenliu) for fake task, maybe only call deleteChunk(), so _dbWithLock maybe null.
+    if (_isFake) {
+        auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
+                                                  mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            LOG(ERROR) << "getDb failed:" << _storeid;
+            return expdb.status();
         }
-        if (!expRcd.ok()) {
-            LOG(ERROR) << "delete cursor error on chunkid:" << chunkid;
-            return expRcd.status();
-        }
+        _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
+    }
+    PStore kvstore = _dbWithLock->store;
+    RecordKey rkStart(chunkidStart, 0, RecordType::RT_INVALID, "", "");
+    RecordKey rkEnd(chunkidEnd + 1, 0, RecordType::RT_INVALID, "", "");
+    string start = rkStart.prefixChunkid();
+    string end = rkEnd.prefixChunkid();
+    auto s = kvstore->deleteRange(start, end);
 
-        Record &rcd = expRcd.value();
-        const RecordKey &rcdKey = rcd.getRecordKey();
-        auto s = ptxn.value()->delKV(rcdKey.encode());
-        if (!s.ok()) {
-            LOG(ERROR) << "delete key fail";
-            continue;
-        }
-        deleteNum++;
-    }
-    auto s = ptxn.value()->commit();
-    // todo: retry_times
     if (!s.ok()) {
-        return s.status();
+        LOG(ERROR) << "deleteChunk commit failed, chunkidStart:" << chunkidStart
+            << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();
+        return s;
     }
-    LOG(INFO) << "deleteChunk chunkid:" << chunkid
-        << " num:" << deleteNum << " is_over:" << over;
-    return deleteNum;
+    LOG(INFO) << "deleteChunk end, chunkidStart:" << chunkidStart
+              << " chunkidEnd:" << chunkidEnd;
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
@@ -477,36 +454,55 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
     if (!checkSlotsBlongDst()){
         return  {ErrorCodes::ERR_CLUSTER, "slots not belongs to dstNodes"};
     }
+    lockChunks();
+
+    LOG(INFO) << "deleteChunks beigin slots: " << bitsetStrEncode(_slots);
     size_t idx = 0;
+    uint32_t storeCount = _svr->getKVStoreCount();
+    uint32_t startChunkid = UINT32_MAX;
+    uint32_t endChunkid = UINT32_MAX;
     while (idx < slots.size()) {
         if (slots.test(idx)) {
-            auto v = deleteChunk(idx);
-            if (!v.ok()) {
-                LOG(ERROR) << "delete slot:" << idx << "fail";
-                return v.status();
+            if (startChunkid == UINT32_MAX) {
+                startChunkid = idx;
+                endChunkid = idx;
+            } else if (idx == endChunkid + storeCount) {
+                endChunkid = idx;
+            } else {
+                auto s = deleteChunk(startChunkid, endChunkid);
+                if (!s.ok()) {
+                    LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
+                        << " endChunkid:" << endChunkid << " err:" << s.toString();
+                    return s;
+                }
+                LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
+                           << " endChunkid:" << endChunkid;
+                startChunkid = idx;
+                endChunkid = idx;
             }
-            _delNum += v.value();
             _delSlot++;
         }
         idx++;
     }
-    LOG(INFO) << "finish del key num: " << _delNum << " del slots num: " << _delSlot;
-    if (!_isFake && _delNum != _snapshotKeyNum + _binlogNum) {
-        LOG(ERROR) << "deleteChunks delNum: " << _delNum
-                   << "is not equal to (snaphotKey+binlog) "
-                   << "snapshotKey num: " << _snapshotKeyNum
-                   << " binlog num: " << _binlogNum
-                   << " storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
-    } else {
-        _consistency = true;
-        LOG(INFO) << "deleteChunks OK, isFake:" << _isFake
-            << " delNum: " << _delNum
-            << " snapshotKeyNum: " << _snapshotKeyNum
-            << " binlogNum: " << _binlogNum
-            << " , storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
+    if (startChunkid != UINT32_MAX) {
+        auto s = deleteChunk(startChunkid, endChunkid);
+        if (!s.ok()) {
+            LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
+                       << " endChunkid:" << endChunkid << " err:" << s.toString();
+            return s;
+        }
+        LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
+                  << " endChunkid:" << endChunkid;
     }
 
-    return {ErrorCodes::ERR_OK, "finish delete chunks"};
+    _consistency = true;
+    LOG(INFO) << "deleteChunks OK, isFake:" << _isFake
+        << " snapshotKeyNum: " << _snapshotKeyNum
+        << " binlogNum: " << _binlogNum
+        << " , storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
+
+    unlockChunks();
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 Status ChunkMigrateSender::lockChunks() {

@@ -435,4 +435,5 @@ func main(){
     flag.Parse()
     // rand.Seed(time.Now().UTC().UnixNano())
     testCluster(*clusterIp, *clusterPortStart, *clusterNodeNum)
+    log.Infof("clustertest.go passed.")
 }

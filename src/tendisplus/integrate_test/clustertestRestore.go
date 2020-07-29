@@ -51,11 +51,12 @@ func checkDbsize(servers *util.RedisServer, expKeynum int) {
     }
 
     if r != expKeynum {
+        log.Infof("checkDbsize failed, server:%d num:%d expKeynum:%d, begin checkData...",
+            servers.Port, r, expKeynum)
         var channel chan int = make(chan int)
         go checkDataInCoroutine(servers, expKeynum, "{12}", "redis-benchmark", true, channel)
         <- channel
-        log.Fatalf("checkDbsize failed, server:%d num:%d expKeynum:%d",
-            servers.Port, r, expKeynum)
+        log.Fatalf("checkDbsize failed")
     }
     log.Infof("checkDbsize success, server:%d num:%d expKeynum:%d",
                 servers.Port, r, expKeynum)
@@ -154,7 +155,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 
     //waitDumpBinlog(src_slave, kvstorecount)
     //waitDumpBinlog(dst_slave, kvstorecount)
-    time.Sleep(5 * time.Second)
+    time.Sleep(10 * time.Second)
     // TOD(takenliu) why dont flush when time pass some seconds ???
     flushBinlog(dst_slave)
 
@@ -261,6 +262,7 @@ func testRestore(portStart int, num int, testFun int) {
     if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
         log.Fatalf("setup failed:%v", err)
     }
+    time.Sleep(2 * time.Second)
 
     // meet
     log.Infof("cluster meet begin")
@@ -313,6 +315,6 @@ func main(){
     flag.Parse()
     testRestore(53000, 100000, 1)
     testRestore(53100, 100000, 2)
-    log.Infof("clustertestRestore sucess")
+    log.Infof("clustertestRestore.go passed.")
 }
     

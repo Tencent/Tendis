@@ -130,7 +130,7 @@ class BinlogScanner{
             return;
         }
         const uint32_t buff_len = 4096;
-        char* buff = new char[buff_len];
+        char buff[buff_len];
 
         int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
         if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
@@ -188,7 +188,6 @@ class BinlogScanner{
             process(key, value, storeId);
         }
 
-        delete[] buff;
         fclose(pf);
     }
     void run() {
