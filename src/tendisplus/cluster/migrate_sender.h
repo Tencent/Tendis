@@ -51,6 +51,11 @@ class ChunkMigrateSender{
     void setClient(std::shared_ptr<BlockingTcpClient> client) {
         _client = client;
     }
+
+    void freeDbLock() {
+        _dbWithLock.reset();
+    }
+
     void setDstStoreid(uint32_t dstStoreid) {
         _dstStoreid = dstStoreid;
     }
@@ -66,8 +71,8 @@ class ChunkMigrateSender{
 
     Expected<uint64_t> deleteChunk(uint32_t chunkid);
     // TODO(wayenchen)  takenliu add, delete the slots param for all interface, use _slots
-    bool deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
-    bool checkSlotsBlongDst(const std::bitset<CLUSTER_SLOTS>& slot);
+    Status deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
+    bool checkSlotsBlongDst();
 
     uint64_t getProtectBinlogid() {
         // TODO(wayenchen)  takenliu add, use atomic
@@ -80,12 +85,11 @@ class ChunkMigrateSender{
 
  private:
     Expected<std::unique_ptr<Transaction>> initTxn();
-    Status sendBinlog(uint16_t time);
+    Status sendBinlog();
     Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
-    Status sendSnapshot(const std::bitset<CLUSTER_SLOTS>& slots);
+    Status sendSnapshot();
 
-    bool pursueBinLog(uint16_t maxTime, uint64_t &startBinLog,
-            uint64_t &binlogHigh, Transaction *txn);
+    bool pursueBinLog(uint64_t *startBinLog);
 
     Expected<uint64_t> catchupBinlog(uint64_t start, uint64_t end,
             const std::bitset<CLUSTER_SLOTS>& slots);
@@ -116,7 +120,7 @@ private:
     uint16_t _dstPort;
     uint32_t _dstStoreid;
     std::shared_ptr<ClusterNode>  _dstNode;
-    uint64_t getMaxBinLog(Transaction * ptxn);
+    uint64_t getMaxBinLog(Transaction * ptxn) const;
     std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
 };
 

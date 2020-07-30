@@ -307,6 +307,7 @@ public:
     bool clusterEnabled = false;
     uint32_t migrateTaskSlotsLimit = 10;
     uint32_t  migrateDistance = 100000;
+    uint16_t migrateBinlogIter = 10;
     uint32_t clusterNodeTimeout = 15000;
     bool clusterRequireFullCoverage = true;
     bool clusterSlaveNoFailover = false;

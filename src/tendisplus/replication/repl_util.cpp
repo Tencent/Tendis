@@ -396,7 +396,10 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
             LOG(INFO) << "deal with chunk migrate: " <<explog.value().getChunkId();
             continue;
         }
-
+        if (slot == VERSIONMETA_CHUNKID) {
+            LOG(INFO) << "deal with versionmeta ";
+            continue;
+        }
         if (binlogId > binlogEnd) {
             LOG(INFO) << "catch up binlog success, binlogPos:" << binlogPos
                        << " binlogEnd:" << binlogEnd << " logNum:" << logNum

@@ -91,7 +91,13 @@ public:
                     if (!exptSlot.ok()) {
                         return exptSlot.status();
                     }
-                    uint32_t slot = (uint32_t) exptSlot.value();
+                    LOG(INFO) << "args:" << args[i];
+                    if (args[i][0] == '-') {
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "Invalid migrate" + args[i]};
+                    }
+                    uint32_t slot = (uint32_t)exptSlot.value();
+
                     if (slot >= CLUSTER_SLOTS) {
                         LOG(ERROR) << "slot" << slot << " ERR Invalid or out of range slot ";
                         return {ErrorCodes::ERR_CLUSTER,
@@ -651,6 +657,7 @@ private:
                         << "not exist in cluster";
             return {ErrorCodes::ERR_CLUSTER, "import node not find"};
         }
+
         auto ip = srcNode->getNodeIp();
         auto port = srcNode->getPort();
 
