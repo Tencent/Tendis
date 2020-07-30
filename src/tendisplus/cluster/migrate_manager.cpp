@@ -1274,8 +1274,8 @@ Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr, PStore s
                 if (_cluster->getNodeBySlot(i) != master) {
                     LOG(WARNING) << "applyMigrateBinlog, maybe gossip"
                         " is earlier come before binlog, slot:" << i
-                        << " master:" << master->getNodeName() << " owner:" << node->getNodeName()
-                        << " slots:" << bitsetStrEncode(slotsMap);
+                        << " master:" << master->getNodeName() << " owner:" << node->getNodeName();
+                        // << " slots:" << bitsetStrEncode(slotsMap);
                 }
                 if (_cluster->getNodeBySlot(i) != master
                     && _cluster->getNodeBySlot(i) != dstnode) {

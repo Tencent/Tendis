@@ -2268,7 +2268,7 @@ Status RocksKVStore:: deleteRangeWithoutBinlog(const std::string &begin, const s
     auto s = db->DeleteRange(rocksdb::WriteOptions(), db->DefaultColumnFamily(),
                              sBegin.ToString(), sEnd.ToString());
     if (!s.ok()) {
-        LOG(ERROR) << "deleteRange failed!";
+        LOG(ERROR) << "deleteRange failed:" << s.ToString();
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
     return {ErrorCodes::ERR_OK, ""};

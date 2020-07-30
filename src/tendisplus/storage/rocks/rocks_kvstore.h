@@ -193,6 +193,7 @@ class RocksKVStore: public KVStore {
     Status setKV(const std::string& key, const std::string& val,
                  Transaction *txn) final;
     Status delKV(const RecordKey& key, Transaction* txn) final;
+    // [begin, end)
     Status deleteRange(const std::string& begin, const std::string& end) final;
     Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) final;
 

@@ -18,5 +18,5 @@ grep PASSED repl_test.log
 grep PASSED restore_test.log
 grep PASSED cluster_test.log
 grep -E 'Expected|FAILED' unittest.log
-grep "compare " src/tendisplus/integrate_test/gotest.log
+grep "go passed" src/tendisplus/integrate_test/gotest.log
 !
