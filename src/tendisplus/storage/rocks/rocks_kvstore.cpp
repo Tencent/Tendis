@@ -447,6 +447,25 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksTxn::deleteRange(const std::string& begin, const std::string& end) {
+    if (_replOnly) {
+        return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
+    }
+    RESET_PERFCONTEXT();
+
+    if (_store->enableRepllog()) {
+        INVARIANT_D(_store->dbId() != CATALOG_NAME);
+        setChunkId(Transaction::CHUNKID_DEL_RANGE);
+        if (_replLogValues.size() >= 1) {
+            LOG(WARNING) << "deleteRange too big binlog size, begin:" + begin + " end:" + end;
+        }
+        ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL_RANGE, msSinceEpoch(),
+                                   begin, end);
+        _replLogValues.emplace_back(std::move(logVal));
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 #ifdef BINLOG_V1
 Status RocksTxn::truncateBinlog(const std::list<ReplLog>& ops) {
     for (const auto& v : ops) {
@@ -579,6 +598,13 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     case ReplOp::REPL_OP_SPEC: {
         INVARIANT_D(0);
     }
+    case ReplOp::REPL_OP_DEL_RANGE: {
+        auto s = _store->deleteRangeWithoutBinlog(logEntry.getOpKey(), logEntry.getOpValue());
+        if (!s.ok()) {
+            return{ ErrorCodes::ERR_INTERNAL, s.toString() };
+        }
+        break;
+    }
     default:
         INVARIANT_D(0);
         return{ ErrorCodes::ERR_DECODE, "not a valid binlog" };
@@ -669,7 +695,7 @@ RocksTxn::~RocksTxn() {
     INVARIANT_D(_replLogValues.size() == 0);
 #endif
 
-    _txn.get()->ClearSnapshot();
+    // _txn.get()->ClearSnapshot();
     _txn.reset();
     _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
 }
@@ -2207,6 +2233,45 @@ Status RocksKVStore::delKV(const RecordKey& key,
                            Transaction *txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
     return txn->delKV(key.encode());
+}
+
+Status RocksKVStore:: deleteRange(const std::string& begin, const std::string& end) {
+    // NOTE(takenliu) be care of db::DeleteRange and add binlog are not atomic
+    auto s = deleteRangeWithoutBinlog(begin, end);
+    if (!s.ok()) {
+        return s;
+    }
+    auto txn = createTransaction(nullptr);
+    if (!txn.ok()) {
+        LOG(ERROR) << "deleteRange not atomic,createTransaction failed!!!";
+        return txn.status();
+    }
+    auto ret = txn.value()->deleteRange(begin, end);
+    if (!ret.ok()) {
+        LOG(ERROR) << "deleteRange not atomic,add binlog failed!!!";
+        return ret;
+    }
+    auto ret2 = txn.value()->commit();
+    if (!ret2.ok()) {
+        LOG(ERROR) << "deleteRange not atomic,add binlog commit failed!!!";
+        return ret2.status();
+    }
+    return ret;
+}
+
+Status RocksKVStore:: deleteRangeWithoutBinlog(const std::string &begin, const std::string &end) {
+    // TODO(takenliu) rocksdb 5.13 DeleteRange cause read performance degradation,
+    //  use greater than rocksdb 5.18
+    rocksdb::Slice sBegin(begin);
+    rocksdb::Slice sEnd(end);
+    rocksdb::DB* db = getBaseDB();
+    auto s = db->DeleteRange(rocksdb::WriteOptions(), db->DefaultColumnFamily(),
+                             sBegin.ToString(), sEnd.ToString());
+    if (!s.ok()) {
+        LOG(ERROR) << "deleteRange failed:" << s.ToString();
+        return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+    }
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 void RocksKVStore::initRocksProperties() {

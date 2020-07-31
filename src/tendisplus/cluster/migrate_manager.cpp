@@ -707,6 +707,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             });
             ++it;
         } else if ((*it)->state == MigrateReceiveState::RECEIVE_BINLOG) {
+            (*it)->isRunning = true;
             _migrateChecker->schedule([this, iter = (*it).get()]() {
                 checkMigrateStatus(iter);
             });
@@ -824,6 +825,7 @@ void MigrateManager::checkMigrateStatus(MigrateReceiveTask* task) {
     std::lock_guard<std::mutex> lk(_mutex);
     SCLOCK::time_point nextSched = SCLOCK::now() + std::chrono::seconds(1);
     task->nextSchedTime = nextSched;
+    task->isRunning = false;
     return;
 }
 
@@ -1165,8 +1167,7 @@ Expected<std::string> MigrateManager::getTaskInfo() {
                                 MigrateSenderStatus::METACHANGE_DONE ? "changed":"unchanged";
         Command::fmtBulk(ss, "metadata:"+ metaInfo);
 
-        std::string delInfo = "delete keys num:" +
-                            std::to_string((*it)->sender->getDelNum())+ delDone;
+        std::string delInfo = "delete keys :" + delDone;
         Command::fmtBulk(ss, delInfo);
 
         std::string consistentInfo = (*it)->sender->getConsistentInfo() ? "OK":"ERROR";
@@ -1273,8 +1274,8 @@ Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr, PStore s
                 if (_cluster->getNodeBySlot(i) != master) {
                     LOG(WARNING) << "applyMigrateBinlog, maybe gossip"
                         " is earlier come before binlog, slot:" << i
-                        << " master:" << master->getNodeName() << " owner:" << node->getNodeName()
-                        << " slots:" << bitsetStrEncode(slotsMap);
+                        << " master:" << master->getNodeName() << " owner:" << node->getNodeName();
+                        // << " slots:" << bitsetStrEncode(slotsMap);
                 }
                 if (_cluster->getNodeBySlot(i) != master
                     && _cluster->getNodeBySlot(i) != dstnode) {
@@ -1387,7 +1388,7 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
             }
         }
 
-        asyncDeleteChunks(storeid, slotsMap);
+        deleteChunks(storeid, slotsMap);
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -1400,7 +1401,7 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
             LOG(INFO) << "migrate task has receive_start and has no receive_end,"
                 << " so delete keys for slots:"
                 << (*iter).to_string();
-            asyncDeleteChunksInLock(storeId, *iter);
+            deleteChunks(storeId, *iter);
         }
     }
 
@@ -1422,25 +1423,17 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
     }
     LOG(INFO) << "onRestoreEnd deletechunks:" << dontContainSlots.to_string();
     // TODO(takenliu) check the logical of locking the chunks
-    asyncDeleteChunks(storeId, dontContainSlots);
+    deleteChunks(storeId, dontContainSlots);
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status MigrateManager::asyncDeleteChunks(uint32_t storeid, const SlotsBitmap& slots) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    return asyncDeleteChunksInLock(storeid, slots);
-}
+Status MigrateManager::deleteChunks(uint32_t storeid, const SlotsBitmap& slots) {
+    // TODO(takenliu) 1. ChunkMigrateReceiver need deleteChunk when migrate failed.
 
-Status MigrateManager::asyncDeleteChunksInLock(uint32_t storeid, const SlotsBitmap& slots) {
-    // TODO(takenliu) 1.add slots to _migrateSlots
-    //     2._importSlots need add too, avoid import request
-    //     3.ChunkMigrateReceiver need deleteChunk when migrate failed.
-    auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg, true);
-    sendTask->nextSchedTime = SCLOCK::now();
-    sendTask->sender->setStoreid(storeid);
-    sendTask->state = MigrateSendState::CLEAR;
-    _migrateSendTask.push_back(std::move(sendTask));
-    LOG(INFO) << "asyncDeleteChunksWithLock _migrateSendTask add fake task, store:" << storeid
+    ChunkMigrateSender fakeSender(slots, _svr, _cfg, true);
+    fakeSender.setStoreid(storeid);
+    fakeSender.deleteChunks(slots); // with chunks X lock, with add binlog
+    LOG(INFO) << "deleteChunksInLock store:" << storeid
               << " slots:" << bitsetStrEncode(slots);
     return {ErrorCodes::ERR_OK, ""};
 }

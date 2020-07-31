@@ -6,6 +6,7 @@ target_link_libraries(server status network nwp time_util rocks_kvstore segment_
 
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)
+set_target_properties(server_params PROPERTIES LINK_FLAGS "")
 
 add_library(segment_mgr segment_manager.cpp)
 target_link_libraries(segment_mgr status session lock)
@@ -48,7 +49,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	# command uses global variables to self-regist, linking flag whole-archive is required.
 	target_link_libraries(tendisplus -Wl,--whole-archive commands -Wl,--no-whole-archive)
 	target_link_libraries(tendisplus server_params server ${SYS_LIBS})
-	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++")
+	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++") # -static-libasan
 else()
 	target_link_libraries(tendisplus commands server_params server ${SYS_LIBS})
 	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")

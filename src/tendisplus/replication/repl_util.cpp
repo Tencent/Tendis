@@ -396,10 +396,19 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
             LOG(INFO) << "deal with chunk migrate: " <<explog.value().getChunkId();
             continue;
         }
+
         if (slot == VERSIONMETA_CHUNKID) {
             LOG(INFO) << "deal with versionmeta ";
             continue;
         }
+
+        // NOTE(takenliu) delete_range binlog dont send to dst node
+        if (slot == Transaction::CHUNKID_DEL_RANGE) {
+            // delete_range binlog should be alone
+            LOG(INFO) << "deal with delete_range: " <<explog.value().getChunkId();
+            continue;
+        }
+
         if (binlogId > binlogEnd) {
             LOG(INFO) << "catch up binlog success, binlogPos:" << binlogPos
                        << " binlogEnd:" << binlogEnd << " logNum:" << logNum

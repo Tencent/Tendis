@@ -108,6 +108,8 @@ class RecordKey {
     std::string prefixPk() const;
 
     std::string prefixSlotType() const;
+    std::string prefixChunkid() const;
+
     /*
     // an encoded prefix with db & type, with no padding zero.
     std::string prefixDbidType() const;
@@ -259,6 +261,7 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_DEL = 2,
     REPL_OP_STMT = 3,  // statement
     REPL_OP_SPEC = 4,  // special
+    REPL_OP_DEL_RANGE = 5,
 };
 
 #ifdef BINLOG_V1

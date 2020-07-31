@@ -65,4 +65,5 @@ func main(){
     testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount, "copy")
     // port+100 to avoid TIME_WAIT
     testRestore(*m1ip, *m1port+100, *m2ip, *m2port+100, *kvstorecount, "ckpt")
+    log.Infof("restoretest.go passed.")
 }

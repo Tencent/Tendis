@@ -108,6 +108,23 @@ func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]Nod
     if !checkself && len(ret_array) != clusterNodeNum*2 {
         log.Fatalf("cluster slots size not right:%v", ret_array)
     }
+    // example:
+    // 1) 1) (integer) 1
+    //    2) (integer) 16383
+    //    3) 1) "127.0.0.1"
+    //       2) (integer) 21002
+    //       3) "0dd8a458cf74fbe16bbcbb5842143074c5fe5f5f"
+    //    4) 1) "127.0.0.1"
+    //       2) (integer) 21003
+    //       3) "5f2b6f8f689253ca0a27d20c3175ec59565d8cfb"
+    // 2) 1) (integer) 0
+    //    2) (integer) 0
+    //    3) 1) "127.0.0.1"
+    //       2) (integer) 21000
+    //       3) "ccb1f3183cdd0a91e6ef127417edc582ff7f0f78"
+    //    4) 1) "127.0.0.1"
+    //       2) (integer) 21001
+    //       3) "29a66186a8d61836e870f6ddb9e6280b22321348"
     for _,value := range ret_array {
         // log.Infof("checkSlotsInfo1 :%s", value)
         if !value.IsType(redis.Array) {
@@ -181,13 +198,17 @@ func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]Nod
 func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     var nodeInfoArray []NodeInfo
     perNodeMigrateNum := CLUSTER_SLOTS / (clusterNodeNum+1) /clusterNodeNum
+    // NOTE(takenliu) if only on node, migrate CLUSTER_SLOTS-1 slots to dst node.
+    if clusterNodeNum == 1 {
+        perNodeMigrateNum = CLUSTER_SLOTS - 1
+    }
     for i := 0; i <= clusterNodeNum; i++ {
         var startSlot = CLUSTER_SLOTS / clusterNodeNum * i;
         var endSlot = startSlot + CLUSTER_SLOTS / clusterNodeNum - 1;
         if i == (clusterNodeNum - 1) {
             endSlot = CLUSTER_SLOTS - 1;
         }
-        var migrateStart = endSlot - perNodeMigrateNum
+        var migrateStart = endSlot - perNodeMigrateNum + 1
         if migrateStart <= startSlot{
             migrateStart = startSlot
         }
@@ -221,6 +242,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         cfgArgs["requirepass"] = "tendis+test"
         cfgArgs["masterauth"] = "tendis+test"
         cfgArgs["generalLog"] = "true"
+        cfgArgs["migrateTaskSlotsLimit"] = "10000"
         if err := server.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup failed,port:%s err:%v", port, err)
         }
@@ -336,7 +358,8 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
     log.Infof("cluster add data end")
 
-    time.Sleep(2 * time.Second)
+    // NOTE(takenliu): if migrateTaskSlotsLimit is smaller, need wait longer time for migrate.
+    time.Sleep(5 * time.Second)
     // gossip hasn't sync info sucess, so check self slots.
     // master will send binlog to slave, so slave will change slots info immediately
     checkself := true
@@ -427,12 +450,14 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
 
     for i := 0; i <= clusterNodeNum*2 + 1; i++ {
-        //shutdownServer(&servers[i], *shutdown, *clear);
+        shutdownServer(&servers[i], *shutdown, *clear);
     }
 }
 
 func main(){
     flag.Parse()
     // rand.Seed(time.Now().UTC().UnixNano())
-    testCluster(*clusterIp, *clusterPortStart, *clusterNodeNum)
+    testCluster(*clusterIp, *clusterPortStart, 1)
+    testCluster(*clusterIp, *clusterPortStart + 100, *clusterNodeNum)
+    log.Infof("clustertest.go passed.")
 }

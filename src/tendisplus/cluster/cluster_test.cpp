@@ -48,12 +48,12 @@ void testCommandArrayResult(std::shared_ptr<ServerEntry> svr,
 }
 
 std::shared_ptr<ServerEntry> 
-makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10) {
+makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10, bool general_log = true) {
     auto mDir = dir;
     auto mport = port;
     EXPECT_TRUE(setupEnv(mDir));
 
-    auto cfg1 = makeServerParam(mport, storeCnt, mDir);
+    auto cfg1 = makeServerParam(mport, storeCnt, mDir, general_log);
     cfg1->clusterEnabled = true;
     cfg1->pauseTimeIndexMgr = 1;
     cfg1->rocksBlockcacheMB = 24;
@@ -1079,7 +1079,7 @@ TEST(Cluster, migrate) {
 
 TEST(Cluster, migrateAndImport) {
     std::vector<std::string> dirs = { "node1", "node2", "node3"};
-    uint32_t startPort = 15000;
+    uint32_t startPort = 14100;
 
     const auto guard = MakeGuard([dirs] {
         for (auto dir : dirs) {
@@ -1222,6 +1222,80 @@ TEST(Cluster, migrateAndImport) {
     servers.clear();
 }
 
+void testDeleteChunks(std::shared_ptr<ServerEntry> svr, uint32_t storeid, std::vector<uint32_t> slotsList) {
+    for (size_t i = 0; i < slotsList.size(); ++i) {
+        uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
+        EXPECT_TRUE(c != 0);
+        LOG(INFO) << "slot:"<<slotsList[i] << " keys count before delete:" << c;
+    }
+
+    SlotsBitmap slots;
+    for (size_t i = 0; i < slotsList.size(); ++i) {
+        slots.set(slotsList[i]);
+    }
+    svr->getMigrateManager()->deleteChunks(storeid, slots);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    for (size_t i = 0; i < slotsList.size(); ++i) {
+        uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
+        EXPECT_TRUE(c == 0);
+    }
+}
+
+TEST(Cluster, deleteChunks) {
+    std::vector<std::string> dirs = { "node1"};
+    uint32_t startPort = 14200;
+
+    const auto guard = MakeGuard([dirs] {
+        for (auto dir : dirs) {
+            destroyEnv(dir);
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    std::vector<std::shared_ptr<ServerEntry>> servers;
+
+    uint32_t index = 0;
+    storeCnt = 10;
+    for (auto dir : dirs) {
+        uint32_t nodePort = startPort + index++;
+        servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt, false)));
+    }
+
+    auto& srcNode = servers[0];
+
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(srcNode, ctx1);
+    WorkLoad work1(srcNode, sess1);
+    work1.init();
+
+    // addSlots
+    LOG(INFO) <<"begin addSlots.";
+    work1.addSlots("{0..16383}");
+    LOG(INFO) << "add slots sucess";
+    std::this_thread::sleep_for(std::chrono::seconds(6));
+
+    const uint32_t  numData = 1000000;
+
+    LOG(INFO) <<"begin add data.";
+    auto kv_keys = work1.writeWork(RecordType::RT_KV, numData);
+    LOG(INFO) <<"end add data.";
+
+    std::this_thread::sleep_for(5s);
+
+    testDeleteChunks(srcNode, 0, {5000});
+    testDeleteChunks(srcNode, 0, {5100,5110,5120});
+    testDeleteChunks(srcNode, 0, {5200,5210,5220,5280});
+    testDeleteChunks(srcNode, 0, {5300,5340,5350,5380});
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+    servers.clear();
+}
 
 TEST(Cluster, ErrStoreNum) {
     std::vector<std::string> dirs = {"node1", "node2"};
@@ -1351,7 +1425,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
 TEST(Cluster, ConvergenceRate) {
     uint32_t nodeNum = 30;
     uint32_t migrateSlot = 8373;
-    uint32_t startPort = 15000;
+    uint32_t startPort = 14300;
     uint32_t dstNodeIndex = 0;
     uint32_t srcNodeIndex = migrateSlot / (CLUSTER_SLOTS / nodeNum);
 

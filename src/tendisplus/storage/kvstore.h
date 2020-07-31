@@ -186,7 +186,8 @@ class Transaction {
                          const std::string& val,
                          const uint64_t ts = 0) = 0;
     virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
-
+    // [begin, end)
+    virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
     virtual uint64_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint64_t timestamp) = 0;
     virtual bool isReplOnly() const = 0;
@@ -204,6 +205,7 @@ class Transaction {
     static constexpr uint32_t CHUNKID_MULTI = 0xFFFFFFFE;
     static constexpr uint32_t CHUNKID_FLUSH = 0xFFFFFFFD;
     static constexpr uint32_t CHUNKID_MIGRATE = 0xFFFFFFFC;
+    static constexpr uint32_t CHUNKID_DEL_RANGE = 0xFFFFFFFB;
 };
 
 class BackupInfo {
@@ -290,6 +292,9 @@ class KVStore {
     virtual Status setKV(const std::string& key, const std::string& val,
                          Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+    virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
+    virtual Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) = 0;
+
 #ifdef BINLOG_V1
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
                                Transaction* txn) = 0;
