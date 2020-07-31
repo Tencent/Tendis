@@ -88,8 +88,8 @@ class ChunkMigrateSender{
     Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
     Status sendSnapshot();
 
-    bool pursueBinLog(uint64_t *startBinLog);
-
+    Status pursueBinLog(uint64_t *startBinLog);
+    Status finishLastBinlog();
     Expected<uint64_t> catchupBinlog(uint64_t start, uint64_t end,
             const std::bitset<CLUSTER_SLOTS>& slots);
     Status sendOver();

@@ -257,8 +257,7 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
                 (*it)->sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
                 auto s = (*it)->sender->unlockChunks();
                 if (!s.ok()) {
-                    LOG(ERROR) << "unlock fail on slots:"
-                               << bitsetStrEncode((*it)->slots);
+                    LOG(ERROR) << "unlock slots fail:"<< s.toString();
                     (*it)->state = MigrateSendState::ERR;
                 } else {
                     (*it)->state = MigrateSendState::CLEAR;
@@ -268,80 +267,14 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
                 // if not change after node timeout, mark fail
                 auto s = (*it)->sender->unlockChunks();
                 if (!s.ok()) {
-                    LOG(ERROR) << "unlock fail on slots:"
-                               << bitsetStrEncode((*it)->slots);
+                    LOG(ERROR) << "unlock slots fail" << s.toString();
                 }
                 (*it)->state = MigrateSendState::ERR;
             }
-
             ++it;
         }
     }
     return doSth;
-}
-
-// TODO(wayenchen)  takenliu add, delete this interface
-Status MigrateManager::lockXChunk(uint32_t chunkid) {
-    uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
-    if (_lockMap.count(chunkid)) {
-        LOG(ERROR) << "chunk" + chunkid << "lock already find in map";
-        return {ErrorCodes::ERR_CLUSTER, "lock already find"};
-    }
-
-    auto lock = std::make_unique<ChunkLock>
-            (storeId, chunkid, mgl::LockMode::LOCK_X, nullptr, _svr->getMGLockMgr());
-
-    _lockMap[chunkid] = std::move(lock);
-    //LOG(INFO) << "lock chunk sucess, chunkid:"<< chunkid << " storeid:" << storeId;
-    return  {ErrorCodes::ERR_OK, "finish chunk:"+ dtos(chunkid)+"lock"};
-}
-
-Status MigrateManager::lockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    size_t idx = 0;
-    Status s;
-    while (idx < slots.size()) {
-        if (slots.test(idx)) {
-            s = lockXChunk(idx);
-            if (!s.ok()) {
-                return  s;
-            }
-        }
-        idx++;
-    }
-    LOG(INFO) << "lockChunks sucess, slots:"<< bitsetStrEncode(slots);
-    return  {ErrorCodes::ERR_OK, "finish bitmap lock"};
-}
-
-// TODO(wayenchen)  takenliu add, delete this interface
-Status MigrateManager::unlockChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
-    std::lock_guard<std::mutex> lk(_mutex);
-    size_t idx = 0;
-    Status s;
-    while (idx < slots.size()) {
-        if (slots.test(idx)) {
-            s = unlockXChunk(idx);
-            if (!s.ok()) {
-                return  s;
-            }
-        }
-        idx++;
-    }
-    LOG(INFO) << "unlockChunks sucess, slots:" << bitsetStrEncode(slots);
-    return  {ErrorCodes::ERR_OK, "finish bitmap unlock"};
-}
-
-
-Status MigrateManager::unlockXChunk(uint32_t chunkid) {
-    auto it = _lockMap.find(chunkid);
-    if (it != _lockMap.end()) {
-        _lockMap.erase(it);
-    } else {
-        LOG(ERROR) << "chunk" + chunkid << "lock not find in map";
-        return {ErrorCodes::ERR_CLUSTER, "lock already find"};
-    }
-    //LOG(INFO) << "unlock chunk sucess, chunkid:"<< chunkid;
-    return  {ErrorCodes::ERR_OK, "finish chunk:"+  dtos(chunkid) +"unlock"};
 }
 
 bool MigrateManager::slotInTask(uint32_t slot) {
@@ -489,7 +422,6 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
     }
     return true;
 }
-
 
 SlotsBitmap  convertMap(const std::vector<uint32_t>& vec) {
     SlotsBitmap  map;
@@ -988,8 +920,14 @@ Expected<std::string> MigrateManager::getMigrateInfoStr(const SlotsBitmap& slots
     if (stream1.str().size() == 0 && stream2.str().size() == 0) {
         return {ErrorCodes::ERR_WRONG_TYPE, "no migrate or import slots"};
     }
-    return stream1.str() + " " + stream2.str();
-}
+
+    std::string importInfo = stream1.str();
+    std::string migrateInfo = stream2.str();
+    if (importInfo.empty() || migrateInfo.empty()) {
+        return importInfo + migrateInfo;
+    } 
+    return importInfo + " " + migrateInfo;
+}            
 
 //pass cluster node slots to check
 Expected<std::string> MigrateManager::getMigrateInfoStrSimple(const SlotsBitmap& slots) {
@@ -1219,85 +1157,10 @@ Expected<uint64_t> MigrateManager::applyMigrateBinlog(ServerEntry* svr, PStore s
         // do nothing
     } else if (type == MigrateBinlogType::RECEIVE_END) {
         // NOTE(wayenchen) need do nothing, receiver have broadcast message
-        if (_cluster->getMyselfNode()->nodeIsMaster()) {
-            LOG(ERROR) << "applyMigrateBinlog error, self is master, slots:"
-                << bitsetStrEncode(slotsMap);
-            return {ErrorCodes::ERR_INTERGER, "self is master"};
-        }
-         
-        // TODO(takenliu) now nodeName hasnot set right ,it's "none"
-        /*auto srcnode = _cluster->clusterLookupNode(nodeName);
-        if (srcnode == nullptr) {
-            LOG(ERROR) << "applyMigrateBinlog error, find node failed:" << nodeName
-                       << " slots:" << bitsetStrEncode(slotsMap);
-            return {ErrorCodes::ERR_INTERGER, "srcnode find failed"};
-        }
-        // maybe gossip is earlier come before binlog
-        for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
-            if (slotsMap.test(i) && _cluster->getNodeBySlot(i) != srcnode) {
-                LOG(WARNING) << "slot info not match,slot:" << i
-                    << " owner:" << _cluster->getNodeBySlot(i)->getNodeName()
-                    << " srcnode:" << nodeName
-                    << " slots:" << bitsetStrEncode(slotsMap);
-            }
-        }
-        
-        auto s = _cluster->setSlots(_cluster->getMyselfNode()->getMaster(), slotsMap);
-        if (!s.ok()) {
-            LOG(ERROR) << "setSlots error:" << s.toString();
-        }
-        */
     } else if (type == MigrateBinlogType::SEND_START) {
         // do nothing
     } else if (type == MigrateBinlogType::SEND_END) {
         // NOTE(wayenchen) need do nothing, receiver have broadcast message
-        /*
-        if (_cluster->getMyselfNode()->nodeIsMaster()) {
-            LOG(ERROR) << "applyMigrateBinlog error, self is master, slots:"
-                << bitsetStrEncode(slotsMap);
-            return {ErrorCodes::ERR_INTERGER, "self is master"};
-        }
-        auto dstnode = _cluster->clusterLookupNode(nodeName);
-        if (dstnode == nullptr) {
-            LOG(ERROR) << "applyMigrateBinlog error, find node failed:" << nodeName
-                       << " slots:" << bitsetStrEncode(slotsMap);
-            return {ErrorCodes::ERR_INTERGER, "dstnode find failed"};
-        }
-        */
-        // maybe gossip is earlier come before binlog
-        // NOTE(wayenchen): delete it
-        /*
-        auto master = _cluster->getMyselfNode()->getMaster();
-        for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
-            if (slotsMap.test(i)) {
-                auto node = _cluster->getNodeBySlot(i);
-                if (_cluster->getNodeBySlot(i) != master) {
-                    LOG(WARNING) << "applyMigrateBinlog, maybe gossip"
-                        " is earlier come before binlog, slot:" << i
-                        << " master:" << master->getNodeName() << " owner:" << node->getNodeName();
-                        // << " slots:" << bitsetStrEncode(slotsMap);
-                }
-                if (_cluster->getNodeBySlot(i) != master
-                    && _cluster->getNodeBySlot(i) != dstnode) {
-                    LOG(ERROR) << "applyMigrateBinlog, slot info not match, slot:" << i
-                               << " master:" << master->getNodeName()
-                               << " owner:" << node->getNodeName()
-                               << " slots:" << bitsetStrEncode(slotsMap);
-                    // should do what?
-                    // return {ErrorCodes::ERR_INTERGER, "slot info not match"};
-                }
-            }
-        }
-         */
-        // NOTE(wayenchen): slave of sender setslots will cause error
-        // when srcnode has no slots after migrating, and setslots finish before receive gossip
-        // then gossip is unable change the this slave to set dstnode as a new master
-        /*
-        auto s = _cluster->setSlots(dstnode, slotsMap);
-        if (!s.ok()) {
-            LOG(ERROR) << "setSlots error:" << s.toString();
-        }
-         */
     }
     return {ErrorCodes::ERR_OK, ""};
 }

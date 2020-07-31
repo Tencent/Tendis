@@ -376,7 +376,7 @@ void ClusterNode::delFailureReport(std::string nodename) {
     std::lock_guard<myMutex> lk(_mutex);
     for (auto it = _failReport.begin(); it != _failReport.end(); ) {
         if ((*it)->getFailNode() == nodename) {
-            _failReport.erase(it++);
+            it = _failReport.erase(it);
         } else {
             it++;
         }
@@ -388,7 +388,7 @@ void ClusterNode::cleanupFailureReports(mstime_t lifeTime) {
         CReportPtr n = *it;
         mstime_t live = msSinceEpoch() - n->getFailTime();
         if (live > lifeTime) {
-            _failReport.erase(it++);
+            it = _failReport.erase(it);
         } else {
             it++;
         }
@@ -1310,13 +1310,11 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
      return  {ErrorCodes::ERR_OK, "finish force failover"};
 }
 
-
 bool ClusterState::clusterSetNodeAsMaster(CNodePtr node) {
     std::lock_guard<myMutex> lk(_mutex);
     bool s = clusterSetNodeAsMasterNoLock(node);
     return  s;
 }
-
 
 bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
     if (node->nodeIsMaster()) {
@@ -1337,7 +1335,6 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
     node->setAsMaster();
     return true;
 }
-
 
 Status ClusterState::clusterSetMaster(CNodePtr node) {
     Status s;
@@ -1580,6 +1577,7 @@ void ClusterState::clusterAddNode(CNodePtr node, bool save) {
         clusterSaveNodesNoLock();
     }
 }
+
 void ClusterState::clusterDelNodeNoLock(CNodePtr delnode) {
     /* 1) Mark slots as unassigned. */
     auto nodeName = delnode->getNodeName();
@@ -1725,6 +1723,7 @@ bool ClusterState::clusterAddSlot(CNodePtr node, const uint32_t slot) {
     auto s = clusterAddSlotNoLock(node, slot);
     return  s;
 }
+
 bool ClusterState::clusterAddSlotNoLock(CNodePtr node, const uint32_t slot) {
     if (_allSlots[slot] != nullptr/* || _allSlots[slot] != node*/) {
         return false;
@@ -1902,7 +1901,6 @@ void ClusterState::resetManualFailoverNoLock() {
     _mfSlave = nullptr;
     _mfMasterOffset = 0;
 }
-
 
 void ClusterState::clusterHandleManualFailover() {
     std::lock_guard<myMutex> lk(_mutex);
@@ -2344,7 +2342,6 @@ Status ClusterState::clusterFailoverReplaceYourMasterMeta(void) {
     }
     return {ErrorCodes::ERR_OK, "replace metadata"};
 }
-
 
 Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     auto s = clusterFailoverReplaceYourMasterMeta();
@@ -4062,7 +4059,7 @@ void ClusterState::setMfStart() {
 }
 
 
-void ClusterState::clusterBlockMyself(uint64_t locktime) {
+Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     if (isClientBlock()) {
         LOG(WARNING) << "aleady block!";
         setClientUnBlock();
@@ -4070,7 +4067,9 @@ void ClusterState::clusterBlockMyself(uint64_t locktime) {
     }
     auto exptLockList = clusterLockMySlots();
     if (!exptLockList.ok()) {
-        LOG(ERROR) << "fail lock slots on:" << getMyselfName();
+        LOG(ERROR) << "fail lock slots on:" << getMyselfName()
+                   << exptLockList.status().toString();
+        return  exptLockList.status();
     }
     _manualLockThead = std::make_unique<std::thread>([this](
             uint64_t time,
@@ -4079,9 +4078,12 @@ void ClusterState::clusterBlockMyself(uint64_t locktime) {
         _cv.wait_for(lk, std::chrono::milliseconds(time));
         LOG(INFO) << "mflock end:" << msSinceEpoch();
     }, locktime, std::move(exptLockList.value()));
+
+    return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
 }
 
 Expected<std::list<std::unique_ptr<ChunkLock>>> ClusterState::clusterLockMySlots() {
+    mstime_t locktime = msSinceEpoch();
     std::list<std::unique_ptr<ChunkLock>> lockList;
     std::unordered_map<uint32_t, std::set<uint32_t>> slotsMap;
 
@@ -4106,13 +4108,18 @@ Expected<std::list<std::unique_ptr<ChunkLock>>> ClusterState::clusterLockMySlots
             for (auto iter = slotSet.begin(); iter != slotSet.end(); ++iter) {
                 auto lock = ChunkLock::AquireChunkLock(i, *iter,
                                                 mgl::LockMode::LOCK_S, nullptr,
-                                                 _server->getMGLockMgr());
+                                                 _server->getMGLockMgr(), 1000);
                 if (!lock.ok()) {
                     LOG(ERROR) << "lock chunk fail on :" << *iter;
                 } else {
                     lockList.push_back(std::move(lock.value()));
                     lockNum++;
                     slotsDone.set(*iter);
+                }
+                //NOTE(wayenchen) LOCK TIME should be limted
+                mstime_t delay = msSinceEpoch() - locktime;
+                if ( delay > CLUSTER_MF_TIMEOUT/2) {
+                    return  {ErrorCodes::ERR_TIMEOUT, "lock timeout"};
                 }
             }
         }
@@ -4922,10 +4929,15 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         /* Manual failover requested from slaves. Initialize the state
         * accordingly. */
         resetManualFailover();
-        setMfSlave(sender);
-        clusterBlockMyself(2*CLUSTER_MF_TIMEOUT);
-        setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
-        LOG(INFO) <<  "set mf_end:" << getMfEnd();
+
+        auto s = clusterBlockMyself(2*CLUSTER_MF_TIMEOUT);
+        if (s.ok()) {
+            setMfSlave(sender);
+            setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
+            LOG(INFO) << "set mf_end:" << getMfEnd();
+        } else {
+            LOG(ERROR) << "manual failover lock fail" << s.toString();
+        }
         serverLog(LL_WARNING, "Manual failover requested by slave %.40s.",
                     sender->getNodeName().c_str());
     } else if (type == ClusterMsg::Type::UPDATE) {

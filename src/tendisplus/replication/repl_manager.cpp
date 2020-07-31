@@ -1005,8 +1005,9 @@ uint64_t ReplManager::replicationGetOffset() const {
     LocalSessionGuard sg(_svr.get());
 
     for (uint64_t i = 0; i < _svr->getKVStoreCount(); i++) {
+        //NOTE(wayenchen) not necessary to lockdb if just get offset in memory
         auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
-                                                  mgl::LockMode::LOCK_IS);
+                                                  mgl::LockMode::LOCK_NONE);
         if (!expdb.ok()) {
             LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
             continue;

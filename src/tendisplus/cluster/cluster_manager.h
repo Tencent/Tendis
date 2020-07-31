@@ -697,7 +697,7 @@ private:
     void clusterBlacklistCleanupNoLock();
 
     uint32_t clusterMastersHaveSlavesNoLock();
-    void clusterBlockMyself(uint64_t time);
+    Status clusterBlockMyself(uint64_t time);
 
  public:
     ClusterHealth _state;

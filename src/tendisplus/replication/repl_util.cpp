@@ -378,34 +378,8 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         auto slot = explog.value().getChunkId();
         binlogId = explog.value().getBinlogId();
 
-        // NOTE(takenliu): FLUSH when migrate, it will generate ambiguous result!
-        //     it cant send to dst node.
-        if (slot == Transaction::CHUNKID_FLUSH) {
-            /*if (writer->getCount() > 0) {
-                writer->resetWriter();
-                }
-            writer->setFlag(BinlogFlag::FLUSH);*/
-            LOG(WARNING) << "FLUSH when migrate, it will generate ambiguous result! slots:"
-                << bitsetStrEncode(slotsMap);
-            continue;
-        }
-
-        // NOTE(takenliu) migrate binlog dont send to dst node
-        if (slot == Transaction::CHUNKID_MIGRATE) {
-            // migrate binlog should be alone
-            LOG(INFO) << "deal with chunk migrate: " <<explog.value().getChunkId();
-            continue;
-        }
-
-        if (slot == VERSIONMETA_CHUNKID) {
-            LOG(INFO) << "deal with versionmeta ";
-            continue;
-        }
-
-        // NOTE(takenliu) delete_range binlog dont send to dst node
-        if (slot == Transaction::CHUNKID_DEL_RANGE) {
-            // delete_range binlog should be alone
-            LOG(INFO) << "deal with delete_range: " <<explog.value().getChunkId();
+        if (slot > CLUSTER_SLOTS - 1) {
+            LOG(INFO) << "migrate sendbinlog deal with invaild slot:" << slot;
             continue;
         }
 
