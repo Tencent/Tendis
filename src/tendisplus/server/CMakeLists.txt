@@ -6,7 +6,6 @@ target_link_libraries(server status network nwp time_util rocks_kvstore segment_
 
 add_library(server_params server_params.cpp)
 target_link_libraries(server_params status glog gtest_main)
-set_target_properties(server_params PROPERTIES LINK_FLAGS "")
 
 add_library(segment_mgr segment_manager.cpp)
 target_link_libraries(segment_mgr status session lock)

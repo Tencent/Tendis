@@ -420,19 +420,16 @@ Status ChunkMigrateSender::sendOver() {
     return { ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::deleteChunk(uint32_t  chunkidStart, uint32_t chunkidEnd) {
+Status ChunkMigrateSender::deleteChunkRange(uint32_t  chunkidStart, uint32_t chunkidEnd) {
     // LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
-    // NOTE(takenliu) for fake task, maybe only call deleteChunk(), so _dbWithLock maybe null.
-    if (_isFake) {
-        auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
-                                                  mgl::LockMode::LOCK_IS);
-        if (!expdb.ok()) {
-            LOG(ERROR) << "getDb failed:" << _storeid;
-            return expdb.status();
-        }
-        _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
+    auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
+            mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+        LOG(ERROR) << "getDb failed:" << _storeid;
+        return expdb.status();
     }
-    PStore kvstore = _dbWithLock->store;
+
+    PStore kvstore = expdb.value().store;
     RecordKey rkStart(chunkidStart, 0, RecordType::RT_INVALID, "", "");
     RecordKey rkEnd(chunkidEnd + 1, 0, RecordType::RT_INVALID, "", "");
     string start = rkStart.prefixChunkid();
@@ -451,41 +448,42 @@ Status ChunkMigrateSender::deleteChunk(uint32_t  chunkidStart, uint32_t chunkidE
 
 Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     // NOTE(wayenchen) check if chunk not belong to me，make sure MOVE work well before delete
-    if (!checkSlotsBlongDst()){
+    if (!_isFake && !checkSlotsBlongDst()){
         return  {ErrorCodes::ERR_CLUSTER, "slots not belongs to dstNodes"};
     }
     lockChunks();
 
     LOG(INFO) << "deleteChunks beigin slots: " << bitsetStrEncode(_slots);
     size_t idx = 0;
-    uint32_t storeCount = _svr->getKVStoreCount();
     uint32_t startChunkid = UINT32_MAX;
     uint32_t endChunkid = UINT32_MAX;
     while (idx < slots.size()) {
-        if (slots.test(idx)) {
-            if (startChunkid == UINT32_MAX) {
-                startChunkid = idx;
-                endChunkid = idx;
-            } else if (idx == endChunkid + storeCount) {
-                endChunkid = idx;
-            } else {
-                auto s = deleteChunk(startChunkid, endChunkid);
-                if (!s.ok()) {
-                    LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
-                        << " endChunkid:" << endChunkid << " err:" << s.toString();
-                    return s;
+        if (_svr->getSegmentMgr()->getStoreid(idx) == _storeid) {
+            if (slots.test(idx)) {
+                if (startChunkid == UINT32_MAX) {
+                    startChunkid = idx;
                 }
-                LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
-                           << " endChunkid:" << endChunkid;
-                startChunkid = idx;
                 endChunkid = idx;
+                _delSlot++;
+            } else {
+                if (startChunkid != UINT32_MAX) {
+                    auto s = deleteChunkRange(startChunkid, endChunkid);
+                    if (!s.ok()) {
+                        LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
+                                   << " endChunkid:" << endChunkid << " err:" << s.toString();
+                        return s;
+                    }
+                    LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
+                              << " endChunkid:" << endChunkid;
+                    startChunkid = UINT32_MAX;
+                    endChunkid = UINT32_MAX;
+                }
             }
-            _delSlot++;
         }
         idx++;
     }
     if (startChunkid != UINT32_MAX) {
-        auto s = deleteChunk(startChunkid, endChunkid);
+        auto s = deleteChunkRange(startChunkid, endChunkid);
         if (!s.ok()) {
             LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
                        << " endChunkid:" << endChunkid << " err:" << s.toString();

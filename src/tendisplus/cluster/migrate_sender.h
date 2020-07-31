@@ -68,7 +68,7 @@ class ChunkMigrateSender{
     MigrateSenderStatus getSenderState() { return _sendstate;}
     void setSenderStatus(MigrateSenderStatus s);
 
-    Status deleteChunk(uint32_t chunkidStart, uint32_t chunkidEnd);
+    Status deleteChunkRange(uint32_t chunkidStart, uint32_t chunkidEnd);
     // TODO(wayenchen)  takenliu add, delete the slots param for all interface, use _slots
     Status deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
     bool checkSlotsBlongDst();

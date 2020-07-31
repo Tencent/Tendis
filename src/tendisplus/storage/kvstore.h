@@ -186,8 +186,7 @@ class Transaction {
                          const std::string& val,
                          const uint64_t ts = 0) = 0;
     virtual Status delKV(const std::string& key, const uint64_t ts = 0) = 0;
-    // [begin, end)
-    virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
+    virtual Status addDeleteRangeBinlog(const std::string& begin, const std::string& end) = 0;
     virtual uint64_t getBinlogTime() = 0;
     virtual void setBinlogTime(uint64_t timestamp) = 0;
     virtual bool isReplOnly() const = 0;
@@ -292,6 +291,7 @@ class KVStore {
     virtual Status setKV(const std::string& key, const std::string& val,
                          Transaction* txn) = 0;
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+    // [begin, end)
     virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
     virtual Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) = 0;
 

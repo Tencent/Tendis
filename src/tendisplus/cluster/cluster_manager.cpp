@@ -3663,6 +3663,7 @@ void ClusterState::cronRestoreSessionIfNeeded() {
                              << ", PORT:" << node->getPort();
 
                 clusterDelNodeNoLock(node);
+                iter = _nodes.begin();
                 continue;
             }
 
