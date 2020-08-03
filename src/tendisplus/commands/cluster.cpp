@@ -87,18 +87,13 @@ public:
                 std::bitset<CLUSTER_SLOTS> slotsMap;
 
                 for (size_t i= 4 ; i<args.size(); i++) {
-                    Expected<uint64_t> exptSlot = ::tendisplus::stoul(args[i]);
+                    Expected<int64_t> exptSlot = ::tendisplus::stoll(args[i]);
                     if (!exptSlot.ok()) {
                         return exptSlot.status();
                     }
-                    LOG(INFO) << "args:" << args[i];
-                    if (args[i][0] == '-') {
-                        return {ErrorCodes::ERR_CLUSTER,
-                                "Invalid migrate" + args[i]};
-                    }
-                    uint32_t slot = (uint32_t)exptSlot.value();
+                    int32_t slot = (int32_t)exptSlot.value();
 
-                    if (slot >= CLUSTER_SLOTS) {
+                    if (slot > CLUSTER_SLOTS - 1  || slot < 0) {
                         LOG(ERROR) << "slot" << slot << " ERR Invalid or out of range slot ";
                         return {ErrorCodes::ERR_CLUSTER,
                                 "Invalid migrate slot position"};
