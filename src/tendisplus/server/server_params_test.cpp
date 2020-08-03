@@ -4,6 +4,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/server/server_params.h"
+#include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 

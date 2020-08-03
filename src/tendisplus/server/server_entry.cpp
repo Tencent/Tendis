@@ -1291,5 +1291,10 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     }
 }
 
+std::shared_ptr<ServerEntry> &getGlobalServer() {
+    static std::shared_ptr<ServerEntry> gServer;
+    return gServer;
+}
+
 }  // namespace tendisplus
 

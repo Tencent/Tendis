@@ -47,6 +47,8 @@ class ClusterManager;
 #define STATS_METRIC_NET_OUTPUT 2   /* Bytes written to network. */
 #define STATS_METRIC_COUNT 3
 
+std::shared_ptr<ServerEntry> &getGlobalServer();
+
 class ServerStat {
  public:
     ServerStat();

@@ -41,7 +41,8 @@ WorkerPool::WorkerPool(const std::string& name,
     :_isRuning(false),
      _ioCtx(std::make_unique<asio::io_context>()),
      _name(name),
-     _matrix(poolMatrix) {
+     _matrix(poolMatrix),
+     _idGenerator(0) {
 }
 
 bool WorkerPool::isFull() const {
@@ -50,22 +51,40 @@ bool WorkerPool::isFull() const {
 }
 
 void WorkerPool::consumeTasks(size_t idx) {
+    bool detachFlag{false};
     char threadName[64];
     memset(threadName, 0, sizeof threadName);
     pthread_getname_np(pthread_self(), threadName, sizeof threadName);
     LOG(INFO) << "workerthread:" << threadName << " starts";
     char* pname = &threadName[0];
-    const auto guard = MakeGuard([this, pname]{
+    const auto guard = MakeGuard([this, pname, &detachFlag]{
         std::lock_guard<std::mutex> lk(_mutex);
         const auto& thd_id = std::this_thread::get_id();
-        for (auto v = _threads.begin(); v != _threads.end(); v++) {
-            if (v->get_id() == thd_id) {
-                LOG(INFO) << "thd:" << thd_id
+        if (_threads.count(thd_id)) {
+           // erase thread in scope guard, only here.
+           // NOTE: after detach thread itself, std::this_thread::get_id()
+           //       can't get the thread id.Because of this, we don't erase 
+           //       other thread. It's really correct.
+            if (detachFlag) {
+                // NOTE: make sure std::thread::detach() and std::container::erase() together,
+                // or maybe serverEntry::shutdown() may get the lock, then occurs error.
+                _threads[thd_id].detach();
+                _threads.erase(thd_id);
+                LOG(INFO) << "thd: " << thd_id
+                          << ",name:" << pname
+                          << ", detach()";
+                LOG(INFO) << "thd: " << thd_id
                           << ",name:" << pname
                           << ", clean and exit";
                 return;
             }
-        }
+            if (_threads[thd_id].get_id() == thd_id) {
+                LOG(INFO) << "thd: " << thd_id
+                          << ",name:" << pname
+                          << ", clean and exit";
+                return;
+            }
+        }    
         LOG(FATAL) << "thd:" << thd_id
                    << ",name:" << pname
                    << "not found in threads_list";
@@ -75,7 +94,23 @@ void WorkerPool::consumeTasks(size_t idx) {
         LOG(INFO) << "WorkerPool consumeTasks work:" << idx;
         // TODO(takenliu): use run_for to make threads more adaptive
         asio::io_context::work work(*_ioCtx);
-        _ioCtx->run();
+        
+        try {
+            _ioCtx->run();
+        } catch (const IOCtxException &) {
+            auto id = std::this_thread::get_id();
+            auto iter = _threads.find(id);
+            if (iter != _threads.cend()) {
+                // NOTE: if in need, we can log exiting thread info with its name
+                //       from pthread_getname_np();
+                detachFlag = true;
+                return;
+            } else {
+                LOG(ERROR) << "This thread isn't in collection";
+            }
+        } catch (...) {
+            LOG(FATAL) << "Workerpool: " << pname << " occurs error";
+        }
     }
 }
 
@@ -84,7 +119,7 @@ void WorkerPool::stop() {
     _isRuning.store(false, std::memory_order_relaxed);
     _ioCtx->stop();
     for (auto& t : _threads) {
-        t.join();
+        t.second.join();
     }
     LOG(INFO) << "workerPool stops complete...";
 }
@@ -103,9 +138,81 @@ Status WorkerPool::startup(size_t poolsize) {
             pthread_setname_np(pthread_self(), threadName.c_str());
             consumeTasks(i);
         });
-        _threads.emplace_back(std::move(thd));
+        auto tid = thd.get_id();
+        _threads.emplace(tid, std::move(thd));
     }
+    _idGenerator.store(poolsize, std::memory_order_relaxed);
     return {ErrorCodes::ERR_OK, ""};
 }
 
+size_t WorkerPool::size() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _threads.size();
+}
+
+/**
+ * @brief resize, impl in resizeIncrease() and resizeDecrease()
+ * @param poolSize
+ */
+void WorkerPool::resize(size_t poolSize) {
+    std::lock_guard<std::mutex> lk(_mutex);
+
+    // poolSize == 0 means stop the worker pool
+    if (poolSize == 0) {
+        stop();
+        return;
+    }
+    auto size = _threads.size();
+    if (poolSize > size) {
+        resizeIncrease(poolSize - size);
+    } else if (size > poolSize) {
+        resizeDecrease(size - poolSize);
+    } else {
+        return;                 // no need to resize
+    }
+}
+
+/**
+ * @brief increase the pool thread size
+ * @param size result to increase by calc (poolSize - container.size())
+ * @note  logic like WorkerPool::startup(), but should incr _idGenerator.
+ */
+void WorkerPool::resizeIncrease(size_t size) {
+    for (size_t i = 0; i < size; ++i) {
+        std::thread thd = std::thread([this]() {
+            std::string threadName = _name + "_" + std::to_string(_idGenerator.load(std::memory_order_relaxed));
+            pthread_setname_np(pthread_self(), threadName.c_str());
+            consumeTasks(_idGenerator.load(std::memory_order_relaxed));
+        });
+        auto tid = thd.get_id();
+        {
+            // TODO(pecochen): In order to reduce the granularity of the lock,
+            //              but maybe hang here, solve this bug later.
+            //              maybe solved by lock guard at top of scope.
+
+            //    std::lock_guard<std::mutex> lk(_mutex);
+            _threads.emplace(tid, std::move(thd));
+        }
+        _idGenerator.store(_idGenerator.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+}
+
+/**
+ * @brief decrease the pool thread size
+ * @param size size result to decrease by calc (container.size() - poolsize)
+ * @note logic core is use exception to exit asio::io_context::run().
+ *      1. detach the thread in try-catch scope,
+ *      2. erase thread from list is scopeguard by makeGuard.
+ *      or may occur bugs.
+ */
+void WorkerPool::resizeDecrease(size_t size) {
+    for (size_t i = 0; i < size; ++i) {
+        auto exceptionTask = []() {
+            throw IOCtxException();
+        };
+        this->schedule(std::move(exceptionTask));
+    }
+}
+
 }  // namespace tendisplus
+

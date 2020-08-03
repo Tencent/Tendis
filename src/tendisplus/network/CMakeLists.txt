@@ -9,3 +9,6 @@ target_link_libraries(network_test server network session gtest_main ${SYS_LIBS}
 
 add_library(session_ctx session_ctx.cpp)
 target_link_libraries(session_ctx glog)
+
+add_executable(worker_pool_test worker_pool_test.cpp)
+target_link_libraries(worker_pool_test  gtest_main nwp test_util)

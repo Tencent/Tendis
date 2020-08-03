@@ -8,9 +8,11 @@
 #include <set>
 #include <assert.h>
 #include <stdlib.h>
+#include <functional>
 #include <atomic>
 #include <list>
 #include "glog/logging.h"
+#include "tendisplus/server/session.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -18,9 +20,9 @@
 namespace tendisplus {
 using namespace std;
 
-typedef void (*funptr) ();
-typedef bool (*checkfunptr) (const string&);
-typedef string (*preProcess) (const string&);
+using funptr = std::function<void ()>;
+using checkfunptr = std::function<bool (const string &)>;
+using preProcess = std::function<string (const string &)>;
 
 string removeQuotes(const string& v);
 string removeQuotesAndToLower(const string& v);
@@ -28,8 +30,7 @@ string removeQuotesAndToLower(const string& v);
 class BaseVar {
 public:
     BaseVar(const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)
-        : name(s), value(v), Onupdate(nullptr),
-          checkFun(ptr), preProcessFun(preFun), allowDynamicSet(allowDS) {
+        : name(s), value(v), Onupdate(nullptr), checkFun(ptr), preProcessFun(preFun), allowDynamicSet(allowDS) {
         if (v == NULL) {
             assert(false);
             return;
@@ -108,8 +109,10 @@ private:
 // support:int, uint32_t
 class IntVar : public BaseVar {
 public:
-    IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int*)value){};
+    IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun,
+            int64_t minVal, int64_t maxVal, bool allowDynamicSet)
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int *)value){},
+          minVal_(minVal), maxVal_(maxVal){};
     virtual string show() const {
         return std::to_string(*(int*)value);
     };
@@ -120,25 +123,34 @@ private:
     bool set(const string& val) {
         auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
+        int64_t valTemp;
 
         try {
-            *(int*)value = std::stoi(v);
+            valTemp = std::stoi(v);
         } catch (...) {
             LOG(ERROR) << "IntVar stoi err:" << v;
             return false;
         }
+        if (valTemp < minVal_ || valTemp > maxVal_) {
+            return false;
+        }
+        *reinterpret_cast<int *>(value) = valTemp;
 
         if (Onupdate != NULL) Onupdate();
         return true;
     }
     int _defaultValue;
+    int64_t minVal_;
+    int64_t maxVal_;
 };
 
 // support:int64_t, uint64_t
 class Int64Var : public BaseVar {
 public:
-    Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t*)value){};
+    Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun,
+            int64_t minVal, int64_t maxVal, bool allowDynamicSet)
+            : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t *)value){},
+              minVal_(minVal), maxVal_(maxVal){};
     virtual string show() const {
         return std::to_string(*(int64_t *)value);
     };
@@ -150,18 +162,25 @@ private:
     bool set(const string& val) {
         auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
+        int64_t valTemp;
 
         try {
-            *(int64_t*)value = std::stoll(v);
+            valTemp = std::stoll(v);
         } catch (...) {
             LOG(ERROR) << "Int64Var stoll err:" << v;
             return false;
         }
+        if (valTemp < minVal_ || valTemp > maxVal_) {
+            return false;
+        }
+        *reinterpret_cast<int64_t *>(value) = valTemp;
 
         if (Onupdate != NULL) Onupdate();
         return true;
     }
     int64_t _defaultValue;
+    int64_t minVal_;
+    int64_t maxVal_;
 };
 
 class FloatVar : public BaseVar {
@@ -178,6 +197,7 @@ private:
     bool set(const string& val) {
         auto v = preProcessFun ? preProcessFun(val) : val;
         if(!check(v)) return false;
+
         try {
             *(float*)value = std::stof(v);
         } catch (...) {
@@ -253,9 +273,11 @@ public:
     string getConfFile() const {
         return _confFile;
     }
-
     const std::unordered_map<string, int64_t>& getRocksdbOptions() const {
         return _rocksdbOptions;
+    }
+    BaseVar *serverParamsVar(const std::string &key) {
+        return _mapServerParams[tendisplus::toLower(key)];
     }
 
 private:

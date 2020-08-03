@@ -170,6 +170,16 @@ class MigrateManager {
     Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
     void requestRateLimit(uint64_t bytes);
 
+    void migrateSenderResize(size_t size);
+    void migrateClearResize(size_t size);
+    void migrateReceiverResize(size_t size);
+    void migrateCheckerResize(size_t size);
+
+    size_t migrateSenderSize();
+    size_t migrateClearSize();
+    size_t migrateReceiverSize();
+    size_t migrateCheckerSize();
+
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
     void controlRoutine();

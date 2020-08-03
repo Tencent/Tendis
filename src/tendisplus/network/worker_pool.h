@@ -14,6 +14,11 @@
 
 namespace tendisplus {
 
+class IOCtxException : public std::exception {
+public:
+  IOCtxException() : std::exception() {}
+};
+
 class PoolMatrix {
 public:
     PoolMatrix operator-(const PoolMatrix& right);
@@ -59,15 +64,20 @@ class WorkerPool {
         // _ioCtx->post(std::move(taskWrap));
     }
     void stop();
+    size_t size() const;
+    void resize(size_t poolSize);
 
  private:
     void consumeTasks(size_t idx);
+    void resizeIncrease(size_t size);
+    void resizeDecrease(size_t size);
     mutable std::mutex _mutex;
     std::atomic<bool> _isRuning;
     std::unique_ptr<asio::io_context> _ioCtx;
     const std::string _name;
     std::shared_ptr<PoolMatrix> _matrix;
-    std::vector<std::thread> _threads;
+    std::atomic<uint64_t> _idGenerator;
+    std::map<std::thread::id, std::thread> _threads;
 };
 
 }  // namespace tendisplus

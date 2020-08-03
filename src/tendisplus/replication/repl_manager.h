@@ -154,6 +154,16 @@ class ReplManager {
     bool isSlaveOfSomeone(uint32_t storeId);
     Status resetRecycleState(uint32_t storeId);
 
+    void fullPusherResize(size_t size);
+    void fullReceiverResize(size_t size);
+    void incrPusherResize(size_t size);
+    void logRecyclerResize(size_t size);
+
+    size_t fullPusherSize();
+    size_t fullReceiverSize();
+    size_t incrPusherSize();
+    size_t logRecycleSize();
+
     std::string getMasterHost() const;
     uint32_t getMasterPort() const;
     uint64_t getLastSyncTime() const;

@@ -5,7 +5,7 @@ add_library(server server_entry.cpp)
 target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate index_mgr cluster_mgr pessimistic server_params)
 
 add_library(server_params server_params.cpp)
-target_link_libraries(server_params status glog gtest_main)
+target_link_libraries(server_params status glog server gtest_main)
 
 add_library(segment_mgr segment_manager.cpp)
 target_link_libraries(segment_mgr status session lock)
