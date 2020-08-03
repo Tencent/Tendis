@@ -205,7 +205,7 @@ Expected<std::string> unhexlify(const std::string& s) {
 
 bool isOptionOn(const std::string& s) {
     auto x = toLower(s);
-    if (x == "on" || x == "1" || x == "true") {
+    if (x == "on" || x == "1" || x == "true" || x == "yes") {
         return true;
     }
     return false;

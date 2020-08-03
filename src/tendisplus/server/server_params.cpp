@@ -7,6 +7,9 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
@@ -76,6 +79,124 @@ string  removeQuotesAndToLower(const string& v) {
         tmp = tmp.substr(1, tmp.size() - 2);
     }
     return tmp;
+}
+
+Status rewriteConfigState::rewriteConfigReadOldFile(const std::string& confFile) {
+    Status s;
+    std::ifstream file(confFile);
+    if (!file.is_open()) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+    int32_t linenum = -1;
+    std::string line;
+    std::vector<std::string> tokens;
+    try {
+        line.clear();
+        while (std::getline(file, line)) {
+            line = trim(line);
+            linenum++;
+            if (line[0] == '#' || line[0] == '\0') {
+                if (!_hasTail && (line == _fixInfo))
+                    _hasTail = 1;
+                _lines.emplace_back(line);
+                line.clear();
+                continue;
+            }
+            std::stringstream ss(line);
+            tokens.clear();
+            std::string tmp;
+            while (std::getline(ss, tmp, ' ')) {
+                tokens.emplace_back(tmp);
+            }
+            if(tokens.empty()) {
+                std::string aux = "# ??? " + line;
+                _lines.emplace_back(aux);
+                line.clear();
+                continue;
+            }
+            tokens[0] = toLower(tokens[0]);
+            _lines.emplace_back(line);
+            _optionToLine[tokens[0]].push_back(linenum);
+            tokens.clear();
+            line.clear();
+        }
+    } catch (const std::exception& ex) {
+        LOG(ERROR) << "invalid " << tokens[0] << " config: " << ex.what() << " line:" << line;
+        return {ErrorCodes::ERR_INTERNAL, "invalid " + tokens[0] + " config: " + ex.what() + " line:" + line};
+    }
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+void rewriteConfigState::rewriteConfigRewriteLine(const std::string& option, const std::string& line, bool force) {
+    if(_rewritten.find(option) == _rewritten.end()) {
+        _rewritten.insert({option, std::list<uint64_t>()});
+    }
+    if(_optionToLine.find(option) == _optionToLine.end() && !force) {
+        return;
+    }
+    if(_optionToLine.find(option) != _optionToLine.end()) {
+        long linenum = *_optionToLine[option].begin();
+        _optionToLine[option].erase(_optionToLine[option].begin());
+        if(_optionToLine[option].empty()) {
+            _optionToLine.erase(option);
+        }
+        _lines[linenum] = line;
+    }else {
+        if(!_hasTail) {
+            _lines.emplace_back(_fixInfo);
+            _hasTail = true;
+        }
+        _lines.emplace_back(line);
+    }
+}
+
+void rewriteConfigState::rewriteConfigOption(const std::string& option, const std::string& value, const std::string& defvalue) {
+    bool force = value != defvalue;
+    std::string line;
+    line += option + " " + value;
+
+    rewriteConfigRewriteLine(option,line,force);
+}
+
+void rewriteConfigState::rewriteConfigRemoveOrphaned() {
+    for(auto it = _optionToLine.begin(); it != _optionToLine.end(); it++) {
+        std::string key = it->first;
+        std::list<uint64_t> val = it->second;
+
+        if(_rewritten.find(key) == _rewritten.end()) {
+            continue;
+        }
+
+        for(auto lit = val.begin(); lit != val.end(); lit++) {
+            int32_t linenum = *lit;
+            _lines[linenum].clear();
+        }
+    }
+}
+
+std::string rewriteConfigState::rewriteConfigGetContentFromState() {
+    std::string content;
+    bool was_empty = false;
+    uint32_t lsize = _lines.size();
+    for(uint32_t i = 0; i < lsize; i++) {
+        if(_lines[i].empty()) {
+            if(was_empty) continue;
+            was_empty = true;
+        } else {
+            was_empty = false;
+        }
+        content = content + _lines[i] + '\n';
+    }
+    return content;
+}
+
+Status rewriteConfigState::rewriteConfigOverwriteFile(const std::string& confFile, const std::string& content) {
+    std::ofstream file(confFile);
+    if(!file.is_open())
+        return {ErrorCodes::ERR_INTERNAL, "fail to open file"};
+    file<<content;
+    file.close();
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 ServerParams::ServerParams() {
@@ -306,5 +427,37 @@ bool ServerParams::showVar(const string& key, vector<string>& info) const {
         return false;
     return true;
 }
+
+Status ServerParams::rewriteConfig() const {
+    auto rw = std::make_shared<rewriteConfigState>();
+    Status s;
+
+    s = rw->rewriteConfigReadOldFile(_confFile);
+    if(!s.ok()) {
+        return s;
+    }
+
+    for(auto it = _mapServerParams.begin(); it != _mapServerParams.end(); it++) {
+        std::string name = it->first;
+        BaseVar * var = it->second;
+
+        if(!var->isallowDynamicSet())
+            continue;
+
+        rw->rewriteConfigOption(name, var->show(), var->default_show());
+    }
+
+    rw->rewriteConfigRemoveOrphaned();
+
+    std::string content = rw->rewriteConfigGetContentFromState();
+
+    s = rw->rewriteConfigOverwriteFile(_confFile, content);
+    if(!s.ok()) {
+        return s;
+    }
+
+    return {ErrorCodes::ERR_OK, ""};
+}
+
 }  // namespace tendisplus
 
