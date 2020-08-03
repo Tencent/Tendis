@@ -1191,6 +1191,7 @@ void ServerEntry::handleShutdownCmd() {
 }
 
 void ServerEntry::stop() {
+    // TODO(takenliu) check _isRunning and _mutex
     if (_isRunning.load(std::memory_order_relaxed) == false) {
         LOG(INFO) << "server is stopping, plz donot kill again";
         return;

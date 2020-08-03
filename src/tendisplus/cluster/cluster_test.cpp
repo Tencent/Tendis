@@ -1600,8 +1600,8 @@ TEST(Cluster, MigrateTTLIndex) {
     LOG(INFO) <<"begin addSlots.";
     work1.addSlots("{0..16382}");
     work2.addSlots("16383");
-    // TODO(takenliu): why need 5 seconds for cluster state change to ok, "CLUSTERDOWN" ???
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // TODO(takenliu): why need 7 seconds for cluster state change to ok, "CLUSTERDOWN" ???
+    std::this_thread::sleep_for(std::chrono::seconds(7));
 
     LOG(INFO) <<"begin add keys.";
     const uint32_t  numData = 10;

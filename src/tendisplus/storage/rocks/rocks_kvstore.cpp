@@ -447,7 +447,7 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksTxn::deleteRange(const std::string& begin, const std::string& end) {
+Status RocksTxn::addDeleteRangeBinlog(const std::string& begin, const std::string& end) {
     if (_replOnly) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
@@ -2235,7 +2235,7 @@ Status RocksKVStore::delKV(const RecordKey& key,
     return txn->delKV(key.encode());
 }
 
-Status RocksKVStore:: deleteRange(const std::string& begin, const std::string& end) {
+Status RocksKVStore::deleteRange(const std::string& begin, const std::string& end) {
     // NOTE(takenliu) be care of db::DeleteRange and add binlog are not atomic
     auto s = deleteRangeWithoutBinlog(begin, end);
     if (!s.ok()) {
@@ -2246,7 +2246,7 @@ Status RocksKVStore:: deleteRange(const std::string& begin, const std::string& e
         LOG(ERROR) << "deleteRange not atomic,createTransaction failed!!!";
         return txn.status();
     }
-    auto ret = txn.value()->deleteRange(begin, end);
+    auto ret = txn.value()->addDeleteRangeBinlog(begin, end);
     if (!ret.ok()) {
         LOG(ERROR) << "deleteRange not atomic,add binlog failed!!!";
         return ret;
@@ -2259,7 +2259,7 @@ Status RocksKVStore:: deleteRange(const std::string& begin, const std::string& e
     return ret;
 }
 
-Status RocksKVStore:: deleteRangeWithoutBinlog(const std::string &begin, const std::string &end) {
+Status RocksKVStore::deleteRangeWithoutBinlog(const std::string &begin, const std::string &end) {
     // TODO(takenliu) rocksdb 5.13 DeleteRange cause read performance degradation,
     //  use greater than rocksdb 5.18
     rocksdb::Slice sBegin(begin);
