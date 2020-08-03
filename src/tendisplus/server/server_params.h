@@ -111,7 +111,7 @@ class IntVar : public BaseVar {
 public:
     IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun,
             int64_t minVal, int64_t maxVal, bool allowDynamicSet)
-        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int *)value){},
+        : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int *)value),
           minVal_(minVal), maxVal_(maxVal){};
     virtual string show() const {
         return std::to_string(*(int*)value);
@@ -149,7 +149,7 @@ class Int64Var : public BaseVar {
 public:
     Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun,
             int64_t minVal, int64_t maxVal, bool allowDynamicSet)
-            : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t *)value){},
+            : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t *)value),
               minVal_(minVal), maxVal_(maxVal){};
     virtual string show() const {
         return std::to_string(*(int64_t *)value);
