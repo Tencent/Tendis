@@ -245,27 +245,18 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             LOG(INFO) << "erase sender task state:" << sendTaskTypeString((*it)->state)
                 << " slots:" << bitsetStrEncode((*it)->slots);
             _migrateSlots ^= ((*it)->slots);
-            _migrateSendTask.erase(it++);
+            it = _migrateSendTask.erase(it);
             continue;
         } else if ((*it)->state == MigrateSendState::HALF) {
             // middle state
             // check if metadata change
             if ((*it)->sender->checkSlotsBlongDst()) {
                 (*it)->sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
-                auto s = (*it)->sender->unlockChunks();
-                if (!s.ok()) {
-                    LOG(ERROR) << "unlock slots fail:"<< s.toString();
-                    (*it)->state = MigrateSendState::ERR;
-                } else {
-                    (*it)->state = MigrateSendState::CLEAR;
-                }
-
+                (*it)->sender->unlockChunks();
+                (*it)->state = MigrateSendState::CLEAR;
             } else {
                 // if not change after node timeout, mark fail
-                auto s = (*it)->sender->unlockChunks();
-                if (!s.ok()) {
-                    LOG(ERROR) << "unlock slots fail" << s.toString();
-                }
+               (*it)->sender->unlockChunks();
                 (*it)->state = MigrateSendState::ERR;
             }
             ++it;
@@ -300,8 +291,8 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
     auto s = task->sender->sendChunk();
     SCLOCK::time_point nextSched;
     if (!s.ok()) {
-        if (s.code() == ErrorCodes::ERR_CLUSTER) {
-            //  middle state, wait for 10s( half node timeout) to change
+        if (task->sender->needToWaitMetaChanged()) {
+            // middle state, wait for 10s( half node timeout) to change
             task->state = MigrateSendState::HALF;
             nextSched = SCLOCK::now() + std::chrono::seconds(10);
         } else  {
@@ -310,15 +301,13 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
             LOG(ERROR) << "Send slots failed, bitmap is:" << task->sender->getSlots().to_string();
         }
     } else {
-        task->sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
-        //TODO(wayenchen) delay deleting of sender, make sure migrate jobs finish first
         nextSched = SCLOCK::now();
         task->state = MigrateSendState::CLEAR;
     }
 
     std::lock_guard<std::mutex> lk(_mutex);
     task->sender->setClient(nullptr);
-    //NOTE(wayenchen) free DB lock
+    // NOTE(wayenchen) free DB lock
     task->sender->freeDbLock();
     task->nextSchedTime = nextSched;
     task->isRunning = false;
@@ -865,22 +854,22 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
     {
         std::lock_guard<std::mutex> lk(_mutex);
         if (!containSlot(slots, _importSlots)) {
-                LOG(ERROR) << "supplyMigrateEnd bitmap err";
-                return {ErrorCodes::ERR_INTERNAL, "slots not be migrating"};
+            LOG(ERROR) << "supplyMigrateEnd bitmap err";
+            return { ErrorCodes::ERR_INTERNAL, "slots not be migrating" };
         }
 
         bool find = false;
         for (auto it = _migrateReceiveTask.begin(); it != _migrateReceiveTask.end(); it++) {
             if ((*it)->receiver->getSlots() == slots) {
                 find = true;
-                (*it)->state =  MigrateReceiveState::SUCC;
+                (*it)->state = MigrateReceiveState::SUCC;
                 storeid = (*it)->storeid;
                 break;
             }
         }
         if (!find) {
             LOG(ERROR) << "supplyMigrateEnd find slots failed:" << bitsetStrEncode(slots);
-            return {ErrorCodes::ERR_INTERNAL, "migrating task not find"};
+            return { ErrorCodes::ERR_INTERNAL, "migrating task not find" };
         }
     }
 
@@ -891,7 +880,7 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
     if (!s.ok()) {
         LOG(ERROR) << "setSlots failed, slots:" << bitsetStrEncode(slots)
             << " err:" << s.toString();
-        return  {ErrorCodes ::ERR_CLUSTER, "set slot myself fail"};
+        return  {ErrorCodes::ERR_CLUSTER, "set slot myself fail"};
     }
 
     clusterState->clusterSaveNodes();

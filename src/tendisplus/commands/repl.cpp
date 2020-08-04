@@ -14,7 +14,6 @@
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/base64.h"
-#include "tendisplus/utils/string.h"
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
@@ -81,11 +80,11 @@ class BackupCommand: public Command {
                     LOG(ERROR) << "write node backup info fail";
                     return  { ErrorCodes::ERR_MANUAL, "write fail" };
                 }
+            } else {
+                LOG(ERROR) << "can't open file: clustermeta.txt";
+                return { ErrorCodes::ERR_INTERNAL, "can't open file: clustermeta.txt" };
             }
-            else {
-                LOG(ERROR) << "write master node in fail";
-            }
-            //TODO(wayenchen) find path to write to file
+            // TODO(wayenchen) find path to write to file
         }
 
         // TODO(wayenchen): use make guard to unset backupruning when backup failed!
@@ -196,7 +195,7 @@ class RestoreBackupCommand : public Command {
     }
 
  private:
-    bool isEmpty(ServerEntry* svr, Session *sess, uint32_t storeId){
+    bool isEmpty(ServerEntry* svr, Session *sess, uint32_t storeId) {
          // IS lock
         auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
             mgl::LockMode::LOCK_IS, true);
@@ -234,7 +233,7 @@ class RestoreBackupCommand : public Command {
         INVARIANT(!store->isRunning());
         Status clearStatus =  store->clear();
         if (!clearStatus.ok()) {
-            INVARIANT_D(0);		
+            INVARIANT_D(0);
             LOG(ERROR) << "Unexpected store:" << storeId << " clear"
                 << " failed:" << clearStatus.toString();
             return clearStatus;
@@ -689,6 +688,7 @@ class ApplyBinlogsCommand: public Command {
 class ApplyBinlogsGeneric : public Command {
  private:
     BinlogApplyMode _mode;
+
  public:
     ApplyBinlogsGeneric(const std::string& name,
         const char* sflags, BinlogApplyMode mode)
@@ -856,7 +856,8 @@ class ApplyBinlogsGeneric : public Command {
 
         Expected<int64_t> etype = ::tendisplus::stoll(splits[0]);
         if (!etype.ok()
-            || etype.value() < MigrateBinlogType::RECEIVE_START || etype.value() > MigrateBinlogType::SEND_END
+            || etype.value() < MigrateBinlogType::RECEIVE_START
+            || etype.value() > MigrateBinlogType::SEND_END
             || splits[2].size() != CLUSTER_SLOTS) {
             LOG(ERROR) << "runMigrate args err:" << value.value().getCmd();
             return etype.status();
@@ -951,7 +952,7 @@ class ApplyBinlogsGeneric : public Command {
 };
 
 class ApplyBinlogsCommandV2 : public ApplyBinlogsGeneric {
-public:
+ public:
     ApplyBinlogsCommandV2()
         :ApplyBinlogsGeneric("applybinlogsv2", "aw",
                 BinlogApplyMode::KEEP_BINLOG_ID) {
@@ -975,7 +976,7 @@ public:
 } applyBinlogsV2Command;
 
 class MigrateBinlogsCommand : public ApplyBinlogsGeneric {
-public:
+ public:
     MigrateBinlogsCommand()
         :ApplyBinlogsGeneric("migratebinlogs", "aw",
             BinlogApplyMode::NEW_BINLOG_ID) {
@@ -1065,7 +1066,7 @@ class RestoreBinlogCommandV2 : public Command {
             return expdb.status();
         }
         // fake the session to be not replonly!
-        sg.getSession()->getCtx()->setReplOnly(false); // set true ??
+        sg.getSession()->getCtx()->setReplOnly(false);
 
         // set binlog time before flush,
         // because the flush binlog is logical, not binary
@@ -1189,7 +1190,7 @@ class RestoreBinlogCommandV2 : public Command {
 } restoreBinlogV2Command;
 
 class restoreEndCommand : public Command {
-public:
+ public:
     restoreEndCommand()
             :Command("restoreend", "aw") {
     }
@@ -1329,7 +1330,6 @@ class SlaveofCommand: public Command {
                 }
                 if (!expdb.value().store->isOpen()) {
                     // NOTE(takenliu): only DestroyStoreCommand will set isOpen be false, and it's unuse.
-                    //return {ErrorCodes::ERR_OK, ""};
                     return {ErrorCodes::ERR_INTERNAL, "store not open"};
                 }
                 if (ip != "" && !expdb.value().store->isEmpty(true)) {

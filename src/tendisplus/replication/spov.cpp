@@ -9,7 +9,6 @@
 #include <string>
 #include <utility>
 
-#include <endian.h>
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"

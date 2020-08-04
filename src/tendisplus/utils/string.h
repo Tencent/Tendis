@@ -5,6 +5,7 @@
 #include <bitset>
 #include <iostream>
 #include <vector>
+#include <utility>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/varint.h"
 #ifndef _WIN32
@@ -43,8 +44,8 @@ size_t lenStrEncodeSize(const std::string& val);
 Expected<LenStrDecodeResult> lenStrDecode(const std::string& str);
 Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size);
 
-std::vector<std::string> stringSplit(const  std::string& s, const std::string& delim);
-
+std::vector<std::string> stringSplit(const  std::string& s,
+                                const std::string& delim);
 
 std::string trim(const std::string& str);
 
@@ -62,9 +63,8 @@ void CopyUint(std::vector<uint8_t> *buf, T element) {
 
 template <size_t size>
 std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
-        // TODO(wayenche)
     size_t idx = 0;
-    std::vector<uint16_t> slotBuff(1,0);
+    std::vector<uint16_t> slotBuff(1, 0);
     while (idx < bitmap.size()) {
         if ( bitmap.test(idx) ) {
             uint16_t pageLen = 0;
@@ -78,12 +78,11 @@ std::vector<uint16_t> bitsetEncode(const std::bitset<size>& bitmap) {
             idx++;
         }
     }
-        // the length after encode
+    // the length after encode
     slotBuff[0] = (slotBuff.size())* sizeof(uint16_t);
     return  slotBuff;
 }
 
-//slot description  use it
 template <size_t size>
 std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
     size_t idx = 0;
@@ -93,9 +92,9 @@ std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
             size_t pos = idx;
             size_t pageLen = 0;
             std::stringstream tempStream;
-            if(idx >= bitmap.size() - 1 || ! bitmap.test(idx+1)){
-                idx ++;
-                tempStream << pos ;
+            if (idx >= bitmap.size() - 1 || !bitmap.test(idx+1)) {
+                idx++;
+                tempStream << pos;
             } else {
                 idx++;
                 while (idx < bitmap.size() && bitmap.test(idx)) {
@@ -115,7 +114,7 @@ std::string  bitsetStrEncode(const std::bitset<size>& bitmap) {
 template <size_t size>
 uint32_t bitsetEncodeSize(const std::bitset<size>& bitmap) {
     size_t idx = 0;
-    std::vector<uint16_t> slotBuff(1,0);
+    std::vector<uint16_t> slotBuff(1, 0);
     while ( idx < bitmap.size() ) {
         if ( bitmap.test(idx) ) {
             uint16_t pageLen = 0;
@@ -147,7 +146,8 @@ Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
         auto len = static_cast<size_t>(pos+pageLength);
 
         if ( len > size ) {
-            return { ErrorCodes::ERR_DECODE, "bitsetDecode bitset error length: "};
+            return { ErrorCodes::ERR_DECODE,
+                    "bitsetDecode bitset error length"};
         }
         for (size_t j = pos; j < len; j++) {
             bitmap.set(j);
@@ -156,7 +156,6 @@ Expected<std::bitset<size>> bitsetDecode(const std::string& str) {
     return bitmap;
 }
 
-//decode from vector<int>
 template <size_t size>
 Expected<std::bitset<size>> bitsetIntDecode(const std::vector<uint16_t> vec) {
     std::bitset<size> bitmap;
@@ -167,7 +166,8 @@ Expected<std::bitset<size>> bitsetIntDecode(const std::vector<uint16_t> vec) {
         offset += 2;
         auto len = static_cast<size_t>(pos+pageLength);
         if ( len > size ) {
-            return { ErrorCodes::ERR_DECODE, "bitsetIntDecode bitset error length"};
+            return {ErrorCodes::ERR_DECODE,
+                    "bitsetIntDecode bitset error length"};
         }
         for (size_t j = pos; j < len; j++) {
             bitmap.set(j);
@@ -176,7 +176,6 @@ Expected<std::bitset<size>> bitsetIntDecode(const std::vector<uint16_t> vec) {
     return bitmap;
 }
 
-//slot description  use it
 template <size_t size>
 Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
     std::bitset<size> bitmap;
@@ -193,7 +192,8 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
                 size_t end = static_cast<size_t >(ePtr.value());
 
                 if ( end >= size ) {
-                    return { ErrorCodes::ERR_DECODE, "bitsetStrDecode bitset error length"};
+                    return {ErrorCodes::ERR_DECODE,
+                            "bitsetStrDecode bitset error length"};
                 }
                 for (size_t j = begin; j <= end; j++) {
                     bitmap.set(j);
@@ -218,7 +218,7 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
 
 #ifdef _MSC_VER
 #define strcasecmp stricmp
-#define strncasecmp  strnicmp 
+#define strncasecmp  strnicmp
 #endif
 
 #ifndef _WIN32
@@ -228,4 +228,4 @@ using std::experimental::string_view;
 #define mystring_view std::string
 #endif
 
-#endif  // SRC_TENDISPLUS_UTILS_STRING_H_ 
+#endif  // SRC_TENDISPLUS_UTILS_STRING_H_

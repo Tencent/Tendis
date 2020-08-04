@@ -28,7 +28,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         return s;
     }
 
-    auto expRsp = _client->readLine(std::chrono::seconds(50));
+    auto expRsp = _client->readLine(std::chrono::seconds(5));
     if (!expRsp.ok()) {
         LOG(ERROR) << "readymigrate req srcDb error:"
                      << expRsp.status().toString();

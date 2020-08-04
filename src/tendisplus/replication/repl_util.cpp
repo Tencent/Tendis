@@ -1,6 +1,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+//#include "tendisplus/replication/repl_util.h"
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 
@@ -282,7 +283,7 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
         Command::fmtBulk(ss2, std::to_string((uint32_t)writer->getFlag()));
     } else {
         if (!needHeartBeart) {
-            return   {ErrorCodes::ERR_OK, "finish send bulk"};
+            return {ErrorCodes::ERR_OK, "finish send bulk"};
         }
 
         Command::fmtMultiBulkLen(ss2, 2);
@@ -314,17 +315,17 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
     return  {ErrorCodes::ERR_OK, "finish send bulk"};
 }
 
-
-
-Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
+Status SendSlotsBinlog(BlockingTcpClient* client,
                        uint32_t storeId, uint32_t dstStoreId,
-                       uint64_t binlogPos, uint64_t  binlogEnd,
+                       uint64_t binlogPos, uint64_t binlogEnd,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slotsMap,
                        std::shared_ptr<ServerEntry> svr,
-                       const std::shared_ptr<ServerParams> cfg) {
+                       uint64_t* sendBinlogNum,
+                       uint64_t* newBinlogId) {
     uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
     size_t suggestBytes = svr->getParams()->bingLogSendBytes;
+    uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
 
     LocalSessionGuard sg(svr.get());
     sg.getSession()->setArgs(
@@ -350,23 +351,23 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
     std::unique_ptr<RepllogCursorV2> cursor =
             txn->createRepllogCursorV2(binlogPos + 1);
 
-    uint64_t binlogId = binlogPos;
 
     std::unique_ptr<BinlogWriter> writer =
                 std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);
 
-    LOG(INFO) << "begin catch up from:" << binlogPos << " to:" << binlogEnd
+    DLOG(INFO) << "begin catch up from:" << binlogPos << " to:" << binlogEnd
             << " storeid:" << storeId
             << " slots:" << bitsetStrEncode(slotsMap);
-    uint32_t timeoutSecs = cfg->timeoutSecBinlogWaitRsp;
-    uint64_t  logNum = 0;
+    *sendBinlogNum = 0;
+    uint64_t binlogId = binlogPos;
+    uint64_t binlogNum = 0;
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (!explog.ok()) {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-                LOG(INFO) << "catch up binlog exhaust,binlogPos:" << binlogPos
+                DLOG(INFO) << "catch up binlog exhaust,binlogPos:" << binlogPos
                           << " binlogEnd:" << binlogEnd << " Current:" << binlogId
-                          << " logNum:" << logNum << " storeid:" << storeId
+                          << " logNum:" << *sendBinlogNum << " storeid:" << storeId
                           << " slots:" << bitsetStrEncode(slotsMap);
                 break;
             }
@@ -376,16 +377,14 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         }
 
         auto slot = explog.value().getChunkId();
-        binlogId = explog.value().getBinlogId();
 
         if (slot > CLUSTER_SLOTS - 1) {
-            LOG(INFO) << "migrate sendbinlog deal with invaild slot:" << slot;
             continue;
         }
 
-        if (binlogId > binlogEnd) {
-            LOG(INFO) << "catch up binlog success, binlogPos:" << binlogPos
-                       << " binlogEnd:" << binlogEnd << " logNum:" << logNum
+        if (explog.value().getBinlogId() > binlogEnd) {
+            DLOG(INFO) << "catch up binlog success, binlogPos:" << binlogPos
+                       << " binlogEnd:" << binlogEnd << " logNum:" << *sendBinlogNum
                        << " storeid:" << storeId
                        << " slots:" << bitsetStrEncode(slotsMap);
             break;
@@ -393,17 +392,20 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
 
         // write slot binlog
         if (slotsMap.test(slot)) {
-            bool  writeFull = writer->writeRepllogRaw(explog.value());
-            logNum ++;
+            bool writeFull = writer->writeRepllogRaw(explog.value());
+            binlogNum++;
+            binlogId = explog.value().getBinlogId();
 
             if (writeFull || writer->getFlag() == BinlogFlag::FLUSH) {
                 auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
                 if (!s.ok()) {
-                    LOG(ERROR) << "send writer bulk fail on slot:" << slot;
-                    // to do: make sure what logNum is
-                    logNum -= writer->getCount();
-                    return  logNum;
+                    LOG(ERROR) << "send writer bulk fail on slot:"
+                        << slot << " " << s.toString();
+                    return s;
                 }
+                *newBinlogId = binlogId;
+                *sendBinlogNum += binlogNum;
+                binlogNum = 0;
                 writer->resetWriter();
             }
         }
@@ -412,11 +414,14 @@ Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient* client,
         auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
         if (!s.ok()) {
             LOG(ERROR) << "send writer bulk fail, cout:" << writer->getCount();
-            return  s;
+            return s;
         }
+        *newBinlogId = binlogId;
+        *sendBinlogNum += binlogNum;
+        binlogNum = 0;
         writer->resetWriter();
     }
-    return logNum;
+    return { ErrorCodes::ERR_OK, "" };
 }
 
 }  // namespace tendisplus
