@@ -164,7 +164,7 @@ makeAnotherSlave(const std::string& name, uint32_t storeCnt, uint32_t port, uint
 size_t recordSize = 10;
 #else
 size_t recordSize = 1000;
-#endif // 
+#endif
 
 TEST(Repl, Common) {
 #ifdef _WIN32
@@ -622,108 +622,302 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
             << " binlogstart:" << binlogstart
             << " num:" << num;
         // if data not full, binlogpos-binlogstart may be smaller than num.
-        EXPECT_TRUE(binlogpos - binlogstart + 1 == num);
+        if(svr->getParams()->binlogDelRange == 1 || svr->getParams()->binlogDelRange == 0){
+            EXPECT_TRUE(binlogpos - binlogstart + 1 == num);
+        } else {
+            EXPECT_TRUE(binlogpos - binlogstart + 1 < num + svr->getParams()->binlogDelRange);
+        }
+        
     }
 }
 
 TEST(Repl, BinlogKeepNum_Test) {
     size_t i = 0;
     {
+        for(int j = 0; j < 2; j++){
+            LOG(INFO) << ">>>>>> test store count:" << i;
+            const auto guard = MakeGuard([] {
+                destroyEnv(master_dir);
+                destroyEnv(slave_dir);
+                destroyEnv(slave1_dir);
+                destroyEnv(single_dir);
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            });
+
+            EXPECT_TRUE(setupEnv(master_dir));
+            EXPECT_TRUE(setupEnv(slave_dir));
+            EXPECT_TRUE(setupEnv(slave1_dir));
+            EXPECT_TRUE(setupEnv(single_dir));
+
+            auto cfg1 = makeServerParam(master_port, i, master_dir, false);
+            auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
+            auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
+            auto cfg4 = makeServerParam(single_port, i, single_dir, false);
+            uint64_t masterBinlogNum = 10;
+            cfg1->maxBinlogKeepNum = masterBinlogNum;
+            cfg2->maxBinlogKeepNum = masterBinlogNum;
+            cfg2->slaveBinlogKeepNum = 1;
+            cfg3->slaveBinlogKeepNum = 1;
+            cfg4->maxBinlogKeepNum = masterBinlogNum;
+            if(j == 1) {
+                cfg1->binlogDelRange = 5000;
+                cfg2->binlogDelRange = 5000;
+                cfg3->binlogDelRange = 5000;
+                cfg4->binlogDelRange = 5000;
+            }
+
+            auto master = std::make_shared<ServerEntry>(cfg1);
+            auto s = master->startup(cfg1);
+            INVARIANT(s.ok());
+
+            auto slave = std::make_shared<ServerEntry>(cfg2);
+            s = slave->startup(cfg2);
+            INVARIANT(s.ok());
+
+            auto slave1 = std::make_shared<ServerEntry>(cfg3);
+            s = slave1->startup(cfg3);
+            INVARIANT(s.ok());
+
+            auto single = std::make_shared<ServerEntry>(cfg4);
+            s = single->startup(cfg4);
+            INVARIANT(s.ok());
+
+            runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
+            // slaveof need about 3 seconds to transfer file.
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            auto allKeys = initData(master, recordSize);
+            initData(single, recordSize);
+
+            waitSlaveCatchup(master, slave);
+            sleep(3); // wait recycle binlog
+
+            LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+            checkBinlogKeepNum(master, masterBinlogNum);
+            checkBinlogKeepNum(slave, 1);
+            checkBinlogKeepNum(single, masterBinlogNum);
+
+
+            LOG(INFO) << ">>>>>> master add data begin.";
+            auto thread = std::thread([this, master](){
+                testAll(master); // need about 40 seconds
+            });
+            uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
+            sleep(sleep_time);
+
+            LOG(INFO) << ">>>>>> slaveof begin.";
+            runCmd(slave1, { "slaveof", "127.0.0.1", std::to_string(slave_port) });
+            // slaveof need about 3 seconds to transfer file.
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            thread.join();
+            initData(master, recordSize); // add data every store
+            waitSlaveCatchup(master, slave);
+            waitSlaveCatchup(slave, slave1);
+            sleep(3); // wait recycle binlog
+            LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
+            checkBinlogKeepNum(master, masterBinlogNum);
+            checkBinlogKeepNum(slave, masterBinlogNum);
+            checkBinlogKeepNum(slave1, 1);
+            LOG(INFO) << ">>>>>> checkBinlogKeepNum end.";
+
+    #ifndef _WIN32
+            master->stop();
+            slave->stop();
+            slave1->stop();
+            single->stop();
+
+            ASSERT_EQ(slave.use_count(), 1);
+            ASSERT_EQ(master.use_count(), 1);
+            ASSERT_EQ(slave1.use_count(), 1);
+            ASSERT_EQ(single.use_count(), 1);
+    #endif
+
+            LOG(INFO) << ">>>>>> test store count:" << i << " end;";   
+        }
+    }
+}
+
+Status scan(const std::string& logfile) {
+    FILE* pf = fopen(logfile.c_str(), "r");
+    if (pf == NULL) {
+        return {ErrorCodes::ERR_INTERNAL, "fopen failed:" + logfile};
+    }
+    const uint32_t buff_len = 4096;
+    char buff[buff_len];
+    uint64_t id = 0;
+
+    int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
+    if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
+        cerr << "read head failed." << endl;
+        return {ErrorCodes::ERR_INTERNAL, "read head failed."};
+    }
+    buff[BINLOG_HEADER_V2_LEN] = '\0';
+    uint32_t storeId =
+        be32toh(*reinterpret_cast<uint32_t*>(buff + strlen(BINLOG_HEADER_V2)));
+    EXPECT_TRUE(storeId == 0);
+
+    while (!feof(pf)) {
+        // keylen
+        uint32_t keylen = 0;
+        ret = fread(buff, sizeof(uint32_t), 1, pf);
+        if (ret != 1) {
+            if (feof(pf)) {
+                // cerr << "read logfile end." << endl;
+                return {ErrorCodes::ERR_OK, ""}; // read file end.
+            }
+            return {ErrorCodes::ERR_INTERNAL, "read keylen failed."};
+        }
+        buff[sizeof(uint32_t)] = '\0';
+        keylen = int32Decode(buff);
+
+        // key
+        string key;
+        key.resize(keylen);
+        ret = fread(const_cast<char*>(key.c_str()), keylen, 1, pf);
+        if (ret != 1) {
+            return {ErrorCodes::ERR_INTERNAL, "read key failed."};
+        }
+
+        // valuelen
+        uint32_t valuelen = 0;
+        ret = fread(buff, sizeof(uint32_t), 1, pf);
+        if (ret != 1) {
+            return {ErrorCodes::ERR_INTERNAL, "read valuelen failed."};
+        }
+        buff[sizeof(uint32_t)] = '\0';
+        valuelen = int32Decode(buff);
+
+        // value
+        string value;
+        value.resize(valuelen);
+        ret = fread(const_cast<char*>(value.c_str()),
+            valuelen, 1, pf);
+        if (ret != 1) {
+            return {ErrorCodes::ERR_INTERNAL, "read value failed."};
+        }
+
+        Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
+        if (!logkey.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, "decode logkey failed."};
+        }
+
+        Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
+        if (!logValue.ok()) {
+            return {ErrorCodes::ERR_INTERNAL, "decode logvalue failed."};
+        }
+
+        if(id == 0) {
+            id = logkey.value().getBinlogId() + 1;
+            continue;
+        }
+        if(id != logkey.value().getBinlogId()) {
+            return {ErrorCodes::ERR_INTERNAL, "binlogId error."};
+        }
+        id++;
+    }
+
+    fclose(pf);
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+TEST(Repl, coreDumpWhenSaveBinlog) {
+    size_t i = 0;
+    {
         LOG(INFO) << ">>>>>> test store count:" << i;
         const auto guard = MakeGuard([] {
-            destroyEnv(master_dir);
-            destroyEnv(slave_dir);
-            destroyEnv(slave1_dir);
             destroyEnv(single_dir);
             std::this_thread::sleep_for(std::chrono::seconds(5));
         });
 
-        EXPECT_TRUE(setupEnv(master_dir));
-        EXPECT_TRUE(setupEnv(slave_dir));
-        EXPECT_TRUE(setupEnv(slave1_dir));
         EXPECT_TRUE(setupEnv(single_dir));
 
-        auto cfg1 = makeServerParam(master_port, i, master_dir, false);
-        auto cfg2 = makeServerParam(slave_port, i, slave_dir, false);
-        auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
-        auto cfg4 = makeServerParam(single_port, i, single_dir, false);
+        auto cfg = makeServerParam(single_port, i, single_dir, false);
         uint64_t masterBinlogNum = 10;
-        cfg1->maxBinlogKeepNum = masterBinlogNum;
-        cfg2->maxBinlogKeepNum = masterBinlogNum;
-        cfg2->slaveBinlogKeepNum = 1;
-        cfg3->slaveBinlogKeepNum = 1;
-        cfg4->maxBinlogKeepNum = masterBinlogNum;
+        cfg->maxBinlogKeepNum = masterBinlogNum;
+        cfg->binlogDelRange = 5000;
 
-        auto master = std::make_shared<ServerEntry>(cfg1);
-        auto s = master->startup(cfg1);
+        {
+            auto single = std::make_shared<ServerEntry>(cfg);
+            auto s = single->startup(cfg);
+            INVARIANT(s.ok());
+
+            initData(single, recordSize);
+
+            single->stop();
+
+            LOG(INFO) << ">>>>>> scanDumpFile begin.";
+            std::string subpath = "./repltest_single/dump/0/";
+            try {
+                for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
+                    const filesystem::path& path = p.path();
+                    if (!filesystem::is_regular_file(p)) {
+                        LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
+                        continue;
+                    }
+                    // assert path with dir prefix
+                    INVARIANT(path.string().find(subpath) == 0);
+                    std::string relative = path.string().erase(0, subpath.size());
+                    if (relative.substr(0, 6) != "binlog") {
+                        LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
+                        continue;
+                    }
+                    auto s = scan(path.string());
+                    EXPECT_TRUE(s.ok());
+                }
+            } catch (const std::exception& ex) {
+                LOG(ERROR) <<" get fileno failed:" << ex.what();
+                EXPECT_TRUE(0);
+                return;
+            }
+        }
+        sleep(3);
+        
+        auto single = std::make_shared<ServerEntry>(cfg);
+        auto s = single->startup(cfg);
         INVARIANT(s.ok());
 
-        auto slave = std::make_shared<ServerEntry>(cfg2);
-        s = slave->startup(cfg2);
-        INVARIANT(s.ok());
-
-        auto slave1 = std::make_shared<ServerEntry>(cfg3);
-        s = slave1->startup(cfg3);
-        INVARIANT(s.ok());
-
-        auto single = std::make_shared<ServerEntry>(cfg4);
-        s = single->startup(cfg4);
-        INVARIANT(s.ok());
-
-        runCmd(slave, { "slaveof", "127.0.0.1", std::to_string(master_port) });
-        // slaveof need about 3 seconds to transfer file.
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        auto allKeys = initData(master, recordSize);
-        initData(single, recordSize);
-
-        waitSlaveCatchup(master, slave);
-        sleep(3); // wait recycle binlog
+        sleep(3);
 
         LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
-        checkBinlogKeepNum(master, masterBinlogNum);
-        checkBinlogKeepNum(slave, 1);
         checkBinlogKeepNum(single, masterBinlogNum);
 
-
-        LOG(INFO) << ">>>>>> master add data begin.";
-        auto thread = std::thread([this, master](){
-            testAll(master); // need about 40 seconds
-        });
-        uint32_t sleep_time = genRand()%20 + 10; // 10-30 seconds
-        sleep(sleep_time);
-
-        LOG(INFO) << ">>>>>> slaveof begin.";
-        runCmd(slave1, { "slaveof", "127.0.0.1", std::to_string(slave_port) });
-        // slaveof need about 3 seconds to transfer file.
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        thread.join();
-        initData(master, recordSize); // add data every store
-        waitSlaveCatchup(master, slave);
-        waitSlaveCatchup(slave, slave1);
-        sleep(3); // wait recycle binlog
-        LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
-        checkBinlogKeepNum(master, masterBinlogNum);
-        checkBinlogKeepNum(slave, masterBinlogNum);
-        checkBinlogKeepNum(slave1, 1);
-        LOG(INFO) << ">>>>>> checkBinlogKeepNum end.";
+        LOG(INFO) << ">>>>>> scanDumpFile begin.";
+        std::string subpath = "./repltest_single/dump/0/";
+        try {
+            for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
+                const filesystem::path& path = p.path();
+                if (!filesystem::is_regular_file(p)) {
+                    LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
+                    continue;
+                }
+                // assert path with dir prefix
+                INVARIANT(path.string().find(subpath) == 0);
+                std::string relative = path.string().erase(0, subpath.size());
+                if (relative.substr(0, 6) != "binlog") {
+                    LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
+                    continue;
+                }
+                auto s = scan(path.string());
+                if(!s.ok()) {
+                    LOG(ERROR) << "scan failed:"<< s.toString();
+                }
+                EXPECT_TRUE(s.ok());
+            }
+        } catch (const std::exception& ex) {
+            LOG(ERROR) <<" get fileno failed:" << ex.what();
+            EXPECT_TRUE(0);
+            return;
+        }
 
 #ifndef _WIN32
-        master->stop();
-        slave->stop();
-        slave1->stop();
         single->stop();
 
-        ASSERT_EQ(slave.use_count(), 1);
-        ASSERT_EQ(master.use_count(), 1);
-        ASSERT_EQ(slave1.use_count(), 1);
         ASSERT_EQ(single.use_count(), 1);
 #endif
 
-        LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+        LOG(INFO) << ">>>>>> test store count:" << i << " end;";   
     }
 }
 
 }  // namespace tendisplus
-

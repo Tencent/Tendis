@@ -345,6 +345,7 @@ public:
     uint32_t truncateBinlogNum = 50000;
     uint32_t binlogFileSizeMB = 64;
     uint32_t binlogFileSecs = 20*60;
+    uint32_t binlogDelRange = 1;
 
     uint32_t keysDefaultLimit = 100;
     uint32_t lockWaitTimeOut = 3600;

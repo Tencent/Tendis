@@ -271,6 +271,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
     REGISTER_VARS(binlogFileSecs);
+    REGISTER_VARS(binlogDelRange);
 
     REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);

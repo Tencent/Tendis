@@ -269,6 +269,7 @@ Status ReplManager::startup() {
                 tp,
                 0,
                 nullptr,
+                Transaction::TXNID_UNINITED,
             });
 
         if (isOpen) {
@@ -290,6 +291,26 @@ Status ReplManager::startup() {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
                 recBinlogStat->timestamp = explog.value().getTimestamp();
                 recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+                recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
+                if(_cfg->binlogDelRange > 1) {
+                    uint64_t save = recBinlogStat->firstBinlogId;
+                    auto expid = getSaveBinlogId(i, fileSeq);
+                    if(!expid.ok() && expid.status().code() != ErrorCodes::ERR_NOTFOUND) {
+                        LOG(ERROR) << "recycleBinlog get save binlog id failed:"
+                                << expid.status().toString();     
+                    }
+                    if(expid.ok()) {
+                        save = expid.value();
+                        save++;
+                        if(recBinlogStat->firstBinlogId > save) {
+                            LOG(ERROR) << "recycleBinlog get an incorrect save binlog id."
+                                <<"save id:"<<save<<" firstBinlogId:"
+                                <<recBinlogStat->firstBinlogId;
+                            save = recBinlogStat->firstBinlogId;
+                        }
+                    }
+                    recBinlogStat->saveBinlogId = save;
+                }
 #endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -298,6 +319,7 @@ Status ReplManager::startup() {
                     recBinlogStat->firstBinlogId = Transaction::MIN_VALID_TXNID;
                     recBinlogStat->timestamp = 0;
                     recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+                    recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
                 } else {
                     return explog.status();
                 }
@@ -436,7 +458,6 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
         } else {
             LOG(ERROR) << "ReplManager::restart failed, storeid:" << storeId;
             return {ErrorCodes::ERR_INTERGER, "getMinBinlog failed."};
-
         }
     }
     return {ErrorCodes::ERR_OK, ""};
@@ -616,10 +637,12 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
 
     uint64_t start = Transaction::MIN_VALID_TXNID;
     uint64_t end = Transaction::MIN_VALID_TXNID;
+    uint64_t save = Transaction::MIN_VALID_TXNID;
+    uint32_t fileSeq = 0;
     bool saveLogs;
 
     bool hasError = false;
-    auto guard = MakeGuard([this, &nextSched, &start, storeId, &hasError] {
+    auto guard = MakeGuard([this, &nextSched, &start, &save, storeId, &hasError] {
         std::lock_guard<std::mutex> lk(_mutex);
         auto& v = _logRecycStatus[storeId];
         INVARIANT_D(v->isRunning);
@@ -635,6 +658,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         } else if (start != Transaction::MIN_VALID_TXNID) {
             v->firstBinlogId = start;
         }
+        v->saveBinlogId = save;
         // DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId reset:" << start;
 
         // currently nothing waits for recycleBinlog's complete
@@ -671,6 +695,8 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         std::unique_lock<std::mutex> lk(_mutex);
 
         start = _logRecycStatus[storeId]->firstBinlogId;
+        save = _logRecycStatus[storeId]->saveBinlogId;
+        fileSeq = _logRecycStatus[storeId]->fileSeq;
 
         saveLogs = _syncMeta[storeId]->syncFromHost != "";  // REPLICATE_ONLY
         // single node
@@ -754,6 +780,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     uint64_t newStart = toDel.value().first;
 #else
     uint64_t newStart = 0;
+    uint64_t newSave = 0;
     {
         std::ofstream* fs = nullptr;
         int64_t maxWriteLen = 0;
@@ -768,8 +795,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
             std::lock_guard<std::mutex> lk(_mutex);
             maxWriteLen = _cfg->binlogFileSizeMB*1024*1024 - _logRecycStatus[storeId]->fileSize;
         }
-
-        auto s = kvstore->truncateBinlogV2(start, end, txn.get(), fs, maxWriteLen, tailSlave);
+        auto s = kvstore->truncateBinlogV2(start, end, save, txn.get(), fs, maxWriteLen, tailSlave);
         if (!s.ok()) {
             LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                 << "failed:" << s.status().toString();
@@ -780,6 +806,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         updateCurBinlogFs(storeId, s.value().written, s.value().timestamp, changeNewFile);
         // TODO(vinchen): stat for binlog deleted
         newStart = s.value().newStart;
+        newSave = s.value().newSave;
     }
 #endif
     auto commitStat = txn->commit();
@@ -794,6 +821,163 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     //    << "addr:" << _svr->getNetwork()->getIp()
     //    << ":" << _svr->getNetwork()->getPort();
     start = newStart;
+    save = newSave;
+}
+
+Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId, uint32_t fileSeq) {
+    if(fileSeq == 0) {
+        return {ErrorCodes::ERR_NOTFOUND, ""};
+    }
+    std::string maxPath;
+
+    std::string subpath = _dumpPath + "/" + std::to_string(storeId) + "/";
+#ifdef _WIN32
+    subpath = replaceAll(subpath, "/", "\\");
+#endif
+    try {
+        for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
+            const filesystem::path& path = p.path();
+            if (!filesystem::is_regular_file(p)) {
+                LOG(INFO) << "maxDumpFileSeq ignore:" << p.path();
+                continue;
+            }
+            // assert path with dir prefix
+            INVARIANT(path.string().find(subpath) == 0);
+            std::string relative = path.string().erase(0, subpath.size());
+            if (relative.substr(0, 6) != "binlog") {
+                LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
+                continue;
+            }
+            size_t i = 0, start = 0, end = 0, first = 0;
+            for (; i < relative.size(); ++i) {
+                if (relative[i] == '-') {
+                    first += 1;
+                    if (first == 2) {
+                        start = i+1;
+                    }
+                    if (first == 3) {
+                        end = i;
+                        break;
+                    }
+                }
+            }
+            Expected<uint64_t> fno = ::tendisplus::stoul(
+                                relative.substr(start, end-start));
+            if (!fno.ok()) {
+                LOG(ERROR) << "parse fileno:" << relative << " failed:"
+                           << fno.status().toString();
+                return fno.status();
+            }
+            if (fno.value() >= std::numeric_limits<uint32_t>::max()) {
+                LOG(ERROR) << "invalid fileno:" << fno.value();
+                return {ErrorCodes::ERR_INTERNAL, "invalid fileno"};
+            }
+            if(fileSeq == (uint32_t)fno.value()) {
+                maxPath = path.string();
+                break;
+            }
+        }
+    } catch (const std::exception& ex) {
+        LOG(ERROR) << "store:" << storeId << " get fileno failed:" << ex.what();
+        return {ErrorCodes::ERR_INTERNAL, "parse fileno failed"};
+    }
+
+    std::ifstream fs(maxPath);
+    if(!fs.is_open()) {
+        LOG(ERROR) << "open file:" << maxPath << " for read failed";
+        return {ErrorCodes::ERR_INTERNAL, "open file failed"};
+    }
+    std::string readBuf;
+    readBuf.resize(4096);
+
+    fs.read(&readBuf[0], strlen(BINLOG_HEADER_V2) + sizeof(uint32_t));
+    if (!fs.good()) {
+        if(fs.eof()) {
+            return {ErrorCodes::ERR_NO_KEY, ""};
+        }
+        LOG(ERROR) << "read file:" << maxPath
+                    << " failed with err:" << strerror(errno);
+        return {ErrorCodes::ERR_INTERNAL, "read file failed"};
+    }
+
+    std::string key;
+    std::string value;
+    //The last key may be incomplete, and you need to return the second last key
+    std::string lastKey;
+    std::string lastValue;
+
+    while(true) {
+        uint32_t keylen = 0;
+        fs.read(&readBuf[0], sizeof(uint32_t));
+        if(fs.eof()) {
+            break;
+        }
+        if(!fs.good()) {
+            LOG(ERROR) << "read file:" << maxPath
+                        << " failed with err:" << strerror(errno);
+            return {ErrorCodes::ERR_INTERNAL, "read file failed"};
+        }
+        readBuf[sizeof(uint32_t)] = '\0';
+        keylen = int32Decode(readBuf.c_str());
+
+        std::string tempKey;
+        tempKey.resize(keylen);
+        fs.read(&tempKey[0], keylen);
+        if(fs.eof()) {
+            break;
+        }
+        if(!fs.good()) {
+            LOG(ERROR) << "read file:" << maxPath
+                        << " failed with err:" << strerror(errno);
+            return {ErrorCodes::ERR_INTERNAL, "read file failed"};
+        }
+
+        uint32_t valuelen = 0;
+        fs.read(&readBuf[0], sizeof(uint32_t));
+        if(fs.eof()) {
+            break;
+        }
+        if(!fs.good()) {
+            LOG(ERROR) << "read file:" << maxPath
+                        << " failed with err:" << strerror(errno);
+            return {ErrorCodes::ERR_INTERNAL, "read file failed"};
+        }
+        readBuf[sizeof(uint32_t)] = '\0';
+        valuelen = int32Decode(readBuf.c_str());
+
+        std::string tempValue;
+        tempValue.resize(valuelen);
+        fs.read(&tempValue[0], valuelen);
+        if(fs.eof()) {
+            break;
+        }
+        if(!fs.good()) {
+            LOG(ERROR) << "read file:" << maxPath
+                        << " failed with err:" << strerror(errno);
+            return {ErrorCodes::ERR_INTERNAL, "read file failed"};
+        }
+
+        lastKey = key;
+        lastValue = value;
+        key = tempKey;
+        value = tempValue;
+    }
+
+    Expected<ReplLogKeyV2> logKey = ReplLogKeyV2::decode(key);
+    Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
+    if(!logKey.ok() || !logValue.ok()) {
+        Expected<ReplLogKeyV2> logLastKey = ReplLogKeyV2::decode(lastKey);
+        Expected<ReplLogValueV2> logLastValue = ReplLogValueV2::decode(lastValue);
+        if(!logLastKey.ok()) {
+            return logLastKey.status();
+        }
+        if(!logLastValue.ok()) {
+            return logLastValue.status();
+        }
+        return logLastKey.value().getBinlogId();
+    }
+
+    return logKey.value().getBinlogId();
 }
 
 void ReplManager::flushCurBinlogFs(uint32_t storeId) {

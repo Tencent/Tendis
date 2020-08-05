@@ -250,10 +250,11 @@ struct KVStoreStat {
 
 struct TruncateBinlogResult {
     TruncateBinlogResult()
-        : newStart(0), timestamp(0),
-        written(0), deleten(0) {}
+        : newStart(0), newSave(0), 
+        timestamp(0), written(0), deleten(0){}
 
     uint64_t newStart;
+    uint64_t newSave;
     uint64_t timestamp;
     uint64_t written;
     uint64_t deleten;
@@ -294,6 +295,7 @@ class KVStore {
     // [begin, end)
     virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
     virtual Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) = 0;
+    virtual Status deleteRangeBinlog(uint64_t begin, uint64_t end) = 0;
 
 #ifdef BINLOG_V1
     virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
@@ -313,7 +315,7 @@ class KVStore {
     virtual uint64_t getNextBinlogSeq() const = 0;
     static std::ofstream* createBinlogFile(const std::string& name, uint32_t storeId);
     virtual Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
-        Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) = 0;
+        uint64_t save, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) = 0;
     virtual Expected<uint64_t> getBinlogCnt(Transaction* txn) const = 0;
     virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
 #endif

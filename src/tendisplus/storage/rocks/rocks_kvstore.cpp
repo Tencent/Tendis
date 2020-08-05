@@ -1320,8 +1320,8 @@ Expected<bool> RocksKVStore::deleteBinlog(uint64_t start) {
     return true;
 }
 
-Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
-    uint64_t end, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) {
+Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start, uint64_t end,
+    uint64_t save, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) {
     //DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
     //    << " getHighestBinlogId:" << getHighestBinlogId()
     //    << " start:"<<start <<" end:"<< end;
@@ -1336,10 +1336,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
         INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
     }
 #endif
-    auto cursor = txn->createRepllogCursorV2(start);
+    uint64_t nextStart;
+    uint64_t nextSave;
+    auto cursor = txn->createRepllogCursorV2(save);
+    nextStart = start;
+    nextSave = save;
     uint64_t max_cnt = _cfg->truncateBinlogNum;
     uint64_t size = 0;
-    uint64_t nextStart = start;
     uint64_t cur_ts = msSinceEpoch();
     while (true) {
         auto explog = cursor->next();
@@ -1376,25 +1379,37 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start,
             }
             written += len;
         }
-
-        // TODO(vinchen): compactrange or compactfilter should be better
-        DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId()
-            << " time:" << (cur_ts - ts)/1000 << " sec ago.";
-        auto s = txn->delBinlog(explog.value());
-        if (!s.ok()) {
-            // NOTE(vinchen): if error here, binlog would be wrong because
-            // saveBinlogV2() can't be rollbacked;
-            LOG(ERROR) << "delbinlog error:" << s.toString();
-            return s;
+        nextSave = explog.value().getBinlogId() + 1;
+        if(_cfg->binlogDelRange == 1 || _cfg->binlogDelRange == 0) {
+            DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << explog.value().getBinlogId()
+                << " time:" << (cur_ts - ts)/1000 << " sec ago.";
+            auto s = txn->delBinlog(explog.value());
+            if (!s.ok()) {
+                // NOTE(vinchen): if error here, binlog would be wrong because
+                // saveBinlogV2() can't be rollbacked;
+                LOG(ERROR) << "delbinlog error:" << s.toString();
+                return s;
+            }
+            deleten++;
+            nextStart = nextSave;
+        } else if(nextSave - nextStart >= _cfg->binlogDelRange) {
+            DLOG(INFO) <<"truncateBinlogV2 dbid:"<< dbId() <<" delete:" << start <<
+                " to "<< explog.value().getBinlogId() << " time:" << (cur_ts - ts)/1000 << " sec ago.";     
+            auto s = deleteRangeBinlog(start, nextSave);
+            if(!s.ok()) {
+                LOG(ERROR) << "deleteRangeBinlog error:" << s.toString();
+                return s;
+            }
+            deleten += nextSave - nextStart;
+            nextStart = nextSave;
         }
-        nextStart = explog.value().getBinlogId() + 1;
-        deleten++;
     }
 
     result.deleten = deleten;
     result.written = written;
     result.timestamp = ts;
     result.newStart = nextStart;
+    result.newSave = nextSave;
     result.ret = ret;
 
     return result;
@@ -2272,6 +2287,14 @@ Status RocksKVStore::deleteRangeWithoutBinlog(const std::string &begin, const st
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
     return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
+    ReplLogKeyV2 beginKey(begin);
+    ReplLogKeyV2 endKey(end);
+    auto beginKeyStr = beginKey.encode();
+    auto endKeyStr = endKey.encode();
+    return deleteRangeWithoutBinlog(beginKeyStr, endKeyStr);
 }
 
 void RocksKVStore::initRocksProperties() {

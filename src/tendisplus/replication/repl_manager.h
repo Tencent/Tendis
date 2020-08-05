@@ -80,6 +80,7 @@ struct RecycleBinlogStatus {
     SCLOCK::time_point fileCreateTime;
     uint64_t fileSize;
     std::unique_ptr<std::ofstream> fs;
+    uint64_t saveBinlogId;
 };
 
 // 1) a new slave store's state is default to REPL_NONE
@@ -153,6 +154,7 @@ class ReplManager {
     bool hasSomeSlave(uint32_t storeId);
     bool isSlaveOfSomeone(uint32_t storeId);
     Status resetRecycleState(uint32_t storeId);
+    Expected<uint64_t> getSaveBinlogId(uint32_t storeId, uint32_t fileSeq);
 
     void fullPusherResize(size_t size);
     void fullReceiverResize(size_t size);
@@ -182,14 +184,13 @@ class ReplManager {
         uint64_t timeoutMs = 1000);
     void slaveStartFullsync(const StoreMeta&);
     void slaveChkSyncStatus(const StoreMeta&);
+    std::ofstream* getCurBinlogFs(uint32_t storeid);
 
 #ifdef BINLOG_V1
     // binlogPos: the greatest id that has been applied
     Expected<uint64_t> masterSendBinlog(BlockingTcpClient*,
             uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos);
 #else
-
-    std::ofstream* getCurBinlogFs(uint32_t storeid);
     void updateCurBinlogFs(uint32_t storeId, uint64_t written,
         uint64_t ts, bool changeNewFile = false);
 #endif
