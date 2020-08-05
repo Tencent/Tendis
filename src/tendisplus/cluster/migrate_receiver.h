@@ -33,7 +33,7 @@ class ChunkMigrateReceiver {
         _client = client;
     }
 
-    uint32_t getsStoreid() { return  _storeid; }
+    uint32_t getsStoreid() const { return  _storeid; }
     std::bitset<CLUSTER_SLOTS> getSlots()  { return  _slots; }
     uint64_t  getSnapshotNum() { return  _snapshotKeyNum; }
     uint64_t  getBinlogNum() { return  _binlogNum; }

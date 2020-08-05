@@ -274,7 +274,7 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
                   uint32_t secs) {
     std::stringstream ss2;
 
-    if (writer->getCount() >0) {
+    if (writer && writer->getCount() >0) {
         Command::fmtMultiBulkLen(ss2, 5);
         Command::fmtBulk(ss2, "migratebinlogs");
         Command::fmtBulk(ss2, std::to_string(dstStoreId));

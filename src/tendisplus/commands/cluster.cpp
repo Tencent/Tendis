@@ -838,7 +838,7 @@ class MigrateendCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 3;
+        return 4;
     }
 
     int32_t firstkey() const {
@@ -866,7 +866,17 @@ class MigrateendCommand: public Command {
 
         std::bitset<CLUSTER_SLOTS> slots(args[1]);
 
-        auto s = migrateMgr->supplyMigrateEnd(slots);
+        auto exptStoreid = ::tendisplus::stoul(args[2]);
+
+        if (!exptStoreid.ok()) {
+            LOG(ERROR) << "ERR Invalid storeid";
+            return {ErrorCodes::ERR_CLUSTER, "Invalid storid"};
+        }
+        uint32_t storeid = exptStoreid.value();
+        std::string sendBinlogResult = args[3];
+
+        bool finishBinlog = (sendBinlogResult == "+OK") ? true : false;
+        auto s = migrateMgr->supplyMigrateEnd(slots, storeid, finishBinlog);
         if (!s.ok()) {
             return s;
         }

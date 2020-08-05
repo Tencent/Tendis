@@ -86,6 +86,7 @@ class ChunkMigrateSender{
     void unlockChunks();
     bool needToWaitMetaChanged() const;
     Status sendVersionMeta();
+    bool needToSendFail() const;
 
  private:
     Expected<std::unique_ptr<Transaction>> initTxn();
@@ -95,6 +96,9 @@ class ChunkMigrateSender{
 
     Status sendLastBinlog();
     Status catchupBinlog(uint64_t end);
+    Status retrySendBinlog(uint64_t start, uint64_t end,
+                           uint64_t* sendBinlogNum,
+                           uint64_t* newBinlogId);
     Status sendOver();
 
 
@@ -124,6 +128,7 @@ private:
     uint64_t getMaxBinLog(Transaction * ptxn) const;
     std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
     std::string _OKSTR = "+OK";
+    static constexpr int32_t RETRY_CNT = 3;
 };
 
 }  // namespace tendisplus

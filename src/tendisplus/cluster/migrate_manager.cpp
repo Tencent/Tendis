@@ -50,7 +50,7 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type, string slots, uint32
 
 const std::string receTaskTypeString(MigrateReceiveState c) {
     switch (c) {
-        case MigrateReceiveState ::ERR:
+        case MigrateReceiveState::ERR:
             return "fail";
         case MigrateReceiveState::SUCC:
             return "success";
@@ -333,7 +333,7 @@ Status MigrateManager::migrating(SlotsBitmap slots,
         const string& ip, uint16_t port, uint32_t storeid) {
     std::lock_guard<myMutex> lk(_mutex);
     size_t idx = 0;
-    DLOG(INFO) << "migrating slot:" << bitsetStrEncode(slots);
+    LOG(INFO) << "migrating slot:" << bitsetStrEncode(slots);
     while (idx < slots.size()) {
         if (slots.test(idx)) {
             if (_migrateSlots.test(idx)) {
@@ -677,7 +677,7 @@ Status MigrateManager::importing(SlotsBitmap slots,
     std::lock_guard<myMutex> lk(_mutex);
     std::size_t idx = 0;
     // set slot flag
-    DLOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
+    LOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
     while (idx < slots.size()) {
         if (slots.test(idx)) {
             if (_importSlots.test(idx)) {
@@ -743,6 +743,13 @@ void MigrateManager::checkMigrateStatus(MigrateReceiveTask* task) {
     SCLOCK::time_point nextSched = SCLOCK::now() + std::chrono::seconds(1);
     task->nextSchedTime = nextSched;
     task->isRunning = false;
+    auto delay = sinceEpoch() - task->lastSyncTime;
+    LOG(INFO) << "delay info:" << delay;
+    /* if receiveing binlog keep more than 10000s after receive binglog,
+     * mark the task fail*/
+    if (delay > 10000) {
+        task->state = MigrateReceiveState::ERR;
+    }
     return;
 }
 
@@ -792,6 +799,7 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
         SCLOCK::time_point nextSched = SCLOCK::now();
         task->state = MigrateReceiveState::RECEIVE_BINLOG;
         task->nextSchedTime = nextSched;
+        task->lastSyncTime = sinceEpoch();
         task->isRunning = false;
     }
     // add client to commands schedule
@@ -832,9 +840,9 @@ Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApply
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
-    LOG(INFO) << "supplyMigrateEnd slots:" << bitsetStrEncode(slots);
-    uint32_t storeid = 0;
+Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots, uint32_t storeid, bool binlogDone) {
+    LOG(INFO) << "supplyMigrateEnd slots:" << bitsetStrEncode(slots)
+              << "sendBinglog finish:" << binlogDone;
     {
         std::lock_guard<myMutex> lk(_mutex);
         if (!containSlot(slots, _importSlots)) {
@@ -844,15 +852,23 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
 
         bool find = false;
         for (auto it = _migrateReceiveTask.begin(); it != _migrateReceiveTask.end(); it++) {
-            if ((*it)->receiver->getSlots() == slots) {
+            if ((*it)->receiver->getSlots() == slots
+                    && (*it)->receiver->getsStoreid() == storeid) {
                 find = true;
+                SCLOCK::time_point nextSched = SCLOCK::now();
+                (*it)->nextSchedTime = nextSched;
+                (*it)->isRunning = false;
+                if (!binlogDone) {
+                    (*it)->state = MigrateReceiveState::ERR;
+                    return{ ErrorCodes::ERR_OK, "" };
+                }
                 (*it)->state = MigrateReceiveState::SUCC;
-                storeid = (*it)->storeid;
                 break;
             }
         }
         if (!find) {
-            LOG(ERROR) << "supplyMigrateEnd find slots failed:" << bitsetStrEncode(slots);
+            LOG(ERROR) << "supplyMigrateEnd find slots failed:" << bitsetStrEncode(slots)
+                       << "sendBinglog finish:" << binlogDone;
             return { ErrorCodes::ERR_INTERNAL, "migrating task not find" };
         }
     }
@@ -1270,12 +1286,14 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
+//TODO(wayenchen) delete it and use gc API
 Status MigrateManager::deleteChunks(uint32_t storeid, const SlotsBitmap& slots) {
     // TODO(takenliu) 1. ChunkMigrateReceiver need deleteChunk when migrate failed.
 
     ChunkMigrateSender fakeSender(slots, _svr, _cfg, true);
     fakeSender.setStoreid(storeid);
     fakeSender.deleteChunks(slots); // with chunks X lock, with add binlog
+
     LOG(INFO) << "deleteChunksInLock store:" << storeid
               << " slots:" << bitsetStrEncode(slots);
     return {ErrorCodes::ERR_OK, ""};

@@ -104,7 +104,7 @@ class MigrateReceiveTask{
 
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
-    SCLOCK::time_point lastSyncTime;
+    uint64_t lastSyncTime;
     MigrateReceiveState state;
     std::unique_ptr<ChunkMigrateReceiver> receiver;
 
@@ -152,7 +152,7 @@ class MigrateManager {
 
     Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
-    Status supplyMigrateEnd(const SlotsBitmap& slots);
+    Status supplyMigrateEnd(const SlotsBitmap& slots, uint32_t storeid, bool binlogDone = true);
     uint64_t getProtectBinlogid(uint32_t storeid);
 
     bool slotInTask(uint32_t slot);
