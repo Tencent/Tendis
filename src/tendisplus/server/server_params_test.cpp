@@ -223,7 +223,7 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->slowlogMaxLen, 128);
     EXPECT_EQ(cfg->netIoThreadNum, 0);
     EXPECT_EQ(cfg->executorThreadNum, 0);
-    EXPECT_EQ(cfg->executorWookPoolSize, 8);
+    EXPECT_EQ(cfg->executorWorkPoolSize, 8);
 
     EXPECT_EQ(cfg->binlogRateLimitMB, 64);
     EXPECT_EQ(cfg->netBatchSize, 1024*1024);

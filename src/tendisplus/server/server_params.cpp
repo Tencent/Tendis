@@ -60,6 +60,13 @@ bool compressTypeParamCheck(const string& val) {
     return false;
 };
 
+bool executorThreadNumCheck(const std::string &val) {
+    auto num = std::strtoull(val.c_str(), nullptr, 10);
+    auto workPoolSize = getGlobalServer()->getParams()->executorWorkPoolSize;
+
+    return (num % workPoolSize) ? false : true;
+}
+
 string removeQuotes(const string& v) {
     if (v.size() < 2) {
         return v;
@@ -248,8 +255,8 @@ ServerParams::ServerParams() {
     // NOTE(pecochen): this two params should provide their own interface to update.
     //              they don't use Workerpool, no need to use Workerpool::resize()
     REGISTER_VARS(netIoThreadNum);
-    REGISTER_VARS_SAME_NAME(executorThreadNum, nullptr, nullptr, 1, 200, true);
-    REGISTER_VARS_SAME_NAME(executorWookPoolSize, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(executorThreadNum, executorThreadNumCheck, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(executorWorkPoolSize, nullptr, nullptr, 1, 200, false);
 
     REGISTER_VARS(binlogRateLimitMB);
     REGISTER_VARS(netBatchSize);

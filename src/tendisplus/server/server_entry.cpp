@@ -248,6 +248,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _enableCluster = cfg->clusterEnabled;
     _dbNum = cfg->dbNum;
     _cfg = cfg;
+    _cfg->serverParamsVar("executorThreadNum")->setUpdate([this](){ resizeExecutorThreadNum(_cfg->executorThreadNum);});
 }
 
 void ServerEntry::resetServerStat() {
@@ -454,12 +455,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         << " executorThreadNum:" << cfg->executorThreadNum;
     //{
     if (_cfg->executorMultiIoContext) {
-        for (uint32_t i = 0; i < threadnum; i += _cfg->executorWookPoolSize) {
+        for (uint32_t i = 0; i < threadnum; i += _cfg->executorWorkPoolSize) {
             // TODO(takenliu): make sure whether multi worker_pool is ok?
             // But each size of worker_pool should been not less than 8;
             //uint32_t i = 0;
-            uint32_t curNum = i + _cfg->executorWookPoolSize < threadnum ?
-                    _cfg->executorWookPoolSize : threadnum - i;
+            uint32_t curNum = i + _cfg->executorWorkPoolSize < threadnum ?
+                    _cfg->executorWorkPoolSize : threadnum - i;
             LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
             auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
             Status s = executor->startup(curNum);
@@ -478,6 +479,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
         _executorList.push_back(std::move(executor));
     }
+
+    _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
@@ -730,6 +733,72 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
             _monitors.erase(it);
             break;
         }
+    }
+}
+
+/**
+ * @brief update func to resize workpool thread num
+ * @note like WorkerPool::resize(), three cases
+ */
+void ServerEntry::resizeExecutorThreadNum(uint64_t poolSize) {
+    auto threadNum = _executorList.size() * _executorList.back()->size();
+    if (poolSize < threadNum) {
+        resizeDecrExecutorThreadNum(poolSize);
+    } else if (poolSize > threadNum) {
+        resizeIncrExecutorThreadNum(poolSize);
+    } else {
+        return;
+    }
+}
+
+/**
+ * @brief decrease _executorList thread number
+ * @note Because of resize() interface is async decrease operation,
+ *      can't stop() directly, so move target workerpool to _executorSet first, keep owning the std::unique_ptr.
+ *      stop the workerpool eventually when call another decrease operation，
+ *      this design means: ergodic operation pressure is on DECREASE OP, NOT INCREASE OP.
+ */
+void ServerEntry::resizeDecrExecutorThreadNum(uint64_t poolSize) {
+    // calculate the threads sum -> threadNum, the list num to resize() -> listNum
+    auto threadNum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (threadNum - poolSize) / _cfg->executorWorkPoolSize;
+
+    // stop the _ioCtx which is idling
+    if (_executorSet.size()) {
+        for (auto &pool : _executorSet) {
+            if (!pool->size()) {
+                pool->stop();
+                _executorSet.erase(pool);
+            }
+        }
+    }
+    
+    // call resize() op, move workerpool to _executorSet.
+    for (size_t i = 0; i < listNum; ++i) {
+        _executorList.back()->resize(0);
+        _executorSet.emplace(std::move(_executorList.back().release()));
+        _executorList.pop_back();
+    }
+}
+
+/**
+ * @brief increase _executorList thread number
+ * @note matbe can reuse worjerpool which in _exexutorSet,
+ *      but may put the ergodic operation pressure on INCREASE OP.
+ *      As we all known, DECREASE OP's pressure is less than INCREASE OP's.
+ * @todo workerpool's name now may be repetitive, should fix it later.
+ */
+void ServerEntry::resizeIncrExecutorThreadNum(uint64_t poolSize) {
+    auto threadNum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (poolSize - threadNum) / _cfg->executorWorkPoolSize;
+
+    for (size_t i = 0; i < listNum; ++i) {
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(10 + i), _poolMatrix);
+        Status s = executor->startup(_executorList.back()->size());
+        if (!s.ok()) {
+            LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
+        }
+        _executorList.push_back(std::move(executor));
     }
 }
 
@@ -1204,6 +1273,9 @@ void ServerEntry::stop() {
     _eventCV.notify_all();
     _network->stop();
     for (auto& executor : _executorList) {
+        executor->stop();
+    }
+    for (auto &executor : _executorSet) {
         executor->stop();
     }
     _replMgr->stop();

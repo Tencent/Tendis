@@ -331,7 +331,7 @@ public:
     bool slowlogFileEnabled = true;
     uint32_t netIoThreadNum = 0;
     uint32_t executorThreadNum = 0;
-    uint32_t executorWookPoolSize = 8;
+    uint32_t executorWorkPoolSize = 8;
 
     uint32_t binlogRateLimitMB = 64;
     uint32_t netBatchSize = 1024*1024;
