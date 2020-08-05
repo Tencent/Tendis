@@ -784,6 +784,10 @@ class PrepareMigrateCommand: public Command {
         return 0;
     }
 
+    bool isBgCmd() const {
+        return true;
+    }
+
     Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "prepareSender should not be called";
         // void compiler complain
@@ -812,6 +816,10 @@ class ReadymigrateCommand: public Command {
 
     int32_t keystep() const {
         return 0;
+    }
+
+    bool isBgCmd() const {
+        return true;
     }
 
     Expected<std::string> run(Session *sess) final {

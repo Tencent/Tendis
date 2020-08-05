@@ -196,7 +196,6 @@ makeMigrateEnv(uint32_t storeCnt) {
     cfg1->migrateSenderThreadnum = 1;
     cfg1->migrateClearThreadnum = 1;
     cfg1->migrateReceiveThreadnum = 1;
-    cfg1->migrateCheckThreadnum = 1;
 
     cfg2->executorThreadNum = 1;
     cfg2->netIoThreadNum = 1;
@@ -208,7 +207,6 @@ makeMigrateEnv(uint32_t storeCnt) {
     cfg2->migrateSenderThreadnum = 1;
     cfg2->migrateClearThreadnum = 1;
     cfg2->migrateReceiveThreadnum = 1;
-    cfg2->migrateCheckThreadnum = 1;
 #endif
 
     auto master1 = std::make_shared<ServerEntry>(cfg1);
@@ -294,7 +292,6 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
     cfg1->migrateSenderThreadnum = 1;
     cfg1->migrateClearThreadnum = 1;
     cfg1->migrateReceiveThreadnum = 1;
-    cfg1->migrateCheckThreadnum = 1;
 #endif
 
     auto master = std::make_shared<ServerEntry>(cfg1);

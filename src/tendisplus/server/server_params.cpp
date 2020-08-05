@@ -274,7 +274,6 @@ ServerParams::ServerParams() {
     REGISTER_VARS(migrateSenderThreadnum);
     REGISTER_VARS(migrateClearThreadnum);
     REGISTER_VARS(migrateReceiveThreadnum);
-    REGISTER_VARS(migrateCheckThreadnum);
 
     REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
     REGISTER_VARS(migrateTaskSlotsLimit);

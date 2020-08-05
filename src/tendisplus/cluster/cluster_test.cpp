@@ -69,7 +69,6 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10, b
     cfg1->migrateSenderThreadnum = 1;
     cfg1->migrateClearThreadnum = 1;
     cfg1->migrateReceiveThreadnum = 1;
-    cfg1->migrateCheckThreadnum = 1;
 #endif
 
     auto master = std::make_shared<ServerEntry>(cfg1);

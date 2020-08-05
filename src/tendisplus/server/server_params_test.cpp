@@ -254,7 +254,6 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
     EXPECT_EQ(cfg->migrateClearThreadnum, 4);
     EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);
-    EXPECT_EQ(cfg->migrateCheckThreadnum, 2);
     EXPECT_EQ(cfg->clusterEnabled, false);
     EXPECT_EQ(cfg->migrateTaskSlotsLimit, 10);
     EXPECT_EQ(cfg->migrateDistance, 10000);

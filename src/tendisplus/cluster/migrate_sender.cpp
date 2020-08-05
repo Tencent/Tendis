@@ -79,6 +79,7 @@ Status ChunkMigrateSender::sendChunk() {
             LOG(ERROR) << "set myself meta data fail on slots:" << s.toString();
             return s;
         }
+        _clusterState->clusterSaveNodes();
     }
     /* unlock after receive package */
     unlockChunks();
@@ -93,18 +94,6 @@ Status ChunkMigrateSender::sendChunk() {
         sendSnapTimeEnd - start,
         lockStart - sendSnapTimeEnd,
         end - lockStart);
-
-    // NOTE(wayenchen) send end should be marked here
-    // TODO(takenliu) if one of the follow steps failed, do what ???
-    auto ret = addMigrateBinlog(MigrateBinlogType::SEND_END,
-                                _slots.to_string(), _storeid, _svr.get(),
-                                _dstNode->getNodeName());
-    if (!ret.ok()) {
-        LOG(ERROR) << "addMigrateBinlog failed:" << ret.status().toString()
-                   << " slots:" << bitsetStrEncode(_slots);
-        // return ret.status();  // TODO(takenliu) what should to do?
-    }
-
     return{ ErrorCodes::ERR_OK, "" };
 }
 

@@ -300,12 +300,49 @@ class FullSyncCommand: public Command {
         return 0;
     }
 
+    bool isBgCmd() const {
+        return true;
+    }
+
     Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "fullsync should not be called";
         // void compiler complain
         return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
     }
 } fullSyncCommand;
+
+class QuitCommand : public Command {
+public:
+    QuitCommand()
+        :Command("quit", "a") {
+    }
+
+    ssize_t arity() const {
+        return 0;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    bool isBgCmd() const {
+        return true;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        LOG(FATAL) << "quit should not be called";
+        // void compiler complain
+        return { ErrorCodes::ERR_INTERNAL, "shouldn't be called" };
+    }
+} quitCmd;
 
 class ToggleIncrSyncCommand: public Command {
  public:
@@ -364,6 +401,10 @@ class IncrSyncCommand: public Command {
 
     int32_t keystep() const {
         return 0;
+    }
+
+    bool isBgCmd() const {
+        return true;
     }
 
     // incrSync storeId dstStoreId binlogId ip port

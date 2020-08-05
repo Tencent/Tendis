@@ -777,10 +777,10 @@ bool ServerEntry::processRequest(Session *sess) {
     // general log if nessarry
     sess->getServerEntry()->logGeneral(sess);
 
-    auto expCmdName = Command::precheck(sess);
-    if (!expCmdName.ok()) {
+    auto expCmd = Command::precheck(sess);
+    if (!expCmd.ok()) {
         auto s = sess->setResponse(
-            redis_port::errorReply(expCmdName.status().toString()));
+            redis_port::errorReply(expCmd.status().toString()));
         if (!s.ok()) {
             return false;
         }
@@ -789,60 +789,63 @@ bool ServerEntry::processRequest(Session *sess) {
 
     replyMonitors(sess);
 
-    if (expCmdName.value() == "fullsync") {
-        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
-        NetSession *ns = dynamic_cast<NetSession*>(sess);
-        INVARIANT(ns != nullptr);
-        std::vector<std::string> args = ns->getArgs();
-        // we have called precheck, it should have 4 args
-        INVARIANT(args.size() == 4);
-        _replMgr->supplyFullSync(ns->borrowConn(), args[1], args[2], args[3]);
-        ++_serverStat.syncFull;
-        return false;
-    } else if (expCmdName.value() == "incrsync") {
-        LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
-        NetSession *ns = dynamic_cast<NetSession*>(sess);
-        INVARIANT(ns != nullptr);
-        std::vector<std::string> args = ns->getArgs();
-        // we have called precheck, it should have 2 args
-        INVARIANT(args.size() == 6);
-        bool ret = _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3], args[4], args[5]);
-        if (ret) {
-            ++_serverStat.syncPartialOk;
-        } else {
-            ++_serverStat.syncPartialErr;
-        }
-        return false;
-    } else if (expCmdName.value() == "readymigrate") {
-        LOG(WARNING) << "[source] session id:" << sess->id() << " socket borrowed";
-        NetSession *ns = dynamic_cast<NetSession*>(sess);
-        INVARIANT(ns != nullptr);
-        std::vector<std::string> args = ns->getArgs();
-        // we have called precheck, it should have 2 args
-        //INVARIANT(args.size() == 4);
-        _migrateMgr->dstReadyMigrate(ns->borrowConn(),args[1], args[2], args[3]);
-        return false;
-    } else if (expCmdName.value() == "preparemigrate") {
-        LOG(INFO) << "prepare migrate command";
-        NetSession *ns = dynamic_cast<NetSession *>(sess);
-        INVARIANT(ns != nullptr);
-        std::vector<std::string> args = ns->getArgs();
-        auto esNum = ::tendisplus::stoul(args[3]);
-        if (!esNum.ok())
-            LOG(ERROR) << "Invalid store num:" << args[3];
-        uint32_t  storeNum = esNum.value();
-        _migrateMgr->prepareSender(ns->borrowConn(), args[1], args[2], storeNum);
-        return false;
-    } else if (expCmdName.value() == "quit") {
-        LOG(INFO) << "quit command";
-        NetSession *ns = dynamic_cast<NetSession*>(sess);
-        INVARIANT(ns != nullptr);
-        ns->setCloseAfterRsp();
-        auto s = ns->setResponse(Command::fmtOK());
-        if (!s.ok()) {
+    if (expCmd.value()->isBgCmd()) {
+        auto expCmdName = expCmd.value()->getName();
+        if (expCmdName == "fullsync") {
+            LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
+            NetSession* ns = dynamic_cast<NetSession*>(sess);
+            INVARIANT(ns != nullptr);
+            std::vector<std::string> args = ns->getArgs();
+            // we have called precheck, it should have 4 args
+            INVARIANT(args.size() == 4);
+            _replMgr->supplyFullSync(ns->borrowConn(), args[1], args[2], args[3]);
+            ++_serverStat.syncFull;
             return false;
+        } else if (expCmdName == "incrsync") {
+            LOG(WARNING) << "[master] session id:" << sess->id() << " socket borrowed";
+            NetSession* ns = dynamic_cast<NetSession*>(sess);
+            INVARIANT(ns != nullptr);
+            std::vector<std::string> args = ns->getArgs();
+            // we have called precheck, it should have 2 args
+            INVARIANT(args.size() == 6);
+            bool ret = _replMgr->registerIncrSync(ns->borrowConn(), args[1], args[2], args[3], args[4], args[5]);
+            if (ret) {
+                ++_serverStat.syncPartialOk;
+            } else {
+                ++_serverStat.syncPartialErr;
+            }
+            return false;
+        } else if (expCmdName == "readymigrate") {
+            LOG(WARNING) << "[source] session id:" << sess->id() << " socket borrowed";
+            NetSession* ns = dynamic_cast<NetSession*>(sess);
+            INVARIANT(ns != nullptr);
+            std::vector<std::string> args = ns->getArgs();
+            // we have called precheck, it should have 2 args
+            //INVARIANT(args.size() == 4);
+            _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2], args[3]);
+            return false;
+        } else if (expCmdName == "preparemigrate") {
+            LOG(INFO) << "prepare migrate command";
+            NetSession* ns = dynamic_cast<NetSession*>(sess);
+            INVARIANT(ns != nullptr);
+            std::vector<std::string> args = ns->getArgs();
+            auto esNum = ::tendisplus::stoul(args[3]);
+            if (!esNum.ok())
+                LOG(ERROR) << "Invalid store num:" << args[3];
+            uint32_t  storeNum = esNum.value();
+            _migrateMgr->dstPrepareMigrate(ns->borrowConn(), args[1], args[2], storeNum);
+            return false;
+        } else if (expCmdName == "quit") {
+            LOG(INFO) << "quit command";
+            NetSession* ns = dynamic_cast<NetSession*>(sess);
+            INVARIANT(ns != nullptr);
+            ns->setCloseAfterRsp();
+            auto s = ns->setResponse(Command::fmtOK());
+            if (!s.ok()) {
+                return false;
+            }
+            return true;
         }
-        return true;
     }
 
     auto expect = Command::runSessionCmd(sess);

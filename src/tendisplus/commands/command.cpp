@@ -166,15 +166,12 @@ std::vector<std::string> Command::listCommands() {
     return lst;
 }
 
-Expected<std::string> Command::precheck(Session *sess) {
+Expected<Command*> Command::precheck(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
         LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
     }
     std::string commandName = toLower(args[0]);
-    if (commandName == "quit") {
-        return commandName;
-    }
     auto it = commandMap().find(commandName);
     if (it == commandMap().end()) {
         {
@@ -225,7 +222,7 @@ Expected<std::string> Command::precheck(Session *sess) {
         return {ErrorCodes::ERR_AUTH, "-NOAUTH Authentication required.\r\n"};
     }
 
-    return it->second->getName();
+    return it->second;
 }
 
 // NOTE(deyukong): call precheck before call runSessionCmd

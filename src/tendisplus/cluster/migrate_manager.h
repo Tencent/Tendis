@@ -130,7 +130,7 @@ class MigrateManager {
                          const std::string& StoreidArg,
                          const std::string& nodeidArg);
 
-    void prepareSender(asio::ip::tcp::socket sock,
+    void dstPrepareMigrate(asio::ip::tcp::socket sock,
                        const std::string& chunkidArg,
                        const std::string& nodeidArg,
                        uint32_t storeNum);
@@ -153,11 +153,6 @@ class MigrateManager {
     Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
     Status supplyMigrateEnd(const SlotsBitmap& slots);
-    Status lockXChunk(uint32_t chunkid);
-    Status unlockXChunk(uint32_t chunkid);
-
-    Status lockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
-    Status unlockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
     uint64_t getProtectBinlogid(uint32_t storeid);
 
     bool slotInTask(uint32_t slot);
@@ -220,14 +215,11 @@ class MigrateManager {
     std::shared_ptr<PoolMatrix> _migrateSenderMatrix;
     std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
-
     // receiver's pov
     std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
 
     std::unique_ptr<WorkerPool> _migrateReceiver;
-    std::unique_ptr<WorkerPool> _migrateChecker;
     std::shared_ptr<PoolMatrix> _migrateReceiverMatrix;
-    std::shared_ptr<PoolMatrix> _migrateCheckerMatrix;
 
     uint16_t _workload;
     // mark dst node or source node

@@ -12,6 +12,8 @@
 namespace tendisplus {
 Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type, string slots, uint32_t storeid,
         ServerEntry* svr, const string& nodeName = "none") {
+    // Temporarily disabled 
+    INVARIANT_D(0);
     auto expdb = svr->getSegmentMgr()->getDb(NULL, storeid,
         mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {
@@ -89,8 +91,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
      _isRunning(false),
      _migrateSenderMatrix(std::make_shared<PoolMatrix>()),
      _migrateClearMatrix(std::make_shared<PoolMatrix>()),
-     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
-     _migrateCheckerMatrix(std::make_shared<PoolMatrix>()) {
+     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()) {
      _cluster = _svr->getClusterMgr()->getClusterState();
 }
 
@@ -120,13 +121,6 @@ Status MigrateManager::startup() {
         return s;
     }
 
-    _migrateChecker = std::make_unique<WorkerPool>(
-            "migrate-checker", _migrateCheckerMatrix);
-    s = _migrateChecker->startup(_cfg->migrateCheckThreadnum);
-    if (!s.ok()) {
-        return s;
-    }
-
     for (uint32_t storeid = 0; storeid < _svr->getKVStoreCount(); storeid++) {
         _restoreMigrateTask[storeid] = std::list<SlotsBitmap>();
     }
@@ -149,7 +143,6 @@ void MigrateManager::stop() {
     _migrateSender->stop();
     _migrateClear->stop();
     _migrateReceiver->stop();
-    _migrateChecker->stop();
 
     LOG(INFO) << "MigrateManager stops succ";
 }
@@ -334,36 +327,26 @@ void MigrateManager::deleteChunks(MigrateSendTask* task) {
 
 Status MigrateManager::migrating(SlotsBitmap slots,
         const string& ip, uint16_t port, uint32_t storeid) {
-    {
-        std::lock_guard<myMutex> lk(_mutex);
-        size_t idx = 0;
-        DLOG(INFO) << "migrating slot:" << bitsetStrEncode(slots);
-        while (idx < slots.size()) {
-            if (slots.test(idx)) {
-                if (_migrateSlots.test(idx)) {
-                    LOG(ERROR) << "slot:" << idx << "already be migrating, slots:" << _migrateSlots;
-                    return {ErrorCodes::ERR_INTERNAL, "already be migrating"};
-                } else {
-                    _migrateSlots.set(idx);
-                }
+    std::lock_guard<myMutex> lk(_mutex);
+    size_t idx = 0;
+    DLOG(INFO) << "migrating slot:" << bitsetStrEncode(slots);
+    while (idx < slots.size()) {
+        if (slots.test(idx)) {
+            if (_migrateSlots.test(idx)) {
+                LOG(ERROR) << "slot:" << idx << "already be migrating, slots:" << _migrateSlots;
+                return { ErrorCodes::ERR_INTERNAL, "already be migrating" };
+            } else {
+                _migrateSlots.set(idx);
             }
-            idx++;
         }
+        idx++;
+    }
 
-        auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg);
-        sendTask->nextSchedTime = SCLOCK::now();
-        sendTask->sender->setStoreid(storeid);
-        _migrateSendTask.push_back(std::move(sendTask));
-    }
-    // TODO(takenliu): delete it?
-    auto ret = addMigrateBinlog(MigrateBinlogType::SEND_START,
-            slots.to_string(), storeid, _svr.get());
-    if (!ret.ok()) {
-        LOG(ERROR) << "addMigrateBinlog failed:" << ret.status().toString()
-            << " slots:" << bitsetStrEncode(slots);
-        return ret.status();
-    }
-    return {ErrorCodes::ERR_OK, ""};
+    auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg);
+    sendTask->nextSchedTime = SCLOCK::now();
+    sendTask->sender->setStoreid(storeid);
+    _migrateSendTask.push_back(std::move(sendTask));
+    return { ErrorCodes::ERR_OK, "" };
 }
 
 // judge if largeMap contain all slots in smallMap
@@ -421,7 +404,7 @@ SlotsBitmap convertMap(const std::vector<uint32_t>& vec) {
     return  map;
 }
 
-void MigrateManager::prepareSender(asio::ip::tcp::socket sock,
+void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
                                 const std::string& bitmap,
                                 const std::string& nodeid,
                                 uint32_t storeNum) {
@@ -642,13 +625,10 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             ++it;
         } else if ((*it)->state == MigrateReceiveState::RECEIVE_BINLOG) {
             (*it)->isRunning = true;
-            _migrateChecker->schedule([this, iter = (*it).get()]() {
-                checkMigrateStatus(iter);
-            });
+            checkMigrateStatus(it->get());
             ++it;
         } else if ((*it)->state == MigrateReceiveState::SUCC
                     || (*it)->state == MigrateReceiveState::ERR) {
-            // TODO(wayenchen)  takenliu add, if receive failed, need deleteChunks.
             std::string slot = bitsetStrEncode((*it)->slots);
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
                 if ((*it)->slots.test(i)) {
@@ -672,43 +652,34 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             }
             LOG(INFO) << "erase receiver task on slots:" << bitsetStrEncode((*it)->slots);
             _importSlots ^= ((*it)->slots);
-            _migrateReceiveTask.erase(it++);
+            it = _migrateReceiveTask.erase(it);
             continue;
         }
     }
     return doSth;
 }
 
-Status MigrateManager::importing(SlotsBitmap slots, const std::string& ip, uint16_t port,
-    uint32_t storeid) {
-    {
-        std::lock_guard<myMutex> lk(_mutex);
-        std::size_t idx = 0;
-        // set slot flag
-        DLOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
-        while (idx < slots.size()) {
-            if (slots.test(idx)) {
-                if (_importSlots.test(idx)) {
-                    LOG(ERROR) << "slot:" << idx << "already be importing" << _importSlots;
-                    return {ErrorCodes::ERR_INTERNAL, "already be importing" };
-                } else {
-                    _importSlots.set(idx);
-                }
+Status MigrateManager::importing(SlotsBitmap slots,
+            const std::string& ip, uint16_t port,
+            uint32_t storeid) {
+    std::lock_guard<myMutex> lk(_mutex);
+    std::size_t idx = 0;
+    // set slot flag
+    DLOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
+    while (idx < slots.size()) {
+        if (slots.test(idx)) {
+            if (_importSlots.test(idx)) {
+                LOG(ERROR) << "slot:" << idx << "already be importing" << _importSlots;
+                return {ErrorCodes::ERR_INTERNAL, "already be importing"};
+            } else {
+                _importSlots.set(idx);
             }
-            idx++;
         }
-        auto receiveTask = std::make_unique<MigrateReceiveTask>(slots, storeid, ip, port, _svr, _cfg);
-        receiveTask->nextSchedTime = SCLOCK::now();
-        _migrateReceiveTask.push_back(std::move(receiveTask));
+        idx++;
     }
-    // NOTE(wayenchen) addMigrateBinlog will get DBLOCK
-    auto ret = addMigrateBinlog(MigrateBinlogType::RECEIVE_START,
-            slots.to_string(), storeid, _svr.get());
-    if (!ret.ok()) {
-        LOG(ERROR) << "addMigrateBinlog failed:" << ret.status().toString()
-                   << " slots:" << bitsetStrEncode(slots);
-        return ret.status();
-    }
+    auto receiveTask = std::make_unique<MigrateReceiveTask>(slots, storeid, ip, port, _svr, _cfg);
+    receiveTask->nextSchedTime = SCLOCK::now();
+    _migrateReceiveTask.push_back(std::move(receiveTask));
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -874,7 +845,6 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
     /* update gossip message and save*/
     auto clusterState = _svr->getClusterMgr()->getClusterState();
     auto s = clusterState->setSlots(clusterState->getMyselfNode(), slots);
-    LOG(INFO) << "set slot metadata begin:" << bitsetStrEncode(slots);
     if (!s.ok()) {
         LOG(ERROR) << "setSlots failed, slots:" << bitsetStrEncode(slots)
             << " err:" << s.toString();
@@ -883,14 +853,6 @@ Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
 
     clusterState->clusterSaveNodes();
     clusterState->clusterUpdateState();
-    // TODO(takenliu) add src node name
-    auto ret = addMigrateBinlog(MigrateBinlogType::RECEIVE_END,
-            slots.to_string(), storeid, _svr.get());
-    if (!ret.ok()) {
-        LOG(ERROR) << "addMigrateBinlog failed:" << ret.status().toString()
-                   << " slots:" << bitsetStrEncode(slots);
-        // return ret.status();  // TODO(takenliu) what should to do?
-    }
     return{ ErrorCodes::ERR_OK, "" };
 }
 

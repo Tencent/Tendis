@@ -344,7 +344,6 @@ public:
     uint32_t migrateSenderThreadnum = 4;
     uint32_t migrateClearThreadnum = 4;
     uint32_t migrateReceiveThreadnum = 4;
-    uint32_t migrateCheckThreadnum = 2;
     bool clusterEnabled = false;
     uint32_t migrateTaskSlotsLimit = 10;
     uint32_t migrateDistance = 10000;
