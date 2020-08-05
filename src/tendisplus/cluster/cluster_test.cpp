@@ -952,7 +952,6 @@ std::bitset<CLUSTER_SLOTS> getBitSet(std::vector<uint32_t> vec) {
     return slots;
 }
 
-
 TEST(Cluster, migrate) {
     std::vector<std::string> dirs = { "node1", "node2" };
     uint32_t startPort = 15000;
@@ -983,6 +982,14 @@ TEST(Cluster, migrate) {
     auto sess2 = makeSession(dstNode, ctx2);
     WorkLoad work2(dstNode, sess2);
     work2.init();
+
+    auto ret = work1.getStringResult(
+        {"syncversion", "nodeid", std::to_string(100), std::to_string(120), "v1"});
+    EXPECT_EQ(ret, "+OK\r\n");
+
+    ret = work2.getStringResult(
+        {"syncversion", "nodeid", std::to_string(10), std::to_string(12), "v1"});
+    EXPECT_EQ(ret, "+OK\r\n");
 
     // addSlots
     LOG(INFO) <<"begin meet";
@@ -1086,6 +1093,9 @@ TEST(Cluster, migrate) {
     ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), false);
     // dstNode should contain the keys
     ASSERT_EQ(keysize2, numData*2);
+    auto meta1 = work1.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
+    auto meta2 = work2.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
+    ASSERT_EQ(meta1, meta2);
     std::this_thread::sleep_for(20s);
 
 #ifndef _WIN32

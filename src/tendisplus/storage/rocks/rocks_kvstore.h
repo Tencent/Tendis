@@ -48,6 +48,7 @@ class RocksTxn: public Transaction {
                                       uint64_t until) final;
     std::unique_ptr<SlotCursor> createSlotCursor(uint32_t  slot) final;
     std::unique_ptr<SlotsCursor> createSlotsCursor(uint32_t start, uint32_t end) final;
+    std::unique_ptr<VersionMetaCursor> createVersionMetaCursor() final;
 
     Expected<uint64_t> commit() final;
     Status rollback() final;
@@ -278,8 +279,8 @@ class RocksKVStore: public KVStore {
     Status recoveryFromBgError() override;
     void resetStatistics();
 
-    Expected<std::unique_ptr<VersionMeta>> getVersionMeta() override;
-    Expected<std::unique_ptr<VersionMeta>> getVersionMeta(std::string name) override;
+    Expected<VersionMeta> getVersionMeta() override;
+    Expected<VersionMeta> getVersionMeta(const std::string& name) override;
     Status setVersionMeta(const std::string& name,
         uint64_t ts, uint64_t version) override;
 

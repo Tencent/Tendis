@@ -64,6 +64,12 @@ Status ChunkMigrateSender::sendChunk() {
         unlockChunks();
         return s;
     }
+    /* in chunk lock, send syncversion meta */
+    s = sendVersionMeta();
+    if (!s.ok()) {
+        LOG(ERROR) << "send version meta Fail:" << s.toString();
+        return s;
+    }
     auto last_binlog = _curBinlogid;
     _sendstate = MigrateSenderStatus::LASTBINLOG_DONE;
 
@@ -408,6 +414,72 @@ Status ChunkMigrateSender::sendLastBinlog() {
         _client->getRemoteRepr().c_str(),
         bitsetStrEncode(_slots).c_str(),
         _binlogNum);
+
+    return {ErrorCodes::ERR_OK, ""};
+}
+
+
+// versionmeta send every migrate task, so in migrating versionmeta may send
+// many times
+Status ChunkMigrateSender::sendVersionMeta() {
+    PStore kvstore = _dbWithLock->store;
+
+    auto ptxn = kvstore->createTransaction(nullptr);
+    auto txn = std::move(ptxn.value());
+    std::unique_ptr<VersionMetaCursor> cursor = txn->createVersionMetaCursor();
+    std::vector<VersionMeta> versionMeta;
+    while (true) {
+        auto record = cursor->next();
+        if (record.ok()) {
+            versionMeta.emplace_back(record.value());
+        } else {
+            if (record.status().code() != ErrorCodes::ERR_EXHAUST) {
+                LOG(WARNING) << record.status().toString();
+            }
+            break;
+        }
+    }
+
+    // no versionmeta just skip send versionmeta
+    if (versionMeta.size() == 0) {
+        return {ErrorCodes::ERR_OK, ""};
+    }
+
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, versionMeta.size() * 3 + 1);
+    Command::fmtBulk(ss, "migrateversionmeta");
+    for (auto& meta : versionMeta) {
+        Command::fmtBulk(ss, meta.getName());
+        Command::fmtBulk(ss, std::to_string(meta.getTimeStamp()));
+        Command::fmtBulk(ss, std::to_string(meta.getVersion()));
+    }
+
+    std::string stringtoWrite = ss.str();
+
+    // LocalSessionGuard sg(_svr.get());
+    // sg.getSession()->setArgs({stringtoWrite});
+
+    Status s = _client->writeData(stringtoWrite);
+
+    if (!s.ok()) {
+        LOG(ERROR) << " writeData failed:" << s.toString() << ",data:" << ss.str();
+        return s;
+    }
+
+    uint32_t secs = _cfg->timeoutSecBinlogWaitRsp;
+    Expected<std::string> expOK = _client->readLine(std::chrono::seconds(secs));
+
+    if (!expOK.ok()) {
+        LOG(ERROR) << " src Store:" << _dstStoreid
+                   << " readLine failed:" << expOK.status().toString()
+                   << "; Size:" << stringtoWrite.size() << "; Seconds:" << secs;
+        // maybe miss message in network
+        return {ErrorCodes::ERR_CLUSTER, "missing package"};
+    } else if (expOK.value() != "+OK") {
+        LOG(ERROR) << "get response of migratesyncversion failed "
+                   << "dstStoreid:" << _dstStoreid << " rsp:" << expOK.value();
+        return {ErrorCodes::ERR_NETWORK, "bad return string"};
+    }
 
     return {ErrorCodes::ERR_OK, ""};
 }

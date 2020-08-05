@@ -874,4 +874,85 @@ class MigrateendCommand: public Command {
     }
 } migrateendCmd;
 
+class MigrateVersionMetaCommand : public Command {
+public:
+    MigrateVersionMetaCommand() : Command("migrateversionmeta", "ws") {}
+
+    ssize_t arity() const {
+        return -1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    bool sameWithRedis() const {
+        return false;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        const auto& args = sess->getArgs();
+        const auto server = sess->getServerEntry();
+
+        if (args.size() % 3 != 1) {
+            return {ErrorCodes::ERR_INTERNAL, "args should be 3*n+1"};
+        }
+
+        for (size_t n = 1; n < args.size();) {
+            const auto& name = args[n];
+            auto eTs = tendisplus::stoull(args[n + 1]);
+            if (!eTs.ok()) {
+                return eTs.status();
+            }
+            auto eVersion = tendisplus::stoull(args[n + 2]);
+            if (!eVersion.ok()) {
+                return eVersion.status();
+            }
+            VersionMeta meta(eTs.value(), eVersion.value(), name);
+            VersionMeta minMeta(UINT64_MAX - 1, UINT64_MAX - 1, name);
+            for (size_t i = 0; i < server->getKVStoreCount(); i++) {
+                auto expdb = server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+                if (!expdb.ok()) {
+                    return expdb.status();
+                }
+                PStore store = expdb.value().store;
+                auto meta = store->getVersionMeta(name);
+                if (!meta.ok()) {
+                    return meta.status();
+                }
+                VersionMeta metaV = meta.value();
+                minMeta = std::min(metaV, minMeta);
+            }
+
+            // migrate version only dest node's versionmeta smaller than source node
+            if (minMeta < meta) {
+                for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
+                    auto expdb = server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+                    if (!expdb.ok()) {
+                        return expdb.status();
+                    }
+                    PStore store = expdb.value().store;
+                    auto s = store->setVersionMeta(name, eTs.value(), eVersion.value());
+                    if (!s.ok()) {
+                        return s;
+                    }
+                }
+            }
+            n = n + 3;
+        }
+
+        return Command::fmtOK();
+    }
+} migrateVersionMetaCmd;
+
 }  // namespace tendisplus
