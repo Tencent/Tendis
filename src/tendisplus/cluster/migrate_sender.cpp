@@ -119,7 +119,7 @@ void ChunkMigrateSender::setSenderStatus(MigrateSenderStatus s) {
 
 // check if bitmap all belong to dst node
 bool ChunkMigrateSender::checkSlotsBlongDst() {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<myMutex> lk(_mutex);
     for (size_t id =0; id < _slots.size(); id++) {
         if (_slots.test(id)) {
             if (_clusterState->getNodeBySlot(id) != _dstNode) {
@@ -228,7 +228,7 @@ Status ChunkMigrateSender::sendSnapshot() {
     auto kvstore = _dbWithLock->store;
 
     {
-        std::lock_guard<std::mutex> lk(_mutex);
+        std::lock_guard<myMutex> lk(_mutex);
         _curBinlogid = kvstore->getHighestBinlogId();
     }
     LOG(INFO) << "sendSnapshot begin, storeid:" << _storeid
@@ -311,7 +311,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     }
 
     {
-        std::lock_guard<std::mutex> lk(_mutex);
+        std::lock_guard<myMutex> lk(_mutex);
         _binlogNum += binlogNum;
         if (newBinlogId != 0) {
             _curBinlogid = newBinlogId;
@@ -549,7 +549,8 @@ Status ChunkMigrateSender::lockChunks() {
         serverLog(LL_NOTICE, "ChunkMigrateSender::lockChunks "
             "%s: [%s] [%s] [%s] [used time:%lu]",
             s.ok() ? "success" : "failed",
-            _client->getRemoteRepr().c_str(),
+            "aa",
+            //_client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str(),
             s.toString().c_str(),
             msSinceEpoch() - locktime);
@@ -582,7 +583,7 @@ Status ChunkMigrateSender::lockChunks() {
 }
 
 void ChunkMigrateSender::unlockChunks() {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<myMutex> lk(_mutex);
     _slotsLockList.clear();
 }
 

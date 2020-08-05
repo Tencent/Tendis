@@ -101,15 +101,13 @@ enum class ClusterHealth: std::uint8_t {
 #define CLUSTER_NAME_LENGTH  40
 #define CLUSTER_BLACKLIST_TTL 60
 
-using  mstime_t = uint64_t;
+using mstime_t = uint64_t;
 
 class ClusterSession;
 class ClusterState;
 class ClusterMsg;
 class ClusterNodeFailReport;
 using myMutex = std::recursive_mutex;
-
-
 
 class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     friend class ClusterState;

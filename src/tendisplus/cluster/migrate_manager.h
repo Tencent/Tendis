@@ -23,6 +23,7 @@ class ChunkMeta;
 class ChunkMigrateSender;
 class ClusterState;
 enum class BinlogApplyMode;
+using myMutex = std::recursive_mutex;
 
 // Sender POV
 enum class MigrateSendState {
@@ -190,7 +191,7 @@ class MigrateManager {
 
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
     std::unique_ptr<std::thread> _controller;
 
     // TODO(wayenchen) takenliu add, change all std::bitset<CLUSTER_SLOTS> to SlotsBitmap

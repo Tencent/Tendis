@@ -20,6 +20,7 @@ namespace tendisplus {
 
 class ClusterState;
 class ClusterNode;
+using myMutex = std::recursive_mutex;
 
 enum class MigrateSenderStatus {
     NONE = 0,
@@ -76,7 +77,7 @@ class ChunkMigrateSender{
 
     uint64_t getProtectBinlogid() {
         // TODO(wayenchen)  takenliu add, use atomic
-        std::lock_guard<std::mutex> lk(_mutex);
+        std::lock_guard<myMutex> lk(_mutex);
         return _curBinlogid;
     }
     std::string getInfo();
@@ -96,7 +97,7 @@ class ChunkMigrateSender{
 
 
 private:
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
 
     std::bitset<CLUSTER_SLOTS> _slots;
     std::shared_ptr<ServerEntry> _svr;

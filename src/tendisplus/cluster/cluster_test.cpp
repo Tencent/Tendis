@@ -915,7 +915,7 @@ bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<Se
 
         if (slots.test(id)) {
             if (state->getNodeBySlot(id) != node) {
-                LOG(ERROR) << "slot:" << id << "not belong to:" << nodeid;
+                LOG(ERROR) << "slot:" << id << " not belong to: " << nodeid;
                 return false;
             }
         }

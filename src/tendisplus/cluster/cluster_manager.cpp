@@ -645,7 +645,7 @@ void ClusterNode::freeClusterSession() {
         if (!_nodeSession) {
             return;
         }
-        LOG(INFO) << "free session:" << _nodeSession->getName();
+        LOG(INFO) << "free session:" << _nodeSession->getRemoteRepr();
         tmpSession = std::move(_nodeSession);
         _nodeSession = nullptr;
     }
@@ -903,7 +903,7 @@ void ClusterState::clusterHandleConfigEpochCollision(CNodePtr sender) {
     _currentEpoch++;
 
     _myself->setConfigEpoch(_currentEpoch);
-    serverLog(LL_VERBOSE,
+    serverLog(LL_WARNING,
         "WARNING: configEpoch collision with node %.40s."
         " configEpoch set to %lu",
         sender->getNodeName().c_str(), (uint64_t)_currentEpoch);
@@ -1448,7 +1448,7 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
         _nodes[nodeName] = node;
     } else {
         _nodes.insert(std::make_pair(nodeName, node));
-        serverLog(LL_VERBOSE, "clusterAddNodeNoLock node:%s ip:%s port:%lu ",
+        serverLog(LL_VERBOSE, "cluster add node:%s ip:%s port:%lu ",
             node->getNodeName().c_str(), node->getNodeIp().c_str(), node->getPort());
     }
 }
@@ -3579,7 +3579,7 @@ Status ClusterManager::startup() {
         auto state = _clusterState->getClusterState();
         std::string clusterState = (unsigned(state) > 0) ? "OK": "FAIL";
         LOG(INFO) << "cluster init success:"
-            << " myself node name " << name << "cluster state is" << clusterState;
+            << " myself node name " << name << " cluster state is " << clusterState;
     }
 
     std::shared_ptr<ServerParams> params = _svr->getParams();
@@ -4340,7 +4340,7 @@ void ClusterSession::drainReqNet() {
 void ClusterSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     if (ec) {
         /* I/O error... */
-        LOG(WARNING) << "I/O error reading from node link: " << ec.message();
+        LOG(WARNING) << "I/O error reading from node link(" << getRemoteRepr() << "): " << ec.message();
         endSession();
         return;
     }
