@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <iostream>
+#include <cstdint>
 #include <string>
 #include <typeinfo>
 #include <algorithm>
@@ -37,10 +38,10 @@ string gMappingCmdList = "";
         _mapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else INVARIANT(0); // NOTE(takenliu): if other type is needed, change here.
 
-#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, 99999999, false)
-#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, 99999999, false)
-#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, 99999999, true)
-#define REGISTER_VARS_DIFF_NAME_DYNAMIC(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, 99999999, true)
+#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, false)
+#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, INT_MAX, false)
+#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, true)
+#define REGISTER_VARS_DIFF_NAME_DYNAMIC(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, INT_MAX, true)
 #define REGISTER_VARS_SAME_NAME(var, checkfun, prefun, minval, maxval, allowDynamicSet) \
         REGISTER_VARS_FULL(#var, var, checkfun, prefun, minval, maxval, allowDynamicSet)
 
