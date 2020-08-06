@@ -190,14 +190,7 @@ void WorkerPool::resizeIncrease(size_t size) {
             consumeTasks(_idGenerator.load(std::memory_order_relaxed));
         });
         auto tid = thd.get_id();
-        {
-            // TODO(pecochen): In order to reduce the granularity of the lock,
-            //              but maybe hang here, solve this bug later.
-            //              maybe solved by lock guard at top of scope.
-
-            //    std::lock_guard<std::mutex> lk(_mutex);
-            _threads.emplace(tid, std::move(thd));
-        }
+        _threads.emplace(tid, std::move(thd));
         _idGenerator.fetch_add(1, std::memory_order::memory_order_relaxed);
     }
 }

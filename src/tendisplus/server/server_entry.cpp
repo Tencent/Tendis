@@ -450,6 +450,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     uint32_t threadnum = std::max(size_t(4), cpuNum/2);
     if (cfg->executorThreadNum != 0) {
         threadnum = cfg->executorThreadNum;
+    } else {
+        _cfg->executorThreadNum = threadnum;        // set the executorThreadNum when it's zero
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
@@ -470,6 +472,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
             }
             _executorList.push_back(std::move(executor));
         }
+
+        // set the executorThreadNum when set executorMultiIoContext is true
+        _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
     } else {
         auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(0), _poolMatrix);
         Status s = executor->startup(threadnum);
@@ -480,7 +485,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         _executorList.push_back(std::move(executor));
     }
 
-    _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
+    // _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
@@ -739,13 +744,16 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
 /**
  * @brief update func to resize workpool thread num
  * @note like WorkerPool::resize(), three cases
+ *     operation on container should be thread-safe,
+ *     use std::lock_guard to make thread safe
  */
-void ServerEntry::resizeExecutorThreadNum(uint64_t poolSize) {
-    auto threadNum = _executorList.size() * _executorList.back()->size();
-    if (poolSize < threadNum) {
-        resizeDecrExecutorThreadNum(poolSize);
-    } else if (poolSize > threadNum) {
-        resizeIncrExecutorThreadNum(poolSize);
+void ServerEntry::resizeExecutorThreadNum(uint64_t newThreadNum) {
+    std::lock_guard<std::mutex> lk(_mutex);          
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    if (newThreadNum < threadSum) {
+        resizeDecrExecutorThreadNum(newThreadNum);
+    } else if (newThreadNum > threadSum) {
+        resizeIncrExecutorThreadNum(newThreadNum);
     } else {
         return;
     }
@@ -758,42 +766,34 @@ void ServerEntry::resizeExecutorThreadNum(uint64_t poolSize) {
  *      stop the workerpool eventually when call another decrease operation，
  *      this design means: ergodic operation pressure is on DECREASE OP, NOT INCREASE OP.
  */
-void ServerEntry::resizeDecrExecutorThreadNum(uint64_t poolSize) {
+void ServerEntry::resizeDecrExecutorThreadNum(uint64_t newThreadNum) {
     // calculate the threads sum -> threadNum, the list num to resize() -> listNum
-    auto threadNum = _executorList.size() * _executorList.back()->size();
-    size_t listNum = (threadNum - poolSize) / _cfg->executorWorkPoolSize;
-
-    // stop the _ioCtx which is idling
-    if (_executorSet.size()) {
-        for (auto &pool : _executorSet) {
-            if (!pool->size()) {
-                pool->stop();
-                _executorSet.erase(pool);
-            }
-        }
-    }
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (threadSum - newThreadNum) / _cfg->executorWorkPoolSize;
+    INVARIANT_D(newThreadNum < threadSum);
     
     // call resize() op, move workerpool to _executorSet.
     for (size_t i = 0; i < listNum; ++i) {
         _executorList.back()->resize(0);
-        _executorSet.emplace(std::move(_executorList.back().release()));
+        _executorRecycleSet.emplace(std::move(_executorList.back().release()));
         _executorList.pop_back();
     }
 }
 
 /**
  * @brief increase _executorList thread number
- * @note matbe can reuse worjerpool which in _exexutorSet,
+ * @note maybe can reuse workerpool which in _executorSet,
  *      but may put the ergodic operation pressure on INCREASE OP.
  *      As we all known, DECREASE OP's pressure is less than INCREASE OP's.
  * @todo workerpool's name now may be repetitive, should fix it later.
  */
-void ServerEntry::resizeIncrExecutorThreadNum(uint64_t poolSize) {
-    auto threadNum = _executorList.size() * _executorList.back()->size();
-    size_t listNum = (poolSize - threadNum) / _cfg->executorWorkPoolSize;
+void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (newThreadNum - threadSum) / _cfg->executorWorkPoolSize;
+    INVARIANT_D(newThreadNum > threadSum);
 
     for (size_t i = 0; i < listNum; ++i) {
-        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(10 + i), _poolMatrix);
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(_executorList.size() + i), _poolMatrix);
         Status s = executor->startup(_executorList.back()->size());
         if (!s.ok()) {
             LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
@@ -1213,6 +1213,16 @@ void ServerEntry::serverCron() {
         }
 
         run_with_period(1000) {
+            // release idling workerpool, trigger 1s once time
+            if (_executorRecycleSet.size()) {
+                for (auto &pool : _executorRecycleSet) {
+                    if (!pool->size()) {
+                        pool->stop();
+                        _executorRecycleSet.erase(pool);
+                    }
+                }
+            }
+
             // full-time matrix collect
             if (_ftmcEnabled.load(std::memory_order_relaxed)) {
                 auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
@@ -1275,7 +1285,7 @@ void ServerEntry::stop() {
     for (auto& executor : _executorList) {
         executor->stop();
     }
-    for (auto &executor : _executorSet) {
+    for (auto &executor : _executorRecycleSet) {
         executor->stop();
     }
     _replMgr->stop();

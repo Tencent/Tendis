@@ -211,7 +211,7 @@ Status rewriteConfigState::rewriteConfigOverwriteFile(const std::string& confFil
 
 ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("bind", bindIp);
-    REGISTER_VARS(port);
+    REGISTER_VARS_FULL("port", port, nullptr, nullptr, 1, 65535, false);
     REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, removeQuotesAndToLower, -1, -1, false);
     REGISTER_VARS(logDir);
 

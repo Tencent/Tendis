@@ -259,9 +259,9 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     void serverCron();
     void replyMonitors(Session* sess);
     void DelMonitorNoLock(uint64_t connId);
-    void resizeExecutorThreadNum(uint64_t poolSize);
-    void resizeIncrExecutorThreadNum(uint64_t poolSize);
-    void resizeDecrExecutorThreadNum(uint64_t poolSize);
+    void resizeExecutorThreadNum(uint64_t newThreadNum);
+    void resizeIncrExecutorThreadNum(uint64_t newThreadNum);
+    void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
 
     // NOTE(deyukong): _isRunning = true -> running
     // _isRunning = false && _isStopped = false -> stopping in progress
@@ -277,7 +277,7 @@ class ServerEntry: public std::enable_shared_from_this<ServerEntry> {
     std::unique_ptr<NetworkAsio> _network;
     std::map<uint64_t, std::shared_ptr<Session>> _sessions;
     std::vector<std::unique_ptr<WorkerPool>> _executorList;
-    std::set<std::unique_ptr<WorkerPool>> _executorSet;
+    std::set<std::unique_ptr<WorkerPool>> _executorRecycleSet;
     std::unique_ptr<SegmentMgr> _segmentMgr;
     std::unique_ptr<ReplManager> _replMgr;
     std::unique_ptr<MigrateManager> _migrateMgr;

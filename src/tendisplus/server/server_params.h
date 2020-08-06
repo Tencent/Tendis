@@ -112,7 +112,7 @@ public:
     IntVar(const string& name, void* v, checkfunptr ptr, preProcess preFun,
             int64_t minVal, int64_t maxVal, bool allowDynamicSet)
         : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int *)value),
-          minVal_(minVal), maxVal_(maxVal){};
+          _minVal(minVal), _maxVal(maxVal){};
     virtual string show() const {
         return std::to_string(*(int*)value);
     };
@@ -131,7 +131,7 @@ private:
             LOG(ERROR) << "IntVar stoi err:" << v;
             return false;
         }
-        if (valTemp < minVal_ || valTemp > maxVal_) {
+        if (valTemp < _minVal || valTemp > _maxVal) {
             return false;
         }
         *reinterpret_cast<int *>(value) = valTemp;
@@ -140,8 +140,8 @@ private:
         return true;
     }
     int _defaultValue;
-    int64_t minVal_;
-    int64_t maxVal_;
+    int64_t _minVal;
+    int64_t _maxVal;
 };
 
 // support:int64_t, uint64_t
@@ -150,7 +150,7 @@ public:
     Int64Var(const string& name, void* v, checkfunptr ptr, preProcess preFun,
             int64_t minVal, int64_t maxVal, bool allowDynamicSet)
             : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(int64_t *)value),
-              minVal_(minVal), maxVal_(maxVal){};
+              _minVal(minVal), _maxVal(maxVal){};
     virtual string show() const {
         return std::to_string(*(int64_t *)value);
     };
@@ -170,7 +170,7 @@ private:
             LOG(ERROR) << "Int64Var stoll err:" << v;
             return false;
         }
-        if (valTemp < minVal_ || valTemp > maxVal_) {
+        if (valTemp < _minVal || valTemp > _maxVal) {
             return false;
         }
         *reinterpret_cast<int64_t *>(value) = valTemp;
@@ -179,8 +179,8 @@ private:
         return true;
     }
     int64_t _defaultValue;
-    int64_t minVal_;
-    int64_t maxVal_;
+    int64_t _minVal;
+    int64_t _maxVal;
 };
 
 class FloatVar : public BaseVar {
