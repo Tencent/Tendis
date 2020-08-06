@@ -6,7 +6,7 @@ rm tendisplus*.log
 rm valgrindTendis*.log
 rm predixy_* -rf
 
-user=takenliu
+user=$USER
 ps axu |grep tendisplus|grep integrate_test| grep $user|awk '{print $2}'|xargs kill -9
 ps axu |grep predixy   |grep integrate_test| grep $user|awk '{print $2}'|xargs kill -9
 while true

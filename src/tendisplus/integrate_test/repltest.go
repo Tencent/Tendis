@@ -4,6 +4,7 @@ import (
     "flag"
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
+    "time"
     "strconv"
 )
 
@@ -37,6 +38,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
             log.Fatalf("setup slave1 failed:%v", err)
         }
     }
+    time.Sleep(15 * time.Second)
 
     addData(&m1, *num1, *keyprefix1)
     slaveof(&m1, &s1)

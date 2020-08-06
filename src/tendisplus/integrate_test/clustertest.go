@@ -248,7 +248,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         }
         servers = append(servers, server)
     }
-    time.Sleep(2 * time.Second)
+    time.Sleep(15 * time.Second)
 
     // meet
     log.Infof("cluster meet begin")

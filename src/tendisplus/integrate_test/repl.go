@@ -286,6 +286,8 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
 	}
+	time.Sleep(15 * time.Second)
+
 	testReplMatch1(kvstore_count, &m, &s)
 	testReplMatch2(kvstore_count, &m, &s)
 

@@ -5,6 +5,7 @@ import (
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "strconv"
+    "time"
     "math"
 )
 
@@ -28,6 +29,7 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     if err := m2.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master2 failed:%v", err)
     }
+    time.Sleep(15 * time.Second)
 
     // check path cant equal dbPath
     cli := createClient(&m1)
