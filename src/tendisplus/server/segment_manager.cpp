@@ -1,6 +1,9 @@
 #include <memory>
 #include <utility>
 #include <map>
+#include <list>
+#include <algorithm>
+#include <limits>
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
@@ -38,7 +41,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
     bool cluster_enabled = false;
     if (sess && sess->getServerEntry()) {
-        lockTimeoutMs = (uint64_t) sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        const auto& cfg = sess->getServerEntry()->getParams();
+        lockTimeoutMs = (uint64_t) cfg->lockWaitTimeOut * 1000;
         cluster_enabled = sess->getServerEntry()->isClusterEnabled();
     }
 
@@ -67,7 +71,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
 
     if (mode != mgl::LockMode::LOCK_NONE) {
         auto elk = KeyLock::AquireKeyLock(segId, chunkId, key, mode, sess,
-            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
+            (sess && sess->getServerEntry()) ?
+                    sess->getServerEntry()->getMGLockMgr() : nullptr,
+            lockTimeoutMs);
         if (!elk.ok()) {
             return elk.status();
         }
@@ -82,16 +88,19 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             }
         }
         return DbWithLock{
-                segId, chunkId, _instances[segId], nullptr, std::move(elk.value())
+                segId, chunkId, _instances[segId],
+                nullptr, std::move(elk.value())
                 };
     } else {
         return DbWithLock{
-                segId, chunkId, _instances[segId], nullptr, nullptr
+                segId, chunkId, _instances[segId],
+                nullptr, nullptr
                 };
     }
 }
 
-Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const std::string& key) {
+Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
+                    Session *sess, const std::string& key) {
     uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
     INVARIANT_D(hash < _chunkSize);
     uint32_t chunkId = hash % _chunkSize;
@@ -113,7 +122,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
-                                                              std::memory_order_relaxed);
+                      std::memory_order_relaxed);
 
         std::stringstream ss;
         ss << "store id " << segId << " is not opened";
@@ -122,7 +131,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
 
     if (_instances[segId]->isPaused()) {
         _instances[segId]->stat.pausedErrorCount.fetch_add(1,
-                                                           std::memory_order_relaxed);
+                      std::memory_order_relaxed);
         std::stringstream ss;
         ss << "store id " << segId << " is paused";
         return{ ErrorCodes::ERR_INTERNAL, ss.str() };
@@ -138,7 +147,8 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(Session *sess, const st
     };
 }
 
-Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
+Expected<std::list<std::unique_ptr<KeyLock>>>
+    SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
         const std::vector<std::string>& args,
         const std::vector<int>& index,
         mgl::LockMode mode) {
@@ -151,7 +161,8 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
     bool cluster_enabled = false;
     if (sess && sess->getServerEntry()) {
-        lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        const auto& cfg = sess->getServerEntry()->getParams();
+        lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
         cluster_enabled = sess->getServerEntry()->isClusterEnabled();
     }
     std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
@@ -184,13 +195,19 @@ Expected<std::list<std::unique_ptr<KeyLock>>> SegmentMgrFnvHash64::getAllKeysLoc
         auto keysvec = element.second;
         std::sort(std::begin(keysvec), std::end(keysvec),
                 [](const std::pair<uint32_t, std::string>& a,
-                   const std::pair<uint32_t, std::string>& b) 
-                    { return a.first < b.first || (a.first == b.first && a.second < b.second); });
-        for (auto keyIter = keysvec.begin(); keyIter != keysvec.end(); keyIter++) {
+                   const std::pair<uint32_t, std::string>& b) {
+                        return a.first < b.first ||
+                        (a.first == b.first && a.second < b.second);
+                      });
+        for (auto keyIter = keysvec.begin();
+                keyIter != keysvec.end(); keyIter++) {
             const auto& pair = *keyIter;
             uint32_t chunkId = pair.first;
-            auto elk = KeyLock::AquireKeyLock(segId, chunkId, pair.second, mode, sess,
-                (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
+            auto elk = KeyLock::AquireKeyLock(segId, chunkId, pair.second,
+                mode, sess,
+                (sess && sess->getServerEntry()) ?
+                        sess->getServerEntry()->getMGLockMgr() : nullptr,
+                lockTimeoutMs);
             if (!elk.ok()) {
                 return elk.status();
             }
@@ -223,8 +240,16 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
     // a duration of 49 days.
     uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
     if (lock_wait_timeout == (uint64_t)-1) {
-        if (sess && sess->getServerEntry()) {
-            lockTimeoutMs = (uint64_t)sess->getServerEntry()->getParams()->lockWaitTimeOut * 1000;
+        if (mode == mgl::LockMode::LOCK_X) {
+            /* *
+             * If get db using LOCK_X, it can't wait
+             * a long time. Otherwise, the waiting LOCK_X
+             * would block all following the requests.
+             */
+            lockTimeoutMs = 1000;
+        } else if (sess && sess->getServerEntry()) {
+            const auto& cfg = sess->getServerEntry()->getParams();
+            lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
         }
     } else {
         // NOTE(vinchen) : if lock_wait_timeout == 0, it means we don't wait
@@ -235,7 +260,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session *sess, uint32_t insId,
     std::unique_ptr<StoreLock> lk = nullptr;
     if (mode != mgl::LockMode::LOCK_NONE) {
         auto elk = StoreLock::AquireStoreLock(insId, mode, sess,
-            (sess && sess->getServerEntry()) ? sess->getServerEntry()->getMGLockMgr() : nullptr, lockTimeoutMs);
+            (sess && sess->getServerEntry()) ?
+                sess->getServerEntry()->getMGLockMgr() : nullptr,
+            lockTimeoutMs);
         if (!elk.ok()) {
             LOG(WARNING) << "store id " << insId
                 << " can't been opened:" << elk.status().toString();

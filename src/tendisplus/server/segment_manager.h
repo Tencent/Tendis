@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <list>
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/lock/lock.h"
@@ -32,15 +33,17 @@ class SegmentMgr {
                                 mgl::LockMode mode,
                                 bool canOpenStoreNoneDB = false,
                                 uint64_t lock_wait_timeout = -1) = 0;
-    virtual Expected<DbWithLock> getDbHasLocked(Session* sess, const std::string& key) = 0;
-    virtual Expected<std::list<std::unique_ptr<KeyLock>>> getAllKeysLocked(Session* sess,
-            const std::vector<std::string>& args,
-            const std::vector<int>& index,
-            mgl::LockMode mode) = 0;
+    virtual Expected<DbWithLock> getDbHasLocked(Session* sess,
+                                const std::string& key) = 0;
+    virtual Expected<std::list<std::unique_ptr<KeyLock>>>
+                getAllKeysLocked(Session* sess,
+                    const std::vector<std::string>& args,
+                    const std::vector<int>& index,
+                    mgl::LockMode mode) = 0;
     virtual size_t getChunkSize() const = 0;
     virtual  uint32_t getStoreid(uint32_t chunkid)  = 0;
     virtual uint64_t getMovedNum() = 0;
-private:
+ private:
     const std::string _name;
 };
 
@@ -54,17 +57,20 @@ class SegmentMgrFnvHash64: public SegmentMgr {
             const std::string& key, mgl::LockMode keyLockMode) final;
     Expected<DbWithLock> getDb(Session* sess, uint32_t insId,
             mgl::LockMode mode,
-            bool canOpenStoreNoneDB = false, 
+            bool canOpenStoreNoneDB = false,
             uint64_t lock_wait_timeout = -1) final;
-    Expected<DbWithLock> getDbHasLocked(Session* sess, const std::string& key) final;
-    Expected<std::list<std::unique_ptr<KeyLock>>> getAllKeysLocked(Session* sess,
+    Expected<DbWithLock> getDbHasLocked(Session* sess,
+            const std::string& key) final;
+    Expected<std::list<std::unique_ptr<KeyLock>>>
+        getAllKeysLocked(Session* sess,
             const std::vector<std::string>& args,
             const std::vector<int>& index,
             mgl::LockMode mode) final;
     size_t getChunkSize() const final { return _chunkSize; }
     uint32_t getStoreid(uint32_t chunkid);
     uint64_t getMovedNum() {return _movedNum;}
-private:
+
+ private:
     std::vector<PStore> _instances;
 
     size_t _chunkSize;
