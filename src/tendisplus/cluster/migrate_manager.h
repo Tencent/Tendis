@@ -168,6 +168,7 @@ class MigrateManager {
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
     Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
+    void requestRateLimit(uint64_t bytes);
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
@@ -177,7 +178,6 @@ class MigrateManager {
     bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
     bool checkSlotOK(const SlotsBitmap& bitMap, const std::string& nodeid,
             std::vector<uint32_t>& taskSlots);
-
 
  private:
     const std::shared_ptr<ServerParams> _cfg;
@@ -225,6 +225,9 @@ class MigrateManager {
     // mark dst node or source node
     std::unordered_map<uint32_t, std::string> _migrateNodes;
     std::unordered_map<uint32_t, std::string> _importNodes;
+
+    // sender rate limiter
+    std::unique_ptr<RateLimiter> _rateLimiter;
 };
 
 }  // namespace tendisplus

@@ -60,7 +60,8 @@ std::string Session::getTypeStr() const {
 std::string Session::getCmdStr() const {
     std::stringstream ss;
     size_t i = 0;
-    if (_args[0] == "applybinlogsv2") {
+    if (_args[0] == "applybinlogsv2" ||
+        _args[0] == "migratebinlogs") {
         for (auto arg : _args) {
             if (i++ == 2) {
                 ss << "[" << arg.size() << "]";

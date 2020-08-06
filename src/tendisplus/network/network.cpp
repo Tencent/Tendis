@@ -117,18 +117,19 @@ std::shared_ptr<asio::io_context> NetworkAsio::getRwCtx(asio::ip::tcp::socket& s
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
-        size_t readBuf) {
+        size_t readBuf, uint64_t rateLimit) {
     auto rwCtx = getRwCtx();
     INVARIANT(rwCtx != nullptr);
-    return std::move(std::make_unique<BlockingTcpClient>(rwCtx, readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec));
+    return std::move(std::make_unique<BlockingTcpClient>(
+            rwCtx, readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec, rateLimit));
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
-        asio::ip::tcp::socket socket, size_t readBuf) {
+        asio::ip::tcp::socket socket, size_t readBuf, uint64_t rateLimit) {
     auto rwCtx = getRwCtx(socket);
     INVARIANT(rwCtx != nullptr);
     return std::move(std::make_unique<BlockingTcpClient>(
-        rwCtx, std::move(socket), readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec));
+        rwCtx, std::move(socket), readBuf, _cfg->netBatchSize, _cfg->netBatchTimeoutSec, rateLimit));
 }
 
 Status NetworkAsio::prepare(const std::string& ip, const uint16_t port, uint32_t netIoThreadNum) {

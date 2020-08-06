@@ -91,7 +91,8 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
      _isRunning(false),
      _migrateSenderMatrix(std::make_shared<PoolMatrix>()),
      _migrateClearMatrix(std::make_shared<PoolMatrix>()),
-     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()) {
+     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
+     _rateLimiter(std::make_unique<RateLimiter>(_cfg->binlogRateLimitMB * 1024 * 1024)) {
      _cluster = _svr->getClusterMgr()->getClusterState();
 }
 
@@ -367,6 +368,14 @@ bool MigrateManager::containSlot(const SlotsBitmap& smallMap, const SlotsBitmap&
     return true;
 }
 
+void MigrateManager::requestRateLimit(uint64_t bytes) {
+    /* *
+     * Set migration rate limit periodically
+     */
+    _rateLimiter->SetBytesPerSecond((uint64_t)_cfg->migrateRateLimitMB * 1024 * 1024);
+    _rateLimiter->Request(bytes);
+}
+
 bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
                 const std::string& nodeid, std::vector<uint32_t>& taskSlots) {
     CNodePtr dstNode = _cluster->clusterLookupNode(nodeid);
@@ -539,7 +548,7 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
                                        const std::string& nodeidArg) {
     std::shared_ptr<BlockingTcpClient> client =
             std::move(_svr->getNetwork()->createBlockingClient(
-                    std::move(sock), 256*1024*1024));
+                    std::move(sock), 64*1024*1024));
     if (client == nullptr) {
         LOG(ERROR) << "sender ready with:"
                    <<  nodeidArg
@@ -752,9 +761,13 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
 
     task->receiver->setClient(client);
 
-    LocalSessionGuard sg(_svr.get());
     uint32_t  storeid = task->receiver->getsStoreid();
-    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), storeid,
+    /*
+     * NOTE: It can't getDb using LocalSession here. Because the IX LOCK
+     * would be held all the whole receive process. But LocalSession() 
+     * should be destructed soon.
+     */
+    auto expdb = _svr->getSegmentMgr()->getDb(nullptr, storeid,
         mgl::LockMode::LOCK_IX);
     if (!expdb.ok()) {
         LOG(ERROR) << "get store:" << storeid
@@ -815,7 +828,6 @@ Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApply
     }
     return{ ErrorCodes::ERR_OK, "" };
 }
-
 
 Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots) {
     LOG(INFO) << "supplyMigrateEnd slots:" << bitsetStrEncode(slots);

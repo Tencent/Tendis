@@ -40,6 +40,7 @@ Status ChunkMigrateSender::sendChunk() {
     if (!s.ok()) {
         return s;
     }
+    auto snapshot_binlog = _curBinlogid;
     _sendstate = MigrateSenderStatus::SNAPSHOT_DONE;
     uint64_t sendSnapTimeEnd = msSinceEpoch();
     /* send binlog of the task slots in iteration of 10(default),
@@ -48,6 +49,7 @@ Status ChunkMigrateSender::sendChunk() {
     if (!s.ok()) {
         return s;
     }
+    auto send_binlog = _curBinlogid;
     _sendstate = MigrateSenderStatus::BINLOG_DONE;
     /* lock chunks to block the client for while */
     auto lockStart = msSinceEpoch();
@@ -62,6 +64,7 @@ Status ChunkMigrateSender::sendChunk() {
         unlockChunks();
         return s;
     }
+    auto last_binlog = _curBinlogid;
     _sendstate = MigrateSenderStatus::LASTBINLOG_DONE;
 
     /* send migrateend command and wait for return*/
@@ -87,13 +90,19 @@ Status ChunkMigrateSender::sendChunk() {
     _sendstate = MigrateSenderStatus::METACHANGE_DONE;
 
     serverLog(LL_NOTICE, "ChunkMigrateSender::sendChunk success"
-        " [%s] [%s] [total used time:%lu] [snapshot time:%lu] [send binlog time:%lu] [locked time:%lu]",
+        " [%s] [%s] [total used time:%lu] [snapshot time:%lu]"
+        " [send binlog time:%lu] [locked time:%lu]"
+        " [snapshot count:%lu] [binlog count:%lu] [binlog:%lu %lu %lu]",
         _client->getRemoteRepr().c_str(),
         bitsetStrEncode(_slots).c_str(),
         end - start,
         sendSnapTimeEnd - start,
         lockStart - sendSnapTimeEnd,
-        end - lockStart);
+        end - lockStart,
+        _snapshotKeyNum,
+        _binlogNum,
+        snapshot_binlog, send_binlog, last_binlog
+        );
     return{ ErrorCodes::ERR_OK, "" };
 }
 
@@ -162,18 +171,26 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
         SyncWriteData("0");
 
         uint32_t keylen = key.size();
-        SyncWriteData(string(reinterpret_cast<char*>(&keylen), sizeof(uint32_t)));
+        SyncWriteData(string(reinterpret_cast<char*>(&keylen),
+                                sizeof(uint32_t)));
 
         SyncWriteData(key);
 
         uint32_t valuelen = value.size();
-        SyncWriteData(string(reinterpret_cast<char*>(&valuelen), sizeof(uint32_t)));
+        SyncWriteData(string(reinterpret_cast<char*>(&valuelen),
+                                sizeof(uint32_t)));
         SyncWriteData(value);
 
         curWriteNum++;
         totalWriteNum++;
-        curWriteLen += 1 + sizeof(uint32_t) + keylen
-                        + sizeof(uint32_t) + valuelen;
+        uint64_t sendBytes = 1 + sizeof(uint32_t) + keylen
+                               + sizeof(uint32_t) + valuelen;
+        curWriteNum += sendBytes;
+
+        /* *
+         * rate limit for migration
+         */
+        _svr->getMigrateManager()->requestRateLimit(sendBytes);
 
         if (curWriteNum >= 1000 || curWriteLen > 1024*1024) {
             SyncWriteData("1");
@@ -281,7 +298,8 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     }
     // TODO(wayenchen) : retry send binlog if network error
     auto s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-            _curBinlogid, end, needHeartbeat, _slots, _svr, &binlogNum, &newBinlogId);
+            _curBinlogid, end, needHeartbeat, _slots, _svr,
+            &binlogNum, &newBinlogId);
     if (!s.ok()) {
         serverLog(LL_NOTICE, "ChunkMigrateSender::catchupBinlog from"
             " %lu to %lu failed: [%s] [%s] [%s]",
@@ -337,7 +355,8 @@ Status ChunkMigrateSender::sendBinlog() {
         // judge if reach for distance
         diffOffset = binlogHigh - _curBinlogid;
         if (diffOffset <= distance) {
-            serverLog(LL_VERBOSE, "ChunkMigrateSender::sendBinlog in"
+            serverLog(LL_VERBOSE,
+                "ChunkMigrateSender::sendBinlog in"
                 " kvstore(%u) finish: [%s] [%s] [%lu]",
                 _storeid,
                 _client->getRemoteRepr().c_str(),
@@ -349,7 +368,8 @@ Status ChunkMigrateSender::sendBinlog() {
         }
     }
     if (!finishCatchup) {
-        serverLog(LL_NOTICE, "ChunkMigrateSender::sendBinlog in kvstore(%u) failed:"
+        serverLog(LL_NOTICE,
+            "ChunkMigrateSender::sendBinlog in kvstore(%u) failed:"
             " [%s] [%s] [Can't catchup binlog(%lu), distance:%lu]",
             _storeid,
             _client->getRemoteRepr().c_str(),
@@ -383,7 +403,7 @@ Status ChunkMigrateSender::sendLastBinlog() {
     }
 
     serverLog(LL_VERBOSE, "ChunkMigrateSender::sendLastBinlog"
-        " in kvstore(%u) ok: [%s] [%s] [send binlog total num:%lu",
+        " in kvstore(%u) ok: [%s] [%s] [send binlog total num:%lu]",
         _storeid,
         _client->getRemoteRepr().c_str(),
         bitsetStrEncode(_slots).c_str(),
@@ -413,7 +433,8 @@ Status ChunkMigrateSender::sendOver() {
 
     // wait 3 sec to get the response
     uint32_t secs = 3;
-    Expected<std::string> exptOK = _client->readLine(std::chrono::seconds(secs));
+    Expected<std::string> exptOK =
+            _client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
         serverLog(LL_NOTICE, "ChunkMigrateSender::sendOver"
             " in kvstore(%u) fail: [%s] [%s] [bad response:%s]",
@@ -441,8 +462,8 @@ Status ChunkMigrateSender::sendOver() {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::deleteChunkRange(uint32_t  chunkidStart, uint32_t chunkidEnd) {
-    // LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
+Status ChunkMigrateSender::deleteChunkRange(
+            uint32_t  chunkidStart, uint32_t chunkidEnd) {
     auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
             mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
@@ -466,7 +487,8 @@ Status ChunkMigrateSender::deleteChunkRange(uint32_t  chunkidStart, uint32_t chu
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
+Status ChunkMigrateSender::deleteChunks(
+            const std::bitset<CLUSTER_SLOTS>& slots) {
     /* NOTE(wayenchen) check if chunk not belong to me,
      * make sure MOVE work well before delete */
     if (!_isFake && !checkSlotsBlongDst()) {
@@ -490,8 +512,10 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
                 if (startChunkid != UINT32_MAX) {
                     auto s = deleteChunkRange(startChunkid, endChunkid);
                     if (!s.ok()) {
-                        LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
-                                   << " endChunkid:" << endChunkid << " err:" << s.toString();
+                        LOG(ERROR) << "deleteChunk fail, startChunkid:"
+                                   << startChunkid
+                                   << " endChunkid:" << endChunkid
+                                   << " err:" << s.toString();
                         return s;
                     }
                     LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
@@ -506,8 +530,10 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
     if (startChunkid != UINT32_MAX) {
         auto s = deleteChunkRange(startChunkid, endChunkid);
         if (!s.ok()) {
-            LOG(ERROR) << "deleteChunk fail, startChunkid:" << startChunkid
-                       << " endChunkid:" << endChunkid << " err:" << s.toString();
+            LOG(ERROR) << "deleteChunk fail, startChunkid:"
+                       << startChunkid
+                       << " endChunkid:" << endChunkid
+                       << " err:" << s.toString();
             return s;
         }
         LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
@@ -525,10 +551,13 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
 }
 
 Status ChunkMigrateSender::lockChunks() {
-    LOG(INFO) << "lockChunks begin, slots:" << bitsetStrEncode(_slots);
     size_t chunkid = 0;
     Status s = { ErrorCodes::ERR_OK, "" };
     mstime_t locktime = msSinceEpoch();
+    std::string remote;
+    if (_client) {
+        remote = _client->getRemoteRepr();
+    }
 
     const auto guard = MakeGuard([&] {
         if (!s.ok()) {
@@ -536,12 +565,10 @@ Status ChunkMigrateSender::lockChunks() {
         }
 
         serverLog(LL_NOTICE, "ChunkMigrateSender::lockChunks "
-            "%s: [%s] [%s] [%s] [used time:%lu]",
-            s.ok() ? "success" : "failed",
-            "aa",
-            //_client->getRemoteRepr().c_str(),
+            "%s: [%s] [%s] [used time:%lu]",
+            s.ok() ? "success" : s.toString().c_str(),
+            remote.c_str(),
             bitsetStrEncode(_slots).c_str(),
-            s.toString().c_str(),
             msSinceEpoch() - locktime);
     });
 
@@ -551,8 +578,8 @@ Status ChunkMigrateSender::lockChunks() {
             uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
 
             auto lock = ChunkLock::AquireChunkLock(storeId, chunkid,
-                                                   mgl::LockMode::LOCK_X,
-                                                   nullptr, _svr->getMGLockMgr(), 1000);
+                        mgl::LockMode::LOCK_X,
+                        nullptr, _svr->getMGLockMgr(), 1000);
             if (!lock.ok()) {
                 s = lock.status();
                 return s;

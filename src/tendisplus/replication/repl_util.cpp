@@ -351,7 +351,6 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     std::unique_ptr<RepllogCursorV2> cursor =
             txn->createRepllogCursorV2(binlogPos + 1);
 
-
     std::unique_ptr<BinlogWriter> writer =
                 std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);
 
@@ -406,6 +405,11 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
                 *newBinlogId = binlogId;
                 *sendBinlogNum += binlogNum;
                 binlogNum = 0;
+
+                /* *
+                 * Rate limit for migration
+                 */
+                svr->getMigrateManager()->requestRateLimit(writer->getSize());
                 writer->resetWriter();
             }
         }
@@ -419,6 +423,11 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
         *newBinlogId = binlogId;
         *sendBinlogNum += binlogNum;
         binlogNum = 0;
+		
+        /* *
+         * Rate limit for migration
+         */
+        svr->getMigrateManager()->requestRateLimit(writer->getSize());
         writer->resetWriter();
     }
     return { ErrorCodes::ERR_OK, "" };
