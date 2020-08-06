@@ -5,6 +5,7 @@ import (
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "strconv"
+    "time"
     "math"
 )
 
@@ -53,6 +54,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     if err := m2.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master2 failed:%v", err)
     }
+    time.Sleep(15 * time.Second)
 
     slaveof(&m1, &s1)
     waitFullsync(&s1, kvstorecount)

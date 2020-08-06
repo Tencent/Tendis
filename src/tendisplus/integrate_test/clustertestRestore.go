@@ -262,7 +262,7 @@ func testRestore(portStart int, num int, testFun int) {
     if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
         log.Fatalf("setup failed:%v", err)
     }
-    time.Sleep(2 * time.Second)
+    time.Sleep(15 * time.Second)
 
     // meet
     log.Infof("cluster meet begin")
