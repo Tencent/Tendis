@@ -474,7 +474,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
 
         // set the executorThreadNum when set executorMultiIoContext is true
-        _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
+        for (auto &pool : _executorList) {
+            _cfg->executorThreadNum += pool->size();
+        }
     } else {
         auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(0), _poolMatrix);
         Status s = executor->startup(threadnum);
@@ -1215,10 +1217,13 @@ void ServerEntry::serverCron() {
         run_with_period(1000) {
             // release idling workerpool, trigger 1s once time
             if (_executorRecycleSet.size()) {
-                for (auto &pool : _executorRecycleSet) {
-                    if (!pool->size()) {
-                        pool->stop();
-                        _executorRecycleSet.erase(pool);
+                for (auto iter = _executorRecycleSet.begin(); 
+                        iter != _executorRecycleSet.end();) {
+                    if (!(*iter)->size()) {
+                        (*iter)->stop();
+                        iter = _executorRecycleSet.erase(iter);
+                    } else {
+                        iter++;
                     }
                 }
             }
