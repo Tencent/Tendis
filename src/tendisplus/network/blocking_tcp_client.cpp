@@ -3,7 +3,7 @@
 #include <utility>
 #include <memory>
 #include <string>
-
+#include <algorithm>
 #include "asio.hpp"
 #include "glog/logging.h"
 #include "tendisplus/network/blocking_tcp_client.h"
@@ -16,14 +16,17 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
                 asio::ip::tcp::socket socket,
                 size_t maxBufSize,
                 uint32_t netBatchSize,
-                uint32_t netBatchTimeoutSec)
+                uint32_t netBatchTimeoutSec,
+                uint64_t netRateLimit)
         :_inited(true),
          _notified(false),
          _ctx(ctx),
          _socket(std::move(socket)),
          _inputBuf(maxBufSize),
          _netBatchSize(netBatchSize),
-         _netBatchTimeoutSec(netBatchTimeoutSec) {
+         _netBatchTimeoutSec(netBatchTimeoutSec),
+         _timeout(std::chrono::seconds(3)),
+         _ctime(msSinceEpoch()) {
     if (&(_socket.get_io_context()) != &(*ctx)) {
         LOG(FATAL) << " cannot transfer socket between ioctx";
     }
@@ -32,13 +35,17 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
     INVARIANT_D(ec.value() == 0);
     _socket.set_option(asio::ip::tcp::no_delay(true));
     _socket.set_option(asio::socket_base::keep_alive(true));
+
+    if (netRateLimit > 0) {
+        _rateLimiter = std::make_unique<RateLimiter>(netRateLimit);
+    }
 }
 
 BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
                 size_t maxBufSize,
                 uint32_t netBatchSize,
-                uint32_t netBatchTimeoutSec)
-
+                uint32_t netBatchTimeoutSec,
+                uint64_t netRateLimit)
         :_inited(false),
          _notified(false),
          _ctx(ctx),
@@ -48,6 +55,9 @@ BlockingTcpClient::BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
          _netBatchTimeoutSec(netBatchTimeoutSec),
          _timeout(std::chrono::seconds(3)),
          _ctime(msSinceEpoch()) {
+    if (netRateLimit > 0) {
+        _rateLimiter = std::make_unique<RateLimiter>(netRateLimit);
+    }
 }
 
 void BlockingTcpClient::closeSocket() {
@@ -84,8 +94,13 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
 
     if (isBlockingConnect) {
         std::unique_lock<std::mutex> lk(_mutex);
-        // TODO(vinchen): is it possible that _cv.notify_one() call before _cv.wait_for()?
-        if (_cv.wait_for(lk, timeout, [this] { return _notified; })) {
+        /* *
+         * NOTE(vinchen): It's possible that _cv.notify_one() was
+           called before _cv.wait_for(). So it check _notified
+           first.
+         */
+        if (_notified ||
+            _cv.wait_for(lk, timeout, [this] { return _notified; })) {
             if (_ec) {
                 closeSocket();
                 return{ ErrorCodes::ERR_NETWORK, _ec.message() };
@@ -107,7 +122,8 @@ Status BlockingTcpClient::connect(const std::string& host, uint16_t port,
 
 Status BlockingTcpClient::tryWaitConnect() {
     std::unique_lock<std::mutex> lk(_mutex);
-    if (_cv.wait_for(lk, std::chrono::milliseconds(0), [this] { return _notified; })) {
+    if (_cv.wait_for(lk, std::chrono::milliseconds(0),
+                    [this] { return _notified; })) {
         if (_ec) {
             closeSocket();
             return{ ErrorCodes::ERR_NETWORK, _ec.message() };
@@ -212,13 +228,20 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
 Status BlockingTcpClient::writeData(const std::string& data) {
     uint32_t cur_size = 0;
     uint32_t total_size = data.size();
-    while(cur_size < total_size) {
+    while (cur_size < total_size) {
         uint32_t send_size = std::min(total_size - cur_size, _netBatchSize);
-        auto s = writeOneBatch(data.c_str() + cur_size, send_size, std::chrono::seconds(_netBatchTimeoutSec));
+        auto s = writeOneBatch(data.c_str() + cur_size, send_size,
+                    std::chrono::seconds(_netBatchTimeoutSec));
         if (!s.ok()) {
             return s;
         }
         cur_size += send_size;
+        /* *
+         * Rate limit for network write
+         */
+        if (_rateLimiter) {
+            _rateLimiter->Request(send_size);
+        }
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -257,6 +280,16 @@ Status BlockingTcpClient::writeLine(const std::string& line) {
 
 asio::ip::tcp::socket BlockingTcpClient::borrowConn() {
     return std::move(_socket);
+}
+
+void BlockingTcpClient::setRateLimit(uint64_t bytesPerSecond) {
+    if (bytesPerSecond > 0) {
+        if (!_rateLimiter) {
+            _rateLimiter = std::make_unique<RateLimiter>(bytesPerSecond);
+        }
+        _rateLimiter->SetBytesPerSecond(bytesPerSecond);
+    }
+
 }
 
 }  // namespace tendisplus

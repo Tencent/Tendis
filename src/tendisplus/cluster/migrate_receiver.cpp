@@ -28,7 +28,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         return s;
     }
 
-    auto expRsp = _client->readLine(std::chrono::seconds(50));
+    auto expRsp = _client->readLine(std::chrono::seconds(5));
     if (!expRsp.ok()) {
         LOG(ERROR) << "readymigrate req srcDb error:"
                      << expRsp.status().toString();
@@ -40,7 +40,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
         return {ErrorCodes::ERR_INTERNAL, "readymigrate req srcDb failed"};
     }
 
-    LOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
+    DLOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
 
     uint32_t timeoutSec = 200;
     uint32_t readNum = 0;
@@ -66,7 +66,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
             break;
         }
     }
-    LOG(INFO) << "migrate snapshot  transfer done,readnum:" << readNum;
+    LOG(INFO) << "migrate snapshot transfer done, readnum:" << readNum;
     _snapshotKeyNum  = readNum;
     return { ErrorCodes::ERR_OK, "" };
 }
@@ -81,7 +81,7 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
         return expRv.status();
     }
 
-    uint32_t  slotid = expRk.value().getChunkId();
+    uint32_t slotid = expRk.value().getChunkId();
     if (!_slots.test(slotid)) {
         LOG(ERROR) << "slotid:"<< expRk.value().getPrimaryKey()
                    << "is not a member in bitmap";
@@ -121,13 +121,11 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key, const string& value)
         }
     }
 
-    auto commitStatus = txn->commit();  // TODO(takenliu) all commit need retry ???
-    s = commitStatus.status();
-    if (s.ok()) {
-        return { ErrorCodes::ERR_OK, "" };
-    } else if (s.code() != ErrorCodes::ERR_COMMIT_RETRY) {
-        return s;
+    auto commitStatus = txn->commit();
+    if (!commitStatus.ok()) {
+        return commitStatus.status();
     }
+
     return { ErrorCodes::ERR_OK, "" };
 }
 

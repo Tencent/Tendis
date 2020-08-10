@@ -69,7 +69,6 @@ makeClusterNode(const std::string& dir, uint32_t port, uint32_t storeCnt = 10, b
     cfg1->migrateSenderThreadnum = 1;
     cfg1->migrateClearThreadnum = 1;
     cfg1->migrateReceiveThreadnum = 1;
-    cfg1->migrateCheckThreadnum = 1;
 #endif
 
     auto master = std::make_shared<ServerEntry>(cfg1);
@@ -915,7 +914,7 @@ bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<Se
 
         if (slots.test(id)) {
             if (state->getNodeBySlot(id) != node) {
-                LOG(ERROR) << "slot:" << id << "not belong to:" << nodeid;
+                LOG(ERROR) << "slot:" << id << " not belong to: " << nodeid;
                 return false;
             }
         }

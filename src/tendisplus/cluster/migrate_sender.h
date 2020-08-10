@@ -20,20 +20,22 @@ namespace tendisplus {
 
 class ClusterState;
 class ClusterNode;
+using myMutex = std::recursive_mutex;
 
 enum class MigrateSenderStatus {
     NONE = 0,
     SNAPSHOT_BEGIN,
     SNAPSHOT_DONE,
     BINLOG_DONE,
+    LASTBINLOG_DONE,
+    SENDOVER_DONE,
+    METACHANGE_DONE,
     DEL_DONE,
-    METACHANGE_DONE
 };
 
 
 class ChunkMigrateSender{
  public:
-
     explicit ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
         std::shared_ptr<ServerEntry> svr,
         std::shared_ptr<ServerParams> cfg,
@@ -75,12 +77,13 @@ class ChunkMigrateSender{
 
     uint64_t getProtectBinlogid() {
         // TODO(wayenchen)  takenliu add, use atomic
-        std::lock_guard<std::mutex> lk(_mutex);
+        std::lock_guard<myMutex> lk(_mutex);
         return _curBinlogid;
     }
     std::string getInfo();
     Status lockChunks();
-    Status unlockChunks();
+    void unlockChunks();
+    bool needToWaitMetaChanged() const;
 
  private:
     Expected<std::unique_ptr<Transaction>> initTxn();
@@ -88,15 +91,13 @@ class ChunkMigrateSender{
     Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
     Status sendSnapshot();
 
-    Status pursueBinLog(uint64_t *startBinLog);
-    Status finishLastBinlog();
-    Expected<uint64_t> catchupBinlog(uint64_t start, uint64_t end,
-            const std::bitset<CLUSTER_SLOTS>& slots);
+    Status sendLastBinlog();
+    Status catchupBinlog(uint64_t end);
     Status sendOver();
 
 
 private:
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
 
     std::bitset<CLUSTER_SLOTS> _slots;
     std::shared_ptr<ServerEntry> _svr;
@@ -120,6 +121,7 @@ private:
     std::shared_ptr<ClusterNode>  _dstNode;
     uint64_t getMaxBinLog(Transaction * ptxn) const;
     std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
+    std::string _OKSTR = "+OK";
 };
 
 }  // namespace tendisplus

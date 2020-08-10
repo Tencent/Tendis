@@ -7,28 +7,36 @@
 #include "asio.hpp"
 #include "glog/logging.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/rate_limiter.h"
 
 namespace tendisplus {
-class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> {
+class BlockingTcpClient
+    : public std::enable_shared_from_this<BlockingTcpClient> {
  public:
     BlockingTcpClient(std::shared_ptr<asio::io_context> ctx, size_t maxBufSize,
-        uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10);
+        uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10,
+        uint64_t netRateLimit = 0);
     BlockingTcpClient(std::shared_ptr<asio::io_context> ctx,
         asio::ip::tcp::socket, size_t maxBufSize,
-        uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10);
+        uint32_t netBatchSize = 1024*1024, uint32_t netBatchTimeoutSec = 10,
+        uint64_t netRateLimit = 0);
     Status connect(const std::string& host, uint16_t port,
         std::chrono::milliseconds timeout, bool isBlockingConnect = true);
     Status tryWaitConnect();
     Expected<std::string> readLine(std::chrono::seconds timeout);
     Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
     Status writeLine(const std::string& line);
-    Status writeOneBatch(const char* data, uint32_t size, std::chrono::seconds timeout);
+    Status writeOneBatch(const char* data, uint32_t size,
+                    std::chrono::seconds timeout);
     Status writeData(const std::string& data);
 
     std::string getRemoteRepr() const {
         try {
             if (_socket.is_open()) {
-                return _socket.remote_endpoint().address().to_string();
+                std::stringstream ss;
+                ss << _socket.remote_endpoint().address().to_string()
+                    << ":" << _socket.remote_endpoint().port();
+                return ss.str();
             }
             return "closed conn";
         } catch (const std::exception& e) {
@@ -43,14 +51,19 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
             }
             return 0;
         } catch (const std::exception& e) {
-            LOG(ERROR) << "BlockingTcpClient::getRemotePort() exception : " << e.what();
+            LOG(ERROR)
+                << "BlockingTcpClient::getRemotePort() exception : "
+                << e.what();
             return -1;
         }
     }
 
     std::string getLocalRepr() const {
         if (_socket.is_open()) {
-            return _socket.local_endpoint().address().to_string();
+            std::stringstream ss;
+            ss << _socket.local_endpoint().address().to_string()
+                << ":" << _socket.local_endpoint().port();
+            return ss.str();
         }
         return "closed conn";
     }
@@ -58,6 +71,7 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
     size_t getReadBufSize() const { return _inputBuf.size(); }
 
     asio::ip::tcp::socket borrowConn();
+    void setRateLimit(uint64_t bytesPerSecond);
 
  private:
     void closeSocket();
@@ -73,6 +87,7 @@ class BlockingTcpClient: public std::enable_shared_from_this<BlockingTcpClient> 
     uint32_t _netBatchTimeoutSec;
     std::chrono::milliseconds _timeout;  // ms
     uint64_t _ctime;
+    std::unique_ptr<RateLimiter> _rateLimiter;
 };
 
 }  // namespace tendisplus

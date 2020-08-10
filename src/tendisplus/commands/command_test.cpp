@@ -1087,11 +1087,11 @@ void testRenameCommand(std::shared_ptr<ServerEntry> svr) {
     NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
     sess.setArgs({ "set" });
-    auto expect = Command::precheck(&sess);
-    EXPECT_EQ(Command::fmtErr("unknown command 'set'"), expect.status().toString());
+    auto eprecheck = Command::precheck(&sess);
+    EXPECT_EQ(Command::fmtErr("unknown command 'set'"), eprecheck.status().toString());
 
     sess.setArgs({ "set_rename", "a", "1" });
-    expect = Command::runSessionCmd(&sess);
+    auto expect = Command::runSessionCmd(&sess);
     EXPECT_EQ(Command::fmtOK(), expect.value());
 
     sess.setArgs({ "dbsize" });

@@ -645,7 +645,7 @@ void ClusterNode::freeClusterSession() {
         if (!_nodeSession) {
             return;
         }
-        LOG(INFO) << "free session:" << _nodeSession->getName();
+        LOG(INFO) << "free session:" << _nodeSession->getRemoteRepr();
         tmpSession = std::move(_nodeSession);
         _nodeSession = nullptr;
     }
@@ -903,13 +903,13 @@ void ClusterState::clusterHandleConfigEpochCollision(CNodePtr sender) {
     _currentEpoch++;
 
     _myself->setConfigEpoch(_currentEpoch);
-    serverLog(LL_VERBOSE,
+    serverLog(LL_WARNING,
         "WARNING: configEpoch collision with node %.40s."
         " configEpoch set to %lu",
         sender->getNodeName().c_str(), (uint64_t)_currentEpoch);
 }
 
-uint64_t ClusterState::getCurrentEpoch() const{
+uint64_t ClusterState::getCurrentEpoch() const {
     std::lock_guard<myMutex> lk(_mutex);
     return _currentEpoch;
 }
@@ -926,7 +926,7 @@ void ClusterState::setCurrentEpoch(uint64_t epoch) {
 
 void ClusterState::incrCurrentEpoch() {
     std::lock_guard<myMutex> lk(_mutex);
-    _currentEpoch ++ ;
+    _currentEpoch++;
 }
 
 void ClusterState::setFailAuthEpoch(uint64_t epoch) {
@@ -942,11 +942,6 @@ CNodePtr ClusterState::getMyselfNode() const {
 std::string ClusterState::getMyselfName() const {
     std::lock_guard<myMutex> lk(_mutex);
     return _myself->getNodeName();
-}
-
-std::unordered_map<std::string, CNodePtr> ClusterState::getNodes() {
-    std::lock_guard<myMutex> lk(_mutex);
-    return  _nodes;
 }
 
 void ClusterState::setLastVoteEpoch(uint64_t epoch) {
@@ -995,13 +990,11 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
                 }
                 bool s = clusterDelSlot(idx);
                 if (s) {
-                    //LOG(INFO) << "del slot:" << idx << " finished";
                     bool result = clusterAddSlot(n, idx);
                     if (!result) {
                         LOG(ERROR) << "setSlots addslot fail on slot:" << idx;
                         return {ErrorCodes::ERR_CLUSTER, "setslot add new slot fail"};
                     }
-                    //LOG(INFO) << "add slot:" << idx << "on:" << n->getNodeName() << " finished";
                 } else {
                     LOG(ERROR) << "setSlots delslot fail on slot:" << idx;
                     return {ErrorCodes::ERR_CLUSTER, "setslot delete old slot fail!"};
@@ -1017,7 +1010,7 @@ Status ClusterState::setSlots(CNodePtr n, const std::bitset<CLUSTER_SLOTS> & slo
             LOG(ERROR) << "setSlots BumpConfigEpoch fail";
             return s;
         }
-        //NOTE(wayenchen) broadcast gossip message if meta change finished
+        // NOTE(wayenchen) broadcast gossip message if meta change finished
         uint64_t offset = _server->getReplManager()->replicationGetOffset();
         clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
     }
@@ -1114,7 +1107,7 @@ CNodePtr ClusterState::getMyMaster() {
     return  _myself->getMaster();
 }
 
-uint64_t ClusterState::getPfailNodeNum() const{
+uint64_t ClusterState::getPfailNodeNum() const {
     std::lock_guard<myMutex> lk(_mutex);
     return _statsPfailNodes;
 }
@@ -1351,7 +1344,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
         }
         if (isClientBlock()) {
             setClientUnBlock();
-            INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
+            INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
             LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
         }
     }
@@ -1455,7 +1448,7 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
         _nodes[nodeName] = node;
     } else {
         _nodes.insert(std::make_pair(nodeName, node));
-        serverLog(LL_VERBOSE, "clusterAddNodeNoLock node:%s ip:%s port:%lu ",
+        serverLog(LL_VERBOSE, "cluster add node:%s ip:%s port:%lu ",
             node->getNodeName().c_str(), node->getNodeIp().c_str(), node->getPort());
     }
 }
@@ -1894,7 +1887,7 @@ void ClusterState::resetManualFailover() {
 void ClusterState::resetManualFailoverNoLock() {
     if (isClientBlock()) {
         setClientUnBlock();
-        INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
+        INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
     }
     _mfEnd = 0;
     _mfCanStart = 0;
@@ -2456,7 +2449,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
     /* If the previous failover attempt timedout and the retry time has
      * elapsed, we can setup a new one. */
     if (auth_age > auth_retry_time) {
-        //TODO(wayenchen) add API to get and set _failoverAuth** params
+        // TODO(wayenchen) add API to get and set _failoverAuth** params
         auto delayTime = msSinceEpoch() + 500 +  /* Fixed delay of 500 milliseconds, let FAIL msg propagate. */
                             redis_port::random() % 500; /* Random delay between 0 and 500 milliseconds. */
         setFailAuthTime(delayTime);
@@ -2823,7 +2816,7 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
      _currentEpoch(cstate->getCurrentEpoch()),
      _offset(offset),
      _slaveOf(CLUSTER_NODE_NULL_NAME),
-     _state(cstate->_state){
+     _state(cstate->_state) {
     auto myself = cstate->getMyselfNode();
     /* If this node is a master, we send its slots bitmap and configEpoch.
     * If this node is a slave we send the master's information instead (the
@@ -3586,7 +3579,7 @@ Status ClusterManager::startup() {
         auto state = _clusterState->getClusterState();
         std::string clusterState = (unsigned(state) > 0) ? "OK": "FAIL";
         LOG(INFO) << "cluster init success:"
-            << " myself node name " << name << "cluster state is" << clusterState;
+            << " myself node name " << name << " cluster state is " << clusterState;
     }
 
     std::shared_ptr<ServerParams> params = _svr->getParams();
@@ -4063,7 +4056,7 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     if (isClientBlock()) {
         LOG(WARNING) << "aleady block!";
         setClientUnBlock();
-        INVARIANT_D(_isCliBlocked.load(std::memory_order_relaxed)==false);
+        INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
     }
     auto exptLockList = clusterLockMySlots();
     if (!exptLockList.ok()) {
@@ -4263,7 +4256,7 @@ bool ClusterManager::emptySlot(uint32_t slot) {
     auto expdb = _svr->getSegmentMgr()->getDb(g.getSession(), storeId,
                                               mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
-        return true;
+        return false;
     }
     auto kvstore = std::move(expdb.value().store);
     auto ptxn = kvstore->createTransaction(nullptr);
@@ -4282,7 +4275,6 @@ bool ClusterManager::emptySlot(uint32_t slot) {
     }
     return false;
 }
-
 
 ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
     asio::ip::tcp::socket sock,
@@ -4348,7 +4340,7 @@ void ClusterSession::drainReqNet() {
 void ClusterSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
     if (ec) {
         /* I/O error... */
-        LOG(WARNING) << "I/O error reading from node link: " << ec.message();
+        LOG(WARNING) << "I/O error reading from node link(" << getRemoteRepr() << "): " << ec.message();
         endSession();
         return;
     }
@@ -5110,7 +5102,6 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
     if (sessNode && type == ClusterMsg::Type::PING) {
         sessNode->setSentTime(msSinceEpoch());
     }
- //   ClusterMsg msg(type, shared_from_this(), _server);
     ClusterMsg msg(type, shared_from_this(), _server, offset);
     /* Populate the gossip fields */
     uint32_t maxiterations = wanted * 3;
@@ -5145,18 +5136,18 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
         gossipcount++;
     }
 
-    auto nodeList = getNodes();
     if (pfail_wanted) {
-         for (const auto &v : nodeList) {
-             CNodePtr node = v.second;
-             if (node->_flags & CLUSTER_NODE_HANDSHAKE) continue;
-             if (node->_flags & CLUSTER_NODE_NOADDR) continue;
-             if (!(node->_flags & CLUSTER_NODE_PFAIL)) continue;
-             msg.clusterAddGossipEntry(node);
-             freshnodes--;
-             gossipcount++;
-         }
-     }
+        auto nodeList = getNodesList();
+        for (const auto& v : nodeList) {
+            CNodePtr node = v.second;
+            if (node->_flags & CLUSTER_NODE_HANDSHAKE) continue;
+            if (node->_flags & CLUSTER_NODE_NOADDR) continue;
+            if (!(node->_flags & CLUSTER_NODE_PFAIL)) continue;
+            msg.clusterAddGossipEntry(node);
+            freshnodes--;
+            gossipcount++;
+        }
+    }
      INVARIANT_D(gossipcount == msg.getEntryCount());
 
      _statsMessagesSent[uint16_t(type)]++;

@@ -23,8 +23,6 @@
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/server/segment_manager.h"
 #include "tendisplus/server/server_entry.h"
-#include "tendisplus/utils/invariant.h"
-#include "tendisplus/utils/scopeguard.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/error/en.h"
@@ -32,7 +30,7 @@
 namespace tendisplus {
 
 class ClusterCommand: public Command {
-public:
+ public:
     ClusterCommand()
             : Command("cluster", "rs") {
     }
@@ -86,7 +84,14 @@ public:
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
 
-                for (size_t i= 4 ; i<args.size(); i++) {
+                auto srcNode = clusterState->clusterLookupNode(nodeId);
+                if (!srcNode) {
+                    LOG(ERROR) << "import nodeid:" << nodeId
+                        << "not exist in cluster";
+                    return { ErrorCodes::ERR_CLUSTER, "import node not find" };
+                }
+
+                for (size_t i= 4 ; i < args.size(); i++) {
                     Expected<int64_t> exptSlot = ::tendisplus::stoll(args[i]);
                     if (!exptSlot.ok()) {
                         return exptSlot.status();
@@ -102,14 +107,20 @@ public:
                         LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
                         return {ErrorCodes::ERR_CLUSTER,
                                 "slot not empty"};
-                    }            
-                    //check meta data
-                    if (clusterState->getNodeBySlot(slot) == myself) {
+                    }
+                    // check meta data
+                    auto thisnode = clusterState->getNodeBySlot(slot);
+                    if (thisnode == myself) {
                         LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
                         return {ErrorCodes::ERR_CLUSTER,
                                 "I'm already the owner of hash slot" + dtos(slot)};
                     }
-                    //check if slot already been migrating
+                    if (thisnode != srcNode) {
+                        DLOG(ERROR) << "slot:" << slot << "is not belong to srcNode : " << nodeId;
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "Source node is not the owner of hash slot" + dtos(slot)};
+                    }
+                    // check if slot already been migrating
                     if (migrateMgr->slotInTask(slot)) {
                         LOG(ERROR) << "migrate task already start on slot:" << slot;
                         return {ErrorCodes::ERR_CLUSTER,
@@ -118,7 +129,7 @@ public:
                     slotsMap.set(slot);
                 }
 
-                s = importingBitmap(slotsMap, nodeId, clusterState, svr, migrateMgr);
+                s = startImportingTasks(svr, srcNode, slotsMap);
                 if (!s.ok()) {
                     return s;
                 }
@@ -141,7 +152,6 @@ public:
                             "Invalid migrate info"};
                 }
             }
-
         }  else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
             /* CLUSTER MEET <ip> <port> [cport] */
             uint64_t port, cport;
@@ -185,7 +195,6 @@ public:
                         "Invalid cluster nodes info"};
             }
         } else if ((arg1 == "addslots" || arg1 == "delslots") && argSize >= 3) {
-
             if (myself->nodeIsSlave()) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "slave node can not be addslot or delslot"};
@@ -194,7 +203,6 @@ public:
             for (size_t i = 2; i < argSize; ++i) {
                 if ((args[i].find('{') != string::npos) &&
                     (args[i].find('}') != string::npos)) {
-
                     std::string str = args[i];
                     str = str.substr(1, str.size() - 2);
 
@@ -340,16 +348,16 @@ public:
                         "Invalid key num " + args[3]};
             }
             uint32_t count = ecount.value();
-            //NOTE(wayenchen) count should be limited in case cost too mush memory
+            // NOTE(wayenchen) count should be limited in case cost too mush memory
             if (count > 5000) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "key num should be less than 5000"};
             }
-            if (slot >= CLUSTER_SLOTS ) {
+            if (slot >= CLUSTER_SLOTS) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "Invalid slot or number of keys"};
             }
-            
+
             std::string keysInfo = getKeys(svr, slot, count);
 
             return keysInfo;
@@ -489,7 +497,7 @@ public:
                 "Invalid cluster command " + args[1]};
     }
 
-private:
+ private:
     Status changeSlots(uint32_t start, uint32_t end, const std::string &arg,
                     const std::shared_ptr<ClusterState> clusterState,
                     const CNodePtr myself) {
@@ -562,7 +570,6 @@ private:
             Command::fmtBulk(keysInfo, vs);
         }
         return keysInfo.str();
-
     }
 
     bool nodeNotEmpty(ServerEntry *svr, CNodePtr node) {
@@ -579,23 +586,22 @@ private:
         return  notEmpty;
     }
 
-
     std::string clusterReplyMultiBulkSlots(const std::shared_ptr<tendisplus::ClusterState> state) {
         std::stringstream ss;
         uint32_t nodeNum = 0;
         std::vector<CNodePtr> nodes;
 
-        for (const auto &v: state->getNodes()) {
+        for (const auto &v : state->getNodesList()) {
             CNodePtr node = v.second;
-            if (!node->nodeIsMaster() || node->getSlotNum() == 0)
+            if (!node->nodeIsMaster() || node->getSlotNum() == 0) {
                 continue;
-            else {
+            } else {
                 nodes.push_back(node);
             }
         }
 
         std::stringstream ssTemp;
-        for (const auto &node: nodes) {
+        for (const auto &node : nodes) {
             int32_t start = -1;
 
             uint16_t  slaveNUm = node->getSlaveNum();
@@ -605,7 +611,7 @@ private:
                     if (start == -1) start = j;
                 }
                 if (start != -1 && (!bit || j == CLUSTER_SLOTS-1)) {
-                    if (bit && j == CLUSTER_SLOTS - 1) j ++;
+                    if (bit && j == CLUSTER_SLOTS - 1) j++;
                     nodeNum++;
 
                     Command::fmtMultiBulkLen(ssTemp, slaveNUm+3);
@@ -638,20 +644,12 @@ private:
         return ss.str();
     }
 
-
-    Status importingBitmap(const std::bitset<CLUSTER_SLOTS>& slotsMap,
-                           const std::string &nodeName,
-                           const std::shared_ptr<ClusterState> clusterState,
-                           ServerEntry* svr,
-                           MigrateManager* migrateMgr) {
-
+    Status startImportingTasks(ServerEntry* svr,
+            CNodePtr srcNode,
+            const std::bitset<CLUSTER_SLOTS> & slotsMap) {
         Status s;
-        auto srcNode = clusterState->clusterLookupNode(nodeName);
-        if (!srcNode) {
-            LOG(ERROR) << "import nodeid:" << nodeName
-                        << "not exist in cluster";
-            return {ErrorCodes::ERR_CLUSTER, "import node not find"};
-        }
+        auto clusterState = svr->getClusterMgr()->getClusterState();
+        auto migrateMgr = svr->getMigrateManager();
 
         auto ip = srcNode->getNodeIp();
         auto port = srcNode->getPort();
@@ -660,11 +658,11 @@ private:
                 std::move(createClient(ip, port, svr));
 
         if (client == nullptr) {
-            LOG(ERROR) << "send message to sender:"
+            LOG(ERROR) << "Connect to sender:"
                        << ip << ":"
                        << port
                        << "failed, no valid client";
-            return {ErrorCodes::ERR_NETWORK, "fail send command from receiver"};
+            return {ErrorCodes::ERR_NETWORK, "fail to connect to sender"};
         }
         std::stringstream ss;
         const std::string nodename = clusterState->getMyselfName();
@@ -673,13 +671,13 @@ private:
                                 << " " << svr->getKVStoreCount();
         s = client->writeLine(ss.str());
         if (!s.ok()) {
-            LOG(ERROR) << "preparemigrate srcDb failed:" << s.toString();
+            LOG(ERROR) << "preparemigrate failed:" << s.toString();
             return s;
         }
         uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
         auto expRsp = client->readLine(std::chrono::seconds(timeoutSecs));
         if (!expRsp.ok()) {
-            LOG(ERROR) << "preparemigrate  req error:"
+            LOG(ERROR) << "preparemigrate error:"
                        << expRsp.status().toString();
             return expRsp.status();
         }
@@ -704,6 +702,12 @@ private:
                      "json contain err:"+ errMsg };
         }
 
+        if (!doc.HasMember("taskmeta") || !doc["taskmeta"].IsUint64())
+            return  {ErrorCodes::ERR_DECODE,
+                     "json contain no taskmeta information!"};
+
+        uint16_t taskSize = doc["taskmeta"].GetUint64();
+
         if (!doc.HasMember("taskinfo"))
             return  {ErrorCodes::ERR_DECODE,
                      "json contain no task information!"};
@@ -712,8 +716,6 @@ private:
 
         if (!Array.IsArray())
             return  {ErrorCodes::ERR_WRONG_TYPE, "information is not array!"};
-
-        uint16_t taskSize = svr->getParams()->migrateTaskSlotsLimit;
 
         if (!doc.HasMember("finishMsg"))
             return  {ErrorCodes::ERR_DECODE,
@@ -754,16 +756,14 @@ private:
                 return {ErrorCodes::ERR_CLUSTER,
                         "migrate receive start task fail"};
             }
-            migrateMgr->insertNodes(slotsVec, nodeName, true);
+            migrateMgr->insertNodes(slotsVec, srcNode->getNodeName(), true);
         }
-        return {ErrorCodes::ERR_OK, "finish"};
+        return {ErrorCodes::ERR_OK, ""};
     }
-
 } clusterCmd;
 
-
 class PrepareMigrateCommand: public Command {
-public:
+ public:
     PrepareMigrateCommand()
             :Command("preparemigrate", "a") {
     }
@@ -784,6 +784,10 @@ public:
         return 0;
     }
 
+    bool isBgCmd() const {
+        return true;
+    }
+
     Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "prepareSender should not be called";
         // void compiler complain
@@ -793,7 +797,7 @@ public:
 
 
 class ReadymigrateCommand: public Command {
-public:
+ public:
     ReadymigrateCommand()
             :Command("readymigrate", "a") {
     }
@@ -814,6 +818,10 @@ public:
         return 0;
     }
 
+    bool isBgCmd() const {
+        return true;
+    }
+
     Expected<std::string> run(Session *sess) final {
         LOG(FATAL) << "readymigrate should not be called";
         // void compiler complain
@@ -823,7 +831,7 @@ public:
 
 
 class MigrateendCommand: public Command {
-public:
+ public:
     MigrateendCommand()
             :Command("migrateend", "rs") {
     }

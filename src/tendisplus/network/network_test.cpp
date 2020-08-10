@@ -6,6 +6,7 @@
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/time.h"
 #include "tendisplus/utils/scopeguard.h"
 
 namespace tendisplus {
@@ -259,6 +260,112 @@ TEST(BlockingTcpClient, Common) {
     s = cli2->writeLine("hello world");
     exps = cli2->readLine(std::chrono::seconds(3));
     EXPECT_FALSE(exps.ok());
+    ioCtx->stop();
+    ioCtx1->stop();
+    thd.join();
+    thd1.join();
+}
+
+class session2 : public std::enable_shared_from_this<session2> {
+public:
+    explicit session2(asio::ip::tcp::socket socket)
+        :_socket(std::move(socket)) {
+    }
+
+    void start() {
+        do_read();
+    }
+
+private:
+    void do_read() {
+        auto self(shared_from_this());
+        using namespace std::chrono_literals;  // NOLINT
+        _socket.async_read_some(asio::buffer(_data, max_length),
+            [this, self](std::error_code ec, size_t length) {
+                if (ec) {
+                    //LOG(ERROR) << ec.message();
+                }
+                do_read();
+            });
+    }
+
+    asio::ip::tcp::socket _socket;
+    enum {
+        max_length = 1024
+    };
+    char _data[max_length];
+};
+
+
+class server2 {
+public:
+    server2(asio::io_context& io_context, uint16_t port)  // NOLINT
+        :_acceptor(
+            io_context,
+            asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port)) {
+        _acceptor.set_option(asio::ip::tcp::acceptor::reuse_address(true));
+        do_accept();
+    }
+
+private:
+    void do_accept() {
+        _acceptor.async_accept(
+            [this](std::error_code ec, asio::ip::tcp::socket socket) {
+                if (!ec) {
+                    std::make_shared<session2>(std::move(socket))->start();
+                }
+                do_accept();
+            });
+    }
+    asio::ip::tcp::acceptor _acceptor;
+};
+
+void rateLimit(uint64_t ratelimit, std::shared_ptr<asio::io_context> ioCtx) {
+    uint32_t total = ratelimit * 10;
+    auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx, 128, 1024 * 1024, 10, ratelimit);
+    Status s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
+    EXPECT_TRUE(s.ok());
+
+    uint32_t count = 0;
+    auto now = msSinceEpoch();
+    size_t buffer_size = 1024 * 16;
+    if (buffer_size > total) {
+        buffer_size = ratelimit;
+    }
+
+    std::string str;
+    str.assign(buffer_size, 'a');
+    while (count < total) {
+        s = cli1->writeLine(str);
+        EXPECT_TRUE(s.ok());
+        count += str.size();
+    }
+
+    uint32_t use_time = (msSinceEpoch() - now) / 1000;
+    LOG(INFO) << "rate:" << ratelimit << " use " << use_time << " seconds";
+    EXPECT_TRUE(use_time >= total / ratelimit && use_time < total * 1.3 / ratelimit);
+}
+
+TEST(BlockingTcpClient, RateLimit) {
+    auto ioCtx = std::make_shared<asio::io_context>();
+    auto ioCtx1 = std::make_shared<asio::io_context>();
+    server2 svr(*ioCtx, 54321);
+
+    std::thread thd([&ioCtx] {
+        asio::io_context::work work(*ioCtx);
+        ioCtx->run();
+        });
+    std::thread thd1([&ioCtx1] {
+        asio::io_context::work work(*ioCtx1);
+        ioCtx1->run();
+        });
+
+    rateLimit(1024, ioCtx1);
+    rateLimit(102400, ioCtx1);
+    rateLimit(1024000, ioCtx1);
+    rateLimit(10240000, ioCtx1);
+    //rateLimit(102400000, ioCtx1);
+
     ioCtx->stop();
     ioCtx1->stop();
     thd.join();

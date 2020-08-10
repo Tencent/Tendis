@@ -23,6 +23,7 @@ class ChunkMeta;
 class ChunkMigrateSender;
 class ClusterState;
 enum class BinlogApplyMode;
+using myMutex = std::recursive_mutex;
 
 // Sender POV
 enum class MigrateSendState {
@@ -129,7 +130,7 @@ class MigrateManager {
                          const std::string& StoreidArg,
                          const std::string& nodeidArg);
 
-    void prepareSender(asio::ip::tcp::socket sock,
+    void dstPrepareMigrate(asio::ip::tcp::socket sock,
                        const std::string& chunkidArg,
                        const std::string& nodeidArg,
                        uint32_t storeNum);
@@ -143,7 +144,7 @@ class MigrateManager {
                     uint16_t port, uint32_t storeid,
                     bool import, uint16_t taskSize);
 
-    void insertNodes(std::vector<uint32_t >slots, std::string nodeid, bool import);
+    void insertNodes(const std::vector<uint32_t>& slots, const std::string& nodeid, bool import);
 
     void fullReceive(MigrateReceiveTask* task);
 
@@ -152,11 +153,6 @@ class MigrateManager {
     Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
     Status supplyMigrateEnd(const SlotsBitmap& slots);
-    Status lockXChunk(uint32_t chunkid);
-    Status unlockXChunk(uint32_t chunkid);
-
-    Status lockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
-    Status unlockChunks(const std::bitset<CLUSTER_SLOTS> &slots);
     uint64_t getProtectBinlogid(uint32_t storeid);
 
     bool slotInTask(uint32_t slot);
@@ -172,6 +168,7 @@ class MigrateManager {
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
     Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
+    void requestRateLimit(uint64_t bytes);
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
@@ -182,7 +179,6 @@ class MigrateManager {
     bool checkSlotOK(const SlotsBitmap& bitMap, const std::string& nodeid,
             std::vector<uint32_t>& taskSlots);
 
-
  private:
     const std::shared_ptr<ServerParams> _cfg;
     std::shared_ptr<ServerEntry> _svr;
@@ -190,7 +186,7 @@ class MigrateManager {
 
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
-    mutable std::mutex _mutex;
+    mutable myMutex _mutex;
     std::unique_ptr<std::thread> _controller;
 
     // TODO(wayenchen) takenliu add, change all std::bitset<CLUSTER_SLOTS> to SlotsBitmap
@@ -219,19 +215,19 @@ class MigrateManager {
     std::shared_ptr<PoolMatrix> _migrateSenderMatrix;
     std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
-
     // receiver's pov
     std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
 
     std::unique_ptr<WorkerPool> _migrateReceiver;
-    std::unique_ptr<WorkerPool> _migrateChecker;
     std::shared_ptr<PoolMatrix> _migrateReceiverMatrix;
-    std::shared_ptr<PoolMatrix> _migrateCheckerMatrix;
 
     uint16_t _workload;
     // mark dst node or source node
     std::unordered_map<uint32_t, std::string> _migrateNodes;
     std::unordered_map<uint32_t, std::string> _importNodes;
+
+    // sender rate limiter
+    std::unique_ptr<RateLimiter> _rateLimiter;
 };
 
 }  // namespace tendisplus

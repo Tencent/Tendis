@@ -30,6 +30,7 @@ class Command {
     virtual int32_t lastkey() const = 0;
     virtual int32_t keystep() const = 0;
     virtual bool sameWithRedis() const { return true; }
+    virtual bool isBgCmd() const { return false; }
     virtual std::vector<int> getKeysFromCommand(
                     const std::vector<std::string>& argv);
     const std::string& getName() const;
@@ -52,7 +53,7 @@ class Command {
     size_t getFlagsCount() const;
     static std::vector<std::string> listCommands();
     // precheck returns command name
-    static Expected<std::string> precheck(Session *sess);
+    static Expected<Command*> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
     static bool isAdminCmd(const std::string& cmd);
     // static bool isKeyLocked(Session *sess,

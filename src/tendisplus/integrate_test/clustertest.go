@@ -242,7 +242,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         cfgArgs["requirepass"] = "tendis+test"
         cfgArgs["masterauth"] = "tendis+test"
         cfgArgs["generalLog"] = "true"
-        cfgArgs["migrateTaskSlotsLimit"] = "10000"
+        cfgArgs["cluster-migration-slots-num-per-task"] = "10000"
         if err := server.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup failed,port:%s err:%v", port, err)
         }

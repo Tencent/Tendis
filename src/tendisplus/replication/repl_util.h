@@ -53,13 +53,14 @@ Status sendWriter(BinlogWriter* writer,
                     uint32_t secs);
 
 
-Expected<uint64_t> SendSlotsBinlog(BlockingTcpClient*,
+Status SendSlotsBinlog(BlockingTcpClient*,
                        uint32_t storeId, uint32_t dstStoreId,
-                       uint64_t binlogPos, uint64_t  binglogEnd,
+                       uint64_t binlogStart, uint64_t binglogEnd,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slots,
                        std::shared_ptr<ServerEntry> svr,
-                       std::shared_ptr<ServerParams> cfg);
+                       uint64_t* sendBinlogNum,
+                       uint64_t* newBinlogId);
 
 }  // namespace tendisplus
 

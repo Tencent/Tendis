@@ -11,6 +11,7 @@ namespace tendisplus {
 std::string PoolMatrix::toString() const {
     std::stringstream ss;
     ss << "\ninQueue\t" << inQueue
+        << "\nexecuting\t" << executing
         << "\nexecuted\t" << executed
         << "\nqueueTime\t" << queueTime << "ns"
         << "\nexecuteTime\t" << executeTime << "ns";
@@ -28,6 +29,7 @@ PoolMatrix PoolMatrix::operator-(const PoolMatrix& right) {
     PoolMatrix result;
     // inQueue is a state, donot handle it
     result.inQueue = inQueue;
+    result.executing = executing;
     result.executed = executed - right.executed;
     result.queueTime = queueTime - right.queueTime;
     result.executeTime = executeTime - right.executeTime;

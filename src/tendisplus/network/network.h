@@ -61,9 +61,9 @@ class NetworkAsio {
     NetworkAsio(NetworkAsio&&) = delete;
 
     // blocking client related apis
-    std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf);
+    std::unique_ptr<BlockingTcpClient> createBlockingClient(size_t readBuf, uint64_t rateLimit = 0);
     std::unique_ptr<BlockingTcpClient> createBlockingClient(
-        asio::ip::tcp::socket, size_t readBuf);
+        asio::ip::tcp::socket, size_t readBuf, uint64_t rateLimit = 0);
     Expected<uint64_t> client2Session(std::shared_ptr<BlockingTcpClient>, bool migrateOnly = false);
     Expected<std::shared_ptr<ClusterSession>> client2ClusterSession(std::shared_ptr<BlockingTcpClient> c);
 
