@@ -96,7 +96,6 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
      _cluster = _svr->getClusterMgr()->getClusterState();
      _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {migrateSenderResize(_cfg->migrateSenderThreadnum);});
      _cfg->serverParamsVar("migrateClearThreadnum")->setUpdate([this]() {migrateClearResize(_cfg->migrateClearThreadnum);});
-     _cfg->serverParamsVar("migrateCheckThreadnum")->setUpdate([this]() {migrateCheckerResize(_cfg->migrateCheckThreadnum);});
      _cfg->serverParamsVar("migrateReceiveThreadnum")->setUpdate([this]() {migrateReceiverResize(_cfg->migrateReceiveThreadnum);});
 }
 
@@ -1290,10 +1289,6 @@ void MigrateManager::migrateClearResize(size_t size) {
     _migrateClear->resize(size);
 }
 
-void MigrateManager::migrateCheckerResize(size_t size) {
-    _migrateChecker->resize(size);
-}
-
 void MigrateManager::migrateReceiverResize(size_t size) {
     _migrateReceiver->resize(size);
 }
@@ -1304,10 +1299,6 @@ size_t MigrateManager::migrateSenderSize() {
 
 size_t MigrateManager::migrateClearSize() {
     return _migrateClear->size();
-}
-
-size_t MigrateManager::migrateCheckerSize() {
-    return _migrateChecker->size();
 }
 
 size_t MigrateManager::migrateReceiverSize() {

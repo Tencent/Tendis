@@ -1775,18 +1775,6 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
     usleep(100000);
     EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 1);
-
-    sess.setArgs({"CONFIG", "SET", "migrateCheckThreadnum", "8"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(svr->getParams()->migrateCheckThreadnum, 8);
-    usleep(100000);
-    EXPECT_EQ(svr->getMigrateManager()->migrateCheckerSize(), 8);
-
-    sess.setArgs({"CONFIG", "SET", "migrateCheckThreadnum", "1"});
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(svr->getParams()->migrateCheckThreadnum, 1);
-    usleep(100000);
-    EXPECT_EQ(svr->getMigrateManager()->migrateCheckerSize(), 1);
 }
 
 TEST(Command, resizeCommand) {
