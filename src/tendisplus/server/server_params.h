@@ -353,7 +353,7 @@ public:
     bool clusterRequireFullCoverage = true;
     bool clusterSlaveNoFailover = false;
     uint32_t clusterMigrationBarrier = 1;
-    uint32_t clusterSlaveValidityFactor = 50;
+    uint32_t clusterSlaveValidityFactor = 10;
 
     // TODO(takenliu) delete this two parm after performance test.
     bool netIoMultiIoContext = false;

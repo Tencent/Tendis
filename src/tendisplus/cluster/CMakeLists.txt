@@ -11,7 +11,7 @@ else()
 endif()
 
 add_library(cluster_mgr cluster_manager.cpp)
-target_link_libraries(cluster_mgr status lock glog ${SYS_LIBS})
+target_link_libraries(cluster_mgr status lock glog utils_common ${SYS_LIBS})
 
 add_executable(cluster_test cluster_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)

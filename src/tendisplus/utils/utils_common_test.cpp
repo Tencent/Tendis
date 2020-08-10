@@ -63,17 +63,21 @@ TEST(Time, Common) {
 
 std::bitset<CLUSTER_SLOTS> genBitMap() {
     std::bitset<CLUSTER_SLOTS> bitmap;
-    uint16_t  start = genRand() % CLUSTER_SLOTS;
-    uint16_t  length = genRand() % (CLUSTER_SLOTS - start);
-    for (size_t j = start; j < start + length; j++) {
-        bitmap.set(j);
+
+    auto count = genRand() % 5;
+    while (count--) {
+        size_t  start = genRand() % CLUSTER_SLOTS;
+        size_t  length = genRand() % (CLUSTER_SLOTS - start);
+        for (size_t j = start; j < start + length; j++) {
+            bitmap.set(j);
+        }
     }
     return  bitmap;
 }
 
 TEST(String, Common) {
     std::stringstream ss;
-    char buf[20000];
+    char buf[21000];
 
     for (size_t i = 0; i < 1000; i++) {
         ss.str("");
@@ -143,33 +147,42 @@ TEST(Base64, common) {
     EXPECT_EQ(data, decode);
 }
 
-
-
 TEST(bitsetEncode, common) {
+    std::bitset<CLUSTER_SLOTS> bitmap;
+    for (size_t j = 0; j < bitmap.size(); j++) {
+        if (j % 2 == 0) {
+            bitmap.set(j);
+        }
+    }
+    auto encodeStr = bitsetEncode(bitmap);
+    auto v1 = bitsetDecode<CLUSTER_SLOTS>(encodeStr);
+    EXPECT_EQ(v1.ok(), true);
+    EXPECT_EQ(bitmap, v1.value());
+
+    std::bitset<CLUSTER_SLOTS> bitmap2;
+    for (size_t j = 0; j < bitmap2.size(); j++) {
+        if (j % 2 == 0) {
+            bitmap2.set(j);
+        }
+    }
+    encodeStr = bitsetEncode(bitmap2);
+    v1 = bitsetDecode<CLUSTER_SLOTS>(encodeStr);
+    EXPECT_EQ(v1.ok(), true);
+    EXPECT_EQ(bitmap2, v1.value());
 
     for (int i = 0; i < 100; i++) {
         std::bitset<CLUSTER_SLOTS> data = genBitMap();
-        std::vector<uint16_t> encode = bitsetEncode(data);
-        encode.erase(encode.begin());
-
-        auto v = bitsetIntDecode<CLUSTER_SLOTS>(encode);
+        std::vector<uint16_t> encode = bitsetEncodeVec(data);
+        auto v = bitsetDecodeVec<CLUSTER_SLOTS>(encode);
         EXPECT_EQ(v.ok(), true);
         std::bitset<CLUSTER_SLOTS> decode = v.value();
         EXPECT_EQ(data, decode);
 
         data = genBitMap();
-        std::vector<uint8_t> key;
-        encode = bitsetEncode(data);
-        encode.erase(encode.begin());
-        for (auto& v : encode) {
-            CopyUint(&key, v);
-        }
-        std::string result = std::string(reinterpret_cast<const char*>(
-            key.data()), key.size());
-
-        auto s = bitsetDecode<CLUSTER_SLOTS>(result);
-        EXPECT_EQ(s.ok(), true);
-        EXPECT_EQ(data, s.value());
+        auto encodeStr = bitsetEncode(data);
+        auto v1 = bitsetDecode<CLUSTER_SLOTS>(encodeStr);
+        EXPECT_EQ(v1.ok(), true);
+        EXPECT_EQ(data, v1.value());
 
         data = genBitMap();
         std::string bitmapStr = bitsetStrEncode(data);
@@ -178,7 +191,6 @@ TEST(bitsetEncode, common) {
         EXPECT_EQ(data, t.value());
     }
 }
-
 
 TEST(ParamManager, common) {
     ParamManager pm;
