@@ -248,6 +248,7 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
     _enableCluster = cfg->clusterEnabled;
     _dbNum = cfg->dbNum;
     _cfg = cfg;
+    _cfg->serverParamsVar("executorThreadNum")->setUpdate([this](){ resizeExecutorThreadNum(_cfg->executorThreadNum);});
 }
 
 void ServerEntry::resetServerStat() {
@@ -449,17 +450,19 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     uint32_t threadnum = std::max(size_t(4), cpuNum/2);
     if (cfg->executorThreadNum != 0) {
         threadnum = cfg->executorThreadNum;
+    } else {
+        _cfg->executorThreadNum = threadnum;        // set the executorThreadNum when it's zero
     }
     LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
         << " executorThreadNum:" << cfg->executorThreadNum;
     //{
     if (_cfg->executorMultiIoContext) {
-        for (uint32_t i = 0; i < threadnum; i += _cfg->executorWookPoolSize) {
+        for (uint32_t i = 0; i < threadnum; i += _cfg->executorWorkPoolSize) {
             // TODO(takenliu): make sure whether multi worker_pool is ok?
             // But each size of worker_pool should been not less than 8;
             //uint32_t i = 0;
-            uint32_t curNum = i + _cfg->executorWookPoolSize < threadnum ?
-                    _cfg->executorWookPoolSize : threadnum - i;
+            uint32_t curNum = i + _cfg->executorWorkPoolSize < threadnum ?
+                    _cfg->executorWorkPoolSize : threadnum - i;
             LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
             auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(i), _poolMatrix);
             Status s = executor->startup(curNum);
@@ -468,6 +471,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                 return s;
             }
             _executorList.push_back(std::move(executor));
+        }
+
+        // set the executorThreadNum when set executorMultiIoContext is true
+        for (auto &pool : _executorList) {
+            _cfg->executorThreadNum += pool->size();
         }
     } else {
         auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(0), _poolMatrix);
@@ -478,6 +486,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         }
         _executorList.push_back(std::move(executor));
     }
+
+    // _cfg->executorThreadNum = _executorList.size() * _executorList.back()->size();
     // network
     _network = std::make_unique<NetworkAsio>(shared_from_this(),
                                              _netMatrix,
@@ -730,6 +740,67 @@ void ServerEntry::DelMonitorNoLock(uint64_t connId) {
             _monitors.erase(it);
             break;
         }
+    }
+}
+
+/**
+ * @brief update func to resize workpool thread num
+ * @note like WorkerPool::resize(), three cases
+ *     operation on container should be thread-safe,
+ *     use std::lock_guard to make thread safe
+ */
+void ServerEntry::resizeExecutorThreadNum(uint64_t newThreadNum) {
+    std::lock_guard<std::mutex> lk(_mutex);          
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    if (newThreadNum < threadSum) {
+        resizeDecrExecutorThreadNum(newThreadNum);
+    } else if (newThreadNum > threadSum) {
+        resizeIncrExecutorThreadNum(newThreadNum);
+    } else {
+        return;
+    }
+}
+
+/**
+ * @brief decrease _executorList thread number
+ * @note Because of resize() interface is async decrease operation,
+ *      can't stop() directly, so move target workerpool to _executorSet first, keep owning the std::unique_ptr.
+ *      stop the workerpool eventually when call another decrease operation，
+ *      this design means: ergodic operation pressure is on DECREASE OP, NOT INCREASE OP.
+ */
+void ServerEntry::resizeDecrExecutorThreadNum(uint64_t newThreadNum) {
+    // calculate the threads sum -> threadNum, the list num to resize() -> listNum
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (threadSum - newThreadNum) / _cfg->executorWorkPoolSize;
+    INVARIANT_D(newThreadNum < threadSum);
+    
+    // call resize() op, move workerpool to _executorSet.
+    for (size_t i = 0; i < listNum; ++i) {
+        _executorList.back()->resize(0);
+        _executorRecycleSet.emplace(std::move(_executorList.back().release()));
+        _executorList.pop_back();
+    }
+}
+
+/**
+ * @brief increase _executorList thread number
+ * @note maybe can reuse workerpool which in _executorSet,
+ *      but may put the ergodic operation pressure on INCREASE OP.
+ *      As we all known, DECREASE OP's pressure is less than INCREASE OP's.
+ * @todo workerpool's name now may be repetitive, should fix it later.
+ */
+void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
+    auto threadSum = _executorList.size() * _executorList.back()->size();
+    size_t listNum = (newThreadNum - threadSum) / _cfg->executorWorkPoolSize;
+    INVARIANT_D(newThreadNum > threadSum);
+
+    for (size_t i = 0; i < listNum; ++i) {
+        auto executor = std::make_unique<WorkerPool>("req-exec-" + std::to_string(_executorList.size() + i), _poolMatrix);
+        Status s = executor->startup(_executorList.back()->size());
+        if (!s.ok()) {
+            LOG(ERROR) << "ServerEntry::startup failed, executor->startup:" << s.toString();
+        }
+        _executorList.push_back(std::move(executor));
     }
 }
 
@@ -1144,6 +1215,19 @@ void ServerEntry::serverCron() {
         }
 
         run_with_period(1000) {
+            // release idling workerpool, trigger 1s once time
+            if (_executorRecycleSet.size()) {
+                for (auto iter = _executorRecycleSet.begin(); 
+                        iter != _executorRecycleSet.end();) {
+                    if (!(*iter)->size()) {
+                        (*iter)->stop();
+                        iter = _executorRecycleSet.erase(iter);
+                    } else {
+                        iter++;
+                    }
+                }
+            }
+
             // full-time matrix collect
             if (_ftmcEnabled.load(std::memory_order_relaxed)) {
                 auto tmpNetMatrix = *_netMatrix - oldNetMatrix;
@@ -1204,6 +1288,9 @@ void ServerEntry::stop() {
     _eventCV.notify_all();
     _network->stop();
     for (auto& executor : _executorList) {
+        executor->stop();
+    }
+    for (auto &executor : _executorRecycleSet) {
         executor->stop();
     }
     _replMgr->stop();
@@ -1289,6 +1376,11 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time, uint64_t duration,
     if (sess && duration >= _cfg->slowlogLogSlowerThan) {
         _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, sess);
     }
+}
+
+std::shared_ptr<ServerEntry> &getGlobalServer() {
+    static std::shared_ptr<ServerEntry> gServer;
+    return gServer;
 }
 
 }  // namespace tendisplus

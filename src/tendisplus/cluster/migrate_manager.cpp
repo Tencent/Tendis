@@ -94,6 +94,9 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
      _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
      _rateLimiter(std::make_unique<RateLimiter>(_cfg->binlogRateLimitMB * 1024 * 1024)) {
      _cluster = _svr->getClusterMgr()->getClusterState();
+     _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {migrateSenderResize(_cfg->migrateSenderThreadnum);});
+     _cfg->serverParamsVar("migrateClearThreadnum")->setUpdate([this]() {migrateClearResize(_cfg->migrateClearThreadnum);});
+     _cfg->serverParamsVar("migrateReceiveThreadnum")->setUpdate([this]() {migrateReceiverResize(_cfg->migrateReceiveThreadnum);});
 }
 
 Status MigrateManager::startup() {
@@ -1276,6 +1279,30 @@ Status MigrateManager::deleteChunks(uint32_t storeid, const SlotsBitmap& slots) 
     LOG(INFO) << "deleteChunksInLock store:" << storeid
               << " slots:" << bitsetStrEncode(slots);
     return {ErrorCodes::ERR_OK, ""};
+}
+
+void MigrateManager::migrateSenderResize(size_t size) {
+    _migrateSender->resize(size);
+}
+
+void MigrateManager::migrateClearResize(size_t size) {
+    _migrateClear->resize(size);
+}
+
+void MigrateManager::migrateReceiverResize(size_t size) {
+    _migrateReceiver->resize(size);
+}
+
+size_t MigrateManager::migrateSenderSize() {
+    return _migrateSender->size();
+}
+
+size_t MigrateManager::migrateClearSize() {
+    return _migrateClear->size();
+}
+
+size_t MigrateManager::migrateReceiverSize() {
+    return _migrateReceiver->size();
 }
 
 }  // namespace tendisplus

@@ -90,6 +90,11 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
      _incrCheckMatrix(std::make_shared<PoolMatrix>()),
      _logRecycleMatrix(std::make_shared<PoolMatrix>()),
      _connectMasterTimeoutMs(1000) {
+
+    _cfg->serverParamsVar("incrPushThreadnum")->setUpdate([this]() {incrPusherResize(_cfg->incrPushThreadnum);});
+    _cfg->serverParamsVar("fullPushThreadnum")->setUpdate([this]() {fullPusherResize(_cfg->fullPushThreadnum);});
+    _cfg->serverParamsVar("fullReceiveThreadnum")->setUpdate([this]() {fullReceiverResize(_cfg->fullReceiveThreadnum);});
+    _cfg->serverParamsVar("logRecycleThreadnum")->setUpdate([this]() {logRecyclerResize(_cfg->logRecycleThreadnum);});
 }
 
 Status ReplManager::stopStore(uint32_t storeId) {
@@ -1349,6 +1354,38 @@ void ReplManager::stop() {
 #endif
 
     LOG(WARNING) << "repl manager stops succ";
+}
+
+void ReplManager::fullPusherResize(size_t size) {
+    _fullPusher->resize(size);
+}
+
+void ReplManager::fullReceiverResize(size_t size) {
+    _fullReceiver->resize(size);
+}
+
+void ReplManager::incrPusherResize(size_t size) {
+    _incrPusher->resize(size);
+}
+
+void ReplManager::logRecyclerResize(size_t size) {
+    _logRecycler->resize(size);
+}
+
+size_t ReplManager::fullPusherSize() {
+    return _fullPusher->size();
+}
+
+size_t ReplManager::fullReceiverSize() {
+    return _fullReceiver->size();
+}
+
+size_t ReplManager::incrPusherSize() {
+    return _incrPusher->size();
+}
+
+size_t ReplManager::logRecycleSize() {
+    return _logRecycler->size();
 }
 
 }  // namespace tendisplus

@@ -12,25 +12,16 @@
 #include "glog/logging.h"
 #include "tendisplus/commands/version.h"
 #include "tendisplus/commands/release.h"
-namespace tendisplus {
-
-static std::shared_ptr<ServerEntry> gServer(nullptr);
-
-std::shared_ptr<ServerEntry> getGlobalServer() {
-    return gServer;
-}
-
-}  // namespace tendisplus
 
 static void shutdown(int sigNum) {
     LOG(INFO) << "signal:" << sigNum << " caught, begin shutdown server";
-    INVARIANT(tendisplus::gServer != nullptr);
-    tendisplus::gServer->handleShutdownCmd();
+    INVARIANT(tendisplus::getGlobalServer() != nullptr);
+    tendisplus::getGlobalServer()->handleShutdownCmd();
 }
 
 static void waitForExit() {
-    INVARIANT(tendisplus::gServer != nullptr);
-    tendisplus::gServer->waitStopComplete();
+    INVARIANT(tendisplus::getGlobalServer() != nullptr);
+    tendisplus::getGlobalServer()->waitStopComplete();
 }
 
 static void setupSignals() {
@@ -125,8 +116,8 @@ int main(int argc, char *argv[]) {
     });
 #endif
 
-    tendisplus::gServer = std::make_shared<tendisplus::ServerEntry>(params);
-    s = tendisplus::gServer->startup(params);
+    tendisplus::getGlobalServer() = std::make_shared<tendisplus::ServerEntry>(params);
+    s = tendisplus::getGlobalServer()->startup(params);
     if (!s.ok()) {
         LOG(FATAL) << "server startup failed:" << s.toString();
     }

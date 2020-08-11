@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <iostream>
+#include <cstdint>
 #include <string>
 #include <typeinfo>
 #include <algorithm>
@@ -13,6 +14,7 @@
 
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
+#include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/invariant.h"
 
@@ -22,12 +24,12 @@ using namespace std;
 string gRenameCmdList = "";
 string gMappingCmdList = "";
 
-#define REGISTER_VARS_FULL(str, var, checkfun, prefun, allowDynamicSet) \
+#define REGISTER_VARS_FULL(str, var, checkfun, prefun, minval, maxval, allowDynamicSet) \
     if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) \
         || typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t)) \
-        _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
+        _mapServerParams.insert(make_pair(toLower(str), new IntVar(str, (void*)&var, checkfun, prefun, minval, maxval, allowDynamicSet))); \
     else if (typeid(var) == typeid(int64_t) || typeid(var) == typeid(uint64_t)) \
-        _mapServerParams.insert(make_pair(toLower(str), new Int64Var(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
+        _mapServerParams.insert(make_pair(toLower(str), new Int64Var(str, (void*)&var, checkfun, prefun, minval, maxval, allowDynamicSet))); \
     else if (typeid(var) == typeid(float)) \
         _mapServerParams.insert(make_pair(toLower(str), new FloatVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else if (typeid(var) == typeid(string)) \
@@ -36,10 +38,12 @@ string gMappingCmdList = "";
         _mapServerParams.insert(make_pair(toLower(str), new BoolVar(str, (void*)&var, checkfun, prefun, allowDynamicSet))); \
     else INVARIANT(0); // NOTE(takenliu): if other type is needed, change here.
 
-#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, false)
-#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, false)
-#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, true)
-#define REGISTER_VARS_DIFF_NAME_DYNAMIC(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, true)
+#define REGISTER_VARS(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, false)
+#define REGISTER_VARS_DIFF_NAME(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, INT_MAX, false)
+#define REGISTER_VARS_ALLOW_DYNAMIC_SET(var) REGISTER_VARS_FULL(#var, var, NULL, NULL, 0, INT_MAX, true)
+#define REGISTER_VARS_DIFF_NAME_DYNAMIC(str, var) REGISTER_VARS_FULL(str, var, NULL, NULL, 0, INT_MAX, true)
+#define REGISTER_VARS_SAME_NAME(var, checkfun, prefun, minval, maxval, allowDynamicSet) \
+        REGISTER_VARS_FULL(#var, var, checkfun, prefun, minval, maxval, allowDynamicSet)
 
 bool logLevelParamCheck(const string& val) {
     auto v = toLower(val);
@@ -56,6 +60,13 @@ bool compressTypeParamCheck(const string& val) {
     }
     return false;
 };
+
+bool executorThreadNumCheck(const std::string &val) {
+    auto num = std::strtoull(val.c_str(), nullptr, 10);
+    auto workPoolSize = getGlobalServer()->getParams()->executorWorkPoolSize;
+
+    return (num % workPoolSize) ? false : true;
+}
 
 string removeQuotes(const string& v) {
     if (v.size() < 2) {
@@ -201,8 +212,8 @@ Status rewriteConfigState::rewriteConfigOverwriteFile(const std::string& confFil
 
 ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("bind", bindIp);
-    REGISTER_VARS(port);
-    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, removeQuotesAndToLower, false);
+    REGISTER_VARS_FULL("port", port, nullptr, nullptr, 1, 65535, false);
+    REGISTER_VARS_FULL("logLevel", logLevel, logLevelParamCheck, removeQuotesAndToLower, -1, -1, false);
     REGISTER_VARS(logDir);
 
     REGISTER_VARS_DIFF_NAME("storage", storageEngine);
@@ -231,7 +242,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
     REGISTER_VARS(noexpire);
-    REGISTER_VARS_ALLOW_DYNAMIC_SET(maxBinlogKeepNum);
+    REGISTER_VARS_SAME_NAME(maxBinlogKeepNum, nullptr, nullptr, 1, 10000000000000, true);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(slaveBinlogKeepNum);
 
@@ -241,18 +252,21 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-max-len", slowlogMaxLen);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-flush-interval", slowlogFlushInterval);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("slowlog-file-enabled", slowlogFileEnabled);
+
+    // NOTE(pecochen): this two params should provide their own interface to update.
+    //              they don't use Workerpool, no need to use Workerpool::resize()
     REGISTER_VARS(netIoThreadNum);
-    REGISTER_VARS(executorThreadNum);
-    REGISTER_VARS(executorWookPoolSize);
+    REGISTER_VARS_SAME_NAME(executorThreadNum, executorThreadNumCheck, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(executorWorkPoolSize, nullptr, nullptr, 1, 200, false);
 
     REGISTER_VARS(binlogRateLimitMB);
     REGISTER_VARS(netBatchSize);
     REGISTER_VARS(netBatchTimeoutSec);
     REGISTER_VARS(timeoutSecBinlogWaitRsp);
-    REGISTER_VARS(incrPushThreadnum);
-    REGISTER_VARS(fullPushThreadnum);
-    REGISTER_VARS(fullReceiveThreadnum);
-    REGISTER_VARS(logRecycleThreadnum);
+    REGISTER_VARS_SAME_NAME(incrPushThreadnum, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(fullPushThreadnum, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(fullReceiveThreadnum, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(logRecycleThreadnum, nullptr, nullptr, 1, 200, true);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogIntervalMs);
     REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
     REGISTER_VARS(binlogFileSizeMB);
@@ -267,13 +281,13 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit", rocksFlushLogAtTrxCommit);
     REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
 
-    REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, false);
+    REGISTER_VARS_FULL("rocks.compress_type", rocksCompressType, compressTypeParamCheck, removeQuotesAndToLower, -1, -1, false);
     REGISTER_VARS_DIFF_NAME("rocks.level0_compress_enabled", level0Compress);
     REGISTER_VARS_DIFF_NAME("rocks.level1_compress_enabled", level1Compress);
 
-    REGISTER_VARS(migrateSenderThreadnum);
-    REGISTER_VARS(migrateClearThreadnum);
-    REGISTER_VARS(migrateReceiveThreadnum);
+    REGISTER_VARS_SAME_NAME(migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(migrateClearThreadnum, nullptr, nullptr, 1, 200, true);
+    REGISTER_VARS_SAME_NAME(migrateReceiveThreadnum, nullptr, nullptr, 1, 200, true);
 
     REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage", clusterRequireFullCoverage);
