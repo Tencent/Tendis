@@ -1580,7 +1580,6 @@ void ClusterState::clusterDelNodeNoLock(CNodePtr delnode) {
     for (uint32_t j = 0; j < CLUSTER_SLOTS; j++) {
         // TODO(Wayenchen) : stop migrating on the slot
         if (_allSlots[j] == delnode) {
-            // TODO(vinchen)
             clusterDelSlot(j);
         }
     }
@@ -3371,7 +3370,6 @@ Status ClusterManager::initNetWork() {
     _clusterNetwork = std::make_unique<NetworkAsio>(_svr, _netMatrix,
                                                 _reqMatrix, cfg, "cluster");
 
-    // TODO(vinchen): cfg->netIoThreadNum
     Status s = _clusterNetwork->prepare(cfg->bindIp, cfg->port+CLUSTER_PORT_INCR, 1);
     if (!s.ok()) {
         return s;
@@ -3391,7 +3389,7 @@ Status ClusterManager::initMetaData() {
     Catalog *catalog = _svr->getCatalog();
     INVARIANT(catalog != nullptr);
 
-    // TODO(vinchen): cluster_announce_port/cluster_announce_bus_port
+    // TODO(wayenchen): cluster_announce_port/cluster_announce_bus_port
     auto params = _svr->getParams();
     std::string nodeIp = params->bindIp;
     uint16_t nodePort = params->port;
@@ -3400,7 +3398,6 @@ Status ClusterManager::initMetaData() {
     std::shared_ptr<ClusterState> gState = std::make_shared<tendisplus::ClusterState>(_svr);
     installClusterState(gState);
 
-    // TODO(vinchen): lastvoteepoch
     auto vs = catalog->getAllClusterMeta();
     if (!vs.ok()) {
         LOG(ERROR) << "getAllClusterMeta error";
@@ -3437,7 +3434,6 @@ Status ClusterManager::initMetaData() {
                 if (eSlot == false) {
                     LOG(ERROR) << "SLOT assgin failed, please check it!";
                 }
-
             } else {
                 INVARIANT_D(0);
                 LOG(WARNING) << "more than one node exists"
@@ -3454,7 +3450,6 @@ Status ClusterManager::initMetaData() {
                 node->setNodeCport(nodeCport);
 
                 _clusterState->setMyselfNode(node);
-                // TODO(vinchen): what for?
                 installClusterNode(node);
             }
         }
@@ -3467,7 +3462,6 @@ Status ClusterManager::initMetaData() {
         // master-slave info
         for (auto& nodeMeta : vs.value()) {
             if (nodeMeta->masterName != "-") {
-                // TODO(vinchen): master maybe null?
                 auto master = _clusterState->clusterLookupNode(nodeMeta->masterName);
                 auto node = _clusterState->clusterLookupNode(nodeMeta->nodeName);
                 INVARIANT(master != nullptr && node != nullptr);
@@ -4357,7 +4351,6 @@ void ClusterSession::processReq() {
         }
     } else {
         setState(State::DrainReqNet);
-        // TODO(vinchen): maybe one unique thread
         schedule();
     }
 }
@@ -4398,7 +4391,6 @@ bool ClusterState::clusterProcessGossipSection(std::shared_ptr<ClusterSession> s
             if (sender && sender->nodeIsMaster() && node != _myself) {
                 if (flags & (CLUSTER_NODE_FAIL | CLUSTER_NODE_PFAIL)) {
                     if (clusterNodeAddFailureReport(node, sender)) {
-                        // TODO(vinchen): need to save?
                         serverLog(LL_VERBOSE,
                             "Node %.40s reported node %.40s as not reachable.",
                             sender->getNodeName().c_str(), node->getNodeName().c_str());
@@ -4655,8 +4647,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
                 sessNode->setNodePort(0);
                 sessNode->setNodeCport(0);
                 sessNode->freeClusterSession();
-                // TODO(vinchen): if sess != node->getSession()
-                // freeClusterSession(sess);
                 save = true;
               //  std::string nodeName = hdr->_sender;
                 return{ ErrorCodes::ERR_CLUSTER,
@@ -4798,7 +4788,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
                 if (hdr->_slots.test(j)) {
                     auto nodej = getNodeBySlot(j);
                     if (nodej == sender ||
-                        // TODO(vinchen) : why? Because all nodej update need UPDATE message
+                        // why? Because all nodej update need UPDATE message
                         nodej == nullptr) {
                         continue;
                     }
@@ -4927,7 +4917,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         if (n->getConfigEpoch() >= reportedConfigEpoch)
             return{ ErrorCodes::ERR_OK, "" };
 
-        // TODO(vinchen):
         /* If in our current config the node is a slave, set it as a master. */
         if (n->nodeIsSlave()) {
             if (clusterSetNodeAsMaster(n))

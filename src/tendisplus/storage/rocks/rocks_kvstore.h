@@ -80,6 +80,7 @@ class RocksTxn: public Transaction {
     uint64_t getBinlogTime() { return _binlogTimeSpov; }
     void setBinlogTime(uint64_t timestamp);
     bool isReplOnly() const { return _replOnly; }
+    std::string getKVStoreId() const;
     const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
         return _txn;
     }

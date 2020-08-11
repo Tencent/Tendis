@@ -243,6 +243,7 @@ class Record {
             const std::string& value);
     KV encode() const;
     bool operator==(const Record& other) const;
+    std::string toString() const;
 
  private:
     RecordKey _key;
