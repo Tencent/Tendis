@@ -90,6 +90,11 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             // check the binlog together
             auto exptRcdv2 = kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
             EXPECT_TRUE(exptRcdv2.ok());
+            if (!exptRcdv2.ok()) {
+                LOG(INFO) << exptRcd1.value().toString()
+                    << " error:" << exptRcdv2.status().toString();
+                continue;
+            }
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
 
@@ -102,6 +107,16 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             }
             INVARIANT(exptRcd2.ok());
             count2++;
+
+            // check the binlog together
+            auto exptRcdv1 = kvstore1->getKV(exptRcd2.value().getRecordKey(), txn1.get());
+            EXPECT_TRUE(exptRcdv1.ok());
+            if (!exptRcdv1.ok()) {
+                LOG(INFO) << exptRcd2.value().toString()
+                    << " error:" << exptRcdv1.status().toString();
+                continue;
+            }
+            EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
         }
 
         EXPECT_EQ(count1, count2);

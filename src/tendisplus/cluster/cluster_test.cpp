@@ -141,7 +141,28 @@ makeCluster(uint32_t startPort, uint32_t nodeNum = 3, uint32_t storeCnt = 10) {
 
         idx++;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    auto t = msSinceEpoch();
+    bool isok = true;
+    LOG(INFO) << "waiting servers cluster state changed to ok ";
+    while (true) {
+        isok = true;
+        for (auto node : servers) {
+            if (!node->getClusterMgr()->getClusterState()->clusterIsOK()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                isok = false;
+                break;
+            }
+        }
+        if (isok) {
+            break;
+        }
+        if (msSinceEpoch() - t > 100 * 1000) {
+            // take too long time
+            INVARIANT_D(0);
+        }
+    }
+    LOG(INFO) << "waiting servers ok using " << (msSinceEpoch() - t) << "ms.";
 
     return std::move(servers);
 }

@@ -698,8 +698,15 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
     int64_t delta = 0;
     if (sum > 0) {
         delta = std::numeric_limits<int64_t>::max();
-    }
-    else {
+    } else if (sum == 0) {
+        int cur = 1;
+        sum += cur;
+        sess.setArgs({ "hincrby", "testkey", "testsubkey", std::to_string(cur) });
+        auto expect = Command::runSessionCmd(&sess);
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtLongLong(sum));
+		delta = std::numeric_limits<int64_t>::max();
+    } else {
         delta = std::numeric_limits<int64_t>::min();
     }
     sess.setArgs({ "hincrby", "testkey", "testsubkey", std::to_string(delta) });

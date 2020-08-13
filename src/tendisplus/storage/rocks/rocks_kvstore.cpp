@@ -321,6 +321,10 @@ uint64_t RocksTxn::getTxnId() const {
     return _txnId;
 }
 
+std::string RocksTxn::getKVStoreId() const {
+    return _store->dbId();
+}
+
 void RocksTxn::setChunkId(uint32_t chunkId) {
     if (_chunkId == Transaction::CHUNKID_UNINITED) {
         _chunkId = chunkId;
@@ -2176,8 +2180,8 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
                 if (i->second.second != Transaction::TXNID_UNINITED) {
                     _highestVisible = i->first;
-                    DLOG(INFO) << "markCommittedInLock dbid:" << dbId()
-                        << " _highestVisible:"<< _highestVisible;
+                    //DLOG(INFO) << "markCommittedInLock dbid:" << dbId()
+                    //    << " _highestVisible:"<< _highestVisible;
                     INVARIANT_D(_highestVisible <= _nextBinlogSeq);
                 }
                 i = _aliveBinlogs.erase(i);
@@ -2189,6 +2193,7 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
 Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
                                           Transaction *txn) {
+    INVARIANT_D(txn->getKVStoreId() == dbId());
     Expected<std::string> s = txn->getKV(key.encode());
     if (!s.ok()) {
         return s.status();

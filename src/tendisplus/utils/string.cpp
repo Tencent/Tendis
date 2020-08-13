@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstdlib>
 #include <random>
+#include <limits>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -251,7 +252,9 @@ std::string trim(const std::string& str) {
 std::string& replaceAll(std::string& str,
                             const std::string& old_value,
                             const std::string& new_value) {
-    for (std::string::size_type pos(0); pos != std::string::npos; pos += new_value.length()) {
+    for (std::string::size_type pos(0);
+            pos != std::string::npos;
+            pos += new_value.length()) {
         if ((pos = str.find(old_value, pos)) != std::string::npos)
             str.replace(pos, old_value.length(), new_value);
         else   break;
@@ -285,12 +288,13 @@ std::string lenStrEncode(const std::string& val) {
 
 // guarantee dest's size is enough
 size_t lenStrEncode(char* dest, size_t destsize, const std::string& val) {
-    size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest), destsize, val.size());
-          
+    size_t size = varintEncodeBuf(reinterpret_cast<uint8_t*>(dest),
+                destsize, val.size());
+
     INVARIANT_D(destsize >= size + val.size());
     memcpy(dest + size, val.c_str(), val.size());
     return size + val.size();
-}  
+}
 
 size_t lenStrEncodeSize(const std::string& val) {
     return varintEncodeSize(val.size()) + val.size();
@@ -300,15 +304,16 @@ Expected<LenStrDecodeResult> lenStrDecode(const std::string& str) {
     return lenStrDecode(str.c_str(), str.size());
 }
 
-Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
-    auto eSize = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr), size);
+Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t max_size) {
+    auto eSize = varintDecodeFwd(reinterpret_cast<const uint8_t*>(ptr),
+                max_size);
     if (!eSize.ok()) {
         return eSize.status();
     }
     size_t keySize = eSize.value().first;
     size_t offset = eSize.value().second;
 
-    if (size - offset < keySize) {
+    if (max_size - offset < keySize) {
         return{ ErrorCodes::ERR_DECODE, "invalid string" };
     }
     // TODO(vinchen): too more copy
@@ -318,7 +323,6 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t size) {
     return LenStrDecodeResult{ std::move(str), offset };
 }
 
-
 std::vector<std::string> stringSplit(const std::string& s,
                             const std::string& delim) {
     std::vector<std::string> elems;
@@ -327,8 +331,8 @@ std::vector<std::string> stringSplit(const std::string& s,
     size_t delim_len = delim.length();
     if (delim_len == 0) return elems;
     while (pos < len) {
-        int find_pos = s.find(delim, pos);
-        if (find_pos < 0) {
+        auto find_pos = s.find(delim, pos);
+        if (find_pos == std::string::npos) {
             elems.push_back(s.substr(pos, len - pos));
             break;
         }
@@ -356,9 +360,5 @@ std::string getUUid(const int len) {
     }
     return ss.str();
 }
-
-//Expected<std::bitset<size>> bitsetDecode(const std::string& str , const uint32_t length) {
-
-    
 
 }  // namespace tendisplus

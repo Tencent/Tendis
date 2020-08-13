@@ -97,7 +97,6 @@ enum class ClusterHealth: std::uint8_t {
 // * as a node (if it is not already in the list). */
 #define CLUSTERMSG_TYPE_COUNT 9         /* Total number of message types. */
 
-#define CLUSTER_IP_LENGTH  46
 #define CLUSTER_NAME_LENGTH  40
 #define CLUSTER_BLACKLIST_TTL 60
 
@@ -357,7 +356,7 @@ class ClusterMsgHeader{
     static constexpr const char* CLUSTER_NODE_NULL_NAME = "0000000000000000000000000000000000000000";
 
     size_t getHeaderSize() const;
-    static size_t headerMinSize();
+    static size_t fixedSize();
     std::string headEncode() const;
     static Expected<ClusterMsgHeader> headDecode(const std::string& key);
 
@@ -408,7 +407,7 @@ class ClusterMsgDataUpdate: public ClusterMsgData {
     ClusterMsgDataUpdate(ClusterMsgDataUpdate&&) = default;
     virtual ~ClusterMsgDataUpdate() {}
 
-    static size_t  minUpdateSize();
+    static size_t  fixedSize();
     std::string dataEncode() const override;
     static Expected<ClusterMsgDataUpdate>  dataDecode(const std::string& key);
 
@@ -742,8 +741,8 @@ class ClusterGossip {
  public:
     explicit ClusterGossip(const std::shared_ptr<ClusterNode> node);
 
-    ClusterGossip(const std::string& gossipName, const uint32_t pingSent,
-                const uint32_t pongReceived, const std::string& gossipIp,
+    ClusterGossip(const std::string& gossipName, const uint64_t pingSent,
+                const uint64_t pongReceived, const std::string& gossipIp,
                 const uint16_t gossipPort, const uint16_t gossipCport,
                 uint16_t gossipFlags);
 
@@ -751,13 +750,14 @@ class ClusterGossip {
     ClusterGossip(ClusterGossip&&) = default;
     virtual ~ClusterGossip() = default;
 
-    static size_t getGossipSize();
-    virtual  std::string gossipEncode() const;
-    static Expected<ClusterGossip> gossipDecode(const std::string& key);
+    size_t getGossipSize() const;
+    static size_t fixedSize();
+    virtual std::string gossipEncode() const;
+    static Expected<ClusterGossip> gossipDecode(const char* key, size_t size);
 
     std::string _gossipName;
-    uint32_t _pingSent;
-    uint32_t _pongReceived;
+    uint64_t _pingSent;
+    uint64_t _pongReceived;
     std::string _gossipIp;
     uint16_t _gossipPort;              // base port last time it was seen
     uint16_t _gossipCport;             // cluster port last time it was seen

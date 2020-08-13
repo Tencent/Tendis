@@ -1174,8 +1174,7 @@ Status ClusterState::clusterSaveNodesNoLock() {
 
         std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
 
-        auto slotBuff = std::move(bitsetEncode(slots));
-        slotBuff.erase(slotBuff.begin());
+        auto slotBuff = std::move(bitsetEncodeVec(slots));
 
         ClusterMeta meta(node->getNodeName(), node->getNodeIp(),
                         node->getPort(), node->getCport(), nodeFlags,
@@ -1581,7 +1580,6 @@ void ClusterState::clusterDelNodeNoLock(CNodePtr delnode) {
     for (uint32_t j = 0; j < CLUSTER_SLOTS; j++) {
         // TODO(Wayenchen) : stop migrating on the slot
         if (_allSlots[j] == delnode) {
-            // TODO(vinchen)
             clusterDelSlot(j);
         }
     }
@@ -2432,8 +2430,6 @@ Status ClusterState::clusterHandleSlaveFailover() {
      * factor configured by the user.
      *
      * Check bypassed for manual failovers. */
-
-    // TODO(vinchen): clusterSlaveValidityFactor maybe too big
     auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
     mstime_t limitTime = ((mstime_t)gBinlogHeartbeatSecs * 1000) +
                          nodeTimeout * slavefactor;
@@ -2523,7 +2519,6 @@ Status ClusterState::clusterHandleSlaveFailover() {
         clusterRequestFailoverAuth();
         _failoverAuthSent.store(1, std::memory_order_relaxed);
 
-        // TODO(vinchen)
         clusterSaveNodes();
         clusterUpdateState();
 
@@ -2735,8 +2730,6 @@ std::string ClusterMsg::msgEncode() {
                 key.data()), key.size());
 }
 
-
-
 Expected<ClusterMsg> ClusterMsg::msgDecode(const std::string& key) {
     std::size_t  offset = 0;
     std::string sig(key.c_str()+offset, 4);
@@ -2885,17 +2878,11 @@ ClusterMsgHeader::ClusterMsgHeader(ClusterMsgHeader&& o)
 }
 
 size_t ClusterMsgHeader::getHeaderSize() const {
-    size_t strLen =  CLUSTER_NAME_LENGTH*2 + CLUSTER_IP_LENGTH;
-
-    size_t intLen = sizeof(_ver) + sizeof(_port) + sizeof(_count)
-            + sizeof(_currentEpoch) + sizeof(_configEpoch) + sizeof(_offset)
-            + sizeof(_cport) + sizeof(_flags) + 1;
-
-    return strLen + intLen + bitsetEncodeSize(_slots);
+    return fixedSize() + lenStrEncodeSize(_myIp) + bitsetEncodeSize(_slots);
 }
 
-size_t ClusterMsgHeader::headerMinSize() {
-    size_t strLen =  CLUSTER_NAME_LENGTH*2 + CLUSTER_IP_LENGTH;
+size_t ClusterMsgHeader::fixedSize() {
+    size_t strLen =  CLUSTER_NAME_LENGTH*2;
 
     size_t intLen = sizeof(_ver) + sizeof(_port) + sizeof(_count)
                     + sizeof(_currentEpoch) + sizeof(_configEpoch)
@@ -2904,12 +2891,9 @@ size_t ClusterMsgHeader::headerMinSize() {
     return strLen + intLen;
 }
 
-
 std::string ClusterMsgHeader::headEncode() const {
     std::vector<uint8_t> key;
-
-    auto slotBuff = std::move(bitsetEncode(_slots));
-    key.reserve(ClusterMsgHeader::headerMinSize() + slotBuff[0]);
+    key.reserve(ClusterMsgHeader::fixedSize());
 
     CopyUint(&key, _ver);
     CopyUint(&key, _port);
@@ -2918,15 +2902,11 @@ std::string ClusterMsgHeader::headEncode() const {
     CopyUint(&key, _configEpoch);
     CopyUint(&key, _offset);
 
+    INVARIANT_D(_sender.size() == CLUSTER_NAME_LENGTH);
     key.insert(key.end(), _sender.begin(), _sender.end());
     //  slaveOf
+    INVARIANT_D(_slaveOf.size() == CLUSTER_NAME_LENGTH);
     key.insert(key.end(), _slaveOf.begin(), _slaveOf.end());
-
-    // TODO(vinchen): use lenstr
-    key.insert(key.end(), _myIp.begin(), _myIp.end());
-    uint16_t ipLen = CLUSTER_IP_LENGTH - _myIp.size();
-    std::vector<uint8_t> zeroVec(ipLen, '\0');
-    key.insert(key.end(), zeroVec.begin(), zeroVec.end());
 
     CopyUint(&key, _cport);
     CopyUint(&key, _flags);
@@ -2934,10 +2914,11 @@ std::string ClusterMsgHeader::headEncode() const {
     uint8_t state = (_state == ClusterHealth::CLUSTER_FAIL) ? 0 : 1;
     CopyUint(&key, state);
 
-    // first element, it is the length
-    for (auto &v : slotBuff) {
-        CopyUint(&key, v);
-    }
+    auto ipEnc = lenStrEncode(_myIp);
+    key.insert(key.end(), ipEnc.begin(), ipEnc.end());
+
+    auto slotStr = bitsetEncode(_slots);
+    key.insert(key.end(), slotStr.begin(), slotStr.end());
 
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
@@ -2945,10 +2926,14 @@ std::string ClusterMsgHeader::headEncode() const {
 
 Expected<ClusterMsgHeader> ClusterMsgHeader::headDecode(const std::string& key) {
     size_t offset = 0;
-    // TODO(wayenchen): check if overflow
-    auto decode = [&] (auto func) { auto n = func(key.c_str()+offset); offset+=sizeof(n); return n; };
+    auto decode = [&] (auto func) {
+        auto n = func(key.c_str()+offset);
+        offset+=sizeof(n);
+        INVARIANT_D(offset <= key.size());
+        return n;
+    };
 
-    size_t minHeaderSize = ClusterMsgHeader::headerMinSize();
+    size_t minHeaderSize = ClusterMsgHeader::fixedSize();
     if (key.size() < minHeaderSize) {
         return {ErrorCodes::ERR_DECODE, "decode head length less than minsize"};
     }
@@ -2970,36 +2955,29 @@ Expected<ClusterMsgHeader> ClusterMsgHeader::headDecode(const std::string& key) 
     std::string slaveOf(key.c_str()+offset, CLUSTER_NAME_LENGTH);
     offset += CLUSTER_NAME_LENGTH;
 
-    std::string myIp(key.c_str()+offset, CLUSTER_IP_LENGTH);
-    auto  pos = myIp.find('\0');
-    if (pos > 0) {
-        myIp.erase(pos, CLUSTER_IP_LENGTH);
-    }
-    offset += CLUSTER_IP_LENGTH;
     uint16_t cport = decode(int16Decode);
     uint16_t flags = decode(int16Decode);
 
-    uint8_t  s = static_cast<uint8_t>(*(key.begin()+offset));
+    uint8_t state = static_cast<uint8_t>(*(key.begin()+offset));
     offset += 1;
 
-    size_t headLen = offset + decode(int16Decode) - sizeof(uint16_t);
-
-    if (headLen > key.size()) {
-        return  {ErrorCodes::ERR_DECODE, "invalid keylen"};
+    auto eIpLen = lenStrDecode(key.c_str() + offset, key.size() - offset);
+    if (!eIpLen.ok()) {
+        return { ErrorCodes::ERR_DECODE, "Invalid Ip" };
     }
+    auto myIp = eIpLen.value().first;
+    offset += eIpLen.value().second;
 
-    std::string slotsStr = key.substr(offset, headLen-offset);
-    auto st = bitsetDecode<CLUSTER_SLOTS>(slotsStr);
-
+    auto st = bitsetDecode<CLUSTER_SLOTS>(key.c_str() + offset, key.size() - offset);
     if (!st.ok()) {
         LOG(ERROR) << "header bitset decode error";
         return st.status();
     }
     std::bitset<CLUSTER_SLOTS> slots = std::move(st.value());
 
-    return  ClusterMsgHeader( port, count, currentEpoch, configEpoch,
+    return  ClusterMsgHeader(port, count, currentEpoch, configEpoch,
                                 headOffset, sender, slots, slaveOf, myIp,
-                                cport, flags, int2ClusterHealth(s));
+                                cport, flags, int2ClusterHealth(state));
 }
 
 
@@ -3025,28 +3003,28 @@ ClusterMsgDataUpdate::ClusterMsgDataUpdate(const uint64_t configEpoch,
      _slots(slots) {
 }
 
-size_t ClusterMsgDataUpdate::minUpdateSize() {
-    size_t updateLen = sizeof(_configEpoch) + CLUSTER_NAME_LENGTH + 1;
-    return  updateLen;
+size_t ClusterMsgDataUpdate::fixedSize() {
+    size_t updateLen = sizeof(_configEpoch) + CLUSTER_NAME_LENGTH;
+    return updateLen;
 }
 std::string ClusterMsgDataUpdate::dataEncode() const {
     std::vector<uint8_t> key;
-    auto slotBuff = std::move(bitsetEncode(_slots));
-    key.reserve(sizeof(_configEpoch) + CLUSTER_NAME_LENGTH + slotBuff[0] );
+    auto slotStr = bitsetEncode(_slots);
+    key.reserve(fixedSize() + slotStr.size());
     //  _configEpoch
     CopyUint(&key, _configEpoch);
     //  _nodeName
+    INVARIANT_D(_nodeName.size() == CLUSTER_NAME_LENGTH);
     key.insert(key.end(), _nodeName.begin(), _nodeName.end());
     // _slots
-    for (auto &v : slotBuff) {
-        CopyUint(&key, v);
-    }
+    key.insert(key.end(), slotStr.begin(), slotStr.end());
+
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
 }
 
 Expected<ClusterMsgDataUpdate> ClusterMsgDataUpdate::dataDecode(const std::string& key) {
-    size_t minUpdateSize = ClusterMsgDataUpdate::minUpdateSize();
+    size_t minUpdateSize = ClusterMsgDataUpdate::fixedSize();
     if (key.size() < minUpdateSize) {
         return {ErrorCodes::ERR_DECODE,
             "decode update length less than minsize"};
@@ -3059,16 +3037,7 @@ Expected<ClusterMsgDataUpdate> ClusterMsgDataUpdate::dataDecode(const std::strin
     std::string nodeName(key.c_str()+offset, CLUSTER_NAME_LENGTH);
     offset += CLUSTER_NAME_LENGTH;
 
-    auto updateLen = offset + decode(int16Decode)-sizeof(uint16_t);
-
-    if (key.size() != updateLen) {
-        return {ErrorCodes::ERR_DECODE, "invalid update msg keylen"};
-    }
-
-    auto slotsStr = key.substr(offset, updateLen-offset);
-
-    auto st = bitsetDecode<CLUSTER_SLOTS>(slotsStr);
-
+    auto st = bitsetDecode<CLUSTER_SLOTS>(key.c_str() + offset, key.size() - offset);
     if (!st.ok()) {
         LOG(INFO) << "update message bitset decode error ";
         return st.status();
@@ -3101,11 +3070,7 @@ void ClusterMsgDataGossip::addGossipEntry(const CNodePtr& node) {
 }
 
 std::string ClusterMsgDataGossip::dataEncode() const {
-    const size_t gossipSize = ClusterGossip::getGossipSize();
     std::vector<uint8_t> key;
-
-    uint16_t keySize = gossipSize*(_gossipMsg.size());
-    key.reserve(keySize);
 
     for (auto& ax : _gossipMsg) {
         std::string content = ax.gossipEncode();
@@ -3117,22 +3082,26 @@ std::string ClusterMsgDataGossip::dataEncode() const {
 
 Expected<ClusterMsgDataGossip> ClusterMsgDataGossip::dataDecode(
                 const std::string& key, uint16_t count) {
-    const size_t gossipSize = ClusterGossip::getGossipSize();
-    if (key.size() != count*gossipSize)  {
-        return {ErrorCodes::ERR_DECODE, "invalid gossip data keylen"};
+    const size_t minSize = ClusterGossip::fixedSize();
+    if (key.size() < count*minSize)  {
+        return {ErrorCodes::ERR_DECODE, "too small gossip data keylen"};
     }
     std::vector<ClusterGossip> gossipMsg;
-    std::vector<string> res;
 
     auto it = key.begin();
-    for (; it < key.end(); it+=gossipSize) {
-        std::string temp(it, it+gossipSize);
-        res.push_back(temp);
-        auto gMsg = ClusterGossip::gossipDecode(temp);
+    for (; it < key.end();) {
+        auto gMsg = ClusterGossip::gossipDecode(&(*it), key.end() - it);
         if (!gMsg.ok()) {
+			INVARIANT_D(0);
             return gMsg.status();
         }
+        auto gossipSize = gMsg.value().getGossipSize();
         gossipMsg.emplace_back(std::move(gMsg.value()));
+        it += gossipSize;
+    }
+    INVARIANT_D(it == key.end());
+    if (it != key.end()) {
+        return {ErrorCodes::ERR_DECODE, "invalid gossip data keylen"};
     }
 
     return ClusterMsgDataGossip(std::move(gossipMsg));
@@ -3165,7 +3134,7 @@ ClusterGossip::ClusterGossip(const std::shared_ptr<ClusterNode> node)
 }
 
 ClusterGossip::ClusterGossip(const std::string& gossipName,
-                const uint32_t pingSent, const uint32_t pongReceived,
+                const uint64_t pingSent, const uint64_t pongReceived,
                 const std::string& gossipIp, const uint16_t gossipPort,
                 const uint16_t gossipCport, uint16_t gossipFlags)
     :_gossipName(gossipName),
@@ -3177,62 +3146,66 @@ ClusterGossip::ClusterGossip(const std::string& gossipName,
      _gossipFlags(gossipFlags) {
 }
 
-size_t ClusterGossip::getGossipSize()  {
-    size_t strLen = CLUSTER_NAME_LENGTH + CLUSTER_IP_LENGTH;
+size_t ClusterGossip::getGossipSize() const {
+    return fixedSize() + lenStrEncodeSize(_gossipIp);
+}
+
+size_t ClusterGossip::fixedSize() {
+    size_t strLen = CLUSTER_NAME_LENGTH;
     size_t intLen = sizeof(_pingSent) + sizeof(_pongReceived)
             + sizeof(_gossipPort) + sizeof(_gossipCport) + sizeof(_gossipFlags);
     return strLen + intLen;
 }
-
 
 std::string ClusterGossip::gossipEncode() const {
     std::vector<uint8_t> key;
     key.reserve(ClusterGossip::getGossipSize());
 
     //  _gossipNodeName
+    INVARIANT_D(_gossipName.size() == CLUSTER_NAME_LENGTH);
     key.insert(key.end(), _gossipName.begin(), _gossipName.end());
 
-    //  _pingSent  uint64_t
     CopyUint(&key, _pingSent);
     CopyUint(&key, _pongReceived);
-
-    key.insert(key.end(), _gossipIp.begin(), _gossipIp.end());
-
-    uint8_t ipLen = CLUSTER_IP_LENGTH - _gossipIp.size();
-    std::vector<uint8_t> zeroVec(ipLen, '\0');
-    key.insert(key.end(), zeroVec.begin(), zeroVec.end());
     CopyUint(&key, _gossipPort);
     CopyUint(&key, _gossipCport);
     CopyUint(&key, _gossipFlags);
+
+    auto ipLen = lenStrEncode(_gossipIp);
+    key.insert(key.end(), ipLen.begin(), ipLen.end());
 
     return std::string(reinterpret_cast<const char *>(
                 key.data()), key.size());
 }
 
-Expected<ClusterGossip> ClusterGossip::gossipDecode(const std::string& key) {
-    const size_t gossipSize = ClusterGossip::getGossipSize();
-    if (key.size() != gossipSize) {
+Expected<ClusterGossip> ClusterGossip::gossipDecode(const char* key, size_t size) {
+    const size_t minSize = ClusterGossip::fixedSize();
+    if (size < minSize) {
         return {ErrorCodes::ERR_DECODE, "invalid gossip keylen"};
     }
     size_t offset = 0;
-    auto decode = [&] (auto func) { auto n = func(key.c_str()+offset); offset+=sizeof(n); return n;};
+    auto decode = [&] (auto func) {
+        auto n = func(key+offset);
+        offset+=sizeof(n);
+        INVARIANT_D(offset <= size);
+        return n;
+    };
 
-    std::string gossipName(key.c_str()+offset, CLUSTER_NAME_LENGTH);
+    std::string gossipName(key + offset, CLUSTER_NAME_LENGTH);
     offset += CLUSTER_NAME_LENGTH;
 
-    auto pingSent = decode(int32Decode);
-    auto pongReceived = decode(int32Decode);
-
-    std::string gossipIp(key.c_str()+offset, CLUSTER_NAME_LENGTH);
-    auto  pos = gossipIp.find('\0');
-    if (pos > 0) {
-        gossipIp.erase(pos, CLUSTER_IP_LENGTH);
-    }
-
-    offset +=  CLUSTER_IP_LENGTH;
+    auto pingSent = decode(int64Decode);
+    auto pongReceived = decode(int64Decode);
     auto gossipPort = decode(int16Decode);
     auto gossipCport = decode(int16Decode);
     auto gossipFlags = decode(int16Decode);
+
+    auto eIpLen = lenStrDecode(key + offset, size - offset);
+    if (!eIpLen.ok()) {
+        return { ErrorCodes::ERR_DECODE, "invalid gossip ip" };
+    }
+    auto gossipIp = eIpLen.value().first;
+    offset += eIpLen.value().second;
 
     return ClusterGossip(gossipName, pingSent, pongReceived, gossipIp,
             gossipPort, gossipCport, gossipFlags);
@@ -3397,7 +3370,6 @@ Status ClusterManager::initNetWork() {
     _clusterNetwork = std::make_unique<NetworkAsio>(_svr, _netMatrix,
                                                 _reqMatrix, cfg, "cluster");
 
-    // TODO(vinchen): cfg->netIoThreadNum
     Status s = _clusterNetwork->prepare(cfg->bindIp, cfg->port+CLUSTER_PORT_INCR, 1);
     if (!s.ok()) {
         return s;
@@ -3417,7 +3389,7 @@ Status ClusterManager::initMetaData() {
     Catalog *catalog = _svr->getCatalog();
     INVARIANT(catalog != nullptr);
 
-    // TODO(vinchen): cluster_announce_port/cluster_announce_bus_port
+    // TODO(wayenchen): cluster_announce_port/cluster_announce_bus_port
     auto params = _svr->getParams();
     std::string nodeIp = params->bindIp;
     uint16_t nodePort = params->port;
@@ -3426,7 +3398,6 @@ Status ClusterManager::initMetaData() {
     std::shared_ptr<ClusterState> gState = std::make_shared<tendisplus::ClusterState>(_svr);
     installClusterState(gState);
 
-    // TODO(vinchen): lastvoteepoch
     auto vs = catalog->getAllClusterMeta();
     if (!vs.ok()) {
         LOG(ERROR) << "getAllClusterMeta error";
@@ -3451,7 +3422,7 @@ Status ClusterManager::initMetaData() {
                 _clusterState->clusterAddNode(node);
 
                 Expected<std::bitset<CLUSTER_SLOTS>> st =
-                        bitsetIntDecode<CLUSTER_SLOTS>(nodeMeta->slots);
+                        bitsetDecodeVec<CLUSTER_SLOTS>(nodeMeta->slots);
 
                 if (!st.ok()) {
                     LOG(ERROR) << "bitset decode init error :";
@@ -3463,7 +3434,6 @@ Status ClusterManager::initMetaData() {
                 if (eSlot == false) {
                     LOG(ERROR) << "SLOT assgin failed, please check it!";
                 }
-
             } else {
                 INVARIANT_D(0);
                 LOG(WARNING) << "more than one node exists"
@@ -3480,7 +3450,6 @@ Status ClusterManager::initMetaData() {
                 node->setNodeCport(nodeCport);
 
                 _clusterState->setMyselfNode(node);
-                // TODO(vinchen): what for?
                 installClusterNode(node);
             }
         }
@@ -3493,7 +3462,6 @@ Status ClusterManager::initMetaData() {
         // master-slave info
         for (auto& nodeMeta : vs.value()) {
             if (nodeMeta->masterName != "-") {
-                // TODO(vinchen): master maybe null?
                 auto master = _clusterState->clusterLookupNode(nodeMeta->masterName);
                 auto node = _clusterState->clusterLookupNode(nodeMeta->nodeName);
                 INVARIANT(master != nullptr && node != nullptr);
@@ -4109,10 +4077,10 @@ Expected<std::list<std::unique_ptr<ChunkLock>>> ClusterState::clusterLockMySlots
                     lockNum++;
                     slotsDone.set(*iter);
                 }
-                //NOTE(wayenchen) LOCK TIME should be limted
+                // NOTE(wayenchen) LOCK TIME should be limited
                 mstime_t delay = msSinceEpoch() - locktime;
-                if ( delay > CLUSTER_MF_TIMEOUT/2) {
-                    return  {ErrorCodes::ERR_TIMEOUT, "lock timeout"};
+                if (delay > CLUSTER_MF_TIMEOUT/2) {
+                    return {ErrorCodes::ERR_TIMEOUT, "lock timeout"};
                 }
             }
         }
@@ -4383,7 +4351,6 @@ void ClusterSession::processReq() {
         }
     } else {
         setState(State::DrainReqNet);
-        // TODO(vinchen): maybe one unique thread
         schedule();
     }
 }
@@ -4424,7 +4391,6 @@ bool ClusterState::clusterProcessGossipSection(std::shared_ptr<ClusterSession> s
             if (sender && sender->nodeIsMaster() && node != _myself) {
                 if (flags & (CLUSTER_NODE_FAIL | CLUSTER_NODE_PFAIL)) {
                     if (clusterNodeAddFailureReport(node, sender)) {
-                        // TODO(vinchen): need to save?
                         serverLog(LL_VERBOSE,
                             "Node %.40s reported node %.40s as not reachable.",
                             sender->getNodeName().c_str(), node->getNodeName().c_str());
@@ -4681,8 +4647,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
                 sessNode->setNodePort(0);
                 sessNode->setNodeCport(0);
                 sessNode->freeClusterSession();
-                // TODO(vinchen): if sess != node->getSession()
-                // freeClusterSession(sess);
                 save = true;
               //  std::string nodeName = hdr->_sender;
                 return{ ErrorCodes::ERR_CLUSTER,
@@ -4824,7 +4788,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
                 if (hdr->_slots.test(j)) {
                     auto nodej = getNodeBySlot(j);
                     if (nodej == sender ||
-                        // TODO(vinchen) : why? Because all nodej update need UPDATE message
+                        // why? Because all nodej update need UPDATE message
                         nodej == nullptr) {
                         continue;
                     }
@@ -4953,7 +4917,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         if (n->getConfigEpoch() >= reportedConfigEpoch)
             return{ ErrorCodes::ERR_OK, "" };
 
-        // TODO(vinchen):
         /* If in our current config the node is a slave, set it as a master. */
         if (n->nodeIsSlave()) {
             if (clusterSetNodeAsMaster(n))

@@ -965,6 +965,7 @@ TEST(Command, lockMulti) {
     auto cfg = makeServerParam();
     auto server = makeServerEntry(cfg);
 
+    testHash2(server);
     testLockMulti(server);
 
 #ifndef _WIN32
@@ -1823,4 +1824,4 @@ TEST(Command, renameCommand) {
 #endif
 }
 
-}  // namespace tendisplus
+}  // namespace tendisplus 

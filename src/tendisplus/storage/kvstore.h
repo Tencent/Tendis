@@ -171,6 +171,7 @@ class Transaction {
     virtual uint64_t getBinlogId() const = 0;
     virtual void setBinlogId(uint64_t binlogId) = 0;
     virtual uint32_t getChunkId() const = 0;
+    virtual std::string getKVStoreId() const = 0;
     virtual void setChunkId(uint32_t chunkId) = 0;
     virtual void SetSnapshot() = 0;
 

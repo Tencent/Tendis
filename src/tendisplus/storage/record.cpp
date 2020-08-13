@@ -1069,8 +1069,24 @@ Expected<Record> Record::decode(const std::string& key,
     return Record(std::move(e.value()), std::move(e1.value()));
 }
 
-bool Record::operator==(const Record& other) const {
+bool Record::operator==(const Record& other) const 
+{
     return _key == other._key && _value == other._value;
+}
+
+std::string Record::toString() const {
+    std::stringstream ss;
+    ss << "chunkid:" << _key.getChunkId()
+        << " dbid:" << _key.getDbId()
+        << " type:" << rt2Char(_key.getRecordType())
+        << " key:" << _key.getPrimaryKey()
+        << " seckey:" << _key.getSecondaryKey()
+        << " recordtype:" << rt2Char(_value.getRecordType())
+        << " ttl:" << _value.getTtl()
+        << " revision:" << _value.getVersionEP()
+        << " value:" << _value.getValue();
+
+    return ss.str();
 }
 
 #ifdef BINLOG_V1
