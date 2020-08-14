@@ -162,25 +162,36 @@ std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
 
 std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
     uint64_t until) {
-    auto cursor = createCursor();
+    RecordKey upper(TTLIndex::CHUNKID + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperBound = upper.prefixChunkid();
+    auto cursor = createCursor(&upperBound);
 
     return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
 }
 
 std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
-    auto cursor = createCursor();
+    RecordKey chunkMax(slot + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperbound = chunkMax.prefixChunkid();
+    auto cursor = createCursor(&upperbound);
 
     return std::make_unique<SlotCursor>(std::move(cursor),slot);
 }
 
 unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t end) {
-    auto cursor = createCursor();
+    RecordKey chunkMax(end + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperbound = chunkMax.prefixChunkid();
+    auto cursor = createCursor(&upperbound);
     return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
 }
 
-std::unique_ptr<Cursor> RocksTxn::createCursor() {
+std::unique_ptr<Cursor> RocksTxn::createCursor(const std::string* iterate_upper_bound) {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
+    if (iterate_upper_bound != NULL) {
+        _strUpperBound = *iterate_upper_bound;
+        _upperBound = rocksdb::Slice(_strUpperBound);
+        readOpts.iterate_upper_bound = &_upperBound;
+    }
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
     return std::unique_ptr<Cursor>(

@@ -695,6 +695,75 @@ TEST(RocksKVStore, PesCursorVisible) {
     cursorVisibleRoutine(kvstore.get());
 }
 
+void setKV(RocksKVStore* kvstore, uint32_t chunkid, const string& prefix, uint32_t num) {
+    auto eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    for (uint32_t i = 0; i < num; i++) {
+        string key = prefix + to_string(i);
+        Status s = kvstore->setKV(
+            Record(RecordKey(chunkid, 0, RecordType::RT_KV, key, ""),
+                RecordValue("12345abcdefghijklmn", RecordType::RT_KV, -1)),
+            txn1.get());
+        EXPECT_EQ(s.ok(), true);
+    }
+    txn1->commit();
+}
+
+TEST(RocksKVStore, CursorUpperBound) {
+    auto cfg = genParams();
+    EXPECT_TRUE(filesystem::create_directory("db"));
+    EXPECT_TRUE(filesystem::create_directory("log"));
+    const auto guard = MakeGuard([] {
+        filesystem::remove_all("./log");
+        filesystem::remove_all("./db");
+    });
+    auto blockCache =
+            rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+    auto kvstore = std::make_unique<RocksKVStore>(
+            "0",
+            cfg,
+            blockCache);
+
+    setKV(kvstore.get(), 0, "a", 10000);
+    setKV(kvstore.get(), 0, "b", 10000);
+    setKV(kvstore.get(), 0, "c", 10000);
+    setKV(kvstore.get(), 1, "d", 10000);
+
+    auto eTxn2 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn2.ok(), true);
+    std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+    RecordKey upper(1, 0, RecordType::RT_INVALID, "", "");
+    string upperBound = upper.prefixChunkid();
+    std::unique_ptr<Cursor> cursor = txn2->createCursor(&upperBound);
+
+    RecordKey start(0, 0, RecordType::RT_INVALID, "", "");
+    cursor->seek(start.prefixChunkid());
+    int32_t cnt = 0;
+    while (true) {
+        Expected<Record> v = cursor->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    EXPECT_EQ(cnt, 30000);
+
+    RecordKey start2(0, 0, RecordType::RT_KV, "b", "");
+    cursor->seek(start2.encode());
+    cnt = 0;
+    while (true) {
+        Expected<Record> v = cursor->next();
+        if (!v.ok()) {
+            EXPECT_EQ(v.status().code(), ErrorCodes::ERR_EXHAUST);
+            break;
+        }
+        cnt += 1;
+    }
+    EXPECT_EQ(cnt, 20000);
+}
+
 TEST(RocksKVStore, BackupCkptInter) {
     auto cfg = genParams();
     EXPECT_TRUE(filesystem::create_directory("db"));

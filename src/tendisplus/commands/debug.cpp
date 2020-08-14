@@ -2903,7 +2903,6 @@ class ResumeStoreCommand : public Command {
     }
 } resumeStoreCmd;
 
-#ifdef TENDIS_DEBUG
 // only used for test. set key to a fixed storeid
 class setInStoreCommand: public Command {
  public:
@@ -2978,7 +2977,6 @@ class setInStoreCommand: public Command {
         return Command::fmtOK();
     }
 } setInStoreCommand;
-#endif
 
 class SyncVersionCommand: public Command {
  public:
@@ -3370,6 +3368,238 @@ class reshapeCommand: public Command {
         return Command::fmtOK();
     }
 } reshapeCmd;
+
+// for debug
+class deleteSlotsCommand: public Command {
+public:
+    deleteSlotsCommand()
+            :Command("deleteslots", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto server = sess->getServerEntry();
+        const auto& args = sess->getArgs();
+
+        const auto guard = MakeGuard([this, &server] {
+        });
+
+        if (!server->isClusterEnabled()) {
+            return {ErrorCodes::ERR_MANUAL, "only cluster mode support deleteslots"};
+        }
+        auto eBeginChunkid = tendisplus::stoul(args[1]);
+        if (!eBeginChunkid.ok()) {
+            return eBeginChunkid.status();
+        }
+        uint32_t beginChunkid = eBeginChunkid.value();
+
+        auto eEndChunkid = tendisplus::stoul(args[2]);
+        if (!eEndChunkid.ok()) {
+            return eEndChunkid.status();
+        }
+        uint32_t endChunkid = eEndChunkid.value();
+
+        // NOTO(takenliu): call needResetPerLevel for "info rocksdbperfstats"
+        sess->getCtx()->needResetPerLevel();
+
+        LOG(INFO) << "deleteSlots beginChunk:" << beginChunkid
+                  << " endChunk:" << endChunkid;
+        for (uint32_t storeid = 0; storeid < server->getKVStoreCount(); storeid++) {
+            uint32_t myBegin = UINT32_MAX;
+            uint32_t myEnd = UINT32_MAX;
+            for (uint32_t chunkid = beginChunkid; chunkid <= beginChunkid; chunkid++) {
+                if (server->getSegmentMgr()->getStoreid(chunkid) == storeid) {
+                    if (myBegin == UINT32_MAX) {
+                        myBegin = chunkid;
+                    }
+                    myEnd = chunkid;
+                }
+            }
+            if (myBegin == UINT32_MAX) {
+                continue;
+            }
+            LOG(INFO) << "deleteSlots storeid:" << storeid << " beginChunk:" << myBegin
+                << " endChunk:" << myEnd;
+            auto s = server->getMigrateManager()->deleteChunkRange(storeid, myBegin, myEnd);
+            if (!s.ok()) {
+                return s.toString();
+            }
+        }
+        return Command::fmtOK();
+    }
+} deleteSlotsCmd;
+
+// for debug
+class compactSlotsCommand: public Command {
+public:
+    compactSlotsCommand()
+            :Command("compactSlots", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto server = sess->getServerEntry();
+        const auto& args = sess->getArgs();
+
+        const auto guard = MakeGuard([this, &server] {
+        });
+
+        if (!server->isClusterEnabled()) {
+            return {ErrorCodes::ERR_MANUAL, "only cluster mode support deleteslots"};
+        }
+        auto eBeginChunkid = tendisplus::stoul(args[1]);
+        if (!eBeginChunkid.ok()) {
+            return eBeginChunkid.status();
+        }
+        uint32_t beginChunkid = eBeginChunkid.value();
+
+        auto eEndChunkid = tendisplus::stoul(args[2]);
+        if (!eEndChunkid.ok()) {
+            return eEndChunkid.status();
+        }
+        uint32_t endChunkid = eEndChunkid.value();
+
+        // NOTO(takenliu): call needResetPerLevel for "info rocksdbperfstats"
+        sess->getCtx()->needResetPerLevel();
+
+        LOG(INFO) << "compactSlots beginChunk:" << beginChunkid
+                  << " endChunk:" << endChunkid;
+
+        for (uint32_t storeid = 0; storeid < server->getKVStoreCount(); storeid++) {
+            uint32_t myBegin = UINT32_MAX;
+            uint32_t myEnd = UINT32_MAX;
+            for (uint32_t chunkid = beginChunkid; chunkid <= beginChunkid; chunkid++) {
+                if (server->getSegmentMgr()->getStoreid(chunkid) == storeid) {
+                    if (myBegin == UINT32_MAX) {
+                        myBegin = chunkid;
+                    }
+                    myEnd = chunkid;
+                }
+            }
+            if (myBegin == UINT32_MAX) {
+                continue;
+            }
+            LOG(INFO) << "compactSlots storeid:" << storeid << " beginChunk:" << myBegin
+                      << " endChunk:" << myEnd;
+
+            auto expdb = server->getSegmentMgr()->getDb(NULL, storeid,
+                                                      mgl::LockMode::LOCK_IS);
+            if (!expdb.ok()) {
+                LOG(ERROR) << "getDb failed:" << storeid;
+                return expdb.status();
+            }
+
+            PStore kvstore = expdb.value().store;
+            RecordKey rkStart(myBegin, 0, RecordType::RT_INVALID, "", "");
+            RecordKey rkEnd(myEnd + 1, 0, RecordType::RT_INVALID, "", "");
+            string start = rkStart.prefixChunkid();
+            string end = rkEnd.prefixChunkid();
+
+            // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
+            //     so we call compactRange to real delete the keys.
+            auto s = kvstore->compactRange(&start, &end);
+            if (!s.ok()) {
+                LOG(ERROR) << "kvstore->compactRange failed, chunkidStart:" << beginChunkid
+                           << " chunkidEnd:" << endChunkid << " err:" << s.toString();
+                return s;
+            }
+            LOG(INFO) << "compactSlots end storeid:" << storeid << " beginChunk:" << myBegin
+                      << " endChunk:" << myEnd;
+        }
+        return Command::fmtOK();
+    }
+} compactSlotsCmd;
+
+// for debug
+class slotsEmptyCommand: public Command {
+public:
+    slotsEmptyCommand()
+            :Command("slotsempty", "sM") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const auto server = sess->getServerEntry();
+        const auto& args = sess->getArgs();
+
+        const auto guard = MakeGuard([this, &server] {
+        });
+
+        if (!server->isClusterEnabled()) {
+            return {ErrorCodes::ERR_MANUAL, "only cluster mode support slotsempty"};
+        }
+        auto eBeginChunkid = tendisplus::stoul(args[1]);
+        if (!eBeginChunkid.ok()) {
+            return eBeginChunkid.status();
+        }
+        uint32_t beginChunkid = eBeginChunkid.value();
+
+        auto eEndChunkid = tendisplus::stoul(args[2]);
+        if (!eEndChunkid.ok()) {
+            return eEndChunkid.status();
+        }
+        uint32_t endChunkid = eEndChunkid.value();
+
+        // NOTO(takenliu): call needResetPerLevel for "info rocksdbperfstats"
+        sess->getCtx()->needResetPerLevel();
+
+        string notEmptySlots;
+        for (uint32_t chunkid = beginChunkid; chunkid <= endChunkid; chunkid++) {
+            if (!server->getClusterMgr()->emptySlot(chunkid)) {
+                notEmptySlots += to_string(chunkid) + " ";
+            }
+        }
+        if (!notEmptySlots.empty()) {
+            return {ErrorCodes::ERR_CLUSTER, notEmptySlots};
+        }
+        return Command::fmtOK();
+    }
+} slotsEmptyCmd;
 
 class EmptyIntCommand: public Command {
  public:

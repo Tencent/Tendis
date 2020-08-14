@@ -34,7 +34,7 @@ class RocksTxn: public Transaction {
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
-    std::unique_ptr<Cursor> createCursor() final;
+    std::unique_ptr<Cursor> createCursor(const std::string* iterate_upper_bound = NULL) final;
 #ifdef BINLOG_V1
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
@@ -93,6 +93,8 @@ class RocksTxn: public Transaction {
     uint32_t _chunkId;
     // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
     std::unique_ptr<rocksdb::Transaction> _txn;
+    string _strUpperBound;
+    rocksdb::Slice _upperBound;
 
     // NOTE(deyukong): not owned by me
     RocksKVStore *_store;

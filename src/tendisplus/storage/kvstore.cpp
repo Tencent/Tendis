@@ -300,7 +300,6 @@ SlotCursor::SlotCursor(std::unique_ptr<Cursor> cursor,
                      "", "");
     auto prefix = tmplRk.prefixSlotType();
     _baseCursor->seek(prefix);
-
 }
 
 Expected<Record> SlotCursor::next() {

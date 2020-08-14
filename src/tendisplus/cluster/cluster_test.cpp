@@ -1690,6 +1690,7 @@ TEST(Cluster, CrossSlot) {
 
     auto servers = makeCluster(startPort, nodeNum);
     auto server = servers[0];
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
             {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
