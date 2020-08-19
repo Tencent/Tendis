@@ -37,15 +37,19 @@ class SelectCommand: public Command {
     Expected<std::string> run(Session *sess) final {
         auto dbId = ::tendisplus::stoll(sess->getArgs()[1]);
         if (!dbId.ok()) {
-            return{ ErrorCodes::ERR_PARSEOPT, "invalid DB index" };
+            return {ErrorCodes::ERR_PARSEOPT, "invalid DB index" };
         }
 
         auto id = dbId.value();
         if (id < 0 || id >= sess->getServerEntry()->dbNum()) {
-            return{ ErrorCodes::ERR_PARSEOPT, "DB index is out of range" };
+            return {ErrorCodes::ERR_PARSEOPT, "DB index is out of range" };
         }
 
-        // TODO(vinchen): disable select db expect 0 ?
+        if (sess->getServerEntry()->isClusterEnabled() && id != 0) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "SELECT is not allowed in cluster mode"};
+        }
+
         SessionCtx *pCtx = sess->getCtx();
         INVARIANT(pCtx != nullptr);
         pCtx->setDbId(id);

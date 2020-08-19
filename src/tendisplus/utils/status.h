@@ -152,6 +152,25 @@ Expected<T> makeExpected(Args&&... args) {
     return Expected<T>{T(std::forward<Args>(args)...)};
 }
 
+
+#define RET_IF_ERR(status) \
+    do { \
+        if (!status.ok()) { \
+            LOG(ERROR) << "Status failed:" << status.toString() \
+            << ' ' << __FILE__ << ' ' << __LINE__; \
+            return status;\
+        } \
+    } while (0)
+
+#define RET_IF_ERR_EXPECTED(e) \
+    do { \
+        if (!e.ok()) { \
+            LOG(ERROR) << "Expected failed:" << e.status().toString() \
+            << ' ' << __FILE__ << ' ' << __LINE__; \
+            return e.status();\
+        } \
+    } while (0)
+
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_UTILS_STATUS_H_

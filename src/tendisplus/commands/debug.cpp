@@ -84,7 +84,6 @@ class KeysCommand: public Command {
             limit = l.value();
         }
 
-        // TODO(vinchen): too big
         if (limit < 0) {
             return{ ErrorCodes::ERR_PARSEOPT, "limit should >=0" };
         }
@@ -3525,9 +3524,8 @@ class TendisadminCommand : public Command {
             for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess,
                     i, mgl::LockMode::LOCK_X);
-                if (!expdb.ok()) {
-                    return expdb.status();
-                }
+                RET_IF_ERR_EXPECTED(expdb);
+
                 result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
             }
             if (server->isClusterEnabled()) {
@@ -3550,14 +3548,10 @@ class TendisadminCommand : public Command {
             for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
                 auto expdb = server->getSegmentMgr()->getDb(sess,
                     i, mgl::LockMode::LOCK_IX);
-                if (!expdb.ok()) {
-                    return expdb.status();
-                }
+                RET_IF_ERR_EXPECTED(expdb);
 
                 auto s = expdb.value().store->recoveryFromBgError();
-                if (!s.ok()) {
-                    return s;
-                }
+                RET_IF_ERR(s);
             }
         } else {
             return{ ErrorCodes::ERR_PARSEOPT, "invalid operation:" + operation };

@@ -2217,13 +2217,14 @@ Expected<RecordValue> RocksKVStore::getKV(const RecordKey& key,
 Status RocksKVStore::setKV(const RecordKey& key,
                            const RecordValue& value,
                            Transaction *txn) {
-    // DLOG(INFO) << "setKV storeid:"<< this->dbId() <<"key:" << key.getPrimaryKey() << " skey:" << key.getSecondaryKey() << " value:" << value.getValue();
+    INVARIANT_D(txn->getKVStoreId() == dbId());
     return txn->setKV(key.encode(), value.encode());
 }
 
 Status RocksKVStore::setKV(const Record& kv,
                            Transaction* txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
+    INVARIANT_D(txn->getKVStoreId() == dbId());
     Record::KV pair = kv.encode();
     return txn->setKV(pair.first, pair.second);
 }
@@ -2231,12 +2232,14 @@ Status RocksKVStore::setKV(const Record& kv,
 Status RocksKVStore::setKV(const std::string& key,
                            const std::string& val,
                            Transaction *txn) {
+    INVARIANT_D(txn->getKVStoreId() == dbId());
     return txn->setKV(key, val);
 }
 
 Status RocksKVStore::delKV(const RecordKey& key,
                            Transaction *txn) {
     // TODO(deyukong): statstics and inmemory-accumulative counter
+    INVARIANT_D(txn->getKVStoreId() == dbId());
     return txn->delKV(key.encode());
 }
 
