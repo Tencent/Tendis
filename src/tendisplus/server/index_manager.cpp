@@ -122,7 +122,11 @@ namespace tendisplus {
 
       if (prefix.size() > 0) {
           cursor->seek(prefix);
-          if (!prefix.compare(cursor->key().value())) {
+          auto key = cursor->key();
+          if (!key.ok()) {
+              return {ErrorCodes::ERR_OK, ""};
+          }
+          if (!prefix.compare(key.value())) {
               cursor->next();
           }
       }
