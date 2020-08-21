@@ -4,6 +4,11 @@
 #include <vector>
 #include <limits>
 #include "glog/logging.h"
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/error/en.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/status.h"
@@ -366,6 +371,29 @@ const std::string& RecordKey::prefixTTLIndex() {
       result.push_back(0x00);
       result.push_back(0x00);
       return result;
+    }();
+
+    return s;
+}
+
+const std::string& RecordKey::prefixVersionMeta() {
+    static std::string s = []() {
+        std::string result;
+
+        static_assert(VersionMeta::DBID == 0XFFFE0000U,
+                      "invalid VersionMeta::DBID");
+        static_assert(VersionMeta::CHUNKID == 0XFFFE0000U,
+                      "invalid VersionMeta::CHUNKID");
+        result.push_back(0xFF);
+        result.push_back(0xFE);
+        result.push_back(0x00);
+        result.push_back(0x00);
+        result.push_back(rt2Char(RecordType::RT_META));
+        result.push_back(0xFF);
+        result.push_back(0xFE);
+        result.push_back(0x00);
+        result.push_back(0x00);
+        return result;
     }();
 
     return s;
@@ -1947,6 +1975,32 @@ Expected<TTLIndex> TTLIndex::decode(const RecordKey& rk) {
     INVARIANT_D(type != RecordType::RT_DATA_META);
 
     return TTLIndex(priKey, type, dbId, ttl);
+}
+
+Expected<VersionMeta> VersionMeta::decode(const RecordKey& rk,
+                                          const RecordValue& rv) {
+  const auto& json = rv.getValue();
+
+  DLOG(INFO) << "RocksKVStore::getVersionMeta succ," << json;
+  rapidjson::Document doc;
+  doc.Parse(json);
+  if (doc.HasParseError()) {
+    LOG(ERROR) << "parse version meta failed"
+               << rapidjson::GetParseError_En(doc.GetParseError());
+    return {ErrorCodes::ERR_DECODE, "invalid version meta:" + rk.encode()};
+  }
+  INVARIANT_D(doc.IsObject());
+  INVARIANT_D(doc.HasMember("timestamp"));
+  INVARIANT_D(doc["timestamp"].IsUint64());
+  INVARIANT_D(doc.HasMember("version"));
+  INVARIANT_D(doc["version"].IsUint64());
+
+  // versionmeta store in rocksdb as name_meta
+  auto nameMeta = rk.getPrimaryKey();
+  std::string name = nameMeta.substr(0, nameMeta.size()-5);
+
+  return VersionMeta((uint64_t)doc["timestamp"].GetUint64(),
+                     (uint64_t)(doc["version"].GetUint64()), name);
 }
 
 namespace rcd_util {

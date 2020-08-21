@@ -291,6 +291,41 @@ Expected<TTLIndex> TTLIndexCursor::next() {
     }
 }
 
+VersionMetaCursor::VersionMetaCursor(std::unique_ptr<Cursor> cursor)
+    : _baseCursor(std::move(cursor)) {
+    _baseCursor->seek(RecordKey::prefixVersionMeta());
+}
+
+void VersionMetaCursor::seek(const std::string& target) {
+    _baseCursor->seek(target);
+}
+
+void VersionMetaCursor::prev() {
+    _baseCursor->prev();
+}
+
+Expected<std::string> VersionMetaCursor::key() {
+    return _baseCursor->key();
+}
+
+Expected<VersionMeta> VersionMetaCursor::next() {
+    Expected<Record> expRcd = _baseCursor->next();
+    if (expRcd.ok()) {
+        const RecordKey& rk = expRcd.value().getRecordKey();
+        const RecordValue& rv = expRcd.value().getRecordValue();
+        if (rk.getRecordType() != RecordType::RT_META) {
+            return {ErrorCodes::ERR_EXHAUST, "no more version meta"};
+        }
+        auto expmeta = VersionMeta::decode(rk, rv);
+        if (!expmeta.ok()) {
+            return expmeta.status();
+        }
+        return expmeta;
+    } else {
+        return expRcd.status();
+    }
+}
+
 SlotCursor::SlotCursor(std::unique_ptr<Cursor> cursor,
                        uint32_t slot)
         : _slot(slot), _baseCursor(std::move(cursor)) {

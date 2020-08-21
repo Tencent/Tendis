@@ -184,6 +184,13 @@ unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t en
     return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
 }
 
+std::unique_ptr<VersionMetaCursor> RocksTxn::createVersionMetaCursor() {
+    RecordKey chunkMax(VersionMeta::CHUNKID+1, 0, RecordType::RT_INVALID, "", "");
+    string upperbound = chunkMax.prefixChunkid();
+    auto cursor = createCursor(&upperbound);
+    return std::make_unique<VersionMetaCursor>(std::move(cursor));
+}
+
 std::unique_ptr<Cursor> RocksTxn::createCursor(const std::string* iterate_upper_bound) {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
@@ -2441,12 +2448,17 @@ void RocksKVStore::resetStatistics() {
     _stats->Reset();
 }
 
-Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta() {
-    return getVersionMeta("version");
+Expected<VersionMeta> RocksKVStore::getVersionMeta() {
+    const std::string name("version");
+    auto meta = getVersionMeta(name);
+    if (!meta.ok()) {
+        return meta.status();
+    }
+    return meta.value();
 }
 
-Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta(std::string name) {
-    auto result = std::make_unique<VersionMeta>(-1, -1, name);
+Expected<VersionMeta> RocksKVStore::getVersionMeta(const std::string& name) {
+    VersionMeta defMeta(-1, -1, name);
     std::stringstream pkss;
     pkss << name << "_meta";
     RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID, RecordType::RT_META,
@@ -2458,35 +2470,19 @@ Expected<std::unique_ptr<VersionMeta>> RocksKVStore::getVersionMeta(std::string 
     auto expRv = getKV(rk, ptxn.value().get());
     if (!expRv.ok()) {
         if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-            return result;
+            return defMeta;
         }
 
         return expRv.status();
     }
     const auto& rv = expRv.value();
-    const auto& json = rv.getValue();
 
-    DLOG(INFO) << "RocksKVStore::getVersionMeta succ," << json;
-    rapidjson::Document doc;
-    doc.Parse(json);
-    if (doc.HasParseError()) {
-        LOG(ERROR) << "parse version meta failed"
-            << rapidjson::GetParseError_En(doc.GetParseError());
-        return { ErrorCodes::ERR_DECODE, "invalid version meta:" + pkss.str() };
+    auto meta = VersionMeta::decode(rk, rv);
+    if (!meta.ok()) {
+        return meta.status();
     }
-    INVARIANT_D(doc.IsObject());
-
-    INVARIANT_D(doc.HasMember("timestamp"));
-    INVARIANT_D(doc["timestamp"].IsUint64());
-    result->setTimeStamp((uint64_t)doc["timestamp"].GetUint64());
-
-    INVARIANT_D(doc.HasMember("version"));
-    INVARIANT_D(doc["version"].IsUint64());
-    result->setVersion((uint64_t)(doc["version"].GetUint64()));
-
-    return result;
+    return meta.value();
 }
-
 
 Status RocksKVStore::setVersionMeta(const std::string& name,
                 uint64_t ts, uint64_t version) {

@@ -3000,6 +3000,8 @@ class SyncVersionCommand: public Command {
     }
 
     Expected<std::string> run(Session *sess) final {
+        // syncversion name ? ? v1
+        // syncversion name ts version v1
         const auto& args = sess->getArgs();
         if (args[4] != "v1") {
             return {ErrorCodes::ERR_PARSEOPT, ""};
@@ -3026,7 +3028,7 @@ class SyncVersionCommand: public Command {
                 if (!meta.ok()) {
                     return meta.status();
                 }
-                VersionMeta metaV = *(meta.value().get());
+                auto metaV = meta.value();
                 minMeta = std::min(metaV, minMeta);
             }
             std::stringstream ss;

@@ -115,6 +115,21 @@ class TTLIndexCursor {
     std::unique_ptr<Cursor> _baseCursor;
 };
 
+class VersionMetaCursor {
+public:
+    VersionMetaCursor() = delete;
+    VersionMetaCursor(std::unique_ptr<Cursor> cursor);
+    ~VersionMetaCursor() = default;
+    Expected<VersionMeta> next();
+    void prev();
+    void seek(const std::string& target);
+    Expected<std::string> key();
+
+private:
+protected:
+    std::unique_ptr<Cursor> _baseCursor;
+};
+
 class SlotCursor {
  public:
     SlotCursor() = delete;
@@ -183,6 +198,7 @@ class Transaction {
         createSlotCursor(uint32_t slot) = 0;
     virtual std::unique_ptr<SlotsCursor>
         createSlotsCursor(uint32_t start, uint32_t end) = 0;
+    virtual std::unique_ptr<VersionMetaCursor> createVersionMetaCursor() = 0;
     virtual Expected<std::string> getKV(const std::string& key) = 0;
     virtual Status setKV(const std::string& key,
                          const std::string& val,
@@ -343,9 +359,8 @@ class KVStore {
     virtual Status recoveryFromBgError() = 0;
     virtual void resetStatistics() = 0;
 
-    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta() = 0;
-    virtual Expected<std::unique_ptr<VersionMeta>> getVersionMeta(
-        std::string name) = 0;
+    virtual Expected<VersionMeta> getVersionMeta() = 0;
+    virtual Expected<VersionMeta> getVersionMeta(const std::string& name) = 0;
     virtual Status setVersionMeta(const std::string& name, uint64_t ts,
                                   uint64_t version) = 0;
 

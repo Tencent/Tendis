@@ -120,6 +120,7 @@ class RecordKey {
     static const std::string& prefixReplLogV2();
 #endif
     static const std::string& prefixTTLIndex();
+    static const std::string& prefixVersionMeta();
 
     RecordType getRecordType() const;
     RecordType getRecordValueType() const;
@@ -757,6 +758,9 @@ public:
 
     void setTimeStamp(uint64_t ts) { _timestamp = ts; }
     void setVersion(uint64_t version) { _version = version; }
+
+    static Expected<VersionMeta> decode(const RecordKey& rk,
+                                        const RecordValue& rv);
 
     friend bool operator<(const VersionMeta& lhs, const VersionMeta& rhs) {
         INVARIANT_D(lhs.getName() == rhs.getName());

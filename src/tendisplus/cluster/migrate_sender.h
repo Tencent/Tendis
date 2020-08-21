@@ -30,6 +30,7 @@ enum class MigrateSenderStatus {
     LASTBINLOG_DONE,
     SENDOVER_DONE,
     METACHANGE_DONE,
+    META_DONE,
     DEL_DONE,
 };
 
@@ -84,6 +85,7 @@ class ChunkMigrateSender{
     Status lockChunks();
     void unlockChunks();
     bool needToWaitMetaChanged() const;
+    Status sendVersionMeta();
 
  private:
     Expected<std::unique_ptr<Transaction>> initTxn();
