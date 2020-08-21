@@ -645,7 +645,6 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
                 if ((*it)->slots.test(i)) {
                     if ((*it)->state == MigrateReceiveState::SUCC) {
-                        LOG(INFO) << "_migrateReceiveTask SUCC, erase it, slots" << i;
                         _succImportSlots.set(i);
                         if (_failImportSlots.test(i)) {
                             _failImportSlots.reset(i);
@@ -662,7 +661,8 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             } else {
                 _failReceTask.push_back(slot);
             }
-            LOG(INFO) << "erase receiver task on slots:" << bitsetStrEncode((*it)->slots);
+            LOG(INFO) << "erase receiver task stat:" << receTaskTypeString((*it)->state)
+                << " slots:" << bitsetStrEncode((*it)->slots);
             _importSlots ^= ((*it)->slots);
             it = _migrateReceiveTask.erase(it);
             continue;
@@ -1279,6 +1279,16 @@ Status MigrateManager::deleteChunks(uint32_t storeid, const SlotsBitmap& slots) 
     LOG(INFO) << "deleteChunksInLock store:" << storeid
               << " slots:" << bitsetStrEncode(slots);
     return {ErrorCodes::ERR_OK, ""};
+}
+
+// [begin, end], with binlog
+Status MigrateManager::deleteChunkRange(uint32_t storeid, uint32_t beginChunk, uint32_t endChunk) {
+    // TODO(takenliu) 1. ChunkMigrateReceiver need deleteChunk when migrate failed.
+
+    SlotsBitmap emptySlots;
+    ChunkMigrateSender fakeSender(emptySlots, _svr, _cfg, true);
+    fakeSender.setStoreid(storeid);
+    return fakeSender.deleteChunkRange(beginChunk, endChunk); // with out chunk lock, with add binlog
 }
 
 void MigrateManager::migrateSenderResize(size_t size) {

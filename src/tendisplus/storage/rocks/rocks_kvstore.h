@@ -34,7 +34,7 @@ class RocksTxn: public Transaction {
     RocksTxn(const RocksTxn&) = delete;
     RocksTxn(RocksTxn&&) = delete;
     virtual ~RocksTxn();
-    std::unique_ptr<Cursor> createCursor() final;
+    std::unique_ptr<Cursor> createCursor(const std::string* iterate_upper_bound = NULL) final;
 #ifdef BINLOG_V1
     std::unique_ptr<BinlogCursor> createBinlogCursor(
                                     uint64_t begin,
@@ -93,6 +93,8 @@ class RocksTxn: public Transaction {
     uint32_t _chunkId;
     // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
     std::unique_ptr<rocksdb::Transaction> _txn;
+    string _strUpperBound;
+    rocksdb::Slice _upperBound;
 
     // NOTE(deyukong): not owned by me
     RocksKVStore *_store;
@@ -242,7 +244,7 @@ class RocksKVStore: public KVStore {
 
     Expected<uint64_t> restart(bool restore = false,
             uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID,
-            uint64_t maxBinlogid = Transaction::TXNID_UNINITED) final;
+            uint64_t maxBinlogid = UINT64_MAX) final;
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
@@ -329,7 +331,7 @@ private:
     // push _highestVisible forward.
     std::map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
 #else
-    uint64_t _nextBinlogSeq;
+    uint64_t _nextBinlogSeq;  // high water level for binlog id
     // <txnId, <commit_or_not, binlogId>>
     std::unordered_map<uint64_t, std::pair<bool, uint64_t>> _aliveTxns;
 
@@ -344,7 +346,7 @@ private:
     // NOTE(deyukong): _highestVisible is the largest committed binlog
     // before _aliveTxns.begin()
     // TOD0(vinchen) : make it actomic?
-    uint64_t _highestVisible;
+    uint64_t _highestVisible;  // low water level for binlog id
 
     std::shared_ptr<BinlogObserver> _logOb;
     std::shared_ptr<RocksdbEnv> _env;

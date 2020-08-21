@@ -162,25 +162,36 @@ std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
 
 std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
     uint64_t until) {
-    auto cursor = createCursor();
+    RecordKey upper(TTLIndex::CHUNKID + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperBound = upper.prefixChunkid();
+    auto cursor = createCursor(&upperBound);
 
     return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
 }
 
 std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
-    auto cursor = createCursor();
+    RecordKey chunkMax(slot + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperbound = chunkMax.prefixChunkid();
+    auto cursor = createCursor(&upperbound);
 
     return std::make_unique<SlotCursor>(std::move(cursor),slot);
 }
 
 unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t end) {
-    auto cursor = createCursor();
+    RecordKey chunkMax(end + 1, 0, RecordType::RT_INVALID, "", "");
+    string upperbound = chunkMax.prefixChunkid();
+    auto cursor = createCursor(&upperbound);
     return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
 }
 
-std::unique_ptr<Cursor> RocksTxn::createCursor() {
+std::unique_ptr<Cursor> RocksTxn::createCursor(const std::string* iterate_upper_bound) {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
+    if (iterate_upper_bound != NULL) {
+        _strUpperBound = *iterate_upper_bound;
+        _upperBound = rocksdb::Slice(_strUpperBound);
+        readOpts.iterate_upper_bound = &_upperBound;
+    }
     readOpts.snapshot =  _txn->GetSnapshot();
     rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
     return std::unique_ptr<Cursor>(
@@ -1536,8 +1547,10 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
     return txn->commit();
 }
 
-Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, uint64_t maxBinlogid) {
-  // when do backup will get _highestVisible first, and backup later. so the _highestVisible maybe smaller than backup.
+Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
+        uint64_t highestVisible) {
+  // when do backup will get _highestVisible first, and backup later.
+  // so the _highestVisible maybe smaller than backup.
   // so slaveof need the slave delete the binlogs after _highestVisible for safe,
   // and restorebackup need delete the binlogs after _highestVisible for safe too.
   bool needDeleteBinlog = false;
@@ -1549,8 +1562,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
         return {ErrorCodes::ERR_INTERNAL, "already running"};
     }
     LOG(INFO) << "RocksKVStore::restart id:"<< dbId() << " restore:" << restore
-        << " nextBinlogid:" << nextBinlogid << " maxBinlogid:" << maxBinlogid;
-    INVARIANT_D(nextBinlogid != Transaction::TXNID_UNINITED);
+        << " nextBinlogSeq:" << nextBinlogSeq << " highestVisible:" << highestVisible;
+    INVARIANT_D(nextBinlogSeq != Transaction::TXNID_UNINITED);
 
     // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
     // to open in rocksdb layer.
@@ -1631,8 +1644,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
 
-    maxCommitId = nextBinlogid - 1;
-    INVARIANT_D(nextBinlogid > maxCommitId);
+    maxCommitId = nextBinlogSeq - 1;
+    INVARIANT_D(nextBinlogSeq > maxCommitId);
 #ifdef BINLOG_V1
     if (expRcd.ok()) {
         const RecordKey& rk = expRcd.value().getRecordKey();
@@ -1683,7 +1696,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
                 needDeleteBinlog = true;
             }
         } else {
-            _nextTxnSeq = nextBinlogid;
+            _nextTxnSeq = nextBinlogSeq;
             _nextBinlogSeq = _nextTxnSeq;
             LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
                 << " have no binlog, set nextSeq to " << _nextTxnSeq;
@@ -1691,7 +1704,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
             INVARIANT_D(_highestVisible < _nextBinlogSeq);
         }
     } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        _nextTxnSeq = nextBinlogid;
+        _nextTxnSeq = nextBinlogSeq;
         _nextBinlogSeq = _nextTxnSeq;
         LOG(INFO) << "store:" << dbId()
             << " all empty, set nextSeq to " << _nextTxnSeq;
@@ -1704,17 +1717,19 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
 
     _isRunning = true;
   }
-  {
-    if (needDeleteBinlog) {
-        if (maxBinlogid != Transaction::TXNID_UNINITED) {
-            Expected<bool> ret = deleteBinlog(maxBinlogid + 1);
-            if (!ret.ok()) {
-                return ret.status();
+    {
+        if (highestVisible != UINT64_MAX) {
+            if (needDeleteBinlog) {
+                Expected<bool> ret = deleteBinlog(highestVisible + 1);
+                if (!ret.ok()) {
+                    return ret.status();
+                }
             }
             LOG(INFO) << "store:" << dbId()
-                << " nextSeq change from:" << _nextTxnSeq
-                << " to:" << maxBinlogid + 1;
-            maxCommitId = maxBinlogid;
+                      << " nextSeq change from:" << _nextTxnSeq
+                      << " to:" << highestVisible + 1
+                      << " needDeleteBinlog:" << needDeleteBinlog;
+            maxCommitId = highestVisible;
 
             std::lock_guard<std::mutex> lk(_mutex);
             _nextTxnSeq = maxCommitId + 1;
@@ -1722,7 +1737,6 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogid, ui
             _highestVisible = maxCommitId;
         }
     }
-  }
     return maxCommitId;
 }
 

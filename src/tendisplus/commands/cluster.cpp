@@ -84,6 +84,7 @@ class ClusterCommand: public Command {
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
 
+                LOG(INFO) << sess->getCmdStr();
                 auto srcNode = clusterState->clusterLookupNode(nodeId);
                 if (!srcNode) {
                     LOG(ERROR) << "import nodeid:" << nodeId

@@ -4112,7 +4112,6 @@ void ClusterManager::controlRoutine() {
         }
         _clusterState->cronCheckFailState();
         std::this_thread::sleep_for(100ms);
-        DLOG(INFO) << "gossip is running";
     }
 }
 

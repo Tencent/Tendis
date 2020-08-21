@@ -179,6 +179,7 @@ Expected<std::unique_ptr<KeyLock>> KeyLock::AquireKeyLock(uint32_t storeId, uint
 
 KeyLock::KeyLock(uint32_t storeId, uint32_t chunkId, const std::string& key,
     mgl::LockMode mode, Session *sess, mgl::MGLockMgr* mgr, uint64_t lockTimeoutMs)
+        // :ILock(new StoreLock(storeId, getParentMode(mode), nullptr, mgr, lockTimeoutMs),
         :ILock(new ChunkLock(storeId, chunkId, getParentMode(mode), nullptr, mgr, lockTimeoutMs),
                             new mgl::MGLock(mgr), sess),
          _key(key) {

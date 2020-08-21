@@ -15,6 +15,7 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
+#include "rocksdb/db.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/server/session.h"
@@ -148,7 +149,7 @@ class Transaction {
     virtual ~Transaction() = default;
     virtual Expected<uint64_t> commit() = 0;
     virtual Status rollback() = 0;
-    virtual std::unique_ptr<Cursor> createCursor() = 0;
+    virtual std::unique_ptr<Cursor> createCursor(const std::string* iterate_upper_bound = NULL) = 0;
 #ifdef BINLOG_V1
     virtual std::unique_ptr<BinlogCursor>
         createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;

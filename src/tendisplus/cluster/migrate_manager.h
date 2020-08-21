@@ -168,6 +168,8 @@ class MigrateManager {
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
     Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
+    Status deleteChunkRange(uint32_t storeid, uint32_t beginChunk, uint32_t endChunk);
+
     void requestRateLimit(uint64_t bytes);
 
     void migrateSenderResize(size_t size);

@@ -140,9 +140,10 @@ Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
 
 Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                 uint32_t begin, uint32_t end) {
-    LOG(INFO) << "snapshot sendRange send begin, store:"
-              << _storeid << " beginSlot:" << begin
-              << " endSlot:" << end;
+    // LOG(INFO) << "snapshot sendRange send begin, store:"
+    //          << _storeid << " beginSlot:" << begin
+    //          << " endSlot:" << end;
+    // need add IS lock for chunks ???
     auto cursor = std::move(txn->createSlotsCursor(begin, end));
     uint32_t totalWriteNum = 0;
     uint32_t curWriteLen = 0;
@@ -152,13 +153,12 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
     while (true) {
         Expected<Record> expRcd = cursor->next();
         if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-                LOG(INFO) << "snapshot sendRange Record is over, totalWriteNum:"
-                          << totalWriteNum
-                          << " storeid:" << _storeid;
             break;
         }
 
         if (!expRcd.ok()) {
+            LOG(ERROR) << "snapshot sendRange failed storeid:" << _storeid
+                << " err:" << expRcd.status().toString();
             return expRcd.status();
         }
         Record &rcd = expRcd.value();
@@ -192,7 +192,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
          */
         _svr->getMigrateManager()->requestRateLimit(sendBytes);
 
-        if (curWriteNum >= 1000 || curWriteLen > 1024*1024) {
+        if (curWriteNum >= 10000 || curWriteLen > 10*1024*1024) {
             SyncWriteData("1");
             SyncReadData(exptData, _OKSTR.length(), timeoutSec)
             if (exptData.value() != _OKSTR) {
@@ -214,10 +214,10 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
         LOG(ERROR) << "read receiver data is not +OK on slot:" << begin;
         return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
     }
-    LOG(INFO) << "snapshot sendRange end, storeid:" << _storeid
-        << " beginSlot:" << begin
-        << " endSlot:" << end
-        << " totalKeynum:" << totalWriteNum;
+    // LOG(INFO) << "snapshot sendRange end, storeid:" << _storeid
+    //    << " beginSlot:" << begin
+    //    << " endSlot:" << end
+    //    << " totalKeynum:" << totalWriteNum;
 
     return totalWriteNum;
 }
@@ -464,6 +464,11 @@ Status ChunkMigrateSender::sendOver() {
 
 Status ChunkMigrateSender::deleteChunkRange(
             uint32_t  chunkidStart, uint32_t chunkidEnd) {
+    // LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
+    INVARIANT_D(chunkidStart <= chunkidEnd);
+    INVARIANT_D(chunkidStart < CLUSTER_SLOTS);
+    INVARIANT_D(chunkidEnd < CLUSTER_SLOTS);
+
     auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
             mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
@@ -478,12 +483,20 @@ Status ChunkMigrateSender::deleteChunkRange(
     auto s = kvstore->deleteRange(start, end);
 
     if (!s.ok()) {
-        LOG(ERROR) << "deleteChunk commit failed, chunkidStart:" << chunkidStart
+        LOG(ERROR) << "kvstore->deleteRange failed, chunkidStart:" << chunkidStart
             << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();
         return s;
     }
-    LOG(INFO) << "deleteChunk end, chunkidStart:" << chunkidStart
-              << " chunkidEnd:" << chunkidEnd;
+    // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
+    //     so we call compactRange to real delete the keys.
+    s = kvstore->compactRange(&start, &end);
+    if (!s.ok()) {
+        LOG(ERROR) << "kvstore->compactRange failed, chunkidStart:" << chunkidStart
+                   << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();
+        return s;
+    }
+    LOG(INFO) << "deleteChunk and compactRange end, storeid:" <<_storeid
+        << " chunkidStart:" << chunkidStart << " chunkidEnd:" << chunkidEnd;
     return {ErrorCodes::ERR_OK, ""};
 }
 
