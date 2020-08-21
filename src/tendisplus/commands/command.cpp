@@ -421,30 +421,17 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId,
                     mgl::LockMode::LOCK_NONE);
-    if (!expdb.ok()) {
-        s = expdb.status();
-        return s;
-    }
+    RET_IF_ERR_EXPECTED(expdb);
+
     PStore kvstore = expdb.value().store;
     INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
     if (valueType == RecordType::RT_KV) {
         s = kvstore->delKV(mk, txn);
-        if (!s.ok()) {
-            return s;
-        }
-
-        if (ictx) {
-            s = txn->delKV(ictx->encode());
-            if (!s.ok()) {
-                return s;
-            }
-        }
+        RET_IF_ERR(s);
 
         auto commitStatus = txn->commit();
-        if (!commitStatus.ok()) {
-            s = commitStatus.status();
-            return s;
-        }
+        RET_IF_ERR_EXPECTED(commitStatus);
+
         return 1;
     }
     std::vector<std::string> prefixes;
@@ -499,10 +486,8 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
             if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!exptRcd.ok()) {
-                s = exptRcd.status();
-                return s;
-            }
+            RET_IF_ERR_EXPECTED(exptRcd);
+
             Record& rcd = exptRcd.value();
             const RecordKey& rcdKey = rcd.getRecordKey();
             if (rcdKey.prefixPk() != prefix) {
@@ -517,25 +502,18 @@ Expected<uint32_t> Command::partialDelSubKeys(Session *sess,
     }
     for (auto& v : pendingDelete) {
         s = kvstore->delKV(v, txn);
-        if (!s.ok()) {
-            return s;
-        }
+        RET_IF_ERR(s);
     }
 
     if (ictx && ictx->getType() != RecordType::RT_KV) {
         s = txn->delKV(ictx->encode());
-        if (!s.ok()) {
-            return s;
-        }
+        RET_IF_ERR(s);
     }
 
     Expected<uint64_t> commitStatus = txn->commit();
-    if (commitStatus.ok()) {
-        return pendingDelete.size();
-    } else {
-        s = commitStatus.status();
-        return s;
-    }
+    RET_IF_ERR_EXPECTED(commitStatus);
+
+    return pendingDelete.size();
 }
 
 Expected<bool> Command::delKeyChkExpire(Session *sess,
@@ -652,13 +630,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
     }
     uint32_t storeId = expdb.value().dbId;
     RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
-    // currently, a simple kv will not be locked
-    // if (mk.getRecordType() != RecordType::RT_KV) {
-    //     std::string mkEnc = mk.encode();
-    //     if (Command::isKeyLocked(sess, storeId, mkEnc)) {
-    //         return {ErrorCodes::ERR_BUSY, "key locked"};
-    //     }
-    // }
     PStore kvstore = expdb.value().store;
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
         auto ptxn = kvstore->createTransaction(sess);
@@ -682,20 +653,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session *sess,
             }
             if (hasVersion) {
                 auto pCtx = sess->getCtx();
-                /*
-                if (pCtx->getVersionEP() == UINT64_MAX) {
-                    // isolate tendis cmd cannot modify value of tendis with cache.
-                    // if (eValue.value().getVersionEP() != UINT64_MAX) {
-                    //    return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-                    //}
-                } else {
-                    // any command can modify value with versionEP = -1
-                    if (pCtx->getVersionEP() <= eValue.value().getVersionEP() &&
-                        eValue.value().getVersionEP() != UINT64_MAX) {
-                        return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
-                    }
-                }
-                 */
                 if (!pCtx->verifyVersion(eValue.value().getVersionEP())) {
                     ++sess->getServerEntry()->getServerStat().keyspaceIncorrectEp;
                     return {ErrorCodes::ERR_WRONG_VERSION_EP, ""};
