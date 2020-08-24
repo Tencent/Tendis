@@ -200,6 +200,7 @@ class RocksKVStore: public KVStore {
     // [begin, end)
     Status deleteRange(const std::string& begin, const std::string& end) final;
     Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) final;
+    Status deleteRangeBinlog(uint64_t begin, uint64_t end) final;
 
 #ifdef BINLOG_V1
     Status applyBinlog(const std::list<ReplLog>& txnLog,
@@ -212,7 +213,7 @@ class RocksKVStore: public KVStore {
     void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) final;
     uint64_t getNextBinlogSeq() const final;
     Expected<TruncateBinlogResult> truncateBinlogV2(uint64_t start, uint64_t end,
-        Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) final;
+        uint64_t save, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) final;
     int64_t saveBinlogV2(std::ofstream* fs, const ReplLogRawV2& log);
     Expected<uint64_t> getBinlogCnt(Transaction* txn) const final;
     Expected<bool> validateAllBinlog(Transaction* txn) const final;
