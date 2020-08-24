@@ -576,7 +576,11 @@ std::ofstream* KVStore::createBinlogFile(const std::string& name,
 }
 
 BackupInfo::BackupInfo()
-    :_binlogPos(Transaction::TXNID_UNINITED) {
+    :_binlogPos(Transaction::TXNID_UNINITED),
+     _backupMode(0),
+     _startTimeSec(0),
+     _endTimeSec(0),
+    _binlogVersion(BinlogVersion::BINLOG_VERSION_1) {
 }
 
 void BackupInfo::setFileList(const std::map<std::string, uint64_t>& fl) {
@@ -599,6 +603,14 @@ void BackupInfo::setStartTimeSec(uint64_t time) {
 }
 void BackupInfo::setEndTimeSec(uint64_t time) {
     _endTimeSec = time;
+}
+
+void BackupInfo::setBinlogVersion(BinlogVersion binlogversion) {
+    _binlogVersion = binlogversion;
+}
+
+BinlogVersion BackupInfo::getBinlogVersion() const {
+    return _binlogVersion;
 }
 
 uint64_t BackupInfo::getBinlogPos() const {

@@ -15,6 +15,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
 
@@ -249,16 +250,40 @@ class RestoreBackupCommand : public Command {
             return backup_meta.status();
         }
         uint64_t binlogpos = Transaction::TXNID_UNINITED;
+        BinlogVersion binlogVersion = BinlogVersion::BINLOG_VERSION_1;
         for (auto& o : backup_meta.value().GetObject()) {
             if (o.name == "binlogpos" && o.value.IsUint()) {
                 binlogpos = o.value.GetUint64();
+            }
+
+            if (o.name == "binlogVersion") {
+                INVARIANT_D(o.value.IsUint64());
+                if (o.value.IsUint64()) {
+                    binlogVersion = (BinlogVersion)o.value.GetUint64();
+                }
             }
         }
         if (binlogpos == Transaction::TXNID_UNINITED) {
             LOG(ERROR) << "binlogpos is invalid " << dir;
         }
 
-        Expected<uint64_t> restartStatus = store->restart(false, Transaction::MIN_VALID_TXNID, binlogpos);
+        uint32_t flags = 0;
+        BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();
+        if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
+            if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
+                flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
+            }
+        } else if (binlogVersion == BinlogVersion::BINLOG_VERSION_2) {
+            if (mybversion == BinlogVersion::BINLOG_VERSION_1) {
+                LOG(ERROR) << "invalid binlog version";
+                return {ErrorCodes::ERR_INTERNAL, "invalid binlog version"};
+            }
+        } else {
+            INVARIANT_D(0);
+        }
+
+        Expected<uint64_t> restartStatus = store->restart(false,
+							Transaction::MIN_VALID_TXNID, binlogpos, flags);
         if (!restartStatus.ok()) {
             INVARIANT_D(0);
             LOG(ERROR) << "restoreBackup restart store:" << storeId

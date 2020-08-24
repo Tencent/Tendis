@@ -18,6 +18,7 @@
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -261,11 +262,27 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
+    uint32_t flags = 0;
+    auto binlogVersion = bkInfo.value().getBinlogVersion();
+    BinlogVersion mybversion = _svr->getCatalog()->getBinlogVersion();
+    if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
+        if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
+            flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
+        }
+    } else if (binlogVersion == BinlogVersion::BINLOG_VERSION_2) {
+        if (mybversion == BinlogVersion::BINLOG_VERSION_1) {
+            LOG(ERROR) << "invalid binlog version";
+            return;
+        }
+    } else {
+        INVARIANT_D(0);
+    }
+
     client->writeLine("+OK");
 
     // 5) restart store, change to stready-syncing mode
     Expected<uint64_t> restartStatus = store->restart(true,
-            Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
+            Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos(), flags);
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
                    << ",failed:" << restartStatus.status().toString();

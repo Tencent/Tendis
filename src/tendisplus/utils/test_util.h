@@ -19,6 +19,8 @@
 
 #ifdef _WIN32
 #define MYTEST TEST_NO
+#include <windows.h>
+#define usleep(us) Sleep(us)
 #else
 #define MYTEST TEST
 #endif

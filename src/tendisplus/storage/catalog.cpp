@@ -154,15 +154,18 @@ Catalog::Catalog(std::unique_ptr<KVStore> store, uint32_t kvStoreCount,
             INVARIANT(0);
         }
     } else if (mainMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        auto binlogVersion = binlogUsingDefaultCF
+            ? BinlogVersion::BINLOG_VERSION_1
+            : BinlogVersion::BINLOG_VERSION_2;
         auto pMeta = std::unique_ptr<MainMeta>(
-            new MainMeta(kvStoreCount, chunkSize));
-        Status s = setMainMeta(*pMeta, binlogUsingDefaultCF);
+            new MainMeta(kvStoreCount, chunkSize,
+                binlogVersion));
+        Status s = setMainMeta(*pMeta);
         if (!s.ok()) {
             LOG(FATAL) << "catalog setMainMeta error:"
                 << s.toString();
             INVARIANT(0);
         }
-        auto tempMainMeta = getMainMeta();
     } else {
         LOG(FATAL) << "catalog getMainMeta error:"
                    << mainMeta.status().toString();
@@ -355,7 +358,7 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
     return result;
 }
 
-Status Catalog::setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF) {
+Status Catalog::setMainMeta(const MainMeta& meta) {
     std::stringstream ss;
     ss << "main_meta";
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
@@ -372,15 +375,10 @@ Status Catalog::setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF) {
     writer.Key("chunkSize");
     writer.Uint64(meta.chunkSize);
 
-    if (binlogUsingDefaultCF == true) {
-        writer.Key("binlogVersion");
-        writer.String("1");
-        _binlogVersion = "1";
-    } else {
-        writer.Key("binlogVersion");
-        writer.String("2");
-        _binlogVersion = "2";
-    }
+    writer.Key("binlogVersion");
+    writer.Uint64((uint64_t)meta.binlogVersion);
+
+    _binlogVersion = meta.binlogVersion;
 
     writer.EndObject();
 
@@ -445,14 +443,13 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     //old version may not have binlog version. 
     //if one version have binlog version, it's bigger than 1.
     if (doc.HasMember("binlogVersion")) {
-        INVARIANT(doc["binlogVersion"].IsString());
-        result->binlogVersion = doc["binlogVersion"].GetString();
+        INVARIANT(doc["binlogVersion"].IsUint64());
+        result->binlogVersion = (BinlogVersion)doc["binlogVersion"].GetUint64();
         _binlogVersion = result->binlogVersion;
     } else {
-        result->binlogVersion = "1";
+        result->binlogVersion = BinlogVersion::BINLOG_VERSION_1;
         _binlogVersion = result->binlogVersion;
     }
-    
 
     return result;
 }

@@ -1634,231 +1634,248 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
     return txn->commit();
 }
 
-Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
-        uint64_t highestVisible, uint32_t flag) {
-  // when do backup will get _highestVisible first, and backup later.
-  // so the _highestVisible maybe smaller than backup.
-  // so slaveof need the slave delete the binlogs after _highestVisible for safe,
-  // and restorebackup need delete the binlogs after _highestVisible for safe too.
-  bool needDeleteBinlog = false;
+Expected<uint64_t> RocksKVStore::restart(bool restore,
+                                         uint64_t nextBinlogSeq,
+                                         uint64_t highestVisible,
+                                         uint32_t flags) {
+    // when do backup will get _highestVisible first, and backup later.
+    // so the _highestVisible maybe smaller than backup.
+    // so slaveof need the slave delete the binlogs after _highestVisible for
+    // safe, and restorebackup need delete the binlogs after _highestVisible for
+    // safe too.
+    bool needDeleteBinlog = false;
 
-  uint64_t maxCommitId = 0;
-  {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (_isRunning) {
-        return {ErrorCodes::ERR_INTERNAL, "already running"};
-    }
-    LOG(INFO) << "RocksKVStore::restart id:"<< dbId() << " restore:" << restore
-        << " nextBinlogSeq:" << nextBinlogSeq << " highestVisible:" << highestVisible;
-    INVARIANT_D(nextBinlogSeq != Transaction::TXNID_UNINITED);
+    uint64_t maxCommitId = 0;
+    {
+        std::lock_guard<std::mutex> lk(_mutex);
+        if (_isRunning) {
+            return {ErrorCodes::ERR_INTERNAL, "already running"};
+        }
+        LOG(INFO) << "RocksKVStore::restart id:" << dbId()
+                  << " restore:" << restore
+                  << " nextBinlogSeq:" << nextBinlogSeq
+                  << " highestVisible:" << highestVisible;
+        INVARIANT_D(nextBinlogSeq != Transaction::TXNID_UNINITED);
 
-    // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
-    // to open in rocksdb layer.
-    if (getMode() == KVStore::StoreMode::STORE_NONE) {
-        return {ErrorCodes::ERR_OK, "" };
-    }
+        // NOTE(vinchen): if stateMode is STORE_NONE, the store no need
+        // to open in rocksdb layer.
+        if (getMode() == KVStore::StoreMode::STORE_NONE) {
+            return {ErrorCodes::ERR_OK, ""};
+        }
 
-    std::string dbname = dbPath() + "/" + dbId();
-    if (restore) {
+        std::string dbname = dbPath() + "/" + dbId();
+        if (restore) {
+            try {
+                const std::string path = dbPath() + "/" + dbId();
+                if (filesystem::exists(path)) {
+                    std::stringstream ss;
+                    ss << "path:" << path << " should not exist when restore";
+                    return {ErrorCodes::ERR_INTERNAL, ss.str()};
+                }
+                if (!filesystem::exists(dftBackupDir())) {
+                    std::stringstream ss;
+                    ss << "recover path:" << dftBackupDir()
+                       << " not exist when restore";
+                    return {ErrorCodes::ERR_INTERNAL, ss.str()};
+                }
+                filesystem::rename(dftBackupDir(), path);
+            } catch (std::exception& ex) {
+                LOG(WARNING)
+                    << "dbId:" << dbId() << "restore exception" << ex.what();
+                return {ErrorCodes::ERR_INTERNAL, ex.what()};
+            }
+        }
+
         try {
-            const std::string path = dbPath() + "/" + dbId();
-            if (filesystem::exists(path)) {
-                std::stringstream ss;
-                ss << "path:" << path
-                    << " should not exist when restore";
-                return {ErrorCodes::ERR_INTERNAL, ss.str()};
+            // this happens due to a bad terminate
+            if (filesystem::exists(dftBackupDir())) {
+                LOG(WARNING) << dftBackupDir() << " exists, remove it";
+                filesystem::remove_all(dftBackupDir());
             }
-            if (!filesystem::exists(dftBackupDir())) {
-                std::stringstream ss;
-                ss << "recover path:" << dftBackupDir()
-                    << " not exist when restore";
-                return {ErrorCodes::ERR_INTERNAL, ss.str()};
-            }
-            filesystem::rename(dftBackupDir(), path);
-        } catch(std::exception& ex) {
-            LOG(WARNING) << "dbId:" << dbId()
-                        << "restore exception" << ex.what();
+        } catch (const std::exception& ex) {
             return {ErrorCodes::ERR_INTERNAL, ex.what()};
         }
-    }
 
-    try {
-        // this happens due to a bad terminate
-        if (filesystem::exists(dftBackupDir())) {
-            LOG(WARNING) << dftBackupDir() << " exists, remove it";
-            filesystem::remove_all(dftBackupDir());
+        rocksdb::Options ColumOpts = options();
+        std::unique_ptr<rocksdb::Iterator> iter = nullptr;
+        std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
+        std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+            rocksdb::kDefaultColumnFamilyName, ColumOpts));
+        if (_cfg->binlogUsingDefaultCF == false) {
+            column_families.push_back(
+                rocksdb::ColumnFamilyDescriptor("binlog_cf", ColumOpts));
         }
-    } catch (const std::exception& ex) {
-        return {ErrorCodes::ERR_INTERNAL, ex.what()};
-    }
-
-    rocksdb::Options ColumOpts = options();
-    std::unique_ptr<rocksdb::Iterator> iter = nullptr;
-    std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
-    std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
-    column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-        rocksdb::kDefaultColumnFamilyName, ColumOpts));
-    if (_cfg->binlogUsingDefaultCF == false) {
-        column_families.push_back(
-            rocksdb::ColumnFamilyDescriptor("binlog_cf", ColumOpts));
-    }
-    if (_txnMode == TxnMode::TXN_OPT) {
-        rocksdb::OptimisticTransactionDB *tmpDb;
-        rocksdb::Options dbOpts = options();
-        dbOpts.create_missing_column_families = true;
-        auto status = rocksdb::OptimisticTransactionDB::Open(
-            dbOpts, dbname, column_families, &_cfHandles, &tmpDb); //open two column_family in OptimisticTranDB
-        if (!status.ok()) {
-            return {ErrorCodes::ERR_INTERNAL, status.ToString()};
-        }
-        rocksdb::ReadOptions readOpts;
-        iter.reset(tmpDb->GetBaseDB()->NewIterator(
-            readOpts, getDataColumnFamilyHandle()));
-        binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
-            readOpts, getBinlogColumnFamilyHandle()));
-        _optdb.reset(tmpDb);
-    } else {
-        rocksdb::TransactionDB* tmpDb;
-        rocksdb::TransactionDBOptions txnDbOptions;
-        // txnDbOptions.max_num_locks unlimit
-        // txnDbOptions.transaction_lock_timeout 1sec
-        // txnDbOptions.default_lock_timeout 1sec
-        // txnDbOptions.write_policy WRITE_COMMITTED
-        rocksdb::Options dbOpts = options();
-        dbOpts.create_missing_column_families = true;
-        LOG(INFO) << "rocksdb Open,id:"<< dbId() << " dbname:" << dbname;
-        // open two colum_family in pessimisticTranDB
-        auto status = rocksdb::TransactionDB::Open(
-            dbOpts, txnDbOptions, dbname, column_families, &_cfHandles, &tmpDb); 
-        if (!status.ok()) {
-            LOG(INFO) << "rocksdb Open error,id:"<< dbId() << " dbname:" << dbname;
-            return {ErrorCodes::ERR_INTERNAL, status.ToString()};
-        }
-        LOG(INFO) << "rocksdb Open sucess,id:"<< dbId() << " dbname:" << dbname;
-        rocksdb::ReadOptions readOpts;
-        iter.reset(tmpDb->GetBaseDB()->NewIterator(
-            readOpts, getDataColumnFamilyHandle()));
-        binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
-            readOpts, getBinlogColumnFamilyHandle()));
-        _pesdb.reset(tmpDb);
-    }
-    // NOTE(deyukong): during starttime, mutex is held and
-    // no need to consider visibility
-    
-    RocksKVCursor cursor(std::move(iter));
-    cursor.seekToLast();
-    Expected<Record> expRcd = cursor.next();
-
-    RocksKVCursor binlog_cursor(std::move(binlog_iter)); 
-    binlog_cursor.seekToLast();
-    Expected<Record> binlog_expRcd = binlog_cursor.next();
-
-    maxCommitId = nextBinlogSeq - 1;
-    INVARIANT_D(nextBinlogSeq > maxCommitId);
-#ifdef BINLOG_V1
-    RocksKVCursor cursor(std::move(iter));
-    cursor.seekToLast();
-    Expected<Record> expRcd = cursor.next();
-    if (expRcd.ok()) {
-        const RecordKey& rk = expRcd.value().getRecordKey();
-        if (rk.getRecordType() == RecordType::RT_BINLOG) {
-            auto explk = ReplLogKey::decode(rk);
-            if (!explk.ok()) {
-                return explk.status();
-            } else {
-                LOG(INFO) << "store:" << dbId()
-                          << " nextSeq change from:" << _nextTxnSeq
-                          << " to:" << explk.value().getTxnId() + 1;
-                maxCommitId = explk.value().getTxnId();
-                _nextTxnSeq = maxCommitId+1;
-                _highestVisible = maxCommitId;
+        if (_txnMode == TxnMode::TXN_OPT) {
+            rocksdb::OptimisticTransactionDB* tmpDb;
+            rocksdb::Options dbOpts = options();
+            dbOpts.create_missing_column_families = true;
+            auto status = rocksdb::OptimisticTransactionDB::Open(
+                dbOpts,
+                dbname,
+                column_families,
+                &_cfHandles,
+                &tmpDb);  // open two column_family in OptimisticTranDB
+            if (!status.ok()) {
+                return {ErrorCodes::ERR_INTERNAL, status.ToString()};
             }
+            rocksdb::ReadOptions readOpts;
+            iter.reset(tmpDb->GetBaseDB()->NewIterator(
+                readOpts, getDataColumnFamilyHandle()));
+            binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
+                readOpts, getBinlogColumnFamilyHandle()));
+            _optdb.reset(tmpDb);
         } else {
-            _nextTxnSeq = Transaction::MIN_VALID_TXNID;
-            LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
-                    << " have no binlog, set nextSeq to " << _nextTxnSeq;
-            _highestVisible = Transaction::TXNID_UNINITED;
-            INVARIANT(_highestVisible < _nextTxnSeq);
-        }
-    } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        _nextTxnSeq = Transaction::MIN_VALID_TXNID;
-        LOG(INFO) << "store:" << dbId()
-                  << " all empty, set nextSeq to " << _nextTxnSeq;
-        _highestVisible = Transaction::TXNID_UNINITED;
-        INVARIANT(_highestVisible < _nextTxnSeq);
-    } else {
-        return expRcd.status();
-    }
-#else
-    // if we have binlog, we will inherit latest binlogId
-    // if we have no binlog, we will reset binlogId
-    if (binlog_expRcd.ok()) {
-        const RecordKey& rk = binlog_expRcd.value().getRecordKey();
-        if (rk.getRecordType() == RecordType::RT_BINLOG) {
-            auto explk = ReplLogKeyV2::decode(rk);
-            if (!explk.ok()) {
-                return explk.status();
-            } else {
-                auto binlogId = explk.value().getBinlogId();
-                LOG(INFO) << "store:" << dbId()
-                          << " nextSeq change from:" << _nextTxnSeq
-                          << " to:" << binlogId + 1;
-                maxCommitId = binlogId;
-                _nextTxnSeq = maxCommitId + 1;
-                _nextBinlogSeq = _nextTxnSeq;
-                _highestVisible = maxCommitId;
-                needDeleteBinlog = true;
+            rocksdb::TransactionDB* tmpDb;
+            rocksdb::TransactionDBOptions txnDbOptions;
+            // txnDbOptions.max_num_locks unlimit
+            // txnDbOptions.transaction_lock_timeout 1sec
+            // txnDbOptions.default_lock_timeout 1sec
+            // txnDbOptions.write_policy WRITE_COMMITTED
+            rocksdb::Options dbOpts = options();
+            dbOpts.create_missing_column_families = true;
+            LOG(INFO) << "rocksdb Open,id:" << dbId() << " dbname:" << dbname;
+            // open two colum_family in pessimisticTranDB
+            auto status = rocksdb::TransactionDB::Open(dbOpts,
+                                                       txnDbOptions,
+                                                       dbname,
+                                                       column_families,
+                                                       &_cfHandles,
+                                                       &tmpDb);
+            if (!status.ok()) {
+                LOG(INFO) << "rocksdb Open error,id:" << dbId()
+                          << " dbname:" << dbname;
+                return {ErrorCodes::ERR_INTERNAL, status.ToString()};
             }
+            LOG(INFO) << "rocksdb Open sucess,id:" << dbId()
+                      << " dbname:" << dbname;
+            rocksdb::ReadOptions readOpts;
+            iter.reset(tmpDb->GetBaseDB()->NewIterator(
+                readOpts, getDataColumnFamilyHandle()));
+            binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
+                readOpts, getBinlogColumnFamilyHandle()));
+            _pesdb.reset(tmpDb);
         }
-    } else if (binlog_expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        _nextTxnSeq = nextBinlogSeq;
-        _nextBinlogSeq = _nextTxnSeq;
-        LOG(INFO) << "store:" << dbId() << " have no binlog, set nextSeq to "
-                  << _nextTxnSeq;
-        _highestVisible = _nextBinlogSeq - 1;
-        INVARIANT_D(_highestVisible < _nextBinlogSeq);
-    } else {
-        return binlog_expRcd.status();
-    }
+        // NOTE(deyukong): during starttime, mutex is held and
+        // no need to consider visibility
 
-    // we need to check binlogVersion, in case reforming db into two column
-    // families
-    // ToDo: we need to delete remaining binlog in defaultCF, and pay attention to 
-    // the number sequence of binlog file flushed to disk.
-    if (flag & BINLOGVERSION_1_2) {
+        maxCommitId = nextBinlogSeq - 1;
+        INVARIANT_D(nextBinlogSeq > maxCommitId);
+#ifdef BINLOG_V1
+        RocksKVCursor cursor(std::move(iter));
+        cursor.seekToLast();
+        Expected<Record> expRcd = cursor.next();
         if (expRcd.ok()) {
             const RecordKey& rk = expRcd.value().getRecordKey();
             if (rk.getRecordType() == RecordType::RT_BINLOG) {
-                auto explk = ReplLogKeyV2::decode(rk);
+                auto explk = ReplLogKey::decode(rk);
                 if (!explk.ok()) {
                     return explk.status();
                 } else {
-                    auto binlogId = explk.value().getBinlogId();
-                    LOG(INFO) << "store(upgrade binlogVersion from 1 to 2):" << dbId()
+                    LOG(INFO) << "store:" << dbId()
                               << " nextSeq change from:" << _nextTxnSeq
-                              << " to:" << binlogId + 1;
-                    maxCommitId = binlogId;
+                              << " to:" << explk.value().getTxnId() + 1;
+                    maxCommitId = explk.value().getTxnId();
                     _nextTxnSeq = maxCommitId + 1;
-                    _nextBinlogSeq = _nextTxnSeq;
                     _highestVisible = maxCommitId;
-                    needDeleteBinlog = true;
                 }
             } else {
-                LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no binlog "
-                             "in default CF";
+                _nextTxnSeq = Transaction::MIN_VALID_TXNID;
+                LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
+                          << " have no binlog, set nextSeq to " << _nextTxnSeq;
+                _highestVisible = Transaction::TXNID_UNINITED;
+                INVARIANT(_highestVisible < _nextTxnSeq);
             }
         } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-            LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no data "
-                         "in default CF";
+            _nextTxnSeq = Transaction::MIN_VALID_TXNID;
+            LOG(INFO) << "store:" << dbId() << " all empty, set nextSeq to "
+                      << _nextTxnSeq;
+            _highestVisible = Transaction::TXNID_UNINITED;
+            INVARIANT(_highestVisible < _nextTxnSeq);
         } else {
             return expRcd.status();
         }
-    }
+#else
+        if (!(flags & ROCKS_FLAGS_BINLOGVERSION_CHANGED)) {
+            // if we have binlog, we will inherit latest binlogId
+            // if we have no binlog, we will reset binlogId
+            RocksKVCursor binlog_cursor(std::move(binlog_iter));
+            binlog_cursor.seekToLast();
+            Expected<Record> binlog_expRcd = binlog_cursor.next();
+            if (binlog_expRcd.ok()) {
+                const RecordKey& rk = binlog_expRcd.value().getRecordKey();
+                if (rk.getRecordType() == RecordType::RT_BINLOG) {
+                    auto explk = ReplLogKeyV2::decode(rk);
+                    if (!explk.ok()) {
+                        return explk.status();
+                    } else {
+                        auto binlogId = explk.value().getBinlogId();
+                        LOG(INFO) << "store:" << dbId()
+                                  << " nextSeq change from:" << _nextTxnSeq
+                                  << " to:" << binlogId + 1;
+                        maxCommitId = binlogId;
+                        _nextTxnSeq = maxCommitId + 1;
+                        _nextBinlogSeq = _nextTxnSeq;
+                        _highestVisible = maxCommitId;
+                        needDeleteBinlog = true;
+                    }
+                }
+            } else if (binlog_expRcd.status().code() ==
+                       ErrorCodes::ERR_EXHAUST) {
+                _nextTxnSeq = nextBinlogSeq;
+                _nextBinlogSeq = _nextTxnSeq;
+                LOG(INFO) << "store:" << dbId()
+                          << " have no binlog, set nextSeq to " << _nextTxnSeq;
+                _highestVisible = _nextBinlogSeq - 1;
+                INVARIANT_D(_highestVisible < _nextBinlogSeq);
+            } else {
+                return binlog_expRcd.status();
+            }
+        } else {
+            // we need to check binlogVersion, in case reforming db into two
+            // column families
+            // TODO(vinchen): we need to delete remaining binlog in
+            // defaultCF, and pay attention to the number sequence of binlog
+            // file flushed to disk.
+            RocksKVCursor cursor(std::move(iter));
+            cursor.seekToLast();
+            Expected<Record> expRcd = cursor.next();
+            if (expRcd.ok()) {
+                const RecordKey& rk = expRcd.value().getRecordKey();
+                if (rk.getRecordType() == RecordType::RT_BINLOG) {
+                    auto explk = ReplLogKeyV2::decode(rk);
+                    if (!explk.ok()) {
+                        return explk.status();
+                    } else {
+                        auto binlogId = explk.value().getBinlogId();
+                        LOG(INFO)
+                            << "store(upgrade binlogVersion from 1 to 2):"
+                            << dbId() << " nextSeq change from:" << _nextTxnSeq
+                            << " to:" << binlogId + 1;
+                        maxCommitId = binlogId;
+                        _nextTxnSeq = maxCommitId + 1;
+                        _nextBinlogSeq = _nextTxnSeq;
+                        _highestVisible = maxCommitId;
+                        needDeleteBinlog = true;
+                    }
+                } else {
+                    LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no "
+                                 "binlog "
+                                 "in default CF";
+                }
+            } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                LOG(INFO)
+                    << "store(upgrade binlogVersion from 1 to 2): no data "
+                       "in default CF";
+            } else {
+                return expRcd.status();
+            }
+        }
 
 #endif
 
-    _isRunning = true;
-  }
+        _isRunning = true;
+    }
     {
         if (highestVisible != UINT64_MAX) {
             if (needDeleteBinlog) {

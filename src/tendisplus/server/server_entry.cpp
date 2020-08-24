@@ -399,22 +399,28 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // ToDo : while starting server, if we process data produced by older
     // version, we need to migrate binlog from default columnf to binlog columnf
     uint32_t flag = 0;
-    if (_catalog->getBinlogVersion() == "1") {
+    if (_catalog->getBinlogVersion() == BinlogVersion::BINLOG_VERSION_1) {
         if (cfg->binlogUsingDefaultCF == false) {
             // if data is produced by one-clolumn db, we want to start it with
-            // two-column db, we need to transfer binlog from default_CF to binlog_CF
-            LOG(INFO) << "binlogVersion is " << _catalog->getBinlogVersion()
-                      << ", binlogUsingDefaultCF is false, we start transfering "
-                         "binlog from default_CF to binlog_CF";
-            //INVARIANT(0);
-            flag &= BINLOGVERSION_1_2;
+            // two-column db, we need to transfer binlog from default_CF to
+            // binlog_CF
+            LOG(INFO)
+                << "binlogVersion is " 
+                << std::to_string((uint64_t)_catalog->getBinlogVersion())
+                << ", binlogUsingDefaultCF is false, we start transfering "
+                   "binlog from default_CF to binlog_CF";
+            // INVARIANT(0);
+            flag |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
         }
-    } else if (_catalog->getBinlogVersion() == "2") {
+    } else if (_catalog->getBinlogVersion() == BinlogVersion::BINLOG_VERSION_2) {
         if (cfg->binlogUsingDefaultCF == true) {
-            LOG(FATAL) << "binlogVersion is " << _catalog->getBinlogVersion()
+            LOG(FATAL) << "binlogVersion is "
+                       << (uint64_t)_catalog->getBinlogVersion()
                        << ",we need to set binlogUsingDefaultCF to false";
-            INVARIANT(0);
+            exit(-1);
         }
+    } else {
+        INVARIANT_D(0);
     }
 
     // kvstore init
@@ -451,10 +457,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
     // initing kvstore with two cf.
     if (cfg->binlogUsingDefaultCF == false &&
-        _catalog->getBinlogVersion() == "1") {
+        _catalog->getBinlogVersion() == BinlogVersion::BINLOG_VERSION_1) {
         auto pMeta =
-            std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
-        Status s = _catalog->setMainMeta(*pMeta, cfg->binlogUsingDefaultCF);
+            std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount,
+                                chunkSize, BinlogVersion::BINLOG_VERSION_2));
+        Status s = _catalog->setMainMeta(*pMeta);
         if (!s.ok()) {
             LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
             INVARIANT(0);
@@ -1272,7 +1279,7 @@ void ServerEntry::serverCron() {
         run_with_period(1000) {
             // release idling workerpool, trigger 1s once time
             if (_executorRecycleSet.size()) {
-                for (auto iter = _executorRecycleSet.begin(); 
+                for (auto iter = _executorRecycleSet.begin();
                         iter != _executorRecycleSet.end();) {
                     if (!(*iter)->size()) {
                         (*iter)->stop();

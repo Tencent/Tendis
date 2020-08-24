@@ -959,4 +959,33 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     }
 }
 
+TEST_NO(Repl, BinlogVersion) {
+    const auto guard = MakeGuard([] {
+        destroyEnv(master_dir);
+        destroyEnv(slave_dir);
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        });
+
+    EXPECT_TRUE(setupEnv(master_dir));
+    auto cfg = makeServerParam(master_port, 10, master_dir, false);
+    cfg->binlogUsingDefaultCF = true;
+    auto version1_master = std::make_shared<ServerEntry>(cfg);
+    auto s = version1_master->startup(cfg);
+    INVARIANT(s.ok());
+    initData(version1_master, recordSize);
+
+    EXPECT_TRUE(setupEnv(master_dir));
+    auto cfg2 = makeServerParam(slave_port, 10, slave_dir, false);
+    cfg2->binlogUsingDefaultCF = false;
+    auto version2_slave = std::make_shared<ServerEntry>(cfg2);
+    s = version2_slave->startup(cfg2);
+    INVARIANT(s.ok());
+
+
+    version1_master->stop();
+    ASSERT_EQ(version1_master.use_count(), 1);
+
+
+}
+
 }  // namespace tendisplus

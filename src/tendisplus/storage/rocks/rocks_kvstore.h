@@ -178,6 +178,8 @@ typedef struct sstMetaData {
     uint64_t num_deletions = 0;
 } sstMetaData;
 
+#define ROCKS_FLAGS_BINLOGVERSION_CHANGED (1<<0)
+
 class RocksKVStore: public KVStore {
  public:
     enum class TxnMode {
