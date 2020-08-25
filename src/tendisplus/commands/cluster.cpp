@@ -104,6 +104,11 @@ class ClusterCommand: public Command {
                         return {ErrorCodes::ERR_CLUSTER,
                                 "Invalid migrate slot position"};
                     }
+                    if (svr->getGcMgr()->slotIsDeleting(slot)) {
+                        LOG(ERROR) << "slot:" << slot << " ERR being deleting before migration";
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "slot in deleting task"};
+                    }
                     if (!svr->getClusterMgr()->emptySlot(slot)) {
                         LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
                         return {ErrorCodes::ERR_CLUSTER,
@@ -703,12 +708,6 @@ class ClusterCommand: public Command {
                      "json contain err:"+ errMsg };
         }
 
-        if (!doc.HasMember("taskmeta") || !doc["taskmeta"].IsUint64())
-            return  {ErrorCodes::ERR_DECODE,
-                     "json contain no taskmeta information!"};
-
-        uint16_t taskSize = doc["taskmeta"].GetUint64();
-
         if (!doc.HasMember("taskinfo"))
             return  {ErrorCodes::ERR_DECODE,
                      "json contain no task information!"};
@@ -751,8 +750,13 @@ class ClusterCommand: public Command {
                 auto element = static_cast<uint32_t>(object.GetUint64());
                 slotsVec.push_back(element);
             }
-            s = migrateMgr->startTask(slotsVec, ip, port,
-                                    storeid, true, taskSize);
+
+            SlotsBitmap taskmap;
+            for (const auto& vs : slotsVec) {
+                taskmap.set(vs);
+            }
+            s = migrateMgr->startTask(taskmap, ip, port,
+                                    storeid, true);
             if (!s.ok()) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "migrate receive start task fail"};
@@ -804,7 +808,7 @@ class ReadymigrateCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 4;
+        return 5;
     }
 
     int32_t firstkey() const {
@@ -838,7 +842,7 @@ class MigrateendCommand: public Command {
     }
 
     ssize_t arity() const {
-        return 4;
+        return 3;
     }
 
     int32_t firstkey() const {
@@ -864,19 +868,11 @@ class MigrateendCommand: public Command {
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
 
-        std::bitset<CLUSTER_SLOTS> slots(args[1]);
-
-        auto exptStoreid = ::tendisplus::stoul(args[2]);
-
-        if (!exptStoreid.ok()) {
-            LOG(ERROR) << "ERR Invalid storeid";
-            return {ErrorCodes::ERR_CLUSTER, "Invalid storid"};
-        }
-        uint32_t storeid = exptStoreid.value();
-        std::string sendBinlogResult = args[3];
+        std::string taskid = args[1];
+        std::string sendBinlogResult = args[2];
 
         bool finishBinlog = (sendBinlogResult == "+OK") ? true : false;
-        auto s = migrateMgr->supplyMigrateEnd(slots, storeid, finishBinlog);
+        auto s = migrateMgr->supplyMigrateEnd(taskid, finishBinlog);
         if (!s.ok()) {
             return s;
         }

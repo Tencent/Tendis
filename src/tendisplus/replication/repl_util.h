@@ -49,8 +49,8 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 
 Status sendWriter(BinlogWriter* writer,
                     BlockingTcpClient*,
-                    uint32_t dstStoreId, bool needHeartBeat,
-                    uint32_t secs);
+                    uint32_t dstStoreId, const std::string& taskid,
+                    bool needHeartBeat, uint32_t secs);
 
 
 Status SendSlotsBinlog(BlockingTcpClient*,
@@ -58,6 +58,7 @@ Status SendSlotsBinlog(BlockingTcpClient*,
                        uint64_t binlogStart, uint64_t binglogEnd,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slots,
+                       const std::string& taskid,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
                        uint64_t* newBinlogId);

@@ -15,6 +15,7 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _svr(svr),
     _cfg(cfg),
     _isFake(is_fake),
+    _taskid(""),
     _clusterState(svr->getClusterMgr()->getClusterState()),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
     _storeid(0),
@@ -74,6 +75,11 @@ Status ChunkMigrateSender::sendChunk() {
     /* in chunk lock, send syncversion meta */
     s = sendVersionMeta();
     if (!s.ok()) {
+        unlockChunks();
+        auto s2 = sendOver();
+        if (!s2.ok()) {
+            return s2;
+        }
         LOG(ERROR) << "send version meta Fail:" << s.toString();
         return s;
     }
@@ -303,6 +309,7 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
 Status ChunkMigrateSender::retrySendBinlog(uint64_t start, uint64_t end,
                                            uint64_t* binlogNum,
                                            uint64_t* newBinlogId) {
+    std::lock_guard<myMutex> lk(_mutex);
     bool needHeartbeat = false;
     setClient(nullptr);
     std::shared_ptr<BlockingTcpClient> client =
@@ -318,14 +325,14 @@ Status ChunkMigrateSender::retrySendBinlog(uint64_t start, uint64_t end,
         return {ErrorCodes::ERR_NETWORK, ""};
     }
     setClient(client);
-
     s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-                             start, end, needHeartbeat, _slots, _svr,
-                             binlogNum, newBinlogId);
+                             start, end, needHeartbeat, _slots,
+                             _taskid, _svr, binlogNum, newBinlogId);
     if (!s.ok()) {
         return  {ErrorCodes::ERR_NETWORK, ""};
     }
-
+    LOG(INFO) << "reconn receiver and send binlog again on slots:"
+              <<  bitsetStrEncode(_slots);
     return  {ErrorCodes::ERR_OK, ""};
 }
 
@@ -339,8 +346,8 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     }
     bool done = true;
     auto s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-            _curBinlogid, end, needHeartbeat, _slots, _svr,
-            &binlogNum, &newBinlogId);
+                    _curBinlogid, end, needHeartbeat, _slots, _taskid,
+                    _svr, &binlogNum, &newBinlogId);
 
     if (!s.ok()) {
         done = false;
@@ -540,10 +547,9 @@ Status ChunkMigrateSender::sendVersionMeta() {
 Status ChunkMigrateSender::sendOver() {
     std::string binlogInfo = needToSendFail() ? "-ERR" : "+OK";
     std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, 4);
+    Command::fmtMultiBulkLen(ss, 3);
     Command::fmtBulk(ss, "migrateend");
-    Command::fmtBulk(ss, _slots.to_string());
-    Command::fmtBulk(ss, std::to_string(_dstStoreid));
+    Command::fmtBulk(ss, _taskid);
     Command::fmtBulk(ss, binlogInfo);
 
     std::string stringtoWrite = ss.str();
@@ -627,12 +633,7 @@ Status ChunkMigrateSender::deleteChunkRange(
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::deleteChunks(
-            const std::bitset<CLUSTER_SLOTS>& slots) {
-    /* NOTE(wayenchen) check if chunk not belong to me,
-     * make sure MOVE work well before delete */
-    if (!_isFake && !checkSlotsBlongDst()) {
-        return  {ErrorCodes::ERR_CLUSTER, "slots not belongs to dstNodes"};
+
 Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
     /* NOTE(wayenchen) check if chunk not belong to me，
         make sure MOVE work well before delete */
@@ -656,7 +657,7 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
             } else {
                 if (startChunkid != UINT32_MAX) {
                     /* just throw it into gc job, no waiting for deleting result */
-                    auto s = _svr->getGcMgr()->deleteChunks(startChunkid, endChunkid);
+                    auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid, 3600);
                     if (!s.ok()) {
                         LOG(ERROR) << "deleteChunk fail, startChunkid:"
                                    << startChunkid
@@ -674,7 +675,7 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
         idx++;
     }
     if (startChunkid != UINT32_MAX) {
-        auto s = _svr->getGcMgr()->deleteChunks(startChunkid, endChunkid);
+        auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
         if (!s.ok()) {
             LOG(ERROR) << "deleteChunk fail, startChunkid:"
                        << startChunkid

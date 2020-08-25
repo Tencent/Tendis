@@ -50,7 +50,6 @@ public:
     DeleteRangeState _state;
     std::unique_ptr<DbWithLock> _dbWithLock;
     Status deleteSlotRange();
-    void updateGarbageInfo();
 };
 
 using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
@@ -62,9 +61,14 @@ class GCManager {
     Status stopStoreTask(uint32_t storid);
     void stop();
 
-    Status deleteChunks(uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
+    Status deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
     Status deleteSlotsList(std::vector<uint32_t> slotsList, mstime_t delay = 0);
- private:
+    bool slotIsDeleting(uint32_t slot);
+
+    void garbageDeleterResize(size_t size);
+    size_t garbageDeleterSize() ;
+
+private:
     void controlRoutine();
     void cronCheck();
     void checkGarbage();
@@ -73,7 +77,6 @@ class GCManager {
     SlotsBitmap  getCheckList();
     void startDeleteTask(uint32_t  storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
     void garbageDelete(DeleteRangeTask* task);
-    void updateGarbageInfo(DeleteRangeTask *task);
 
  private:
     std::shared_ptr<ServerEntry> _svr;

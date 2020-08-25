@@ -89,6 +89,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     :_cfg(cfg),
      _svr(svr),
      _isRunning(false),
+     _taskIdGen(0),
      _migrateSenderMatrix(std::make_shared<PoolMatrix>()),
      _migrateClearMatrix(std::make_shared<PoolMatrix>()),
      _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
@@ -293,7 +294,7 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
         } else  {
             task->state = MigrateSendState::ERR;
             nextSched = SCLOCK::now();
-            LOG(ERROR) << "Send slots failed, bitmap is:" << task->sender->getSlots().to_string();
+            LOG(ERROR) << "Send slots failed, bitmap is:" << bitsetStrEncode(task->sender->getSlots());
         }
     } else {
         nextSched = SCLOCK::now();
@@ -408,6 +409,12 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
     return true;
 }
 
+std::string MigrateManager::genTaskid() {
+    /* taskid contain importer Nodeid and automic number */
+    uint64_t taskNum = _taskIdGen.fetch_add(1);
+    return  _cluster->getMyselfName() + std::to_string(taskNum);
+}
+
 SlotsBitmap convertMap(const std::vector<uint32_t>& vec) {
     SlotsBitmap map;
     for (const auto& vs : vec) {
@@ -470,6 +477,7 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
         client->writeLine(sb.GetString());
         return;
     }
+    //check kvstore count
     uint32_t mystoreNum = _svr->getKVStoreCount();
     if (mystoreNum != storeNum) {
         LOG(ERROR) << "my storenum:" << mystoreNum
@@ -481,11 +489,12 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
     }
     writer.String("+OK");
     // split slots and start task
+
     std::unordered_map<uint32_t, std::vector<uint32_t>> slotSet;
+
     for (const auto &slot : taskSlots) {
         uint32_t storeid = _svr->getSegmentMgr()->getStoreid(slot);
-        std::unordered_map<uint32_t, std::vector<uint32_t>>::iterator it;
-        if ((it= slotSet.find(storeid)) != slotSet.end()) {
+        if ((slotSet.find(storeid)) != slotSet.end()) {
             slotSet[storeid].push_back(slot);
         } else {
             std::vector<uint32_t> temp;
@@ -493,39 +502,46 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
             slotSet.insert(std::make_pair(storeid, temp));
         }
     }
+
     bool startMigate = true;
     uint16_t taskSize = _svr->getParams()->migrateTaskSlotsLimit;
-
-    writer.Key("taskmeta");
-    writer.Uint64(taskSize);
-
     writer.Key("taskinfo");
     writer.StartArray();
     for (const auto &v : slotSet) {
         uint32_t storeid = v.first;
-        auto slotVec = v.second;
+        auto slotsVec = v.second;
 
-        writer.StartObject();
-        writer.Key("storeid");
-        writer.Uint64(storeid);
+        uint16_t slotsSize = slotsVec.size();
+        for (size_t i = 0; i < slotsSize; i += taskSize) {
+            std::vector<uint32_t> vecTask;
+            auto last = std::min(slotsVec.size(), i + taskSize);
+            vecTask.insert(vecTask.end(), slotsVec.begin() + i, slotsVec.begin() + last);
 
-        writer.Key("migrateSlots");
-        writer.StartArray();
-        for (auto &v : slotVec)
-            writer.Uint64(v);
-        writer.EndArray();
-        writer.EndObject();
-        // migrate task should start before send task information to receiver
-        auto s = startTask(slotVec, ip, port, storeid, false, taskSize);
-        if (!s.ok()) {
-            LOG(ERROR) << "start task on store:" << storeid << "fail";
-            startMigate = false;
-            break;
+            writer.StartObject();
+            writer.Key("storeid");
+            writer.Uint64(storeid);
+
+            writer.Key("migrateSlots");
+            writer.StartArray();
+            for (auto &v : vecTask)
+                writer.Uint64(v);
+            writer.EndArray();
+            writer.EndObject();
+
+            // migrate task should start before send task information to receiver
+            auto s = startTask(convertMap(vecTask), ip, port, storeid, false);
+            if (!s.ok()) {
+                LOG(ERROR) << "start task on store:" << storeid << "fail";
+                startMigate = false;
+                break;
+            }
+            for (const auto &vs :vecTask) {
+                _migrateNodes[vs] = nodeid;
+            }
         }
-        for (const auto& vs : slotVec) {
-            _migrateNodes[vs] = nodeid;
-        }
+
     }
+
     writer.EndArray();
 
     // if start all task, value is "+OK"
@@ -548,7 +564,8 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
 void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
                                        const std::string& slotsArg,
                                        const std::string& StoreidArg,
-                                       const std::string& nodeidArg) {
+                                       const std::string& nodeidArg,
+                                       const std::string& taskidArg) {
     std::shared_ptr<BlockingTcpClient> client =
             std::move(_svr->getNetwork()->createBlockingClient(
                     std::move(sock), 64*1024*1024));
@@ -586,27 +603,25 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
     for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
         if ((*it)->sender->getSlots() == receiveMap) {
             findJob = true;
-
             // send response to srcNode
             std::stringstream ss;
             ss << "+OK";
             client->writeLine(ss.str());
-
-            // start migrate task
-            (*it)->state = MigrateSendState::START;
+        
             (*it)->sender->setClient(client);
             (*it)->sender->setDstNode(nodeidArg);
             (*it)->sender->setDstStoreid(dstStoreid);
+            // set taskid
+            (*it)->sender->setTaskId(taskidArg);
+            // start migrate task
+            (*it)->state = MigrateSendState::START;
+            LOG(INFO) << "sender start on taskid:" << taskidArg;
             break;
         }
     }
     if (!findJob) {
         LOG(ERROR) << "findJob failed, store:" << dstStoreid
             << " receiveMap:" << bitsetStrEncode(receiveMap);
-        for (auto it = _migrateSendTask.begin(); it != _migrateSendTask.end(); ++it) {
-            LOG(ERROR) << "findJob failed, _migrateSendTask:"
-                << bitsetStrEncode((*it)->sender->getSlots());
-        }
 
         std::stringstream ss;
         ss << "-ERR not be migrating: invalid task bitmap";
@@ -621,30 +636,31 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
 ///////////////////////////////////
 bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
     bool doSth = false;
-    for (auto it = _migrateReceiveTask.begin(); it != _migrateReceiveTask.end(); ) {
-        if ((*it)->isRunning || now < (*it)->nextSchedTime) {
+    for (auto it = _migrateReceiveTaskMap.begin(); it != _migrateReceiveTaskMap.end(); ) {
+        auto taskPtr = (*it).second.get();
+        if ((taskPtr)->isRunning || now < (taskPtr)->nextSchedTime) {
             ++it;
             continue;
         }
 
         doSth = true;
-        if ((*it)->state == MigrateReceiveState::RECEIVE_SNAPSHOT) {
-            (*it)->isRunning = true;
+        if ((taskPtr)->state == MigrateReceiveState::RECEIVE_SNAPSHOT) {
+            (taskPtr)->isRunning = true;
             LOG(INFO) << "receive_snapshot begin";
-            _migrateReceiver->schedule([this, iter = (*it).get()]() {
+            _migrateReceiver->schedule([this, iter = taskPtr]() {
                 fullReceive(iter);
             });
             ++it;
-        } else if ((*it)->state == MigrateReceiveState::RECEIVE_BINLOG) {
-            (*it)->isRunning = true;
-            checkMigrateStatus(it->get());
+        } else if (taskPtr->state == MigrateReceiveState::RECEIVE_BINLOG) {
+            taskPtr->isRunning = true;
+            checkMigrateStatus(taskPtr);
             ++it;
-        } else if ((*it)->state == MigrateReceiveState::SUCC
-                    || (*it)->state == MigrateReceiveState::ERR) {
-            std::string slot = bitsetStrEncode((*it)->slots);
+        } else if (taskPtr->state == MigrateReceiveState::SUCC
+                    || taskPtr->state == MigrateReceiveState::ERR) {
+            std::string slot = bitsetStrEncode(taskPtr->slots);
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
-                if ((*it)->slots.test(i)) {
-                    if ((*it)->state == MigrateReceiveState::SUCC) {
+                if (taskPtr->slots.test(i)) {
+                    if (taskPtr->state == MigrateReceiveState::SUCC) {
                         _succImportSlots.set(i);
                         if (_failImportSlots.test(i)) {
                             _failImportSlots.reset(i);
@@ -656,15 +672,15 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
                     _importNodes.erase(i);
                 }
             }
-            if ((*it)->state == MigrateReceiveState::SUCC) {
+            if (taskPtr->state == MigrateReceiveState::SUCC) {
                 _succReceTask.push_back(slot);
             } else {
                 _failReceTask.push_back(slot);
             }
-            LOG(INFO) << "erase receiver task stat:" << receTaskTypeString((*it)->state)
-                << " slots:" << bitsetStrEncode((*it)->slots);
-            _importSlots ^= ((*it)->slots);
-            it = _migrateReceiveTask.erase(it);
+            LOG(INFO) << "erase receiver task stat:" << receTaskTypeString(taskPtr->state)
+                << " slots:" << bitsetStrEncode(taskPtr->slots);
+            _importSlots ^= (taskPtr->slots);
+            it = _migrateReceiveTaskMap.erase(it);
             continue;
         }
     }
@@ -673,11 +689,12 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
 
 Status MigrateManager::importing(SlotsBitmap slots,
             const std::string& ip, uint16_t port,
-            uint32_t storeid) {
+            uint32_t storeid, const std::string& taskid) {
     std::lock_guard<myMutex> lk(_mutex);
     std::size_t idx = 0;
     // set slot flag
-    LOG(INFO) << "importing slot:" << bitsetStrEncode(slots);
+    LOG(INFO) << "importing slot:" << bitsetStrEncode(slots)
+              << " task id is:" << taskid;
     while (idx < slots.size()) {
         if (slots.test(idx)) {
             if (_importSlots.test(idx)) {
@@ -689,39 +706,40 @@ Status MigrateManager::importing(SlotsBitmap slots,
         }
         idx++;
     }
-    auto receiveTask = std::make_unique<MigrateReceiveTask>(slots, storeid, ip, port, _svr, _cfg);
+    auto receiveTask = std::make_unique<MigrateReceiveTask>(slots,
+                        storeid, taskid, ip, port, _svr, _cfg);
     receiveTask->nextSchedTime = SCLOCK::now();
-    _migrateReceiveTask.push_back(std::move(receiveTask));
+    /* taskid should be unique*/
+    auto iter = _migrateReceiveTaskMap.find(taskid);
+    if (iter != _migrateReceiveTaskMap.end()) {
+        LOG(ERROR) << "receiver taskid:" << taskid << "already exists";
+        return  {ErrorCodes::ERR_INTERNAL, "taskid already exists"};
+    } else {
+        _migrateReceiveTaskMap.insert(
+                std::make_pair(taskid, std::move(receiveTask)));
+    }
     return {ErrorCodes::ERR_OK, ""};
 }
 
+Status MigrateManager::startTask(const SlotsBitmap& taskmap,
+                        const std::string & ip, uint16_t port,
+                        uint32_t storeid, bool importFlag) {
 
-Status MigrateManager::startTask(const std::vector<uint32_t> slotsVec,
-                                 const std::string& ip, uint16_t port,
-                                 uint32_t storeid, bool importFlag,
-                                 uint16_t taskSize) {
     Status s;
-    uint16_t slotsSize = slotsVec.size();
-    for (size_t i = 0; i < slotsSize; i += taskSize) {
-        std::vector<uint32_t > vecTask;
-        auto last = std::min(slotsVec.size(), i + taskSize);
-        vecTask.insert(vecTask.end(), slotsVec.begin() + i, slotsVec.begin() + last);
-        SlotsBitmap taskmap = convertMap(vecTask);
-        if (importFlag) {
-            s = importing(taskmap, ip, port, storeid);
-            if (!s.ok()) {
-                LOG(ERROR) << "start task fail on store:" << storeid;
-                return  s;
-            }
-        } else {
-            s = migrating(taskmap, ip, port, storeid);
-            if (!s.ok()) {
-                LOG(ERROR) << "start task fail on store:" << storeid;
-                return s;
-            }
+    if (importFlag) {
+        /* if it is called by importer, generate a taskid to mark the task*/
+        s = importing(taskmap, ip, port, storeid, genTaskid());
+        if (!s.ok()) {
+            LOG(ERROR) << "start task fail on store:" << storeid;
+            return  s;
+        }
+    } else {
+        s = migrating(taskmap, ip, port, storeid);
+        if (!s.ok()) {
+            LOG(ERROR) << "start task fail on store:" << storeid;
+            return s;
         }
     }
-     
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -744,10 +762,11 @@ void MigrateManager::checkMigrateStatus(MigrateReceiveTask* task) {
     task->nextSchedTime = nextSched;
     task->isRunning = false;
     auto delay = sinceEpoch() - task->lastSyncTime;
-    LOG(INFO) << "delay info:" << delay;
-    /* if receiveing binlog keep more than 10000s after receive binglog,
-     * mark the task fail*/
-    if (delay > 10000) {
+    /* NOTE(wayenchen):sendbinlog beatheat interval is set to 60s, 
+        so mark 70s as no connected stated*/
+    if (delay > 70) {
+        LOG(ERROR) << "receiver task receive binlog timeout"
+                   << " on slots:" << bitsetStrEncode(task->slots);
         task->state = MigrateReceiveState::ERR;
     }
     return;
@@ -818,8 +837,20 @@ void MigrateManager::fullReceive(MigrateReceiveTask* task) {
 
 Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
     const std::string& logKey, const std::string& logValue) {
+    std::lock_guard<myMutex> lk(_mutex);
     if (logKey == "") {
-        // binlog_heartbeat, do nothing
+        if (logValue != "") {
+            /* NOTE(wayenchen) find the binlog task by taskid in migrate heartbeat,
+             * set the lastSyncTime of receiver in order to judge if heartbeat timeout*/
+            LOG(INFO) << "receive migrate heartbeat on taskid:" << logValue;
+            auto iter = _migrateReceiveTaskMap.find(logValue);
+            if (iter != _migrateReceiveTaskMap.end()) {
+                iter->second->lastSyncTime = sinceEpoch();
+            } else {
+                LOG(ERROR) << "migrate heartbeat taskid:"
+                    << logValue << "not find, may be erase";
+            }
+        }
     } else {
         auto value = ReplLogValueV2::decode(logValue);
         if (!value.ok()) {
@@ -827,7 +858,8 @@ Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApply
         }
         // NOTE(takenliu): use the keys chunkid to check
         if (!_importSlots.test(value.value().getChunkId())) {
-            LOG(ERROR) << "applyBinlog chunkid err:" << value.value().getChunkId();
+            LOG(ERROR) << "applyBinlog chunkid err:" << value.value().getChunkId()
+                       << "value:" << value.value().getData();
             return {ErrorCodes::ERR_INTERNAL, "chunk not be migrating"};;
         }
         auto binlog = applySingleTxnV2(sess, storeid,
@@ -840,35 +872,33 @@ Status MigrateManager::applyRepllog(Session* sess, uint32_t storeid, BinlogApply
     return{ ErrorCodes::ERR_OK, "" };
 }
 
-Status MigrateManager::supplyMigrateEnd(const SlotsBitmap& slots, uint32_t storeid, bool binlogDone) {
-    LOG(INFO) << "supplyMigrateEnd slots:" << bitsetStrEncode(slots)
-              << "sendBinglog finish:" << binlogDone;
+Status MigrateManager::supplyMigrateEnd(const std::string& taskid, bool binlogDone) {
+    SlotsBitmap  slots;
     {
         std::lock_guard<myMutex> lk(_mutex);
-        if (!containSlot(slots, _importSlots)) {
-            LOG(ERROR) << "supplyMigrateEnd bitmap err";
-            return { ErrorCodes::ERR_INTERNAL, "slots not be migrating" };
-        }
+        std::string taskResult = binlogDone ? "success" : "failed";
 
-        bool find = false;
-        for (auto it = _migrateReceiveTask.begin(); it != _migrateReceiveTask.end(); it++) {
-            if ((*it)->receiver->getSlots() == slots
-                    && (*it)->receiver->getsStoreid() == storeid) {
-                find = true;
-                SCLOCK::time_point nextSched = SCLOCK::now();
-                (*it)->nextSchedTime = nextSched;
-                (*it)->isRunning = false;
-                if (!binlogDone) {
-                    (*it)->state = MigrateReceiveState::ERR;
-                    return{ ErrorCodes::ERR_OK, "" };
-                }
-                (*it)->state = MigrateReceiveState::SUCC;
-                break;
+        auto iter = _migrateReceiveTaskMap.find(taskid);
+        if (iter != _migrateReceiveTaskMap.end()) {
+            slots = iter->second->receiver->getSlots();
+            SCLOCK::time_point nextSched = SCLOCK::now();
+            iter->second->nextSchedTime = nextSched;
+            iter->second->isRunning = false;
+            if (!binlogDone) {
+                iter->second->state = MigrateReceiveState::ERR;
+                return{ ErrorCodes::ERR_OK, "" };
             }
-        }
-        if (!find) {
-            LOG(ERROR) << "supplyMigrateEnd find slots failed:" << bitsetStrEncode(slots)
-                       << "sendBinglog finish:" << binlogDone;
+            iter->second->state = MigrateReceiveState::SUCC;
+            LOG(INFO) << "supplyMigrateEnd finished on slots:"
+                      << bitsetStrEncode(slots)
+                      << " taskid: " << taskid
+                      << " task result is:" << taskResult;
+        } else {
+            LOG(ERROR) << "supplyMigrateEnd find task failed,"
+                       << " slots:" << bitsetStrEncode(slots)
+                       << " taskid:" << taskid
+                       << " task result is:" << taskResult;
+
             return { ErrorCodes::ERR_INTERNAL, "migrating task not find" };
         }
     }
@@ -984,55 +1014,67 @@ SlotsBitmap MigrateManager::getSteadySlots(const SlotsBitmap& slots) {
     return tempSlots;
 }
 
+
 Expected<std::string> MigrateManager::getMigrateInfo() {
     std::lock_guard<myMutex> lk(_mutex);
-    std::string migrateSlots = "migrating slots:"
-                                    + bitsetStrEncode(_migrateSlots);
-    std::string importSlots = "importing slots:"
-                                    + bitsetStrEncode(_importSlots);
-
-    std::string succMSlots = "success migrate slots:"
-                                    + bitsetStrEncode(_succMigrateSlots);
-
-    std::string failMSlots = "fail migrate slots:"
-                                    + bitsetStrEncode(_failMigrateSlots);
-
-    std::string succISlots = "success import slots:"
-                                    + bitsetStrEncode(_succImportSlots);
-
-    std::string failISlots = "fail import slots:"
-                                    + bitsetStrEncode(_failImportSlots);
-
-
     std::stringstream ss;
+    auto commandLen = 0;
+    uint16_t isMigrating = (_migrateSlots.count() || _succMigrateSlots.count()
+                             || _failMigrateSlots.count()) ? 1 : 0;
+    uint16_t isImporting = (_importSlots.count() || _succImportSlots.count()
+                            || _failImportSlots.count()) ? 1 : 0;
+    commandLen += (isMigrating*6 + isImporting*6);
 
-    std::string taskSizeInfo = "running sender task num:" +
-                                std::to_string(_migrateSendTask.size());
-    std::string succcInfo = "success sender task num:" +
+    Command::fmtMultiBulkLen(ss, commandLen);
+    if (isMigrating) {
+        std::string migrateSlots = "migrating slots:"
+                                   + bitsetStrEncode(_migrateSlots);
+
+        std::string succMSlots = "success migrate slots:"
+                                 + bitsetStrEncode(_succMigrateSlots);
+
+        std::string failMSlots = "fail migrate slots:"
+                                 + bitsetStrEncode(_failMigrateSlots);
+
+        std::string taskSizeInfo = "running sender task num:" +
+                                   std::to_string(_migrateSendTask.size());
+        std::string succcInfo = "success sender task num:" +
                                 std::to_string(_succSenderTask.size());
-    std::string failInfo = "fail sender task num:" +
-                                std::to_string(_failSenderTask.size());
+        std::string failInfo = "fail sender task num:" +
+                               std::to_string(_failSenderTask.size());
 
-    std::string taskSizeInfo2 = "running receiver task num:" +
-                               std::to_string(_migrateReceiveTask.size());
-    std::string succcInfo2 = "success receiver task num:" +
-                            std::to_string(_succReceTask.size());
-    std::string failInfo2 = "fail receiver task num:" +
-                           std::to_string(_failReceTask.size());
+        Command::fmtBulk(ss,  migrateSlots);
+        Command::fmtBulk(ss, succMSlots);
+        Command::fmtBulk(ss, failMSlots);
+        Command::fmtBulk(ss, taskSizeInfo);
+        Command::fmtBulk(ss, succcInfo);
+        Command::fmtBulk(ss, failInfo);
+    }
 
-    Command::fmtMultiBulkLen(ss, 12);
-    Command::fmtBulk(ss,  migrateSlots);
-    Command::fmtBulk(ss,  importSlots);
-    Command::fmtBulk(ss, succMSlots);
-    Command::fmtBulk(ss, failMSlots);
-    Command::fmtBulk(ss, succISlots);
-    Command::fmtBulk(ss, failISlots);
-    Command::fmtBulk(ss, taskSizeInfo);
-    Command::fmtBulk(ss, succcInfo);
-    Command::fmtBulk(ss, failInfo);
-    Command::fmtBulk(ss, taskSizeInfo2);
-    Command::fmtBulk(ss, succcInfo2);
-    Command::fmtBulk(ss, failInfo2);
+    if (isImporting) {
+        std::string importSlots = "importing slots:"
+                                  + bitsetStrEncode(_importSlots);
+
+        std::string succISlots = "success import slots:"
+                                 + bitsetStrEncode(_succImportSlots);
+
+        std::string failISlots = "fail import slots:"
+                                 + bitsetStrEncode(_failImportSlots);
+
+        std::string taskSizeInfo2 = "running receiver task num:" +
+                                    std::to_string(_migrateReceiveTaskMap.size());
+        std::string succcInfo2 = "success receiver task num:" +
+                                  std::to_string(_succReceTask.size());
+        std::string failInfo2 = "fail receiver task num:" +
+                                  std::to_string(_failReceTask.size());
+
+        Command::fmtBulk(ss, importSlots);
+        Command::fmtBulk(ss, succISlots);
+        Command::fmtBulk(ss, failISlots);
+        Command::fmtBulk(ss, taskSizeInfo2);
+        Command::fmtBulk(ss, succcInfo2);
+        Command::fmtBulk(ss, failInfo2);
+    }
 
     if (ss.str().size() == 0) {
         return  {ErrorCodes::ERR_WRONG_TYPE, "no task info"};
@@ -1043,7 +1085,7 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
 Expected<std::string> MigrateManager::getTaskInfo() {
     std::stringstream ss;
     std::lock_guard<myMutex> lk(_mutex);
-    uint32_t  totalSize = _migrateSendTask.size()+ _migrateReceiveTask.size()
+    uint32_t  totalSize = _migrateSendTask.size()+ _migrateReceiveTaskMap.size()
                     +_failSenderTask.size() +_succSenderTask.size()
                     +_failReceTask.size() +_succReceTask.size();
     Command::fmtMultiBulkLen(ss, totalSize);
@@ -1110,23 +1152,22 @@ Expected<std::string> MigrateManager::getTaskInfo() {
         ++it;
     }
 
-    for (auto it = _migrateReceiveTask.begin(); it != _migrateReceiveTask.end(); ) {
+    for (auto it = _migrateReceiveTaskMap.begin(); it != _migrateReceiveTaskMap.end(); ) {
         Command::fmtMultiBulkLen(ss, 4);
-
         std::string taskState = "receiveTaskState:" +
-                            receTaskTypeString((*it)->state);
-        std::string slotsInfo = bitsetStrEncode((*it)->slots);
+                            receTaskTypeString((it->second)->state);
+        std::string slotsInfo = bitsetStrEncode((it->second)->slots);
         slotsInfo.erase(slotsInfo.end()-1);
 
         Command::fmtBulk(ss, "receiveTaskSlots:" + slotsInfo);
         Command::fmtBulk(ss, taskState);
 
         std::string snapshotInfo = "receive snapshot keys num:"
-                            + std::to_string((*it)->receiver->getSnapshotNum());
+                            + std::to_string(it->second->receiver->getSnapshotNum());
         Command::fmtBulk(ss, snapshotInfo);
 
         std::string binlogInfo = "receive binlog num:"
-                            + std::to_string((*it)->receiver->getBinlogNum());
+                            + std::to_string(it->second->receiver->getBinlogNum());
 
         Command::fmtBulk(ss, binlogInfo);
         ++it;

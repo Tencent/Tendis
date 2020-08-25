@@ -904,7 +904,7 @@ bool ServerEntry::processRequest(Session *sess) {
             std::vector<std::string> args = ns->getArgs();
             // we have called precheck, it should have 2 args
             //INVARIANT(args.size() == 4);
-            _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2], args[3]);
+            _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2], args[3], args[4]);
             return false;
         } else if (expCmdName == "preparemigrate") {
             LOG(INFO) << "prepare migrate command";

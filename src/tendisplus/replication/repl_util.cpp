@@ -270,7 +270,8 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 }
 
 Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
-                  uint32_t dstStoreId, bool needHeartBeart,
+                  uint32_t dstStoreId, const std::string& taskId,
+                  bool needHeartBeart,
                   uint32_t secs) {
     std::stringstream ss2;
 
@@ -285,10 +286,11 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
         if (!needHeartBeart) {
             return {ErrorCodes::ERR_OK, "finish send bulk"};
         }
-
-        Command::fmtMultiBulkLen(ss2, 2);
-        Command::fmtBulk(ss2, "binlog_heartbeat");
+        // keep the client alive
+        Command::fmtMultiBulkLen(ss2, 3);
+        Command::fmtBulk(ss2, "migrate_heartbeat");
         Command::fmtBulk(ss2, std::to_string(dstStoreId));
+        Command::fmtBulk(ss2, taskId);
     }
 
     std::string stringtoWrite = ss2.str();
@@ -320,6 +322,7 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
                        uint64_t binlogPos, uint64_t binlogEnd,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slotsMap,
+                       const std::string& taskid,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
                        uint64_t* newBinlogId) {
@@ -360,6 +363,8 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     *sendBinlogNum = 0;
     uint64_t binlogId = binlogPos;
     uint64_t binlogNum = 0;
+    uint64_t totalLogNum = 0;
+    uint64_t heartBeatTime = sinceEpoch();
     while (true) {
         Expected<ReplLogRawV2> explog = cursor->next();
         if (!explog.ok()) {
@@ -373,6 +378,21 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
             LOG(ERROR) << "iter binlog failed:"
                        << explog.status().toString();
             return explog.status();
+        }
+
+        if (++totalLogNum % 1000) {
+            auto delay = sinceEpoch() - heartBeatTime;
+            if (delay > 60) {
+                // send migrate heartheat
+                auto s = sendWriter(nullptr, client, dstStoreId,
+                                    taskid, true, timeoutSecs);
+                if (!s.ok()) {
+                    LOG(ERROR) << "send migrate heartbeat fail on task:"
+                               << taskid << s.toString();
+                    return s;
+                }
+                heartBeatTime = sinceEpoch();
+            }
         }
 
         auto slot = explog.value().getChunkId();
@@ -396,7 +416,8 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
             binlogId = explog.value().getBinlogId();
 
             if (writeFull || writer->getFlag() == BinlogFlag::FLUSH) {
-                auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
+                auto s = sendWriter(writer.get(), client, dstStoreId,
+                                    taskid, needHeartBeart, timeoutSecs);
                 if (!s.ok()) {
                     LOG(ERROR) << "send writer bulk fail on slot:"
                         << slot << " " << s.toString();
@@ -415,15 +436,15 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
         }
     }
     if (writer->getCount() != 0) {
-        auto s = sendWriter(writer.get(), client, dstStoreId, needHeartBeart, timeoutSecs);
+        auto s = sendWriter(writer.get(), client, dstStoreId,
+                           taskid, needHeartBeart, timeoutSecs);
         if (!s.ok()) {
             LOG(ERROR) << "send writer bulk fail, cout:" << writer->getCount();
             return s;
         }
         *newBinlogId = binlogId;
         *sendBinlogNum += binlogNum;
-        binlogNum = 0;
-		
+
         /* *
          * Rate limit for migration
          */

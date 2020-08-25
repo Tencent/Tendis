@@ -69,7 +69,7 @@ void GCManager::controlRoutine() {
 void GCManager::cronCheck() {
     while (_isRunning.load(std::memory_order_relaxed)) {
         checkGarbage();
-        std::this_thread::sleep_for(10s);
+        std::this_thread::sleep_for(1000s);
         DLOG(INFO) << "check thread is running";
     }
 }
@@ -83,7 +83,8 @@ SlotsBitmap GCManager::getCheckList() {
     while (idx < checklist.size()) {
         /*NOTE(wayenchen) garbage list should not be migrating,
          * should not belong to me and is not empty*/
-        if (_svr->getMigrateManager()->slotInTask(idx) || myslots.test(idx)
+        if (_svr->getMigrateManager()->slotInTask(idx)
+                || myslots.test(idx)
                 || _svr->getClusterMgr()->emptySlot(idx)
                 || _deletingSlots.test(idx)) {
             checklist.reset(idx);
@@ -189,19 +190,20 @@ bool GCManager::gcSchedule(const SCLOCK::time_point &now) {
     return doSth;
 }
 
+bool GCManager::slotIsDeleting(uint32_t slot) {
+    std::lock_guard<myMutex> lk(_mutex);
+    return  _deletingSlots.test(slot) ? true : false;
+}
 /*
- * delete the data in range (slotStart,slotEnd) which belong to same storeid,
- * the task will start after delay seconds (delay deleting is more stable when migrating)
- * @note (wayenchen) if any cluster or migrate task pass a [start, end] to this API,
-    the storeid passed to deleteRange is based on slotStart and slotEnd
- */
-Status GCManager::deleteChunks(uint32_t slotStart, uint32_t slotEnd, mstime_t delay) {
-    uint32_t storeid =  _svr->getSegmentMgr()->getStoreid(slotStart);
-    // NOTE(wayenchen) if any cluster or migrate  task pass a [start, end] deleteRange to this API, the
-    // *storeid passed to deleteRange is based on slotStart and slotEnd, not
-    if (_svr->getSegmentMgr()->getStoreid(slotEnd) != storeid) {
+ *  if any cluster or migrate task pass a [storeid start, end] deleteRange to this API, the
+    the task will start after delay seconds (delay deleting is more stable when migrating)
+ * @note (wayenchen) it is better to delay for sometime to delete in migrating situation
+*/
+Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay) {
+    if ( _svr->getSegmentMgr()->getStoreid(slotStart) != storeid
+                || _svr->getSegmentMgr()->getStoreid(slotEnd) != storeid) {
         return {ErrorCodes::ERR_INTERNAL,
-                "storeid of startSlot should be equal to endSlot"};
+                "storeid of SlotStart or slotEnd is not matched"};
     }
     if (slotStart > slotEnd) {
         return {ErrorCodes::ERR_INTERNAL,
@@ -217,8 +219,8 @@ Status GCManager::deleteChunks(uint32_t slotStart, uint32_t slotEnd, mstime_t de
     return  {ErrorCodes::ERR_OK, ""};
 }
 
-/* given a slotlist and delete them all
- * (this slots may belong to different storeid)*/
+/* given a slotlist and delete them of all storeids
+ * note(wayenchen): this slots belong to different storeid*/
 Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList, mstime_t delay) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> slotMap;
     for (const auto &slot : slotsList) {
@@ -267,7 +269,7 @@ void GCManager::garbageDelete(DeleteRangeTask *task) {
 }
 
 Status DeleteRangeTask::deleteSlotRange() {
-    auto expdb =  _svr->getSegmentMgr()->getDb(nullptr, _storeid,
+    auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
                                               mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
         LOG(ERROR) << "getDb failed:" << _storeid;
@@ -278,22 +280,43 @@ Status DeleteRangeTask::deleteSlotRange() {
     RecordKey rkEnd(_slotEnd + 1, 0, RecordType::RT_INVALID, "", "");
     string start = rkStart.prefixChunkid();
     string end = rkEnd.prefixChunkid();
-
     auto s = kvstore->deleteRange(start, end);
 
     if (!s.ok()) {
         serverLog(LL_NOTICE, "DeleteRangeTask::deleteChunk commit failed,"
-            "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
+                                     "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
             _slotStart,
             _slotEnd,
             s.toString().c_str());
         return s;
     }
+    // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
+    //     so we call compactRange to real delete the keys.
+    s = kvstore->compactRange(&start, &end);
+
+    if (!s.ok()) {
+        serverLog(LL_NOTICE, "DeleteRangeTask::kvstore->compactRange failed,"
+                                     "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
+            _slotStart,
+            _slotEnd,
+            s.toString().c_str());
+        return s;
+    }
+
     serverLog(LL_VERBOSE, "DeleteRangeTask::deleteRange finished,"
                           "from [startSlot: %u] to [endSlot: %u]",
         _slotStart,
         _slotEnd);
     return {ErrorCodes::ERR_OK, ""};
+
+}
+
+void GCManager::garbageDeleterResize(size_t size) {
+    _gcDeleter->resize(size);
+}
+
+size_t GCManager::garbageDeleterSize() {
+    return _gcDeleter->size();
 }
 
 }

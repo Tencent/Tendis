@@ -59,6 +59,10 @@ class ChunkMigrateSender{
         _dbWithLock.reset();
     }
 
+    void setTaskId(const std::string& taskid) {
+        _taskid = taskid;
+    }
+
     void setDstStoreid(uint32_t dstStoreid) {
         _dstStoreid = dstStoreid;
     }
@@ -112,6 +116,7 @@ private:
 
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
+    std::string _taskid;
     std::shared_ptr<ClusterState> _clusterState;
     MigrateSenderStatus _sendstate;
     uint32_t _storeid;

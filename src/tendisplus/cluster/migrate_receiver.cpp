@@ -7,11 +7,13 @@ namespace tendisplus {
 ChunkMigrateReceiver::ChunkMigrateReceiver(
     const std::bitset<CLUSTER_SLOTS>& slots,
     uint32_t storeid,
+    std::string taskid,
     std::shared_ptr<ServerEntry> svr,
     std::shared_ptr<ServerParams> cfg) :
     _svr(svr),
     _cfg(cfg),
     _storeid(storeid),
+    _taskid(taskid),
     _slots(slots),
     _snapshotKeyNum(0),
     _binlogNum(0) {
@@ -21,7 +23,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     std::stringstream ss;
     const std::string nodename = _svr->getClusterMgr()->getClusterState()->getMyselfName();
     std::string bitmapStr = _slots.to_string();
-    ss << "readymigrate " << bitmapStr << " " << _storeid << " " << nodename;
+    ss << "readymigrate " << bitmapStr << " " << _storeid << " " << nodename << " " << _taskid;
     Status s = _client->writeLine(ss.str());
     if (!s.ok()) {
         LOG(ERROR) << "readymigrate srcDb failed:" << s.toString();

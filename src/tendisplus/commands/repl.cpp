@@ -1338,6 +1338,65 @@ class BinlogHeartbeatCommand : public Command {
         return Command::fmtOK();
     }
 } binlogHeartbeatCmd;
+
+class MigateHeartbeatCommand : public Command {
+public:
+    MigateHeartbeatCommand()
+            :Command("migrate_heartbeat", "a") {
+    }
+
+    ssize_t arity() const {
+        return 3;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    // migate_heartbeat storeId
+    Expected<std::string> run(Session *sess) final {
+        const std::vector<std::string>& args = sess->getArgs();
+
+        uint32_t storeId;
+        Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
+        if (!exptStoreId.ok()) {
+            return exptStoreId.status();
+        }
+
+        auto svr = sess->getServerEntry();
+        INVARIANT(svr != nullptr);
+        if (exptStoreId.value() >= svr->getKVStoreCount()) {
+            return{ ErrorCodes::ERR_PARSEOPT, "invalid storeId" };
+        }
+        storeId = (uint32_t)exptStoreId.value();
+
+        auto migMgr = svr->getMigrateManager();
+        INVARIANT(migMgr != nullptr);
+
+        // LOCK_IS first
+        auto expdb = svr->getSegmentMgr()->getDb(sess, storeId,
+                                                 mgl::LockMode::LOCK_IS);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        std::string taskId = args[2];
+        Status s = migMgr->applyRepllog(sess, storeId, BinlogApplyMode::NEW_BINLOG_ID, "", taskId);
+
+        if (!s.ok()) {
+            return s;
+        }
+        return Command::fmtOK();
+    }
+} migrateHeartbeatCmd;
+
 #endif
 
 class SlaveofCommand: public Command {

@@ -288,7 +288,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_SAME_NAME(migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
     REGISTER_VARS_SAME_NAME(migrateClearThreadnum, nullptr, nullptr, 1, 200, true);
     REGISTER_VARS_SAME_NAME(migrateReceiveThreadnum, nullptr, nullptr, 1, 200, true);
-    REGISTER_VARS(garbageDeleteThreadnum);
+    REGISTER_VARS_SAME_NAME(garbageDeleteThreadnum, nullptr, nullptr, 1, 100, true);
 
     REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage", clusterRequireFullCoverage);
