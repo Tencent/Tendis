@@ -37,6 +37,7 @@ void GCManager::stop() {
     LOG(INFO) << "GCManager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _controller->join();
+    _cv.notify_one();
     _gcChecker->join();
     _gcDeleter->stop();
     LOG(INFO) << "GCManager stops succ";
@@ -67,12 +68,15 @@ void GCManager::controlRoutine() {
 }
 
 void GCManager::cronCheck() {
-    while (_isRunning.load(std::memory_order_relaxed)) {
+    // NOTE(wayenchen) use cv wait_for to make a crontask instead of longtime sleep(thread.join is not work when sleep)
+     std::unique_lock<std::mutex> lk(_checkerMutex);
+     while(!_cv.wait_for(lk, std::chrono::minutes(30),
+             [this]() { return !_isRunning; })) {
         checkGarbage();
-        std::this_thread::sleep_for(1000s);
         DLOG(INFO) << "check thread is running";
-    }
+     }
 }
+
 /* get cron check slots list, which contain dirty data*/
 SlotsBitmap GCManager::getCheckList() {
     std::lock_guard<myMutex> lk(_mutex);
@@ -93,6 +97,7 @@ SlotsBitmap GCManager::getCheckList() {
     }
     return  checklist;
 }
+
 /* check the chunks which not belong to me but contain keys
  * @note wayenchen checkGarbage is a cron task, may be two ways to finish it:
  *  delete slots one by one or delete at once after check finish
@@ -126,7 +131,8 @@ void GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart, uint32_t s
             _deletingSlots.set(i);
         }
     }
-    auto deleteTask = std::make_unique<DeleteRangeTask>(storeid, slotStart, slotEnd, _svr);
+    auto deleteTask = std::make_unique<DeleteRangeTask>(storeid,
+                                        slotStart, slotEnd, _svr);
     /* NOTE(wayenchen) it is better to delay deleting after migrting  */
     deleteTask->_nextSchedTime = SCLOCK::now() + chrono::seconds (delay);
     _deleteChunkTask.push_back(std::move(deleteTask));
@@ -202,15 +208,23 @@ bool GCManager::slotIsDeleting(uint32_t slot) {
 Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay) {
     if ( _svr->getSegmentMgr()->getStoreid(slotStart) != storeid
                 || _svr->getSegmentMgr()->getStoreid(slotEnd) != storeid) {
+        LOG(ERROR) << "delete slot range from:" << slotStart 
+                   << "to:" << slotEnd
+                   << "not match storeid:" << storeid;
         return {ErrorCodes::ERR_INTERNAL,
                 "storeid of SlotStart or slotEnd is not matched"};
     }
     if (slotStart > slotEnd) {
+        LOG(ERROR) << "delete slot range begin pos:" << slotStart
+                   << "bigger than end pos:" << slotEnd;
         return {ErrorCodes::ERR_INTERNAL,
                 "startSlot should be less than endSlot"};
     }
 
     if (slotEnd >= CLUSTER_SLOTS || slotStart >= CLUSTER_SLOTS) {
+        LOG(ERROR) << "delete slot range from:" << slotStart
+                   << "to:" << slotEnd
+                   << "error, slot is more than 16383";
         return {ErrorCodes::ERR_INTERNAL,
                 "slot should be less than 16383"};
     }
@@ -221,7 +235,8 @@ Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t sl
 
 /* given a slotlist and delete them of all storeids
  * note(wayenchen): this slots belong to different storeid*/
-Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList, mstime_t delay) {
+Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList,
+                                mstime_t delay) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> slotMap;
     for (const auto &slot : slotsList) {
         uint32_t storeid = _svr->getSegmentMgr()->getStoreid(slot);
@@ -238,7 +253,8 @@ Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList, mstime_t dela
         if (!jobList.empty()) {
             auto startPos = n.second[0];
             auto endPos = n.second.back();
-            auto s = deleteChunks(startPos, endPos , delay);
+            uint32_t storeid = _svr->getSegmentMgr()->getStoreid(startPos);
+            auto s = deleteChunks(storeid, startPos, endPos , delay);
             if (!s.ok()) {
                 LOG(ERROR) << s.toString();
                 return  s;
@@ -284,7 +300,7 @@ Status DeleteRangeTask::deleteSlotRange() {
 
     if (!s.ok()) {
         serverLog(LL_NOTICE, "DeleteRangeTask::deleteChunk commit failed,"
-                                     "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
+                        "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
             _slotStart,
             _slotEnd,
             s.toString().c_str());
@@ -296,7 +312,7 @@ Status DeleteRangeTask::deleteSlotRange() {
 
     if (!s.ok()) {
         serverLog(LL_NOTICE, "DeleteRangeTask::kvstore->compactRange failed,"
-                                     "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
+                        "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
             _slotStart,
             _slotEnd,
             s.toString().c_str());

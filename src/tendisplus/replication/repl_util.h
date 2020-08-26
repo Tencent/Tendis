@@ -50,7 +50,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 Status sendWriter(BinlogWriter* writer,
                     BlockingTcpClient*,
                     uint32_t dstStoreId, const std::string& taskid,
-                    bool needHeartBeat, uint32_t secs);
+                    bool needHeartBeat, bool *needRetry, uint32_t secs);
 
 
 Status SendSlotsBinlog(BlockingTcpClient*,
@@ -61,7 +61,8 @@ Status SendSlotsBinlog(BlockingTcpClient*,
                        const std::string& taskid,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
-                       uint64_t* newBinlogId);
+                       uint64_t* newBinlogId,
+                       bool* needRetry);
 
 }  // namespace tendisplus
 

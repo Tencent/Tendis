@@ -306,14 +306,14 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
     return maxBinlogId;
 }
 
-Status ChunkMigrateSender::retrySendBinlog(uint64_t start, uint64_t end,
-                                           uint64_t* binlogNum,
-                                           uint64_t* newBinlogId) {
+Status ChunkMigrateSender::resetClient() {
     std::lock_guard<myMutex> lk(_mutex);
-    bool needHeartbeat = false;
+    //  bool needHeartbeat = false;
+    //   bool needRetry = false;
     setClient(nullptr);
     std::shared_ptr<BlockingTcpClient> client =
             std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
+
     Status s = client->connect(
             _dstIp,
             _dstPort,
@@ -325,44 +325,54 @@ Status ChunkMigrateSender::retrySendBinlog(uint64_t start, uint64_t end,
         return {ErrorCodes::ERR_NETWORK, ""};
     }
     setClient(client);
-    s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-                             start, end, needHeartbeat, _slots,
-                             _taskid, _svr, binlogNum, newBinlogId);
-    if (!s.ok()) {
-        return  {ErrorCodes::ERR_NETWORK, ""};
-    }
-    LOG(INFO) << "reconn receiver and send binlog again on slots:"
-              <<  bitsetStrEncode(_slots);
     return  {ErrorCodes::ERR_OK, ""};
 }
-
 // catch up binlog from _curBinlogid to end
 Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     bool needHeartbeat = false;
+    bool needRetry = false;
     uint64_t binlogNum = 0;
     uint64_t newBinlogId = 0;
     if (_curBinlogid >= end) {
         return { ErrorCodes::ERR_OK, "" };
     }
-    bool done = true;
-    auto s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-                    _curBinlogid, end, needHeartbeat, _slots, _taskid,
-                    _svr, &binlogNum, &newBinlogId);
+    bool done = false;
+    Status s;
 
-    if (!s.ok()) {
-        done = false;
-        /* retry send binlog if network error */
-        if (newBinlogId != 0 && newBinlogId > _curBinlogid) {
-            for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-                auto s = retrySendBinlog(newBinlogId, end,
-                                    &binlogNum, &newBinlogId);
-                if (s.ok()) {
-                    done = true;
-                    break;
-                }
+    for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+        s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
+                            _curBinlogid, end, needHeartbeat, _slots, _taskid,
+                            _svr, &binlogNum, &newBinlogId, &needRetry);
+        /* NOTE(wayenchen) may send half binlog but fail , 
+            so update the _curbinlog first*/
+        {
+            std::lock_guard<myMutex> lk(_mutex);
+            _binlogNum += binlogNum;
+            if (newBinlogId != 0) {
+                _curBinlogid = newBinlogId;
             }
         }
+        if (s.ok()) {
+            done = true;
+            break;
+        }
+
+        if (!s.ok() && needRetry) {
+            if (newBinlogId > 0) {
+                _curBinlogid = newBinlogId;
+            }
+            needRetry = false;
+            s = resetClient();
+            if (!s.ok()) {
+                LOG(ERROR) << "reset client fail on slots:"
+                           << bitsetStrEncode(_slots);
+                continue;
+            }
+            LOG(INFO) << "reconn receiver on slots:"
+                      << bitsetStrEncode(_slots);
+        }
     }
+
     if (!done) {
         serverLog(LL_NOTICE, "ChunkMigrateSender::catchupBinlog from"
                                      " %lu to %lu failed: [%s] [%s] [%s]",
@@ -380,14 +390,6 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
             end,
             _client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str());
-    }
-
-    {
-        std::lock_guard<myMutex> lk(_mutex);
-        _binlogNum += binlogNum;
-        if (newBinlogId != 0) {
-            _curBinlogid = newBinlogId;
-        }
     }
 
     return s;

@@ -917,7 +917,6 @@ bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<Se
     CNodePtr node = state->clusterLookupNode(nodeid);
 
     for (size_t id =0; id < slots.size(); id++) {
-
         if (slots.test(id)) {
             if (state->getNodeBySlot(id) != node) {
                 LOG(ERROR) << "slot:" << id << " not belong to: " << nodeid;
@@ -928,25 +927,12 @@ bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<Se
     return true;
 }
 
-
 std::bitset<CLUSTER_SLOTS> getBitSet(std::vector<uint32_t> vec) {
     std::bitset<CLUSTER_SLOTS> slots;
     for (auto &vs: vec) {
         slots.set(vs);
     }
     return slots;
-}
-
-void testGarbageDelete(std::shared_ptr<ServerEntry> svr) {
-    auto myslots = svr->getClusterMgr()->getClusterState()->getMyselfNode()->getSlots();
-    size_t  idx = 0;
-    while (idx < myslots.size()) {
-        if (!myslots.test(idx)) {
-            uint64_t c = svr->getClusterMgr()->countKeysInSlot(idx);
-            EXPECT_TRUE(c == 0);
-        }
-        idx ++;
-    }
 }
 
 TEST(Cluster, migrate) {
@@ -1049,8 +1035,7 @@ TEST(Cluster, migrate) {
     ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), true);
     // dstNode should contain the keys
     ASSERT_EQ(keysize2, numData);
-    std::this_thread::sleep_for(30s);
-    testGarbageDelete(srcNode);
+    std::this_thread::sleep_for(10s);
 
     // migrate from dstNode to srcNode back
     keysize1 = 0;
@@ -1092,7 +1077,6 @@ TEST(Cluster, migrate) {
     auto meta2 = work2.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
     ASSERT_EQ(meta1, meta2);
     std::this_thread::sleep_for(30s);
-    testGarbageDelete(dstNode);
 
 
 #ifndef _WIN32
@@ -1101,8 +1085,10 @@ TEST(Cluster, migrate) {
         LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
     }
 #endif
+    LOG(INFO) << "stop servers here";
     servers.clear();
 }
+
 
 TEST(Cluster, migrateAndImport) {
     std::vector<std::string> dirs = { "node1", "node2", "node3"};
@@ -1222,7 +1208,6 @@ TEST(Cluster, migrateAndImport) {
     ASSERT_EQ(checkSlotsBlong(bitmap1, dstNode1, dstNode1->getClusterMgr()->getClusterState()->getMyselfName()), true);
     // dstNode should contain the keys
     ASSERT_EQ(keysize2, numData);
-    testGarbageDelete(srcNode);
 
     keysize1 = 0;
     keysize2 = 0;
@@ -1239,7 +1224,6 @@ TEST(Cluster, migrateAndImport) {
     // dstNode should contain the keys
     //NOTE(wayenchen) delelte key may delay in master, not expected zero here
     ASSERT_EQ(keysize2, numData);
-    testGarbageDelete(dstNode1);
 
 #ifndef _WIN32
     for (auto svr : servers) {
@@ -1257,11 +1241,6 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr, std::vector<uint32_t> sl
         EXPECT_TRUE(c != 0);
         LOG(INFO) << "slot:"<<slotsList[i] << " keys count before delete:" << c;
     }
-
-    SlotsBitmap slots;
-    for (size_t i = 0; i < slotsList.size(); ++i) {
-        slots.set(slotsList[i]);
-    }
     svr->getGcMgr()->deleteSlotsList(slotsList, 0);
     std::this_thread::sleep_for(std::chrono::seconds(5));
 
@@ -1270,7 +1249,18 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr, std::vector<uint32_t> sl
         EXPECT_TRUE(c == 0);
     }
 }
- 
+
+void testDeleteRange(std::shared_ptr<ServerEntry> svr, uint32_t storeid, uint32_t start, uint32_t end) {
+    svr->getGcMgr()->deleteChunks(storeid, start, end);
+    std::this_thread::sleep_for(std::chrono::seconds(8));
+    for (size_t i = start; i <= end; ++i) {
+        if (svr->getSegmentMgr()->getStoreid(i) == storeid) {
+            uint64_t c = svr->getClusterMgr()->countKeysInSlot(i);
+            EXPECT_TRUE(c == 0);
+        }
+    }
+}
+
 TEST(Cluster, deleteChunks) {
     std::vector<std::string> dirs = { "node1"};
     uint32_t startPort = 14200;
@@ -1313,10 +1303,14 @@ TEST(Cluster, deleteChunks) {
     std::this_thread::sleep_for(5s);
 
     testDeleteChunks(srcNode, {5000});
-    testDeleteChunks(srcNode, {5100,5110,5120});
     testDeleteChunks(srcNode, {5200,5210,5220,5280});
-    testDeleteChunks(srcNode, {5300,5340,5350,5380});
     testDeleteChunks(srcNode, {5130,5131,5132,5133,5134,5140,5141,5142});
+
+    auto storeid1 = srcNode->getSegmentMgr()->getStoreid(6000);
+    auto storeid2 = srcNode->getSegmentMgr()->getStoreid(6200);
+
+    EXPECT_TRUE(storeid1 == storeid2);
+    testDeleteRange(srcNode, storeid1, 6000, 6200);
 
 #ifndef _WIN32
     for (auto svr : servers) {
@@ -1329,7 +1323,7 @@ TEST(Cluster, deleteChunks) {
 
 TEST(Cluster, ErrStoreNum) {
     std::vector<std::string> dirs = {"node1", "node2"};
-    uint32_t startPort = 17000;
+    uint32_t startPort = 17500;
 
     const auto guard = MakeGuard([dirs] {
         for (auto dir : dirs) {

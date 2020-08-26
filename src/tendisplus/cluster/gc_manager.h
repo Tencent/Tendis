@@ -23,7 +23,6 @@ enum class DeleteRangeState {
     NONE = 0,
     START,
     SUCC,
-    RETRY,
     ERR
 };
 
@@ -48,7 +47,6 @@ public:
     SCLOCK::time_point _nextSchedTime;
     mutable myMutex _mutex;
     DeleteRangeState _state;
-    std::unique_ptr<DbWithLock> _dbWithLock;
     Status deleteSlotRange();
 };
 
@@ -83,6 +81,8 @@ private:
     std::shared_ptr<ClusterState> _cstate;
     std::atomic<bool> _isRunning;
     mutable myMutex _mutex;
+    mutable std::mutex _checkerMutex;
+    std::condition_variable _cv;
     std::unique_ptr<std::thread> _controller;
 
     std::list<std::shared_ptr<DeleteRangeTask>> _deleteChunkTask;

@@ -238,8 +238,6 @@ class MigrateManager {
     std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
     // receiver's pov
-    std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
-
     std::map<std::string, std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTaskMap;
 
 

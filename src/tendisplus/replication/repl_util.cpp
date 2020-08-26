@@ -271,7 +271,7 @@ Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
 
 Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
                   uint32_t dstStoreId, const std::string& taskId,
-                  bool needHeartBeart,
+                  bool needHeartBeart, bool *needRetry,
                   uint32_t secs) {
     std::stringstream ss2;
 
@@ -299,8 +299,10 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
         LOG(WARNING) << " dst Store:" << dstStoreId
                      << " writeData failed:" << s.toString()
                      << "; Size:" << stringtoWrite.size();
+        *needRetry = true;
         return s;
     }
+
     Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
     if (!exptOK.ok()) {
         LOG(WARNING) <<  " dst Store:" << dstStoreId
@@ -325,7 +327,8 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
                        const std::string& taskid,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
-                       uint64_t* newBinlogId) {
+                       uint64_t* newBinlogId,
+                       bool* needRetry) {
     uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
     size_t suggestBytes = svr->getParams()->bingLogSendBytes;
     uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
@@ -380,12 +383,13 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
             return explog.status();
         }
 
-        if (++totalLogNum % 1000) {
+        if (!(++totalLogNum % 10000)) {
             auto delay = sinceEpoch() - heartBeatTime;
-            if (delay > 60) {
+            /*NOTE(wayenchen) send a heartbeat every 6s*/
+            if (delay > 6) {
                 // send migrate heartheat
                 auto s = sendWriter(nullptr, client, dstStoreId,
-                                    taskid, true, timeoutSecs);
+                                    taskid, true, needRetry, timeoutSecs);
                 if (!s.ok()) {
                     LOG(ERROR) << "send migrate heartbeat fail on task:"
                                << taskid << s.toString();
@@ -417,7 +421,7 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
 
             if (writeFull || writer->getFlag() == BinlogFlag::FLUSH) {
                 auto s = sendWriter(writer.get(), client, dstStoreId,
-                                    taskid, needHeartBeart, timeoutSecs);
+                                    taskid, needHeartBeart, needRetry, timeoutSecs);
                 if (!s.ok()) {
                     LOG(ERROR) << "send writer bulk fail on slot:"
                         << slot << " " << s.toString();
@@ -437,7 +441,7 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     }
     if (writer->getCount() != 0) {
         auto s = sendWriter(writer.get(), client, dstStoreId,
-                           taskid, needHeartBeart, timeoutSecs);
+                           taskid, needHeartBeart, needRetry, timeoutSecs);
         if (!s.ok()) {
             LOG(ERROR) << "send writer bulk fail, cout:" << writer->getCount();
             return s;

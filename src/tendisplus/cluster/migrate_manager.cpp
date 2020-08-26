@@ -159,9 +159,9 @@ Status MigrateManager::stopStoreTask(uint32_t storeid) {
             iter->nextSchedTime = SCLOCK::time_point::max();
         }
     }
-    for (auto &iter : _migrateReceiveTask) {
-        if (iter->storeid == storeid) {
-            iter->nextSchedTime = SCLOCK::time_point::max();
+    for (auto &iter : _migrateReceiveTaskMap) {
+        if (iter.second->storeid == storeid) {
+            iter.second->nextSchedTime = SCLOCK::time_point::max();
         }
     }
 
@@ -762,9 +762,9 @@ void MigrateManager::checkMigrateStatus(MigrateReceiveTask* task) {
     task->nextSchedTime = nextSched;
     task->isRunning = false;
     auto delay = sinceEpoch() - task->lastSyncTime;
-    /* NOTE(wayenchen):sendbinlog beatheat interval is set to 60s, 
-        so mark 70s as no connected stated*/
-    if (delay > 70) {
+    /* NOTE(wayenchen):sendbinlog beatheat interval is set to 6s,
+        so mark 20s as no heartbeat for more than three times*/
+    if (delay > 20) {
         LOG(ERROR) << "receiver task receive binlog timeout"
                    << " on slots:" << bitsetStrEncode(task->slots);
         task->state = MigrateReceiveState::ERR;
