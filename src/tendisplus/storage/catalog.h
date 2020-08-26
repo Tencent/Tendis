@@ -173,6 +173,7 @@ class Catalog {
     Status setEpochMeta(const EpochMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
+    Status setMainMeta(const MainMeta& meta);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }
     uint32_t getChunkSize() const { return _chunkSize; }
@@ -182,7 +183,7 @@ class Catalog {
     }
 
  private:
-    Status setMainMeta(const MainMeta& meta);
+    //Status setMainMeta(const MainMeta& meta);
     std::unique_ptr<KVStore> _store;
     uint32_t _kvStoreCount;
     uint32_t _chunkSize;

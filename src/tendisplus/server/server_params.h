@@ -307,7 +307,10 @@ public:
 
     uint32_t chunkSize = 0x4000;  // same as rediscluster
     uint32_t kvStoreCount = 10;
-    std::string binlogVersion;
+    // 0 : has no meaning
+    // 1 : one default column family
+    // 2 : two column family
+    std::string binlogVersion = "0";
 
     uint32_t scanCntIndexMgr = 1000;
     uint32_t scanJobCntIndexMgr = 1;

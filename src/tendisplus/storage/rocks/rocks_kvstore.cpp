@@ -1745,6 +1745,10 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
     
+    RocksKVCursor cursor(std::move(iter));
+    cursor.seekToLast();
+    Expected<Record> expRcd = cursor.next();
+
     RocksKVCursor binlog_cursor(std::move(binlog_iter)); 
     binlog_cursor.seekToLast();
     Expected<Record> binlog_expRcd = binlog_cursor.next();
@@ -1815,6 +1819,40 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
         INVARIANT_D(_highestVisible < _nextBinlogSeq);
     } else {
         return binlog_expRcd.status();
+    }
+
+    // we need to check binlogVersion, in case reforming db into two column
+    // families
+    // ToDo: we need to delete remaining binlog in defaultCF, and pay attention to 
+    // the number sequence of binlog file flushed to disk.
+    if (_cfg->binlogUsingDefaultCF == false && _cfg->binlogVersion == "1") {
+        if (expRcd.ok()) {
+            const RecordKey& rk = expRcd.value().getRecordKey();
+            if (rk.getRecordType() == RecordType::RT_BINLOG) {
+                auto explk = ReplLogKeyV2::decode(rk);
+                if (!explk.ok()) {
+                    return explk.status();
+                } else {
+                    auto binlogId = explk.value().getBinlogId();
+                    LOG(INFO) << "store(upgrade binlogVersion from 1 to 2):" << dbId()
+                              << " nextSeq change from:" << _nextTxnSeq
+                              << " to:" << binlogId + 1;
+                    maxCommitId = binlogId;
+                    _nextTxnSeq = maxCommitId + 1;
+                    _nextBinlogSeq = _nextTxnSeq;
+                    _highestVisible = maxCommitId;
+                    needDeleteBinlog = true;
+                }
+            } else {
+                LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no binlog "
+                             "in default CF";
+            }
+        } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no data "
+                         "in default CF";
+        } else {
+            return expRcd.status();
+        }
     }
 
 #endif

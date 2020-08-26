@@ -4,6 +4,7 @@
 #include "tendisplus/utils/portable.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/cluster/cluster_manager.h"
 #include "endian.h"
 
 namespace tendisplus {
@@ -269,7 +270,7 @@ Expected<Record> BasicDataCursor::next() {
     auto expRcd = _baseCursor->next();
     if (expRcd.ok()) {
         Record dataRecord(expRcd.value());
-        if (dataRecord.getRecordKey().getChunkId() <= 16383) {
+        if (dataRecord.getRecordKey().getChunkId() < CLUSTER_SLOTS) {
             return dataRecord;
         } else {
             return {ErrorCodes::ERR_EXHAUST, "no more basic data"};
@@ -287,7 +288,7 @@ Expected<std::string> BasicDataCursor::key() {
     auto expKey = _baseCursor->key();
     if (expKey.ok()) {
         std::string dataKey = expKey.value();
-        if (RecordKey::decodeChunkId(dataKey) <= 16383) {
+        if (RecordKey::decodeChunkId(dataKey) < CLUSTER_SLOTS) {
             return dataKey;
         } else {
             return {ErrorCodes::ERR_EXHAUST, "no more basic data"};

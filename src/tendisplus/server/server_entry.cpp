@@ -401,9 +401,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         if (cfg->binlogUsingDefaultCF == false) {
             // if data is produced by one-clolumn db, we want to start it with
             // two-column db, we need to transfer binlog from default_CF to binlog_CF
-            LOG(FATAL) << "binlogVersion is " << _catalog->getBinlogVersion()
-                       << ",we need to set binlogUsingDefaultCF to true";
-            INVARIANT(0);
+            LOG(INFO) << "binlogVersion is " << _catalog->getBinlogVersion()
+                      << ", binlogUsingDefaultCF is false, we start transfering "
+                         "binlog from default_CF to binlog_CF";
+            //INVARIANT(0);
+            _cfg->binlogVersion = "1";
         }
     } else if (_catalog->getBinlogVersion() == "2") {
         if (cfg->binlogUsingDefaultCF == true) {
@@ -442,6 +444,23 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode,
                 RocksKVStore::TxnMode::TXN_PES)));
+    }
+
+    // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
+    // initing kvstore with two cf.
+    if (cfg->binlogUsingDefaultCF == false &&
+        _catalog->getBinlogVersion() == "1") {
+        auto pMeta =
+            std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
+        Status s = _catalog->setMainMeta(*pMeta);
+        if (!s.ok()) {
+            LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
+            INVARIANT(0);
+        }
+        _cfg->binlogVersion = "2";
+        _catalog->setBinlogVersion("2");
+        LOG(INFO) << "we finish transfering "
+                     "binlog from default_CF to binlog_CF";
     }
 
     installStoresInLock(tmpStores);
