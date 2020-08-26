@@ -343,7 +343,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
         s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
                             _curBinlogid, end, needHeartbeat, _slots, _taskid,
                             _svr, &binlogNum, &newBinlogId, &needRetry);
-        /* NOTE(wayenchen) may send half binlog but fail , 
+        /* NOTE(wayenchen) may have already sended half binlog but fail, 
             so update the _curbinlog first*/
         {
             std::lock_guard<myMutex> lk(_mutex);
@@ -659,7 +659,7 @@ Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots)
             } else {
                 if (startChunkid != UINT32_MAX) {
                     /* just throw it into gc job, no waiting for deleting result */
-                    auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid, 3600);
+                    auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
                     if (!s.ok()) {
                         LOG(ERROR) << "deleteChunk fail, startChunkid:"
                                    << startChunkid

@@ -309,6 +309,7 @@ Status sendWriter(BinlogWriter* writer, BlockingTcpClient*client,
                      << " readLine failed:" << exptOK.status().toString()
                      << "; Size:" << stringtoWrite.size()
                      << "; Seconds:" << secs;
+        *needRetry = true;
         return exptOK.status();
     } else if (exptOK.value() != "+OK") {
         LOG(WARNING) << " dst Store:" << dstStoreId
