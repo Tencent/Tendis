@@ -27,6 +27,8 @@ using preProcess = std::function<string (const string &)>;
 string removeQuotes(const string& v);
 string removeQuotesAndToLower(const string& v);
 
+#define BINLOGVERSION_1_2 (1<<0)
+
 class BaseVar {
 public:
     BaseVar(const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)
@@ -307,10 +309,6 @@ public:
 
     uint32_t chunkSize = 0x4000;  // same as rediscluster
     uint32_t kvStoreCount = 10;
-    // 0 : has no meaning
-    // 1 : one default column family
-    // 2 : two column family
-    std::string binlogVersion = "0";
 
     uint32_t scanCntIndexMgr = 1000;
     uint32_t scanJobCntIndexMgr = 1;

@@ -191,7 +191,8 @@ class RocksKVStore: public KVStore {
         std::shared_ptr<rocksdb::Cache> blockCache,
         bool enableRepllog = true,
         KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
-        TxnMode txnMode = TxnMode::TXN_PES);
+        TxnMode txnMode = TxnMode::TXN_PES,
+        uint32_t flag = 0);
     virtual ~RocksKVStore() = default;
     Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
@@ -253,7 +254,8 @@ class RocksKVStore: public KVStore {
 
     Expected<uint64_t> restart(bool restore = false,
             uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID,
-            uint64_t maxBinlogid = UINT64_MAX) final;
+            uint64_t maxBinlogid = UINT64_MAX,
+            uint32_t flag = 0) final;
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
     Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;

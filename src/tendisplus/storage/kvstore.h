@@ -429,7 +429,8 @@ class KVStore {
     // return the greatest commitId
     virtual Expected<uint64_t> restart(bool restore = false,
                     uint64_t nextBinlogid = Transaction::MIN_VALID_TXNID,
-                    uint64_t maxBinlogid = Transaction::TXNID_UNINITED) = 0;
+                    uint64_t maxBinlogid = Transaction::TXNID_UNINITED,
+                    uint32_t flag = 0) = 0;
     virtual Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) = 0;
 
     // backup related apis, allows only one backup at a time

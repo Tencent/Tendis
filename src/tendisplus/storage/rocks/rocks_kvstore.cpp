@@ -1635,7 +1635,7 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
 }
 
 Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
-        uint64_t highestVisible) {
+        uint64_t highestVisible, uint32_t flag) {
   // when do backup will get _highestVisible first, and backup later.
   // so the _highestVisible maybe smaller than backup.
   // so slaveof need the slave delete the binlogs after _highestVisible for safe,
@@ -1825,7 +1825,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
     // families
     // ToDo: we need to delete remaining binlog in defaultCF, and pay attention to 
     // the number sequence of binlog file flushed to disk.
-    if (_cfg->binlogUsingDefaultCF == false && _cfg->binlogVersion == "1") {
+    if (flag & BINLOGVERSION_1_2) {
         if (expRcd.ok()) {
             const RecordKey& rk = expRcd.value().getRecordKey();
             if (rk.getRecordType() == RecordType::RT_BINLOG) {
@@ -1887,7 +1887,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
             std::shared_ptr<rocksdb::Cache> blockCache,
             bool enableRepllog,
             KVStore::StoreMode mode,
-            TxnMode txnMode)
+            TxnMode txnMode,
+            uint32_t flag)
         :KVStore(id, cfg->dbPath),
          _cfg(cfg),
          _isRunning(false),
@@ -1908,11 +1909,14 @@ RocksKVStore::RocksKVStore(const std::string& id,
     if (_cfg->noexpire) {
         _enableFilter = false;
     }
-    Expected<uint64_t> s = restart(false);
+    
+    Expected<uint64_t> s =
+        restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
-                    << ", failed info:" << s.status().toString();
+                   << ", failed info:" << s.status().toString();
     }
+
     initRocksProperties();
 }
 

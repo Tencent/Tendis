@@ -141,8 +141,7 @@ Catalog::Catalog(std::unique_ptr<KVStore> store, uint32_t kvStoreCount,
                  uint32_t chunkSize, bool binlogUsingDefaultCF)
     :_store(std::move(store)),
     _kvStoreCount(kvStoreCount),
-    _chunkSize(chunkSize),
-    _binlogUsingDefaultCF(binlogUsingDefaultCF) {
+    _chunkSize(chunkSize) {
     auto mainMeta = getMainMeta();
     if (mainMeta.ok()) {
         if (_kvStoreCount != mainMeta.value()->kvStoreCount ||
@@ -154,28 +153,16 @@ Catalog::Catalog(std::unique_ptr<KVStore> store, uint32_t kvStoreCount,
                 << ") not equal";
             INVARIANT(0);
         }
-        _binlogVersion = mainMeta.value()->binlogVersion;
-        // set the mainmeta of new version to replace the outdated mainmeta
-        /*if (mainMeta.value()->binlogVersion == "1") {
-            auto pMeta =
-                std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
-            Status s = setMainMeta(*pMeta);
-            if (!s.ok()) {
-                LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
-                INVARIANT(0);
-            }
-        }*/
     } else if (mainMeta.status().code() == ErrorCodes::ERR_NOTFOUND) {
         auto pMeta = std::unique_ptr<MainMeta>(
             new MainMeta(kvStoreCount, chunkSize));
-        Status s = setMainMeta(*pMeta);
+        Status s = setMainMeta(*pMeta, binlogUsingDefaultCF);
         if (!s.ok()) {
             LOG(FATAL) << "catalog setMainMeta error:"
                 << s.toString();
             INVARIANT(0);
         }
         auto tempMainMeta = getMainMeta();
-        _binlogVersion = tempMainMeta.value()->binlogVersion;
     } else {
         LOG(FATAL) << "catalog getMainMeta error:"
                    << mainMeta.status().toString();
@@ -368,7 +355,7 @@ Expected<std::unique_ptr<StoreMainMeta>> Catalog::getStoreMainMeta(
     return result;
 }
 
-Status Catalog::setMainMeta(const MainMeta& meta) {
+Status Catalog::setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF) {
     std::stringstream ss;
     ss << "main_meta";
     RecordKey rk(0, 0, RecordType::RT_META, ss.str(), "");
@@ -385,12 +372,14 @@ Status Catalog::setMainMeta(const MainMeta& meta) {
     writer.Key("chunkSize");
     writer.Uint64(meta.chunkSize);
 
-    if (_binlogUsingDefaultCF == true) {
+    if (binlogUsingDefaultCF == true) {
         writer.Key("binlogVersion");
         writer.String("1");
+        _binlogVersion = "1";
     } else {
         writer.Key("binlogVersion");
         writer.String("2");
+        _binlogVersion = "2";
     }
 
     writer.EndObject();
@@ -458,8 +447,10 @@ Expected<std::unique_ptr<MainMeta>> Catalog::getMainMeta() {
     if (doc.HasMember("binlogVersion")) {
         INVARIANT(doc["binlogVersion"].IsString());
         result->binlogVersion = doc["binlogVersion"].GetString();
+        _binlogVersion = result->binlogVersion;
     } else {
         result->binlogVersion = "1";
+        _binlogVersion = result->binlogVersion;
     }
     
 

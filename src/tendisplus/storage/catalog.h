@@ -173,14 +173,11 @@ class Catalog {
     Status setEpochMeta(const EpochMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
-    Status setMainMeta(const MainMeta& meta);
+    Status setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }
     uint32_t getChunkSize() const { return _chunkSize; }
     string getBinlogVersion() const { return _binlogVersion; }
-    void setBinlogVersion(std::string binlogversion) {
-        _binlogVersion = binlogversion;
-    }
 
  private:
     //Status setMainMeta(const MainMeta& meta);
@@ -190,7 +187,6 @@ class Catalog {
     //== "1" represents that data and binlogs are stroed in one cloumn family
     //== "2" represents that data and binlogs are stored in two column family seperately
     string _binlogVersion;
-    bool _binlogUsingDefaultCF;
 };
 
 }  // namespace tendisplus

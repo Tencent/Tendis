@@ -397,6 +397,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     // column_family exists
     // ToDo : while starting server, if we process data produced by older
     // version, we need to migrate binlog from default columnf to binlog columnf
+    uint32_t flag = 0;
     if (_catalog->getBinlogVersion() == "1") {
         if (cfg->binlogUsingDefaultCF == false) {
             // if data is produced by one-clolumn db, we want to start it with
@@ -405,7 +406,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                       << ", binlogUsingDefaultCF is false, we start transfering "
                          "binlog from default_CF to binlog_CF";
             //INVARIANT(0);
-            _cfg->binlogVersion = "1";
+            flag &= BINLOGVERSION_1_2;
         }
     } else if (_catalog->getBinlogVersion() == "2") {
         if (cfg->binlogUsingDefaultCF == true) {
@@ -443,7 +444,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode,
-                RocksKVStore::TxnMode::TXN_PES)));
+                RocksKVStore::TxnMode::TXN_PES, flag)));
     }
 
     // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
@@ -452,13 +453,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         _catalog->getBinlogVersion() == "1") {
         auto pMeta =
             std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
-        Status s = _catalog->setMainMeta(*pMeta);
+        Status s = _catalog->setMainMeta(*pMeta, cfg->binlogUsingDefaultCF);
         if (!s.ok()) {
             LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
             INVARIANT(0);
         }
-        _cfg->binlogVersion = "2";
-        _catalog->setBinlogVersion("2");
         LOG(INFO) << "we finish transfering "
                      "binlog from default_CF to binlog_CF";
     }
