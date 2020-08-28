@@ -274,21 +274,17 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         auto ptxn1 = kvstore1->createTransaction(nullptr);
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
-        auto cursor1 = txn1->createCursor();
-        cursor1->seek("");
+        auto cursor1 = txn1->createAllDataCursor();
+        auto cursor1_binlog = txn1->createBinlogCursor();
+        //check the data
         while (true) {
             Expected<Record> exptRcd1 = cursor1->next();
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
             INVARIANT(exptRcd1.ok());
-            auto type = exptRcd1.value().getRecordKey().getRecordType();
-            if (!com_binlog && type == RecordType::RT_BINLOG) {
-                continue;
-            }
             count1++;
-
-            // check the binlog together
+            auto type = exptRcd1.value().getRecordKey().getRecordType();
             auto key = exptRcd1.value().getRecordKey();
             auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
             if (!exptRcdv2.ok()) {
@@ -298,19 +294,45 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             EXPECT_TRUE(exptRcdv2.ok());
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
+        //chech the binlog
+        while (com_binlog) {
+            Expected<Record> exptRcd1 = cursor1_binlog->next();
+            if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd1.ok());
+            count1++;
+            auto type = exptRcd1.value().getRecordKey().getRecordType();
+            auto key = exptRcd1.value().getRecordKey();
+            auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
+            if (!exptRcdv2.ok()) {
+              LOG(INFO) << "key:" << key.getPrimaryKey()
+                        << ",type:" << static_cast<int>(type) << " not found!";
+              INVARIANT(0);
+            }
+            EXPECT_TRUE(exptRcdv2.ok());
+            EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+        }
 
-        auto cursor2 = txn2->createCursor();
-        cursor2->seek("");
+        auto cursor2 = txn2->createAllDataCursor();
+        auto cursor2_binlog = txn2->createBinlogCursor();
+        //check the data
         while (true) {
             Expected<Record> exptRcd2 = cursor2->next();
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (!com_binlog && exptRcd2.value().getRecordKey().getRecordType()
-                == RecordType::RT_BINLOG) {
-                continue;
+         
+            INVARIANT(exptRcd2.ok());
+            count2++;
+        }
+        //check the binlog
+        while (com_binlog) {
+            Expected<Record> exptRcd2 = cursor2_binlog->next();
+            if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
             }
-
+            
             INVARIANT(exptRcd2.ok());
             count2++;
         }
@@ -338,8 +360,8 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
         auto ptxn1 = kvstore1->createTransaction(nullptr);
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
-        auto cursor1 = txn1->createCursor();
-        cursor1->seek("");
+        auto cursor1 = txn1->createAllDataCursor();
+        auto cursor1_binlog = txn1->createBinlogCursor();
         while (true) {
             Expected<Record> exptRcd1 = cursor1->next();
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -348,7 +370,6 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
             INVARIANT(exptRcd1.ok());
             count1++;
 
-            // check the binlog together
             auto exptRcdv2 = kvstore2->getKV(
                 exptRcd1.value().getRecordKey(), txn2.get());
             if (exptRcdv2.ok()) {
@@ -357,9 +378,26 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
                 notFoundNum++;
             }
         }
+        //check the binlog
+        while (true) {
+            Expected<Record> exptRcd1 = cursor1_binlog->next();
+            if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd1.ok());
+            count1++;
 
-        auto cursor2 = txn2->createCursor();
-        cursor2->seek("");
+            auto exptRcdv2 =
+                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+            if (exptRcdv2.ok()) {
+                EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+            } else {
+                notFoundNum++;
+            }
+        }
+
+        auto cursor2 = txn2->createAllDataCursor();
+        auto cursor2_binlog = txn2->createBinlogCursor();
         while (true) {
             Expected<Record> exptRcd2 = cursor2->next();
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -368,6 +406,15 @@ void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
             INVARIANT(exptRcd2.ok());
             count2++;
         }
+        while (true) {
+            Expected<Record> exptRcd2 = cursor2_binlog->next();
+            if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd2.ok());
+            count2++;
+        }
+
         if (count1 == 0) {
             EXPECT_EQ(count1, count2);
         } else {
@@ -398,10 +445,18 @@ std::vector<uint32_t> getKeyNum(const std::shared_ptr<ServerEntry>& master) {
         auto ptxn = kvstore->createTransaction(nullptr);
         EXPECT_TRUE(ptxn.ok());
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        auto cursor = txn->createCursor();
-        cursor->seek("");
+        auto cursor = txn->createAllDataCursor();
+        auto cursor_binlog = txn->createBinlogCursor();
         while (true) {
             Expected<Record> exptRcd = cursor->next();
+            if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd.ok());
+            count++;
+        }
+        while (true) {
+            Expected<Record> exptRcd = cursor_binlog->next();
             if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }

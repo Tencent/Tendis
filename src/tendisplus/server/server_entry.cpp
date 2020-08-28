@@ -391,8 +391,30 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         std::move(std::unique_ptr<KVStore>(
             new RocksKVStore(CATALOG_NAME, cfg, nullptr, false,
                 KVStore::StoreMode::READ_WRITE, RocksKVStore::TxnMode::TXN_PES))),
-          kvStoreCount, chunkSize);
+          kvStoreCount, chunkSize, cfg->binlogUsingDefaultCF);
     installCatalog(std::move(catalog));
+    // forward compatibilty : binlogVersion is used to check whether binlog
+    // column_family exists
+    // ToDo : while starting server, if we process data produced by older
+    // version, we need to migrate binlog from default columnf to binlog columnf
+    uint32_t flag = 0;
+    if (_catalog->getBinlogVersion() == "1") {
+        if (cfg->binlogUsingDefaultCF == false) {
+            // if data is produced by one-clolumn db, we want to start it with
+            // two-column db, we need to transfer binlog from default_CF to binlog_CF
+            LOG(INFO) << "binlogVersion is " << _catalog->getBinlogVersion()
+                      << ", binlogUsingDefaultCF is false, we start transfering "
+                         "binlog from default_CF to binlog_CF";
+            //INVARIANT(0);
+            flag &= BINLOGVERSION_1_2;
+        }
+    } else if (_catalog->getBinlogVersion() == "2") {
+        if (cfg->binlogUsingDefaultCF == true) {
+            LOG(FATAL) << "binlogVersion is " << _catalog->getBinlogVersion()
+                       << ",we need to set binlogUsingDefaultCF to false";
+            INVARIANT(0);
+        }
+    }
 
     // kvstore init
     auto blockCache =
@@ -422,7 +444,22 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
         tmpStores.emplace_back(std::unique_ptr<KVStore>(
             new RocksKVStore(std::to_string(i), cfg, blockCache, true, mode,
-                RocksKVStore::TxnMode::TXN_PES)));
+                RocksKVStore::TxnMode::TXN_PES, flag)));
+    }
+
+    // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
+    // initing kvstore with two cf.
+    if (cfg->binlogUsingDefaultCF == false &&
+        _catalog->getBinlogVersion() == "1") {
+        auto pMeta =
+            std::unique_ptr<MainMeta>(new MainMeta(kvStoreCount, chunkSize));
+        Status s = _catalog->setMainMeta(*pMeta, cfg->binlogUsingDefaultCF);
+        if (!s.ok()) {
+            LOG(FATAL) << "catalog setMainMeta error:" << s.toString();
+            INVARIANT(0);
+        }
+        LOG(INFO) << "we finish transfering "
+                     "binlog from default_CF to binlog_CF";
     }
 
     installStoresInLock(tmpStores);

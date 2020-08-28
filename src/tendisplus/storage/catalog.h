@@ -88,6 +88,7 @@ class MainMeta {
 
     uint32_t kvStoreCount;
     uint32_t chunkSize;
+    string binlogVersion;
 };
 
 // cluster meta
@@ -145,8 +146,8 @@ class EpochMeta {
 // store meta
 class Catalog {
  public:
-    Catalog(std::unique_ptr<KVStore> store,
-        uint32_t kvStoreCount, uint32_t chunkSize);
+    Catalog(std::unique_ptr<KVStore> store, uint32_t kvStoreCount,
+            uint32_t chunkSize, bool binlogUsingDefaultCF);
     virtual ~Catalog() = default;
     // repl meta for each store
     Expected<std::unique_ptr<StoreMeta>> getStoreMeta(uint32_t idx);
@@ -162,7 +163,8 @@ class Catalog {
     // cluster meta
     bool clusterMetaExist(Transaction* txn, const std::string& nodeName);
     Status delClusterMeta(const std::string& nodeName);
-    Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(const string& nodeName);
+    Expected<std::unique_ptr<ClusterMeta>> getClusterMeta(
+        const string& nodeName);
 
     Expected<std::vector<std::unique_ptr<ClusterMeta>>> getAllClusterMeta();
     Status setClusterMeta(const ClusterMeta& meta);
@@ -171,15 +173,20 @@ class Catalog {
     Status setEpochMeta(const EpochMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
+    Status setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }
     uint32_t getChunkSize() const { return _chunkSize; }
+    string getBinlogVersion() const { return _binlogVersion; }
 
  private:
-    Status setMainMeta(const MainMeta& meta);
+    //Status setMainMeta(const MainMeta& meta);
     std::unique_ptr<KVStore> _store;
     uint32_t _kvStoreCount;
     uint32_t _chunkSize;
+    //== "1" represents that data and binlogs are stroed in one cloumn family
+    //== "2" represents that data and binlogs are stored in two column family seperately
+    string _binlogVersion;
 };
 
 }  // namespace tendisplus

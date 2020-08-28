@@ -115,16 +115,11 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         auto ptxn1 = kvstore1->createTransaction(nullptr);
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
-        auto cursor1 = txn1->createCursor();
-        cursor1->seek("");
+        auto cursor1 = txn1->createAllDataCursor();
         while (true) {
             Expected<Record> exptRcd1 = cursor1->next();
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
-            }
-            if (exptRcd1.value().getRecordKey().getRecordType()
-                == RecordType::RT_BINLOG) {
-                continue;
             }
             INVARIANT(exptRcd1.ok());
             count1++;
@@ -141,24 +136,17 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             INVARIANT(exptRcd1.value().getRecordKey().getChunkId() != chunkid1);
             INVARIANT(exptRcd1.value().getRecordKey().getChunkId() != chunkid2);
 
-            // check the binlog together
-            auto exptRcdv2 = kvstore2->getKV(
-                exptRcd1.value().getRecordKey(), txn2.get());
+            auto exptRcdv2 =
+                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
             EXPECT_TRUE(!exptRcdv2.ok());
         }
 
-        auto cursor2 = txn2->createCursor();
-        cursor2->seek("");
+        auto cursor2 = txn2->createAllDataCursor();
         while (true) {
             Expected<Record> exptRcd2 = cursor2->next();
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
                 break;
             }
-            if (exptRcd2.value().getRecordKey().getRecordType()
-                == RecordType::RT_BINLOG) {
-                continue;
-            }
-
             INVARIANT(exptRcd2.ok());
             INVARIANT(exptRcd2.value().getRecordKey().getChunkId() == chunkid1 ||
                 exptRcd2.value().getRecordKey().getChunkId() == chunkid2);

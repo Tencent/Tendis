@@ -501,7 +501,7 @@ class SetSerializer: public Serializer {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         RecordKey fakeRk(expdb.value().chunkId,
                 _sess->getCtx()->getDbId(),
                 RecordType::RT_SET_ELE,
@@ -621,7 +621,7 @@ class HashSerializer: public Serializer {
                 expdb.value().chunkId,
                 _sess->getCtx()->getDbId(),
                 RecordType::RT_HASH_ELE, _key, "");
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         cursor->seek(fakeRk.prefixPk());
         while (true) {
             Expected<Record> expRcd = cursor->next();
@@ -1501,7 +1501,7 @@ class RestoreMetaCommand: public Command {
         }
 
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
 
         RecordKey tmplRk(slotId,
                 0,

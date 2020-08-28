@@ -302,6 +302,8 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", bingLogSendBytes);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier", clusterMigrationBarrier);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor", clusterSlaveValidityFactor);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
+                                    binlogUsingDefaultCF);
 
     REGISTER_VARS(netIoMultiIoContext);
     REGISTER_VARS(executorMultiIoContext);

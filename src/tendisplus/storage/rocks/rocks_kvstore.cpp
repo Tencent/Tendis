@@ -13,6 +13,8 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/error/en.h"
+#include "rocksdb/db.h"
+#include "rocksdb/slice.h"
 #include "rocksdb/table.h"
 #include "rocksdb/filter_policy.h"
 #include "rocksdb/utilities/backupable_db.h"
@@ -164,34 +166,53 @@ std::unique_ptr<TTLIndexCursor> RocksTxn::createTTLIndexCursor(
     uint64_t until) {
     RecordKey upper(TTLIndex::CHUNKID + 1, 0, RecordType::RT_INVALID, "", "");
     string upperBound = upper.prefixChunkid();
-    auto cursor = createCursor(&upperBound);
-
+    auto cursor =
+        createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperBound);
     return std::make_unique<TTLIndexCursor>(std::move(cursor), until);
 }
 
 std::unique_ptr<SlotCursor> RocksTxn::createSlotCursor(uint32_t slot) {
     RecordKey chunkMax(slot + 1, 0, RecordType::RT_INVALID, "", "");
     string upperbound = chunkMax.prefixChunkid();
-    auto cursor = createCursor(&upperbound);
-
+    auto cursor =
+        createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
     return std::make_unique<SlotCursor>(std::move(cursor),slot);
 }
 
 unique_ptr <SlotsCursor> RocksTxn::createSlotsCursor(uint32_t start, uint32_t end) {
     RecordKey chunkMax(end + 1, 0, RecordType::RT_INVALID, "", "");
     string upperbound = chunkMax.prefixChunkid();
-    auto cursor = createCursor(&upperbound);
+    auto cursor =
+        createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
     return std::make_unique<SlotsCursor>(std::move(cursor), start, end);
 }
 
 std::unique_ptr<VersionMetaCursor> RocksTxn::createVersionMetaCursor() {
     RecordKey chunkMax(VersionMeta::CHUNKID+1, 0, RecordType::RT_INVALID, "", "");
     string upperbound = chunkMax.prefixChunkid();
-    auto cursor = createCursor(&upperbound);
+    auto cursor =
+        createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperbound);
     return std::make_unique<VersionMetaCursor>(std::move(cursor));
 }
 
-std::unique_ptr<Cursor> RocksTxn::createCursor(const std::string* iterate_upper_bound) {
+std::unique_ptr<BasicDataCursor> RocksTxn::createDataCursor() {
+    auto cursor = createCursor(ColumnFamilyNumber::ColumnFamily_Default);
+    return std::make_unique<BasicDataCursor>(std::move(cursor));
+}
+
+std::unique_ptr<AllDataCursor> RocksTxn::createAllDataCursor() {
+    auto cursor = createCursor(ColumnFamilyNumber::ColumnFamily_Default);
+    return std::make_unique<AllDataCursor>(std::move(cursor));
+}
+
+std::unique_ptr<BinlogCursor> RocksTxn::createBinlogCursor() {
+    auto cursor = createCursor(ColumnFamilyNumber::ColumnFamily_Binlog);
+    return std::make_unique<BinlogCursor>(std::move(cursor));
+}
+
+std::unique_ptr<Cursor> RocksTxn::createCursor(
+    ColumnFamilyNumber column_family_num,
+    const std::string* iterate_upper_bound) {
     rocksdb::ReadOptions readOpts;
     RESET_PERFCONTEXT();
     if (iterate_upper_bound != NULL) {
@@ -199,11 +220,20 @@ std::unique_ptr<Cursor> RocksTxn::createCursor(const std::string* iterate_upper_
         _upperBound = rocksdb::Slice(_strUpperBound);
         readOpts.iterate_upper_bound = &_upperBound;
     }
-    readOpts.snapshot =  _txn->GetSnapshot();
-    rocksdb::Iterator* iter = _txn->GetIterator(readOpts);
+    readOpts.snapshot = _txn->GetSnapshot();
+    // create iterator corresponding to chosen column family
+    rocksdb::Iterator* iter;
+    if (column_family_num == ColumnFamilyNumber::ColumnFamily_Default) {
+        iter = _txn->GetIterator(readOpts);
+    } else if (column_family_num == ColumnFamilyNumber::ColumnFamily_Binlog) {
+        iter =
+            _txn->GetIterator(readOpts, _store->getBinlogColumnFamilyHandle());
+    } else {
+        LOG(WARNING) << "can't create iterator";
+        return nullptr;
+    }
     return std::unique_ptr<Cursor>(
-        new RocksKVCursor(
-            std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
+        new RocksKVCursor(std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
 }
 
 Expected<uint64_t> RocksTxn::commit() {
@@ -283,7 +313,9 @@ Expected<uint64_t> RocksTxn::commit() {
             nullptr, 0);
 
         binlogTxnId = _txnId;
-        auto s = _txn->Put(key.encode(), val.encode(_replLogValues));
+        //put binlog into binlog_column_family
+        auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(), key.encode(),
+                           val.encode(_replLogValues));
         if (!s.ok()) {
             binlogTxnId = Transaction::TXNID_UNINITED;
             return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
@@ -359,7 +391,13 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
     std::string value;
 
     RESET_PERFCONTEXT();
-    auto s = _txn->Get(readOpts, key, &value);
+    rocksdb::Status s;
+    if (RecordKey::decodeType(key) == RecordType::RT_BINLOG) {
+        s = _txn->Get(readOpts, _store->getBinlogColumnFamilyHandle(), key, &value);
+    } else {
+        s = _txn->Get(readOpts, key, &value);
+    }
+    
     if (s.ok()) {
         return value;
     }
@@ -377,6 +415,7 @@ Status RocksTxn::setKV(const std::string& key,
     }
 
     RESET_PERFCONTEXT();
+    //put data into default column family
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -426,7 +465,13 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
         return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
     }
     RESET_PERFCONTEXT();
-    auto s = _txn->Delete(key);
+    rocksdb::Status s;
+    if (RecordKey::decodeType(key) == RecordType::RT_BINLOG) {
+      s = _txn->Delete(_store->getBinlogColumnFamilyHandle(), key);
+    } else {
+      s = _txn->Delete(key);
+    }
+
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
     }
@@ -460,8 +505,8 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
                 LOG(WARNING) << "delKV too big binlog size, invalid key:" + key;
             }
         }
-        ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL, ts ? ts : msSinceEpoch(),
-            key, "");
+        ReplLogValueEntryV2 logVal(ReplOp::REPL_OP_DEL,
+                                   ts ? ts : msSinceEpoch(), key, "");
         // TODO(vinchen): maybe OOM
         _replLogValues.emplace_back(std::move(logVal));
     }
@@ -648,7 +693,7 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
     INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
 
     RESET_PERFCONTEXT();
-    auto s = _txn->Put(logKey, logValue);
+    auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(), logKey, logValue);
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
     }
@@ -671,7 +716,7 @@ Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
     // TODO(takenliu) in ReplLogValueV2, ReplFlag _txnId timestamp VersionEP cmd use who's ?
     // TODO(takenliu) when migrating, binlog and set key value, how to set VersionEP ???
 
-    auto s = _txn->Put(logkey.value().encode(), value);
+    auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(), logkey.value().encode(), value);
     if (!s.ok()) {
         return { ErrorCodes::ERR_INTERNAL, s.ToString() };
     }
@@ -680,7 +725,7 @@ Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
 
 Status RocksTxn::delBinlog(const ReplLogRawV2& log) {
     RESET_PERFCONTEXT();
-    auto s = _txn->Delete(log.getReplLogKey());
+    auto s = _txn->Delete(_store->getBinlogColumnFamilyHandle(), log.getReplLogKey());
     if (!s.ok()) {
         return{ ErrorCodes::ERR_INTERNAL, s.ToString() };
     }
@@ -987,7 +1032,7 @@ rocksdb::Options RocksKVStore::options() {
     options.write_buffer_size = 64 * 1024 * 1024; // 64MB
     // level_0 max size: 8*64MB = 512MB
     options.level0_slowdown_writes_trigger = 8;
-    options.max_write_buffer_number = 4;
+    options.max_write_buffer_number = 2;
     options.max_write_buffer_number_to_maintain = 1;
     options.max_background_compactions = 8;
     options.max_background_flushes = 2;
@@ -1063,28 +1108,32 @@ bool RocksKVStore::isEmpty(bool ignoreBinlog) const {
     }
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-    auto baseCursor = txn->createCursor();
-
+    auto baseCursor = txn->createAllDataCursor();
     Expected<std::string> expKey = baseCursor->key();
+
     if (expKey.ok()) {
-        if (!ignoreBinlog) {
-            return false;
-        }
-        Expected<RecordKey> expRk = RecordKey::decode(expKey.value());
-        if (!expRk.ok()) {
-            LOG(ERROR) << "RecordKey::decode failed.";
-            return false;
-        }
-        if (expRk.value().getChunkId() == ReplLogKeyV2::CHUNKID) {
-            return true;
-        }
         return false;
     } else if (expKey.status().code() == ErrorCodes::ERR_EXHAUST) {
-        return true;
+        if (!ignoreBinlog) {
+            auto binlogCursor = txn->createBinlogCursor();
+            Expected<std::string> expBinlogKey = binlogCursor->key();
+            if (expBinlogKey.ok()) {
+                return false;
+            } else if (expBinlogKey.status().code() == ErrorCodes::ERR_EXHAUST) {
+                return true;
+            } else {
+                LOG(ERROR) << "binlogCursor key failed:"
+                           << expBinlogKey.status().toString();
+                return false;
+            }
+        } else {
+            return true;
+        }
     } else {
         LOG(ERROR) << "baseCursor key failed:" << expKey.status().toString();
-        return false;
+        return false;   
     }
+
 }
 
 Status RocksKVStore::pause() {
@@ -1482,8 +1531,9 @@ Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::compactRange(const std::string* begin,
-    const std::string* end) {
+Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
+                                  const std::string* begin,
+                                  const std::string* end) {
     // TODO(vinchen): need lock_guard?
     auto compactionOptions = rocksdb::CompactRangeOptions();
     auto db =  getBaseDB();
@@ -1504,8 +1554,13 @@ Status RocksKVStore::compactRange(const std::string* begin,
     if (end != nullptr) {
         send = new rocksdb::Slice(*end);
     }
-    rocksdb::Status status =  db->CompactRange(compactionOptions,
-                sbegin, send);
+    rocksdb::Status status;
+    if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
+        status = db->CompactRange(compactionOptions, sbegin, send);
+    } else if (cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
+        status = db->CompactRange(compactionOptions,
+                                  getBinlogColumnFamilyHandle(), sbegin, send);
+    }
     if (!status.ok()) {
         return {ErrorCodes::ERR_INTERNAL, status.getState()};
     }
@@ -1513,7 +1568,17 @@ Status RocksKVStore::compactRange(const std::string* begin,
 }
 
 Status RocksKVStore::fullCompact() {
-    return compactRange(nullptr, nullptr);
+    Status s;
+    // compact data of default column family
+    s = compactRange(ColumnFamilyNumber::ColumnFamily_Default, nullptr,
+                     nullptr);
+    if (!s.ok())
+        return s;
+    // compact data of binlog column family
+    s = compactRange(ColumnFamilyNumber::ColumnFamily_Binlog, nullptr, nullptr);
+    if (!s.ok())
+        return s;
+    return s;
 }
 
 Status RocksKVStore::clear() {
@@ -1570,7 +1635,7 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
 }
 
 Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
-        uint64_t highestVisible) {
+        uint64_t highestVisible, uint32_t flag) {
   // when do backup will get _highestVisible first, and backup later.
   // so the _highestVisible maybe smaller than backup.
   // so slaveof need the slave delete the binlogs after _highestVisible for safe,
@@ -1627,17 +1692,30 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
 
+    rocksdb::Options ColumOpts = options();
     std::unique_ptr<rocksdb::Iterator> iter = nullptr;
+    std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
+    std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
+    column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+        rocksdb::kDefaultColumnFamilyName, ColumOpts));
+    if (_cfg->binlogUsingDefaultCF == false) {
+        column_families.push_back(
+            rocksdb::ColumnFamilyDescriptor("binlog_cf", ColumOpts));
+    }
     if (_txnMode == TxnMode::TXN_OPT) {
         rocksdb::OptimisticTransactionDB *tmpDb;
         rocksdb::Options dbOpts = options();
+        dbOpts.create_missing_column_families = true;
         auto status = rocksdb::OptimisticTransactionDB::Open(
-            dbOpts, dbname, &tmpDb);
+            dbOpts, dbname, column_families, &_cfHandles, &tmpDb); //open two column_family in OptimisticTranDB
         if (!status.ok()) {
             return {ErrorCodes::ERR_INTERNAL, status.ToString()};
         }
         rocksdb::ReadOptions readOpts;
-        iter.reset(tmpDb->GetBaseDB()->NewIterator(readOpts));
+        iter.reset(tmpDb->GetBaseDB()->NewIterator(
+            readOpts, getDataColumnFamilyHandle()));
+        binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
+            readOpts, getBinlogColumnFamilyHandle()));
         _optdb.reset(tmpDb);
     } else {
         rocksdb::TransactionDB* tmpDb;
@@ -1647,28 +1725,40 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
         // txnDbOptions.default_lock_timeout 1sec
         // txnDbOptions.write_policy WRITE_COMMITTED
         rocksdb::Options dbOpts = options();
+        dbOpts.create_missing_column_families = true;
         LOG(INFO) << "rocksdb Open,id:"<< dbId() << " dbname:" << dbname;
+        // open two colum_family in pessimisticTranDB
         auto status = rocksdb::TransactionDB::Open(
-            dbOpts, txnDbOptions, dbname, &tmpDb);
+            dbOpts, txnDbOptions, dbname, column_families, &_cfHandles, &tmpDb); 
         if (!status.ok()) {
             LOG(INFO) << "rocksdb Open error,id:"<< dbId() << " dbname:" << dbname;
             return {ErrorCodes::ERR_INTERNAL, status.ToString()};
         }
         LOG(INFO) << "rocksdb Open sucess,id:"<< dbId() << " dbname:" << dbname;
         rocksdb::ReadOptions readOpts;
-        iter.reset(tmpDb->GetBaseDB()->NewIterator(readOpts));
+        iter.reset(tmpDb->GetBaseDB()->NewIterator(
+            readOpts, getDataColumnFamilyHandle()));
+        binlog_iter.reset(tmpDb->GetBaseDB()->NewIterator(
+            readOpts, getBinlogColumnFamilyHandle()));
         _pesdb.reset(tmpDb);
     }
     // NOTE(deyukong): during starttime, mutex is held and
     // no need to consider visibility
+    
     RocksKVCursor cursor(std::move(iter));
-
     cursor.seekToLast();
     Expected<Record> expRcd = cursor.next();
+
+    RocksKVCursor binlog_cursor(std::move(binlog_iter)); 
+    binlog_cursor.seekToLast();
+    Expected<Record> binlog_expRcd = binlog_cursor.next();
 
     maxCommitId = nextBinlogSeq - 1;
     INVARIANT_D(nextBinlogSeq > maxCommitId);
 #ifdef BINLOG_V1
+    RocksKVCursor cursor(std::move(iter));
+    cursor.seekToLast();
+    Expected<Record> expRcd = cursor.next();
     if (expRcd.ok()) {
         const RecordKey& rk = expRcd.value().getRecordKey();
         if (rk.getRecordType() == RecordType::RT_BINLOG) {
@@ -1700,8 +1790,10 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
         return expRcd.status();
     }
 #else
-    if (expRcd.ok()) {
-        const RecordKey& rk = expRcd.value().getRecordKey();
+    // if we have binlog, we will inherit latest binlogId
+    // if we have no binlog, we will reset binlogId
+    if (binlog_expRcd.ok()) {
+        const RecordKey& rk = binlog_expRcd.value().getRecordKey();
         if (rk.getRecordType() == RecordType::RT_BINLOG) {
             auto explk = ReplLogKeyV2::decode(rk);
             if (!explk.ok()) {
@@ -1709,32 +1801,60 @@ Expected<uint64_t> RocksKVStore::restart(bool restore, uint64_t nextBinlogSeq,
             } else {
                 auto binlogId = explk.value().getBinlogId();
                 LOG(INFO) << "store:" << dbId()
-                    << " nextSeq change from:" << _nextTxnSeq
-                    << " to:" << binlogId + 1;
+                          << " nextSeq change from:" << _nextTxnSeq
+                          << " to:" << binlogId + 1;
                 maxCommitId = binlogId;
                 _nextTxnSeq = maxCommitId + 1;
                 _nextBinlogSeq = _nextTxnSeq;
                 _highestVisible = maxCommitId;
                 needDeleteBinlog = true;
             }
-        } else {
-            _nextTxnSeq = nextBinlogSeq;
-            _nextBinlogSeq = _nextTxnSeq;
-            LOG(INFO) << "store:" << dbId() << ' ' << rk.getPrimaryKey()
-                << " have no binlog, set nextSeq to " << _nextTxnSeq;
-            _highestVisible = _nextBinlogSeq - 1;
-            INVARIANT_D(_highestVisible < _nextBinlogSeq);
         }
-    } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+    } else if (binlog_expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
         _nextTxnSeq = nextBinlogSeq;
         _nextBinlogSeq = _nextTxnSeq;
-        LOG(INFO) << "store:" << dbId()
-            << " all empty, set nextSeq to " << _nextTxnSeq;
+        LOG(INFO) << "store:" << dbId() << " have no binlog, set nextSeq to "
+                  << _nextTxnSeq;
         _highestVisible = _nextBinlogSeq - 1;
         INVARIANT_D(_highestVisible < _nextBinlogSeq);
     } else {
-        return expRcd.status();
+        return binlog_expRcd.status();
     }
+
+    // we need to check binlogVersion, in case reforming db into two column
+    // families
+    // ToDo: we need to delete remaining binlog in defaultCF, and pay attention to 
+    // the number sequence of binlog file flushed to disk.
+    if (flag & BINLOGVERSION_1_2) {
+        if (expRcd.ok()) {
+            const RecordKey& rk = expRcd.value().getRecordKey();
+            if (rk.getRecordType() == RecordType::RT_BINLOG) {
+                auto explk = ReplLogKeyV2::decode(rk);
+                if (!explk.ok()) {
+                    return explk.status();
+                } else {
+                    auto binlogId = explk.value().getBinlogId();
+                    LOG(INFO) << "store(upgrade binlogVersion from 1 to 2):" << dbId()
+                              << " nextSeq change from:" << _nextTxnSeq
+                              << " to:" << binlogId + 1;
+                    maxCommitId = binlogId;
+                    _nextTxnSeq = maxCommitId + 1;
+                    _nextBinlogSeq = _nextTxnSeq;
+                    _highestVisible = maxCommitId;
+                    needDeleteBinlog = true;
+                }
+            } else {
+                LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no binlog "
+                             "in default CF";
+            }
+        } else if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+            LOG(INFO) << "store(upgrade binlogVersion from 1 to 2): no data "
+                         "in default CF";
+        } else {
+            return expRcd.status();
+        }
+    }
+
 #endif
 
     _isRunning = true;
@@ -1767,7 +1887,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
             std::shared_ptr<rocksdb::Cache> blockCache,
             bool enableRepllog,
             KVStore::StoreMode mode,
-            TxnMode txnMode)
+            TxnMode txnMode,
+            uint32_t flag)
         :KVStore(id, cfg->dbPath),
          _cfg(cfg),
          _isRunning(false),
@@ -1788,11 +1909,14 @@ RocksKVStore::RocksKVStore(const std::string& id,
     if (_cfg->noexpire) {
         _enableFilter = false;
     }
-    Expected<uint64_t> s = restart(false);
+    
+    Expected<uint64_t> s =
+        restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
     if (!s.ok()) {
         LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
-                    << ", failed info:" << s.status().toString();
+                   << ", failed info:" << s.status().toString();
     }
+
     initRocksProperties();
 }
 

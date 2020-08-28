@@ -106,7 +106,7 @@ class KeysCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto cursor = txn->createCursor();
+            auto cursor = txn->createDataCursor();
 
             cursor->seek("");
 
@@ -222,7 +222,7 @@ class DbsizeCommand: public Command {
                 return ptxn.status();
             }
             std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-            auto cursor = txn->createCursor();
+            auto cursor = txn->createDataCursor();
             cursor->seek("");
 
             while (true) {
@@ -410,7 +410,7 @@ public:
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         if (args[2] == "0") {
             cursor->seek("");
         }
@@ -542,7 +542,7 @@ class IterAllCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        auto cursor = txn->createCursor();
+        auto cursor = txn->createDataCursor();
         if (args[2] == "0") {
             cursor->seek("");
         } else {
@@ -3528,7 +3528,8 @@ public:
 
             // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
             //     so we call compactRange to real delete the keys.
-            auto s = kvstore->compactRange(&start, &end);
+            auto s = kvstore->compactRange(
+                ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
             if (!s.ok()) {
                 LOG(ERROR) << "kvstore->compactRange failed, chunkidStart:" << beginChunkid
                            << " chunkidEnd:" << endChunkid << " err:" << s.toString();

@@ -35,8 +35,25 @@ echo "###### restoretest begin ######" >> $logfile
 
 ./clear.sh
 echo "" >> $logfile
-echo "###### clustertest begin ######" >> $logfile
+echo "###### clustertest(set) begin ######" >> $logfile
+echo "### set ###" >> $logfile
 ./clustertest -benchtype="set" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
+
+#./clear.sh
+#echo "### sadd ###" >> $logfile
+#./clustertest -benchtype="sadd" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
+
+#./clear.sh
+#echo "### hmset ###" >> $logfile
+#./clustertest -benchtype="hmset" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
+
+#./clear.sh
+#echo "### rpush ###" >> $logfile
+#./clustertest -benchtype="rpush" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
+
+#./clear.sh
+#echo "### zadd ###" >> $logfile
+#./clustertest -benchtype="zadd" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
 
 ./clear.sh
 echo "" >> $logfile

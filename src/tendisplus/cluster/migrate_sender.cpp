@@ -561,7 +561,8 @@ Status ChunkMigrateSender::deleteChunkRange(
     }
     // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
     //     so we call compactRange to real delete the keys.
-    s = kvstore->compactRange(&start, &end);
+    s = kvstore->compactRange(
+        ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
     if (!s.ok()) {
         LOG(ERROR) << "kvstore->compactRange failed, chunkidStart:" << chunkidStart
                    << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();

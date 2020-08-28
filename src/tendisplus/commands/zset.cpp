@@ -1925,7 +1925,7 @@ class ZUnionInterGenericCommand : public Command {
                                 value, aggr);
                     }
                 } else if (keyType == RecordType::RT_SET_META) {
-                    auto cursor = txn->createCursor();
+                    auto cursor = txn->createDataCursor();
                     RecordKey rk(expdb.value().chunkId,
                             pCtx->getDbId(),
                             RecordType::RT_SET_ELE,

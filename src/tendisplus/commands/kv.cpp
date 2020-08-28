@@ -2086,7 +2086,7 @@ public:
         std::vector<Record> pending;
         pending.reserve(cnt.value());
         for (const auto &prefix : prefixes) {
-            auto cursor = sptxn.value()->createCursor();
+            auto cursor = sptxn.value()->createDataCursor();
             cursor->seek(prefix);
 
             while (true) {

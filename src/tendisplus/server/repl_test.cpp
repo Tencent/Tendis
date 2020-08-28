@@ -77,8 +77,9 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         auto ptxn1 = kvstore1->createTransaction(nullptr);
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
-        auto cursor1 = txn1->createCursor();
-        cursor1->seek("");
+        auto cursor1 = txn1->createAllDataCursor();
+        auto cursor1_binlog = txn1->createBinlogCursor();
+        //check the data
         while (true) {
             Expected<Record> exptRcd1 = cursor1->next();
             if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -87,7 +88,6 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             INVARIANT(exptRcd1.ok());
             count1++;
 
-            // check the binlog together
             auto exptRcdv2 = kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
             EXPECT_TRUE(exptRcdv2.ok());
             if (!exptRcdv2.ok()) {
@@ -97,9 +97,24 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             }
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
+        int count1_data = count1;
+        //check the binlog
+        while (true) {
+            Expected<Record> exptRcd1 = cursor1_binlog->next();
+            if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd1.ok());
+            count1++;
 
-        auto cursor2 = txn2->createCursor();
-        cursor2->seek("");
+            auto exptRcdv2 =
+                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+            EXPECT_TRUE(exptRcdv2.ok());
+            EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+        }
+
+        auto cursor2 = txn2->createAllDataCursor();
+        auto cursor2_binlog = txn2->createBinlogCursor();
         while (true) {
             Expected<Record> exptRcd2 = cursor2->next();
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -118,7 +133,16 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             }
             EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
         }
-
+        int count2_data = count2;
+        while (true) {
+            Expected<Record> exptRcd2 = cursor2_binlog->next();
+            if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+                break;
+            }
+            INVARIANT(exptRcd2.ok());
+            count2++;
+        }
+        EXPECT_EQ(count1_data, count2_data);
         EXPECT_EQ(count1, count2);
         LOG(INFO) << "compare data: store " << i << " record count " << count1;
     }
@@ -274,7 +298,7 @@ TEST(Repl, Common) {
         thd1.join();
         thd2.join();
 
-        sleep(3); // wait recycle binlog
+        sleep(2); // wait recycle binlog
 
         waitSlaveCatchup(master, slave);
         compareData(master, slave);
