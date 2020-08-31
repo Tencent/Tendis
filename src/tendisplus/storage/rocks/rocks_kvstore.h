@@ -260,7 +260,9 @@ class RocksKVStore: public KVStore {
             uint32_t flag = 0) final;
     Expected<uint64_t> flush(Session* sess, uint64_t nextBinlogid) final;
 
-    Expected<BackupInfo> backup(const std::string&, KVStore::BackupMode) final;
+    Expected<BackupInfo> backup(const std::string&,
+                                KVStore::BackupMode,
+                                BinlogVersion binlogVersion) final;
     Expected<std::string> restoreBackup(const std::string& dir) final;
     Expected<rapidjson::Document> getBackupMeta(const std::string& dir) final;
 

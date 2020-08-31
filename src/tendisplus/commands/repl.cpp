@@ -106,7 +106,7 @@ class BackupCommand: public Command {
             }
             std::string dbdir = dir + "/" + std::to_string(i) + "/";
             Expected<BackupInfo> bkInfo = store->backup(
-                dbdir, mode);
+                dbdir, mode, svr->getCatalog()->getBinlogVersion());
             if (!bkInfo.ok()) {
                 svr->onBackupEndFailed(i, bkInfo.status().toString());
                 return bkInfo.status();

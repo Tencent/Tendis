@@ -51,12 +51,39 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
     }
     Expected<uint64_t> pos = ::tendisplus::stoul(expPos.value());
     if (!pos.ok()) {
-        LOG(WARNING) << "fullSync binlogpos parse fail:"
-                     << pos.status().toString();
-        return pos.status();
-    }
-    bkInfo.setBinlogPos(pos.value());
+        /* Before tendisplus-2.0.1, expPos is an integer
+         * After tendisplus-2.0.1, expPos is a json.
+         */
+        rapidjson::Document doc;
+        doc.Parse(expPos.value());
+        if (doc.HasParseError()) {
+            return { ErrorCodes::ERR_NETWORK,
+                        rapidjson::GetParseError_En(doc.GetParseError()) };
+        }
 
+        if (!doc.IsObject()) {
+            return { ErrorCodes::ERR_NOTFOUND, "expPos is not json obj" };
+        }
+
+#ifdef _WIN32
+#undef GetObject
+#endif
+        for (auto& o : doc.GetObject()) {
+            if (o.name.GetString() == "binlogPos") {
+                if (!o.value.IsUint64()) {
+                    return { ErrorCodes::ERR_NOTFOUND, "binlogPos is not uint64" };
+                }
+                bkInfo.setBinlogPos(o.value.GetUint64());
+            } else if (o.name.GetString() == "binlogVersion") {
+                if (!o.value.IsUint64()) {
+                    return { ErrorCodes::ERR_NOTFOUND, "binlogVersion is not uint64" };
+                }
+                bkInfo.setBinlogVersion((BinlogVersion)o.value.GetUint64());
+            }
+        }
+    } else {
+        bkInfo.setBinlogPos(pos.value());
+    }
     auto expFlist = client->readLine(std::chrono::seconds(100));
     if (!expFlist.ok()) {
         LOG(WARNING) << "fullSync req flist error:"
@@ -165,7 +192,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
                      << " failed, no valid client";
         return;
     }
-
 
     auto newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_TRANSFER;

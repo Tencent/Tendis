@@ -959,10 +959,11 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     }
 }
 
-TEST_NO(Repl, BinlogVersion) {
+TEST(Repl, BinlogVersion) {
     const auto guard = MakeGuard([] {
         destroyEnv(master_dir);
         destroyEnv(slave_dir);
+        destroyEnv(slave1_dir);
         std::this_thread::sleep_for(std::chrono::seconds(5));
         });
 
@@ -973,19 +974,79 @@ TEST_NO(Repl, BinlogVersion) {
     auto s = version1_master->startup(cfg);
     INVARIANT(s.ok());
     initData(version1_master, recordSize);
+    EXPECT_EQ(version1_master->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_1);
 
-    EXPECT_TRUE(setupEnv(master_dir));
+    // 1. check version2 slaveof version1
+    EXPECT_TRUE(setupEnv(slave_dir));
     auto cfg2 = makeServerParam(slave_port, 10, slave_dir, false);
     cfg2->binlogUsingDefaultCF = false;
     auto version2_slave = std::make_shared<ServerEntry>(cfg2);
     s = version2_slave->startup(cfg2);
     INVARIANT(s.ok());
+    EXPECT_EQ(version2_slave->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
 
+    {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto session = makeSession(version2_slave, ctx);
 
+        WorkLoad work(version2_slave, session);
+        work.init();
+        work.slaveof("127.0.0.1", master_port);
+    }
+
+    waitSlaveCatchup(version1_master, version2_slave);
+    sleep(3); // wait recycle binlog
+    EXPECT_EQ(version2_slave->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
+    compareData(version1_master, version2_slave);
+
+    auto binlogHighest = version1_master->getStores()[0]->getHighestBinlogId();
+    auto binlogMax = version1_master->getStores()[0]->getNextBinlogSeq();
     version1_master->stop();
     ASSERT_EQ(version1_master.use_count(), 1);
 
+    version2_slave->stop();
+    ASSERT_EQ(version2_slave.use_count(), 1);
 
+
+
+    // 2. check version2 startup with version1 datafile
+    cfg->binlogUsingDefaultCF = false;
+    auto version2_master = std::make_shared<ServerEntry>(cfg);
+    s = version2_master->startup(cfg);
+    INVARIANT(s.ok());
+    EXPECT_EQ(version2_master->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
+    EXPECT_EQ(version2_master->getStores()[0]->getHighestBinlogId(), binlogHighest);
+    EXPECT_EQ(version2_master->getStores()[0]->getNextBinlogSeq(), binlogMax);
+    initData(version2_master, recordSize);
+
+    // 3. check version2 slaveof version2
+    EXPECT_TRUE(setupEnv(slave1_dir));
+    auto cfg3 = makeServerParam(slave1_port, 10, slave1_dir, false);
+    cfg3->binlogUsingDefaultCF = false;
+    auto version2_slave2 = std::make_shared<ServerEntry>(cfg3);
+    s = version2_slave2->startup(cfg3);
+    INVARIANT(s.ok());
+    EXPECT_EQ(version2_slave2->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
+
+    {
+        auto ctx = std::make_shared<asio::io_context>();
+        auto session = makeSession(version2_slave2, ctx);
+
+        WorkLoad work(version2_slave2, session);
+        work.init();
+        work.slaveof("127.0.0.1", master_port);
+    }
+
+    waitSlaveCatchup(version2_master, version2_slave2);
+    sleep(3); // wait recycle binlog
+    EXPECT_EQ(version2_slave2->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
+    compareData(version2_master, version2_slave2);
+
+    version2_master->stop();
+    ASSERT_EQ(version2_master.use_count(), 1);
+
+    version2_slave2->stop();
+    ASSERT_EQ(version2_slave2.use_count(), 1);
 }
 
 }  // namespace tendisplus

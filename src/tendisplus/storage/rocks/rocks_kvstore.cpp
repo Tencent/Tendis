@@ -1696,15 +1696,17 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
             return {ErrorCodes::ERR_INTERNAL, ex.what()};
         }
 
-        rocksdb::Options ColumOpts = options();
+        rocksdb::Options columOpts = options();
         std::unique_ptr<rocksdb::Iterator> iter = nullptr;
         std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
         std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-            rocksdb::kDefaultColumnFamilyName, ColumOpts));
+            rocksdb::kDefaultColumnFamilyName, columOpts));
         if (_cfg->binlogUsingDefaultCF == false) {
+            // TODO(takenliu): make memory usage of binlog cf correct
+            columOpts.write_buffer_size /= 2;
             column_families.push_back(
-                rocksdb::ColumnFamilyDescriptor("binlog_cf", ColumOpts));
+                rocksdb::ColumnFamilyDescriptor("binlog_cf", columOpts));
         }
         if (_txnMode == TxnMode::TXN_OPT) {
             rocksdb::OptimisticTransactionDB* tmpDb;
@@ -1959,7 +1961,7 @@ Status RocksKVStore::releaseBackup() {
 // If backup failed, there should be no remaining dirs left to clean,
 // and the _hasBackup flag set to false
 Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
-    KVStore::BackupMode mode) {
+    KVStore::BackupMode mode, BinlogVersion binlogVersion) {
     bool succ = false;
     auto guard = MakeGuard([this, &dir, &succ]() {
         if (succ) {
@@ -2047,6 +2049,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     result.setFileList(flist);
     result.setEndTimeSec(sinceEpoch());
     result.setBackupMode((uint32_t)mode);
+    result.setBinlogVersion(binlogVersion);
     auto saveret = saveBackupMeta(dir, result);
     if (!saveret.ok()) {
         return saveret.status();
@@ -2069,6 +2072,8 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, const
     writer.Uint64(backup.getEndTimeSec());
     writer.Key("useTimeSec");
     writer.Uint64(backup.getEndTimeSec() - backup.getStartTimeSec());
+    writer.Key("binlogVersion");
+    writer.Uint64((uint64_t)backup.getBinlogVersion());
     writer.EndObject();
     string data = sb.GetString();
 

@@ -793,7 +793,8 @@ TEST(RocksKVStore, BackupCkptInter) {
     EXPECT_EQ(exptCommitId.ok(), true);
 
     Expected<BackupInfo> expBk = kvstore->backup(
-        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER);
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER,
+        cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1 : BinlogVersion::BINLOG_VERSION_2);
     EXPECT_TRUE(expBk.ok()) << expBk.status().toString();
     for (auto& bk : expBk.value().getFileList()) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
@@ -801,12 +802,14 @@ TEST(RocksKVStore, BackupCkptInter) {
 
     // backup failed, set the backup state to false
     Expected<BackupInfo> expBk1 = kvstore->backup(
-        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER);
+        kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT_INTER,
+        cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1 : BinlogVersion::BINLOG_VERSION_2);
     EXPECT_FALSE(expBk1.ok());
 
     // backup failed, set the backup state to false
     Expected<BackupInfo> expBk2 = kvstore->backup(
-            "wrong_dir", KVStore::BackupMode::BACKUP_CKPT_INTER);
+            "wrong_dir", KVStore::BackupMode::BACKUP_CKPT_INTER,
+        cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1 : BinlogVersion::BINLOG_VERSION_2);
     EXPECT_FALSE(expBk2.ok());
 
     s = kvstore->stop();
@@ -861,19 +864,21 @@ TEST(RocksKVStore, BackupCkpt) {
     Expected<uint64_t> exptCommitId = txn1->commit();
     EXPECT_EQ(exptCommitId.ok(), true);
 
+    auto binlogversion = cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1 : BinlogVersion::BINLOG_VERSION_2;
+
     Expected<BackupInfo> expBk0 = kvstore->backup(
-            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT);
+            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_CKPT, binlogversion);
     EXPECT_EQ(expBk0.status().toString(), "-ERR:3,msg:BACKUP_CKPT|BACKUP_COPY cant equal dftBackupDir:./db/0_bak\r\n");
 
     Expected<BackupInfo> expBk1 = kvstore->backup(
-            backup_dir, KVStore::BackupMode::BACKUP_CKPT);
+            backup_dir, KVStore::BackupMode::BACKUP_CKPT, binlogversion);
     EXPECT_TRUE(expBk1.ok()) << expBk1.status().toString();
     for (auto& bk : expBk1.value().getFileList()) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
     }
 
     Expected<BackupInfo> expBk2 = kvstore->backup(
-            backup_dir, KVStore::BackupMode::BACKUP_CKPT);
+            backup_dir, KVStore::BackupMode::BACKUP_CKPT, binlogversion);
     EXPECT_EQ(expBk2.status().toString(), "-ERR:3,msg:Invalid argument: Directory exists\r\n");
 
     s = kvstore->stop();
@@ -930,19 +935,20 @@ TEST(RocksKVStore, BackupCopy) {
     Expected<uint64_t> exptCommitId = txn1->commit();
     EXPECT_EQ(exptCommitId.ok(), true);
 
+    auto binlogversion = cfg->binlogUsingDefaultCF ? BinlogVersion::BINLOG_VERSION_1 : BinlogVersion::BINLOG_VERSION_2;
     Expected<BackupInfo> expBk0 = kvstore->backup(
-            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_COPY);
+            kvstore->dftBackupDir(), KVStore::BackupMode::BACKUP_COPY, binlogversion);
     EXPECT_FALSE(expBk0.ok());
 
     Expected<BackupInfo> expBk1 = kvstore->backup(
-            backup_dir, KVStore::BackupMode::BACKUP_COPY);
+            backup_dir, KVStore::BackupMode::BACKUP_COPY, binlogversion);
     EXPECT_TRUE(expBk1.ok());
     for (auto& bk : expBk1.value().getFileList()) {
         LOG(INFO) << "backupInfo:[" << bk.first << "," << bk.second << "]";
     }
 
     Expected<BackupInfo> expBk2 = kvstore->backup(
-            backup_dir, KVStore::BackupMode::BACKUP_COPY);
+            backup_dir, KVStore::BackupMode::BACKUP_COPY, binlogversion);
     // BackupEngine will delete dir if not null.
     EXPECT_TRUE(expBk2.ok());
 

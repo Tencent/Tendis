@@ -509,7 +509,8 @@ void ReplManager::supplyFullSyncRoutine(
     uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup(
         store->dftBackupDir(),
-        KVStore::BackupMode::BACKUP_CKPT_INTER);
+        KVStore::BackupMode::BACKUP_CKPT_INTER,
+        _svr->getCatalog()->getBinlogVersion());
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
@@ -530,8 +531,11 @@ void ReplManager::supplyFullSyncRoutine(
         }
     });
 
+    Status s;
+#ifdef XXX
+    // before tendisplus-2.0.1
     // send binlogPos
-    Status s = client->writeLine(
+    s = client->writeLine(
             std::to_string(bkInfo.value().getBinlogPos()));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
@@ -540,6 +544,27 @@ void ReplManager::supplyFullSyncRoutine(
     }
     LOG(INFO) << "fullsync " << storeId << " send binlogPos success:"
         << bkInfo.value().getBinlogPos();
+#else
+    {
+        // send backup base info
+        rapidjson::StringBuffer sb;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
+        writer.StartObject();
+        writer.Key("binlogPos");
+        writer.Uint64(bkInfo.value().getBinlogPos());
+        writer.Key("binlogVersion");
+        writer.Uint64((uint64_t)bkInfo.value().getBinlogVersion());
+        writer.EndObject();
+        s = client->writeLine(sb.GetString());
+        if (!s.ok()) {
+            LOG(ERROR) << "store:" << storeId
+                << " fullsync send binlogpos failed:" << s.toString();
+            return;
+        }
+        LOG(INFO) << "fullsync " << storeId << " send binlogPos success:"
+            << sb.GetString();
+    }
+#endif
 
     // send fileList
     rapidjson::StringBuffer sb;
@@ -551,7 +576,6 @@ void ReplManager::supplyFullSyncRoutine(
     }
     writer.EndObject();
     uint32_t secs = 10;
-    // NOTE(takenliu):change timeout 1000s to 10s
     s = client->writeLine(sb.GetString());
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId

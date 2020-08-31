@@ -446,7 +446,7 @@ class KVStore {
 
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
-    virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
+    virtual Expected<BackupInfo> backup(const std::string&, BackupMode, BinlogVersion) = 0;
     virtual Expected<std::string> restoreBackup(const std::string& dir) = 0;
     virtual Expected<rapidjson::Document> getBackupMeta(const std::string& dir) = 0;
     virtual Status releaseBackup() = 0;
