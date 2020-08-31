@@ -308,7 +308,7 @@ Status DeleteRangeTask::deleteSlotRange() {
     }
     // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
     //     so we call compactRange to real delete the keys.
-    s = kvstore->compactRange(&start, &end);
+    s = kvstore->compactRange(ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
 
     if (!s.ok()) {
         serverLog(LL_NOTICE, "DeleteRangeTask::kvstore->compactRange failed,"
