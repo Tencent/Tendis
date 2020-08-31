@@ -15,6 +15,7 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _svr(svr),
     _cfg(cfg),
     _isFake(is_fake),
+    _taskid(""),
     _clusterState(svr->getClusterMgr()->getClusterState()),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
     _storeid(0),
@@ -34,7 +35,6 @@ Status ChunkMigrateSender::sendChunk() {
     LOG(INFO) <<"sendChunk begin on store:" << _storeid
               << " slots:" << bitsetStrEncode(_slots);
     uint64_t start = msSinceEpoch();
-
     /* send Snapshot of bitmap data */
     Status s = sendSnapshot();
     if (!s.ok()) {
@@ -47,6 +47,10 @@ Status ChunkMigrateSender::sendChunk() {
      * make sure the diff offset of srcNode and DstNode is small enough*/
     s = sendBinlog();
     if (!s.ok()) {
+        auto s2 = sendOver();
+        if (!s2.ok()) {
+            return s2;
+        }
         return s;
     }
     auto send_binlog = _curBinlogid;
@@ -62,17 +66,25 @@ Status ChunkMigrateSender::sendChunk() {
     if (!s.ok()) {
         /* if error, it need to unlock chunks */
         unlockChunks();
+        auto s2 = sendOver();
+        if (!s2.ok()) {
+            return s2;
+        }
         return s;
     }
     /* in chunk lock, send syncversion meta */
     s = sendVersionMeta();
     if (!s.ok()) {
+        unlockChunks();
+        auto s2 = sendOver();
+        if (!s2.ok()) {
+            return s2;
+        }
         LOG(ERROR) << "send version meta Fail:" << s.toString();
         return s;
     }
     auto last_binlog = _curBinlogid;
     _sendstate = MigrateSenderStatus::LASTBINLOG_DONE;
-
     /* send migrateend command and wait for return*/
     s = sendOver();
     if (!s.ok()) {
@@ -294,26 +306,83 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
     return maxBinlogId;
 }
 
+Status ChunkMigrateSender::resetClient() {
+    std::lock_guard<myMutex> lk(_mutex);
+    //  bool needHeartbeat = false;
+    //   bool needRetry = false;
+    setClient(nullptr);
+    std::shared_ptr<BlockingTcpClient> client =
+            std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
+
+    Status s = client->connect(
+            _dstIp,
+            _dstPort,
+            std::chrono::seconds(3));
+    if (!s.ok()) {
+        LOG(WARNING) << "send binlog connect " << _dstIp
+                     << ":" << _dstPort << " failed:"
+                     << s.toString();
+        return {ErrorCodes::ERR_NETWORK, ""};
+    }
+    setClient(client);
+    return  {ErrorCodes::ERR_OK, ""};
+}
 // catch up binlog from _curBinlogid to end
 Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     bool needHeartbeat = false;
+    bool needRetry = false;
     uint64_t binlogNum = 0;
     uint64_t newBinlogId = 0;
     if (_curBinlogid >= end) {
         return { ErrorCodes::ERR_OK, "" };
     }
-    // TODO(wayenchen) : retry send binlog if network error
-    auto s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
-            _curBinlogid, end, needHeartbeat, _slots, _svr,
-            &binlogNum, &newBinlogId);
-    if (!s.ok()) {
+    bool done = false;
+    Status s;
+
+    for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+        s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
+                            _curBinlogid, end, needHeartbeat, _slots, _taskid,
+                            _svr, &binlogNum, &newBinlogId, &needRetry);
+        /* NOTE(wayenchen) may have already sended half binlog but fail, 
+            so update the _curbinlog first*/
+        {
+            std::lock_guard<myMutex> lk(_mutex);
+            _binlogNum += binlogNum;
+            if (newBinlogId != 0) {
+                _curBinlogid = newBinlogId;
+            }
+        }
+        if (s.ok()) {
+            done = true;
+            break;
+        }
+
+        if (!s.ok() && needRetry) {
+            if (newBinlogId > 0) {
+                _curBinlogid = newBinlogId;
+            }
+            needRetry = false;
+            s = resetClient();
+            if (!s.ok()) {
+                LOG(ERROR) << "reset client fail on slots:"
+                           << bitsetStrEncode(_slots);
+                continue;
+            }
+            LOG(INFO) << "reconn receiver on slots:"
+                      << bitsetStrEncode(_slots);
+        }
+    }
+
+    if (!done) {
         serverLog(LL_NOTICE, "ChunkMigrateSender::catchupBinlog from"
-            " %lu to %lu failed: [%s] [%s] [%s]",
+                                     " %lu to %lu failed: [%s] [%s] [%s]",
             _curBinlogid,
             end,
             _client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str(),
             s.toString().c_str());
+
+        return s;
     } else {
         serverLog(LL_VERBOSE, "ChunkMigrateSender::catchupBinlog from"
             " %lu to %lu ok: [%s] [%s]",
@@ -321,14 +390,6 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
             end,
             _client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str());
-    }
-
-    {
-        std::lock_guard<myMutex> lk(_mutex);
-        _binlogNum += binlogNum;
-        if (newBinlogId != 0) {
-            _curBinlogid = newBinlogId;
-        }
     }
 
     return s;
@@ -353,6 +414,7 @@ Status ChunkMigrateSender::sendBinlog() {
     while (catchupTimes < iterNum) {
         auto s = catchupBinlog(binlogHigh);
         if (!s.ok()) {
+            // retry
             return s;
         }
         catchupTimes++;
@@ -485,11 +547,12 @@ Status ChunkMigrateSender::sendVersionMeta() {
 }
 
 Status ChunkMigrateSender::sendOver() {
+    std::string binlogInfo = needToSendFail() ? "-ERR" : "+OK";
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, 3);
     Command::fmtBulk(ss, "migrateend");
-    Command::fmtBulk(ss, _slots.to_string());
-    Command::fmtBulk(ss, std::to_string(_dstStoreid));
+    Command::fmtBulk(ss, _taskid);
+    Command::fmtBulk(ss, binlogInfo);
 
     std::string stringtoWrite = ss.str();
     Status s = _client->writeData(stringtoWrite);
@@ -573,14 +636,14 @@ Status ChunkMigrateSender::deleteChunkRange(
     return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ChunkMigrateSender::deleteChunks(
-            const std::bitset<CLUSTER_SLOTS>& slots) {
-    /* NOTE(wayenchen) check if chunk not belong to me,
-     * make sure MOVE work well before delete */
-    if (!_isFake && !checkSlotsBlongDst()) {
-        return  {ErrorCodes::ERR_CLUSTER, "slots not belongs to dstNodes"};
+
+Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
+    /* NOTE(wayenchen) check if chunk not belong to me，
+        make sure MOVE work well before delete */
+    if (!checkSlotsBlongDst()){
+        return  {ErrorCodes::ERR_CLUSTER,
+                "slots not belongs to dstNodes"};
     }
-    lockChunks();
 
     LOG(INFO) << "deleteChunks beigin slots: " << bitsetStrEncode(_slots);
     size_t idx = 0;
@@ -596,7 +659,8 @@ Status ChunkMigrateSender::deleteChunks(
                 _delSlot++;
             } else {
                 if (startChunkid != UINT32_MAX) {
-                    auto s = deleteChunkRange(startChunkid, endChunkid);
+                    /* just throw it into gc job, no waiting for deleting result */
+                    auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
                     if (!s.ok()) {
                         LOG(ERROR) << "deleteChunk fail, startChunkid:"
                                    << startChunkid
@@ -614,7 +678,7 @@ Status ChunkMigrateSender::deleteChunks(
         idx++;
     }
     if (startChunkid != UINT32_MAX) {
-        auto s = deleteChunkRange(startChunkid, endChunkid);
+        auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
         if (!s.ok()) {
             LOG(ERROR) << "deleteChunk fail, startChunkid:"
                        << startChunkid
@@ -632,7 +696,6 @@ Status ChunkMigrateSender::deleteChunks(
         << " binlogNum: " << _binlogNum
         << " , storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
 
-    unlockChunks();
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -692,6 +755,12 @@ void ChunkMigrateSender::unlockChunks() {
 bool ChunkMigrateSender::needToWaitMetaChanged() const {
     return _sendstate == MigrateSenderStatus::LASTBINLOG_DONE ||
         _sendstate == MigrateSenderStatus::SENDOVER_DONE;
+}
+
+
+bool ChunkMigrateSender::needToSendFail() const {
+    return _sendstate == MigrateSenderStatus::SNAPSHOT_DONE ||
+        _sendstate == MigrateSenderStatus::BINLOG_DONE;
 }
 
 }  // namespace tendisplus

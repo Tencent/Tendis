@@ -21,6 +21,7 @@ class ChunkMigrateReceiver {
  public:
     explicit ChunkMigrateReceiver(const std::bitset<CLUSTER_SLOTS>& slots,
         uint32_t storeid,
+        std::string taskid,
         std::shared_ptr<ServerEntry> svr,
         std::shared_ptr<ServerParams> cfg);
 
@@ -33,8 +34,13 @@ class ChunkMigrateReceiver {
         _client = client;
     }
 
-    uint32_t getsStoreid() { return  _storeid; }
+    void setTaskId(const std::string& taskid) {
+        _taskid = taskid;
+    }
+
+    uint32_t getsStoreid() const { return  _storeid; }
     std::bitset<CLUSTER_SLOTS> getSlots()  { return  _slots; }
+    std::string getTaskid() { return  _taskid; }
     uint64_t  getSnapshotNum() { return  _snapshotKeyNum; }
     uint64_t  getBinlogNum() { return  _binlogNum; }
 
@@ -46,6 +52,7 @@ class ChunkMigrateReceiver {
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
     uint32_t _storeid;
+    std::string _taskid;
     std::bitset<CLUSTER_SLOTS> _slots;
 
     uint64_t _snapshotKeyNum;

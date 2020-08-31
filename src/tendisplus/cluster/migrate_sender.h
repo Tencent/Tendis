@@ -59,6 +59,10 @@ class ChunkMigrateSender{
         _dbWithLock.reset();
     }
 
+    void setTaskId(const std::string& taskid) {
+        _taskid = taskid;
+    }
+
     void setDstStoreid(uint32_t dstStoreid) {
         _dstStoreid = dstStoreid;
     }
@@ -86,6 +90,7 @@ class ChunkMigrateSender{
     void unlockChunks();
     bool needToWaitMetaChanged() const;
     Status sendVersionMeta();
+    bool needToSendFail() const;
 
  private:
     Expected<std::unique_ptr<Transaction>> initTxn();
@@ -95,6 +100,11 @@ class ChunkMigrateSender{
 
     Status sendLastBinlog();
     Status catchupBinlog(uint64_t end);
+    Status retrySendBinlog(uint64_t start, uint64_t end,
+                           uint64_t* sendBinlogNum,
+                           uint64_t* newBinlogId);
+
+    Status resetClient();
     Status sendOver();
 
 
@@ -108,6 +118,7 @@ private:
 
     std::unique_ptr<DbWithLock> _dbWithLock;
     std::shared_ptr<BlockingTcpClient> _client;
+    std::string _taskid;
     std::shared_ptr<ClusterState> _clusterState;
     MigrateSenderStatus _sendstate;
     uint32_t _storeid;
@@ -124,6 +135,7 @@ private:
     uint64_t getMaxBinLog(Transaction * ptxn) const;
     std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
     std::string _OKSTR = "+OK";
+    static constexpr int32_t RETRY_CNT = 3;
 };
 
 }  // namespace tendisplus

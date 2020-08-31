@@ -894,15 +894,12 @@ TEST(Cluster, failover) {
     //master node2 mark fail
     ASSERT_EQ(node2Ptr->nodeFailed(), true);
 
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(10));
     CNodePtr node4Ptr = state->clusterLookupNode(nodeName4);
     // slave become master
     ASSERT_EQ(node4Ptr->nodeIsMaster(), true);
     // cluster work ok after vote sucessful
     ASSERT_EQ(clusterOk(state), true);
-
-
-
 
 #ifndef _WIN32
     for (auto svr : servers) {
@@ -915,24 +912,11 @@ TEST(Cluster, failover) {
 
 }
 
-
-bool slotBlongToMe(uint32_t slot, std::shared_ptr<ServerEntry> svr) {
-    auto state = svr->getClusterMgr()->getClusterState();
-    auto myself = state->getMyselfNode();
-    if(state->getNodeBySlot(slot) == myself) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
-
 bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<ServerEntry> svr, std::string nodeid) {
     auto state = svr->getClusterMgr()->getClusterState();
     CNodePtr node = state->clusterLookupNode(nodeid);
 
     for (size_t id =0; id < slots.size(); id++) {
-
         if (slots.test(id)) {
             if (state->getNodeBySlot(id) != node) {
                 LOG(ERROR) << "slot:" << id << " not belong to: " << nodeid;
@@ -942,7 +926,6 @@ bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots, std::shared_ptr<Se
     }
     return true;
 }
-
 
 std::bitset<CLUSTER_SLOTS> getBitSet(std::vector<uint32_t> vec) {
     std::bitset<CLUSTER_SLOTS> slots;
@@ -1042,8 +1025,6 @@ TEST(Cluster, migrate) {
     uint32_t  keysize1 = 0;
     uint32_t  keysize2 = 0;
     for (auto &vs: slotsList) {
-        LOG(INFO) <<"node1->getClusterMgr()->countKeysInSlot:" << vs <<"is:" << srcNode->getClusterMgr()->countKeysInSlot(vs);
-        keysize1 += srcNode->getClusterMgr()->countKeysInSlot(vs);
         LOG(INFO) <<"node2->getClusterMgr()->countKeysInSlot:" << vs <<"is:" << dstNode->getClusterMgr()->countKeysInSlot(vs);
         keysize2 += dstNode->getClusterMgr()->countKeysInSlot(vs);
     }
@@ -1054,8 +1035,7 @@ TEST(Cluster, migrate) {
     ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), true);
     // dstNode should contain the keys
     ASSERT_EQ(keysize2, numData);
-    std::this_thread::sleep_for(100s);
-
+    std::this_thread::sleep_for(10s);
 
     // migrate from dstNode to srcNode back
     keysize1 = 0;
@@ -1091,12 +1071,13 @@ TEST(Cluster, migrate) {
     // bitmap should belong to dstNode
     ASSERT_EQ(checkSlotsBlong(bitmap, srcNode, srcNode->getClusterMgr()->getClusterState()->getMyselfName()), true);
     ASSERT_EQ(checkSlotsBlong(bitmap, dstNode, dstNode->getClusterMgr()->getClusterState()->getMyselfName()), false);
-    // dstNode should contain the keys
+    // srcNode should contain the keys
     ASSERT_EQ(keysize2, numData*2);
     auto meta1 = work1.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
     auto meta2 = work2.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
     ASSERT_EQ(meta1, meta2);
-    std::this_thread::sleep_for(20s);
+    std::this_thread::sleep_for(30s);
+
 
 #ifndef _WIN32
     for (auto svr : servers) {
@@ -1104,8 +1085,10 @@ TEST(Cluster, migrate) {
         LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
     }
 #endif
+    LOG(INFO) << "stop servers here";
     servers.clear();
 }
+
 
 TEST(Cluster, migrateAndImport) {
     std::vector<std::string> dirs = { "node1", "node2", "node3"};
@@ -1252,23 +1235,29 @@ TEST(Cluster, migrateAndImport) {
     servers.clear();
 }
 
-void testDeleteChunks(std::shared_ptr<ServerEntry> svr, uint32_t storeid, std::vector<uint32_t> slotsList) {
+void testDeleteChunks(std::shared_ptr<ServerEntry> svr, std::vector<uint32_t> slotsList) {
     for (size_t i = 0; i < slotsList.size(); ++i) {
         uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
         EXPECT_TRUE(c != 0);
         LOG(INFO) << "slot:"<<slotsList[i] << " keys count before delete:" << c;
     }
-
-    SlotsBitmap slots;
-    for (size_t i = 0; i < slotsList.size(); ++i) {
-        slots.set(slotsList[i]);
-    }
-    svr->getMigrateManager()->deleteChunks(storeid, slots);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    svr->getGcMgr()->deleteSlotsList(slotsList, 0);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     for (size_t i = 0; i < slotsList.size(); ++i) {
         uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
         EXPECT_TRUE(c == 0);
+    }
+}
+
+void testDeleteRange(std::shared_ptr<ServerEntry> svr, uint32_t storeid, uint32_t start, uint32_t end) {
+    svr->getGcMgr()->deleteChunks(storeid, start, end);
+    std::this_thread::sleep_for(std::chrono::seconds(8));
+    for (size_t i = start; i <= end; ++i) {
+        if (svr->getSegmentMgr()->getStoreid(i) == storeid) {
+            uint64_t c = svr->getClusterMgr()->countKeysInSlot(i);
+            EXPECT_TRUE(c == 0);
+        }
     }
 }
 
@@ -1313,10 +1302,15 @@ TEST(Cluster, deleteChunks) {
 
     std::this_thread::sleep_for(5s);
 
-    testDeleteChunks(srcNode, 0, {5000});
-    testDeleteChunks(srcNode, 0, {5100,5110,5120});
-    testDeleteChunks(srcNode, 0, {5200,5210,5220,5280});
-    testDeleteChunks(srcNode, 0, {5300,5340,5350,5380});
+    testDeleteChunks(srcNode, {5000});
+    testDeleteChunks(srcNode, {5200,5210,5220,5280});
+    testDeleteChunks(srcNode, {5130,5131,5132,5133,5134,5140,5141,5142});
+
+    auto storeid1 = srcNode->getSegmentMgr()->getStoreid(6000);
+    auto storeid2 = srcNode->getSegmentMgr()->getStoreid(6200);
+
+    EXPECT_TRUE(storeid1 == storeid2);
+    testDeleteRange(srcNode, storeid1, 6000, 6200);
 
 #ifndef _WIN32
     for (auto svr : servers) {
@@ -1329,7 +1323,7 @@ TEST(Cluster, deleteChunks) {
 
 TEST(Cluster, ErrStoreNum) {
     std::vector<std::string> dirs = {"node1", "node2"};
-    uint32_t startPort = 17000;
+    uint32_t startPort = 17500;
 
     const auto guard = MakeGuard([dirs] {
         for (auto dir : dirs) {
@@ -1685,6 +1679,39 @@ TEST(Cluster, MigrateTTLIndex) {
     }
 #endif
     servers.clear();
+}
+
+TEST(Cluster, lockConfict) {
+    uint32_t nodeNum = 3;
+    uint32_t startPort = 15000;
+
+    const auto guard = MakeGuard([&nodeNum] {
+        destroyCluster(nodeNum);
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    auto servers = makeCluster(startPort, nodeNum);
+    auto server = servers[0];
+
+    auto ctx = std::make_shared<asio::io_context>();
+    auto sess = makeSession(server, ctx);
+    WorkLoad work(server, sess);
+    work.init();
+    work.lockDb(1000);
+
+    std::this_thread::sleep_for(15s);
+
+    auto server2 = servers[1];
+    EXPECT_EQ(server2->getClusterMgr()->getClusterState()->clusterIsOK(), true);
+
+#ifndef _WIN32
+    for (auto svr : servers) {
+        svr->stop();
+        LOG(INFO) << "stop " <<  svr->getParams()->port << " success";
+    }
+#endif
+    servers.clear();
+
 }
 
 TEST(Cluster, CrossSlot) {

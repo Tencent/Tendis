@@ -3742,7 +3742,7 @@ class TendisadminCommand : public Command {
 
         auto operation = toLower(args[1]);
 
-        if (operation == "sleep") {
+        if (operation == "sleep" || operation == "lockdb") {
             if (args.size() != 3) {
                 return{ ErrorCodes::ERR_PARSEOPT, "args size incorrect!" };
             }
@@ -3761,7 +3761,8 @@ class TendisadminCommand : public Command {
 
                 result.emplace_back(std::make_unique<DbWithLock>(std::move(expdb.value())));
             }
-            if (server->isClusterEnabled()) {
+
+            if (server->isClusterEnabled() && operation != "lockdb") {
                 auto cstate = server->getClusterMgr()->getClusterState();
                 if(cstate->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
                     return {ErrorCodes::ERR_CLUSTER_ERR, "cluste is fail"};

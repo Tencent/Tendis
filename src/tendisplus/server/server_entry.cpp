@@ -215,6 +215,7 @@ ServerEntry::ServerEntry()
          _pessimisticMgr(nullptr),
          _mgLockMgr(nullptr),
          _clusterMgr(nullptr),
+         _gcMgr(nullptr),
          _catalog(nullptr),
          _netMatrix(std::make_shared<NetworkMatrix>()),
          _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -583,6 +584,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
             return s;
         }
 
+        _gcMgr = std::make_unique<GCManager>(shared_from_this());
+        s = _gcMgr->startup();
+        if (!s.ok()) {
+            LOG(WARNING) << "start up gc manager failed";
+            return  s;
+        }
     }
 
     _isRunning.store(true, std::memory_order_relaxed);
@@ -634,6 +641,10 @@ IndexManager* ServerEntry::getIndexMgr() {
 
 ClusterManager* ServerEntry::getClusterMgr() {
     return _clusterMgr.get();
+}
+
+GCManager* ServerEntry::getGcMgr() {
+    return  _gcMgr.get();
 }
 
 std::string ServerEntry::requirepass() const {
@@ -930,7 +941,7 @@ bool ServerEntry::processRequest(Session *sess) {
             std::vector<std::string> args = ns->getArgs();
             // we have called precheck, it should have 2 args
             //INVARIANT(args.size() == 4);
-            _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2], args[3]);
+            _migrateMgr->dstReadyMigrate(ns->borrowConn(), args[1], args[2], args[3], args[4]);
             return false;
         } else if (expCmdName == "preparemigrate") {
             LOG(INFO) << "prepare migrate command";
@@ -1180,6 +1191,13 @@ Status ServerEntry::destroyStore(Session *sess,
         return status;
     }
 
+    status = _gcMgr->stopStoreTask(storeId);
+    if (!status.ok()) {
+        LOG(ERROR) << "gcMgr stopStore :" << storeId
+                   << " failed:" << status.toString();
+        return status;
+    }
+
     if (_indexMgr) {
         status = _indexMgr->stopStore(storeId);
         if (!status.ok()) {
@@ -1342,7 +1360,9 @@ void ServerEntry::stop() {
     if (_clusterMgr) {
         _clusterMgr->stop();
     }
-
+    if (_gcMgr) {
+        _gcMgr->stop();
+    }
     if (!_isShutdowned.load(std::memory_order_relaxed)) {
         // NOTE(vinchen): if it's not the shutdown command, it should reset the
         // workerpool to decr the referent count of share_ptr<server>
@@ -1358,6 +1378,7 @@ void ServerEntry::stop() {
         _mgLockMgr.reset();
         _segmentMgr.reset();
         _clusterMgr.reset();
+        _gcMgr.reset();
     }
 
     // stop the rocksdb

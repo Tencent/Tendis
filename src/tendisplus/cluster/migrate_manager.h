@@ -55,6 +55,7 @@ class MigrateSendTask {
             const std::shared_ptr<ServerParams> cfg, bool is_fake = false) :
             storeid(storeId),
             slots(slots_),
+            taskid(0),
             isRunning(false),
             state(MigrateSendState::WAIT),
             isFake(is_fake) {
@@ -63,11 +64,14 @@ class MigrateSendTask {
 
     uint32_t storeid;
     SlotsBitmap slots;
+    std::atomic<uint64_t> taskid;
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
     MigrateSendState state;
     bool isFake;
     std::unique_ptr<ChunkMigrateSender> sender;
+
+    void setTaskId(const std::string& taskid);
 };
 
 
@@ -86,25 +90,27 @@ class ChunkMigrateReceiver;
 class MigrateReceiveTask{
  public:
     explicit MigrateReceiveTask(const SlotsBitmap& slots_,
-        uint32_t store_id, const string& ip, uint16_t port,
+        uint32_t store_id, const string& taskid_, const string& ip, uint16_t port,
         std::shared_ptr<ServerEntry> svr,
         const std::shared_ptr<ServerParams> cfg) :
         slots(slots_),
+        taskid(taskid_),
         storeid(store_id),
         srcIp(ip),
         srcPort(port),
         isRunning(false),
         state(MigrateReceiveState::RECEIVE_SNAPSHOT) {
-            receiver = std::make_unique<ChunkMigrateReceiver>(slots_, store_id, svr, cfg);
+            receiver = std::make_unique<ChunkMigrateReceiver>(slots_, store_id, taskid_, svr, cfg);
     }
     SlotsBitmap slots;
+    std::string taskid;
     uint32_t storeid;
     string srcIp;
     uint16_t srcPort;
 
     bool isRunning;
     SCLOCK::time_point nextSchedTime;
-    SCLOCK::time_point lastSyncTime;
+    uint64_t lastSyncTime;
     MigrateReceiveState state;
     std::unique_ptr<ChunkMigrateReceiver> receiver;
 
@@ -128,7 +134,8 @@ class MigrateManager {
     void dstReadyMigrate(asio::ip::tcp::socket sock,
                          const std::string& chunkidArg,
                          const std::string& StoreidArg,
-                         const std::string& nodeidArg);
+                         const std::string& nodeidArg,
+                         const std::string& taskidArg);
 
     void dstPrepareMigrate(asio::ip::tcp::socket sock,
                        const std::string& chunkidArg,
@@ -138,11 +145,11 @@ class MigrateManager {
     // receiver POV
     bool receiverSchedule(const SCLOCK::time_point& now);
 
-    Status importing(SlotsBitmap slots, const string& ip, uint16_t port, uint32_t storeid);
+    Status importing(SlotsBitmap slots, const string& ip, uint16_t port, uint32_t storeid, const std::string& taskid);
 
-    Status startTask(const std::vector<uint32_t> slotsVec, const std::string& ip,
-                    uint16_t port, uint32_t storeid,
-                    bool import, uint16_t taskSize);
+    Status startTask(const SlotsBitmap& taskmap, const std::string& ip,
+                        uint16_t port, uint32_t storeid,
+                        bool import);
 
     void insertNodes(const std::vector<uint32_t>& slots, const std::string& nodeid, bool import);
 
@@ -152,7 +159,7 @@ class MigrateManager {
 
     Status applyRepllog(Session* sess, uint32_t storeid, BinlogApplyMode mode,
                        const std::string& logKey, const std::string& logValue);
-    Status supplyMigrateEnd(const SlotsBitmap& slots);
+    Status supplyMigrateEnd(const std::string& taskid, bool binlogDone = true);
     uint64_t getProtectBinlogid(uint32_t storeid);
 
     bool slotInTask(uint32_t slot);
@@ -190,7 +197,7 @@ class MigrateManager {
     bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
     bool checkSlotOK(const SlotsBitmap& bitMap, const std::string& nodeid,
             std::vector<uint32_t>& taskSlots);
-
+    std::string genTaskid();
  private:
     const std::shared_ptr<ServerParams> _cfg;
     std::shared_ptr<ServerEntry> _svr;
@@ -198,6 +205,7 @@ class MigrateManager {
 
     std::condition_variable _cv;
     std::atomic<bool> _isRunning;
+    std::atomic<uint64_t> _taskIdGen;
     mutable myMutex _mutex;
     std::unique_ptr<std::thread> _controller;
 
@@ -222,13 +230,16 @@ class MigrateManager {
     // sender's pov
     std::list<std::unique_ptr<MigrateSendTask>> _migrateSendTask;
 
+    std::map<std::string, std::unique_ptr<MigrateSendTask>> _MigrateSendTaskMap;
+
     std::unique_ptr<WorkerPool> _migrateSender;
     std::unique_ptr<WorkerPool> _migrateClear;
     std::shared_ptr<PoolMatrix> _migrateSenderMatrix;
     std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
     // receiver's pov
-    std::list<std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTask;
+    std::map<std::string, std::unique_ptr<MigrateReceiveTask>> _migrateReceiveTaskMap;
+
 
     std::unique_ptr<WorkerPool> _migrateReceiver;
     std::shared_ptr<PoolMatrix> _migrateReceiverMatrix;

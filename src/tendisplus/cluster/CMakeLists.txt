@@ -1,6 +1,10 @@
 add_library(migrate STATIC migrate_manager.cpp migrate_sender.cpp migrate_receiver.cpp)
 target_link_libraries(migrate status glog network catalog kvstore ${SYS_LIBS})
 
+
+add_library(gc_mgr STATIC gc_manager.cpp)
+target_link_libraries(gc_mgr status glog kvstore ${SYS_LIBS})
+
 add_executable(migrate_test migrate_test.cpp)
 if(CMAKE_COMPILER_IS_GNUCC)
 	target_link_libraries(migrate_test -Wl,--whole-archive commands -Wl,--no-whole-archive)

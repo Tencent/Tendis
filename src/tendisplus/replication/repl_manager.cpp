@@ -1146,6 +1146,7 @@ Status ReplManager::replicationUnSetMaster() {
             return s;
         }
     }
+
     return { ErrorCodes::ERR_OK, "" };
 }
 
@@ -1194,21 +1195,21 @@ uint64_t ReplManager::replicationGetOffset() const {
     LocalSessionGuard sg(_svr.get());
 
     for (uint64_t i = 0; i < _svr->getKVStoreCount(); i++) {
-        //NOTE(wayenchen) not necessary to lockdb if just get offset in memory
         auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
                                                   mgl::LockMode::LOCK_NONE);
         if (!expdb.ok()) {
             LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
             continue;
         }
+
         auto kvstore = std::move(expdb.value().store);
-        auto nextBinlog = kvstore->getNextBinlogSeq() -1;
-        totalBinlog += nextBinlog;
+        uint64_t maxBinlog = kvstore->getHighestBinlogId();
+        totalBinlog += maxBinlog;
     }
     return totalBinlog;
 }
 
-uint64_t ReplManager::replicationGetMaxBinlogId() const {
+uint64_t ReplManager::replicationGetMaxBinlogIdFromRocks() const {
     uint64_t totalBinlog = 0;
     LocalSessionGuard sg(_svr.get());
 
@@ -1239,22 +1240,21 @@ uint64_t ReplManager::replicationGetMaxBinlogId() const {
     return totalBinlog;
 }
 
-uint64_t ReplManager::replicationGetHighestBinlogId() const {
+uint64_t ReplManager::replicationGetMaxBinlogId() const {
     uint64_t totalBinlog = 0;
     LocalSessionGuard sg(_svr.get());
 
     for (uint64_t i = 0; i < _svr->getKVStoreCount(); i++) {
+        //NOTE(wayenchen) not necessary to lockdb if just get offset in memory
         auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(), i,
-                                                  mgl::LockMode::LOCK_IS);
+                                                  mgl::LockMode::LOCK_NONE);
         if (!expdb.ok()) {
             LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
             continue;
         }
-
-       auto kvstore = std::move(expdb.value().store);
-       uint64_t maxBinlog = kvstore->getHighestBinlogId();
-       totalBinlog += maxBinlog;
-
+        auto kvstore = std::move(expdb.value().store);
+        auto nextBinlog = kvstore->getNextBinlogSeq() -1;
+        totalBinlog += nextBinlog;
     }
     return totalBinlog;
 }

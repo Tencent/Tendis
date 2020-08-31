@@ -452,6 +452,11 @@ void WorkLoad::replicate(const std::string & nodeName) {
     EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::lockDb(mstime_t locktime) {
+    _session->setArgs({"tendisadmin", "lockdb", std::to_string(locktime)});
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
 
 int genRand() {
     int grand = 0;

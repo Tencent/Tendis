@@ -513,30 +513,37 @@ bool  ClusterNode::nodeIsSlave() const {
 }
 
 bool  ClusterNode::nodeHasAddr() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_NOADDR) ? false : true;
 }
 
 bool  ClusterNode::nodeWithoutAddr() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_NOADDR) ? true : false;
 }
 
 bool  ClusterNode::nodeIsMyself() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_MYSELF) ? true : false;
 }
 
 bool ClusterNode::nodeInHandshake() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_HANDSHAKE) ? true : false;
 }
 
 bool ClusterNode::nodeTimedOut() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_PFAIL) ? true : false;
 }
 
 bool ClusterNode::nodeFailed() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_FAIL) ? true : false;
 }
 
 bool ClusterNode::nodeCantFailover() const {
+    std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_NOFAILOVER) ? true : false;
 }
 
@@ -2335,14 +2342,15 @@ Status ClusterState::clusterFailoverReplaceYourMasterMeta(void) {
 }
 
 Status ClusterState::clusterFailoverReplaceYourMaster(void) {
-    auto s = clusterFailoverReplaceYourMasterMeta();
-    if (!s.ok()) {
-        LOG(FATAL) << "replace master meta update fail";
-        return  s;
-    }
+    Status s;
     s = _server->getReplManager()->replicationUnSetMaster();
     if (!s.ok()) {
         LOG(ERROR) << "replication set master fail on node";
+        return  s;
+    }
+    s = clusterFailoverReplaceYourMasterMeta();
+    if (!s.ok()) {
+        LOG(FATAL) << "replace master meta update fail";
         return  s;
     }
     /* Pong all the other nodes so that they can update the state
@@ -3859,7 +3867,7 @@ void ClusterState::cronCheckFailState() {
     }
     if (!mfNodeList.empty()) {
         uint64_t offset = _server->getReplManager()->replicationGetMaxBinlogId();
-        for (auto iter = pingNodeList.begin(); iter != pingNodeList.end(); iter++) {
+        for (auto iter = mfNodeList.begin(); iter != mfNodeList.end(); iter++) {
             clusterSendPing((*iter)->getSession(), ClusterMsg::Type::PING, offset);
         }
     }
@@ -4469,6 +4477,7 @@ bool ClusterState::clusterProcessGossipSection(std::shared_ptr<ClusterSession> s
 Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, const ClusterMsg& msg) {
     bool save = false;
     bool update = false;
+
     if (getBlockState()) {
         // sleep or return OK?
         DLOG(INFO) << "packet begin block at:" << msSinceEpoch();
