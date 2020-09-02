@@ -221,13 +221,11 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
                 if ((*it)->slots.test(i)) {
                     if ((*it)->state == MigrateSendState::SUCC) {
-                        //LOG(INFO) << "_migrateSendTask SUCC, erase it, slots" << i;
                         _succMigrateSlots.set(i);
                         if (_failMigrateSlots.test(i)) {
                             _failMigrateSlots.reset(i);
                         }
                     } else {
-                        //LOG(INFO) << "_migrateSendTask ERROR, erase it, slots" << i;
                         _failMigrateSlots.set(i);
                     }
                     _migrateNodes.erase(i);
@@ -253,7 +251,7 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             } else {
                 // if not change after node timeout, mark fail
                (*it)->sender->unlockChunks();
-                (*it)->state = MigrateSendState::ERR;
+               (*it)->state = MigrateSendState::ERR;
             }
             ++it;
         }

@@ -459,8 +459,11 @@ class ClusterCommand: public Command {
             std::string nodeName = myself->getNodeName();
             return  Command::fmtBulk(nodeName);
         } else if (arg1 == "slots" && argSize == 2) {
-            std::string slotInfo = clusterReplyMultiBulkSlots(clusterState);
-            return  slotInfo;
+            auto exptSlotInfo = clusterState->clusterReplyMultiBulkSlots();
+            if (!exptSlotInfo.ok()) {
+                return exptSlotInfo.status();
+            }
+            return  exptSlotInfo.value();
         } else if (arg1 == "failover" && (argSize == 2 || argSize == 3)) {
             bool force = false;
             bool takeover = false;
@@ -590,64 +593,6 @@ class ClusterCommand: public Command {
             ++idx;
         }
         return  notEmpty;
-    }
-
-    std::string clusterReplyMultiBulkSlots(const std::shared_ptr<tendisplus::ClusterState> state) {
-        std::stringstream ss;
-        uint32_t nodeNum = 0;
-        std::vector<CNodePtr> nodes;
-
-        for (const auto &v : state->getNodesList()) {
-            CNodePtr node = v.second;
-            if (!node->nodeIsMaster() || node->getSlotNum() == 0) {
-                continue;
-            } else {
-                nodes.push_back(node);
-            }
-        }
-
-        std::stringstream ssTemp;
-        for (const auto &node : nodes) {
-            int32_t start = -1;
-
-            uint16_t  slaveNUm = node->getSlaveNum();
-            for (int32_t j = 0; j < CLUSTER_SLOTS; j++) {
-                auto bit = node->getSlots().test(j);
-                if (bit) {
-                    if (start == -1) start = j;
-                }
-                if (start != -1 && (!bit || j == CLUSTER_SLOTS-1)) {
-                    if (bit && j == CLUSTER_SLOTS - 1) j++;
-                    nodeNum++;
-
-                    Command::fmtMultiBulkLen(ssTemp, slaveNUm+3);
-
-                    if (start == j - 1) {
-                        Command::fmtLongLong(ssTemp, start);
-                        Command::fmtLongLong(ssTemp, start);
-                    } else {
-                        Command::fmtLongLong(ssTemp, start);
-                        Command::fmtLongLong(ssTemp, j - 1);
-                    }
-
-                    Command::fmtMultiBulkLen(ssTemp, 3);
-                    Command::fmtBulk(ssTemp, node->getNodeIp());
-                    Command::fmtLongLong(ssTemp, node->getPort());
-                    Command::fmtBulk(ssTemp, node->getNodeName());
-                    for (uint16_t  i = 0; i < slaveNUm; i++) {
-                        Command::fmtMultiBulkLen(ssTemp, 3);
-                        CNodePtr  slave = node->_slaves[i];
-                        Command::fmtBulk(ssTemp, slave->getNodeIp());
-                        Command::fmtLongLong(ssTemp, slave->getPort());
-                        Command::fmtBulk(ssTemp, slave->getNodeName());
-                    }
-                    start = -1;
-                }
-            }
-        }
-        Command::fmtMultiBulkLen(ss, nodeNum);
-        ss << ssTemp.str();
-        return ss.str();
     }
 
     Status startImportingTasks(ServerEntry* svr,

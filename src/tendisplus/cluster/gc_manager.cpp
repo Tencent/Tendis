@@ -95,7 +95,7 @@ SlotsBitmap GCManager::getCheckList() {
         }
         idx ++;
     }
-    return  checklist;
+    return checklist;
 }
 
 /* check the chunks which not belong to me but contain keys
@@ -110,7 +110,7 @@ void GCManager::checkGarbage()  {
     }
     auto garbageList = getCheckList();
     if (garbageList.count() == 0) {
-        return;;
+        return;
     }
     LOG(INFO) << "garbage list is :" << bitsetStrEncode(garbageList);
     size_t idx = 0;
@@ -198,7 +198,7 @@ bool GCManager::gcSchedule(const SCLOCK::time_point &now) {
 
 bool GCManager::slotIsDeleting(uint32_t slot) {
     std::lock_guard<myMutex> lk(_mutex);
-    return  _deletingSlots.test(slot) ? true : false;
+    return _deletingSlots.test(slot) ? true : false;
 }
 /*
  *  if any cluster or migrate task pass a [storeid start, end] deleteRange to this API, the

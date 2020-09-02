@@ -152,7 +152,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     void setSentTime(uint64_t t);
     void setReceivedTime(uint64_t t);
 
-    uint16_t getSlaveNum() const { return _numSlaves; }
+    uint16_t getSlaveNum() const;
 
     uint32_t getNonFailingSlavesCount() const;
     std::list<std::shared_ptr<ClusterNodeFailReport>> getFailReport() const;
@@ -204,7 +204,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
  public:
     bool addSlave(std::shared_ptr<ClusterNode> slave);
     bool removeSlave(std::shared_ptr<ClusterNode> slave);
-    void setSlots(const std::bitset<CLUSTER_SLOTS>& slots);
+    Expected<std::vector<std::shared_ptr<ClusterNode>>> getSlaves() const;
 
  private:
     mutable myMutex _mutex;
@@ -626,6 +626,8 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
 
     Expected<std::string> getNodeInfo(CNodePtr n);
     Expected<std::string> getBackupInfo();
+
+    Expected<std::string> clusterReplyMultiBulkSlots();
     mstime_t getMfEnd() const;
     CNodePtr getMfSlave() const;
     void setMfEnd(uint64_t x);

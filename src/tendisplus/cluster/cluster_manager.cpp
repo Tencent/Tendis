@@ -326,29 +326,30 @@ bool ClusterNode::addSlave(std::shared_ptr<ClusterNode> slave) {
 bool ClusterNode::removeSlave(std::shared_ptr<ClusterNode> slave) {
     std::lock_guard<myMutex> lk(_mutex);
 
-    for (auto iter = _slaves.begin(); iter != _slaves.end(); iter++) {
+    for (auto iter = _slaves.begin(); iter != _slaves.end(); ) {
         if (*iter == slave) {
-            _slaves.erase(iter);
+            iter = _slaves.erase(iter);
+            _numSlaves--;
 
             if (_slaves.size() == 0) {
                 _flags &= ~CLUSTER_NODE_MIGRATE_TO;
             }
             return true;
+        } else {
+            ++ iter;
         }
     }
 
     return false;
 }
 
-void ClusterNode::setSlots(const std::bitset<CLUSTER_SLOTS>& slots) {
+Expected<std::vector<std::shared_ptr<ClusterNode>>> ClusterNode::getSlaves() const{
     std::lock_guard<myMutex> lk(_mutex);
-    size_t idx = 0;
-    while (idx < slots.size()) {
-        _mySlots[idx] = slots[idx];
-        idx++;
+    if (!nodeIsMaster()) {
+        return  {ErrorCodes::ERR_CLUSTER, "not a master"};
     }
+    return _slaves;
 }
-
 
 uint32_t ClusterNode::getNonFailingSlavesCount() const {
     std::lock_guard<myMutex> lk(_mutex);
@@ -446,6 +447,10 @@ uint32_t ClusterNode::getSlavesCount() const {
     return _slaves.size();
 }
 
+uint16_t ClusterNode::getSlaveNum() const {
+    std::lock_guard<myMutex> lk(_mutex);
+    return _numSlaves;
+}
 
 void ClusterNode::markAsFailing() {
     std::lock_guard<myMutex> lk(_mutex);
@@ -1252,6 +1257,66 @@ Expected<std::string> ClusterState::getBackupInfo() {
     return  eptInfo.value();
 }
 
+Expected<std::string> ClusterState::clusterReplyMultiBulkSlots() {
+    std::stringstream ss;
+    uint32_t nodeNum = 0;
+    std::stringstream ssTemp;
+
+    std::lock_guard<myMutex> lk(_mutex);
+    for (const auto &v : _nodes) {
+        CNodePtr node = v.second;
+        if (!node->nodeIsMaster() || node->getSlotNum() == 0) {
+            continue;
+        }
+        int32_t start = -1;
+
+        auto exptSlaveList = node->getSlaves();
+        if (!exptSlaveList.ok()) {
+            return exptSlaveList.status();
+        }
+        auto slaveList = exptSlaveList.value();
+        uint16_t slaveNum = slaveList.size();
+        for (int32_t j = 0; j < CLUSTER_SLOTS; j++) {
+            auto bit = node->getSlots().test(j);
+            if (bit) {
+                if (start == -1) start = j;
+            }
+            if (start != -1 && (!bit || j == CLUSTER_SLOTS-1)) {
+                if (bit && j == CLUSTER_SLOTS - 1) j++;
+                nodeNum++;
+
+                Command::fmtMultiBulkLen(ssTemp, slaveNum+3);
+
+                if (start == j - 1) {
+                    Command::fmtLongLong(ssTemp, start);
+                    Command::fmtLongLong(ssTemp, start);
+                } else {
+                    Command::fmtLongLong(ssTemp, start);
+                    Command::fmtLongLong(ssTemp, j - 1);
+                }
+
+                Command::fmtMultiBulkLen(ssTemp, 3);
+                Command::fmtBulk(ssTemp, node->getNodeIp());
+                Command::fmtLongLong(ssTemp, node->getPort());
+                Command::fmtBulk(ssTemp, node->getNodeName());
+                if (slaveNum > 0) {
+                    for (uint16_t i = 0; i < slaveNum; i++) {
+                        Command::fmtMultiBulkLen(ssTemp, 3);
+                        CNodePtr slave = slaveList[i];
+                        Command::fmtBulk(ssTemp, slave->getNodeIp());
+                        Command::fmtLongLong(ssTemp, slave->getPort());
+                        Command::fmtBulk(ssTemp, slave->getNodeName());
+                    }
+                }
+                start = -1;
+            }
+        }
+    }
+    Command::fmtMultiBulkLen(ss, nodeNum);
+    ss << ssTemp.str();
+    return ss.str();
+}
+
 void ClusterState::clusterSaveNodes() {
     std::lock_guard<myMutex> lk(_mutex);
     Status s =  clusterSaveNodesNoLock();
@@ -1401,7 +1466,6 @@ bool ClusterState::clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave) {
 bool ClusterState::clusterNodeRemoveSlaveNolock(CNodePtr master, CNodePtr slave) {
     return master->removeSlave(slave);
 }
-
 
 bool ClusterState::clusterNodeAddSlave(CNodePtr master, CNodePtr slave) {
     std::lock_guard<myMutex> lk(_mutex);
