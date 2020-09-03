@@ -61,7 +61,7 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server,
 }
 
 void compareData(const std::shared_ptr<ServerEntry>& master,
-    const std::shared_ptr<ServerEntry>& slave) {
+    const std::shared_ptr<ServerEntry>& slave, bool comparebinlog = true) {
     INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
 
     for (size_t i = 0; i < master->getKVStoreCount(); i++) {
@@ -78,7 +78,6 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         EXPECT_TRUE(ptxn1.ok());
         std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
         auto cursor1 = txn1->createAllDataCursor();
-        auto cursor1_binlog = txn1->createBinlogCursor();
         //check the data
         while (true) {
             Expected<Record> exptRcd1 = cursor1->next();
@@ -98,23 +97,26 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
         }
         int count1_data = count1;
-        //check the binlog
-        while (true) {
-            Expected<Record> exptRcd1 = cursor1_binlog->next();
-            if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
-                break;
-            }
-            INVARIANT(exptRcd1.ok());
-            count1++;
 
-            auto exptRcdv2 =
-                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
-            EXPECT_TRUE(exptRcdv2.ok());
-            EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+        if (comparebinlog) {
+            // check the binlog
+            auto cursor1_binlog = txn1->createBinlogCursor();
+            while (true) {
+                Expected<Record> exptRcd1 = cursor1_binlog->next();
+                if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                INVARIANT(exptRcd1.ok());
+                count1++;
+
+                auto exptRcdv2 =
+                    kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+                EXPECT_TRUE(exptRcdv2.ok());
+                EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+            }
         }
 
         auto cursor2 = txn2->createAllDataCursor();
-        auto cursor2_binlog = txn2->createBinlogCursor();
         while (true) {
             Expected<Record> exptRcd2 = cursor2->next();
             if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -134,13 +136,17 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
             EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
         }
         int count2_data = count2;
-        while (true) {
-            Expected<Record> exptRcd2 = cursor2_binlog->next();
-            if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
-                break;
+
+        if (comparebinlog) {
+            auto cursor2_binlog = txn2->createBinlogCursor();
+            while (true) {
+                Expected<Record> exptRcd2 = cursor2_binlog->next();
+                if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+                    break;
+                }
+                INVARIANT(exptRcd2.ok());
+                count2++;
             }
-            INVARIANT(exptRcd2.ok());
-            count2++;
         }
         EXPECT_EQ(count1_data, count2_data);
         EXPECT_EQ(count1, count2);
@@ -968,7 +974,8 @@ TEST(Repl, BinlogVersion) {
         });
 
     EXPECT_TRUE(setupEnv(master_dir));
-    auto cfg = makeServerParam(master_port, 10, master_dir, false);
+    uint32_t kvstoreNum = 1;
+    auto cfg = makeServerParam(master_port, kvstoreNum, master_dir, false);
     cfg->binlogUsingDefaultCF = true;
     auto version1_master = std::make_shared<ServerEntry>(cfg);
     auto s = version1_master->startup(cfg);
@@ -978,7 +985,7 @@ TEST(Repl, BinlogVersion) {
 
     // 1. check version2 slaveof version1
     EXPECT_TRUE(setupEnv(slave_dir));
-    auto cfg2 = makeServerParam(slave_port, 10, slave_dir, false);
+    auto cfg2 = makeServerParam(slave_port, kvstoreNum, slave_dir, false);
     cfg2->binlogUsingDefaultCF = false;
     auto version2_slave = std::make_shared<ServerEntry>(cfg2);
     s = version2_slave->startup(cfg2);
@@ -997,17 +1004,17 @@ TEST(Repl, BinlogVersion) {
     waitSlaveCatchup(version1_master, version2_slave);
     sleep(3); // wait recycle binlog
     EXPECT_EQ(version2_slave->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
-    compareData(version1_master, version2_slave);
+    compareData(version1_master, version2_slave, false);
 
     auto binlogHighest = version1_master->getStores()[0]->getHighestBinlogId();
     auto binlogMax = version1_master->getStores()[0]->getNextBinlogSeq();
     version1_master->stop();
     ASSERT_EQ(version1_master.use_count(), 1);
 
+#ifndef _WIN32
     version2_slave->stop();
     ASSERT_EQ(version2_slave.use_count(), 1);
-
-
+#endif
 
     // 2. check version2 startup with version1 datafile
     cfg->binlogUsingDefaultCF = false;
@@ -1021,7 +1028,7 @@ TEST(Repl, BinlogVersion) {
 
     // 3. check version2 slaveof version2
     EXPECT_TRUE(setupEnv(slave1_dir));
-    auto cfg3 = makeServerParam(slave1_port, 10, slave1_dir, false);
+    auto cfg3 = makeServerParam(slave1_port, kvstoreNum, slave1_dir, false);
     cfg3->binlogUsingDefaultCF = false;
     auto version2_slave2 = std::make_shared<ServerEntry>(cfg3);
     s = version2_slave2->startup(cfg3);
@@ -1040,7 +1047,7 @@ TEST(Repl, BinlogVersion) {
     waitSlaveCatchup(version2_master, version2_slave2);
     sleep(3); // wait recycle binlog
     EXPECT_EQ(version2_slave2->getCatalog()->getBinlogVersion(), BinlogVersion::BINLOG_VERSION_2);
-    compareData(version2_master, version2_slave2);
+    compareData(version2_master, version2_slave2, false);
 
     version2_master->stop();
     ASSERT_EQ(version2_master.use_count(), 1);

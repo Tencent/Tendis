@@ -195,7 +195,7 @@ class RocksKVStore: public KVStore {
         KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
         TxnMode txnMode = TxnMode::TXN_PES,
         uint32_t flag = 0);
-    virtual ~RocksKVStore() = default;
+    virtual ~RocksKVStore() { stop(); }
     Expected<std::unique_ptr<Transaction>> createTransaction(Session* sess) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn) final;
     Expected<RecordValue> getKV(const RecordKey& key, Transaction* txn,
@@ -264,7 +264,7 @@ class RocksKVStore: public KVStore {
                                 KVStore::BackupMode,
                                 BinlogVersion binlogVersion) final;
     Expected<std::string> restoreBackup(const std::string& dir) final;
-    Expected<rapidjson::Document> getBackupMeta(const std::string& dir) final;
+    Expected<BackupInfo> getBackupMeta(const std::string& dir) final;
 
     Status releaseBackup() final;
 
@@ -315,7 +315,7 @@ class RocksKVStore: public KVStore {
     rocksdb::Options options();
     Expected<bool> deleteBinlog(uint64_t start);
     void initRocksProperties();
-    Expected<std::string> saveBackupMeta(const std::string& dir, const BackupInfo& result);
+    Expected<std::string> saveBackupMeta(const std::string& dir, BackupInfo* result);
     Expected<std::string> loadCopy(const std::string& dir);
     Expected<std::string> copyCkpt(const std::string& dir);
 private:

@@ -21,6 +21,7 @@
 #define MYTEST TEST_NO
 #include <windows.h>
 #define usleep(us) Sleep(us)
+#define be32toh(x) _byteswap_ulong(x)
 #else
 #define MYTEST TEST
 #endif

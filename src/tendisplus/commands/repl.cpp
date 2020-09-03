@@ -249,23 +249,8 @@ class RestoreBackupCommand : public Command {
         if (!backup_meta.ok()) {
             return backup_meta.status();
         }
-        uint64_t binlogpos = Transaction::TXNID_UNINITED;
-        BinlogVersion binlogVersion = BinlogVersion::BINLOG_VERSION_1;
-        for (auto& o : backup_meta.value().GetObject()) {
-            if (o.name == "binlogpos" && o.value.IsUint()) {
-                binlogpos = o.value.GetUint64();
-            }
-
-            if (o.name == "binlogVersion") {
-                INVARIANT_D(o.value.IsUint64());
-                if (o.value.IsUint64()) {
-                    binlogVersion = (BinlogVersion)o.value.GetUint64();
-                }
-            }
-        }
-        if (binlogpos == Transaction::TXNID_UNINITED) {
-            LOG(ERROR) << "binlogpos is invalid " << dir;
-        }
+        uint64_t binlogpos = backup_meta.value().getBinlogPos();
+        BinlogVersion binlogVersion = backup_meta.value().getBinlogVersion();
 
         uint32_t flags = 0;
         BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();

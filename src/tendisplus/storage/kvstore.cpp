@@ -591,6 +591,10 @@ const std::map<std::string, uint64_t>& BackupInfo::getFileList() const {
     return _fileList;
 }
 
+void BackupInfo::addFile(const std::string& file, uint64_t size) {
+    _fileList[file] = size;
+}
+
 void BackupInfo::setBinlogPos(uint64_t pos) {
     _binlogPos = pos;
 }

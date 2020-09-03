@@ -493,9 +493,9 @@ void ReplManager::supplyFullSyncRoutine(
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             if (hasError) {
-                _fullPushStatus[storeId].erase(iter);
                 LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, "
                     << iter->second->toString();
+                _fullPushStatus[storeId].erase(iter);
             } else {
                 iter->second->endTime =  SCLOCK::now();
                 iter->second->state = FullPushState::SUCESS;
@@ -531,11 +531,8 @@ void ReplManager::supplyFullSyncRoutine(
         }
     });
 
-    Status s;
-#ifdef XXX
-    // before tendisplus-2.0.1
     // send binlogPos
-    s = client->writeLine(
+    Status s = client->writeLine(
             std::to_string(bkInfo.value().getBinlogPos()));
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId
@@ -544,27 +541,6 @@ void ReplManager::supplyFullSyncRoutine(
     }
     LOG(INFO) << "fullsync " << storeId << " send binlogPos success:"
         << bkInfo.value().getBinlogPos();
-#else
-    {
-        // send backup base info
-        rapidjson::StringBuffer sb;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
-        writer.StartObject();
-        writer.Key("binlogPos");
-        writer.Uint64(bkInfo.value().getBinlogPos());
-        writer.Key("binlogVersion");
-        writer.Uint64((uint64_t)bkInfo.value().getBinlogVersion());
-        writer.EndObject();
-        s = client->writeLine(sb.GetString());
-        if (!s.ok()) {
-            LOG(ERROR) << "store:" << storeId
-                << " fullsync send binlogpos failed:" << s.toString();
-            return;
-        }
-        LOG(INFO) << "fullsync " << storeId << " send binlogPos success:"
-            << sb.GetString();
-    }
-#endif
 
     // send fileList
     rapidjson::StringBuffer sb;

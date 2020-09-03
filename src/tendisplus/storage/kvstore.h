@@ -303,6 +303,7 @@ class BackupInfo {
     uint64_t getStartTimeSec() const;
     uint64_t getEndTimeSec() const;
     BinlogVersion getBinlogVersion() const;
+    void addFile(const std::string& file, uint64_t size);
  private:
     std::map<std::string, uint64_t> _fileList;
     uint64_t _binlogPos;
@@ -448,7 +449,7 @@ class KVStore {
     // backup and return the filename<->filesize pair
     virtual Expected<BackupInfo> backup(const std::string&, BackupMode, BinlogVersion) = 0;
     virtual Expected<std::string> restoreBackup(const std::string& dir) = 0;
-    virtual Expected<rapidjson::Document> getBackupMeta(const std::string& dir) = 0;
+    virtual Expected<BackupInfo> getBackupMeta(const std::string& dir) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(

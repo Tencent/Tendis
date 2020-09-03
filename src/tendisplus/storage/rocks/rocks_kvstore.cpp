@@ -313,7 +313,7 @@ Expected<uint64_t> RocksTxn::commit() {
             nullptr, 0);
 
         binlogTxnId = _txnId;
-        //put binlog into binlog_column_family
+        // put binlog into binlog_column_family
         auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(), key.encode(),
                            val.encode(_replLogValues));
         if (!s.ok()) {
@@ -397,7 +397,7 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
     } else {
         s = _txn->Get(readOpts, key, &value);
     }
-    
+
     if (s.ok()) {
         return value;
     }
@@ -415,7 +415,7 @@ Status RocksTxn::setKV(const std::string& key,
     }
 
     RESET_PERFCONTEXT();
-    //put data into default column family
+    // put data into default column family
     auto s = _txn->Put(key, val);
     if (!s.ok()) {
         return {ErrorCodes::ERR_INTERNAL, s.ToString()};
@@ -1075,6 +1075,11 @@ rocksdb::Options RocksKVStore::options() {
         }
     }
 
+    if (!_cfg->binlogUsingDefaultCF) {
+        // TODO(takenliu): make memory usage of binlog cf correct
+        options.write_buffer_size /= 2;
+    }
+
     options.table_factory.reset(
         rocksdb::NewBlockBasedTableFactory(table_options));
 
@@ -1165,6 +1170,11 @@ Status RocksKVStore::stop() {
             "it's upperlayer's duty to guarantee no pinning txns alive"};
     }
     _isRunning = false;
+
+    for (auto* h : _cfHandles) {
+        delete h;
+    }
+    _cfHandles.clear();
     _optdb.reset();
     _pesdb.reset();
     return {ErrorCodes::ERR_OK, ""};
@@ -1703,8 +1713,6 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             rocksdb::kDefaultColumnFamilyName, columOpts));
         if (_cfg->binlogUsingDefaultCF == false) {
-            // TODO(takenliu): make memory usage of binlog cf correct
-            columOpts.write_buffer_size /= 2;
             column_families.push_back(
                 rocksdb::ColumnFamilyDescriptor("binlog_cf", columOpts));
         }
@@ -1928,7 +1936,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
     if (_cfg->noexpire) {
         _enableFilter = false;
     }
-    
+
     Expected<uint64_t> s =
         restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
     if (!s.ok()) {
@@ -2050,7 +2058,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     result.setEndTimeSec(sinceEpoch());
     result.setBackupMode((uint32_t)mode);
     result.setBinlogVersion(binlogVersion);
-    auto saveret = saveBackupMeta(dir, result);
+    auto saveret = saveBackupMeta(dir, &result);
     if (!saveret.ok()) {
         return saveret.status();
     }
@@ -2058,22 +2066,22 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
     return result;
 }
 
-Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, const BackupInfo& backup) {
+Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, BackupInfo* backup) {
     rapidjson::StringBuffer sb;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
     writer.Key("backupType");
-    writer.Uint(backup.getBackupMode());
+    writer.Uint(backup->getBackupMode());
     writer.Key("binlogpos");
-    writer.Uint64(backup.getBinlogPos());
+    writer.Uint64(backup->getBinlogPos());
     writer.Key("startTimeSec");
-    writer.Uint64(backup.getStartTimeSec());
+    writer.Uint64(backup->getStartTimeSec());
     writer.Key("endTimeSec");
-    writer.Uint64(backup.getEndTimeSec());
+    writer.Uint64(backup->getEndTimeSec());
     writer.Key("useTimeSec");
-    writer.Uint64(backup.getEndTimeSec() - backup.getStartTimeSec());
+    writer.Uint64(backup->getEndTimeSec() - backup->getStartTimeSec());
     writer.Key("binlogVersion");
-    writer.Uint64((uint64_t)backup.getBinlogVersion());
+    writer.Uint64((uint64_t)backup->getBinlogVersion());
     writer.EndObject();
     string data = sb.GetString();
 
@@ -2084,10 +2092,15 @@ Expected<std::string> RocksKVStore::saveBackupMeta(const std::string& dir, const
     }
     metafile << data;
     metafile.close();
+
+    // add metafile to filelist
+    auto size = filesystem::file_size(filename);
+    backup->addFile("backup_meta", size);
+
     return std::string("ok");
 }
 
-Expected<rapidjson::Document> RocksKVStore::getBackupMeta(const std::string& dir) {
+Expected<BackupInfo> RocksKVStore::getBackupMeta(const std::string& dir) {
     string filename = dir + "/backup_meta";
     std::ifstream metafile(filename);
     if (!metafile.is_open()) {
@@ -2109,7 +2122,45 @@ Expected<rapidjson::Document> RocksKVStore::getBackupMeta(const std::string& dir
         LOG(ERROR) << "backup_meta json IsObject failed:" << filename;
         return {ErrorCodes::ERR_NOTFOUND, "json parse failed"};
     }
-    return doc;
+
+    BackupInfo bkInfo;
+#ifdef _WIN32
+#undef GetObject
+#endif
+    for (auto& o : doc.GetObject()) {
+        if (o.name == "backupType") {
+            if (o.value.IsUint()) {
+                bkInfo.setBackupMode(o.value.GetInt());
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "Invalid backup meta" };
+            }
+        } else if (o.name == "binlogpos") {
+            if (o.value.IsUint64()) {
+                bkInfo.setBinlogPos(o.value.GetInt64());
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "Invalid backup meta" };
+            }
+        } else if (o.name == "startTimeSec") {
+            if (o.value.IsUint64()) {
+                bkInfo.setStartTimeSec(o.value.GetInt64());
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "Invalid backup meta" };
+            }
+        } else if (o.name == "endTimeSec") {
+            if (o.value.IsUint64()) {
+                bkInfo.setEndTimeSec(o.value.IsUint64());
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "Invalid backup meta" };
+            }
+        } else if (o.name == "binlogVersion") {
+            if (o.value.IsUint64()) {
+                bkInfo.setBinlogVersion((BinlogVersion)o.value.IsUint64());
+            } else {
+                return { ErrorCodes::ERR_PARSEOPT, "Invalid backup meta" };
+            }
+        }
+    }
+    return bkInfo;
 }
 
 Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
@@ -2118,16 +2169,7 @@ Expected<std::string> RocksKVStore::restoreBackup(const std::string& dir) {
         return backup_meta.status();
     }
 
-#ifdef _WIN32
-#undef GetObject
-#endif
-    uint32_t mode = std::numeric_limits<uint32_t>::max();
-    for (auto& o : backup_meta.value().GetObject()) {
-        if (o.name == "backupType" && o.value.IsUint()) {
-            mode = o.value.GetUint();
-        }
-    }
-
+    uint32_t mode = backup_meta.value().getBackupMode();
     if (mode == (uint32_t)KVStore::BackupMode::BACKUP_CKPT) {
         return copyCkpt(dir);
     } else if (mode == (uint32_t)KVStore::BackupMode::BACKUP_COPY) {
@@ -2362,8 +2404,6 @@ void RocksKVStore::markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId) {
 
                 if (i->second.second != Transaction::TXNID_UNINITED) {
                     _highestVisible = i->first;
-                    //DLOG(INFO) << "markCommittedInLock dbid:" << dbId()
-                    //    << " _highestVisible:"<< _highestVisible;
                     INVARIANT_D(_highestVisible <= _nextBinlogSeq);
                 }
                 i = _aliveBinlogs.erase(i);
@@ -2606,7 +2646,7 @@ Status RocksKVStore::recoveryFromBgError() {
     _env->resetError();
 #else
     // NOTE(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-    // We can only reset the bg_error_ in rocksdb. 
+    // We can only reset the bg_error_ in rocksdb.
     _env->resetError();
 #endif
 
@@ -2655,7 +2695,6 @@ Expected<VersionMeta> RocksKVStore::getVersionMeta(const std::string& name) {
 
 Status RocksKVStore::setVersionMeta(const std::string& name,
                 uint64_t ts, uint64_t version) {
-
     std::stringstream pkss;
     pkss << name << "_meta";
     RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID, RecordType::RT_META,
@@ -2805,7 +2844,7 @@ void RocksdbEnv::resetError() {
     // do nothing
 #else
     // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-    // We can only reset the bg_error_ in rocksdb. 
+    // We can only reset the bg_error_ in rocksdb.
     *_rocksbgError = rocksdb::Status::OK();
 #endif
 }
