@@ -618,8 +618,8 @@ void ReplManager::supplyFullSyncRoutine(
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             if (hasError) {
-                _fullPushStatus[storeId].erase(iter);
                 LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, " << iter->second->toString();
+                _fullPushStatus[storeId].erase(iter);
             } else {
                 iter->second->endTime =  SCLOCK::now();
                 iter->second->state = FullPushState::SUCESS;
