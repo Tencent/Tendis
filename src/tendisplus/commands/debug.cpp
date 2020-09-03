@@ -3838,7 +3838,7 @@ public:
         }
         int64_t id = eid.value();
 
-        LocalSessionGuard sg(sess->getServerEntry());
+        LocalSessionGuard sg(sess->getServerEntry(), sess);
         auto lsess = sg.getSession();
         std::vector<std::string> newargs;
         for (uint32_t i = 2; i < args.size(); i++) {

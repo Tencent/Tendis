@@ -151,8 +151,11 @@ Status LocalSession::setResponse(const std::string& s) {
     return { ErrorCodes::ERR_OK, "" };
 }
 
-LocalSessionGuard::LocalSessionGuard(ServerEntry* svr) {
+LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess) {
     _sess = std::make_shared<LocalSession>(svr);
+    if (sess && sess->getCtx()->authed()) {
+        _sess->getCtx()->setAuthed();
+    }
     if (svr) {
         svr->addSession(_sess);
     }
