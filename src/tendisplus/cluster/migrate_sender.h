@@ -55,6 +55,11 @@ class ChunkMigrateSender{
         _client = client;
     }
 
+    void setDstAddr(const std::string& ip, uint32_t port) {
+        _dstIp = ip;
+        _dstPort = port;
+    }
+
     void freeDbLock() {
         _dbWithLock.reset();
     }
@@ -75,9 +80,6 @@ class ChunkMigrateSender{
     MigrateSenderStatus getSenderState() { return _sendstate;}
     void setSenderStatus(MigrateSenderStatus s);
 
-    Status deleteChunkRange(uint32_t chunkidStart, uint32_t chunkidEnd);
-    // TODO(wayenchen)  takenliu add, delete the slots param for all interface, use _slots
-    Status deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots);
     bool checkSlotsBlongDst();
 
     uint64_t getProtectBinlogid() {
@@ -85,7 +87,6 @@ class ChunkMigrateSender{
         std::lock_guard<myMutex> lk(_mutex);
         return _curBinlogid;
     }
-    std::string getInfo();
     Status lockChunks();
     void unlockChunks();
     bool needToWaitMetaChanged() const;
@@ -100,13 +101,9 @@ class ChunkMigrateSender{
 
     Status sendLastBinlog();
     Status catchupBinlog(uint64_t end);
-    Status retrySendBinlog(uint64_t start, uint64_t end,
-                           uint64_t* sendBinlogNum,
-                           uint64_t* newBinlogId);
 
     Status resetClient();
     Status sendOver();
-
 
 private:
     mutable myMutex _mutex;
@@ -124,7 +121,6 @@ private:
     uint32_t _storeid;
     uint64_t  _snapshotKeyNum;
     uint64_t  _binlogNum;
-    uint64_t  _delSlot;
     bool _consistency;
     std::string _nodeid;
     uint64_t _curBinlogid;
@@ -135,7 +131,6 @@ private:
     uint64_t getMaxBinLog(Transaction * ptxn) const;
     std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
     std::string _OKSTR = "+OK";
-    static constexpr int32_t RETRY_CNT = 3;
 };
 
 }  // namespace tendisplus

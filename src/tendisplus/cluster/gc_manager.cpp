@@ -10,6 +10,8 @@ GCManager::GCManager(std::shared_ptr<ServerEntry> svr)
           _cstate(svr->getClusterMgr()->getClusterState()),
           _isRunning(false),
           _gcDeleterMatrix(std::make_shared<PoolMatrix>()) {
+    _svr->getParams()->serverParamsVar("garbageDeleteThreadnum")->
+        setUpdate([this]() {garbageDeleterResize(_svr->getParams()->garbageDeleteThreadnum);});
 }
 
 Status GCManager::startup() {
@@ -26,10 +28,6 @@ Status GCManager::startup() {
         controlRoutine();
     }));
 
-    _gcChecker= std::make_unique<std::thread>(std::move([this]() {
-        cronCheck();
-    }));
-
     return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -37,8 +35,6 @@ void GCManager::stop() {
     LOG(INFO) << "GCManager begins stops...";
     _isRunning.store(false, std::memory_order_relaxed);
     _controller->join();
-    _cv.notify_one();
-    _gcChecker->join();
     _gcDeleter->stop();
     LOG(INFO) << "GCManager stops succ";
 }
@@ -67,34 +63,24 @@ void GCManager::controlRoutine() {
     DLOG(INFO) << "gc controller exits";
 }
 
-void GCManager::cronCheck() {
-    // NOTE(wayenchen) use cv wait_for to make a crontask instead of longtime sleep(thread.join is not work when sleep)
-     std::unique_lock<std::mutex> lk(_checkerMutex);
-     while(!_cv.wait_for(lk, std::chrono::minutes(30),
-             [this]() { return !_isRunning; })) {
-        checkGarbage();
-        DLOG(INFO) << "check thread is running";
-     }
-}
-
 /* get cron check slots list, which contain dirty data*/
 SlotsBitmap GCManager::getCheckList() {
-    std::lock_guard<myMutex> lk(_mutex);
     SlotsBitmap checklist;
     checklist.set();
     size_t idx = 0;
     SlotsBitmap myslots = _cstate->getMyselfNode()->getSlots();
-    while (idx < checklist.size()) {
+    while (idx < CLUSTER_SLOTS) {
         /*NOTE(wayenchen) garbage list should not be migrating,
          * should not belong to me and is not empty*/
-        if (_svr->getMigrateManager()->slotInTask(idx)
-                || myslots.test(idx)
-                || _svr->getClusterMgr()->emptySlot(idx)
-                || _deletingSlots.test(idx)) {
+        if (myslots.test(idx)
+            || slotIsDeleting(idx)
+            || _svr->getMigrateManager()->slotInTask(idx)
+            || _svr->getClusterMgr()->emptySlot(idx)) {
             checklist.reset(idx);
         }
         idx ++;
     }
+    LOG(INFO) << "check list is:" << bitsetStrEncode(checklist);
     return checklist;
 }
 
@@ -102,29 +88,45 @@ SlotsBitmap GCManager::getCheckList() {
  * @note wayenchen checkGarbage is a cron task, may be two ways to finish it:
  *  delete slots one by one or delete at once after check finish
  */
-void GCManager::checkGarbage()  {
-    std::lock_guard<myMutex> lk(_mutex);
+Status GCManager::delGarbage() {
     /* only master node should be check */
     if (!_cstate->isMyselfMaster()) {
-        return;
+        return {ErrorCodes::ERR_CLUSTER, "not master"};
+    }
+    if (!_cstate->clusterIsOK()) {
+        return  {ErrorCodes::ERR_CLUSTER, "cluster error state"};
     }
     auto garbageList = getCheckList();
     if (garbageList.count() == 0) {
-        return;
+        LOG(WARNING) << "no dirty data find in " << _cstate->getMyselfName();
+        return {ErrorCodes::ERR_NOTFOUND, "no dirty data to delete"};
     }
-    LOG(INFO) << "garbage list is :" << bitsetStrEncode(garbageList);
+
     size_t idx = 0;
+    std::vector<uint32_t> slotsList;
     while (idx < garbageList.size()) {
         // start detele task of a single slot
         if (garbageList.test(idx)) {
-            auto storeid = _svr->getSegmentMgr()->getStoreid(idx);
-            startDeleteTask(storeid, idx, idx);
+            slotsList.push_back(idx);
         }
-        idx ++;
+        idx++;
     }
+
+    auto s = deleteSlotsList(slotsList);
+    if (!s.ok()) {
+        LOG(ERROR) << "delete garbage fail:" << s.toString();
+    }
+
+    LOG(INFO) << "finish del garbage, deleting list is :"
+              << bitsetStrEncode(garbageList)
+              << "delete num is:" << slotsList.size();
+
+    return  {ErrorCodes::ERR_OK, ""};
+
 }
 
-void GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay) {
+void GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart,
+                                uint32_t slotEnd, mstime_t delay) {
     std::lock_guard<myMutex> lk(_mutex);
     for (uint32_t  i = slotStart; i <= slotEnd; i ++) {
         if (_svr->getSegmentMgr()->getStoreid(i) == storeid) {
@@ -176,8 +178,9 @@ bool GCManager::gcSchedule(const SCLOCK::time_point &now) {
                            << " from:" << startPos
                            << " to:" << endPos;
                 for (uint32_t i = startPos; i <= endPos; i ++) {
-                    if (_svr->getSegmentMgr()->getStoreid(i) == storeid)
-                        _deletingSlots.reset(i);;
+                    if (_svr->getSegmentMgr()->getStoreid(i) == storeid) {
+                        _deletingSlots.reset(i);
+                    }
                 }
                 /*NOTE (wayenchen) no need rerty again, 
                 beacause croncheck job will do the fail job */
@@ -191,7 +194,7 @@ bool GCManager::gcSchedule(const SCLOCK::time_point &now) {
         _gcDeleter->schedule([this, iter = (*it).get()]() {
             garbageDelete(iter);
         });
-        ++it;
+        it = startDeletingTask.erase(it);
     }
     return doSth;
 }
@@ -205,7 +208,8 @@ bool GCManager::slotIsDeleting(uint32_t slot) {
     the task will start after delay seconds (delay deleting is more stable when migrating)
  * @note (wayenchen) it is better to delay for sometime to delete in migrating situation
 */
-Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay) {
+Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart,
+                                uint32_t slotEnd, mstime_t delay) {
     if ( _svr->getSegmentMgr()->getStoreid(slotStart) != storeid
                 || _svr->getSegmentMgr()->getStoreid(slotEnd) != storeid) {
         LOG(ERROR) << "delete slot range from:" << slotStart 
@@ -233,11 +237,38 @@ Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t sl
     return  {ErrorCodes::ERR_OK, ""};
 }
 
-/* given a slotlist and delete them of all storeids
- * note(wayenchen): this slots belong to different storeid*/
+/* delete slots numbers should be control, if more than 300, split into small list*/
+Status GCManager::deleteLargeChunks(uint32_t storeid, uint32_t slotStart,
+                                    uint32_t slotEnd, mstime_t delay) {
+    auto maxSize = _svr->getParams()->garbageDeleteSize;
+    auto kvcount = _svr->getParams()->kvStoreCount;
+    const uint32_t maxDiff = maxSize * kvcount;
+    if (slotEnd - slotStart < maxDiff) {
+        auto s = deleteChunks(storeid, slotStart, slotEnd, delay);
+        if (!s.ok()) {
+            LOG(ERROR) << "delete range fail:" << s.toString();
+            return  s;
+        }
+    }
+    for (size_t i = slotStart; i <= slotEnd ; i+= maxDiff) {
+        uint32_t endPos = slotEnd < i + maxDiff ?  slotEnd : i + maxDiff;
+        auto s = deleteChunks(storeid, i, endPos, delay);
+        if (!s.ok()) {
+            LOG(ERROR) << "delete range fail:" << s.toString();
+            return  s;
+        }
+    }
+    return  {ErrorCodes::ERR_OK, ""};
+}
+
+/*  note(wayenchen): given a slotlist and delete them of all storeids
+ * before deleting all nodes will be sorted and made into contious groups
+ * this slots may belong to different storeid*/
 Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList,
-                                mstime_t delay) {
+                                    mstime_t delay) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> slotMap;
+    Status s;
+    /* group slots by storeid */
     for (const auto &slot : slotsList) {
         uint32_t storeid = _svr->getSegmentMgr()->getStoreid(slot);
         if ((slotMap.find(storeid)) != slotMap.end()) {
@@ -248,19 +279,49 @@ Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList,
             slotMap.insert(std::make_pair(storeid, temp));
         }
     }
+    uint32_t kvstoreCount = _svr->getKVStoreCount();
     for (const auto& n : slotMap) {
+        uint32_t storeid = n.first;
         auto jobList = n.second;
-        if (!jobList.empty()) {
-            auto startPos = n.second[0];
-            auto endPos = n.second.back();
-            uint32_t storeid = _svr->getSegmentMgr()->getStoreid(startPos);
-            auto s = deleteChunks(storeid, startPos, endPos , delay);
+        if (jobList.empty()) continue;
+        /* sort the vector, and
+          * then get continous slot ranges to make task*/
+        sort(jobList.begin(), jobList.end());
+
+        auto startPos = jobList[0];
+        auto endPos = jobList[0];
+
+        if (jobList.size() == 1) {
+            s = deleteChunks(storeid, startPos, endPos, delay);
             if (!s.ok()) {
                 LOG(ERROR) << s.toString();
-                return  s;
+                return s;
             }
         }
+        for (auto iter = jobList.begin()+1; iter != jobList.end(); ++iter) {
+            if (*iter - endPos == kvstoreCount) {
+                endPos = *iter;
+            } else {
+                s = deleteLargeChunks(storeid, startPos, endPos, delay);
+                if (!s.ok()) {
+                    LOG(ERROR) << "delete from:" << startPos
+                               << "to:"  << endPos << "failed"
+                               <<s.toString();
+                    return s;
+                }
+                startPos = *iter;
+                endPos = *iter;
+            }
+        }
+        s = deleteLargeChunks(storeid, startPos, endPos, delay);
+        if (!s.ok()) {
+            LOG(ERROR) << "delete from:" << startPos
+                       << "to:"  << endPos << "failed"
+                       <<s.toString();
+            return s;
+        }
     }
+
     return  {ErrorCodes::ERR_OK, ""};
 }
 
@@ -323,8 +384,8 @@ Status DeleteRangeTask::deleteSlotRange() {
                           "from [startSlot: %u] to [endSlot: %u]",
         _slotStart,
         _slotEnd);
-    return {ErrorCodes::ERR_OK, ""};
 
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 void GCManager::garbageDeleterResize(size_t size) {

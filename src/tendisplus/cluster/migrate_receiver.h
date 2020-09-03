@@ -43,7 +43,6 @@ class ChunkMigrateReceiver {
     std::string getTaskid() { return  _taskid; }
     uint64_t  getSnapshotNum() { return  _snapshotKeyNum; }
     uint64_t  getBinlogNum() { return  _binlogNum; }
-
  private:
     Status supplySetKV(const string& key, const string& value);
 

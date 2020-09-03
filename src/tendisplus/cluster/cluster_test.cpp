@@ -1264,7 +1264,7 @@ TEST(Cluster, migrateAndImport) {
     servers.clear();
 }
 
-void testDeleteChunks(std::shared_ptr<ServerEntry> svr, std::vector<uint32_t> slotsList) {
+void  testDeleteChunks(std::shared_ptr<ServerEntry> svr, std::vector<uint32_t> slotsList) {
     for (size_t i = 0; i < slotsList.size(); ++i) {
         uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
         EXPECT_TRUE(c != 0);
@@ -1333,8 +1333,9 @@ TEST(Cluster, deleteChunks) {
 
     testDeleteChunks(srcNode, {5000});
     testDeleteChunks(srcNode, {5200,5210,5220,5280});
-    testDeleteChunks(srcNode, {5130,5131,5132,5133,5134,5140,5141,5142});
-
+    testDeleteChunks(srcNode, {5130,5131,5132,5133,5134,5140,5151,5142});
+    testDeleteChunks(srcNode, {5300,5310,5320,5333,5964,5740,5251,5261,5271,9900,9910,8888});
+    testDeleteChunks(srcNode, {5200,5210,5220,5280,5300,5310,5320,5330,5340,3000,3010,3020,3088,2033,9000,9010});
     auto storeid1 = srcNode->getSegmentMgr()->getStoreid(6000);
     auto storeid2 = srcNode->getSegmentMgr()->getStoreid(6200);
 

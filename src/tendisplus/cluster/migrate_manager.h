@@ -113,7 +113,6 @@ class MigrateReceiveTask{
     uint64_t lastSyncTime;
     MigrateReceiveState state;
     std::unique_ptr<ChunkMigrateReceiver> receiver;
-
 };
 
 
@@ -162,6 +161,7 @@ class MigrateManager {
     Status supplyMigrateEnd(const std::string& taskid, bool binlogDone = true);
     uint64_t getProtectBinlogid(uint32_t storeid);
 
+    Status deleteSlotsData(const SlotsBitmap& slots, uint32_t storeid, uint64_t delay=0);
     bool slotInTask(uint32_t slot);
     bool slotsInTask(const SlotsBitmap& bitMap);
     Expected<std::string> getTaskInfo();
@@ -174,26 +174,21 @@ class MigrateManager {
             MigrateBinlogType type, string slots, const string& nodeName);
     Status restoreMigrateBinlog(MigrateBinlogType type, uint32_t storeid, string slots);
     Status onRestoreEnd(uint32_t storeId);
-    Status deleteChunks(uint32_t storeid, const SlotsBitmap& slots);
-    Status deleteChunkRange(uint32_t storeid, uint32_t beginChunk, uint32_t endChunk);
 
     void requestRateLimit(uint64_t bytes);
 
     void migrateSenderResize(size_t size);
-    void migrateClearResize(size_t size);
     void migrateReceiverResize(size_t size);
-    void migrateCheckerResize(size_t size);
 
     size_t migrateSenderSize();
-    size_t migrateClearSize();
     size_t migrateReceiverSize();
-    size_t migrateCheckerSize();
+    static constexpr int32_t RETRY_CNT = 3;
 
  private:
     std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
     void controlRoutine();
     void sendSlots(MigrateSendTask* task);
-    void deleteChunks(MigrateSendTask* task);
+    void deleteSenderChunks(MigrateSendTask* task);
     bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
     bool checkSlotOK(const SlotsBitmap& bitMap, const std::string& nodeid,
             std::vector<uint32_t>& taskSlots);

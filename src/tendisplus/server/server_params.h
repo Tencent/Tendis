@@ -27,6 +27,7 @@ using preProcess = std::function<string (const string &)>;
 string removeQuotes(const string& v);
 string removeQuotesAndToLower(const string& v);
 
+
 class BaseVar {
 public:
     BaseVar(const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)
@@ -215,7 +216,7 @@ public:
     BoolVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
         : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(bool*)value){};
     virtual string show() const {
-        return *(bool*)value ? "yes" : "no";
+        return value ? "yes" : "no";
     };
     virtual string default_show() const {
         return _defaultValue ? "yes" : "no";
@@ -329,7 +330,7 @@ public:
     uint32_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
     uint64_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
     bool slowlogFileEnabled = true;
-    bool binlogUsingDefaultCF = false;
+    bool binlogUsingDefaultCF = true;
     uint32_t netIoThreadNum = 0;
     uint32_t executorThreadNum = 0;
     uint32_t executorWorkPoolSize = 8;
@@ -366,9 +367,10 @@ public:
     uint32_t bingLogSendBytes =  16 * 1024 * 1024;
 
     uint32_t migrateSenderThreadnum = 4;
-    uint32_t migrateClearThreadnum = 4;
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t garbageDeleteThreadnum = 1;
+    uint16_t garbageDeleteSize = 30;
+
     bool clusterEnabled = false;
     uint32_t migrateTaskSlotsLimit = 10;
     uint32_t migrateDistance = 10000;

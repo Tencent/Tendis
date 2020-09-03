@@ -21,7 +21,6 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _storeid(0),
     _snapshotKeyNum(0),
     _binlogNum(0),
-    _delSlot(0),
     _consistency(false),
     _nodeid(""),
     _curBinlogid(UINT64_MAX),
@@ -158,9 +157,6 @@ Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
 
 Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                 uint32_t begin, uint32_t end) {
-    // LOG(INFO) << "snapshot sendRange send begin, store:"
-    //          << _storeid << " beginSlot:" << begin
-    //          << " endSlot:" << end;
     // need add IS lock for chunks ???
     auto cursor = std::move(txn->createSlotsCursor(begin, end));
     uint32_t totalWriteNum = 0;
@@ -232,10 +228,6 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
         LOG(ERROR) << "read receiver data is not +OK on slot:" << begin;
         return { ErrorCodes::ERR_INTERNAL, "read +OK failed"};
     }
-    // LOG(INFO) << "snapshot sendRange end, storeid:" << _storeid
-    //    << " beginSlot:" << begin
-    //    << " endSlot:" << end
-    //    << " totalKeynum:" << totalWriteNum;
 
     return totalWriteNum;
 }
@@ -308,8 +300,6 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
 
 Status ChunkMigrateSender::resetClient() {
     std::lock_guard<myMutex> lk(_mutex);
-    //  bool needHeartbeat = false;
-    //   bool needRetry = false;
     setClient(nullptr);
     std::shared_ptr<BlockingTcpClient> client =
             std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
@@ -325,6 +315,7 @@ Status ChunkMigrateSender::resetClient() {
         return {ErrorCodes::ERR_NETWORK, ""};
     }
     setClient(client);
+    LOG(INFO) << "reset connect on ip:" << _dstIp << ":" << _dstPort;
     return  {ErrorCodes::ERR_OK, ""};
 }
 // catch up binlog from _curBinlogid to end
@@ -339,7 +330,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     bool done = false;
     Status s;
 
-    for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+    for (uint32_t i = 0; i < MigrateManager::RETRY_CNT; ++i) {
         s = SendSlotsBinlog(_client.get(), _storeid, _dstStoreid,
                             _curBinlogid, end, needHeartbeat, _slots, _taskid,
                             _svr, &binlogNum, &newBinlogId, &needRetry);
@@ -453,6 +444,7 @@ Status ChunkMigrateSender::sendBinlog() {
         _curBinlogid,
         _client->getRemoteRepr().c_str(),
         bitsetStrEncode(_slots).c_str());
+
     return  { ErrorCodes::ERR_OK, "" };
 }
 
@@ -479,7 +471,6 @@ Status ChunkMigrateSender::sendLastBinlog() {
 
     return {ErrorCodes::ERR_OK, ""};
 }
-
 
 // versionmeta send every migrate task, so in migrating versionmeta may send
 // many times
@@ -593,108 +584,6 @@ Status ChunkMigrateSender::sendOver() {
         _storeid,
         _client->getRemoteRepr().c_str(),
         bitsetStrEncode(_slots).c_str());
-
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-Status ChunkMigrateSender::deleteChunkRange(
-            uint32_t  chunkidStart, uint32_t chunkidEnd) {
-    // LOG(INFO) << "deleteChunk begin on chunkid:" << chunkid;
-    INVARIANT_D(chunkidStart <= chunkidEnd);
-    INVARIANT_D(chunkidStart < CLUSTER_SLOTS);
-    INVARIANT_D(chunkidEnd < CLUSTER_SLOTS);
-
-    auto expdb = _svr->getSegmentMgr()->getDb(NULL, _storeid,
-            mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-        LOG(ERROR) << "getDb failed:" << _storeid;
-        return expdb.status();
-    }
-    PStore kvstore = expdb.value().store;
-    RecordKey rkStart(chunkidStart, 0, RecordType::RT_INVALID, "", "");
-    RecordKey rkEnd(chunkidEnd + 1, 0, RecordType::RT_INVALID, "", "");
-    string start = rkStart.prefixChunkid();
-    string end = rkEnd.prefixChunkid();
-    auto s = kvstore->deleteRange(start, end);
-
-    if (!s.ok()) {
-        LOG(ERROR) << "kvstore->deleteRange failed, chunkidStart:" << chunkidStart
-            << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();
-        return s;
-    }
-    // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in delete range,
-    //     so we call compactRange to real delete the keys.
-    s = kvstore->compactRange(
-        ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
-    if (!s.ok()) {
-        LOG(ERROR) << "kvstore->compactRange failed, chunkidStart:" << chunkidStart
-                   << " chunkidEnd:" << chunkidEnd << " err:" << s.toString();
-        return s;
-    }
-    LOG(INFO) << "deleteChunk and compactRange end, storeid:" <<_storeid
-        << " chunkidStart:" << chunkidStart << " chunkidEnd:" << chunkidEnd;
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-
-Status ChunkMigrateSender::deleteChunks(const std::bitset<CLUSTER_SLOTS>& slots) {
-    /* NOTE(wayenchen) check if chunk not belong to me，
-        make sure MOVE work well before delete */
-    if (!checkSlotsBlongDst()){
-        return  {ErrorCodes::ERR_CLUSTER,
-                "slots not belongs to dstNodes"};
-    }
-
-    LOG(INFO) << "deleteChunks beigin slots: " << bitsetStrEncode(_slots);
-    size_t idx = 0;
-    uint32_t startChunkid = UINT32_MAX;
-    uint32_t endChunkid = UINT32_MAX;
-    while (idx < slots.size()) {
-        if (_svr->getSegmentMgr()->getStoreid(idx) == _storeid) {
-            if (slots.test(idx)) {
-                if (startChunkid == UINT32_MAX) {
-                    startChunkid = idx;
-                }
-                endChunkid = idx;
-                _delSlot++;
-            } else {
-                if (startChunkid != UINT32_MAX) {
-                    /* just throw it into gc job, no waiting for deleting result */
-                    auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
-                    if (!s.ok()) {
-                        LOG(ERROR) << "deleteChunk fail, startChunkid:"
-                                   << startChunkid
-                                   << " endChunkid:" << endChunkid
-                                   << " err:" << s.toString();
-                        return s;
-                    }
-                    LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
-                              << " endChunkid:" << endChunkid;
-                    startChunkid = UINT32_MAX;
-                    endChunkid = UINT32_MAX;
-                }
-            }
-        }
-        idx++;
-    }
-    if (startChunkid != UINT32_MAX) {
-        auto s = _svr->getGcMgr()->deleteChunks(_storeid, startChunkid, endChunkid);
-        if (!s.ok()) {
-            LOG(ERROR) << "deleteChunk fail, startChunkid:"
-                       << startChunkid
-                       << " endChunkid:" << endChunkid
-                       << " err:" << s.toString();
-            return s;
-        }
-        LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
-                  << " endChunkid:" << endChunkid;
-    }
-
-    _consistency = true;
-    LOG(INFO) << "deleteChunks OK, isFake:" << _isFake
-        << " snapshotKeyNum: " << _snapshotKeyNum
-        << " binlogNum: " << _binlogNum
-        << " , storeid: " << _storeid << " slots:" << bitsetStrEncode(_slots);
 
     return {ErrorCodes::ERR_OK, ""};
 }
