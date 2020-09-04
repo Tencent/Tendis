@@ -1,6 +1,6 @@
 logfile="gotest.log"
 
-rm $logfile
+rm -f $logfile
 
 srcroot=`pwd`/../../../
 govendor=`pwd`/../../thirdparty/govendor/

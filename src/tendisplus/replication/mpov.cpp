@@ -493,9 +493,9 @@ void ReplManager::supplyFullSyncRoutine(
         auto iter = _fullPushStatus[storeId].find(slaveNode);
         if (iter != _fullPushStatus[storeId].end()) {
             if (hasError) {
-                _fullPushStatus[storeId].erase(iter);
                 LOG(INFO) << "supplyFullSyncRoutine hasError, _fullPushStatus erase, "
                     << iter->second->toString();
+                _fullPushStatus[storeId].erase(iter);
             } else {
                 iter->second->endTime =  SCLOCK::now();
                 iter->second->state = FullPushState::SUCESS;
@@ -509,7 +509,8 @@ void ReplManager::supplyFullSyncRoutine(
     uint64_t currTime = nsSinceEpoch();
     Expected<BackupInfo> bkInfo = store->backup(
         store->dftBackupDir(),
-        KVStore::BackupMode::BACKUP_CKPT_INTER);
+        KVStore::BackupMode::BACKUP_CKPT_INTER,
+        _svr->getCatalog()->getBinlogVersion());
     if (!bkInfo.ok()) {
         std::stringstream ss;
         ss << "-ERR backup failed:" << bkInfo.status().toString();
@@ -551,7 +552,6 @@ void ReplManager::supplyFullSyncRoutine(
     }
     writer.EndObject();
     uint32_t secs = 10;
-    // NOTE(takenliu):change timeout 1000s to 10s
     s = client->writeLine(sb.GetString());
     if (!s.ok()) {
         LOG(ERROR) << "store:" << storeId

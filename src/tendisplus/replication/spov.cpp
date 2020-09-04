@@ -18,6 +18,7 @@
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/record.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -165,21 +166,21 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         return;
     }
 
-
     auto newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_TRANSFER;
     newMeta->binlogId = Transaction::TXNID_UNINITED;
     changeReplState(*newMeta, false);
 
     // 4) read backupinfo from master
-    auto bkInfo = getBackupInfo(client.get(), metaSnapshot,
+    // get binlogPos and filelist£¬other messages get from "backup_meta" file
+    auto ebkInfo = getBackupInfo(client.get(), metaSnapshot,
             _svr->getParams()->bindIp, _svr->getParams()->port);
-    if (!bkInfo.ok()) {
+    if (!ebkInfo.ok()) {
         LOG(WARNING) << "storeId:" << metaSnapshot.id
                      << ",syncMaster:" << metaSnapshot.syncFromHost
                      << ":" << metaSnapshot.syncFromPort
                      << ":" << metaSnapshot.syncFromId
-                     << " failed:" << bkInfo.status().toString();
+                     << " failed:" << ebkInfo.status().toString();
         return;
     }
 
@@ -200,7 +201,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         return;
     }
 
-    auto flist = bkInfo.value().getFileList();
+    auto flist = ebkInfo.value().getFileList();
 
     std::set<std::string> finishedFiles;
     while (true) {
@@ -261,11 +262,44 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
         finishedFiles.insert(s.value());
     }
 
+    BackupInfo bkInfo = std::move(ebkInfo.value());
+    auto metaFile = store->dftBackupDir() + "/" + "backup_meta";
+    if (filesystem::exists(metaFile)) {
+        // if backup_meta exists, get the backupinfo from backup_meata
+        auto ebinfo = store->getBackupMeta(store->dftBackupDir());
+        if (!ebinfo.ok()) {
+            INVARIANT_D(0);
+            LOG(ERROR) << "invalid backup_meta"
+                << ebinfo.status().toString();
+            return;
+        }
+
+        bkInfo = std::move(ebkInfo.value());
+        INVARIANT(bkInfo.getBinlogPos() == ebkInfo.value().getBinlogPos());
+        bkInfo.setFileList(ebkInfo.value().getFileList());
+    }
+
+    uint32_t flags = 0;
+    auto binlogVersion = bkInfo.getBinlogVersion();
+    BinlogVersion mybversion = _svr->getCatalog()->getBinlogVersion();
+    if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
+        if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
+            flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
+        }
+    } else if (binlogVersion == BinlogVersion::BINLOG_VERSION_2) {
+        if (mybversion == BinlogVersion::BINLOG_VERSION_1) {
+            LOG(ERROR) << "invalid binlog version";
+            return;
+        }
+    } else {
+        INVARIANT_D(0);
+    }
+
     client->writeLine("+OK");
 
     // 5) restart store, change to stready-syncing mode
     Expected<uint64_t> restartStatus = store->restart(true,
-            Transaction::MIN_VALID_TXNID, bkInfo.value().getBinlogPos());
+            Transaction::MIN_VALID_TXNID, bkInfo.getBinlogPos(), flags);
     if (!restartStatus.ok()) {
         LOG(FATAL) << "fullSync restart store:" << metaSnapshot.id
                    << ",failed:" << restartStatus.status().toString();
@@ -273,7 +307,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
     newMeta = metaSnapshot.copy();
     newMeta->replState = ReplState::REPL_CONNECTED;
-    newMeta->binlogId = bkInfo.value().getBinlogPos();
+    newMeta->binlogId = bkInfo.getBinlogPos();
 
     changeReplState(*newMeta, true);
     // NOTE(takenliu):should reset firstBinlogId to the MinBinlog,

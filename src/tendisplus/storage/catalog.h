@@ -79,16 +79,20 @@ class StoreMainMeta {
 // store meta
 class MainMeta {
  public:
-    MainMeta() : MainMeta(0, 0) {}
+    MainMeta() : MainMeta(0, 0, BinlogVersion::BINLOG_VERSION_1) {}
     MainMeta(const MainMeta&) = default;
     MainMeta(MainMeta&&) = delete;
-    MainMeta(uint32_t instCount, uint32_t hashSpace_)
-        : kvStoreCount(instCount), chunkSize(hashSpace_) {}
+    MainMeta(uint32_t instCount,
+             uint32_t hashSpace_,
+             BinlogVersion binlogVersion_)
+        : kvStoreCount(instCount),
+          chunkSize(hashSpace_),
+          binlogVersion(binlogVersion_) {}
     std::unique_ptr<MainMeta> copy() const;
 
     uint32_t kvStoreCount;
     uint32_t chunkSize;
-    string binlogVersion;
+    BinlogVersion binlogVersion;
 };
 
 // cluster meta
@@ -153,9 +157,6 @@ class Catalog {
     Expected<std::unique_ptr<StoreMeta>> getStoreMeta(uint32_t idx);
     Status setStoreMeta(const StoreMeta& meta);
 
-    Expected<std::unique_ptr<ChunkMeta>> getChunkMeta(uint32_t idx);
-    Status setChunkMeta(const ChunkMeta& meta);
-
     Status stop();
     // main meta for each store
     Expected<std::unique_ptr<StoreMainMeta>> getStoreMainMeta(uint32_t idx);
@@ -173,20 +174,18 @@ class Catalog {
     Status setEpochMeta(const EpochMeta& meta);
     // main meta
     Expected<std::unique_ptr<MainMeta>> getMainMeta();
-    Status setMainMeta(const MainMeta& meta, bool binlogUsingDefaultCF);
+    Status setMainMeta(const MainMeta& meta);
 
     uint32_t getKVStoreCount() const { return _kvStoreCount; }
     uint32_t getChunkSize() const { return _chunkSize; }
-    string getBinlogVersion() const { return _binlogVersion; }
+    BinlogVersion getBinlogVersion() const { return _binlogVersion; }
 
  private:
     //Status setMainMeta(const MainMeta& meta);
     std::unique_ptr<KVStore> _store;
     uint32_t _kvStoreCount;
     uint32_t _chunkSize;
-    //== "1" represents that data and binlogs are stroed in one cloumn family
-    //== "2" represents that data and binlogs are stored in two column family seperately
-    string _binlogVersion;
+    BinlogVersion _binlogVersion;
 };
 
 }  // namespace tendisplus

@@ -40,12 +40,19 @@ class RecordValue;
 class VersionMeta;
 enum class RecordType;
 
+enum class BinlogVersion : uint8_t {
+    //== "1" represents that data and binlogs are stored in one cloumn family
+    BINLOG_VERSION_1 = 1,
+    //== "2" represents that data and binlogs are stored in two column family
+    BINLOG_VERSION_2,
+};
+
 #define ROCKSDB_NUM_LEVELS 7
 
 using PStore = std::shared_ptr<KVStore>;
 
 enum class ColumnFamilyNumber { 
-    ColumnFamily_Default, 
+    ColumnFamily_Default = 0, 
     ColumnFamily_Binlog 
 };
 
@@ -290,16 +297,20 @@ class BackupInfo {
     void setBackupMode(uint8_t);
     void setStartTimeSec(uint64_t);
     void setEndTimeSec(uint64_t);
+    void setBinlogVersion(BinlogVersion binlogversion);
     uint64_t getBinlogPos() const;
     uint8_t getBackupMode() const;
     uint64_t getStartTimeSec() const;
     uint64_t getEndTimeSec() const;
+    BinlogVersion getBinlogVersion() const;
+    void addFile(const std::string& file, uint64_t size);
  private:
     std::map<std::string, uint64_t> _fileList;
     uint64_t _binlogPos;
     uint8_t _backupMode;
     uint64_t _startTimeSec;
     uint64_t _endTimeSec;
+    BinlogVersion _binlogVersion;
 };
 
 class BinlogObserver {
@@ -348,6 +359,7 @@ class KVStore {
         BACKUP_CKPT,
         BACKUP_CKPT_INTER
     };
+
 
     explicit KVStore(const std::string& id, const std::string& path);
     virtual ~KVStore() = default;
@@ -435,9 +447,9 @@ class KVStore {
 
     // backup related apis, allows only one backup at a time
     // backup and return the filename<->filesize pair
-    virtual Expected<BackupInfo> backup(const std::string&, BackupMode) = 0;
+    virtual Expected<BackupInfo> backup(const std::string&, BackupMode, BinlogVersion) = 0;
     virtual Expected<std::string> restoreBackup(const std::string& dir) = 0;
-    virtual Expected<rapidjson::Document> getBackupMeta(const std::string& dir) = 0;
+    virtual Expected<BackupInfo> getBackupMeta(const std::string& dir) = 0;
     virtual Status releaseBackup() = 0;
 
     virtual void appendJSONStat(

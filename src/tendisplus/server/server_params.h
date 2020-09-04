@@ -27,8 +27,6 @@ using preProcess = std::function<string (const string &)>;
 string removeQuotes(const string& v);
 string removeQuotesAndToLower(const string& v);
 
-#define BINLOGVERSION_1_2 (1<<0)
-
 class BaseVar {
 public:
     BaseVar(const string& s, void* v, checkfunptr ptr, preProcess preFun, bool allowDS)

@@ -92,6 +92,15 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
                 nullptr, std::move(elk.value())
                 };
     } else {
+        if (cluster_enabled) {
+            auto svr = sess->getServerEntry();
+            const std::shared_ptr<tendisplus::ClusterState>& clusterState =
+                svr->getClusterMgr()->getClusterState();
+            auto node = clusterState->clusterHandleRedirect(chunkId);
+            if (!node.ok()) {
+                return node.status();
+            }
+        }
         return DbWithLock{
                 segId, chunkId, _instances[segId],
                 nullptr, nullptr

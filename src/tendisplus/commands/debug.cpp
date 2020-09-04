@@ -1293,7 +1293,7 @@ class BinlogPosCommand: public Command {
         }
 
         auto expdb = server->getSegmentMgr()->getDb(sess, storeId.value(),
-                    mgl::LockMode::LOCK_IS, false, 0);
+                    mgl::LockMode::LOCK_IS);
         if (!expdb.ok()) {
             return expdb.status();
         }

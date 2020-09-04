@@ -15,6 +15,7 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
 
@@ -105,7 +106,7 @@ class BackupCommand: public Command {
             }
             std::string dbdir = dir + "/" + std::to_string(i) + "/";
             Expected<BackupInfo> bkInfo = store->backup(
-                dbdir, mode);
+                dbdir, mode, svr->getCatalog()->getBinlogVersion());
             if (!bkInfo.ok()) {
                 svr->onBackupEndFailed(i, bkInfo.status().toString());
                 return bkInfo.status();
@@ -248,17 +249,26 @@ class RestoreBackupCommand : public Command {
         if (!backup_meta.ok()) {
             return backup_meta.status();
         }
-        uint64_t binlogpos = Transaction::TXNID_UNINITED;
-        for (auto& o : backup_meta.value().GetObject()) {
-            if (o.name == "binlogpos" && o.value.IsUint()) {
-                binlogpos = o.value.GetUint64();
+        uint64_t binlogpos = backup_meta.value().getBinlogPos();
+        BinlogVersion binlogVersion = backup_meta.value().getBinlogVersion();
+
+        uint32_t flags = 0;
+        BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();
+        if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
+            if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
+                flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
             }
-        }
-        if (binlogpos == Transaction::TXNID_UNINITED) {
-            LOG(ERROR) << "binlogpos is invalid " << dir;
+        } else if (binlogVersion == BinlogVersion::BINLOG_VERSION_2) {
+            if (mybversion == BinlogVersion::BINLOG_VERSION_1) {
+                LOG(ERROR) << "invalid binlog version";
+                return {ErrorCodes::ERR_INTERNAL, "invalid binlog version"};
+            }
+        } else {
+            INVARIANT_D(0);
         }
 
-        Expected<uint64_t> restartStatus = store->restart(false, Transaction::MIN_VALID_TXNID, binlogpos);
+        Expected<uint64_t> restartStatus = store->restart(false,
+							Transaction::MIN_VALID_TXNID, binlogpos, flags);
         if (!restartStatus.ok()) {
             INVARIANT_D(0);
             LOG(ERROR) << "restoreBackup restart store:" << storeId
