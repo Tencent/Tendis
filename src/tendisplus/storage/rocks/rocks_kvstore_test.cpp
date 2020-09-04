@@ -215,7 +215,13 @@ TEST(RocksKVStore, RocksOptions) {
         blockCache);
 
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 5);
-    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size, 4096000);
+    if (cfg->binlogUsingDefaultCF) {
+        EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size,
+                  4096000);
+    } else {
+        EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size,
+                  4096000/2);
+    }
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing, true);
 
     rocksdb::BlockBasedTableOptions* option =
@@ -264,7 +270,6 @@ TEST(RocksKVStore, BinlogRightMost) {
 
     // default values
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().max_write_buffer_number, 2);
-    EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().write_buffer_size, 64 * 1024 * 1024);
     EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing, true);
 
     rocksdb::BlockBasedTableOptions* option =

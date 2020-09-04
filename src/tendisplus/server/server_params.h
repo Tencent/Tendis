@@ -329,7 +329,7 @@ public:
     uint32_t slowlogFlushInterval = CONFIG_DEFAULT_SLOWLOG_FLUSH_INTERVAL;
     uint64_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
     bool slowlogFileEnabled = true;
-    bool binlogUsingDefaultCF = true;
+    bool binlogUsingDefaultCF = false;
     uint32_t netIoThreadNum = 0;
     uint32_t executorThreadNum = 0;
     uint32_t executorWorkPoolSize = 8;

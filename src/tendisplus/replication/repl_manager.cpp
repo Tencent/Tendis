@@ -606,8 +606,10 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
     std::lock_guard<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     v->lastFlushBinlogId = binlogid;
-    LOG(INFO) << "ReplManager::onFlush, storeId:" << storeId
-        << " binlogid:" << binlogid;
+    INVARIANT_D(v->lastFlushBinlogId >= v->firstBinlogId);
+    INVARIANT_D(v->lastFlushBinlogId >= v->saveBinlogId);
+    LOG(INFO) << "ReplManager::onFlush, storeId:" << storeId << " "
+        << v->toString();
 }
 
 bool ReplManager::hasSomeSlave(uint32_t storeId) {
@@ -795,6 +797,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
             std::lock_guard<std::mutex> lk(_mutex);
             maxWriteLen = _cfg->binlogFileSizeMB*1024*1024 - _logRecycStatus[storeId]->fileSize;
         }
+        DLOG(INFO) << "store:" << storeId << " " << _logRecycStatus[storeId]->toString();
         auto s = kvstore->truncateBinlogV2(start, end, save, txn.get(), fs, maxWriteLen, tailSlave);
         if (!s.ok()) {
             LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId

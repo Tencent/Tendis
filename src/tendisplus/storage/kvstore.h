@@ -380,7 +380,6 @@ class KVStore {
     virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
     // [begin, end)
     virtual Status deleteRange(const std::string& begin, const std::string& end) = 0;
-    virtual Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) = 0;
     virtual Status deleteRangeBinlog(uint64_t begin, uint64_t end) = 0;
 
 #ifdef BINLOG_V1

@@ -208,8 +208,9 @@ class RocksKVStore: public KVStore {
     Status delKV(const RecordKey& key, Transaction* txn) final;
     // [begin, end)
     Status deleteRange(const std::string& begin, const std::string& end) final;
-    Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) final;
-    Status deleteRangeBinlog(uint64_t begin, uint64_t end) final;
+    Status deleteRangeWithoutBinlog(rocksdb::ColumnFamilyHandle* column_family,
+            const std::string& begin, const std::string& end);
+    Status deleteRangeBinlog(uint64_t begin, uint64_t end);
 
 #ifdef BINLOG_V1
     Status applyBinlog(const std::list<ReplLog>& txnLog,

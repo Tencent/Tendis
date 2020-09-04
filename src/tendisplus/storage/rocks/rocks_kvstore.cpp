@@ -666,7 +666,8 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
         INVARIANT_D(0);
     }
     case ReplOp::REPL_OP_DEL_RANGE: {
-        auto s = _store->deleteRangeWithoutBinlog(logEntry.getOpKey(), logEntry.getOpValue());
+        auto s = _store->deleteRangeWithoutBinlog(_store->getDataColumnFamilyHandle(),
+                    logEntry.getOpKey(), logEntry.getOpValue());
         if (!s.ok()) {
             return{ ErrorCodes::ERR_INTERNAL, s.toString() };
         }
@@ -2467,7 +2468,7 @@ Status RocksKVStore::delKV(const RecordKey& key,
 
 Status RocksKVStore::deleteRange(const std::string& begin, const std::string& end) {
     // NOTE(takenliu) be care of db::DeleteRange and add binlog are not atomic
-    auto s = deleteRangeWithoutBinlog(begin, end);
+    auto s = deleteRangeWithoutBinlog(getDataColumnFamilyHandle(), begin, end);
     if (!s.ok()) {
         return s;
     }
@@ -2489,13 +2490,13 @@ Status RocksKVStore::deleteRange(const std::string& begin, const std::string& en
     return ret;
 }
 
-Status RocksKVStore::deleteRangeWithoutBinlog(const std::string &begin, const std::string &end) {
+Status RocksKVStore::deleteRangeWithoutBinlog(rocksdb::ColumnFamilyHandle* column_family, const std::string &begin, const std::string &end) {
     // TODO(takenliu) rocksdb 5.13 DeleteRange cause read performance degradation,
     //  use greater than rocksdb 5.18
     rocksdb::Slice sBegin(begin);
     rocksdb::Slice sEnd(end);
     rocksdb::DB* db = getBaseDB();
-    auto s = db->DeleteRange(rocksdb::WriteOptions(), db->DefaultColumnFamily(),
+    auto s = db->DeleteRange(rocksdb::WriteOptions(), column_family,
                              sBegin.ToString(), sEnd.ToString());
     if (!s.ok()) {
         LOG(ERROR) << "deleteRange failed:" << s.ToString();
@@ -2509,7 +2510,7 @@ Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
     ReplLogKeyV2 endKey(end);
     auto beginKeyStr = beginKey.encode();
     auto endKeyStr = endKey.encode();
-    return deleteRangeWithoutBinlog(beginKeyStr, endKeyStr);
+    return deleteRangeWithoutBinlog(getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
 }
 
 void RocksKVStore::initRocksProperties() {
