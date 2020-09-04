@@ -1394,12 +1394,13 @@ class SuniongenericCommand: public Command {
             cursor->seek(fakeRk.prefixPk());
             while (true) {
                 Expected<Record> exptRcd = cursor->next();
-                if (!exptRcd.ok()) {
-                    return exptRcd.status();
-                }
                 if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
                     break;
                 }
+                if (!exptRcd.ok()) {
+                    return exptRcd.status();
+                }
+                
                 Record& rcd = exptRcd.value();
                 const RecordKey& rcdkey = rcd.getRecordKey();
                 if (rcdkey.prefixPk() != fakeRk.prefixPk()) {

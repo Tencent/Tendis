@@ -84,7 +84,7 @@ class LocalSession: public Session {
 
 class LocalSessionGuard {
  public:
-    explicit LocalSessionGuard(ServerEntry* svr);
+    explicit LocalSessionGuard(ServerEntry* svr, Session* sess = nullptr);
     LocalSession* getSession();
     ~LocalSessionGuard();
 
