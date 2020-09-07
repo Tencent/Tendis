@@ -274,13 +274,13 @@ func addSortedData(m *util.RedisServer, num int, prefixkey string) {
 
 // format=="redis-benchmark": "key:{12}0000000001"
 func checkDataInCoroutine(m *util.RedisServer, num int, prefixkey string, keyformat string,
-    onlyMyself bool, channel chan int) {
+    channel chan int) {
     var optype string = *benchtype
     //log.Infof("optype is : %s", optype)
     switch optype {
         case "set" : 
             log.Infof("optype is : %s", optype)
-            checkData(m, num, prefixkey, keyformat, onlyMyself)
+            checkData(m, num, prefixkey, keyformat)
         case "sadd" : 
             log.Infof("optype is : %s", optype)
             checkSetData(m, num, prefixkey)
@@ -300,18 +300,11 @@ func checkDataInCoroutine(m *util.RedisServer, num int, prefixkey string, keyfor
     channel <- 0
 }
 
-func checkData(m *util.RedisServer, num int, prefixkey string, keyformat string,
-    onlyMyself bool) {
+func checkData(m *util.RedisServer, num int, prefixkey string, keyformat string) {
     log.Infof("checkData begin. num:%d prefixkey:%s keyformat:%s", num, prefixkey, keyformat)
 
+    cli := createClient(m)
     for i := 1; i <= num+1; i++ {
-        var args []string
-        args = append(args,  "-h", (*m).Ip, "-p", strconv.Itoa((*m).Port),
-            "-a", *auth)
-        if !onlyMyself {
-            args = append(args, "-c")
-        }
-
         key := ""
         value := ""
         if keyformat == "redis-benchmark" {
@@ -321,10 +314,14 @@ func checkData(m *util.RedisServer, num int, prefixkey string, keyformat string,
         } else {
             // add if needed
         }
-        args = append(args, "get", key)
 
-        cmd := exec.Command("../../../bin/redis-cli", args...)
-        data, err := cmd.Output()
+        var data string
+        var err error
+        data, err = cli.Cmd("get", key).Str();
+        if err != nil {
+            log.Infof("get failed, key:%v data:%s err:%v", key, data, err)
+            return
+        }
 
         retValue := strings.Replace(string(data), "\n", "", -1)
         if retValue != value {

@@ -43,7 +43,7 @@ func checkSlotEmpty(servers *util.RedisServer, slot int, expectEmpty bool) {
                 servers.Port, slot, r, expectEmpty)
 }
 
-func checkDbsize(servers *util.RedisServer, expKeynum int) {
+func checkDbsize(servers *util.RedisServer, expKeynum int, predixy *util.Predixy) {
     cli := createClient(servers)
     r, err := cli.Cmd("dbsize").Int();
     if err != nil {
@@ -55,7 +55,7 @@ func checkDbsize(servers *util.RedisServer, expKeynum int) {
         log.Infof("checkDbsize failed, server:%d num:%d expKeynum:%d, begin checkData...",
             servers.Port, r, expKeynum)
         var channel chan int = make(chan int)
-        go checkDataInCoroutine(servers, expKeynum, "{12}", "redis-benchmark", true, channel)
+        go checkDataInCoroutine(&predixy.RedisServer, expKeynum, "{12}", "redis-benchmark", channel)
         <- channel
         log.Fatalf("checkDbsize failed")
     }
@@ -72,9 +72,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     log.Infof("cluster adddata begin")
     var channel chan int = make(chan int)
     migSlot := 8373
-    fake_redis := util.RedisServer{}
-    fake_redis.Init(predixy.Ip, predixy.Port, "", "")
-    go addDataInCoroutine(&fake_redis, num, "{12}", channel)
+    go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel)
 
     log.Infof("cluster backup begin")
     time.Sleep(1 * time.Second)
@@ -124,16 +122,16 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     checkSlotEmpty(src_restore, migSlot, false)
     checkSlotEmpty(dst_restore, migSlot, true)
 
-    checkDbsize(src_master, 0)
-    checkDbsize(src_slave, 0)
-    checkDbsize(dst_master, num)
-    checkDbsize(dst_slave, num)
+    checkDbsize(src_master, 0, predixy)
+    checkDbsize(src_slave, 0, predixy)
+    checkDbsize(dst_master, num, predixy)
+    checkDbsize(dst_slave, num, predixy)
 
     // wait until keys are expired
     time.Sleep(40 * time.Second)
     //checkData(dst_master, 100, "{12}", "redis-benchmark", false)
-    checkDbsize(dst_master, num - 100)
-    checkDbsize(dst_slave, num - 100)
+    checkDbsize(dst_master, num - 100, predixy)
+    checkDbsize(dst_slave, num - 100, predixy)
 }
 
 func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
@@ -145,9 +143,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
     log.Infof("cluster adddata begin")
     var channel chan int = make(chan int)
     migSlot := 8373
-    fake_redis := util.RedisServer{}
-    fake_redis.Init(predixy.Ip, predixy.Port, "", "")
-    go addDataInCoroutine(&fake_redis, num, "{12}", channel)
+    go addDataInCoroutine(&predixy.RedisServer, num, "{12}", channel)
 
     // migrate
     log.Infof("cluster migrate begin")
@@ -210,13 +206,13 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
     checkSlotEmpty(src_restore, migSlot, true)
     checkSlotEmpty(dst_restore, migSlot, false)
 
-    checkDbsize(src_master, 0)
-    checkDbsize(src_slave, 0)
-    checkDbsize(dst_master, num)
-    checkDbsize(dst_slave, num)
-    checkDbsize(src_restore, 0)
+    checkDbsize(src_master, 0, predixy)
+    checkDbsize(src_slave, 0, predixy)
+    checkDbsize(dst_master, num, predixy)
+    checkDbsize(dst_slave, num, predixy)
+    checkDbsize(src_restore, 0, predixy)
     // truncateBinlogV2 at least keep one binlog
-    checkDbsize(dst_restore, num-1)
+    checkDbsize(dst_restore, num-1, predixy)
 }
 
 func testRestore(portStart int, num int, testFun int, commandType string) {

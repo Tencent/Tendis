@@ -193,9 +193,7 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 }
 
 type Predixy struct {
-	Port int
-	Path string
-	Ip string
+	RedisServer
 	RedisIp string
 	RedisPort int
 	Pid int
