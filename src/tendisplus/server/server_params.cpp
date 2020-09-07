@@ -63,6 +63,9 @@ bool compressTypeParamCheck(const string& val) {
 
 bool executorThreadNumCheck(const std::string &val) {
     auto num = std::strtoull(val.c_str(), nullptr, 10);
+    if (!getGlobalServer()) {
+        return true;
+    }
     auto workPoolSize = getGlobalServer()->getParams()->executorWorkPoolSize;
 
     return (num % workPoolSize) ? false : true;

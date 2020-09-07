@@ -20,6 +20,7 @@ TEST(ServerParams, Common) {
     myfile << "port 8903\n";
     myfile << "loglevel debug\n";
     myfile << "logdir ./Log\n";
+    myfile << "executorThreadNum 9";
     myfile.close();
     const auto guard = MakeGuard([] {
         remove("a.cfg");
@@ -69,6 +70,8 @@ TEST(ServerParams, Common) {
     EXPECT_EQ(testFloat, 1.5);
     EXPECT_EQ(testFloatVar.setVar("abc2.5abc"), false);
     EXPECT_EQ(testFloat, 1.5);
+
+    EXPECT_EQ(cfg->executorThreadNum, 9);
 }
 
 TEST(ServerParams, Include) {
