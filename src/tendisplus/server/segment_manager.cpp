@@ -116,7 +116,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     INVARIANT(_chunkSize == CLUSTER_SLOTS);
     uint32_t segId = chunkId % _instances.size();
 
-    auto svr = sess->getServerEntry();
+    /*auto svr = sess->getServerEntry();
 
     if (svr->isClusterEnabled()) {
         auto svr = sess->getServerEntry();
@@ -127,7 +127,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
         if (!node.ok()) {
             return node.status();
         }
-    }
+    }*/
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
@@ -191,6 +191,17 @@ Expected<std::list<std::unique_ptr<KeyLock>>>
                 return { ErrorCodes::ERR_CLUSTER_REDIR_CROSS_SLOT, ""};
             }
             last_chunkId = chunkId;
+        }
+    }
+
+    if (last_chunkId != (uint32_t)-1 && sess->getServerEntry()->isClusterEnabled()) {
+        auto svr = sess->getServerEntry();
+        const std::shared_ptr<tendisplus::ClusterState>
+                & clusterState = svr->getClusterMgr()->getClusterState();
+
+        auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
+        if (!node.ok()) {
+            return node.status();
         }
     }
 

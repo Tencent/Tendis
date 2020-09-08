@@ -166,7 +166,7 @@ std::vector<std::string> Command::listCommands() {
     return lst;
 }
 
-Expected<Command*> Command::getCommand(Session *sess) {
+Command* Command::getCommand(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {
         return nullptr;

@@ -1077,8 +1077,7 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot, Session *s
     if ((sess->getCtx()->getFlags() & CLIENT_READONLY) &&
         isMyselfSlave() && _myself->_slaveOf == node)
     {
-        auto ExpCmd = Command::getCommand(sess);
-        Command* cmd = ExpCmd.value();
+        auto cmd = Command::getCommand(sess);
         if (cmd != nullptr && (cmd->getFlags() & CMD_READONLY)) {
             // cmd == evalCom || cmd == evalShaCommand
             return _myself;
