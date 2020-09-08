@@ -8,47 +8,6 @@
 #include "endian.h"
 
 namespace tendisplus {
-#ifdef BINLOG_V1
-BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin,
-            uint64_t end)
-        :_baseCursor(std::move(cursor)),
-         _beginPrefix(ReplLogKey::prefix(begin)),
-         _end(end) {
-    _baseCursor->seek(_beginPrefix);
-}
-
-void BinlogCursor::seekToLast() {
-    // NOTE(deyukong): it works because binlog has a maximum prefix.
-    // see RecordType::RT_BINLOG, plz note that it's tricky.
-    _baseCursor->seekToLast();
-}
-
-Expected<ReplLog> BinlogCursor::next() {
-    Expected<Record> expRcd = _baseCursor->next();
-    if (expRcd.ok()) {
-        const RecordKey& rk = expRcd.value().getRecordKey();
-        if (rk.getRecordType() != RecordType::RT_BINLOG) {
-            return {ErrorCodes::ERR_EXHAUST, ""};
-        }
-        auto explk = ReplLogKey::decode(rk);
-        if (!explk.ok()) {
-            return explk.status();
-        }
-        if (explk.value().getTxnId() > _end) {
-            return {ErrorCodes::ERR_EXHAUST, ""};
-        }
-        Expected<ReplLogValue> val =
-            ReplLogValue::decode(expRcd.value().getRecordValue());
-        if (!val.ok()) {
-            return val.status();
-        }
-        return ReplLog(std::move(explk.value()), std::move(val.value()));
-    } else {
-        return expRcd.status();
-    }
-}
-#else
-
 RepllogCursorV2::RepllogCursorV2(Transaction *txn, uint64_t begin, uint64_t end)
         : _txn(txn),
           _baseCursor(nullptr),
@@ -249,8 +208,6 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
 
     return {ErrorCodes::ERR_EXHAUST, ""};
 }
-
-#endif
 
 BasicDataCursor::BasicDataCursor(std::unique_ptr<Cursor> cursor)
     : _baseCursor(std::move(cursor)) {

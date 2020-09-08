@@ -96,10 +96,6 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
         lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
     }
-#ifdef BINLOG_V1
-    Expected<uint64_t> newPos =
-            masterSendBinlog(client, storeId, dstStoreId, binlogPos);
-#else
     if (lastSend + std::chrono::seconds(gBinlogHeartbeatSecs)
                 < SCLOCK::now()) {
         needHeartbeat = true;
@@ -108,7 +104,6 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     Expected<uint64_t> newPos =
             masterSendBinlogV2(client, storeId, dstStoreId,
                         binlogPos, needHeartbeat, _svr, _cfg);
-#endif
     if (!newPos.ok()) {
         LOG(WARNING) << "masterSendBinlog to client:"
                 << client->getRemoteRepr() << " failed:"
@@ -136,110 +131,6 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
         _pushStatus[storeId][clientId]->binlogPos = newPos.value();
     }
 }
-
-#ifdef BINLOG_V1
-Expected<uint64_t> ReplManager::masterSendBinlog(BlockingTcpClient* client,
-                uint32_t storeId, uint32_t dstStoreId, uint64_t binlogPos) {
-    constexpr uint32_t suggestBatch = 64;
-    constexpr size_t suggestBytes = 16*1024*1024;
-
-    LocalSessionGuard sg(_svr.get());
-    sg.getSession()->setArgs(
-        {"mastersendlog",
-         std::to_string(storeId),
-         client->getRemoteRepr(),
-         std::to_string(dstStoreId),
-         std::to_string(binlogPos)});
-
-    auto expdb = _svr->getSegmentMgr()->getDb(sg.getSession(),
-                    storeId, mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-        return expdb.status();
-    }
-    auto store = std::move(expdb.value().store);
-    INVARIANT(store != nullptr);
-
-    auto ptxn = store->createTransaction(sg.getSession());
-    if (!ptxn.ok()) {
-        return ptxn.status();
-    }
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    std::unique_ptr<BinlogCursor> cursor =
-        txn->createBinlogCursor(binlogPos+1);
-
-    std::vector<ReplLog> binlogs;
-    uint32_t cnt = 0;
-    uint64_t nowId = 0;
-    size_t estimateSize = 0;
-
-    while (true) {
-        Expected<ReplLog> explog = cursor->next();
-        if (explog.ok()) {
-            cnt += 1;
-            const ReplLogKey& rlk = explog.value().getReplLogKey();
-            const ReplLogValue& rlv = explog.value().getReplLogValue();
-            estimateSize += rlv.getOpValue().size();
-            if (nowId == 0 || nowId != rlk.getTxnId()) {
-                nowId = rlk.getTxnId();
-                if (cnt >= suggestBatch || estimateSize >= suggestBytes) {
-                    break;
-                } else {
-                    binlogs.emplace_back(std::move(explog.value()));
-                }
-            } else {
-                binlogs.emplace_back(std::move(explog.value()));
-            }
-        } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-            // no more data
-            break;
-        } else {
-            LOG(ERROR) << "iter binlog failed:"
-                        << explog.status().toString();
-            return explog.status();
-        }
-    }
-
-    std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, binlogs.size()*2 + 2);
-    Command::fmtBulk(ss, "applybinlogs");
-    Command::fmtBulk(ss, std::to_string(dstStoreId));
-    for (auto& v : binlogs) {
-        ReplLog::KV kv = v.encode();
-        Command::fmtBulk(ss, kv.first);
-        Command::fmtBulk(ss, kv.second);
-    }
-    std::string stringtoWrite = ss.str();
-    uint32_t secs = 1;
-    if (stringtoWrite.size() > 1024*1024) {
-        secs = 2;
-    } else if (stringtoWrite.size() > 1024*1024*10) {
-        secs = 4;
-    }
-    Status s = client->writeData(stringtoWrite);
-    if (!s.ok()) {
-        return s;
-    }
-
-    // TODO(vinchen): NO NEED TO READ OK
-    Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
-    if (!exptOK.ok()) {
-        return exptOK.status();
-    } else if (exptOK.value() != "+OK") {
-        LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
-                     << " apply binlogs failed:" << exptOK.value();
-        return {ErrorCodes::ERR_NETWORK, "bad return string"};
-    }
-
-    if (binlogs.size() == 0) {
-        return binlogPos;
-    } else {
-        return binlogs[binlogs.size()-1].getReplLogKey().getTxnId();
-    }
-}
-#else
-
-#endif
 
 //  1) s->m INCRSYNC (m side: session2Client)
 //  2) m->s +OK

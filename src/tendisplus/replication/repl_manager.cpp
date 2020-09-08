@@ -278,14 +278,6 @@ Status ReplManager::startup() {
                 return ptxn.status();
             }
             auto txn = std::move(ptxn.value());
-#ifdef BINLOG_V1
-            std::unique_ptr<BinlogCursor> cursor =
-                txn->createBinlogCursor(Transaction::MIN_VALID_TXNID);
-            Expected<ReplLog> explog = cursor->next();
-            if (explog.ok()) {
-                const auto& rlk = explog.value().getReplLogKey();
-                recBinlogStat->firstBinlogId = rlk.getTxnId();
-#else
             auto explog = RepllogCursorV2::getMinBinlog(txn.get());
             if (explog.ok()) {
                 recBinlogStat->firstBinlogId = explog.value().getBinlogId();
@@ -311,7 +303,6 @@ Status ReplManager::startup() {
                     }
                     recBinlogStat->saveBinlogId = save;
                 }
-#endif
             } else {
                 if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
                     // void compiler ud-link about static constexpr
@@ -745,40 +736,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     }
     auto txn = std::move(ptxn.value());
 
-#ifdef BINLOG_V1
-    auto toDel = kvstore->getTruncateLog(start, end, txn.get());
-    if (!toDel.ok()) {
-        LOG(ERROR) << "get to be truncated binlog store:" << storeId
-                    << "start:" << start
-                    << ",end:" << end
-                    << ",failed:" << toDel.status().toString();
-        hasError = true;
-        return;
-    }
-    if (start == toDel.value().first) {
-        INVARIANT(toDel.value().second.size() == 0);
-        nextSched = nextSched + std::chrono::seconds(1);
-        return;
-    }
-
-    if (saveLogs) {
-        auto s = saveBinlogs(storeId, toDel.value().second);
-        if (!s.ok()) {
-            LOG(ERROR) << "save binlog store:" << storeId
-                        << "failed:" << s.toString();
-            hasError = true;
-            return;
-        }
-    }
-    auto s = kvstore->truncateBinlog(toDel.value().second, txn.get());
-    if (!s.ok()) {
-        LOG(ERROR) << "truncate binlog store:" << storeId
-                    << "failed:" << s.toString();
-        hasError = true;
-        return;
-    }
-    uint64_t newStart = toDel.value().first;
-#else
     uint64_t newStart = 0;
     uint64_t newSave = 0;
     {
@@ -808,7 +765,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
         newStart = s.value().newStart;
         newSave = s.value().newSave;
     }
-#endif
+
     auto commitStat = txn->commit();
     if (!commitStat.ok()) {
         LOG(ERROR) << "truncate binlog store:" << storeId
