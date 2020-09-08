@@ -21,6 +21,7 @@
 namespace tendisplus {
 
 #define InMulti (1 << 0)
+#define CLIENT_READONLY (1 << 1)
 
 // storeLock state pair
 using SLSP = std::tuple<uint32_t, uint32_t, std::string, mgl::LockMode>;
@@ -94,6 +95,15 @@ class SessionCtx {
     inline void resetMulti() {
         _flags &= ~InMulti;
         _txnVersion = -1;
+    }
+    uint32_t getFlags() {
+        return _flags;
+    }
+    inline void setFlags(uint32_t flag) {
+        _flags |= flag;
+    }
+    inline void resetFlags(uint32_t flag) {
+        _flags &= ~flag;
     }
     bool verifyVersion(uint64_t keyVersion);
 

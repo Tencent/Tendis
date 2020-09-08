@@ -166,6 +166,19 @@ std::vector<std::string> Command::listCommands() {
     return lst;
 }
 
+Expected<Command*> Command::getCommand(Session *sess) {
+    const auto& args = sess->getArgs();
+    if (args.size() == 0) {
+        return nullptr;
+    }
+    std::string commandName = toLower(args[0]);
+    auto it = commandMap().find(commandName);
+    if (it == commandMap().end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
 Expected<Command*> Command::precheck(Session *sess) {
     const auto& args = sess->getArgs();
     if (args.size() == 0) {

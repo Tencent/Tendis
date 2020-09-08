@@ -82,7 +82,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>
                     &clusterState = svr->getClusterMgr()->getClusterState();
-            auto node = clusterState->clusterHandleRedirect(chunkId);
+            auto node = clusterState->clusterHandleRedirect(chunkId, sess);
             if (!node.ok()) {
                 return node.status();
             }
@@ -96,7 +96,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>& clusterState =
                 svr->getClusterMgr()->getClusterState();
-            auto node = clusterState->clusterHandleRedirect(chunkId);
+            auto node = clusterState->clusterHandleRedirect(chunkId, sess);
             if (!node.ok()) {
                 return node.status();
             }
@@ -123,7 +123,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
         const std::shared_ptr<tendisplus::ClusterState>
             & clusterState = svr->getClusterMgr()->getClusterState();
 
-        auto node = clusterState->clusterHandleRedirect(chunkId);
+        auto node = clusterState->clusterHandleRedirect(chunkId, sess);
         if (!node.ok()) {
             return node.status();
         }

@@ -497,7 +497,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     // set myself
     void setMyselfNode(CNodePtr node);
     bool isMyselfMaster();
-    bool isMyselfSlave();
+    bool isMyselfSlave() const;
     // getMyMaster
     CNodePtr getMyMaster();
     // addNode
@@ -561,7 +561,7 @@ class ClusterState: public std::enable_shared_from_this<ClusterState> {
     Status setSlotsMyself(const std::bitset<CLUSTER_SLOTS>& slots);
     void setSlotsBelongMyself(const std::bitset<CLUSTER_SLOTS>& slots);
 
-    Expected<CNodePtr> clusterHandleRedirect(uint32_t slot) const;
+    Expected<CNodePtr> clusterHandleRedirect(uint32_t slot, Session *sess) const;
     CNodePtr getNodeBySlot(uint32_t slot) const;
 
     void clusterUpdateSlotsConfigWith(CNodePtr sender,
