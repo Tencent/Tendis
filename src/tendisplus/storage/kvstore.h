@@ -26,14 +26,10 @@ namespace tendisplus {
 
 class KVStore;
 class Record;
-#ifdef BINLOG_V1
-class ReplLog;
-#else
 class ReplLogValueEntryV2;
 class ReplLogRawV2;
 class ReplLogV2;
 class Transaction;
-#endif
 class TTLIndex;
 class RecordKey;
 class RecordValue;
@@ -67,24 +63,6 @@ class Cursor {
     virtual Status prev() = 0;
     virtual Expected<std::string> key() = 0;
 };
-#ifdef BINLOG_V1
-class BinlogCursor {
- public:
-    BinlogCursor() = delete;
-    // NOTE(deyukong): in range of [begin, end], be careful both close interval
-    BinlogCursor(std::unique_ptr<Cursor> cursor, uint64_t begin, uint64_t end);
-    ~BinlogCursor() = default;
-    Expected<ReplLog> next();
-    void seekToLast();
-
- protected:
-    std::unique_ptr<Cursor> _baseCursor;
-
- private:
-    const std::string _beginPrefix;
-    const uint64_t _end;
-};
-#else
 class RepllogCursorV2 {
  public:
     RepllogCursorV2() = delete;
@@ -108,7 +86,6 @@ class RepllogCursorV2 {
     uint64_t _cur;
     const uint64_t _end;
 };
-#endif
 
 class BasicDataCursor {
  public:
@@ -224,12 +201,6 @@ class Transaction {
     virtual std::unique_ptr<Cursor> createCursor(
         ColumnFamilyNumber cf,
         const std::string* iterate_upper_bound = NULL) = 0;
-#ifdef BINLOG_V1
-    virtual std::unique_ptr<BinlogCursor>
-        createBinlogCursor(uint64_t begin, bool ignoreReadBarrier = false) = 0;
-    virtual Status applyBinlog(const std::list<ReplLog>& txnLog) = 0;
-    virtual Status truncateBinlog(const std::list<ReplLog>& txnLog) = 0;
-#else
     virtual Status flushall() = 0;
     virtual Status migrate(const std::string& logKey, const std::string& logValue) = 0;
 
@@ -250,7 +221,6 @@ class Transaction {
     virtual void setChunkId(uint32_t chunkId) = 0;
     virtual void SetSnapshot() = 0;
 
-#endif
     virtual std::unique_ptr<TTLIndexCursor>
         createTTLIndexCursor(std::uint64_t until) = 0;
     virtual std::unique_ptr<SlotCursor>
@@ -315,9 +285,6 @@ class BackupInfo {
 
 class BinlogObserver {
  public:
-#ifdef BINLOG_V1
-    virtual void onCommit(const std::vector<ReplLog>& binlogs) = 0;
-#endif
     virtual ~BinlogObserver() = default;
 };
 
@@ -383,19 +350,6 @@ class KVStore {
     virtual Status deleteRangeWithoutBinlog(const std::string& begin, const std::string& end) = 0;
     virtual Status deleteRangeBinlog(uint64_t begin, uint64_t end) = 0;
 
-#ifdef BINLOG_V1
-    virtual Status applyBinlog(const std::list<ReplLog>& txnLog,
-                               Transaction* txn) = 0;
-
-    // get binlogs in [start, end], and check if start == "the first binlog"
-    // return the "next first binlog" and a list of binlogs to be deleted.
-    // if no visible binlogs, "next first binlog" == start
-    virtual Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
-            uint64_t start, uint64_t end, Transaction* txn) = 0;
-
-    virtual Status truncateBinlog(const std::list<ReplLog>&, Transaction*) = 0;
-#else
-
     virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
     virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
     virtual uint64_t getNextBinlogSeq() const = 0;
@@ -404,7 +358,7 @@ class KVStore {
         uint64_t save, Transaction *txn, std::ofstream *fs, int64_t maxWritelen, bool tailSlave) = 0;
     virtual Expected<uint64_t> getBinlogCnt(Transaction* txn) const = 0;
     virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
-#endif
+
     virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
     virtual Status compactRange(ColumnFamilyNumber cf, const std::string* begin,
                                 const std::string* end) = 0;

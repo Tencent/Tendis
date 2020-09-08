@@ -12,7 +12,6 @@
 
 namespace tendisplus {
 
-#ifndef BINLOG_V1
 ReplLogKeyV2::ReplLogKeyV2()
     :_binlogId(0),
     _version("v2") {
@@ -706,6 +705,5 @@ uint64_t ReplLogV2::getTimestamp() const {
     INVARIANT_D(_val.getTimestamp() == _entrys.rbegin()->getTimestamp());
     return _entrys.rbegin()->getTimestamp();
 }
-#endif
 
 }  // namespace tendisplus

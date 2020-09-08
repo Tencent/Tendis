@@ -114,11 +114,7 @@ class RecordKey {
     // an encoded prefix with db & type, with no padding zero.
     std::string prefixDbidType() const;
     */
-#ifdef BINLOG_V1
-    static const std::string& prefixReplLog();
-#else
     static const std::string& prefixReplLogV2();
-#endif
     static const std::string& prefixTTLIndex();
     static const std::string& prefixVersionMeta();
 
@@ -266,93 +262,6 @@ enum class ReplOp: std::uint8_t {
     REPL_OP_DEL_RANGE = 5,
 };
 
-#ifdef BINLOG_V1
-// ********************* repl key format ******************************
-// txnId + localId + flag + timestamp + reserved
-// txnId is a uint64_t in big endian. big endian ensures the scan order
-// is same with value order
-// localId is a uint16 in big endian. stores the operation counter in
-// the same transaction.
-// flag is a uint16 in big endian.
-// timestamp is a uint32 in big endian.
-// reserved is a uint8.
-// ********************* repl value format ****************************
-// op + keylen + key + valuelen + value
-// op is a uint8
-// keylen is a varint
-// valuelen is a varint
-// ********************************************************************
-class ReplLogKey {
- public:
-    ReplLogKey();
-    ReplLogKey(const ReplLogKey&) = default;
-    ReplLogKey(ReplLogKey&&);
-    ReplLogKey(uint64_t txnid, uint16_t localid, ReplFlag flag,
-        uint64_t timestamp, uint8_t reserved = 0);
-    static Expected<ReplLogKey> decode(const RecordKey&);
-    static Expected<ReplLogKey> decode(const std::string&);
-    std::string encode() const;
-    bool operator==(const ReplLogKey&) const;
-    ReplLogKey& operator=(const ReplLogKey&);
-    uint64_t getTxnId() const { return _txnId; }
-    uint16_t getLocalId() const { return _localId; }
-    uint64_t getTimestamp() const { return _timestamp; }
-    void setFlag(ReplFlag f) { _flag = f; }
-    ReplFlag getFlag() const { return _flag; }
-
-    static std::string prefix(uint64_t commitId);
-    static constexpr uint32_t DBID = REPLLOGKEY_DBID;
-    static constexpr uint32_t CHUNKID = REPLLOGKEY_CHUNKID;
-
- private:
-    uint64_t _txnId;
-    uint16_t _localId;
-    ReplFlag _flag;
-    uint64_t _timestamp;
-    uint8_t _reserved;
-};
-
-class ReplLogValue {
- public:
-    ReplLogValue();
-    ReplLogValue(const ReplLogValue&) = default;
-    ReplLogValue(ReplLogValue&&);
-    ReplLogValue(ReplOp op, const std::string&, const std::string&);
-    const std::string& getOpKey() const;
-    const std::string& getOpValue() const;
-    ReplOp getOp() const;
-    static Expected<ReplLogValue> decode(const std::string&);
-    static Expected<ReplLogValue> decode(const RecordValue&);
-    std::string encode() const;
-    bool operator==(const ReplLogValue&) const;
-
- private:
-    ReplOp _op;
-    std::string _key;
-    std::string _val;
-};
-
-class ReplLog {
- public:
-    using KV = std::pair<std::string, std::string>;
-    ReplLog();
-    ReplLog(const ReplLog&) = default;
-    ReplLog(ReplLog&&);
-    ReplLog(const ReplLogKey& key, const ReplLogValue& value);
-    ReplLog(ReplLogKey&& key, ReplLogValue&& value);
-    const ReplLogKey& getReplLogKey() const;
-    ReplLogKey& getReplLogKey();
-    const ReplLogValue& getReplLogValue() const;
-    static Expected<ReplLog> decode(const std::string& key,
-            const std::string& value);
-    KV encode() const;
-    bool operator==(const ReplLog&) const;
-
- private:
-    ReplLogKey _key;
-    ReplLogValue _val;
-};
-#else
 class ReplLogKeyV2 {
  public:
     ReplLogKeyV2();
@@ -558,7 +467,6 @@ class BinlogReader {
     size_t _pos;
     mystring_view _val;
 };
-#endif
 
 class ListMetaValue {
  public:

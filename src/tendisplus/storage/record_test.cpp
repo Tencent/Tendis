@@ -190,59 +190,7 @@ TEST(Record, Common) {
         EXPECT_EQ(prcd1.value(), rcd);
     }
 }
-#ifdef BINLOG_V1
-TEST(ReplRecord, Prefix) {
-    uint64_t timestamp = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
-    auto rlk = ReplLogKey(genRand(), 0, randomReplFlag(), timestamp);
-    RecordKey rk(ReplLogKey::CHUNKID, ReplLogKey::DBID,
-                 RecordType::RT_BINLOG, rlk.encode(), "");
-    const std::string s = rk.encode();
-    EXPECT_EQ(s[0], '\xff');
-    EXPECT_EQ(s[1], '\xff');
-    EXPECT_EQ(s[2], '\xff');
-    EXPECT_EQ(s[3], '\x00');
-    EXPECT_EQ(s[4], '\xff');
-    EXPECT_EQ(s[5], '\xff');
-    EXPECT_EQ(s[6], '\xff');
-    EXPECT_EQ(s[7], '\xff');
-    EXPECT_EQ(s[8], '\x00');
-    const std::string& prefix = RecordKey::prefixReplLog();
-    for (int i = 0; i < 100000; ++i) {
-        EXPECT_TRUE(randomStr(5, false) <= prefix);
-    }
-}
 
-TEST(ReplRecord, Common) {
-    srand(time(NULL));
-    std::vector<ReplLogKey> logKeys;
-    for (size_t i = 0; i < 100000; i++) {
-        uint64_t txnid = uint64_t(genRand())*uint64_t(genRand());
-        uint16_t localid = uint16_t(genRand());
-        ReplFlag flag = randomReplFlag();
-        uint64_t timestamp = (uint64_t)genRand()+std::numeric_limits<uint32_t>::max() + 1;
-        auto rk = ReplLogKey(txnid, localid, flag, timestamp);
-        auto rkStr = rk.encode();
-        auto prk = ReplLogKey::decode(rkStr);
-        EXPECT_TRUE(prk.ok());
-        EXPECT_EQ(prk.value(), rk);
-        logKeys.emplace_back(std::move(rk));
-    }
-    std::sort(logKeys.begin(), logKeys.end(),
-        [](const ReplLogKey& a, const ReplLogKey& b) {
-            return a.encode() < b.encode();
-        });
-    for (size_t i = 0; i < logKeys.size()-1; ++i) {
-        EXPECT_TRUE(logKeys[i].getTxnId() < logKeys[i+1].getTxnId()
-            ||(logKeys[i].getTxnId() == logKeys[i+1].getTxnId() &&
-            logKeys[i].getLocalId() <= logKeys[i+1].getLocalId()));
-    }
-
-    ReplLogValue rlv(ReplOp::REPL_OP_SET, "a", "b");
-    std::string s = rlv.encode();
-    Expected<ReplLogValue> erlv = ReplLogValue::decode(s);
-    EXPECT_TRUE(erlv.ok());
-}
-#else
 TEST(ReplRecordV2, Prefix) {
     uint64_t binlogid = (uint64_t)genRand() + std::numeric_limits<uint32_t>::max();
     auto rlk = ReplLogKeyV2(binlogid);
@@ -361,7 +309,6 @@ TEST(ReplRecordV2, Common) {
         }
     }
 }
-#endif
 
 TEST(TTLIndex, Prefix) {
     auto rlk = TTLIndex("abc", RecordType::RT_KV, 0, 10);

@@ -1238,23 +1238,12 @@ class BinlogTimeCommand: public Command {
             return ptxn.status();
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-#ifdef BINLOG_V1
-        std::unique_ptr<BinlogCursor> cursor =
-            txn->createBinlogCursor(binlogId.value(), true);
-        Expected<ReplLog> explog = cursor->next();
-        if (!explog.ok()) {
-            return explog.status();
-        }
-        return Command::fmtLongLong(
-            explog.value().getReplLogKey().getTimestamp());
-#else
         auto cursor = txn->createRepllogCursorV2(binlogId.value(), true);
         auto explog = cursor->nextV2();
         if (!explog.ok()) {
             return explog.status();
         }
         return Command::fmtLongLong(explog.value().getTimestamp());
-#endif
     }
 } binlogTimeCmd;
 
