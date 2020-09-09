@@ -13,3 +13,5 @@ tclsh tests/cluster/run.tcl --single 10-manual-failover.tcl
 tclsh tests/cluster/run.tcl --single 11-manual-takeover.tcl
 tclsh tests/cluster/run.tcl --single 12-replica-migration-2.tcl
 tclsh tests/cluster/run.tcl --single 13-no-failover-option.tcl
+tclsh tests/cluster/run.tcl --single 14-manual-failover-force.tcl
+tclsh tests/cluster/run.tcl --single 15-arbiter-selection.tcl

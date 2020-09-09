@@ -135,7 +135,8 @@ static struct redisNodeFlags redisNodeFlagsTable[] = {
     { CLUSTER_NODE_FAIL,         "fail" },
     { CLUSTER_NODE_HANDSHAKE,    "handshake" },
     { CLUSTER_NODE_NOADDR,       "noaddr" },
-    { CLUSTER_NODE_NOFAILOVER,   "nofailover" }
+    { CLUSTER_NODE_NOFAILOVER,   "nofailover" },
+    { CLUSTER_NODE_ARBITER,   "arbiter" }
 };
 
 std::string  representClusterNodeFlags(uint16_t flags) {
@@ -476,7 +477,7 @@ bool ClusterNode::clearNodeFailureIfNeeded(uint32_t timeout) {
 
     /* For slaves we always clear the FAIL flag if we can contact the
     * node again. */
-    if (nodeIsSlave() || _numSlots == 0) {
+    if (nodeIsSlave() || _numSlots == 0 || nodeIsArbiter()) {
         serverLog(LL_NOTICE,
             "Clear FAIL state for node %.40s: %s is reachable again.",
             _nodeName.c_str(),
@@ -510,6 +511,11 @@ void ClusterNode::setMaster(std::shared_ptr<ClusterNode> master) {
 bool  ClusterNode::nodeIsMaster() const {
     std::lock_guard<myMutex> lk(_mutex);
     return (_flags & CLUSTER_NODE_MASTER) ? true : false;
+}
+
+bool  ClusterNode::nodeIsArbiter() const {
+    std::lock_guard<myMutex> lk(_mutex);
+    return (_flags & CLUSTER_NODE_ARBITER) ? true : false;
 }
 
 bool  ClusterNode::nodeIsSlave() const {
@@ -1440,6 +1446,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
 Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
     INVARIANT(node != _myself);
     INVARIANT(_myself->getSlotNum() == 0);
+    INVARIANT(!_myself->nodeIsArbiter());
 
     if (_myself->nodeIsMaster()) {
         _myself->_flags &= ~(CLUSTER_NODE_MASTER | CLUSTER_NODE_MIGRATE_TO);
@@ -2175,11 +2182,12 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node, const ClusterM
     int j;
 
     // TODO(vinchen): if there is a slave, we should be able to vote!
-    /* IF we are not a master serving at least 1 slot, we don't have the
+    /* IF we are not a master serving at least 1 slot or an arbiter, we don't have the
      * right to vote, as the cluster size in Redis Cluster is the number
      * of masters serving at least one slot, and quorum is the cluster
      * size + 1 */
-     if (_myself->nodeIsSlave() || _myself->getSlotNum() == 0) return;
+     if ((_myself->nodeIsSlave() || _myself->getSlotNum() == 0) && !_myself->nodeIsArbiter())
+        return;
 
     /* Request epoch must be >= our currentEpoch.
      * Note that it is impossible for it to actually be greater since
@@ -3376,6 +3384,7 @@ Status ClusterManager::clusterReset(uint16_t hard) {
             _clusterState->clusterSetNodeAsMaster(myself);
             isSlave = true;
         }
+        myself->_flags &= ~CLUSTER_NODE_ARBITER;
     }
     if (isSlave) {
         s = _svr->getReplManager()->replicationUnSetMaster();
@@ -4018,15 +4027,15 @@ void ClusterState::clusterUpdateState() {
         }
     }
 
-    /* Compute the cluster size, that is the numbe r of master nodes
-      * serving at least a single slot.
+    /* Compute the cluster size, that is the sum of the number of master nodes
+      * serving at least a single slot  and the number of arbiter.
       *
       * At the same time count the number of reachable masters having
       * at least one slot. */
     _size = 0;
     for (const auto& nodep : _nodes) {
         const auto& node = nodep.second;
-        if (node->nodeIsMaster() && node->getSlotNum()) {
+        if (node->nodeIsMaster() && (node->getSlotNum() || node->nodeIsArbiter())) {
             _size++;
             if ((node->getFlags() & (CLUSTER_NODE_FAIL|CLUSTER_NODE_PFAIL)) == 0) {
                 reachable_masters++;
@@ -4698,7 +4707,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
                 serverLog(LL_DEBUG, "Handshake with node %.40s completed.",
                     sessNode->getNodeName().c_str());
                 sessNode->_flags &= ~CLUSTER_NODE_HANDSHAKE;
-                sessNode->_flags |= flags & (CLUSTER_NODE_MASTER | CLUSTER_NODE_SLAVE);
+                sessNode->_flags |= flags & (CLUSTER_NODE_MASTER | CLUSTER_NODE_SLAVE | CLUSTER_NODE_ARBITER);
                 clusterRenameNode(sessNode, hdr->_sender);
                 save = true;
             } else if (sessNode->getNodeName() != hdr->_sender) {
@@ -4736,6 +4745,17 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
             int nofailover = flags & CLUSTER_NODE_NOFAILOVER;
             sender->_flags &= ~CLUSTER_NODE_NOFAILOVER;
             sender->_flags |= nofailover;
+        }
+
+        /* Update the node arbiter flag */
+        if(sender && (type == ClusterMsg::Type::PING || type == ClusterMsg::Type::PONG)){
+            if((sender->_flags & CLUSTER_NODE_ARBITER) != (flags & CLUSTER_NODE_ARBITER)){
+                serverLog(LL_WARNING,"%s arbiter flags change %d",sender->getNodeName().c_str(),
+                (int)(flags & CLUSTER_NODE_ARBITER));
+            }
+            sender->_flags &= ~CLUSTER_NODE_ARBITER;
+            sender->_flags |= flags & CLUSTER_NODE_ARBITER;
+            save=true;
         }
 
         /* Update the node address if it changed. */
@@ -4932,10 +4952,10 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess, 
         if (!sender)
             return { ErrorCodes::ERR_OK, "" };  /* We don't know that node. */
         /* We consider this vote only if the sender is a master serving
-	     * a non zero number of slots, and its currentEpoch is greater or
+	     * a non zero number of slots or an arbiter, and its currentEpoch is greater or
          * equal to epoch where this node started the election. */
         if (sender->nodeIsMaster() &&
-            sender->getSlotNum() > 0 &&
+            (sender->getSlotNum() > 0 || sender->nodeIsArbiter()) &&
             senderCurrentEpoch >= getFailAuthEpoch()) {
             addFailVoteNum();
             /* Maybe we reached a quorum here, set a flag to make sure
