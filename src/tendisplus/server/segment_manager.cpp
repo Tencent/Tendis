@@ -116,19 +116,6 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     INVARIANT(_chunkSize == CLUSTER_SLOTS);
     uint32_t segId = chunkId % _instances.size();
 
-    /*auto svr = sess->getServerEntry();
-
-    if (svr->isClusterEnabled()) {
-        auto svr = sess->getServerEntry();
-        const std::shared_ptr<tendisplus::ClusterState>
-            & clusterState = svr->getClusterMgr()->getClusterState();
-
-        auto node = clusterState->clusterHandleRedirect(chunkId, sess);
-        if (!node.ok()) {
-            return node.status();
-        }
-    }*/
-
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
                       std::memory_order_relaxed);
@@ -194,17 +181,6 @@ Expected<std::list<std::unique_ptr<KeyLock>>>
         }
     }
 
-    if (last_chunkId != (uint32_t)-1 && sess->getServerEntry()->isClusterEnabled()) {
-        auto svr = sess->getServerEntry();
-        const std::shared_ptr<tendisplus::ClusterState>
-                & clusterState = svr->getClusterMgr()->getClusterState();
-
-        auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
-        if (!node.ok()) {
-            return node.status();
-        }
-    }
-
     /* NOTE(vinchen): lock sequence
         lock kvstores from small to big(kvstore id)
             lock chunks from small to big(chunk id) in kvstore
@@ -232,6 +208,17 @@ Expected<std::list<std::unique_ptr<KeyLock>>>
                 return elk.status();
             }
             locklist.emplace_back(std::move(elk.value()));
+        }
+    }
+
+    if (last_chunkId != (uint32_t)-1 && sess->getServerEntry()->isClusterEnabled()) {
+        auto svr = sess->getServerEntry();
+        const std::shared_ptr<tendisplus::ClusterState>
+                & clusterState = svr->getClusterMgr()->getClusterState();
+
+        auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
+        if (!node.ok()) {
+            return node.status();
         }
     }
 
