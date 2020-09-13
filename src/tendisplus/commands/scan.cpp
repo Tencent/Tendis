@@ -12,6 +12,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/storage/skiplist.h"
 
 namespace tendisplus {
 class ScanGenericCommand: public Command {
@@ -104,6 +105,39 @@ class ScanGenericCommand: public Command {
         }
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
+        std::string name = getName();
+        if(name == "zscanbyscore") {
+            auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
+            if (!eMetaContent.ok()) {
+                return eMetaContent.status();
+            }
+            ZSlMetaValue meta = eMetaContent.value();
+            SkipList sl(expdb.value().chunkId, pCtx->getDbId(),
+                    key, meta, kvstore);
+            Zrangespec range;
+            if (zslParseRange(cursor.c_str(), maxscore.c_str(), &range) != 0) {
+                return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
+            }
+            auto arr = sl.scanByScore(range, 0, count+1, false, txn.get());
+            if (!arr.ok()) {
+                return arr.status();
+            }
+            std::stringstream ss;
+            Command::fmtMultiBulkLen(ss, 2);
+            if(arr.value().size() == count+1) {
+                Command::fmtBulk(ss, ::tendisplus::dtos(arr.value().back().first));
+                arr.value().pop_back();
+            } else {
+                Command::fmtNull(ss);
+            }
+            Command::fmtMultiBulkLen(ss, arr.value().size()*2);
+            for (const auto& v : arr.value()) {
+                Command::fmtBulk(ss, v.second);
+                Command::fmtBulk(ss, ::tendisplus::dtos(v.first));
+            }
+            return ss.str();
+        }
+
         RecordKey fake = genFakeRcd(expdb.value().chunkId,
                                     pCtx->getDbId(), key);
 
@@ -126,6 +160,8 @@ class ScanGenericCommand: public Command {
         }
         return genResult(batch.value().first, batch.value().second);
     }
+private:
+    std::string maxscore = "9223372036854775806";
 };
 
 class ZScanCommand: public ScanGenericCommand {
@@ -161,6 +197,55 @@ class ZScanCommand: public ScanGenericCommand {
         return ss.str();
     }
 } zscanCmd;
+
+class ZScanbyscoreCommand: public ScanGenericCommand {
+ public:
+    ZScanbyscoreCommand()
+        :ScanGenericCommand("zscanbyscore", "rR") {
+    }
+
+    RecordType getRcdType() const final {
+        return RecordType::RT_ZSET_META;
+    }
+
+    RecordKey genFakeRcd(uint32_t chunkId, uint32_t dbId,
+                        const std::string& key) const final {
+        return {chunkId, dbId, RecordType::RT_ZSET_S_ELE, key, std::to_string(ZSlMetaValue::HEAD_ID)};
+    }
+
+    Expected<std::string> genResult(const std::string& cursor,
+                    const std::list<Record>& rcds) {
+        std::list<Record> sortRcds = rcds;
+        // sortRcds.sort([](Record& a, Record& b) -> bool {
+        //     auto da = tendisplus::doubleDecode(a.getRecordValue().getValue());
+        //     auto db = tendisplus::doubleDecode(b.getRecordValue().getValue());
+        //     if(!da.ok() || !db.ok()) {
+        //         return false;
+        //     }
+        //     return da.value() < db.value();
+        // });
+        std::stringstream ss;
+        Command::fmtMultiBulkLen(ss, 2);
+        Command::fmtBulk(ss, cursor);
+        Command::fmtMultiBulkLen(ss, rcds.size()*2);
+        for (const auto& v : rcds) {
+            auto str = v.toString() + " ";
+            std::cout << str;
+            if(v.getRecordKey().getSecondaryKey()
+                == std::to_string(ZSlMetaValue::HEAD_ID)) {
+                    continue;
+            }
+            Command::fmtBulk(ss, v.getRecordValue().getValue());
+            auto d = tendisplus::doubleDecode(v.getRecordKey().getSecondaryKey());
+            INVARIANT_D(d.ok());
+            if (!d.ok()) {
+                return d.status();
+            }
+            Command::fmtBulk(ss, tendisplus::dtos(d.value()));
+        }
+        return ss.str();
+    }
+} zscanbyscoreCmd;
 
 class SScanCommand: public ScanGenericCommand {
  public:

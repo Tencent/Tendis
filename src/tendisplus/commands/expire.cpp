@@ -247,7 +247,7 @@ class GenericTtlCommand: public Command {
                 ms = 1;
             }
             if (Command::getName() == "ttl") {
-                return Command::fmtLongLong(ms/1000);
+                return Command::fmtLongLong((ms + 500) / 1000);
             } else if (Command::getName() == "pttl") {
                 return Command::fmtLongLong(ms);
             } else {

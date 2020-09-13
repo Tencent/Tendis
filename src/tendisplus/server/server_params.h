@@ -215,7 +215,7 @@ public:
     BoolVar(const string& name, void* v, checkfunptr ptr, preProcess preFun, bool allowDynamicSet)
         : BaseVar(name, v, ptr, preFun, allowDynamicSet), _defaultValue(*(bool*)value){};
     virtual string show() const {
-        return value ? "yes" : "no";
+        return *(bool*)value ? "yes" : "no";
     };
     virtual string default_show() const {
         return _defaultValue ? "yes" : "no";

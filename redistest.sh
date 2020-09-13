@@ -19,6 +19,13 @@ tclsh tests/test_helper.tcl --single rr_unit/quit
 tclsh tests/test_helper.tcl --single rr_unit/sort
 tclsh tests/test_helper.tcl --single rr_unit/bugs
 
+tclsh tests/test_helper.tcl --single tendis_ssd_test/zscanbyscore
+tclsh tests/test_helper.tcl --single tendis_ssd_test/hmcas
+tclsh tests/test_helper.tcl --single tendis_ssd_test/cas
+tclsh tests/test_helper.tcl --single tendis_ssd_test/setnxex
+tclsh tests/test_helper.tcl --single tendis_ssd_test/bitfield
+tclsh tests/test_helper.tcl --single tendis_ssd_test/increx
+
 
 valgrind=0
 #tests=(aofrw bitfield dump geo introspection-2 keyspace lazyfree maxmemory multi other protocol quit scripting sort wait auth bitops expire hyperloglog introspection latency-monitor limits memefficiency obuf-limits printver pubsub scan slowlog)

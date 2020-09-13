@@ -890,7 +890,7 @@ Status hmcas(Session *sess, const std::string& key,
 
         RecordKey subrk(expdb.value().chunkId, pCtx->getDbId(),
                         RecordType::RT_HASH_ELE, key, keyPos.first);
-        if (eop.value() == OPSET || !exists) {
+        if (eop.value() == OPSET || (!exists && eop.value() == OPADD)) {
             RecordValue subrv(subargs[keyPos.second+2],
                                 RecordType::RT_HASH_ELE, -1);
             Status s = kvstore->setKV(subrk, subrv, txn.get());
@@ -913,6 +913,8 @@ Status hmcas(Session *sess, const std::string& key,
             if (!s.ok()) {
                 return s;
             }
+        } else {
+            return {ErrorCodes::ERR_UNKNOWN, ""};
         }
     }
 
@@ -924,10 +926,10 @@ Status hmcas(Session *sess, const std::string& key,
             if (eValue.ok() && cas != -1) {
                 cas += 1;
             } else {
-                cas = vsn;
+                cas = vsn + 1;
             }
         } else {
-            cas = vsn;
+            cas = vsn + 1;
         }
     }
     hashMeta.setCount(hashMeta.getCount() + uniqkeys.size() - existkvs.size());
@@ -991,7 +993,7 @@ class HMCasV2Command: public Command {
         }
         auto server = sess->getServerEntry();
         if (server->versionIncrease()) {
-            if (newvsn <= vsn) {
+            if (newvsn <= vsn && cmp) {
                 return {ErrorCodes::ERR_PARSEOPT,
                     "new version must be greater than old version"};
             }
@@ -1158,6 +1160,7 @@ class HMSetGeneric: public Command {
         hashMeta.setCount(hashMeta.getCount() + inserted);
         RecordValue metaValue(hashMeta.encode(), RecordType::RT_HASH_META,
                 sess->getCtx()->getVersionEP(), ttl, eValue);
+        metaValue.setCas(-1);
         Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
         if (!setStatus.ok()) {
             return setStatus;
