@@ -733,10 +733,6 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(Command::fmtOne(), expect.value());
-    sess.setArgs({ "hmcas", "hmcaskey1", "1", "123", "subkey1", "0", "subval1" });
-    expect = Command::runSessionCmd(&sess);
-    EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(Command::fmtOne(), expect.value());
     sess.setArgs({ "hmcas", "hmcaskey1", "1", "124", "subkey1", "0", "subval2" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
@@ -755,16 +751,16 @@ void testHash2(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(Command::fmtOne(), expect.value());
 
     // parse int failed
-    sess.setArgs({ "hmcas", "hmcaskey1", "1", "999", "subkey1", "1", "10" });
+    sess.setArgs({ "hmcas", "hmcaskey1", "1", "1000", "subkey1", "1", "10" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_FALSE(expect.ok());
 
-    sess.setArgs({ "hmcas", "hmcaskey1", "1", "999", "subkey1", "0", "-100" });
+    sess.setArgs({ "hmcas", "hmcaskey1", "1", "1000", "subkey1", "0", "-100" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(Command::fmtOne(), expect.value());
 
-    sess.setArgs({ "hmcas", "hmcaskey1", "1", "1000", "subkey1", "1", "100" });
+    sess.setArgs({ "hmcas", "hmcaskey1", "1", "1001", "subkey1", "1", "100" });
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(Command::fmtOne(), expect.value());

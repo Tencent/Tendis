@@ -437,6 +437,89 @@ class SetNxCommand: public Command {
     }
 } setnxCmd;
 
+class SetNxExCommand: public Command {
+ public:
+    SetNxExCommand()
+        :Command("setnxex", "wm") {
+    }
+
+    ssize_t arity() const {
+        return 4;
+    }
+
+    int32_t firstkey() const {
+        return 1;
+    }
+
+    int32_t lastkey() const {
+        return 1;
+    }
+
+    int32_t keystep() const {
+        return 1;
+    }
+
+    Expected<std::string> run(Session *sess) final {
+        const std::string& key = sess->getArgs()[1];
+        const std::string& val = sess->getArgs()[3];
+        Expected<int64_t> eexpire = ::tendisplus::stoll(sess->getArgs()[2]);
+        if (!eexpire.ok()) {
+            return eexpire.status();
+        }
+        if (eexpire.value() <= 0) {
+            return{ ErrorCodes::ERR_PARSEPKT, "invalid expire time" };
+        }
+        auto ttl = msSinceEpoch() + eexpire.value() * 1000;
+
+        auto server = sess->getServerEntry();
+        INVARIANT(server != nullptr);
+        auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key,
+                                            mgl::LockMode::LOCK_X);
+        if (!expdb.ok()) {
+            return expdb.status();
+        }
+        PStore kvstore = expdb.value().store;
+        SessionCtx *pCtx = sess->getCtx();
+        INVARIANT(pCtx != nullptr);
+
+        RecordKey rk(expdb.value().chunkId, pCtx->getDbId(),
+                     RecordType::RT_KV, key, "");
+        RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
+
+        for (int32_t i = 0; i < RETRY_CNT; ++i) {
+            auto ptxn = kvstore->createTransaction(sess);
+            if (!ptxn.ok()) {
+                return ptxn.status();
+            }
+            std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+            auto result = setGeneric(sess,
+                                     kvstore,
+                                     txn.get(),
+                                     REDIS_SET_NX,
+                                     rk,
+                                     rv,
+                                     server->checkKeyTypeForSet(),
+                                     true,
+                                     Command::fmtOne(),
+                                     Command::fmtZero());
+            if (result.ok()) {
+                return result.value();
+            }
+            if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                return result.status();
+            }
+            if (i == RETRY_CNT - 1) {
+                return result.status();
+            } else {
+                continue;
+            }
+        }
+
+        INVARIANT_D(0);
+        return {ErrorCodes::ERR_INTERNAL, "not reachable"};
+    }
+} setnxexCmd;
+
 class StrlenCommand: public Command {
  public:
     StrlenCommand()
@@ -961,11 +1044,14 @@ class CasCommand: public GetSetGeneral {
             return ecas.status();
         }
 
-        auto ttl = oldValue.value().getTtl();
+        uint64_t ttl = 0;
+        if (oldValue.ok()) {
+            ttl = oldValue.value().getTtl();
+        }
         RecordValue ret(sess->getArgs()[3], RecordType::RT_KV,
                 sess->getCtx()->getVersionEP(), ttl, oldValue);
         if (!oldValue.ok()) {
-            ret.setCas(ecas.value());
+            ret.setCas(ecas.value() + 1);
             return ret;
         }
 
@@ -1459,6 +1545,9 @@ public:
         RecordType type = RecordType::RT_KV;
         if (oldValue.ok()) {
             type = oldValue.value().getRecordType();
+            if (oldValue.value().getTtl() != 0) {
+                ttl = oldValue.value().getTtl();
+            }
         }
         return RecordValue(std::to_string(newSum.value()),
             type, sess->getCtx()->getVersionEP(), ttl, oldValue);
