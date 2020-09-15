@@ -61,6 +61,7 @@ enum class ClusterHealth: std::uint8_t {
 #define CLUSTER_NODE_MEET 128     /* Send a MEET message to this node */
 #define CLUSTER_NODE_MIGRATE_TO 256 /* Master elegible for replica migration. */
 #define CLUSTER_NODE_NOFAILOVER 512 /* Slave will not try to failver. */
+#define CLUSTER_NODE_ARBITER 1024 /* The node is an arbiter and not save any data. */
 
 /* Redirection errors returned by getNodeByQuery(). */
 #define CLUSTER_REDIR_NONE 0          /* Node can serve the request. */
@@ -171,6 +172,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
     bool clearNodeFailureIfNeeded(uint32_t timeout);
 
     bool nodeIsMaster() const;
+    bool nodeIsArbiter() const;
     bool nodeIsSlave() const;
     bool nodeInHandshake() const;
     bool nodeHasAddr() const;

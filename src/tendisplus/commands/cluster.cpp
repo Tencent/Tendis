@@ -80,6 +80,10 @@ class ClusterCommand: public Command {
             Status s;
             const std::string arg2 = toLower(args[2]);
             if (arg2 == "importing" && argSize >= 5) {
+                if (myself->nodeIsArbiter()) {
+                    return { ErrorCodes::ERR_CLUSTER, "Can't importing slots to arbiter node." };
+                }
+
                 std::string nodeId = args[3];
                 /* CLUSTER SETSLOT IMPORTING nodename chunkid */
                 std::bitset<CLUSTER_SLOTS> slotsMap;
@@ -90,6 +94,9 @@ class ClusterCommand: public Command {
                     LOG(ERROR) << "import nodeid:" << nodeId
                         << "not exist in cluster";
                     return { ErrorCodes::ERR_CLUSTER, "import node not find" };
+                }
+                if (srcNode->nodeIsArbiter()){
+                    return { ErrorCodes::ERR_CLUSTER, "Can't importing slots from arbiter node." };
                 }
 
                 for (size_t i= 4 ; i < args.size(); i++) {
@@ -186,6 +193,21 @@ class ClusterCommand: public Command {
                         "Invalid node address specified:" + host + std::to_string(port)};
             }
             return Command::fmtOK();
+        } else if (arg1 == "asarbiter" && argSize == 2) {
+            if (myself->nodeIsMaster() && myself->nodeIsArbiter()) {
+                return Command::fmtOK();
+            }
+            if (!myself->nodeIsMaster()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "Only master can became arbiter."};
+            }
+            if (myself->getSlotNum()){
+                return {ErrorCodes::ERR_CLUSTER,
+                        "To set an arbiter, the node must be empty."};
+            }
+            myself->_flags |= CLUSTER_NODE_ARBITER;
+            LOG(INFO) << "set myself as arbiter";
+            return Command::fmtOK();
         } else if (arg1 == "nodes" && argSize <= 3) {
             bool simple = false;
             if (argSize == 3 && args[2] == "simple") {
@@ -204,6 +226,10 @@ class ClusterCommand: public Command {
             if (myself->nodeIsSlave()) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "slave node can not be addslot or delslot"};
+            }
+            if (myself->nodeIsArbiter()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "Can not add/del slots on arbiter."};
             }
 
             for (size_t i = 2; i < argSize; ++i) {
@@ -261,6 +287,14 @@ class ClusterCommand: public Command {
             if (n->nodeIsSlave()) {
                 return {ErrorCodes::ERR_CLUSTER,
                         "only replicate a master, not a slave"};
+            }
+            if (myself->nodeIsArbiter()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "I am an arbiter, can not replicate to others."};
+            }
+            if (n->nodeIsArbiter()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "can not replicate to an arbiter."};
             }
             if (myself->nodeIsMaster() &&
                     (myself->getSlotNum() != 0 || nodeNotEmpty(svr, myself))) {

@@ -122,6 +122,19 @@ proc create_cluster {masters slaves} {
     assert_cluster_state ok
 }
 
+#Create a cluster composed of the specified number of masters, arbiters and slaves.
+proc create_cluster_with_arbiter {masters slaves arbiters} {
+    cluster_allocate_slots $masters
+    if {$slaves} {
+        cluster_allocate_slaves $masters $slaves
+    }
+    # add arbiters
+    for {set j [expr {$masters + $slaves}]} {$j < [expr {$masters + $slaves + $arbiters}]} {incr j} {
+        R $j cluster asarbiter
+    }
+    assert_cluster_state ok
+}
+
 # Set the cluster node-timeout to all the reachalbe nodes.
 proc set_cluster_node_timeout {to} {
     foreach_redis_id id {
