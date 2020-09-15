@@ -1069,7 +1069,7 @@ CNodePtr ClusterState::getNodeBySlot(uint32_t slot) const {
     return _allSlots[slot];
 }
 
-Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot) const {
+Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot, Session *sess) const {
     std::lock_guard<myMutex> lk(_mutex);
     if (_state == ClusterHealth::CLUSTER_FAIL) {
         return { ErrorCodes::ERR_CLUSTER_REDIR_DOWN_STATE, "" };
@@ -1078,6 +1078,16 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot) const {
     auto node = getNodeBySlot(slot);
     if (!node) {
         return { ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND, "" };
+    }
+
+    if ((sess->getCtx()->getFlags() & CLIENT_READONLY) &&
+        isMyselfSlave() && _myself->_slaveOf == node)
+    {
+        auto cmd = Command::getCommand(sess);
+        if (cmd != nullptr && (cmd->getFlags() & CMD_READONLY)) {
+            // cmd == evalCom || cmd == evalShaCommand
+            return _myself;
+        }
     }
 
     if (node != _myself) {
@@ -1113,7 +1123,7 @@ bool ClusterState::isMyselfMaster() {
     return  _myself->nodeIsMaster();
 }
 
-bool ClusterState::isMyselfSlave() {
+bool ClusterState::isMyselfSlave() const {
     std::lock_guard<myMutex> lk(_mutex);
     return  _myself->nodeIsSlave();
 }

@@ -5,7 +5,6 @@ import (
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "strings"
-    "os/exec"
     "strconv"
 )
 
@@ -23,11 +22,8 @@ func cluster_meet(m *util.RedisServer, s *util.RedisServer) {
 }
 
 func getNodeName(m *util.RedisServer) string {
-    cmd := exec.Command("../../../bin/redis-cli", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-        "-a", *auth,
-        "cluster", "myid")
-    output, err := cmd.Output()
-    //fmt.Print(string(output))
+    cli := createClient(m)
+    output, err := cli.Cmd("cluster", "myid").Str();
     if err != nil {
         fmt.Print(err)
     }

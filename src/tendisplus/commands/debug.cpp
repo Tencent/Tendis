@@ -2891,6 +2891,7 @@ class ResumeStoreCommand : public Command {
     }
 } resumeStoreCmd;
 
+#ifdef TENDIS_DEBUG
 // only used for test. set key to a fixed storeid
 class setInStoreCommand: public Command {
  public:
@@ -2965,6 +2966,7 @@ class setInStoreCommand: public Command {
         return Command::fmtOK();
     }
 } setInStoreCommand;
+#endif
 
 class SyncVersionCommand: public Command {
  public:
@@ -3850,5 +3852,64 @@ public:
         return getReturnStr(id, expect.value());
     }
 } directExecCmd;
+
+class readOnlyCommand : public Command {
+public:
+    readOnlyCommand()
+            :Command("readonly", "F") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        if (!sess->getServerEntry()->isClusterEnabled()) {
+            return {ErrorCodes::ERR_CLUSTER, "This instance has cluster support disabled"};
+        }
+        sess->getCtx()->setFlags(CLIENT_READONLY);
+        return Command::fmtOK();
+    }
+} readOnlyCmd;
+
+class readWriteCommand : public Command {
+public:
+    readWriteCommand()
+            :Command("readwrite", "F") {
+    }
+
+    ssize_t arity() const {
+        return 1;
+    }
+
+    int32_t firstkey() const {
+        return 0;
+    }
+
+    int32_t lastkey() const {
+        return 0;
+    }
+
+    int32_t keystep() const {
+        return 0;
+    }
+
+    Expected<std::string> run(Session* sess) final {
+        sess->getCtx()->resetFlags(CLIENT_READONLY);
+        return Command::fmtOK();
+    }
+} readWriteCmd;
 
 }  // namespace tendisplus

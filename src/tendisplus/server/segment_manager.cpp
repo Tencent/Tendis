@@ -82,7 +82,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>
                     &clusterState = svr->getClusterMgr()->getClusterState();
-            auto node = clusterState->clusterHandleRedirect(chunkId);
+            auto node = clusterState->clusterHandleRedirect(chunkId, sess);
             if (!node.ok()) {
                 return node.status();
             }
@@ -96,7 +96,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(Session *sess,
             auto svr = sess->getServerEntry();
             const std::shared_ptr<tendisplus::ClusterState>& clusterState =
                 svr->getClusterMgr()->getClusterState();
-            auto node = clusterState->clusterHandleRedirect(chunkId);
+            auto node = clusterState->clusterHandleRedirect(chunkId, sess);
             if (!node.ok()) {
                 return node.status();
             }
@@ -115,19 +115,6 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     uint32_t chunkId = hash % _chunkSize;
     INVARIANT(_chunkSize == CLUSTER_SLOTS);
     uint32_t segId = chunkId % _instances.size();
-
-    auto svr = sess->getServerEntry();
-
-    if (svr->isClusterEnabled()) {
-        auto svr = sess->getServerEntry();
-        const std::shared_ptr<tendisplus::ClusterState>
-            & clusterState = svr->getClusterMgr()->getClusterState();
-
-        auto node = clusterState->clusterHandleRedirect(chunkId);
-        if (!node.ok()) {
-            return node.status();
-        }
-    }
 
     if (!_instances[segId]->isOpen()) {
         _instances[segId]->stat.destroyedErrorCount.fetch_add(1,
@@ -221,6 +208,17 @@ Expected<std::list<std::unique_ptr<KeyLock>>>
                 return elk.status();
             }
             locklist.emplace_back(std::move(elk.value()));
+        }
+    }
+
+    if (last_chunkId != (uint32_t)-1 && sess->getServerEntry()->isClusterEnabled()) {
+        auto svr = sess->getServerEntry();
+        const std::shared_ptr<tendisplus::ClusterState>
+                & clusterState = svr->getClusterMgr()->getClusterState();
+
+        auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
+        if (!node.ok()) {
+            return node.status();
         }
     }
 

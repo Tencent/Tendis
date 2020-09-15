@@ -13,13 +13,11 @@ import (
 )
 
 func printNodes(m *util.RedisServer) {
-    cmd := exec.Command("../../../bin/redis-cli", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
-        "-a", *auth,
-        "cluster", "nodes")
-    output, err := cmd.Output()
-    //fmt.Print(string(output))
+    cli := createClient(m)
+    output, err := cli.Cmd("cluster", "nodes").Str();
     if err != nil {
         fmt.Print(err)
+        return
     }
     log.Infof("printNodes sucess. %s:%d nodes:%s", m.Ip, m.Port, output)
 }
@@ -208,18 +206,15 @@ func checkDataInCoroutine2(m *[]util.RedisServer, num int, prefixkey string, cha
 func checkData2(m *[]util.RedisServer, num int, prefixkey string) {
     log.Infof("checkData begin. prefixkey:%s", prefixkey)
 
+    cli := createClient(&(*m)[0])
     for i := 0; i < num; i++ {
         // redis-cli will process moved station in get command
-        var args []string
-        args = append(args,  "-h", (*m)[0].Ip, "-p", strconv.Itoa((*m)[0].Port),
-            "-c", "-a", *auth, "get")
-
         key := "key" + prefixkey + "_" + strconv.Itoa(i)
         value := "value" + prefixkey + "_" + strconv.Itoa(i)
-        args = append(args, key)
-
-        cmd := exec.Command("../../../bin/redis-cli", args...)
-        data, err := cmd.Output()
+        data, err := cli.Cmd("get", key).Str();
+        if err != nil {
+            log.Infof("get failed, key:%v data:%s err:%v", key, data, err)
+        }
 
         retValue := strings.Replace(string(data), "\n", "", -1)
         if retValue != value {
@@ -548,6 +543,16 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
         }
     }
 
+    // start predixy
+    portPredixy := clusterPortStart + clusterNodeNum * 2 + 10
+    predixy := util.Predixy{}
+    ip := "127.0.0.1"
+    predixy.Init(ip, portPredixy, ip, clusterPortStart, pwd, "predixy_")
+    predixyCfgArgs := make(map[string]string)
+    if err := predixy.Setup(false, &predixyCfgArgs); err != nil {
+        log.Fatalf("setup failed:%v", err)
+    }
+
     // TODO(takenliu) why need 15s for 5 nodes to change CLUSTER_OK ???
     time.Sleep(20 * time.Second)
 
@@ -555,8 +560,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("cluster add data begin")
     var channel chan int = make(chan int)
     for i := 0; i < clusterNodeNum; i++ {
-        // go addDataInCoroutine(&servers[i], *num1, "{12}", channel)
-        go addDataByClientInCoroutine(&servers[i], *num1, strconv.Itoa(i), channel)
+        go addDataInCoroutine(&predixy.RedisServer, *num1, strconv.Itoa(i), channel)
     }
 
     // if add 10000 key, need about 15s
@@ -675,8 +679,10 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
     log.Infof("check keys num masterTotalKeyNum:%d slaveTotalKeyNum:%d", masterTotalKeyNum, slaveTotalKeyNum)
     if masterTotalKeyNum != clusterNodeNum * *num1 {
+        var fake_servers []util.RedisServer
+        fake_servers = append(fake_servers, predixy.RedisServer)
         for i := 0; i < clusterNodeNum; i++ {
-            go checkDataInCoroutine2(&servers, *num1, strconv.Itoa(i), channel)
+            go checkDataInCoroutine2(&fake_servers, *num1, strconv.Itoa(i), channel)
         }
         for i := 0; i < clusterNodeNum; i++ {
             <- channel
@@ -690,6 +696,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     for i := 0; i <= clusterNodeNum*2 + 1; i++ {
         shutdownServer(&servers[i], *shutdown, *clear);
     }
+    shutdownPredixy(&predixy, *shutdown, *clear)
 }
 
 func main(){

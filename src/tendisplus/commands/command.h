@@ -52,6 +52,7 @@ class Command {
     int getFlags() const;
     size_t getFlagsCount() const;
     static std::vector<std::string> listCommands();
+    static Command* getCommand(Session *sess);
     // precheck returns command name
     static Expected<Command*> precheck(Session *sess);
     static Expected<std::string> runSessionCmd(Session *sess);
