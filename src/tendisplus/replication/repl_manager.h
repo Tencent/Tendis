@@ -81,6 +81,15 @@ struct RecycleBinlogStatus {
     uint64_t fileSize;
     std::unique_ptr<std::ofstream> fs;
     uint64_t saveBinlogId;
+    std::string toString() const {
+        std::stringstream ss;
+        ss << "firstBinlogId:" << firstBinlogId
+            << ",saveBinlogId:" << saveBinlogId
+            << ",lastFlushBinlogId:" << lastFlushBinlogId
+            << ",fileSeq:" << fileSeq
+            << ",timestamp:" << timestamp;
+        return ss.str();
+    }
 };
 
 // 1) a new slave store's state is default to REPL_NONE
