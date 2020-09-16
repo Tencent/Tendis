@@ -305,7 +305,7 @@ void MigrateManager::deleteSenderChunks(MigrateSendTask* task) {
                    << bitsetStrEncode(task->slots);
         task->state = MigrateSendState::ERR;
     } else {
-        auto s = deleteSlotsData(task->slots, task->storeid);
+        auto s = _svr->getGcMgr()->deleteSlotsData(task->slots, task->storeid);
         std::lock_guard<myMutex> lk(_mutex);
         if (!s.ok()) {
             LOG(ERROR) << "sender task delete chunk fail on store:" << task->storeid
@@ -668,7 +668,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
                 _succReceTask.push_back(slot);
             } else {
                 /*NOTE(wayenchen) delete Receiver dirty data in gc*/
-                auto s = deleteSlotsData(taskPtr->slots, taskPtr->storeid);
+                auto s = _svr->getGcMgr()->deleteSlotsData(taskPtr->slots, taskPtr->storeid);
                 if (!s.ok()) {
                     //no need retry, gc will do it again
                     LOG(ERROR) << "receiver task delete chunk fail"
@@ -1287,7 +1287,11 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
             }
         }
 
-        deleteSlotsData(slotsMap, storeid);
+        auto s = _svr->getGcMgr()->deleteSlotsData(slotsMap, storeid);
+        if (!s.ok()) {
+            LOG(ERROR) << "restoreMigrateBinlog deletechunk fail:" << s.toString();
+            return s;
+        }
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -1300,7 +1304,11 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
             LOG(INFO) << "migrate task has receive_start and has no receive_end,"
                 << " so delete keys for slots:"
                 << (*iter).to_string();
-            deleteSlotsData(*iter, storeId);
+            auto s = _svr->getGcMgr()->deleteSlotsData(*iter, storeId);
+            if (!s.ok()) {
+                LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
+                return s;
+            }
         }
     }
 
@@ -1322,55 +1330,10 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
     }
     LOG(INFO) << "onRestoreEnd deletechunks:" << dontContainSlots.to_string();
     // TODO(takenliu) check the logical of locking the chunks
-    deleteSlotsData(dontContainSlots, storeId);
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-Status MigrateManager::deleteSlotsData(const SlotsBitmap& slots,
-                                         uint32_t storeid, uint64_t delay) {
-    size_t idx = 0;
-    uint32_t startChunkid = UINT32_MAX;
-    uint32_t endChunkid = UINT32_MAX;
-    while (idx < slots.size()) {
-        if (_svr->getSegmentMgr()->getStoreid(idx) == storeid) {
-            if (slots.test(idx)) {
-                if (startChunkid == UINT32_MAX) {
-                    startChunkid = idx;
-                }
-                endChunkid = idx;
-            } else {
-                if (startChunkid != UINT32_MAX) {
-                    /* throw it into gc job, no waiting */
-                    auto s = _svr->getGcMgr()->deleteChunks(storeid,
-                                                            startChunkid, endChunkid, delay);
-                    if (!s.ok()) {
-                        LOG(ERROR) << "deleteChunk fail, startChunkid:"
-                                   << startChunkid
-                                   << " endChunkid:" << endChunkid
-                                   << " err:" << s.toString();
-                        return s;
-                    }
-                    LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
-                              << " endChunkid:" << endChunkid;
-                    startChunkid = UINT32_MAX;
-                    endChunkid = UINT32_MAX;
-                }
-            }
-        }
-        idx++;
-    }
-    if (startChunkid != UINT32_MAX) {
-        auto s = _svr->getGcMgr()->deleteChunks(storeid,
-                                                startChunkid, endChunkid, delay);
-        if (!s.ok()) {
-            LOG(ERROR) << "deleteChunk fail, startChunkid:"
-                       << startChunkid
-                       << " endChunkid:" << endChunkid
-                       << " err:" << s.toString();
-            return s;
-        }
-        LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
-                  << " endChunkid:" << endChunkid;
+    auto s = _svr->getGcMgr()->deleteSlotsData(dontContainSlots, storeId);
+    if (!s.ok()) {
+        LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
+        return s;
     }
     return {ErrorCodes::ERR_OK, ""};
 }

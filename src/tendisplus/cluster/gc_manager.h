@@ -61,17 +61,19 @@ class GCManager {
 
     Status deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
 
-    Status deleteSlotsList(std::vector<uint32_t> slotsList, mstime_t delay = 0);
+    Status deleteBitMap(const SlotsBitmap& slots,uint64_t delay = 0);
+    Status deleteSlotsData(const SlotsBitmap& slots, uint32_t storeid, uint64_t delay = 0);
     bool slotIsDeleting(uint32_t slot);
 
     void garbageDeleterResize(size_t size);
     size_t garbageDeleterSize() ;
     Status delGarbage();
+
 private:
     void controlRoutine();
     bool gcSchedule(const SCLOCK::time_point& now);
     SlotsBitmap  getCheckList();
-    void startDeleteTask(uint32_t  storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
+    Status startDeleteTask(uint32_t  storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
     void garbageDelete(DeleteRangeTask* task);
     Status deleteLargeChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
  private:

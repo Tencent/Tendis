@@ -101,35 +101,29 @@ Status GCManager::delGarbage() {
         LOG(WARNING) << "no dirty data find in " << _cstate->getMyselfName();
         return {ErrorCodes::ERR_NOTFOUND, "no dirty data to delete"};
     }
-
-    size_t idx = 0;
-    std::vector<uint32_t> slotsList;
-    while (idx < garbageList.size()) {
-        // start detele task of a single slot
-        if (garbageList.test(idx)) {
-            slotsList.push_back(idx);
-        }
-        idx++;
-    }
-
-    auto s = deleteSlotsList(slotsList);
+    std::lock_guard<myMutex> lk(_mutex);
+    auto s = deleteBitMap(garbageList);
     if (!s.ok()) {
         LOG(ERROR) << "delete garbage fail:" << s.toString();
     }
 
     LOG(INFO) << "finish del garbage, deleting list is :"
               << bitsetStrEncode(garbageList)
-              << "delete num is:" << slotsList.size();
+              << "delete num is:" << garbageList.count();
 
     return  {ErrorCodes::ERR_OK, ""};
 
 }
 
-void GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart,
+Status GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart,
                                 uint32_t slotEnd, mstime_t delay) {
     std::lock_guard<myMutex> lk(_mutex);
     for (uint32_t  i = slotStart; i <= slotEnd; i ++) {
         if (_svr->getSegmentMgr()->getStoreid(i) == storeid) {
+            if (_deletingSlots.test(i)) {
+                LOG(WARNING) << "slot:" << i << "is already deleting";
+                return {ErrorCodes::ERR_INTERNAL, "already deleting"};
+            }
             _deletingSlots.set(i);
         }
     }
@@ -139,6 +133,7 @@ void GCManager::startDeleteTask(uint32_t storeid, uint32_t slotStart,
     deleteTask->_nextSchedTime = SCLOCK::now() + chrono::seconds (delay);
     _deleteChunkTask.push_back(std::move(deleteTask));
     LOG(INFO) << "add deleting task from:" << slotStart << "to:" << slotEnd;
+    return  {ErrorCodes::ERR_OK, ""};
 }
 
 // garbage dat delete schedule job
@@ -233,7 +228,11 @@ Status GCManager::deleteChunks(uint32_t storeid, uint32_t slotStart,
                 "slot should be less than 16383"};
     }
 
-    startDeleteTask(storeid, slotStart, slotEnd, delay);
+    auto s = startDeleteTask(storeid, slotStart, slotEnd, delay);
+    if (!s.ok()) {
+        LOG(ERROR) << "gen delete task fail:" << s.toString();
+        return  s;
+    }
     return  {ErrorCodes::ERR_OK, ""};
 }
 
@@ -247,8 +246,8 @@ Status GCManager::deleteLargeChunks(uint32_t storeid, uint32_t slotStart,
         auto s = deleteChunks(storeid, slotStart, slotEnd, delay);
         if (!s.ok()) {
             LOG(ERROR) << "delete range fail:" << s.toString();
-            return  s;
         }
+        return s;
     }
     for (size_t i = slotStart; i <= slotEnd ; i+= maxDiff) {
         uint32_t endPos = slotEnd < i + maxDiff ?  slotEnd : i + maxDiff;
@@ -257,6 +256,7 @@ Status GCManager::deleteLargeChunks(uint32_t storeid, uint32_t slotStart,
             LOG(ERROR) << "delete range fail:" << s.toString();
             return  s;
         }
+        i += kvcount;
     }
     return  {ErrorCodes::ERR_OK, ""};
 }
@@ -264,65 +264,66 @@ Status GCManager::deleteLargeChunks(uint32_t storeid, uint32_t slotStart,
 /*  note(wayenchen): given a slotlist and delete them of all storeids
  * before deleting all nodes will be sorted and made into contious groups
  * this slots may belong to different storeid*/
-Status GCManager::deleteSlotsList(std::vector<uint32_t> slotsList,
+Status GCManager::deleteBitMap(const SlotsBitmap& slots,
                                     mstime_t delay) {
-    std::unordered_map<uint32_t, std::vector<uint32_t>> slotMap;
     Status s;
-    /* group slots by storeid */
-    for (const auto &slot : slotsList) {
-        uint32_t storeid = _svr->getSegmentMgr()->getStoreid(slot);
-        if ((slotMap.find(storeid)) != slotMap.end()) {
-            slotMap[storeid].push_back(slot);
-        } else {
-            std::vector<uint32_t> temp;
-            temp.push_back(slot);
-            slotMap.insert(std::make_pair(storeid, temp));
+    for (uint64_t i = 0; i < _svr->getKVStoreCount(); i++) {
+        s = deleteSlotsData(slots, i, delay);
+        if (!s.ok()) {
+            LOG(ERROR) << "delete fail on storeid:" << i << s.toString();
+            return  s;
         }
     }
-    uint32_t kvstoreCount = _svr->getKVStoreCount();
-    for (const auto& n : slotMap) {
-        uint32_t storeid = n.first;
-        auto jobList = n.second;
-        if (jobList.empty()) continue;
-        /* sort the vector, and
-          * then get continous slot ranges to make task*/
-        sort(jobList.begin(), jobList.end());
+    return  {ErrorCodes::ERR_OK, ""};
+}
 
-        auto startPos = jobList[0];
-        auto endPos = jobList[0];
 
-        if (jobList.size() == 1) {
-            s = deleteChunks(storeid, startPos, endPos, delay);
-            if (!s.ok()) {
-                LOG(ERROR) << s.toString();
-                return s;
-            }
-        }
-        for (auto iter = jobList.begin()+1; iter != jobList.end(); ++iter) {
-            if (*iter - endPos == kvstoreCount) {
-                endPos = *iter;
-            } else {
-                s = deleteLargeChunks(storeid, startPos, endPos, delay);
-                if (!s.ok()) {
-                    LOG(ERROR) << "delete from:" << startPos
-                               << "to:"  << endPos << "failed"
-                               <<s.toString();
-                    return s;
+Status GCManager::deleteSlotsData(const SlotsBitmap& slots,
+                                       uint32_t storeid, uint64_t delay) {
+    size_t idx = 0;
+    uint32_t startChunkid = UINT32_MAX;
+    uint32_t endChunkid = UINT32_MAX;
+    while (idx < slots.size()) {
+        if (_svr->getSegmentMgr()->getStoreid(idx) == storeid) {
+            if (slots.test(idx)) {
+                if (startChunkid == UINT32_MAX) {
+                    startChunkid = idx;
                 }
-                startPos = *iter;
-                endPos = *iter;
+                endChunkid = idx;
+            } else {
+                if (startChunkid != UINT32_MAX) {
+                    /* throw it into gc job, no waiting */
+                    auto s = deleteLargeChunks(storeid, startChunkid,
+                                               endChunkid, delay);
+                    if (!s.ok()) {
+                        LOG(ERROR) << "deleteChunk fail, startChunkid:"
+                                   << startChunkid
+                                   << " endChunkid:" << endChunkid
+                                   << " err:" << s.toString();
+                        return s;
+                    }
+                    LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
+                              << " endChunkid:" << endChunkid;
+                    startChunkid = UINT32_MAX;
+                    endChunkid = UINT32_MAX;
+                }
             }
         }
-        s = deleteLargeChunks(storeid, startPos, endPos, delay);
+        idx++;
+    }
+    if (startChunkid != UINT32_MAX) {
+        auto s = deleteLargeChunks(storeid, startChunkid, endChunkid, delay);
         if (!s.ok()) {
-            LOG(ERROR) << "delete from:" << startPos
-                       << "to:"  << endPos << "failed"
-                       <<s.toString();
+            LOG(ERROR) << "deleteChunk fail, startChunkid:"
+                       << startChunkid
+                       << " endChunkid:" << endChunkid
+                       << " err:" << s.toString();
             return s;
         }
+        LOG(INFO) << "deleteChunk ok, startChunkid:" << startChunkid
+                  << " endChunkid:" << endChunkid;
     }
-
-    return  {ErrorCodes::ERR_OK, ""};
+    return {ErrorCodes::ERR_OK, ""};
 }
 
 void GCManager::garbageDelete(DeleteRangeTask *task) {
