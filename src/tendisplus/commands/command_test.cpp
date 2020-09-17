@@ -1753,17 +1753,17 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
     usleep(100000);
     EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
 
-    sess.setArgs({"CONFIG", "SET", "migrateClearThreadnum", "8"});
+    sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "8"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(svr->getParams()->migrateClearThreadnum, 8);
+    EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 8);
     usleep(100000);
-    EXPECT_EQ(svr->getMigrateManager()->migrateClearSize(), 8);
+    EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 8);
 
-    sess.setArgs({"CONFIG", "SET", "migrateClearThreadnum", "1"});
+    sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "1"});
     expect = Command::runSessionCmd(&sess);
-    EXPECT_EQ(svr->getParams()->migrateClearThreadnum, 1);
+    EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
     usleep(100000);
-    EXPECT_EQ(svr->getMigrateManager()->migrateClearSize(), 1);
+    EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);
 
     sess.setArgs({"CONFIG", "SET", "migrateReceiveThreadnum", "8"});
     expect = Command::runSessionCmd(&sess);

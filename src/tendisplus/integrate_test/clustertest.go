@@ -601,7 +601,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("cluster add data end")
 
     // NOTE(takenliu): if migrateTaskSlotsLimit is smaller, need wait longer time for migrate.
-    time.Sleep(10 * time.Second)
+    time.Sleep(50 * time.Second)
     // gossip hasn't sync info sucess, so check self slots.
     // master will send binlog to slave, so slave will change slots info immediately
     checkself := true

@@ -91,12 +91,10 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
      _isRunning(false),
      _taskIdGen(0),
      _migrateSenderMatrix(std::make_shared<PoolMatrix>()),
-     _migrateClearMatrix(std::make_shared<PoolMatrix>()),
      _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
      _rateLimiter(std::make_unique<RateLimiter>(_cfg->binlogRateLimitMB * 1024 * 1024)) {
      _cluster = _svr->getClusterMgr()->getClusterState();
      _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {migrateSenderResize(_cfg->migrateSenderThreadnum);});
-     _cfg->serverParamsVar("migrateClearThreadnum")->setUpdate([this]() {migrateClearResize(_cfg->migrateClearThreadnum);});
      _cfg->serverParamsVar("migrateReceiveThreadnum")->setUpdate([this]() {migrateReceiverResize(_cfg->migrateReceiveThreadnum);});
 }
 
@@ -107,13 +105,6 @@ Status MigrateManager::startup() {
     _migrateSender = std::make_unique<WorkerPool>(
             "migrate-sender", _migrateSenderMatrix);
     Status s = _migrateSender->startup(_cfg->migrateSenderThreadnum);
-    if (!s.ok()) {
-        return s;
-    }
-
-    _migrateClear = std::make_unique<WorkerPool>(
-            "migrate-clear", _migrateClearMatrix);
-    s = _migrateClear->startup(_cfg->migrateClearThreadnum);
     if (!s.ok()) {
         return s;
     }
@@ -146,7 +137,6 @@ void MigrateManager::stop() {
     // make sure all workpool has been stopped; otherwise calling
     // the destructor of a std::thread that is running will crash
     _migrateSender->stop();
-    _migrateClear->stop();
     _migrateReceiver->stop();
 
     LOG(INFO) << "MigrateManager stops succ";
@@ -211,9 +201,7 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
             ++it;
         } else if ((*it)->state == MigrateSendState::CLEAR) {
             (*it)->isRunning = true;
-            _migrateClear->schedule([this, iter = (*it).get()](){
-                deleteChunks(iter);
-                });
+            deleteSenderChunks((*it).get());
             ++it;
         } else if ((*it)->state == MigrateSendState::SUCC
             || (*it)->state == MigrateSendState::ERR) {
@@ -292,7 +280,9 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
         } else  {
             task->state = MigrateSendState::ERR;
             nextSched = SCLOCK::now();
-            LOG(ERROR) << "Send slots failed, bitmap is:" << bitsetStrEncode(task->sender->getSlots());
+            LOG(ERROR) << "Send slots failed, bitmap is:"
+                       << bitsetStrEncode(task->sender->getSlots())
+                       << s.toString();
         }
     } else {
         nextSched = SCLOCK::now();
@@ -307,25 +297,30 @@ void MigrateManager::sendSlots(MigrateSendTask* task) {
     task->isRunning = false;
 }
 
-void MigrateManager::deleteChunks(MigrateSendTask* task) {
-    auto s = task->sender->deleteChunks(task->slots);
-    std::lock_guard<myMutex> lk(_mutex);
-    // TODO(takenliu): not over, limit the delete rate?
-
-    if (!s.ok()) {
-        if (s.code() == ErrorCodes::ERR_TIMEOUT) {
-            task->nextSchedTime = SCLOCK::now() + std::chrono::seconds(100);
-            task->isRunning = false;
-            return;
-        } else {
-            LOG(ERROR) << "delete chunk fail on store:" << task->sender->getStoreid();
-        }
+void MigrateManager::deleteSenderChunks(MigrateSendTask* task) {
+    /* NOTE(wayenchen) check if chunk not belong to me，
+    make sure MOVE work well before delete */
+    if (!task->sender->checkSlotsBlongDst()) {
+        LOG(ERROR) << "slots not belongs to dstNodes on task:"
+                   << bitsetStrEncode(task->slots);
+        task->state = MigrateSendState::ERR;
     } else {
-        task->nextSchedTime = SCLOCK::now();
-        task->isRunning = false;
-        task->sender->setSenderStatus(MigrateSenderStatus::DEL_DONE);
-        task->state = MigrateSendState::SUCC;
+        auto s = _svr->getGcMgr()->deleteSlotsData(task->slots, task->storeid);
+        std::lock_guard<myMutex> lk(_mutex);
+        if (!s.ok()) {
+            LOG(ERROR) << "sender task delete chunk fail on store:" << task->storeid
+                       <<  "slots:" << bitsetStrEncode(task->slots)
+                       <<  s.toString();
+            /* NOTE(wayenchen) if delete fail, no need retry,
+             * gcMgr will delete at last*/
+            task->state = MigrateSendState::ERR;
+        } else {
+            task->sender->setSenderStatus(MigrateSenderStatus::DEL_DONE);
+            task->state = MigrateSendState::SUCC;
+        }
     }
+    task->nextSchedTime = SCLOCK::now();
+    task->isRunning = false;
 }
 
 Status MigrateManager::migrating(SlotsBitmap slots,
@@ -348,6 +343,7 @@ Status MigrateManager::migrating(SlotsBitmap slots,
     auto sendTask = std::make_unique<MigrateSendTask>(storeid, slots, _svr, _cfg);
     sendTask->nextSchedTime = SCLOCK::now();
     sendTask->sender->setStoreid(storeid);
+    sendTask->sender->setDstAddr(ip, port);
     _migrateSendTask.push_back(std::move(sendTask));
     return { ErrorCodes::ERR_OK, "" };
 }
@@ -539,9 +535,7 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
         }
 
     }
-
     writer.EndArray();
-
     // if start all task, value is "+OK"
     writer.Key("finishMsg");
     if (!startMigate) {
@@ -673,10 +667,18 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
             if (taskPtr->state == MigrateReceiveState::SUCC) {
                 _succReceTask.push_back(slot);
             } else {
+                /*NOTE(wayenchen) delete Receiver dirty data in gc*/
+                auto s = _svr->getGcMgr()->deleteSlotsData(taskPtr->slots, taskPtr->storeid);
+                if (!s.ok()) {
+                    //no need retry, gc will do it again
+                    LOG(ERROR) << "receiver task delete chunk fail"
+                               << s.toString();
+                }
                 _failReceTask.push_back(slot);
             }
-            LOG(INFO) << "erase receiver task stat:" << receTaskTypeString(taskPtr->state)
-                << " slots:" << bitsetStrEncode(taskPtr->slots);
+            LOG(INFO) << "erase receiver task stat:"
+                      << receTaskTypeString(taskPtr->state)
+                      << " slots:" << bitsetStrEncode(taskPtr->slots);
             _importSlots ^= (taskPtr->slots);
             it = _migrateReceiveTaskMap.erase(it);
             continue;
@@ -762,7 +764,7 @@ void MigrateManager::checkMigrateStatus(MigrateReceiveTask* task) {
     auto delay = sinceEpoch() - task->lastSyncTime;
     /* NOTE(wayenchen):sendbinlog beatheat interval is set to 6s,
         so mark 20s as no heartbeat for more than three times*/
-    if (delay > 20) {
+    if (delay > 20 * MigrateManager::RETRY_CNT) {
         LOG(ERROR) << "receiver task receive binlog timeout"
                    << " on slots:" << bitsetStrEncode(task->slots);
         task->state = MigrateReceiveState::ERR;
@@ -1011,7 +1013,6 @@ SlotsBitmap MigrateManager::getSteadySlots(const SlotsBitmap& slots) {
     }
     return tempSlots;
 }
-
 
 Expected<std::string> MigrateManager::getMigrateInfo() {
     std::lock_guard<myMutex> lk(_mutex);
@@ -1286,7 +1287,11 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
             }
         }
 
-        deleteChunks(storeid, slotsMap);
+        auto s = _svr->getGcMgr()->deleteSlotsData(slotsMap, storeid);
+        if (!s.ok()) {
+            LOG(ERROR) << "restoreMigrateBinlog deletechunk fail:" << s.toString();
+            return s;
+        }
     }
     return {ErrorCodes::ERR_OK, ""};
 }
@@ -1299,7 +1304,11 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
             LOG(INFO) << "migrate task has receive_start and has no receive_end,"
                 << " so delete keys for slots:"
                 << (*iter).to_string();
-            deleteChunks(storeId, *iter);
+            auto s = _svr->getGcMgr()->deleteSlotsData(*iter, storeId);
+            if (!s.ok()) {
+                LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
+                return s;
+            }
         }
     }
 
@@ -1321,39 +1330,16 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
     }
     LOG(INFO) << "onRestoreEnd deletechunks:" << dontContainSlots.to_string();
     // TODO(takenliu) check the logical of locking the chunks
-    deleteChunks(storeId, dontContainSlots);
+    auto s = _svr->getGcMgr()->deleteSlotsData(dontContainSlots, storeId);
+    if (!s.ok()) {
+        LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
+        return s;
+    }
     return {ErrorCodes::ERR_OK, ""};
-}
-
-//TODO(wayenchen) delete it and use gc API
-Status MigrateManager::deleteChunks(uint32_t storeid, const SlotsBitmap& slots) {
-    // TODO(takenliu) 1. ChunkMigrateReceiver need deleteChunk when migrate failed.
-
-    ChunkMigrateSender fakeSender(slots, _svr, _cfg, true);
-    fakeSender.setStoreid(storeid);
-    fakeSender.deleteChunks(slots); // with chunks X lock, with add binlog
-
-    LOG(INFO) << "deleteChunksInLock store:" << storeid
-              << " slots:" << bitsetStrEncode(slots);
-    return {ErrorCodes::ERR_OK, ""};
-}
-
-// [begin, end], with binlog
-Status MigrateManager::deleteChunkRange(uint32_t storeid, uint32_t beginChunk, uint32_t endChunk) {
-    // TODO(takenliu) 1. ChunkMigrateReceiver need deleteChunk when migrate failed.
-
-    SlotsBitmap emptySlots;
-    ChunkMigrateSender fakeSender(emptySlots, _svr, _cfg, true);
-    fakeSender.setStoreid(storeid);
-    return fakeSender.deleteChunkRange(beginChunk, endChunk); // with out chunk lock, with add binlog
 }
 
 void MigrateManager::migrateSenderResize(size_t size) {
     _migrateSender->resize(size);
-}
-
-void MigrateManager::migrateClearResize(size_t size) {
-    _migrateClear->resize(size);
 }
 
 void MigrateManager::migrateReceiverResize(size_t size) {
@@ -1362,10 +1348,6 @@ void MigrateManager::migrateReceiverResize(size_t size) {
 
 size_t MigrateManager::migrateSenderSize() {
     return _migrateSender->size();
-}
-
-size_t MigrateManager::migrateClearSize() {
-    return _migrateClear->size();
 }
 
 size_t MigrateManager::migrateReceiverSize() {

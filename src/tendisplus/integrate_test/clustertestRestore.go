@@ -118,6 +118,16 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
     restoreBinlogEnd(dst_restore, kvstorecount)
 
 
+    log.Infof("delete dirty data begin")
+    {
+        cli := createClient(dst_restore)
+        if r, err := cli.Cmd("cluster", "clear").Str();
+            r != ("OK") {
+            log.Infof("clear failed:%v %s", err, r)
+        }
+    }
+    time.Sleep(3 * time.Second)
+
     log.Infof("checkData begin")
     checkSlotEmpty(src_restore, migSlot, false)
     checkSlotEmpty(dst_restore, migSlot, true)
@@ -202,8 +212,17 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 
     time.Sleep(3 * time.Second)
 
-    log.Infof("checkData begin")
+    log.Infof("delete dirty data begin")
+    {
+        cli := createClient(src_restore)
+        if r, err := cli.Cmd("cluster", "clear").Str();
+            r != ("OK") {
+            log.Infof("clear failed:%v %s", err, r)
+        }
+    }
+    time.Sleep(3 * time.Second)
     checkSlotEmpty(src_restore, migSlot, true)
+    
     checkSlotEmpty(dst_restore, migSlot, false)
 
     checkDbsize(src_master, 0, predixy)

@@ -366,9 +366,9 @@ public:
     uint32_t bingLogSendBytes =  16 * 1024 * 1024;
 
     uint32_t migrateSenderThreadnum = 4;
-    uint32_t migrateClearThreadnum = 4;
     uint32_t migrateReceiveThreadnum = 4;
     uint32_t garbageDeleteThreadnum = 1;
+    uint16_t garbageDeleteSize = 30;
     bool clusterEnabled = false;
     uint32_t migrateTaskSlotsLimit = 10;
     uint32_t migrateDistance = 10000;

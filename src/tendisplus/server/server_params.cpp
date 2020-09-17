@@ -290,7 +290,6 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME("rocks.level1_compress_enabled", level1Compress);
 
     REGISTER_VARS_SAME_NAME(migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
-    REGISTER_VARS_SAME_NAME(migrateClearThreadnum, nullptr, nullptr, 1, 200, true);
     REGISTER_VARS_SAME_NAME(migrateReceiveThreadnum, nullptr, nullptr, 1, 200, true);
     REGISTER_VARS_SAME_NAME(garbageDeleteThreadnum, nullptr, nullptr, 1, 100, true);
 
@@ -299,6 +298,7 @@ ServerParams::ServerParams() {
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-no-failover", clusterSlaveNoFailover);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-node-timeout", clusterNodeTimeout);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-distance", migrateDistance);
+    REGISTER_VARS_DIFF_NAME_DYNAMIC("garbage-delete-size", garbageDeleteSize);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-binlog-iters", migrateBinlogIter);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-slots-num-per-task", migrateTaskSlotsLimit);
     REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-rate-limit", migrateRateLimitMB);

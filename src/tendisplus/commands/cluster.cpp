@@ -66,6 +66,9 @@ class ClusterCommand: public Command {
         auto replMgr = svr->getReplManager();
         INVARIANT(replMgr != nullptr);
 
+        auto gcMgr = svr->getGcMgr();
+        INVARIANT(gcMgr != nullptr);
+
         auto migrateMgr = svr->getMigrateManager();
         INVARIANT(migrateMgr != nullptr);
         const std::shared_ptr<tendisplus::ClusterState>
@@ -238,7 +241,16 @@ class ClusterCommand: public Command {
                     std::string str = args[i];
                     str = str.substr(1, str.size() - 2);
 
+                    if (str.find("..") == std::string::npos) {
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "Invalid range input withot .."};
+                    }
                     auto vs = stringSplit(str, "..");
+
+                    if (vs.size() != 2) {
+                        return {ErrorCodes::ERR_CLUSTER,
+                                "no find start and end position"};
+                    }
                     auto startSlot = ::tendisplus::stoul(vs[0]);
                     auto endSlot = ::tendisplus::stoul(vs[1]);
 
@@ -534,8 +546,18 @@ class ClusterCommand: public Command {
                 return  s;
             }
             return Command::fmtOK();
+        } else if (arg1 == "clear" || argSize == 2) {
+            if (myself->nodeIsSlave()) {
+                return {ErrorCodes::ERR_CLUSTER,
+                        "You should send CLUSTER CLEAR to master"};
+            }
+            auto s = gcMgr->delGarbage();
+            if (!s.ok()) {
+                LOG(ERROR) << "delete garbage fail" << s.toString();
+                return s;
+            }
+            return Command::fmtOK();
         }
-
         return {ErrorCodes::ERR_CLUSTER,
                 "Invalid cluster command " + args[1]};
     }

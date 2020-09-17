@@ -3427,7 +3427,7 @@ public:
             }
             LOG(INFO) << "deleteSlots storeid:" << storeid << " beginChunk:" << myBegin
                 << " endChunk:" << myEnd;
-            auto s = server->getMigrateManager()->deleteChunkRange(storeid, myBegin, myEnd);
+            auto s = server->getGcMgr()->deleteChunks(storeid, myBegin, myEnd);
             if (!s.ok()) {
                 return s.toString();
             }

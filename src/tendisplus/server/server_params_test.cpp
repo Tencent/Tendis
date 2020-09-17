@@ -256,8 +256,8 @@ TEST(ServerParams, DefaultValue) {
     EXPECT_EQ(cfg->bingLogSendBytes, 16 * 1024 * 1024);
 
     EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
-    EXPECT_EQ(cfg->migrateClearThreadnum, 4);
     EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);
+    EXPECT_EQ(cfg->garbageDeleteThreadnum, 1);
     EXPECT_EQ(cfg->clusterEnabled, false);
     EXPECT_EQ(cfg->migrateTaskSlotsLimit, 10);
     EXPECT_EQ(cfg->migrateDistance, 10000);
