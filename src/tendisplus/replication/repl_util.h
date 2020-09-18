@@ -11,51 +11,58 @@ namespace tendisplus {
 
 #define CLUSTER_SLOTS 16384
 
-#define SyncReadData(data, len, timeout) \
-    Expected<std::string> (data) = \
-        _client->read((len), std::chrono::seconds((timeout))); \
-    if (!data.ok()) { \
-        LOG(ERROR) << "SyncReadData failed:" \
-                    << data.status().toString(); \
-        return { ErrorCodes::ERR_INTERNAL, "read failed" }; \
-    }
+#define SyncReadData(data, len, timeout)                              \
+  Expected<std::string>(data) =                                       \
+    _client->read((len), std::chrono::seconds((timeout)));            \
+  if (!data.ok()) {                                                   \
+    LOG(ERROR) << "SyncReadData failed:" << data.status().toString(); \
+    return {ErrorCodes::ERR_INTERNAL, "read failed"};                 \
+  }
 
-#define SyncWriteData(data) \
-    if (!_client->writeData((data)).ok()) { \
-        LOG(ERROR) << "write data failed:" << s.toString(); \
-        return { ErrorCodes::ERR_INTERNAL, "write failed" }; \
-    } \
+#define SyncWriteData(data)                             \
+  if (!_client->writeData((data)).ok()) {               \
+    LOG(ERROR) << "write data failed:" << s.toString(); \
+    return {ErrorCodes::ERR_INTERNAL, "write failed"};  \
+  }
 
-std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
-    std::shared_ptr<ServerEntry> svr);
+std::shared_ptr<BlockingTcpClient> createClient(
+  const string& ip, uint16_t port, std::shared_ptr<ServerEntry> svr);
 
-std::shared_ptr<BlockingTcpClient> createClient(const string& ip, uint16_t port,
-    ServerEntry* svr);
-
+std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
+                                                uint16_t port,
+                                                ServerEntry* svr);
 
 
 Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
-    uint32_t storeId, uint32_t dstStoreId,
-    uint64_t binlogPos, bool needHeartBeart,
-    std::shared_ptr<ServerEntry> svr,
-    const std::shared_ptr<ServerParams> cfg);
+                                      uint32_t storeId,
+                                      uint32_t dstStoreId,
+                                      uint64_t binlogPos,
+                                      bool needHeartBeart,
+                                      std::shared_ptr<ServerEntry> svr,
+                                      const std::shared_ptr<ServerParams> cfg);
 
 
-Expected<uint64_t> applySingleTxnV2(Session* sess, uint32_t storeId,
-    const std::string& logKey, const std::string& logValue,
-    BinlogApplyMode mode);
-
+Expected<uint64_t> applySingleTxnV2(Session* sess,
+                                    uint32_t storeId,
+                                    const std::string& logKey,
+                                    const std::string& logValue,
+                                    BinlogApplyMode mode);
 
 
 Status sendWriter(BinlogWriter* writer,
-                    BlockingTcpClient*,
-                    uint32_t dstStoreId, const std::string& taskid,
-                    bool needHeartBeat, bool *needRetry, uint32_t secs);
+                  BlockingTcpClient*,
+                  uint32_t dstStoreId,
+                  const std::string& taskid,
+                  bool needHeartBeat,
+                  bool* needRetry,
+                  uint32_t secs);
 
 
 Status SendSlotsBinlog(BlockingTcpClient*,
-                       uint32_t storeId, uint32_t dstStoreId,
-                       uint64_t binlogStart, uint64_t binglogEnd,
+                       uint32_t storeId,
+                       uint32_t dstStoreId,
+                       uint64_t binlogStart,
+                       uint64_t binglogEnd,
                        bool needHeartBeart,
                        const std::bitset<CLUSTER_SLOTS>& slots,
                        const std::string& taskid,

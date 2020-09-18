@@ -19,77 +19,84 @@ using mstime_t = uint64_t;
 using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
 using myMutex = std::recursive_mutex;
 
-enum class DeleteRangeState {
-    NONE = 0,
-    START,
-    SUCC,
-    ERR
-};
+enum class DeleteRangeState { NONE = 0, START, SUCC, ERR };
 
 class DeleteRangeTask {
-public:
-    explicit DeleteRangeTask(uint32_t storeid,
-                             uint32_t slotIdStart, uint64_t slotIdEnd,
-                             std::shared_ptr<ServerEntry> svr) :
-            _storeid(storeid),
-            _slotStart(slotIdStart),
-            _slotEnd(slotIdEnd),
-            _svr(svr),
-            _isRunning(false),
-            _state(DeleteRangeState::START) {
-    }
+ public:
+  explicit DeleteRangeTask(uint32_t storeid,
+                           uint32_t slotIdStart,
+                           uint64_t slotIdEnd,
+                           std::shared_ptr<ServerEntry> svr)
+    : _storeid(storeid),
+      _slotStart(slotIdStart),
+      _slotEnd(slotIdEnd),
+      _svr(svr),
+      _isRunning(false),
+      _state(DeleteRangeState::START) {}
 
-    uint32_t _storeid;
-    uint32_t _slotStart;
-    uint32_t _slotEnd;
-    std::shared_ptr<ServerEntry> _svr;
-    bool _isRunning;
-    SCLOCK::time_point _nextSchedTime;
-    mutable myMutex _mutex;
-    DeleteRangeState _state;
-    Status deleteSlotRange();
+  uint32_t _storeid;
+  uint32_t _slotStart;
+  uint32_t _slotEnd;
+  std::shared_ptr<ServerEntry> _svr;
+  bool _isRunning;
+  SCLOCK::time_point _nextSchedTime;
+  mutable myMutex _mutex;
+  DeleteRangeState _state;
+  Status deleteSlotRange();
 };
 
 using SlotsBitmap = std::bitset<CLUSTER_SLOTS>;
 class GCManager {
  public:
-    explicit GCManager(std::shared_ptr<ServerEntry> svr);
+  explicit GCManager(std::shared_ptr<ServerEntry> svr);
 
-    Status startup();
-    Status stopStoreTask(uint32_t storid);
-    void stop();
+  Status startup();
+  Status stopStoreTask(uint32_t storid);
+  void stop();
 
-    Status deleteChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
+  Status deleteChunks(uint32_t storeid,
+                      uint32_t slotStart,
+                      uint32_t slotEnd,
+                      mstime_t delay = 0);
 
-    Status deleteBitMap(const SlotsBitmap& slots,uint64_t delay = 0);
-    Status deleteSlotsData(const SlotsBitmap& slots, uint32_t storeid, uint64_t delay = 0);
-    bool slotIsDeleting(uint32_t slot);
+  Status deleteBitMap(const SlotsBitmap& slots, uint64_t delay = 0);
+  Status deleteSlotsData(const SlotsBitmap& slots,
+                         uint32_t storeid,
+                         uint64_t delay = 0);
+  bool slotIsDeleting(uint32_t slot);
 
-    void garbageDeleterResize(size_t size);
-    size_t garbageDeleterSize() ;
-    Status delGarbage();
+  void garbageDeleterResize(size_t size);
+  size_t garbageDeleterSize();
+  Status delGarbage();
 
-private:
-    void controlRoutine();
-    bool gcSchedule(const SCLOCK::time_point& now);
-    SlotsBitmap  getCheckList();
-    Status startDeleteTask(uint32_t  storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
-    void garbageDelete(DeleteRangeTask* task);
-    Status deleteLargeChunks(uint32_t storeid, uint32_t slotStart, uint32_t slotEnd, mstime_t delay = 0);
  private:
-    std::shared_ptr<ServerEntry> _svr;
-    std::shared_ptr<ClusterState> _cstate;
-    std::atomic<bool> _isRunning;
-    mutable myMutex _mutex;
-    std::unique_ptr<std::thread> _controller;
+  void controlRoutine();
+  bool gcSchedule(const SCLOCK::time_point& now);
+  SlotsBitmap getCheckList();
+  Status startDeleteTask(uint32_t storeid,
+                         uint32_t slotStart,
+                         uint32_t slotEnd,
+                         mstime_t delay = 0);
+  void garbageDelete(DeleteRangeTask* task);
+  Status deleteLargeChunks(uint32_t storeid,
+                           uint32_t slotStart,
+                           uint32_t slotEnd,
+                           mstime_t delay = 0);
 
-    std::list<std::shared_ptr<DeleteRangeTask>> _deleteChunkTask;
+ private:
+  std::shared_ptr<ServerEntry> _svr;
+  std::shared_ptr<ClusterState> _cstate;
+  std::atomic<bool> _isRunning;
+  mutable myMutex _mutex;
+  std::unique_ptr<std::thread> _controller;
 
-    std::unique_ptr<WorkerPool> _gcDeleter;
-    std::shared_ptr<PoolMatrix> _gcDeleterMatrix;
+  std::list<std::shared_ptr<DeleteRangeTask>> _deleteChunkTask;
 
-    // slots in deleting task
-    std::bitset<CLUSTER_SLOTS> _deletingSlots;
+  std::unique_ptr<WorkerPool> _gcDeleter;
+  std::shared_ptr<PoolMatrix> _gcDeleterMatrix;
+
+  // slots in deleting task
+  std::bitset<CLUSTER_SLOTS> _deletingSlots;
 };
 
 }  // namespace tendisplus

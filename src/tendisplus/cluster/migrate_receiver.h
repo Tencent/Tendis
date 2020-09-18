@@ -19,43 +19,54 @@ using namespace std;
 
 class ChunkMigrateReceiver {
  public:
-    explicit ChunkMigrateReceiver(const std::bitset<CLUSTER_SLOTS>& slots,
-        uint32_t storeid,
-        std::string taskid,
-        std::shared_ptr<ServerEntry> svr,
-        std::shared_ptr<ServerParams> cfg);
+  explicit ChunkMigrateReceiver(const std::bitset<CLUSTER_SLOTS>& slots,
+                                uint32_t storeid,
+                                std::string taskid,
+                                std::shared_ptr<ServerEntry> svr,
+                                std::shared_ptr<ServerParams> cfg);
 
-    Status receiveSnapshot();
+  Status receiveSnapshot();
 
-    void setDbWithLock(std::unique_ptr<DbWithLock> db) {
-        _dbWithLock = std::move(db);
-    }
-    void setClient(std::shared_ptr<BlockingTcpClient> client) {
-        _client = client;
-    }
+  void setDbWithLock(std::unique_ptr<DbWithLock> db) {
+    _dbWithLock = std::move(db);
+  }
+  void setClient(std::shared_ptr<BlockingTcpClient> client) {
+    _client = client;
+  }
 
-    void setTaskId(const std::string& taskid) {
-        _taskid = taskid;
-    }
+  void setTaskId(const std::string& taskid) {
+    _taskid = taskid;
+  }
 
-    uint32_t getsStoreid() const { return  _storeid; }
-    std::bitset<CLUSTER_SLOTS> getSlots()  { return  _slots; }
-    std::string getTaskid() { return  _taskid; }
-    uint64_t  getSnapshotNum() { return  _snapshotKeyNum; }
-    uint64_t  getBinlogNum() { return  _binlogNum; }
+  uint32_t getsStoreid() const {
+    return _storeid;
+  }
+  std::bitset<CLUSTER_SLOTS> getSlots() {
+    return _slots;
+  }
+  std::string getTaskid() {
+    return _taskid;
+  }
+  uint64_t getSnapshotNum() {
+    return _snapshotKeyNum;
+  }
+  uint64_t getBinlogNum() {
+    return _binlogNum;
+  }
+
  private:
-    Status supplySetKV(const string& key, const string& value);
+  Status supplySetKV(const string& key, const string& value);
 
-    std::shared_ptr<ServerEntry> _svr;
-    const std::shared_ptr<ServerParams> _cfg;
-    std::unique_ptr<DbWithLock> _dbWithLock;
-    std::shared_ptr<BlockingTcpClient> _client;
-    uint32_t _storeid;
-    std::string _taskid;
-    std::bitset<CLUSTER_SLOTS> _slots;
+  std::shared_ptr<ServerEntry> _svr;
+  const std::shared_ptr<ServerParams> _cfg;
+  std::unique_ptr<DbWithLock> _dbWithLock;
+  std::shared_ptr<BlockingTcpClient> _client;
+  uint32_t _storeid;
+  std::string _taskid;
+  std::bitset<CLUSTER_SLOTS> _slots;
 
-    uint64_t _snapshotKeyNum;
-    uint64_t  _binlogNum;
+  uint64_t _snapshotKeyNum;
+  uint64_t _binlogNum;
 };
 
 }  // namespace tendisplus

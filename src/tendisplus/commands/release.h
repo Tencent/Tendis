@@ -8,4 +8,4 @@
 #include <stdint.h>
 uint64_t redisBuildId(void);
 
-#endif // RELEASE_H
+#endif  // RELEASE_H

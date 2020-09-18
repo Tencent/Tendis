@@ -38,9 +38,12 @@ void destroyEnv();
 bool setupEnv(const std::string& v);
 void destroyEnv(const std::string& v);
 std::string getBulkValue(const std::string& reply, uint32_t index);
-std::shared_ptr<ServerParams> makeServerParam(uint32_t port = 8811, uint32_t storeCnt = 0,
-    const std::string& dir = "", bool general_log = true);
-std::shared_ptr<ServerEntry> makeServerEntry(const std::shared_ptr<ServerParams>& cfg);
+std::shared_ptr<ServerParams> makeServerParam(uint32_t port = 8811,
+                                              uint32_t storeCnt = 0,
+                                              const std::string& dir = "",
+                                              bool general_log = true);
+std::shared_ptr<ServerEntry> makeServerEntry(
+  const std::shared_ptr<ServerParams>& cfg);
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);
 
@@ -73,36 +76,42 @@ void testAll(std::shared_ptr<ServerEntry> svr);
 
 class WorkLoad {
  public:
-    WorkLoad(TestServer server, TestSession session) :
-        _session(session),
-        _max_key_len(32) { }
+  WorkLoad(TestServer server, TestSession session)
+    : _session(session), _max_key_len(32) {}
 
-    void init() { std::srand((uint32_t)msSinceEpoch()); }
-    KeysWritten writeWork(RecordType, uint32_t count,
-                          uint32_t maxlen = 0, bool sharename = true,
-                          const char* key_suffix = NULL);
-    void expireKeys(const AllKeys &keys, uint64_t ttl);
-    void slaveof(const std::string& ip, uint32_t port);
-    void flush();
-    void delKeys(const KeysWritten &keys);
-    void clusterMeet(const std::string& ip, uint32_t port, const uint32_t cport = 0);
-    void clusterNodes();
-    void addSlots(const std::string& slotsBuff);
-    void replicate(const std::string& nodeName);
-    void lockDb(mstime_t locktime);
-    void setMaxKeyLen(uint32_t max_key_len);
-    Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
-    std::string getStringResult(const std::vector<std::string>& args);
+  void init() {
+    std::srand((uint32_t)msSinceEpoch());
+  }
+  KeysWritten writeWork(RecordType,
+                        uint32_t count,
+                        uint32_t maxlen = 0,
+                        bool sharename = true,
+                        const char* key_suffix = NULL);
+  void expireKeys(const AllKeys& keys, uint64_t ttl);
+  void slaveof(const std::string& ip, uint32_t port);
+  void flush();
+  void delKeys(const KeysWritten& keys);
+  void clusterMeet(const std::string& ip,
+                   uint32_t port,
+                   const uint32_t cport = 0);
+  void clusterNodes();
+  void addSlots(const std::string& slotsBuff);
+  void replicate(const std::string& nodeName);
+  void lockDb(mstime_t locktime);
+  void setMaxKeyLen(uint32_t max_key_len);
+  Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
+  std::string getStringResult(const std::vector<std::string>& args);
 
  private:
-    TestSession _session;
-    uint32_t _max_key_len;
+  TestSession _session;
+  uint32_t _max_key_len;
 };
 
 void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,
-        const std::shared_ptr<ServerEntry>& slave);
+                      const std::shared_ptr<ServerEntry>& slave);
 
-std::string runCommand(std::shared_ptr<ServerEntry> svr, std::vector<std::string> args);
+std::string runCommand(std::shared_ptr<ServerEntry> svr,
+                       std::vector<std::string> args);
 void runBgCommand(std::shared_ptr<ServerEntry> svr);
 }  // namespace tendisplus
 
