@@ -48,7 +48,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	# command uses global variables to self-regist, linking flag whole-archive is required.
 	target_link_libraries(tendisplus -Wl,--whole-archive commands -Wl,--no-whole-archive)
 	target_link_libraries(tendisplus server_params server ${SYS_LIBS})
-	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++") # -static-libasan
+	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "-static") # -static-libgcc -static-libstdc++ -static-libasan
 else()
 	target_link_libraries(tendisplus commands server_params server ${SYS_LIBS})
 	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
