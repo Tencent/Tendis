@@ -1,4 +1,7 @@
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <iostream>
 #include <cstdint>
 #include <string>
@@ -8,9 +11,7 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <memory>
 
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
@@ -28,35 +29,49 @@ string gMappingCmdList = "";
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
   if (typeid(var) == typeid(int) || typeid(var) == typeid(int32_t) ||         \
       typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t))     \
-    _mapServerParams.insert(make_pair(toLower(str),                           \
-                                      new IntVar(str,                         \
-                                                 (void*)&var,                 \
-                                                 checkfun,                    \
-                                                 prefun,                      \
-                                                 minval,                      \
-                                                 maxval,                      \
-                                                 allowDynamicSet)));          \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new IntVar(str,                                               \
+                           reinterpret_cast<void*>(&var),                     \
+                           checkfun,                                          \
+                           prefun,                                            \
+                           minval,                                            \
+                           maxval,                                            \
+                           allowDynamicSet)));                                \
   else if (typeid(var) == typeid(int64_t) || typeid(var) == typeid(uint64_t)) \
-    _mapServerParams.insert(make_pair(toLower(str),                           \
-                                      new Int64Var(str,                       \
-                                                   (void*)&var,               \
-                                                   checkfun,                  \
-                                                   prefun,                    \
-                                                   minval,                    \
-                                                   maxval,                    \
-                                                   allowDynamicSet)));        \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new Int64Var(str,                                             \
+                             reinterpret_cast<void*>(&var),                   \
+                             checkfun,                                        \
+                             prefun,                                          \
+                             minval,                                          \
+                             maxval,                                          \
+                             allowDynamicSet)));                              \
   else if (typeid(var) == typeid(float))                                      \
-    _mapServerParams.insert(make_pair(                                        \
-      toLower(str),                                                           \
-      new FloatVar(str, (void*)&var, checkfun, prefun, allowDynamicSet)));    \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new FloatVar(str,                                             \
+                             reinterpret_cast<void*>(&var),                   \
+                             checkfun,                                        \
+                             prefun,                                          \
+                             allowDynamicSet)));                              \
   else if (typeid(var) == typeid(string))                                     \
-    _mapServerParams.insert(make_pair(                                        \
-      toLower(str),                                                           \
-      new StringVar(str, (void*)&var, checkfun, prefun, allowDynamicSet)));   \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new StringVar(str,                                            \
+                              reinterpret_cast<void*>(&var),                  \
+                              checkfun,                                       \
+                              prefun,                                         \
+                              allowDynamicSet)));                             \
   else if (typeid(var) == typeid(bool))                                       \
-    _mapServerParams.insert(make_pair(                                        \
-      toLower(str),                                                           \
-      new BoolVar(str, (void*)&var, checkfun, prefun, allowDynamicSet)));     \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new BoolVar(str,                                              \
+                            reinterpret_cast<void*>(&var),                    \
+                            checkfun,                                         \
+                            prefun,                                           \
+                            allowDynamicSet)));                               \
   else                                                                        \
     INVARIANT(0);  // NOTE(takenliu): if other type is needed, change here.
 
@@ -87,7 +102,7 @@ bool compressTypeParamCheck(const string& val) {
     return true;
   }
   return false;
-};
+}
 
 bool executorThreadNumCheck(const std::string& val) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
@@ -182,7 +197,7 @@ void rewriteConfigState::rewriteConfigRewriteLine(const std::string& option,
     return;
   }
   if (_optionToLine.find(option) != _optionToLine.end()) {
-    long linenum = *_optionToLine[option].begin();
+    uint64_t linenum = *_optionToLine[option].begin();
     _optionToLine[option].erase(_optionToLine[option].begin());
     if (_optionToLine[option].empty()) {
       _optionToLine.erase(option);
@@ -380,7 +395,7 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS(netIoMultiIoContext);
   REGISTER_VARS(executorMultiIoContext);
-};
+}
 
 ServerParams::~ServerParams() {
   for (auto iter : _mapServerParams) {
@@ -511,7 +526,7 @@ bool ServerParams::showVar(const string& key, string& info) const {
   return true;
 }
 
-bool ServerParams::showVar(const string& key, vector<string>& info) const {
+bool ServerParams::showVar(const string& key, vector<string>* info) const {
   for (auto iter = _mapServerParams.begin(); iter != _mapServerParams.end();
        iter++) {
     if (redis_port::stringmatchlen(key.c_str(),
@@ -519,11 +534,11 @@ bool ServerParams::showVar(const string& key, vector<string>& info) const {
                                    iter->first.c_str(),
                                    iter->first.size(),
                                    1)) {
-      info.push_back(iter->first);
-      info.push_back(iter->second->show());
+      info->push_back(iter->first);
+      info->push_back(iter->second->show());
     }
   }
-  if (info.empty())
+  if (info->empty())
     return false;
   return true;
 }

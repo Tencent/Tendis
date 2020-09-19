@@ -1,16 +1,17 @@
 #ifndef SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 #define SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_
 
+#include <assert.h>
+#include <stdlib.h>
 #include <iostream>
 #include <string>
 #include <map>
 #include <unordered_map>
 #include <set>
-#include <assert.h>
-#include <stdlib.h>
 #include <functional>
 #include <atomic>
 #include <list>
+#include <vector>
 #include "glog/logging.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/status.h"
@@ -41,8 +42,8 @@ class BaseVar {
       assert(false);
       return;
     }
-  };
-  virtual ~BaseVar(){};
+  }
+  virtual ~BaseVar() {}
   bool setVar(const string& value, string* errinfo = NULL, bool force = true) {
     if (!allowDynamicSet && !force) {
       if (errinfo != NULL) {
@@ -73,7 +74,7 @@ class BaseVar {
       return checkFun(value);
     }
     return true;
-  };
+  }
 
   string name = "";
   void* value = NULL;
@@ -92,18 +93,18 @@ class StringVar : public BaseVar {
             preProcess preFun,
             bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*(string*)value) {
+      _defaultValue(*reinterpret_cast<string*>(value)) {
     if (!preProcessFun) {
       preProcessFun = removeQuotes;
     }
-  };
+  }
   virtual string show() const {
-    return "\"" + *(string*)value + "\"";
-  };
+    return "\"" + *reinterpret_cast<string*>(value) + "\"";
+  }
 
   virtual string default_show() const {
     return "\"" + _defaultValue + "\"";
-  };
+  }
 
  private:
   bool set(const string& val) {
@@ -111,7 +112,7 @@ class StringVar : public BaseVar {
     if (!check(v))
       return false;
 
-    *(string*)value = v;
+    *reinterpret_cast<string*>(value) = v;
 
     if (Onupdate != NULL)
       Onupdate();
@@ -131,15 +132,15 @@ class IntVar : public BaseVar {
          int64_t maxVal,
          bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*(int*)value),
+      _defaultValue(*reinterpret_cast<int*>(value)),
       _minVal(minVal),
-      _maxVal(maxVal){};
+      _maxVal(maxVal) {}
   virtual string show() const {
-    return std::to_string(*(int*)value);
-  };
+    return std::to_string(*reinterpret_cast<int*>(value));
+  }
   virtual string default_show() const {
     return std::to_string(_defaultValue);
-  };
+  }
 
  private:
   bool set(const string& val) {
@@ -179,15 +180,15 @@ class Int64Var : public BaseVar {
            int64_t maxVal,
            bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*(int64_t*)value),
+      _defaultValue(*reinterpret_cast<int64_t*>(value)),
       _minVal(minVal),
-      _maxVal(maxVal){};
+      _maxVal(maxVal) {}
   virtual string show() const {
-    return std::to_string(*(int64_t*)value);
-  };
+    return std::to_string(*reinterpret_cast<int64_t*>(value));
+  }
   virtual string default_show() const {
     return std::to_string(_defaultValue);
-  };
+  }
 
  private:
   bool set(const string& val) {
@@ -224,13 +225,13 @@ class FloatVar : public BaseVar {
            preProcess preFun,
            bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*(float*)value){};
+      _defaultValue(*reinterpret_cast<float*>(value)) {}
   virtual string show() const {
-    return std::to_string(*(float*)value);
-  };
+    return std::to_string(*reinterpret_cast<float*>(value));
+  }
   virtual string default_show() const {
     return std::to_string(_defaultValue);
-  };
+  }
 
  private:
   bool set(const string& val) {
@@ -239,7 +240,7 @@ class FloatVar : public BaseVar {
       return false;
 
     try {
-      *(float*)value = std::stof(v);
+      *reinterpret_cast<float*>(value) = std::stof(v);
     } catch (...) {
       LOG(ERROR) << "FloatVar stof err:" << v;
       return false;
@@ -259,13 +260,13 @@ class BoolVar : public BaseVar {
           preProcess preFun,
           bool allowDynamicSet)
     : BaseVar(name, v, ptr, preFun, allowDynamicSet),
-      _defaultValue(*(bool*)value){};
+      _defaultValue(*reinterpret_cast<bool*>(value)) {}
   virtual string show() const {
-    return *(bool*)value ? "yes" : "no";
-  };
+    return *reinterpret_cast<bool*>(value) ? "yes" : "no";
+  }
   virtual string default_show() const {
     return _defaultValue ? "yes" : "no";
-  };
+  }
 
  private:
   bool set(const string& val) {
@@ -273,7 +274,7 @@ class BoolVar : public BaseVar {
     if (!check(v))
       return false;
 
-    *(bool*)value = isOptionOn(v);
+    *reinterpret_cast<bool*>(value) = isOptionOn(v);
 
     if (Onupdate != NULL)
       Onupdate();
@@ -284,8 +285,8 @@ class BoolVar : public BaseVar {
 
 class rewriteConfigState {
  public:
-  rewriteConfigState() : _hasTail(false){};
-  ~rewriteConfigState(){};
+  rewriteConfigState() : _hasTail(false) {}
+  ~rewriteConfigState() {}
   Status rewriteConfigReadOldFile(const std::string& confFile);
   void rewriteConfigOption(const std::string& option,
                            const std::string& value,
@@ -316,7 +317,7 @@ class ServerParams {
   bool registerOnupdate(const string& name, funptr ptr);
   string showAll() const;
   bool showVar(const string& key, string& info) const;
-  bool showVar(const string& key, vector<string>& info) const;
+  bool showVar(const string& key, vector<string>* info) const;
   bool setVar(const string& name,
               const string& value,
               string* errinfo,

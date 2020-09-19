@@ -1471,7 +1471,6 @@ class SuniongenericCommand : public Command {
     }
 
     auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
-    ;
     if (!expdb.ok()) {
       return expdb.status();
     }

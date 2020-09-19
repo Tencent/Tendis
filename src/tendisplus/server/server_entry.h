@@ -58,11 +58,11 @@ class ServerStat {
   uint64_t getInstantaneousMetric(int metric) const;
   void reset();
 
-  Atom<uint64_t> expiredkeys;         /* Number of expired keys */
-  Atom<uint64_t> keyspaceHits;        /* Number of successful lookups of keys */
-  Atom<uint64_t> keyspaceMisses;      /* Number of failed lookups of keys */
-  Atom<uint64_t> keyspaceIncorrectEp; /* Number of failed lookups of keys with
-                                         incorrect versionEp */
+  Atom<uint64_t> expiredkeys;    /* Number of expired keys */
+  Atom<uint64_t> keyspaceHits;   /* Number of successful lookups of keys */
+  Atom<uint64_t> keyspaceMisses; /* Number of failed lookups of keys */
+  Atom<uint64_t> keyspaceIncorrectEp;  // Number of failed lookups of keys with
+                                       // incorrect versionEp
   Atom<uint64_t> rejectedConn;   /* Clients rejected because of maxclients */
   Atom<uint64_t> syncFull;       /* Number of full resyncs with slaves. */
   Atom<uint64_t> syncPartialOk;  /* Number of accepted PSYNC requests. */
@@ -99,8 +99,8 @@ class CompactionStat {
 struct SlowlogEntry {
   std::vector<string> argv;
   int argc;
-  long long id;       /* Unique entry identifier. */
-  long long duration; /* Time spent by the query, in microseconds. */
+  uint64_t id;        /* Unique entry identifier. */
+  uint64_t duration;  /* Time spent by the query, in microseconds. */
   uint64_t unix_time; /* Unix time at which the query was executed. */
   std::string cname;
   std::string peerID;
@@ -130,7 +130,7 @@ class ServerEntry;
 
 class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
  public:
-  ServerEntry(const std::shared_ptr<ServerParams>& cfg);
+  explicit ServerEntry(const std::shared_ptr<ServerParams>& cfg);
   ServerEntry(const ServerEntry&) = delete;
   ServerEntry(ServerEntry&&) = delete;
   Catalog* getCatalog();

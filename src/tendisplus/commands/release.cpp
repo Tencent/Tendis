@@ -1,7 +1,7 @@
 #include <string.h>
 
-#include "release.h"
-#include "version.h"
+#include "tendisplus/commands/release.h"
+#include "tendisplus/commands/version.h"
 #include "tendisplus/utils/redis_port.h"
 
 uint64_t redisBuildId(void) {

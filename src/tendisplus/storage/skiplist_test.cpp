@@ -276,6 +276,7 @@ TEST(SkipList, InsertDelSameKeys) {
       auto meta = eMetaContent.value();
       SkipList sl(0, 0, "skiplistkey", meta, store);
       Status s;
+      unsigned int seed = 123;
       if (k == "k1") {
         if (exists1) {
           s = sl.remove(score1, k, eTxn.value().get());
@@ -284,7 +285,7 @@ TEST(SkipList, InsertDelSameKeys) {
           score1 = 0;
         } else {
           exists1 = true;
-          score1 = rand();
+          score1 = rand_r(&seed);
           s = sl.insert(score1, k, eTxn.value().get());
           EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
         }
@@ -296,7 +297,7 @@ TEST(SkipList, InsertDelSameKeys) {
           score2 = 0;
         } else {
           exists2 = true;
-          score2 = rand();
+          score2 = rand_r(&seed);
           s = sl.insert(score2, k, eTxn.value().get());
           EXPECT_TRUE(s.ok()) << k << ' ' << s.toString();
         }

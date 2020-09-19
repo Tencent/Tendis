@@ -109,7 +109,7 @@ class MainMeta {
 class ClusterMeta {
  public:
   ClusterMeta();
-  ClusterMeta(const std::string& nodeName_);
+  explicit ClusterMeta(const std::string& nodeName_);
   ClusterMeta(const std::string& nodeName_,
               const std::string& ip_,
               uint64_t port_,

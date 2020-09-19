@@ -1122,7 +1122,7 @@ void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
     runCommand(svr, {"info", "all"});
     uint32_t end = msSinceEpoch();
 
-    EXPECT_TRUE(end - now < 500);
+    EXPECT_LT(end - now, 500);
     LOG(INFO) << "info used " << end - now
               << "ms when running tendisadmin sleep ";
   });

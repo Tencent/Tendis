@@ -1,5 +1,6 @@
 #include <vector>
 #include <algorithm>
+#include <limits>
 #include "tendisplus/storage/varint.h"
 #include "gtest/gtest.h"
 
@@ -10,7 +11,11 @@ void testVarint(uint64_t val, std::vector<uint8_t> bytes) {
 
   auto str = varintEncodeStr(val);
   EXPECT_EQ(str.size(), bytes.size());
-  EXPECT_EQ(memcmp((void*)str.c_str(), (void*)bytes.data(), str.size()), 0);
+  EXPECT_EQ(
+    memcmp(const_cast<void*>(reinterpret_cast<const void*>(str.c_str())),
+           const_cast<void*>(reinterpret_cast<const void*>(bytes.data())),
+           str.size()),
+    0);
   EXPECT_EQ(str.size(), varintEncodeSize(val));
 
   auto expt = varintDecodeFwd(bytes.data(), bytes.size());
@@ -72,7 +77,7 @@ double genDouble() {
 
   int x = r % 1111;
   int y = r2 % 111;
-  return (double)(x * y) / 1111;
+  return static_cast<double>(x * y) / 1111;
 }
 
 void testdouble(double val) {

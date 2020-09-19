@@ -25,7 +25,7 @@ struct MyAllocator {
   // left size
   std::size_t leftSize;
   std::size_t allocSize;
-  MyAllocator(size_t N = 1024)
+  explicit MyAllocator(size_t N = 1024)
     : data(0), p(0), firstAlignedPtr(0), leftSize(N), allocSize(N) {
     data = reinterpret_cast<char*>(calloc(N, sizeof(char)));
     p = data;
@@ -116,8 +116,8 @@ struct MyAllocator {
 
 class HPLLObject {
  public:
-  HPLLObject(int type = HLL_SPARSE);
-  HPLLObject(const std::string& v);
+  explicit HPLLObject(int type = HLL_SPARSE);
+  explicit HPLLObject(const std::string& v);
   HPLLObject(const HPLLObject&) = delete;
   HPLLObject(HPLLObject&&) = default;
 

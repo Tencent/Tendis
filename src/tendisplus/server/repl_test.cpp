@@ -16,12 +16,12 @@
 
 namespace tendisplus {
 
-std::string master_dir = "repltest_master";
-std::string slave_dir = "repltest_slave";
-std::string slave_slave_dir = "repltest_slave_slave";
-std::string slave1_dir = "repltest_slave1";
-std::string slave2_dir = "repltest_slave2";
-std::string single_dir = "repltest_single";
+const std::string master_dir = "repltest_master";
+const std::string slave_dir = "repltest_slave";
+const std::string slave_slave_dir = "repltest_slave_slave";
+const std::string slave1_dir = "repltest_slave1";
+const std::string slave2_dir = "repltest_slave2";
+const std::string single_dir = "repltest_single";
 uint32_t master_port = 1111;
 uint32_t slave_port = 1112;
 uint32_t slave_slave_port = 1113;
@@ -43,9 +43,9 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server, uint32_t count) {
   auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
   all_keys.emplace_back(list_keys);
 
-  //#ifdef _WIN32
+  // #ifdef _WIN32
   work.flush();
-  //#endif
+  // #endif
 
   auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 50);
   all_keys.emplace_back(hash_keys);
@@ -809,7 +809,7 @@ Status scan(const std::string& logfile) {
   buff[BINLOG_HEADER_V2_LEN] = '\0';
   uint32_t storeId =
     be32toh(*reinterpret_cast<uint32_t*>(buff + strlen(BINLOG_HEADER_V2)));
-  EXPECT_TRUE(storeId == 0);
+  EXPECT_EQ(storeId, 0);
 
   while (!feof(pf)) {
     // keylen

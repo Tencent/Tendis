@@ -87,7 +87,7 @@ class RepllogCursorV2 {
 class BasicDataCursor {
  public:
   BasicDataCursor() = delete;
-  BasicDataCursor(std::unique_ptr<Cursor>);
+  explicit BasicDataCursor(std::unique_ptr<Cursor>);
   ~BasicDataCursor() = default;
   void seek(const std::string& prefix);
   // void seekToLast();
@@ -102,7 +102,7 @@ class BasicDataCursor {
 class AllDataCursor {
  public:
   AllDataCursor() = delete;
-  AllDataCursor(std::unique_ptr<Cursor>);
+  explicit AllDataCursor(std::unique_ptr<Cursor>);
   ~AllDataCursor() = default;
   void seek(const std::string& prefix);
   void seekToLast();
@@ -117,7 +117,7 @@ class AllDataCursor {
 class BinlogCursor {
  public:
   BinlogCursor() = delete;
-  BinlogCursor(std::unique_ptr<Cursor>);
+  explicit BinlogCursor(std::unique_ptr<Cursor>);
   ~BinlogCursor() = default;
   void seek(const std::string& prefix);
   void seekToLast();
@@ -149,7 +149,7 @@ class TTLIndexCursor {
 class VersionMetaCursor {
  public:
   VersionMetaCursor() = delete;
-  VersionMetaCursor(std::unique_ptr<Cursor> cursor);
+  explicit VersionMetaCursor(std::unique_ptr<Cursor> cursor);
   ~VersionMetaCursor() = default;
   Expected<VersionMeta> next();
   void prev();

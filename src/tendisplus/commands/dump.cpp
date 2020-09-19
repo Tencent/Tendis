@@ -117,7 +117,7 @@ Expected<std::vector<byte>> Serializer::dump(bool prefixVer) {
   Serializer::saveObjectType(&payload, &_pos, _type);
   INVARIANT_D(_pos > 0);
 
-  auto expRet = dumpObject(payload);
+  auto expRet = dumpObject(&payload);
   if (!expRet.ok()) {
     return expRet.status();
   }
@@ -315,8 +315,8 @@ class KvSerializer : public Serializer {
     : Serializer(
         sess, key, DumpType::RDB_TYPE_STRING, std::forward<RecordValue>(rv)) {}
 
-  Expected<size_t> dumpObject(std::vector<byte>& payload) {
-    Serializer::saveString(&payload, &_pos, _rv.getValue());
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
+    Serializer::saveString(payload, &_pos, _rv.getValue());
     _begin = 0;
     return _pos - _begin;
   }
@@ -324,9 +324,9 @@ class KvSerializer : public Serializer {
 
 class ListSerializer : public Serializer {
  private:
-  Expected<uint32_t> formatZiplist(std::vector<byte>& payload,
-                                   size_t& pos,
-                                   std::vector<std::string>& zl,
+  Expected<uint32_t> formatZiplist(std::vector<byte>* payload,
+                                   size_t* pos,
+                                   const std::vector<std::string>& zl,
                                    uint32_t byteSz) {
     std::vector<byte> ziplist;
     ziplist.reserve(byteSz);
@@ -358,10 +358,10 @@ class ListSerializer : public Serializer {
     easyCopy(&ziplist, &zlInitPos, zltail);
 
     size_t written(0);
-    auto wr = Serializer::saveLen(&payload, &pos, ziplist.size());
+    auto wr = Serializer::saveLen(payload, pos, ziplist.size());
     INVARIANT(wr.value() > 0);
     written += wr.value();
-    written += easyCopy(&payload, &pos, ziplist.data(), ziplist.size());
+    written += easyCopy(payload, pos, ziplist.data(), ziplist.size());
     return written;
   }
 
@@ -374,7 +374,7 @@ class ListSerializer : public Serializer {
                  DumpType::RDB_TYPE_QUICKLIST,
                  std::forward<RecordValue>(rv)) {}
 
-  Expected<size_t> dumpObject(std::vector<byte>& payload) {
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
     size_t qlbytes(0);
     size_t notAligned = _pos;
     size_t qlEnd = notAligned + 9;
@@ -382,7 +382,7 @@ class ListSerializer : public Serializer {
     {
       // make room for quicklist length first,
       // remember to move first several bytes to align after.
-      payload.resize(payload.size() + 9);
+      payload->resize(payload->size() + 9);
       _pos += 9;
     }
 
@@ -435,7 +435,7 @@ class ListSerializer : public Serializer {
       ziplist.emplace_back(std::move(expNodeVal.value().getValue()));
       if ((byteSz > ZLBYTE_LIMIT || lenSz > ZLLEN_LIMIT) || i == tail - 1) {
         ++zlCnt;
-        auto ezlBytes = formatZiplist(payload, _pos, ziplist, byteSz);
+        auto ezlBytes = formatZiplist(payload, &_pos, ziplist, byteSz);
         if (!ezlBytes.ok()) {
           return ezlBytes.status();
         }
@@ -446,16 +446,17 @@ class ListSerializer : public Serializer {
       }
     }
 
-    auto expQlUsed = saveLen(&payload, &notAligned, zlCnt);
+    auto expQlUsed = saveLen(payload, &notAligned, zlCnt);
     if (!expQlUsed.ok()) {
       return expQlUsed.status();
     }
     if (expQlUsed.value() < 9) {
-      std::copy_backward(
-        payload.begin(), payload.begin() + notAligned, payload.begin() + qlEnd);
+      std::copy_backward(payload->begin(),
+                         payload->begin() + notAligned,
+                         payload->begin() + qlEnd);
     }
     _begin = 9 - expQlUsed.value();
-    _end = payload.size() - _begin;
+    _end = payload->size() - _begin;
     return qlbytes + expQlUsed.value();
   }
 };
@@ -468,7 +469,7 @@ class SetSerializer : public Serializer {
     : Serializer(
         sess, key, DumpType::RDB_TYPE_SET, std::forward<RecordValue>(rv)) {}
 
-  Expected<size_t> dumpObject(std::vector<byte>& payload) {
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
     Expected<SetMetaValue> expMeta = SetMetaValue::decode(_rv.getValue());
     size_t len = expMeta.value().getCount();
     INVARIANT_D(len > 0);
@@ -476,7 +477,7 @@ class SetSerializer : public Serializer {
       return {ErrorCodes::ERR_INTERNAL, "invalid set"};
     }
 
-    auto expwr = saveLen(&payload, &_pos, len);
+    auto expwr = saveLen(payload, &_pos, len);
     if (!expwr.ok()) {
       return expwr.status();
     }
@@ -515,7 +516,7 @@ class SetSerializer : public Serializer {
       }
 
       const std::string& subk = rcdKey.getSecondaryKey();
-      Serializer::saveString(&payload, &_pos, subk);
+      Serializer::saveString(payload, &_pos, subk);
     }
 
     _begin = 0;
@@ -531,7 +532,7 @@ class ZsetSerializer : public Serializer {
     : Serializer(
         sess, key, DumpType::RDB_TYPE_ZSET, std::forward<RecordValue>(rv)) {}
 
-  Expected<size_t> dumpObject(std::vector<byte>& payload) {
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
     auto server = _sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
     if (!expdb.ok()) {
@@ -552,7 +553,7 @@ class ZsetSerializer : public Serializer {
     SkipList zsl(
       expdb.value().chunkId, _sess->getCtx()->getDbId(), _key, meta, kvstore);
 
-    auto expwr = saveLen(&payload, &_pos, zsl.getCount() - 1);
+    auto expwr = saveLen(payload, &_pos, zsl.getCount() - 1);
     if (!expwr.ok()) {
       return expwr.status();
     }
@@ -563,10 +564,10 @@ class ZsetSerializer : public Serializer {
     }
     for (auto& ele : rev.value()) {
       Serializer::saveString(
-        &payload, &_pos, std::forward<std::string>(ele.second));
+        payload, &_pos, std::forward<std::string>(ele.second));
       // save binary double score
       double score = ele.first;
-      easyCopy(&payload, &_pos, score);
+      easyCopy(payload, &_pos, score);
     }
     _begin = 0;
     return _pos - _begin;
@@ -581,12 +582,12 @@ class HashSerializer : public Serializer {
     : Serializer(
         sess, key, DumpType::RDB_TYPE_HASH, std::forward<RecordValue>(rv)) {}
 
-  Expected<size_t> dumpObject(std::vector<byte>& payload) {
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
     Expected<HashMetaValue> expHashMeta = HashMetaValue::decode(_rv.getValue());
     if (!expHashMeta.ok()) {
       return expHashMeta.status();
     }
-    auto expwr = saveLen(&payload, &_pos, expHashMeta.value().getCount());
+    auto expwr = saveLen(payload, &_pos, expHashMeta.value().getCount());
     if (!expwr.ok()) {
       return expwr.status();
     }
@@ -625,8 +626,8 @@ class HashSerializer : public Serializer {
       const std::string& field =
         expRcd.value().getRecordKey().getSecondaryKey();
       const std::string& value = expRcd.value().getRecordValue().getValue();
-      Serializer::saveString(&payload, &_pos, field);
-      Serializer::saveString(&payload, &_pos, value);
+      Serializer::saveString(payload, &_pos, field);
+      Serializer::saveString(payload, &_pos, value);
     }
     _begin = 0;
     return _pos - _begin;
@@ -702,7 +703,7 @@ Expected<size_t> Deserializer::loadLen(const std::string& payload,
     if (isencoded) {
       *isencoded = true;
     }
-    LOG(INFO) << "return encType " << (int)ret;
+    LOG(INFO) << "return encType " << static_cast<int>(ret);
   } else if (encType == RDB_6BITLEN) {
     ret = buf[0] & 0x3F;
   } else if (encType == RDB_14BITLEN) {
@@ -753,7 +754,7 @@ std::string Deserializer::loadString(const std::string& payload, size_t* pos) {
         break;
       }
       default:
-        LOG(INFO) << "Unknown encoding " << (int)len;
+        LOG(INFO) << "Unknown encoding " << static_cast<int>(len);
     }
   }
 

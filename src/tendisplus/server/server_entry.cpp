@@ -1270,7 +1270,6 @@ Status ServerEntry::destroyStore(Session* sess,
 }
 
 Status ServerEntry::setStoreMode(PStore store, KVStore::StoreMode mode) {
-
   // assert held the X lock of store
   if (store->getMode() == mode) {
     return {ErrorCodes::ERR_OK, ""};

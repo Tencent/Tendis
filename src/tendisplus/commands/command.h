@@ -114,7 +114,7 @@ class Command {
  protected:
   static std::mutex _mutex;
   // protected by mutex
-  const static uint32_t _maxUnseenCmdNum = 10000;
+  static const uint32_t _maxUnseenCmdNum = 10000;
   static std::map<std::string, uint64_t> _unSeenCmds;
 
   static bool _noexpire;

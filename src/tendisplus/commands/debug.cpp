@@ -1792,14 +1792,14 @@ class InfoCommand : public Command {
 #endif
          << "process_id:" << getpid()
          << "\r\n"
-         //<< "run_id:" << "0000000000000000000000000000000000000000" <<
-         //"\r\n" // TODO(takenliu)
+         //  << "run_id:" << "0000000000000000000000000000000000000000" <<
+         //  "\r\n" // TODO(takenliu)
          << "tcp_port:" << server->getNetwork()->getPort() << "\r\n"
          << "uptime_in_seconds:" << uptime / 1000000000 << "\r\n"
          << "uptime_in_days:" << uptime / 1000000000 / (3600 * 24)
          << "\r\n"
-         //<< "hz:" << "" << "\r\n" // TODO(takenliu)
-         //<< "lru_clock:" << "" << "\r\n" // TODO(takenliu)
+         //  << "hz:" << "" << "\r\n" // TODO(takenliu)
+         //  << "lru_clock:" << "" << "\r\n" // TODO(takenliu)
          << "config_file:" << server->getParams()->getConfFile() << "\r\n";
       ss << "\r\n";
       result << ss.str();
@@ -2523,7 +2523,7 @@ class ConfigCommand : public Command {
         info.push_back("masterauth");
         info.push_back(sess->getServerEntry()->masterauth());
       } else if (!sess->getServerEntry()->getParams()->showVar(configName,
-                                                               info)) {
+                                                               &info)) {
         return Command::fmtZeroBulkLen();
       }
       int size = info.size();

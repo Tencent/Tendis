@@ -1,9 +1,11 @@
 // Copyright [2017] <eliotwang, deyukong>
-#ifndef SRC_TENDISPLUS_REPLICATION_INDEX_MANAGER_H_
-#define SRC_TENDISPLUS_REPLICATION_INDEX_MANAGER_H_
+#ifndef SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_
+#define SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_
 
 #include <unordered_map>
-
+#include <list>
+#include <string>
+#include <memory>
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/network/worker_pool.h"
 
@@ -56,4 +58,4 @@ class IndexManager {
 
 }  // namespace tendisplus
 
-#endif
+#endif  // SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_

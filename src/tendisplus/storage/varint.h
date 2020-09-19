@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <vector>
 #include <utility>
+#include <string>
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {

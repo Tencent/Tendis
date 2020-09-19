@@ -11,7 +11,7 @@ namespace tendisplus {
 int paramUpdateValue = 0;
 void paramOnUpdate() {
   paramUpdateValue = 1;
-};
+}
 
 TEST(ServerParams, Common) {
   std::ofstream myfile;

@@ -5,7 +5,7 @@
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/cluster/cluster_manager.h"
-#include "endian.h"
+#include "tendisplus/include/endian.h"
 
 namespace tendisplus {
 RepllogCursorV2::RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end)
@@ -442,7 +442,6 @@ SlotsCursor::SlotsCursor(std::unique_ptr<Cursor> cursor,
                          uint32_t begin,
                          uint32_t end)
   : _startSlot(begin), _endSlot(end), _baseCursor(std::move(cursor)) {
-
   RecordKey tmplRk(begin, 0, RecordType::RT_KV, "", "");
   auto prefix = tmplRk.prefixSlotType();
   _baseCursor->seek(prefix);

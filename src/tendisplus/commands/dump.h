@@ -1,5 +1,5 @@
-#ifndef SRC_TENDISPLUS_COMMANDS_DUMP_H
-#define SRC_TENDISPLUS_COMMANDS_DUMP_H
+#ifndef SRC_TENDISPLUS_COMMANDS_DUMP_H_
+#define SRC_TENDISPLUS_COMMANDS_DUMP_H_
 
 #include <string>
 #include <vector>
@@ -83,7 +83,7 @@ class Serializer {
   Serializer(Serializer&& rhs) = default;
   virtual ~Serializer() = default;
   Expected<std::vector<byte>> dump(bool prefixVer = false);
-  virtual Expected<size_t> dumpObject(std::vector<byte>& buf) = 0;
+  virtual Expected<size_t> dumpObject(std::vector<byte>* buf) = 0;
   // virtual Expected<std::vector<byte>> restore() = 0;
 
   static Expected<size_t> saveObjectType(std::vector<byte>* payload,
@@ -144,4 +144,4 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
 
 }  // namespace tendisplus
 
-#endif  // SRC_TENDISPLUS_COMMANDS_DUMP_H
+#endif  // SRC_TENDISPLUS_COMMANDS_DUMP_H_

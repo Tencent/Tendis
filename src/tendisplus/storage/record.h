@@ -162,7 +162,7 @@ class RecordKey {
 
 class RecordValue {
  public:
-  RecordValue(RecordType type);
+  explicit RecordValue(RecordType type);
   RecordValue(const RecordValue&) = default;
 
   // for zset score
@@ -309,7 +309,7 @@ class ReplLogKeyV2 {
   ReplLogKeyV2();
   ReplLogKeyV2(const ReplLogKeyV2&) = delete;
   ReplLogKeyV2(ReplLogKeyV2&&);
-  ReplLogKeyV2(uint64_t binlogid);
+  explicit ReplLogKeyV2(uint64_t binlogid);
   static Expected<ReplLogKeyV2> decode(const RecordKey&);
   static Expected<ReplLogKeyV2> decode(const std::string&);
   // static std::string& updateBinlogId(std::string& encodeStr, uint64_t
@@ -454,7 +454,7 @@ class ReplLogRawV2 {
   ReplLogRawV2(const ReplLogRawV2&) = delete;
   ReplLogRawV2(ReplLogRawV2&&);
   ReplLogRawV2(const std::string& key, const std::string& value);
-  ReplLogRawV2(const Record& record);
+  explicit ReplLogRawV2(const Record& record);
   ReplLogRawV2(std::string&& key, std::string&& value);
   uint64_t getBinlogId();
   uint64_t getVersionEp();
@@ -564,7 +564,7 @@ class BinlogWriter {
 
 class BinlogReader {
  public:
-  BinlogReader(const std::string& s);
+  explicit BinlogReader(const std::string& s);
   Expected<ReplLogRawV2> next();
   Expected<ReplLogV2> nextV2();
 

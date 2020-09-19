@@ -194,10 +194,12 @@ size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
   offset += varintEncodeBuf(dest + offset, destSize - offset, _timestamp);
 
   // key
-  offset += lenStrEncode((char*)dest + offset, destSize - offset, _key);
+  offset += lenStrEncode(
+    reinterpret_cast<char*>(dest) + offset, destSize - offset, _key);
 
   // val
-  offset += lenStrEncode((char*)dest + offset, destSize - offset, _val);
+  offset += lenStrEncode(
+    reinterpret_cast<char*>(dest) + offset, destSize - offset, _val);
 
   INVARIANT_D(offset == encodeSize());
 
@@ -207,8 +209,9 @@ size_t ReplLogValueEntryV2::encode(uint8_t* dest, size_t destSize) const {
 std::string ReplLogValueEntryV2::encode() const {
   std::string val;
   val.resize(encodeSize());
-
-  size_t offset = encode((uint8_t*)(val.c_str()), val.size());
+  uint8_t* desc =
+    const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(val.c_str()));
+  size_t offset = encode(desc, val.size());
   INVARIANT_D(offset == encodeSize());
 
   return val;
@@ -323,7 +326,9 @@ std::string ReplLogValueV2::encode(
   val.resize(allocSize);
 
   for (const auto& v : vec) {
-    uint8_t* desc = (uint8_t*)val.c_str() + offset;
+    uint8_t* desc =
+      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(val.c_str())) +
+      offset;
     size_t len = v.encode(desc, allocSize - offset);
     INVARIANT_D(len > 0);
     offset += len;

@@ -2,7 +2,7 @@
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
-#include "endian.h"
+#include "tendisplus/include/endian.h"
 
 namespace tendisplus {
 
@@ -143,7 +143,7 @@ uint16_t int16Decode(const char* input) {
   memcpy(&tmp, input, sizeof(uint16_t));
   return be16toh(tmp);
 #else
-  return be16toh(*(uint16_t*)input);
+  return be16toh(*reinterpret_cast<const uint16_t*>(input));
 #endif
 }
 
@@ -163,7 +163,7 @@ uint32_t int32Decode(const char* input) {
   memcpy(&tmp, input, sizeof(uint32_t));
   return be32toh(tmp);
 #else
-  return be32toh(*(uint32_t*)input);
+  return be32toh(*reinterpret_cast<const uint32_t*>(input));
 #endif
 }
 
@@ -183,7 +183,7 @@ uint64_t int64Decode(const char* input) {
   memcpy(&tmp, input, sizeof(uint64_t));
   return be64toh(tmp);
 #else
-  return be64toh(*(uint64_t*)input);
+  return be64toh(*reinterpret_cast<const uint64_t*>(input));
 #endif
 }
 

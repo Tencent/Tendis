@@ -46,7 +46,6 @@ Expected<std::string> setGeneric(Session* sess,
                                  bool endTxn,
                                  const std::string& okReply,
                                  const std::string& abortReply) {
-
   bool diffType = false;
   bool needExpire = false;
   bool notExist = false;
@@ -970,8 +969,8 @@ class GetSetGeneral : public Command {
                                REDIS_SET_NO_FLAGS,
                                rk,
                                newValue.value(),
-                               false, /* check_type has be done by
-                                         Command::expireKeyIfNeeded() */
+                               false,  //  check_type has be done by
+                                       //  Command::expireKeyIfNeeded()
                                true,
                                "",
                                "");
@@ -2254,7 +2253,6 @@ class RenameGenericCommand : public Command {
 class RenameCommand : public RenameGenericCommand {
  public:
   RenameCommand() : RenameGenericCommand("rename", "w", false) {}
-
 } renameCmd;
 
 class RenamenxCommand : public RenameGenericCommand {
@@ -2499,13 +2497,13 @@ class BitFieldCommand : public Command {
       int64_t i64(0);
       int sign;
 
-      if (!::strcasecmp(args[i].c_str(), "get") && remaining >= 2)
+      if (!::strcasecmp(args[i].c_str(), "get") && remaining >= 2) {
         opcode = FieldOpType::BITFIELDOP_GET;
-      else if (!::strcasecmp(args[i].c_str(), "set") && remaining >= 3)
+      } else if (!::strcasecmp(args[i].c_str(), "set") && remaining >= 3) {
         opcode = FieldOpType::BITFIELDOP_SET;
-      else if (!::strcasecmp(args[i].c_str(), "incrby") && remaining >= 3)
+      } else if (!::strcasecmp(args[i].c_str(), "incrby") && remaining >= 3) {
         opcode = FieldOpType::BITFIELDOP_INCRBY;
-      else if (!::strcasecmp(args[i].c_str(), "overflow") && remaining >= 1) {
+      } else if (!::strcasecmp(args[i].c_str(), "overflow") && remaining >= 1) {
         ++i;
         if (!::strcasecmp(args[i].c_str(), "wrap")) {
           owtype = BFOverFlowType::BFOVERFLOW_WRAP;
@@ -2513,6 +2511,8 @@ class BitFieldCommand : public Command {
           owtype = BFOverFlowType::BFOVERFLOW_SAT;
         } else if (!::strcasecmp(args[i].c_str(), "fail")) {
           owtype = BFOverFlowType::BFOVERFLOW_FAIL;
+        } else {
+          return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
         continue;
       } else {
