@@ -1,18 +1,18 @@
 #ifndef SRC_TENDISPLUS_CLUSTER_CLUSTER_MANAGER_H_
 #define SRC_TENDISPLUS_CLUSTER_CLUSTER_MANAGER_H_
 
-#include <string>
-#include <vector>
-#include <memory>
-#include <array>
-#include <utility>
-#include <list>
-#include <unordered_map>
 #include <algorithm>
+#include <array>
 #include <bitset>
-#include "tendisplus/storage/catalog.h"
-#include "tendisplus/server/server_entry.h"
+#include <list>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 #include "tendisplus/network/network.h"
+#include "tendisplus/server/server_entry.h"
+#include "tendisplus/storage/catalog.h"
 
 namespace tendisplus {
 
@@ -26,66 +26,63 @@ enum class ClusterHealth : std::uint8_t {
 
 #define CLUSTER_SLOTS 16384
 
-#define CLUSTER_NAMELEN 40 /* sha1 hex length */
-#define CLUSTER_PORT_INCR 10000 /* Cluster port = baseport + PORT_INCR */
+#define CLUSTER_NAMELEN 40  // sha1 hex length
+#define CLUSTER_PORT_INCR 10000  // Cluster port = baseport + PORT_INCR
 
 
-/* The following defines are amount of time, sometimes expressed as
- * multiplicators of the node timeout value (when ending with MULT). */
+// The following defines are amount of time, sometimes expressed as
+// multiplicators of the node timeout value (when ending with MULT).
 #define CLUSTER_DEFAULT_NODE_TIMEOUT 15000
-#define CLUSTER_DEFAULT_SLAVE_VALIDITY 10 /* Slave max data age factor. */
+#define CLUSTER_DEFAULT_SLAVE_VALIDITY 10  // Slave max data age factor.
 #define CLUSTER_DEFAULT_REQUIRE_FULL_COVERAGE 1
-#define CLUSTER_DEFAULT_SLAVE_NO_FAILOVER 0 /* Failover by default. */
-#define CLUSTER_FAIL_REPORT_VALIDITY_MULT 2 /* Fail report validity. */
-#define CLUSTER_FAIL_UNDO_TIME_MULT 2 /* Undo fail if master is back. */
-#define CLUSTER_FAIL_UNDO_TIME_ADD 10 /* Some additional time. */
-#define CLUSTER_FAILOVER_DELAY 5 /* Seconds */
+#define CLUSTER_DEFAULT_SLAVE_NO_FAILOVER 0  // Failover by default.
+#define CLUSTER_FAIL_REPORT_VALIDITY_MULT 2  // Fail report validity.
+#define CLUSTER_FAIL_UNDO_TIME_MULT 2  // Undo fail if master is back.
+#define CLUSTER_FAIL_UNDO_TIME_ADD 10  // Some additional time.
+#define CLUSTER_FAILOVER_DELAY 5  // Seconds
 #define CLUSTER_DEFAULT_MIGRATION_BARRIER 1
-#define CLUSTER_MF_TIMEOUT 5000 /* Milliseconds to do a manual failover. */
-#define CLUSTER_MF_PAUSE_MULT 2 /* Master pause manual failover mult. */
-#define CLUSTER_SLAVE_MIGRATION_DELAY 5000 /* Delay for slave migration. */
+#define CLUSTER_MF_TIMEOUT 5000  // Milliseconds to do a manual failover.
+#define CLUSTER_MF_PAUSE_MULT 2  // Master pause manual failover mult.
+#define CLUSTER_SLAVE_MIGRATION_DELAY 5000  // Delay for slave migration.
 
 
 // TODO(wayenchen)
 #define CLUSTERMSG_MIN_LEN 100
 
-/* Cluster node flags and macros. */
-#define CLUSTER_NODE_MASTER 1 /* The node is a master */
-#define CLUSTER_NODE_SLAVE 2 /* The node is a slave */
-#define CLUSTER_NODE_PFAIL 4 /* Failure? Need acknowledge */
-#define CLUSTER_NODE_FAIL 8 /* The node is believed to be malfunctioning */
-#define CLUSTER_NODE_MYSELF 16 /* This node is myself */
-#define CLUSTER_NODE_HANDSHAKE                   \
-  32 /* We have still to exchange the first ping \
-      */
-#define CLUSTER_NODE_NOADDR 64 /* We don't know the address of this node */
-#define CLUSTER_NODE_MEET 128 /* Send a MEET message to this node */
-#define CLUSTER_NODE_MIGRATE_TO                 \
-  256 /* Master elegible for replica migration. \
-       */
-#define CLUSTER_NODE_NOFAILOVER 512 /* Slave will not try to failver. */
-#define CLUSTER_NODE_ARBITER \
-  1024 /* The node is an arbiter and not save any data. */
+// Cluster node flags and macros.
+#define CLUSTER_NODE_MASTER 1  // The node is a master
+#define CLUSTER_NODE_SLAVE 2  // The node is a slave
+#define CLUSTER_NODE_PFAIL 4  // Failure? Need acknowledge
+#define CLUSTER_NODE_FAIL 8  // The node is believed to be malfunctioning
+#define CLUSTER_NODE_MYSELF 16  // This node is myself
+#define CLUSTER_NODE_HANDSHAKE 32  // We have still to exchange the first ping
 
-/* Redirection errors returned by getNodeByQuery(). */
-#define CLUSTER_REDIR_NONE 0 /* Node can serve the request. */
-#define CLUSTER_REDIR_CROSS_SLOT 1 /* -CROSSSLOT request. */
-#define CLUSTER_REDIR_UNSTABLE 2 /* -TRYAGAIN redirection required */
-#define CLUSTER_REDIR_ASK 3 /* -ASK redirection required. */
-#define CLUSTER_REDIR_MOVED 4 /* -MOVED redirection required. */
-#define CLUSTER_REDIR_DOWN_STATE 5 /* -CLUSTERDOWN, global state. */
-#define CLUSTER_REDIR_DOWN_UNBOUND 6 /* -CLUSTERDOWN, unbound slot. */
+#define CLUSTER_NODE_NOADDR 64  // We don't know the address of this node
+#define CLUSTER_NODE_MEET 128  // Send a MEET message to this node
+#define CLUSTER_NODE_MIGRATE_TO 256  // Master elegible for replica migration.
+
+#define CLUSTER_NODE_NOFAILOVER 512  // Slave will not try to failver.
+#define CLUSTER_NODE_ARBITER 1024  // arbiter node.
+
+// Redirection errors returned by getNodeByQuery().
+#define CLUSTER_REDIR_NONE 0  // Node can serve the request.
+#define CLUSTER_REDIR_CROSS_SLOT 1  // -CROSSSLOT request.
+#define CLUSTER_REDIR_UNSTABLE 2  // -TRYAGAIN redirection required
+#define CLUSTER_REDIR_ASK 3  // -ASK redirection required.
+#define CLUSTER_REDIR_MOVED 4  // -MOVED redirection required.
+#define CLUSTER_REDIR_DOWN_STATE 5  // -CLUSTERDOWN, global state.
+#define CLUSTER_REDIR_DOWN_UNBOUND 6  // -CLUSTERDOWN, unbound slot.
 
 
-/* Reasons why a slave is not able to failover. */
+// Reasons why a slave is not able to failover.
 #define CLUSTER_CANT_FAILOVER_NONE 0
 #define CLUSTER_CANT_FAILOVER_DATA_AGE 1
 #define CLUSTER_CANT_FAILOVER_WAITING_DELAY 2
 #define CLUSTER_CANT_FAILOVER_EXPIRED 3
 #define CLUSTER_CANT_FAILOVER_WAITING_VOTES 4
-#define CLUSTER_CANT_FAILOVER_RELOG_PERIOD (60 * 5) /* seconds. */
+#define CLUSTER_CANT_FAILOVER_RELOG_PERIOD (60 * 5)  // seconds.
 
-/* clusterState todo_before_sleep flags. */
+// clusterState todo_before_sleep flags.
 #define CLUSTER_TODO_HANDLE_FAILOVER (1 << 0)
 #define CLUSTER_TODO_UPDATE_STATE (1 << 1)
 #define CLUSTER_TODO_SAVE_CONFIG (1 << 2)
@@ -94,13 +91,14 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_MAX_REJOIN_DELAY 5000
 #define CLUSTER_MIN_REJOIN_DELAY 500
 #define CLUSTER_WRITABLE_DELAY 2000
-///* Message types.
-// *
-// * Note that the PING, PONG and MEET messages are actually the same exact
-// * kind of packet. PONG is the reply to ping, in the exact format as a PING,
-// * while MEET is a special PING that forces the receiver to add the sender
-// * as a node (if it is not already in the list). */
-#define CLUSTERMSG_TYPE_COUNT 9 /* Total number of message types. */
+
+// Message types.
+//
+// Note that the PING, PONG and MEET messages are actually the same exact
+// kind of packet. PONG is the reply to ping, in the exact format as a PING,
+// while MEET is a special PING that forces the receiver to add the sender
+// as a node (if it is not already in the list).
+#define CLUSTERMSG_TYPE_COUNT 9  // Total number of message types.
 
 #define CLUSTER_NAME_LENGTH 40
 #define CLUSTER_BLACKLIST_TTL 60
@@ -120,7 +118,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   ClusterNode(const std::string& name,
               const uint16_t flags,
               std::shared_ptr<ClusterState> cstate,
-              //     const std::bitset<CLUSTER_SLOTS>& slots_,
               const std::string& host = "",
               uint32_t port = 0,
               uint32_t cport = 0,
@@ -222,14 +219,14 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   mutable myMutex _mutex;
   std::string _nodeName;
   uint64_t _configEpoch;
-  std::string _nodeIp; /* Latest known IP address of this node */
-  uint64_t _nodePort;  /* Latest known clients port of this node */
-  uint64_t _nodeCport; /* Latest known cluster port of this node. */
-  /* TCP/IP session with this node, connect success */
+  std::string _nodeIp;  // Latest known IP address of this node
+  uint64_t _nodePort;   // Latest known clients port of this node
+  uint64_t _nodeCport;  // Latest known cluster port of this node.
+  // TCP/IP session with this node, connect success
   std::shared_ptr<ClusterSession> _nodeSession;
-  /* try connect to the _node */
+  // try connect to the _node
   std::shared_ptr<BlockingTcpClient> _nodeClient;
-  /* slots handled by this node */
+  // slots handled by this node
   std::bitset<CLUSTER_SLOTS> _mySlots;
   uint16_t _numSlaves;
   uint32_t _numSlots;
@@ -248,7 +245,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   mstime_t _replOffsetTime;
   mstime_t _orphanedTime;
   // FIXME: there is no offset in tendis
-  uint64_t _replOffset; /* Last known repl offset for this node. */
+  uint64_t _replOffset;  // Last known repl offset for this node.
   std::list<std::shared_ptr<ClusterNodeFailReport>> _failReport;
 };
 
@@ -282,25 +279,24 @@ class ClusterMsgHeader;
 class ClusterMsgData;
 class ClusterMsg {
  public:
-  /* Message types.
-   *
-   * Note that the PING, PONG and MEET messages are actually the same exact
-   * kind of packet. PONG is the reply to ping, in the exact format as a PING,
-   * while MEET is a special PING that forces the receiver to add the sender
-   * as a node (if it is not already in the list). */
+  // Message types.
+  //
+  // Note that the PING, PONG and MEET messages are actually the same exact
+  // kind of packet. PONG is the reply to ping, in the exact format as a PING,
+  // while MEET is a special PING that forces the receiver to add the sender
+  // as a node (if it is not already in the list).
   enum class Type : uint16_t {
-    PING = 0,                  /* Ping */
-    PONG = 1,                  /* Pong (reply to Ping) */
-    MEET = 2,                  /* Meet "let's join" message */
-    FAIL = 3,                  /* Mark node xxx as failing */
-    PUBLISH = 4,               /* Pub/Sub Publish propagation */
-    FAILOVER_AUTH_REQUEST = 5, /* May I failover? */
-    FAILOVER_AUTH_ACK = 6,     /* Yes, you have my vote */
-    UPDATE = 7,                /* Another node slots configuration */
-    MFSTART = 8,               /* Pause clients for manual failover */
+    PING = 0,                   // Ping
+    PONG = 1,                   // Pong (reply to Ping)
+    MEET = 2,                   // Meet "let's join" message
+    FAIL = 3,                   // Mark node xxx as failing
+    PUBLISH = 4,                // Pub/Sub Publish propagation
+    FAILOVER_AUTH_REQUEST = 5,  // May I failover?
+    FAILOVER_AUTH_ACK = 6,      // Yes, you have my vote
+    UPDATE = 7,                 // Another node slots configuration
+    MFSTART = 8,                // Pause clients for manual failover
   };
 
-  //    static constexpr uint16_t CLUSTERMSG_TYPE_COUNT = 9;
   static constexpr uint16_t CLUSTER_PROTO_VER = 1;
 
   static std::string clusterGetMessageTypeString(Type type);
@@ -359,12 +355,11 @@ class ClusterMsg {
   std::shared_ptr<ClusterMsgData> _msgData;
 };
 
-/* Message flags better specify the packet content or are used to
- * provide some information about the node state. */
-#define CLUSTERMSG_FLAG0_PAUSED \
-  (1 << 0) /* Master paused for manual failover. */
+// Message flags better specify the packet content or are used to
+// provide some information about the node state.
+#define CLUSTERMSG_FLAG0_PAUSED (1 << 0)  // Master paused for manual failover.
 #define CLUSTERMSG_FLAG0_FORCEACK \
-  (1 << 1) /* Give ACK to AUTH_REQUEST even if master is up. */
+  (1 << 1)  // Give ACK to AUTH_REQUEST even if master is up.
 
 using headerPair = std::pair<Expected<ClusterMsgHeader>, size_t>;
 class ClusterMsgHeader {
@@ -398,19 +393,19 @@ class ClusterMsgHeader {
   static Expected<ClusterMsgHeader> headDecode(const std::string& key);
 
   uint16_t _ver;
-  uint16_t _port; /* TCP base port number.*/
+  uint16_t _port;  // TCP base port number.
   uint16_t _count;
   uint64_t _currentEpoch;
   uint64_t _configEpoch;
   uint64_t _offset;
 
-  std::string _sender; /* Name of the sender node */
+  std::string _sender;  // Name of the sender node
   std::bitset<CLUSTER_SLOTS> _slots;
   std::string _slaveOf;
-  std::string _myIp;    /* Sender IP, if not all zeroed. */
-  uint16_t _cport;      /* Sender TCP cluster bus port */
-  uint16_t _flags;      /* Sender node flags */
-  ClusterHealth _state; /* Cluster state from the POV of the sender */
+  std::string _myIp;     // Sender IP, if not all zeroed.
+  uint16_t _cport;       // Sender TCP cluster bus port
+  uint16_t _flags;       // Sender node flags
+  ClusterHealth _state;  // Cluster state from the POV of the sender
 };
 
 
@@ -629,7 +624,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterBroadcastPong(int target, uint64_t offset);
   void clusterSendFail(CNodePtr node, uint64_t offset);
   // TODO(vinchen): make it const reference
-  void clusterBroadcastMessage(ClusterMsg& msg);
+  void clusterBroadcastMessage(ClusterMsg& msg);  // NOLINT
 
   // if update == true, _currentEpoch should be updated
   uint64_t clusterGetOrUpdateMaxEpoch(bool update = false);
@@ -739,34 +734,38 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   mutable myMutex _mutex;
   mutable std::mutex _failMutex;
   std::condition_variable _cv;
-  CNodePtr _myself; /* This node */
+  CNodePtr _myself;  // This node
   uint64_t _currentEpoch;
-  uint64_t _lastVoteEpoch; /* Epoch of the last vote granted. */
+  uint64_t _lastVoteEpoch;  // Epoch of the last vote granted.
   std::shared_ptr<ServerEntry> _server;
   std::atomic<bool> _blockState;
   std::atomic<uint64_t> _blockTime;
-  /* Manual failover state in common. */
-  mstime_t _mfEnd; /* Manual failover time limit (ms unixtime).  It is zero if
-                      there is no MF in progress. */
-  /* Manual failover state of master. */
-  CNodePtr _mfSlave; /* Slave performing the manual failover. */
-  /* Manual failover state of slave. */
-  uint64_t _mfMasterOffset;  /* Master offset the slave needs to start MF or
-                                zero if stil not received. */
-  uint32_t _mfCanStart;      /* If non-zero signal that the manual failover can
-                                start requesting masters vote. */
-  uint64_t _statsPfailNodes; /* Number of nodes in PFAIL status */
+  // Manual failover state in common.
+  // Manual failover time limit (ms unixtime).  It is zero if there is no MF in
+  // progress.
+  mstime_t _mfEnd;
+  //  Manual failover state of master.
+  CNodePtr _mfSlave;  //  Slave performing the manual failover.
+  //  Manual failover state of slave.
+  // Master offset the slave needs to start MF or zero if stil not received.
+  uint64_t _mfMasterOffset;
+  // If non-zero signal that the manual failover can  start requesting masters
+  // vote.
+  uint32_t _mfCanStart;
+  // Number of nodes in PFAIL status
+  uint64_t _statsPfailNodes;
   std::unique_ptr<std::thread> _manualLockThead;
   std::atomic<bool> _isCliBlocked;
   std::unordered_map<std::string, CNodePtr> _nodes;
   mstime_t _failoverAuthTime;
-  /* The followign fields are used by masters to take state on elections. */
-  std::atomic<uint16_t>
-    _failoverAuthCount; /* Number of votes received so far. */
-  std::atomic<uint16_t>
-    _failoverAuthSent; /* True if we already asked for votes. */
+  // The followign fields are used by masters to take state on elections.
+  // Number of votes received so far.
+  std::atomic<uint16_t> _failoverAuthCount;
+  // True if we already asked for votes.
+  std::atomic<uint16_t> _failoverAuthSent;
   std::atomic<uint32_t> _failoverAuthRank;
-  std::atomic<uint64_t> _failoverAuthEpoch; /* Epoch of the current election. */
+  // Epoch of the current election.
+  std::atomic<uint64_t> _failoverAuthEpoch;
   Status clusterSaveNodesNoLock();
   void clusterAddNodeNoLock(CNodePtr node);
   void clusterDelNodeNoLock(CNodePtr node);
@@ -785,14 +784,14 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::array<CNodePtr, CLUSTER_SLOTS> _importingSlots;
   std::array<CNodePtr, CLUSTER_SLOTS> _allSlots;
   std::array<uint64_t, CLUSTER_SLOTS> _slotsKeysCount;
-  // rax *slots_to_keys;
-  uint8_t
-    _cantFailoverReason; /* Why a slave is currently not able to failover*/
+  // Why a slave is currently not able to failover
+  uint8_t _cantFailoverReason;
   uint64_t _lastLogTime;
   uint64_t _updateStateCallTime;
   uint64_t _amongMinorityTime;
-  uint8_t _todoBeforeSleep; /* Things to do in clusterBeforeSleep(). */
-  /* Messages received and sent by type. */
+  // Things to do in clusterBeforeSleep().
+  uint8_t _todoBeforeSleep;
+  // Messages received and sent by type.
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesSent;
   std::array<uint64_t, CLUSTERMSG_TYPE_COUNT> _statsMessagesReceived;
 };

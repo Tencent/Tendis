@@ -1,4 +1,5 @@
 #include <utility>
+#include <vector>
 #include "glog/logging.h"
 #include "tendisplus/cluster/migrate_sender.h"
 #include "tendisplus/commands/command.h"

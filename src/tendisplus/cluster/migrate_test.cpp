@@ -20,8 +20,8 @@
 
 namespace tendisplus {
 
-std::string master1_dir = "migratetest_master1";
-std::string master2_dir = "migratetest_master2";
+static const char master1_dir[] = "migratetest_master1";
+static const char master2_dir[] = "migratetest_master2";
 uint32_t master1_port = 1131;
 uint32_t master2_port = 1132;
 uint32_t chunkid1 = 3300;

@@ -2,11 +2,12 @@
 #define SRC_TENDISPLUS_CLUSTER_GC_MANAGER_H_
 
 #include <list>
+#include <memory>
 #include <string>
 #include <utility>
+
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/server/server_entry.h"
-#include "tendisplus/cluster/cluster_manager.h"
 
 namespace tendisplus {
 
@@ -101,4 +102,4 @@ class GCManager {
 
 }  // namespace tendisplus
 
-#endif  // SRC_TENDISPLUS_CLUSTER_MIGRATE_MANAGER_H_
+#endif  // SRC_TENDISPLUS_CLUSTER_GC_MANAGER_H_

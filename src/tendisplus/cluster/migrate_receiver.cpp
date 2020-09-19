@@ -47,7 +47,8 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
   uint32_t timeoutSec = 200;
   uint32_t readNum = 0;
   while (true) {
-    SyncReadData(exptData, 1, timeoutSec) if (exptData.value()[0] == '0') {
+    SyncReadData(exptData, 1, timeoutSec);
+    if (exptData.value()[0] == '0') {
       SyncReadData(keylenData, 4, timeoutSec) uint32_t keylen =
         *reinterpret_cast<const uint32_t*>(keylenData.value().c_str());
       SyncReadData(keyData, keylen, timeoutSec)
@@ -58,14 +59,11 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
 
         supplySetKV(keyData.value(), valueData.value());
       readNum++;
-    }
-    else if (exptData.value()[0] == '1') {
+    } else if (exptData.value()[0] == '1') {
       SyncWriteData("+OK")
-    }
-    else if (exptData.value()[0] == '2') {
+    } else if (exptData.value()[0] == '2') {
       SyncWriteData("+OK")
-    }
-    else if (exptData.value()[0] == '3') {
+    } else if (exptData.value()[0] == '3') {
       SyncWriteData("+OK") break;
     }
   }

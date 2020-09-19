@@ -388,7 +388,7 @@ void MigrateManager::requestRateLimit(uint64_t bytes) {
 
 bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
                                  const std::string& nodeid,
-                                 std::vector<uint32_t>& taskSlots) {
+                                 std::vector<uint32_t>* taskSlots) {
   CNodePtr dstNode = _cluster->clusterLookupNode(nodeid);
   CNodePtr myself = _cluster->getMyselfNode();
   size_t idx = 0;
@@ -409,7 +409,7 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
         LOG(ERROR) << "migrating task exists in slot:" << idx;
         return false;
       }
-      taskSlots.push_back(idx);
+      (*taskSlots).push_back(idx);
     }
     idx++;
   }
@@ -473,7 +473,7 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
 
   // check slots
   std::vector<uint32_t> taskSlots;
-  if (!checkSlotOK(taskMap, nodeid, taskSlots)) {
+  if (!checkSlotOK(taskMap, nodeid, &taskSlots)) {
     std::stringstream ss;
     for (auto& vs : taskSlots) {
       ss << vs << " ";
@@ -741,7 +741,6 @@ Status MigrateManager::startTask(const SlotsBitmap& taskmap,
                                  uint16_t port,
                                  uint32_t storeid,
                                  bool importFlag) {
-
   Status s;
   if (importFlag) {
     /* if it is called by importer, generate a taskid to mark the task*/
@@ -882,7 +881,6 @@ Status MigrateManager::applyRepllog(Session* sess,
       LOG(ERROR) << "applyBinlog chunkid err:" << value.value().getChunkId()
                  << "value:" << value.value().getData();
       return {ErrorCodes::ERR_INTERNAL, "chunk not be migrating"};
-      ;
     }
     auto binlog = applySingleTxnV2(sess, storeid, logKey, logValue, mode);
     if (!binlog.ok()) {

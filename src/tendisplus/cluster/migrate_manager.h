@@ -209,7 +209,7 @@ class MigrateManager {
   bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
   bool checkSlotOK(const SlotsBitmap& bitMap,
                    const std::string& nodeid,
-                   std::vector<uint32_t>& taskSlots);
+                   std::vector<uint32_t>* taskSlots);
   std::string genTaskid();
 
  private:

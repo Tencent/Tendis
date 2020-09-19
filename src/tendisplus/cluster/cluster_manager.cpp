@@ -1,23 +1,17 @@
-#include "tendisplus/cluster/cluster_manager.h"
 #include <math.h>
 #include <bitset>
-#include <sstream>
 #include <set>
-#include "tendisplus/utils/time.h"
-#include "tendisplus/utils/string.h"
-#include "tendisplus/utils/invariant.h"
+#include <sstream>
+#include "tendisplus/cluster/cluster_manager.h"
+#include "tendisplus/commands/command.h"
 #include "tendisplus/storage/varint.h"
+#include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
-#include "tendisplus/commands/command.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/time.h"
 
 namespace tendisplus {
-
-/*
-#undef serverLog
-#define serverLog(level, fmt, ...) do {\
-} while(0)
-*/
 
 inline ClusterHealth int2ClusterHealth(const uint8_t t) {
   if (t == 1) {
@@ -255,21 +249,19 @@ bool ClusterNode::setSlotBit(uint32_t slot, uint32_t masterSlavesCount) {
   _mySlots.set(slot);
   if (!old) {
     _numSlots++;
-    /* When a master gets its first slot, even if it has no slaves,
-     * it gets flagged with MIGRATE_TO, that is, the master is a valid
-     * target for replicas migration, if and only if at least one of
-     * the other masters has slaves right now.
-     *
-     * Normally masters are valid targets of replica migration if:
-     * 1. The used to have slaves (but no longer have).
-     * 2. They are slaves failing over a master that used to have slaves.
-     *
-     * However new masters with slots assigned are considered valid
-     * migration targets if the rest of the cluster is not a slave-less.
-     *
-     * See https://github.com/antirez/redis/issues/3043 for more info. */
-    // if (_numSlots == 1 &&
-    // _clusterState->clusterMastersHaveSlavesNoLock())
+    //  When a master gets its first slot, even if it has no slaves,
+    //  it gets flagged with MIGRATE_TO, that is, the master is a valid
+    //  target for replicas migration, if and only if at least one of
+    //  the other masters has slaves right now.
+    //
+    //  Normally masters are valid targets of replica migration if:
+    //  1. The used to have slaves (but no longer have).
+    //  2. They are slaves failing over a master that used to have slaves.
+    //
+    //  However new masters with slots assigned are considered valid
+    //  migration targets if the rest of the cluster is not a slave-less.
+    //
+    //  See https://github.com/antirez/redis/issues/3043 for more info. */
     if (_numSlots == 1 && masterSlavesCount)
       _flags |= CLUSTER_NODE_MIGRATE_TO;
   }
@@ -277,7 +269,7 @@ bool ClusterNode::setSlotBit(uint32_t slot, uint32_t masterSlavesCount) {
   return old;
 }
 
-/* Clear the slot bit and return the old value. */
+// Clear the slot bit and return the old value.
 bool ClusterNode::clearSlotBit(uint32_t slot) {
   std::lock_guard<myMutex> lk(_mutex);
   bool old = _mySlots.test(slot);
@@ -303,9 +295,8 @@ uint32_t ClusterNode::delAllSlotsNoLock() {
   return 0;
 }
 
-// clusterDelNodeSlots
-/* Delete all the slots associated with the specified node.
- * The number of deleted slots is returned. */
+// Delete all the slots associated with the specified node.
+// The number of deleted slots is returned.
 uint32_t ClusterNode::delAllSlots() {
   std::lock_guard<myMutex> lk(_mutex);
   return delAllSlotsNoLock();
@@ -457,7 +448,6 @@ uint16_t ClusterNode::getSlaveNum() const {
 
 void ClusterNode::markAsFailing() {
   std::lock_guard<myMutex> lk(_mutex);
-  /* Mark the node as failing. */
   _flags &= ~CLUSTER_NODE_PFAIL;
   _flags |= CLUSTER_NODE_FAIL;
   _failTime = msSinceEpoch();
@@ -477,8 +467,8 @@ bool ClusterNode::clearNodeFailureIfNeeded(uint32_t timeout) {
 
   INVARIANT_D(nodeFailed());
 
-  /* For slaves we always clear the FAIL flag if we can contact the
-   * node again. */
+  // For slaves we always clear the FAIL flag if we can contact the
+  // node again.
   if (nodeIsSlave() || _numSlots == 0 || nodeIsArbiter()) {
     serverLog(LL_NOTICE,
               "Clear FAIL state for node %.40s: %s is reachable again.",
@@ -489,10 +479,10 @@ bool ClusterNode::clearNodeFailureIfNeeded(uint32_t timeout) {
     return true;
   }
 
-  /* If it is a master and...
-   * 1) The FAIL state is old enough.
-   * 2) It is yet serving slots from our point of view (not failed over).
-   * Apparently no one is going to fix these slots, clear the FAIL flag. */
+  // If it is a master and...
+  // 1) The FAIL state is old enough.
+  // 2) It is yet serving slots from our point of view (not failed over).
+  // Apparently no one is going to fix these slots, clear the FAIL flag.
   if (nodeIsMaster() && _numSlots > 0 &&
       (now - _failTime) > (timeout * CLUSTER_FAIL_UNDO_TIME_MULT)) {
     serverLog(LL_NOTICE,
@@ -2279,19 +2269,20 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
    * request, if the request epoch was greater. */
   if (requestCurrentEpoch < _currentEpoch) {
     serverLog(LL_WARNING,
-              "Failover auth denied to %.40s: reqEpoch (%llu) < curEpoch(%llu)",
+              "Failover auth denied to %.40s: reqEpoch (%" PRIu64
+              ") < curEpoch(%" PRIu64 ")",
               node->getNodeName().c_str(),
-              (unsigned long long)requestCurrentEpoch,
-              (unsigned long long)_currentEpoch);
+              requestCurrentEpoch,
+              _currentEpoch);
     return;
   }
 
   /* I already voted for this epoch? Return ASAP. */
   if (_lastVoteEpoch == _currentEpoch) {
     serverLog(LL_WARNING,
-              "Failover auth denied to %.40s: already voted for epoch %llu",
+              "Failover auth denied to %.40s: already voted for epoch %" PRIu64,
               node->getNodeName().c_str(),
-              (unsigned long long)_currentEpoch);
+              _currentEpoch);
     return;
   }
 
@@ -2325,10 +2316,9 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   if (msSinceEpoch() - master->getVoteTime() < nodeTimeout * 2) {
     serverLog(LL_WARNING,
               "Failover auth denied to %.40s: "
-              "can't vote about this master before %lld milliseconds",
+              "can't vote about this master before %" PRIu64 " milliseconds",
               node->getNodeName().c_str(),
-              (long long)((nodeTimeout * 2) -
-                          (msSinceEpoch() - master->getVoteTime())));
+              ((nodeTimeout * 2) - (msSinceEpoch() - master->getVoteTime())));
     return;
   }
 
@@ -2349,11 +2339,11 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
      * by the slave requesting our vote. Refuse to vote for this slave. */
     serverLog(LL_WARNING,
               "Failover auth denied to %.40s: "
-              "slot %d epoch (%llu) > reqEpoch (%llu)",
+              "slot %d epoch (%" PRIu64 ") > reqEpoch (%" PRIu64 ")",
               node->getNodeName().c_str(),
               j,
-              (unsigned long long)_allSlots[j]->getConfigEpoch(),
-              (unsigned long long)requestConfigEpoch);
+              _allSlots[j]->getConfigEpoch(),
+              requestConfigEpoch);
     return;
   }
 
@@ -2365,23 +2355,23 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
 
   clusterSendFailoverAuth(node);
   serverLog(LL_WARNING,
-            "Failover auth granted to %.40s for epoch %llu",
+            "Failover auth granted to %.40s for epoch %" PRIu64,
             node->getNodeName().c_str(),
-            (unsigned long long)_currentEpoch);
+            _currentEpoch);
 }
 
-/* This function returns the "rank" of this instance, a slave, in the context
- * of its master-slaves ring. The rank of the slave is given by the number of
- * other slaves for the same master that have a better replication offset
- * compared to the local one (better means, greater, so they claim more data).
- *
- * A slave with rank 0 is the one with the greatest (most up to date)
- * replication offset, and so forth. Note that because how the rank is computed
- * multiple slaves may have the same rank, in case they have the same offset.
- *
- * The slave rank is used to add a delay to start an election in order to
- * get voted and replace a failing master. Slaves with better replication
- * offsets are more likely to win. */
+// This function returns the "rank" of this instance, a slave, in the context
+// of its master-slaves ring. The rank of the slave is given by the number of
+// other slaves for the same master that have a better replication offset
+// compared to the local one (better means, greater, so they claim more data).
+//
+// A slave with rank 0 is the one with the greatest (most up to date)
+// replication offset, and so forth. Note that because how the rank is computed
+// multiple slaves may have the same rank, in case they have the same offset.
+//
+// The slave rank is used to add a delay to start an election in order to
+// get voted and replace a failing master. Slaves with better replication
+// offsets are more likely to win. */
 uint32_t ClusterState::clusterGetSlaveRank(void) {
   uint32_t rank = 0;
 
@@ -2399,28 +2389,28 @@ uint32_t ClusterState::clusterGetSlaveRank(void) {
   return rank;
 }
 
-/* This function is called by clusterHandleSlaveFailover() in order to
- * let the slave log why it is not able to failover. Sometimes there are
- * not the conditions, but since the failover function is called again and
- * again, we can't log the same things continuously.
- *
- * This function works by logging only if a given set of conditions are
- * true:
- *
- * 1) The reason for which the failover can't be initiated changed.
- *    The reasons also include a NONE reason we reset the state to
- *    when the slave finds that its master is fine (no FAIL flag).
- * 2) Also, the log is emitted again if the master is still down and
- *    the reason for not failing over is still the same, but more than
- *    CLUSTER_CANT_FAILOVER_RELOG_PERIOD seconds elapsed.
- * 3) Finally, the function only logs if the slave is down for more than
- *    five seconds + NODE_TIMEOUT. This way nothing is logged when a
- *    failover starts in a reasonable time.
- *
- * The function is called with the reason why the slave can't failover
- * which is one of the integer macros CLUSTER_CANT_FAILOVER_*.
- *
- * The function is guaranteed to be called only if 'myself' is a slave. */
+// This function is called by clusterHandleSlaveFailover() in order to
+// let the slave log why it is not able to failover. Sometimes there are
+// not the conditions, but since the failover function is called again and
+// again, we can't log the same things continuously.
+//
+// This function works by logging only if a given set of conditions are
+// true:
+//
+// 1) The reason for which the failover can't be initiated changed.
+//    The reasons also include a NONE reason we reset the state to
+//    when the slave finds that its master is fine (no FAIL flag).
+// 2) Also, the log is emitted again if the master is still down and
+//    the reason for not failing over is still the same, but more than
+//    CLUSTER_CANT_FAILOVER_RELOG_PERIOD seconds elapsed.
+// 3) Finally, the function only logs if the slave is down for more than
+//    five seconds + NODE_TIMEOUT. This way nothing is logged when a
+//    failover starts in a reasonable time.
+//
+// The function is called with the reason why the slave can't failover
+// which is one of the integer macros CLUSTER_CANT_FAILOVER_*.
+//
+// The function is guaranteed to be called only if 'myself' is a slave. */
 void ClusterState::clusterLogCantFailover(int reason) {
   std::lock_guard<myMutex> lk(_mutex);
   std::string msg;
@@ -2637,11 +2627,12 @@ Status ClusterState::clusterHandleSlaveFailover() {
       _failoverAuthRank.store(0, std::memory_order_relaxed);
     }
     serverLog(LL_WARNING,
-              "Start of election delayed for %lld milliseconds "
-              "(rank #%d, offset %lld).",
-              (long long)(_failoverAuthTime - msSinceEpoch()),
+              "Start of election delayed for %" PRId64
+              " milliseconds "
+              "(rank #%d, offset %" PRIu64 ").",
+              (_failoverAuthTime - msSinceEpoch()),
               getFailAuthRank(),
-              (long long)_server->getReplManager()->replicationGetOffset());
+              _server->getReplManager()->replicationGetOffset());
 
     /* Now that we have a scheduled election, broadcast our offset
      * to all the other slaves so that they'll updated their offsets
@@ -2659,11 +2650,12 @@ Status ClusterState::clusterHandleSlaveFailover() {
   if (getFailAuthSent() == 0 && getMfEnd() == 0) {
     auto newrank = clusterGetSlaveRank();
     if (newrank > getFailAuthRank()) {
-      long long added_delay = (newrank - getFailAuthRank()) * 1000;
+      int64_t added_delay = (newrank - getFailAuthRank()) * 1000;
       addFailAuthTime(added_delay);
       _failoverAuthRank.store(newrank, std::memory_order_relaxed);
       serverLog(LL_WARNING,
-                "Slave rank updated to #%d, added %lld milliseconds of delay.",
+                "Slave rank updated to #%d, added %" PRId64
+                " milliseconds of delay.",
                 newrank,
                 added_delay);
     }
@@ -2688,8 +2680,8 @@ Status ClusterState::clusterHandleSlaveFailover() {
     setFailAuthEpoch(epoch);
 
     serverLog(LL_WARNING,
-              "Starting a failover election for epoch %llu.",
-              (unsigned long long)_currentEpoch);
+              "Starting a failover election for epoch %" PRIu64 ".",
+              _currentEpoch);
     clusterRequestFailoverAuth();
     _failoverAuthSent.store(1, std::memory_order_relaxed);
 
@@ -2707,8 +2699,8 @@ Status ClusterState::clusterHandleSlaveFailover() {
     if (_myself->getConfigEpoch() < getFailAuthEpoch()) {
       _myself->setConfigEpoch(getFailAuthEpoch());
       serverLog(LL_WARNING,
-                "configEpoch set to %llu after successful failover",
-                (unsigned long long)_myself->getConfigEpoch());
+                "configEpoch set to %" PRIu64 " after successful failover",
+                _myself->getConfigEpoch());
     }
 
     return {ErrorCodes::ERR_OK, ""};
@@ -2760,7 +2752,6 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
     _mflags(0),
     _header(std::make_shared<ClusterMsgHeader>(cstate, svr, offset)),
     _msgData(nullptr) {
-
   if (cstate->getMyselfNode()->nodeIsMaster() && cstate->getMfEnd()) {
     _mflags |= CLUSTERMSG_FLAG0_PAUSED;
   }
@@ -2788,10 +2779,10 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
       }
       break;
     case Type::FAILOVER_AUTH_REQUEST:
-      /* If this is a manual failover, set the CLUSTERMSG_FLAG0_FORCEACK
-       * bit in the header to communicate the nodes receiving the message
-       * that they should authorized the failover even if the master is
-       * working. */
+      // If this is a manual failover, set the CLUSTERMSG_FLAG0_FORCEACK
+      // bit in the header to communicate the nodes receiving the message
+      // that they should authorized the failover even if the master is
+      // working.
       if (cstate->getMfEnd()) {
         _mflags |= CLUSTERMSG_FLAG0_FORCEACK;
       }
@@ -2870,7 +2861,7 @@ void ClusterMsg::setTotlen(uint32_t totlen) {
   _totlen = totlen;
 }
 
-std::string ClusterMsg::msgEncode() {
+std::string ClusterMsg::msgEncode() {  // NOLINT
   std::vector<uint8_t> key;
 
   std::string data = "";
@@ -4913,7 +4904,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         serverLog(LL_WARNING,
                   "%s arbiter flags change %d",
                   sender->getNodeName().c_str(),
-                  (int)(flags & CLUSTER_NODE_ARBITER));
+                  (flags & CLUSTER_NODE_ARBITER));
       }
       sender->_flags &= ~CLUSTER_NODE_ARBITER;
       sender->_flags |= flags & CLUSTER_NODE_ARBITER;
@@ -5227,7 +5218,7 @@ Status ClusterSession::clusterReadHandler() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {
+Status ClusterSession::clusterSendMessage(ClusterMsg& msg) {  // NOLINT
   setResponse(msg.msgEncode());
   return {ErrorCodes::ERR_OK, ""};
 }

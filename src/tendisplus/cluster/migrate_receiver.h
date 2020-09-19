@@ -13,7 +13,6 @@
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
-using namespace std;
 
 #define CLUSTER_SLOTS 16384
 

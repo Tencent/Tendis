@@ -1,7 +1,7 @@
 #include <utility>
 #include "glog/logging.h"
+#include "tendisplus/cluster/gc_manager.h"
 #include "tendisplus/commands/command.h"
-#include "gc_manager.h"
 
 namespace tendisplus {
 

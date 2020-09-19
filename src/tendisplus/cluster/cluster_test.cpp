@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <limits>
 
+#include "gtest/gtest.h"
+
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/test_util.h"
@@ -16,8 +18,6 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/commands/command.h"
-#include "tendisplus/utils/invariant.h"
-#include "gtest/gtest.h"
 
 namespace tendisplus {
 
@@ -145,7 +145,7 @@ makeCluster(uint32_t startPort,
     }
 
     char buf[128];
-    sprintf(buf, "{%u..%u}", firstslot, lastslot);
+    sprintf(buf, "{%u..%u}", firstslot, lastslot);  // NOLINT
 
     std::string slotstr(buf);
     LOG(INFO) << "ADD SLOTS:" << slotstr;
@@ -1354,7 +1354,7 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr,
                       std::vector<uint32_t> slotsList) {
   for (size_t i = 0; i < slotsList.size(); ++i) {
     uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
-    EXPECT_TRUE(c != 0);
+    EXPECT_EQ(c, 0);
     LOG(INFO) << "slot:" << slotsList[i] << " keys count before delete:" << c;
   }
   auto bitmap = getBitSet(slotsList);
@@ -1363,7 +1363,7 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr,
 
   for (size_t i = 0; i < slotsList.size(); ++i) {
     uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
-    EXPECT_TRUE(c == 0);
+    EXPECT_EQ(c, 0);
   }
 }
 
@@ -1376,7 +1376,7 @@ void testDeleteRange(std::shared_ptr<ServerEntry> svr,
   for (size_t i = start; i <= end; ++i) {
     if (svr->getSegmentMgr()->getStoreid(i) == storeid) {
       uint64_t c = svr->getClusterMgr()->countKeysInSlot(i);
-      EXPECT_TRUE(c == 0);
+      EXPECT_EQ(c, 0);
     }
   }
 }
@@ -1602,8 +1602,8 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
     }
     std::this_thread::sleep_for(1s);
   }
-  EXPECT_TRUE(begin != INT32_MAX);
-  EXPECT_TRUE(end != 0);
+  EXPECT_NE(begin, INT32_MAX);
+  EXPECT_NE(end, 0);
   EXPECT_LT((end - begin), 60);
 }
 
