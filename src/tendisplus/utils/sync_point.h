@@ -63,7 +63,7 @@ class SyncPoint {
   // And/or call registered callback functionn, with argument `cb_arg`
   void Process(const std::string& point, void* cb_arg = nullptr);
 
-  // TODO: it might be useful to provide a function that blocks until all
+  // TODO(xxx): it might be useful to provide a function that blocks until all
   // sync points are cleared.
 
  private:
@@ -72,7 +72,7 @@ class SyncPoint {
   // successor/predecessor map loaded from LoadDependency
   std::unordered_map<std::string, std::vector<std::string>> successors_;
   std::unordered_map<std::string, std::vector<std::string>> predecessors_;
-  std::unordered_map<std::string, std::function<void(void*)> > callbacks_;
+  std::unordered_map<std::string, std::function<void(void*)>> callbacks_;
 
   std::mutex mutex_;
   std::condition_variable cv_;

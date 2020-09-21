@@ -6,14 +6,15 @@
 
 namespace tendisplus {
 
-class ParamManager{
+class ParamManager {
  public:
-    void init(int argc, char** argv);
-    uint64_t getUint64(const char* param, uint64_t default_value = 0) const;
-    std::string getString(const char* param, std::string default_value = "") const;
+  void init(int argc, char** argv);
+  uint64_t getUint64(const char* param, uint64_t default_value = 0) const;
+  std::string getString(const char* param,
+                        std::string default_value = "") const;
 
  private:
-    std::map<std::string, std::string> _dict;
+  std::map<std::string, std::string> _dict;
 };
 
 }  // namespace tendisplus

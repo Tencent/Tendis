@@ -4,20 +4,16 @@
 #include <sstream>
 
 namespace tendisplus {
-Status::Status()
-    :Status(ErrorCodes::ERR_OK, "") {
-}
+Status::Status() : Status(ErrorCodes::ERR_OK, "") {}
 
 Status::Status(const ErrorCodes& code, const std::string& reason)
-    :_errmsg(reason), _code(code) {
-}
+  : _errmsg(reason), _code(code) {}
 
 Status::Status(Status&& other)
-    :_errmsg(std::move(other._errmsg)), _code(other._code) {
-}
+  : _errmsg(std::move(other._errmsg)), _code(other._code) {}
 
 bool Status::ok() const {
-    return _code == ErrorCodes::ERR_OK;
+  return _code == ErrorCodes::ERR_OK;
 }
 
 /*
@@ -49,12 +45,16 @@ shared.noscripterr = createObject(OBJ_STRING,sdsnew(
 shared.loadingerr = createObject(OBJ_STRING,sdsnew(
 "-LOADING Redis is loading the dataset in memory\r\n"));
 shared.slowscripterr = createObject(OBJ_STRING,sdsnew(
-"-BUSY Redis is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE.\r\n"));
-shared.masterdownerr = createObject(OBJ_STRING,sdsnew(
-"-MASTERDOWN Link with MASTER is down and slave-serve-stale-data is set to 'no'.\r\n"));
-shared.bgsaveerr = createObject(OBJ_STRING,sdsnew(
-"-MISCONF Redis is configured to save RDB snapshots, but it is currently not able to persist on disk. Commands that may modify the data set are disabled, because this instance is configured to report errors during writes if RDB snapshotting fails (stop-writes-on-bgsave-error option). Please check the Redis logs for details about the RDB error.\r\n"));
-shared.roslaveerr = createObject(OBJ_STRING,sdsnew(
+"-BUSY Redis is busy running a script. You can only call SCRIPT KILL or SHUTDOWN
+NOSAVE.\r\n")); shared.masterdownerr = createObject(OBJ_STRING,sdsnew(
+"-MASTERDOWN Link with MASTER is down and slave-serve-stale-data is set to
+'no'.\r\n")); shared.bgsaveerr = createObject(OBJ_STRING,sdsnew(
+"-MISCONF Redis is configured to save RDB snapshots, but it is currently not
+able to persist on disk. Commands that may modify the data set are disabled,
+because this instance is configured to report errors during writes if RDB
+snapshotting fails (stop-writes-on-bgsave-error option). Please check the Redis
+logs for details about the RDB error.\r\n")); shared.roslaveerr =
+createObject(OBJ_STRING,sdsnew(
 "-READONLY You can't write against a read only slave.\r\n"));
 shared.noautherr = createObject(OBJ_STRING,sdsnew(
 "-NOAUTH Authentication required.\r\n"));
@@ -73,80 +73,76 @@ shared.plus = createObject(OBJ_STRING,sdsnew("+"));
 */
 
 std::string Status::getErrStr(ErrorCodes code) {
-    switch (code) {
+  switch (code) {
     case ErrorCodes::ERR_NAN:
-        return "-ERR resulting score is not a number (NaN)\r\n";
+      return "-ERR resulting score is not a number (NaN)\r\n";
     case ErrorCodes::ERR_FLOAT:
-        return "-ERR value is not a valid float\r\n";
+      return "-ERR value is not a valid float\r\n";
     case ErrorCodes::ERR_INTERGER:
-        return "-ERR value is not an integer or out of range\r\n";
+      return "-ERR value is not an integer or out of range\r\n";
     case ErrorCodes::ERR_PARSEOPT:
-        return "-ERR syntax error\r\n";
+      return "-ERR syntax error\r\n";
     case ErrorCodes::ERR_ZSLPARSERANGE:
-        return "-ERR min or max is not a float\r\n";
+      return "-ERR min or max is not a float\r\n";
     case ErrorCodes::ERR_ZSLPARSELEXRANGE:
-        return "-ERR min or max not valid string range item\r\n";
+      return "-ERR min or max not valid string range item\r\n";
     case ErrorCodes::ERR_EXTENDED_PROTOCOL:
-        return "-ERR invalid extended protocol input\r\n";
+      return "-ERR invalid extended protocol input\r\n";
     case ErrorCodes::ERR_WRONG_TYPE:
-        return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
+      return "-WRONGTYPE Operation against a key holding the wrong kind "
+             "of value\r\n";
     case ErrorCodes::ERR_WRONG_ARGS_SIZE:
-        return "-ERR wrong number of arguments\r\n";
+      return "-ERR wrong number of arguments\r\n";
     case ErrorCodes::ERR_INVALID_HLL:
-        return "-INVALIDOBJ Corrupted HLL object detected\r\n";
+      return "-INVALIDOBJ Corrupted HLL object detected\r\n";
     case ErrorCodes::ERR_NO_KEY:
-        return "-ERR no such key\r\n";
+      return "-ERR no such key\r\n";
     case ErrorCodes::ERR_OUT_OF_RANGE:
-        return "-ERR index out of range\r\n";
+      return "-ERR index out of range\r\n";
     case ErrorCodes::ERR_WRONG_VERSION_EP:
-        return "-WRONGVERSION\r\n";
+      return "-WRONGVERSION\r\n";
     case ErrorCodes::ERR_CLUSTER_REDIR_CROSS_SLOT:
-        return "-CROSSSLOT Keys in request don't hash to the same slot\r\n";
+      return "-CROSSSLOT Keys in request don't hash to the same slot\r\n";
     case ErrorCodes::ERR_CLUSTER_REDIR_DOWN_STATE:
-        return "-CLUSTERDOWN The cluster is down\r\n";
+      return "-CLUSTERDOWN The cluster is down\r\n";
     case ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND:
-        return "-CLUSTERDOWN Hash slot not served\r\n";
+      return "-CLUSTERDOWN Hash slot not served\r\n";
 
     default:
-        break;
-    }
+      break;
+  }
 
-    return "";
+  return "";
 }
 
 std::string Status::toString() const {
-    if (_errmsg.size() == 0) {
-        return Status::getErrStr(_code);
+  if (_errmsg.size() == 0) {
+    return Status::getErrStr(_code);
+  } else {
+    std::stringstream ss;
+    if (_code < ErrorCodes::ERR_AUTH) {
+      ss << "-ERR:"
+         << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
+         << ",msg:" << _errmsg << "\r\n";
     } else {
-        std::stringstream ss;
-        if (_code < ErrorCodes::ERR_AUTH) {
-            ss << "-ERR:"
-                << static_cast<std::underlying_type<ErrorCodes>::type>(_code)
-                << ",msg:"
-                << _errmsg
-                << "\r\n";
-        } else {
-            // redis error
-            if (_errmsg[0] == '-') {
-                INVARIANT_D(_errmsg[_errmsg.size() - 2] == '\r');
-                INVARIANT_D(_errmsg[_errmsg.size() - 1] == '\n');
+      // redis error
+      if (_errmsg[0] == '-') {
+        INVARIANT_D(_errmsg[_errmsg.size() - 2] == '\r');
+        INVARIANT_D(_errmsg[_errmsg.size() - 1] == '\n');
 
-                return _errmsg;
-            } else {
-                ss << "-ERR "
-                    << _errmsg
-                    << "\r\n";
-            }
-        }
-        return ss.str();
+        return _errmsg;
+      } else {
+        ss << "-ERR " << _errmsg << "\r\n";
+      }
     }
+    return ss.str();
+  }
 }
 
 ErrorCodes Status::code() const {
-    return _code;
+  return _code;
 }
 
-Status::~Status() {
-}
+Status::~Status() {}
 
 }  // namespace tendisplus

@@ -15,69 +15,69 @@
 namespace tendisplus {
 
 class IOCtxException : public std::exception {
-public:
+ public:
   IOCtxException() : std::exception() {}
 };
 
 class PoolMatrix {
-public:
-    PoolMatrix operator-(const PoolMatrix& right);
-    Atom<uint64_t> inQueue{0};
-    Atom<uint64_t> executing{0};
-    Atom<uint64_t> executed{0};
-    Atom<uint64_t> queueTime{0};
-    Atom<uint64_t> executeTime{0};
-    std::string toString() const;
-    void reset();
+ public:
+  PoolMatrix operator-(const PoolMatrix& right);
+  Atom<uint64_t> inQueue{0};
+  Atom<uint64_t> executing{0};
+  Atom<uint64_t> executed{0};
+  Atom<uint64_t> queueTime{0};
+  Atom<uint64_t> executeTime{0};
+  std::string toString() const;
+  void reset();
 };
 
 // TODO(pecochen): currently only support static thread-num
 // It's better to adaptively resize thread-pool by pressure
 class WorkerPool {
  public:
-    explicit WorkerPool(const std::string& name,
-                        std::shared_ptr<PoolMatrix> poolMatrix);
-    WorkerPool(const WorkerPool&) = delete;
-    WorkerPool(WorkerPool&&) = delete;
-    Status startup(size_t poolSize);
-    bool isFull() const;
-    template <typename fn>
-    void schedule(fn&& task) {
-        int64_t enQueueTs = nsSinceEpoch();
-        ++_matrix->inQueue;
-        auto taskWrap = [this, mytask = std::move(task), enQueueTs] () mutable {
-            int64_t outQueueTs = nsSinceEpoch();
-            _matrix->queueTime += outQueueTs - enQueueTs;
-            ++_matrix->executing;
-            mytask();
-            --_matrix->inQueue;
-            --_matrix->executing;
-            int64_t endExeTs = nsSinceEpoch();
-            _matrix->executeTime += endExeTs - outQueueTs;
-            ++_matrix->executed;
-        };
-        asio::post(*_ioCtx, std::move(taskWrap));
-        // NOTE(deyukong): use asio::post rather than ctx.post, the latter one
-        // only support copyable callbacks. which means you cannot use a lambda
-        // which captures unique_Ptr as params
-        // refers here: https://github.com/boostorg/asio/issues/61
-        // _ioCtx->post(std::move(taskWrap));
-    }
-    void stop();
-    size_t size() const;
-    void resize(size_t poolSize);
+  explicit WorkerPool(const std::string& name,
+                      std::shared_ptr<PoolMatrix> poolMatrix);
+  WorkerPool(const WorkerPool&) = delete;
+  WorkerPool(WorkerPool&&) = delete;
+  Status startup(size_t poolSize);
+  bool isFull() const;
+  template <typename fn>
+  void schedule(fn&& task) {
+    int64_t enQueueTs = nsSinceEpoch();
+    ++_matrix->inQueue;
+    auto taskWrap = [this, mytask = std::move(task), enQueueTs]() mutable {
+      int64_t outQueueTs = nsSinceEpoch();
+      _matrix->queueTime += outQueueTs - enQueueTs;
+      ++_matrix->executing;
+      mytask();
+      --_matrix->inQueue;
+      --_matrix->executing;
+      int64_t endExeTs = nsSinceEpoch();
+      _matrix->executeTime += endExeTs - outQueueTs;
+      ++_matrix->executed;
+    };
+    asio::post(*_ioCtx, std::move(taskWrap));
+    // NOTE(deyukong): use asio::post rather than ctx.post, the latter one
+    // only support copyable callbacks. which means you cannot use a lambda
+    // which captures unique_Ptr as params
+    // refers here: https://github.com/boostorg/asio/issues/61
+    // _ioCtx->post(std::move(taskWrap));
+  }
+  void stop();
+  size_t size() const;
+  void resize(size_t poolSize);
 
  private:
-    void consumeTasks(size_t idx);
-    void resizeIncrease(size_t size);
-    void resizeDecrease(size_t size);
-    mutable std::mutex _mutex;
-    std::atomic<bool> _isRuning;
-    std::unique_ptr<asio::io_context> _ioCtx;
-    const std::string _name;
-    std::shared_ptr<PoolMatrix> _matrix;
-    std::atomic<uint64_t> _idGenerator;
-    std::map<std::thread::id, std::thread> _threads;
+  void consumeTasks(size_t idx);
+  void resizeIncrease(size_t size);
+  void resizeDecrease(size_t size);
+  mutable std::mutex _mutex;
+  std::atomic<bool> _isRuning;
+  std::unique_ptr<asio::io_context> _ioCtx;
+  const std::string _name;
+  std::shared_ptr<PoolMatrix> _matrix;
+  std::atomic<uint64_t> _idGenerator;
+  std::map<std::thread::id, std::thread> _threads;
 };
 
 }  // namespace tendisplus

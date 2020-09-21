@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <vector>
 #include <utility>
+#include <string>
 #include "tendisplus/utils/status.h"
 
 namespace tendisplus {
@@ -17,17 +18,17 @@ std::string varintEncodeStr(uint64_t val);
 size_t varintEncodeBuf(uint8_t* buf, size_t bufsize, uint64_t val);
 size_t varintEncodeSize(uint64_t val);
 
-Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t *input,
-        size_t maxSize);
+Expected<VarintDecodeResult> varintDecodeFwd(const uint8_t* input,
+                                             size_t maxSize);
 
 // NOTE(deyukong): if you have a buff, named p, with size = maxSize
 // you should write varintDecodeRvs(p+maxSize, maxSize)
 // donot write varintDecodeRvs(p, maxSize)
-Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t *input,
-        size_t maxSize);
+Expected<VarintDecodeResult> varintDecodeRvs(const uint8_t* input,
+                                             size_t maxSize);
 
 std::vector<uint8_t> doubleEncode(double val);
-Expected<double> doubleDecode(const uint8_t *input, size_t maxSize);
+Expected<double> doubleDecode(const uint8_t* input, size_t maxSize);
 Expected<double> doubleDecode(const std::string& input);
 
 uint16_t int16Encode(uint16_t input);

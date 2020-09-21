@@ -66,7 +66,8 @@ void SyncPoint::ClearTrace() {
 void SyncPoint::Process(const std::string& point, void* cb_arg) {
   std::unique_lock<std::mutex> lock(mutex_);
 
-  if (!enabled_) return;
+  if (!enabled_)
+    return;
 
   auto callback_pair = callbacks_.find(point);
   if (callback_pair != callbacks_.end()) {
