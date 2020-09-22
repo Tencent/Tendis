@@ -56,7 +56,7 @@ class NetworkAsio {
               std::shared_ptr<NetworkMatrix> netMatrix,
               std::shared_ptr<RequestMatrix> reqMatrix,
               std::shared_ptr<ServerParams> cfg,
-              const std::string& name = "network");
+              const std::string& name = "tx-io");
   NetworkAsio(const NetworkAsio&) = delete;
   NetworkAsio(NetworkAsio&&) = delete;
 

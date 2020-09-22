@@ -45,13 +45,13 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
 Status IndexManager::startup() {
   Status s;
 
-  _indexScanner = std::make_unique<WorkerPool>("idx-scan", _scannerMatrix);
+  _indexScanner = std::make_unique<WorkerPool>("tx-idx-scan", _scannerMatrix);
   s = _indexScanner->startup(_scanPoolSize);
   if (!s.ok()) {
     return s;
   }
 
-  _keyDeleter = std::make_unique<WorkerPool>("idx-delete", _deleterMatrix);
+  _keyDeleter = std::make_unique<WorkerPool>("tx-idx-del", _deleterMatrix);
   s = _keyDeleter->startup(_delPoolSize);
   if (!s.ok()) {
     return s;
@@ -59,7 +59,7 @@ Status IndexManager::startup() {
 
   _isRunning.store(true, std::memory_order_relaxed);
   _runner = std::thread([this]() {
-    pthread_setname_np(pthread_self(), "index_loop");
+    pthread_setname_np(pthread_self(), "tx-idx-loop");
     run();
   });
 
