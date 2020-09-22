@@ -113,7 +113,7 @@ Status MigrateManager::startup() {
 
   // sender's pov
   _migrateSender =
-    std::make_unique<WorkerPool>("tx-mgrt-sender", _migrateSenderMatrix);
+    std::make_unique<WorkerPool>("tx-mgrt-snd", _migrateSenderMatrix);
   Status s = _migrateSender->startup(_cfg->migrateSenderThreadnum);
   if (!s.ok()) {
     return s;
@@ -121,7 +121,7 @@ Status MigrateManager::startup() {
 
   // receiver's pov
   _migrateReceiver =
-    std::make_unique<WorkerPool>("tx-mgrt-recver", _migrateReceiverMatrix);
+    std::make_unique<WorkerPool>("tx-mgrt-rcv", _migrateReceiverMatrix);
   s = _migrateReceiver->startup(_cfg->migrateReceiveThreadnum);
   if (!s.ok()) {
     return s;
