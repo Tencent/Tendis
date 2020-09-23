@@ -129,7 +129,7 @@ Status WorkerPool::startup(size_t poolsize) {
       std::string thread_name = _name + "_" + std::to_string(i);
       thread_name.resize(15);  // pthread_setname_np allows a maximum thread
                                // name of 16 bytes including the trailing '\0'
-      INVARIANT_D(!pthread_setname_np(pthread_self(), thread_name.c_str()));
+      INVARIANT(!pthread_setname_np(pthread_self(), thread_name.c_str()));
       consumeTasks(i);
     });
     auto tid = thd.get_id();
@@ -180,7 +180,7 @@ void WorkerPool::resizeIncrease(size_t size) {
       std::string thread_name = _name + "_" +
         std::to_string(_idGenerator.load(std::memory_order_relaxed));
       thread_name.resize(15);
-      INVARIANT_D(!pthread_setname_np(pthread_self(), thread_name.c_str()));
+      INVARIANT(!pthread_setname_np(pthread_self(), thread_name.c_str()));
       consumeTasks(_idGenerator.load(std::memory_order_relaxed));
     });
     auto tid = thd.get_id();
