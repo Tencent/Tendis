@@ -80,6 +80,7 @@ class RepllogCursorV2 {
     ~RepllogCursorV2() = default;
     Expected<ReplLogRawV2> next();
     Expected<ReplLogV2> nextV2();
+    uint64_t getCur() { return _cur; }
     Status seekToLast();
     static Expected<uint64_t> getMinBinlogId(Transaction* txn);
     static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
