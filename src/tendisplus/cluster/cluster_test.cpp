@@ -1354,12 +1354,12 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr,
                       std::vector<uint32_t> slotsList) {
   for (size_t i = 0; i < slotsList.size(); ++i) {
     uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
-    EXPECT_EQ(c, 0);
     LOG(INFO) << "slot:" << slotsList[i] << " keys count before delete:" << c;
   }
   auto bitmap = getBitSet(slotsList);
   svr->getGcMgr()->deleteBitMap(bitmap, 0);
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  // TODO(wayenchen) check deleteTask state
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   for (size_t i = 0; i < slotsList.size(); ++i) {
     uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
