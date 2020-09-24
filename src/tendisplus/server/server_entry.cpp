@@ -518,7 +518,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
         : threadnum - i;
       LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
       auto executor = std::make_unique<WorkerPool>(
-        "req-exec-" + std::to_string(i), _poolMatrix);
+        "tx-worker-" + std::to_string(i), _poolMatrix);
       Status s = executor->startup(curNum);
       if (!s.ok()) {
         LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
@@ -534,7 +534,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
   } else {
     auto executor = std::make_unique<WorkerPool>(
-      "req-exec-" + std::to_string(0), _poolMatrix);
+      "tx-worker-" + std::to_string(0), _poolMatrix);
     Status s = executor->startup(threadnum);
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
@@ -619,7 +619,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   // server stats monitor
   _cronThd = std::make_unique<std::thread>([this] {
-    pthread_setname_np(pthread_self(), "server_cron");
+    INVARIANT_D(!pthread_setname_np(pthread_self(), "tx-svr-cron"));
     serverCron();
   });
 
@@ -872,7 +872,7 @@ void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
 
   for (size_t i = 0; i < listNum; ++i) {
     auto executor = std::make_unique<WorkerPool>(
-      "req-exec-" + std::to_string(_executorList.size() + i), _poolMatrix);
+      "tx-worker-" + std::to_string(_executorList.size() + i), _poolMatrix);
     Status s = executor->startup(_executorList.back()->size());
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"

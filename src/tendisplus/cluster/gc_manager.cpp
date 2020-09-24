@@ -19,7 +19,7 @@ GCManager::GCManager(std::shared_ptr<ServerEntry> svr)
 
 Status GCManager::startup() {
   std::lock_guard<myMutex> lk(_mutex);
-  _gcDeleter = std::make_unique<WorkerPool>("gc-clear", _gcDeleterMatrix);
+  _gcDeleter = std::make_unique<WorkerPool>("tx-gc-manager", _gcDeleterMatrix);
 
   auto s = _gcDeleter->startup(_svr->getParams()->garbageDeleteThreadnum);
   if (!s.ok()) {

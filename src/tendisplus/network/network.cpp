@@ -241,8 +241,9 @@ void NetworkAsio::stop() {
 Status NetworkAsio::startThread() {
   _isRunning.store(true, std::memory_order_relaxed);
   _acceptThd = std::make_unique<std::thread>([this] {
-    std::string threadName = _name + "-ac";
-    pthread_setname_np(pthread_self(), threadName.c_str());
+    std::string threadName = _name + "-accept";
+    threadName.resize(15);
+    INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
     while (_isRunning.load(std::memory_order_relaxed)) {
       // if no work-gurad, the run() returns immediately if no other tasks
       asio::io_context::work work(*_acceptCtx);
@@ -272,8 +273,9 @@ Status NetworkAsio::startThread() {
     }
     for (size_t i = 0; i < threadnum; ++i) {
       std::thread thd([this, i] {
-        std::string threadName = _name + "-rw_" + std::to_string(i);
-        pthread_setname_np(pthread_self(), threadName.c_str());
+        std::string threadName = _name + "-rw-" + std::to_string(i);
+        threadName.resize(15);
+        INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
         while (_isRunning.load(std::memory_order_relaxed)) {
           // if no workguard, the run() returns immediately if no
           // tasks
@@ -293,8 +295,9 @@ Status NetworkAsio::startThread() {
     _rwCtxList.push_back(std::make_shared<asio::io_context>());
     for (size_t i = 0; i < threadnum; ++i) {
       std::thread thd([this, i] {
-        std::string threadName = _name + "-rw_" + std::to_string(i);
-        pthread_setname_np(pthread_self(), threadName.c_str());
+        std::string threadName = _name + "-rw-" + std::to_string(i);
+        threadName.resize(15);
+        INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
         while (_isRunning.load(std::memory_order_relaxed)) {
           // if no workguard, the run() returns immediately if no
           // tasks

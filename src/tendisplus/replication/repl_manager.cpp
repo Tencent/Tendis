@@ -149,31 +149,32 @@ Status ReplManager::startup() {
     }
   }
 
-  _incrPusher = std::make_unique<WorkerPool>("repl-minc", _incrPushMatrix);
+  _incrPusher = std::make_unique<WorkerPool>("tx-repl-minc", _incrPushMatrix);
   Status s = _incrPusher->startup(_cfg->incrPushThreadnum);
   if (!s.ok()) {
     return s;
   }
-  _fullPusher = std::make_unique<WorkerPool>("repl-mfull", _fullPushMatrix);
+  _fullPusher = std::make_unique<WorkerPool>("tx-repl-mfull", _fullPushMatrix);
   s = _fullPusher->startup(_cfg->fullPushThreadnum);
   if (!s.ok()) {
     return s;
   }
 
   _fullReceiver =
-    std::make_unique<WorkerPool>("repl-sfull", _fullReceiveMatrix);
+    std::make_unique<WorkerPool>("tx-repl-sfull", _fullReceiveMatrix);
   s = _fullReceiver->startup(_cfg->fullReceiveThreadnum);
   if (!s.ok()) {
     return s;
   }
 
-  _incrChecker = std::make_unique<WorkerPool>("repl-scheck", _incrCheckMatrix);
+  _incrChecker = std::make_unique<WorkerPool>("tx-repl-schk", _incrCheckMatrix);
   s = _incrChecker->startup(2);
   if (!s.ok()) {
     return s;
   }
 
-  _logRecycler = std::make_unique<WorkerPool>("log-recyc", _logRecycleMatrix);
+  _logRecycler =
+    std::make_unique<WorkerPool>("tx-log-recyc", _logRecycleMatrix);
   s = _logRecycler->startup(_cfg->logRecycleThreadnum);
   if (!s.ok()) {
     return s;
@@ -318,7 +319,7 @@ Status ReplManager::startup() {
 
   _isRunning.store(true, std::memory_order_relaxed);
   _controller = std::make_unique<std::thread>(std::move([this]() {
-    pthread_setname_np(pthread_self(), "repl_loop");
+    pthread_setname_np(pthread_self(), "tx-repl-loop");
     controlRoutine();
   }));
 

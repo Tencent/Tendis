@@ -53,7 +53,6 @@ void WorkerPool::consumeTasks(size_t idx) {
   char threadName[64];
   memset(threadName, 0, sizeof threadName);
   pthread_getname_np(pthread_self(), threadName, sizeof threadName);
-  LOG(INFO) << "workerthread:" << threadName << " starts";
   char* pname = &threadName[0];
   const auto guard = MakeGuard([this, pname, &detachFlag] {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -96,8 +95,7 @@ void WorkerPool::consumeTasks(size_t idx) {
       auto iter = _threads.find(id);
       if (iter != _threads.cend()) {
         // NOTE: if in need, we can log exiting thread info with its
-        // name
-        //       from pthread_getname_np();
+        // name from pthread_getname_np();
         detachFlag = true;
         return;
       } else {
@@ -129,9 +127,9 @@ Status WorkerPool::startup(size_t poolsize) {
   for (size_t i = 0; i < poolsize; ++i) {
     std::thread thd = std::thread([this, i]() {
       std::string threadName = _name + "_" + std::to_string(i);
-      // NOTE(deyukong): pthread_setname_np requires the
-      // name not longer than 15 chars.
-      pthread_setname_np(pthread_self(), threadName.c_str());
+      threadName.resize(15);  // pthread_setname_np allows a maximum thread
+                              // name of 16 bytes including the trailing '\0'
+      INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
       consumeTasks(i);
     });
     auto tid = thd.get_id();
@@ -181,7 +179,8 @@ void WorkerPool::resizeIncrease(size_t size) {
     std::thread thd = std::thread([this]() {
       std::string threadName = _name + "_" +
         std::to_string(_idGenerator.load(std::memory_order_relaxed));
-      pthread_setname_np(pthread_self(), threadName.c_str());
+      threadName.resize(15);
+      INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
       consumeTasks(_idGenerator.load(std::memory_order_relaxed));
     });
     auto tid = thd.get_id();
