@@ -137,12 +137,25 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
 Status NetworkAsio::prepare(const std::string& ip,
                             const uint16_t port,
                             uint32_t netIoThreadNum) {
+  bool supportDomain = _server->getParams()->domainEnabled;
+
   try {
     _ip = ip;
     _port = port;
     _netIoThreadNum = netIoThreadNum;
-    asio::ip::address address = asio::ip::make_address(ip);
-    auto ep = tcp::endpoint(address, port);
+    asio::ip::tcp::endpoint ep;
+    /*NOTE(wayenchen) if bind domain name, use resolver to get endpoint*/
+    if (supportDomain) {
+      asio::ip::tcp::resolver resolver(*_acceptCtx);
+      std::stringstream ss;
+      ss << port;
+      asio::ip::tcp::resolver::query query(ip, ss.str());
+      asio::ip::tcp::resolver::iterator iter = resolver.resolve(query);
+      ep = iter->endpoint();
+    } else {
+      asio::ip::address address = asio::ip::make_address(ip);
+      ep = tcp::endpoint(address, port);
+    }
     std::error_code ec;
     _acceptor = std::make_unique<tcp::acceptor>(*_acceptCtx, ep);
     _acceptor->set_option(tcp::acceptor::reuse_address(true));

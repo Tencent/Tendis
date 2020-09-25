@@ -277,7 +277,6 @@ Status GCManager::deleteBitMap(const SlotsBitmap& slots, mstime_t delay) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-
 Status GCManager::deleteSlotsData(const SlotsBitmap& slots,
                                   uint32_t storeid,
                                   uint64_t delay) {

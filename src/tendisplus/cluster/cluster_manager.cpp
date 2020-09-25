@@ -594,6 +594,11 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
   if (sess == node->getSession())
     return false;
 
+  /* if domain name is used in gossip instead of ip address,
+   * no need to change the domain name in k8s */
+  if (_server->getParams()->domainEnabled)
+    return false;
+
   ip = sess->nodeIp2String(ip);
   if (node->getPort() == port && node->getCport() == cport &&
       ip == node->getNodeIp()) {
@@ -4712,6 +4717,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   uint16_t flags = hdr->_flags;
   uint64_t senderCurrentEpoch = 0, senderConfigEpoch = 0;
   auto timeout = _server->getParams()->clusterNodeTimeout;
+  bool useDomain = _server->getParams()->domainEnabled;
 
   /* Check if the sender is a known node. */
   auto sender = clusterLookupNode(hdr->_sender);
@@ -4763,9 +4769,9 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * However if we don't have an address at all, we update the address
      * even with a normal PING packet. If it's wrong it will be fixed
      * by MEET later. */
-    // TODO(wayenchen) : cluster_announce_ip ?
+    /* NOTE(wayenchen) domain named will not be changed so not need to update*/
     if ((type == ClusterMsg::Type::MEET || _myself->getNodeIp() == "")
-        /* && server.cluster_announce_ip == NULL*/) {
+            && !useDomain) {
       auto eip = sess->getLocalIp();
       if (eip.ok() && eip.value() != _myself->getNodeIp()) {
         serverLog(LL_WARNING,
@@ -5268,7 +5274,8 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
   }
   if (sess->getNode()) {
     DLOG(INFO) << "send message:" << sess->getNode()->getNodeName()
-               << "type:" << clusterMsgTypeString(type);
+               << "type:" << clusterMsgTypeString(type)
+               << "ip" << sess->getNode()->getNodeIp();
   }
   uint32_t gossipcount = 0; /* Number of gossip sections added so far. */
   uint32_t
