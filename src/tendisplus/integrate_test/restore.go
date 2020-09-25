@@ -17,10 +17,6 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     m2 := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-    m1.Init(m1_ip, m1_port, pwd, "m1_")
-    s1.Init(s1_ip, s1_port, pwd, "s1_")
-    s2.Init(s2_ip, s2_port, pwd, "s2_")
-    m2.Init(m2_ip, m2_port, pwd, "m2_")
 
     cfgArgs := make(map[string]string)
     cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
@@ -29,12 +25,18 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     cfgArgs["maxbinlogkeepnum"] = "10000"
     cfgArgs["minbinlogkeepsec"] = "60"
+    m1_port = util.FindAvailablePort(m1_port)
+    log.Infof("FindAvailablePort:%d", m1_port)
+    m1.Init(m1_ip, m1_port, pwd, "m1_")
     if err := m1.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master1 failed:%v", err)
     }
 
     cfgArgs["maxbinlogkeepnum"] = "10000"
     cfgArgs["minbinlogkeepsec"] = "60"
+    s1_port = util.FindAvailablePort(s1_port)
+    log.Infof("FindAvailablePort:%d", s1_port)
+    s1.Init(s1_ip, s1_port, pwd, "s1_")
     if err := s1.Setup(false, &cfgArgs); err != nil {
         cfgArgs["maxbinlogkeepnum"] = "1"
         cfgArgs["minbinlogkeepsec"] = "0"
@@ -43,6 +45,9 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     cfgArgs["maxbinlogkeepnum"] = "1"
     cfgArgs["minbinlogkeepsec"] = "0"
+    s2_port = util.FindAvailablePort(s2_port)
+    log.Infof("FindAvailablePort:%d", s2_port)
+    s2.Init(s2_ip, s2_port, pwd, "s2_")
     if err := s2.Setup(false, &cfgArgs); err != nil {
         cfgArgs["maxbinlogkeepnum"] = "1"
         cfgArgs["minbinlogkeepsec"] = "0"
@@ -51,6 +56,9 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 
     cfgArgs["maxbinlogkeepnum"] = "10000"
     cfgArgs["minbinlogkeepsec"] = "3600"
+    m2_port = util.FindAvailablePort(m2_port)
+    log.Infof("FindAvailablePort:%d", m2_port)
+    m2.Init(m2_ip, m2_port, pwd, "m2_")
     if err := m2.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master2 failed:%v", err)
     }

@@ -6,6 +6,7 @@ import (
 	"github.com/ngaut/log"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -28,6 +29,21 @@ func RandStrAlpha(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func FindAvailablePort(start int) int {
+	for i := start; i < start+1024; i++ {
+		ipPort := "127.0.0.1:" + strconv.Itoa(i)
+		conn, err := net.Dial("tcp", ipPort)
+		if err != nil {
+			//log.Debugf("retry %s err dialing:%v", ipPort, err.Error())
+			return i
+		}
+		defer conn.Close()
+	}
+
+	fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
+	return 0
 }
 
 func FileExist(path string) (bool, error) {
@@ -130,6 +146,48 @@ func StartProcess(command []string, env []string, pidPath string, timeout time.D
 	}
 }
 
+func eventually(fn func() error, timeout time.Duration) error {
+	errCh := make(chan error, 1)
+	done := make(chan struct{})
+	exit := make(chan struct{})
+
+	go func() {
+		for {
+			err := fn()
+			// ok 会 通知 done
+			if err == nil {
+				close(done)
+				return
+			}
+
+			select {
+			case errCh <- err:
+			default:
+			}
+
+			select {
+			case <-exit:
+				return
+			case <-time.After(timeout / 100):
+			}
+		}
+	}()
+
+	select {
+	// 返回
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		close(exit)
+		select {
+		case err := <-errCh:
+			return err
+		default:
+			return fmt.Errorf("timeout after %s without an error", timeout)
+		}
+	}
+}
+
 func (s *RedisServer) Init(ip string, port int, pwd string, path string) {
 	s.Ip = ip
 	s.Port = port
@@ -138,6 +196,15 @@ func (s *RedisServer) Init(ip string, port int, pwd string, path string) {
 
 func (s *RedisServer) Destroy() {
     os.RemoveAll(s.Path)
+}
+
+func CheckPortInUse(s *RedisServer) error {
+    checkStatement := fmt.Sprintf("lsof -i:%d ", s.Port)
+    output, _ := exec.Command("sh", "-c", checkStatement).CombinedOutput()
+    if len(output) <= 0 {
+        return fmt.Errorf("port %d not in use", s.Port)
+    }
+    return nil
 }
 
 func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
@@ -173,8 +240,7 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
             cfgFilePath, s.Port)
         args = append(args, cmd)
         inShell := true
-        _, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
-        return err
+        StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
 	} else {
 	    log.Infof("start normal %d", s.Port)
 		//args = append(args, "../../../build/bin/tendisplus", cfgFilePath)
@@ -186,10 +252,17 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
         args := []string{}
         args = append(args, cmd)
         inShell := true
-	    _, err := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
-
-        return err
+	    StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
 	}
+
+    // Wait until port is in use
+    err := eventually(func() error {
+        return CheckPortInUse(s)
+    }, 10*time.Second)
+    if err != nil {
+        panic(err)
+    }
+    return nil
 }
 
 type Predixy struct {
@@ -266,5 +339,13 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
     inShell := true
 	pid, err := StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
 	s.Pid = pid
+
+    // Wait until port is in use
+    err = eventually(func() error {
+        return CheckPortInUse(&s.RedisServer)
+    }, 10*time.Second)
+    if err != nil {
+        panic(err)
+    }
 	return err
 }
