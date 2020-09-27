@@ -81,9 +81,9 @@ class ClusterCommand : public Command {
       Status s;
       const std::string arg2 = toLower(args[2]);
       if (arg2 == "importing" && argSize >= 5) {
-        if (myself->nodeIsArbiter()) {
+        if (myself->nodeIsArbiter() || myself->nodeIsSlave()) {
           return {ErrorCodes::ERR_CLUSTER,
-                  "Can't importing slots to arbiter node."};
+                  "Can't importing slots to slave or arbiter node "};
         }
 
         std::string nodeId = args[3];
@@ -526,7 +526,7 @@ class ClusterCommand : public Command {
         return s;
       }
       return Command::fmtOK();
-    } else if (arg1 == "clear" || argSize == 2) {
+    } else if (arg1 == "clear" && argSize == 2) {
       if (myself->nodeIsSlave()) {
         return {ErrorCodes::ERR_CLUSTER,
                 "You should send CLUSTER CLEAR to master"};

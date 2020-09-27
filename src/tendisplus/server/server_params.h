@@ -426,6 +426,7 @@ class ServerParams {
   uint32_t garbageDeleteThreadnum = 1;
   uint16_t garbageDeleteSize = 30;
   bool clusterEnabled = false;
+  bool domainEnabled = false;
   uint32_t migrateTaskSlotsLimit = 10;
   uint32_t migrateDistance = 10000;
   uint16_t migrateBinlogIter = 10;

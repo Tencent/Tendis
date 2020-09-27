@@ -370,6 +370,7 @@ ServerParams::ServerParams() {
     garbageDeleteThreadnum, nullptr, nullptr, 1, 100, true);
 
   REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
+  REGISTER_VARS_DIFF_NAME("domain-enabled", domainEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage",
                                   clusterRequireFullCoverage);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-no-failover",

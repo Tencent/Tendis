@@ -78,8 +78,14 @@ Status BlockingTcpClient::connect(const std::string& host,
   }
   std::stringstream ss;
   ss << port;
-  asio::ip::tcp::resolver::results_type endpoints =
-    asio::ip::tcp::resolver(*_ctx).resolve(host, ss.str());
+  /*NOTE(wayenchen) parse domain name may fail and core, catch it*/
+  asio::ip::tcp::resolver::results_type endpoints;
+  try {
+    endpoints = asio::ip::tcp::resolver(*_ctx).resolve(host, ss.str());
+  } catch (const std::exception& ex) {
+    LOG(ERROR) << "block client connect failed:" << ex.what();
+    return {ErrorCodes::ERR_NETWORK, "resolve domain name fail"};
+  }
 
   _notified = false;
   auto self(shared_from_this());
