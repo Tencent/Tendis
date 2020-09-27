@@ -1204,10 +1204,6 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(uint64_t start, ui
         auto explog = cursor->next();
         if (!explog.ok()) {
             if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
-                nextStart = nextSave = cursor->getCur();
-                LOG(INFO) << "truncateBinlogV2 skip null binlogids: "
-                    << save << "-" << cursor->getCur() << ", nextStart set to "
-                    << nextStart;
                 break;
             }
             return explog.status();
