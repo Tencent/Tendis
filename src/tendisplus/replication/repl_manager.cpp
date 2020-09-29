@@ -575,6 +575,10 @@ void ReplManager::recycleFullPushStatus() {
 void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
   std::lock_guard<std::mutex> lk(_mutex);
   auto& v = _logRecycStatus[storeId];
+  LOG(INFO) << "ReplManager::onFlush before, storeId:" << storeId << " "
+            << v->toString();
+  v->firstBinlogId = binlogid;
+  v->saveBinlogId = binlogid;
   v->lastFlushBinlogId = binlogid;
   INVARIANT_D(v->lastFlushBinlogId >= v->firstBinlogId);
   INVARIANT_D(v->lastFlushBinlogId >= v->saveBinlogId);

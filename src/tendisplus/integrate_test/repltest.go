@@ -19,8 +19,6 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
     s1 := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-    m1.Init(m1_ip, m1_port, pwd, "m1_")
-    s1.Init(s1_ip, s1_port, pwd, "s1_")
 
     if *startup == 1 {
         cfgArgs := make(map[string]string)
@@ -29,10 +27,16 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
         cfgArgs["kvstorecount"] = strconv.Itoa(kvstorecount)
         cfgArgs["rocks.blockcachemb"] = strconv.Itoa(1024)
         cfgArgs["requirepass"] = "tendis+test"
-    
+
+        m1_port = util.FindAvailablePort(m1_port)
+        log.Infof("FindAvailablePort:%d", m1_port)
+        m1.Init(m1_ip, m1_port, pwd, "m1_")
         if err := m1.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup master1 failed:%v", err)
         }
+        s1_port = util.FindAvailablePort(s1_port)
+        log.Infof("FindAvailablePort:%d", s1_port)
+        s1.Init(s1_ip, s1_port, pwd, "s1_")
         cfgArgs["masterauth"] = "tendis+test"
         if err := s1.Setup(false, &cfgArgs); err != nil {
             log.Fatalf("setup slave1 failed:%v", err)

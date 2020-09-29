@@ -273,16 +273,20 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 	s := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-	m.Init("127.0.0.1", m_port, pwd, "m_")
-	s.Init("127.0.0.1", s_port, pwd, "s_")
 
     cfgArgs := make(map[string]string)
     //cfgArgs["requirepass"] = "tendis+test"
     //cfgArgs["masterauth"] = "tendis+test"
 
+    m_port = util.FindAvailablePort(m_port)
+    log.Infof("FindAvailablePort:%d", m_port)
+    m.Init("127.0.0.1", m_port, pwd, "m_")
 	if err := m.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup master failed:%v", err)
 	}
+    s_port = util.FindAvailablePort(s_port)
+    log.Infof("FindAvailablePort:%d", s_port)
+    s.Init("127.0.0.1", s_port, pwd, "s_")
 	if err := s.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup slave failed:%v", err)
 	}

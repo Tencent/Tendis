@@ -14,8 +14,6 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     m2 := util.RedisServer{}
     pwd := getCurrentDirectory()
     log.Infof("current pwd:" + pwd)
-    m1.Init(m1_ip, m1_port, pwd, "m1_")
-    m2.Init(m2_ip, m2_port, pwd, "s1_")
 
     cfgArgs := make(map[string]string)
     cfgArgs["maxBinlogKeepNum"] = "1"
@@ -23,9 +21,15 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
     cfgArgs["requirepass"] = "tendis+test"
     cfgArgs["masterauth"] = "tendis+test"
 
+    m1_port = util.FindAvailablePort(m1_port)
+    log.Infof("FindAvailablePort:%d", m1_port)
+    m1.Init(m1_ip, m1_port, pwd, "m1_")
     if err := m1.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master1 failed:%v", err)
     }
+    m2_port = util.FindAvailablePort(m2_port)
+    log.Infof("FindAvailablePort:%d", m2_port)
+    m2.Init(m2_ip, m2_port, pwd, "s1_")
     if err := m2.Setup(false, &cfgArgs); err != nil {
         log.Fatalf("setup master2 failed:%v", err)
     }

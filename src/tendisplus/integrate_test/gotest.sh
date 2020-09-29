@@ -61,3 +61,4 @@ echo "###### clustertestRestore begin ######" >> $logfile
 ./clustertestRestore -benchtype="set">> $logfile 2>&1
 
 grep "go passed" $logfile
+grep -E "\[error\]|\[fatal\]" $logfile

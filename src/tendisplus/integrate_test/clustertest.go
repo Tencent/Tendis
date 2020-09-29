@@ -328,7 +328,7 @@ type NodeInfo struct {
 }
 
 func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]NodeInfo,
-    clusterPortStart int, clusterNodeNum int, dstNodeIndex int, checkself bool) {
+    clusterNodeNum int, dstNodeIndex int, checkself bool) {
     log.Infof("checkSlots begin idx:%d checkself:%v", serverIdx, checkself)
 
     cli0 := createClient(&(*servers)[serverIdx])
@@ -394,9 +394,18 @@ func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]Nod
         if checkself && port != (*servers)[serverIdx].Port && port_slave != (*servers)[serverIdx].Port {
             continue
         }
-        log.Infof("startslot:%v endslot:%v ip:%v port:%v port_slave:%v nodename:%v",
-            startSlot, endSlot, ip, port, port_slave, nodeName)
-        nodeIndex := port - clusterPortStart
+        nodeIndex := -1
+        for i := 0; i < len(*servers); i++ {
+            if ((*servers)[i].Port == port) {
+                nodeIndex = i;
+            }
+        }
+        if nodeIndex == -1 {
+            log.Fatalf("startslot:%v endslot:%v ip:%v port:%v port_slave:%v nodename:%v nodeIndex:%v",
+                startSlot, endSlot, ip, port, port_slave, nodeName, nodeIndex)
+        }
+        log.Infof("startslot:%v endslot:%v ip:%v port:%v port_slave:%v nodename:%v nodeIndex:%v",
+            startSlot, endSlot, ip, port, port_slave, nodeName, nodeIndex)
         // check src nodes
         if nodeIndex < clusterNodeNum &&
             (startSlot != (*nodeInfoArray)[nodeIndex].startSlot ||
@@ -464,7 +473,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     log.Infof("start servers clusterNodeNum:%d", clusterNodeNum)
     for i := 0; i <= clusterNodeNum * 2 + 1; i++ {
         server := util.RedisServer{}
-        port := clusterPortStart + i
+        port := util.FindAvailablePort(clusterPortStart)
+        log.Infof("start server i:%d port:%d", i, port)
+        //port := clusterPortStart + i
         server.Init(clusterIp, port, pwd, "m" + strconv.Itoa(i) + "_")
         cfgArgs := make(map[string]string)
         cfgArgs["maxBinlogKeepNum"] = "100"
@@ -544,10 +555,12 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
 
     // start predixy
-    portPredixy := clusterPortStart + clusterNodeNum * 2 + 10
+    //portPredixy := clusterPortStart + clusterNodeNum * 2 + 10
+    portPredixy := util.FindAvailablePort(clusterPortStart)
+    log.Infof("start server Predixy port:%d", portPredixy)
     predixy := util.Predixy{}
     ip := "127.0.0.1"
-    predixy.Init(ip, portPredixy, ip, clusterPortStart, pwd, "predixy_")
+    predixy.Init(ip, portPredixy, ip, servers[0].Port, pwd, "predixy_")
     predixyCfgArgs := make(map[string]string)
     if err := predixy.Setup(false, &predixyCfgArgs); err != nil {
         log.Fatalf("setup failed:%v", err)
@@ -606,25 +619,25 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // master will send binlog to slave, so slave will change slots info immediately
     checkself := true
     // master
-    checkSlots(&servers, 0, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, 0, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // slave
-    checkSlots(&servers, clusterNodeNum, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, clusterNodeNum, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // dst node master
-    checkSlots(&servers, dstNodeIndex, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, dstNodeIndex, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // dst node slave
-    checkSlots(&servers, dstNodeIndex + 1, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, dstNodeIndex + 1, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
 
     // wait gossip sync info, and check all nodes
     time.Sleep(30 * time.Second)
     checkself = false
     // master
-    checkSlots(&servers, 0, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, 0, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // slave
-    checkSlots(&servers, clusterNodeNum, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, clusterNodeNum, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // dst node master
-    checkSlots(&servers, dstNodeIndex, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, dstNodeIndex, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
     // dst node slave
-    checkSlots(&servers, dstNodeIndex + 1, &nodeInfoArray, clusterPortStart, clusterNodeNum, dstNodeIndex, checkself)
+    checkSlots(&servers, dstNodeIndex + 1, &nodeInfoArray, clusterNodeNum, dstNodeIndex, checkself)
 
     // check keys num
     masterTotalKeyNum := 0
