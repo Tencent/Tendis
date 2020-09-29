@@ -1688,6 +1688,16 @@ class MGetCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+    const auto& args = sess->getArgs();
+
+    auto index = getKeysFromCommand(args);
+    auto locklist = server->getSegmentMgr()->getAllKeysLocked(
+      sess, args, index, Command::RdLock());
+    if (!locklist.ok()) {
+      return locklist.status();
+    }
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, sess->getArgs().size() - 1);
@@ -2056,6 +2066,10 @@ class RenameGenericCommand : public Command {
     std::vector<int32_t> keyidx = {1, 2};
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
       sess, args, keyidx, mgl::LockMode::LOCK_X);
+    if (!locklist.ok()) {
+      return locklist.status();
+    }
+
     auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
     auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
     Expected<RecordValue> rv =

@@ -85,7 +85,10 @@ class ClusterCommand : public Command {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots to slave or arbiter node "};
         }
-
+        if (!clusterState->clusterIsOK()) {
+          return {ErrorCodes::ERR_CLUSTER,
+                  "Can't importing slots when cluster fail"};
+        }
         std::string nodeId = args[3];
         /* CLUSTER SETSLOT IMPORTING nodename chunkid */
         std::bitset<CLUSTER_SLOTS> slotsMap;

@@ -311,6 +311,15 @@ class ExistsCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     auto& args = sess->getArgs();
     size_t count = 0;
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+
+    auto index = getKeysFromCommand(args);
+    auto locklist = server->getSegmentMgr()->getAllKeysLocked(
+      sess, args, index, Command::RdLock());
+    if (!locklist.ok()) {
+      return locklist.status();
+    }
 
     for (size_t j = 1; j < args.size(); j++) {
       const std::string& key = args[j];
