@@ -15,8 +15,8 @@
 #include <set>
 #include <list>
 #include <map>
-#include <thread>
-#include <chrono>
+#include <thread>                 // NOLINT
+#include <chrono>                 // NOLINT
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -909,7 +909,7 @@ class CommandCommand : public Command {
                              int flag,
                              const std::string& reply) {
     if (cmd->getFlags() & flag) {
-      Command::fmtBulk(ss, reply);
+      Command::fmtStatus(ss, reply);
       return 1;
     }
     return 0;
@@ -2382,25 +2382,25 @@ class ObjectCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     auto& args = sess->getArgs();
 
-    if (args.size() == 2) {
+    if (args.size() == 2 && toLower(args[1]) == "help") {
       std::stringstream ss;
 
-      Command::fmtLongLong(ss, 5);
-      Command::fmtBulk(ss, "OBJECT <subcommand> key. Subcommands:");
-      Command::fmtBulk(
+      Command::fmtMultiBulkLen(ss, 5);
+      Command::fmtStatus(ss, "OBJECT <subcommand> key. Subcommands:");
+      Command::fmtStatus(
         ss,
         "refcount -- Return the number of references of the value "
-        "associated with the specified key. Always 1.");  // NOLINT
-      Command::fmtBulk(ss,
+        "associated with the specified key. Always 1.");
+      Command::fmtStatus(ss,
                        "encoding -- Return the kind of internal "
                        "representation used in order to store the value "
-                       "associated with a key.");  // NOLINT
-      Command::fmtBulk(
+                       "associated with a key.");
+      Command::fmtStatus(
         ss,
         "idletime -- Return the idle time of the key, that is the "
         "approximated number of seconds elapsed since the last access "
-        "to the key. Always 0");  // NOLINT
-      Command::fmtBulk(
+        "to the key. Always 0");
+      Command::fmtStatus(
         ss,
         "freq -- Return the access frequency index of the key. The "
         "returned integer is proportional to the logarithm of the "
@@ -2439,7 +2439,7 @@ class ObjectCommand : public Command {
     }
     return {ErrorCodes::ERR_PARSEOPT,
             "Unknown subcommand or wrong number of arguments. Try OBJECT "
-            "help"};  // NOLINT
+            "help"};
   }
 } objectCmd;
 

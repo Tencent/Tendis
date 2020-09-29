@@ -821,6 +821,22 @@ std::string Command::fmtBulk(const std::string& s) {
   return ss.str();
 }
 
+std::string Command::fmtStatus(const std::string& s) {
+  std::stringstream ss;
+  ss << "+";
+  ss.write(s.c_str(), s.size());
+  ss << "\r\n";
+  return ss.str();
+}
+
+std::stringstream& Command::fmtStatus(std::stringstream& ss,
+                                    const std::string& s) {
+  ss << "+";
+  ss.write(s.c_str(), s.size());
+  ss << "\r\n";
+  return ss;
+}
+
 std::vector<int> Command::getKeysFromCommand(
   const std::vector<std::string>& argv) {
   int argc = argv.size();

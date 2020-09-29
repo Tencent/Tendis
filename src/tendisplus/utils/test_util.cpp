@@ -192,7 +192,6 @@ std::string getBulkValue(const std::string& reply, uint32_t index) {
 
 std::shared_ptr<ServerEntry> makeServerEntry(
   const std::shared_ptr<ServerParams>& cfg) {
-
   auto master = std::make_shared<ServerEntry>(cfg);
   auto s = master->startup(cfg);
   INVARIANT(s.ok());
@@ -1655,7 +1654,7 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({"pfdebug", "encoding", "pfxxx"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(expect.value(), Command::fmtBulk("sparse"));
+    EXPECT_EQ(expect.value(), Command::fmtStatus("sparse"));
 
     sess.setArgs({"pfdebug", "decode", "pfxxx"});
     expect = Command::runSessionCmd(&sess);
@@ -1672,7 +1671,7 @@ void testPf(std::shared_ptr<ServerEntry> svr) {
     sess.setArgs({"pfdebug", "encoding", "pfxxx"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
-    EXPECT_EQ(expect.value(), Command::fmtBulk("dense"));
+    EXPECT_EQ(expect.value(), Command::fmtStatus("dense"));
 
     sess.setArgs({"pfdebug", "todense", "pfxxx"});
     expect = Command::runSessionCmd(&sess);
@@ -1809,7 +1808,7 @@ void testType(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "test_type_key"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("none"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("none"));
 
   sess.setArgs({"set", "test_type_key", "a"});
   expect = Command::runSessionCmd(&sess);
@@ -1817,7 +1816,7 @@ void testType(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "test_type_key"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("string"));
 
   sess.setArgs({"hset", "test_type_key", "a", "b"});
   expect = Command::runSessionCmd(&sess);
@@ -1825,7 +1824,7 @@ void testType(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "test_type_key"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("string"));
 
   sess.setArgs({"hset", "test_type_key1", "a", "b"});
   expect = Command::runSessionCmd(&sess);
@@ -1833,7 +1832,7 @@ void testType(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "test_type_key1"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("hash"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("hash"));
 }
 
 void testMset(std::shared_ptr<ServerEntry> svr) {
@@ -1898,7 +1897,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "sa"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("set"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("set"));
 
   // wrong type
   sess.setArgs({"mset", "sa", "100", "ma", "1000"});
@@ -1920,7 +1919,7 @@ void testMset(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"type", "sa"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), Command::fmtBulk("string"));
+  EXPECT_EQ(expect.value(), Command::fmtStatus("string"));
 
   sess.setArgs({"msetnx", "n1", "1", "n2", "2"});
   expect = Command::runSessionCmd(&sess);
