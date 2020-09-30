@@ -1358,7 +1358,7 @@ void testDeleteChunks(std::shared_ptr<ServerEntry> svr,
   }
   auto bitmap = getBitSet(slotsList);
   svr->getGcMgr()->deleteBitMap(bitmap, 0);
-  // TODO(wayenchen) check deleteTask state
+  // TODO(wayenchen) ccheck deleteTask state
   std::this_thread::sleep_for(std::chrono::seconds(10));
 
   for (size_t i = 0; i < slotsList.size(); ++i) {
@@ -1917,7 +1917,20 @@ TEST(Cluster, CrossSlot) {
      "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
     {{"mset", "a{2}", "b", "c{2}", "d"}, Command::fmtOK()},
     {{"mset", "a{1}", "b", "c{1}", "d"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
+    {{"mget", "a{1}", "c{2}"},
+     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"exists", "a{1}", "c{2}"},
+     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"exists", "a{2}", "c{2}"}, ":2\r\n"},
+    {{"rename", "a{1}", "d{2}"},
+     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"rename", "a{2}", "d{2}"}, Command::fmtOK()},
+    {{"sadd", "s1{2}", "1", "2", "3"}, ":3\r\n"},
+    {{"smove", "s1{2}", "s2{1}", "1"},
+     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"smove", "s1{2}", "s2{2}", "1"}, ":1\r\n"},
   };
+
   testCommandArrayResult(server, resultArr);
 
   // readonly, readwrite

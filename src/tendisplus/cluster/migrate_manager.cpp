@@ -473,7 +473,7 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
 
   // check slots
   std::vector<uint32_t> taskSlots;
-  if (!checkSlotOK(taskMap, nodeid, &taskSlots)) {
+  if (!checkSlotOK(taskMap, nodeid, &taskSlots) || !_cluster->clusterIsOK()) {
     std::stringstream ss;
     for (auto& vs : taskSlots) {
       ss << vs << " ";

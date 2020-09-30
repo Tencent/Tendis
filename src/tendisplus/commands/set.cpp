@@ -1281,6 +1281,9 @@ class SmoveCommand : public Command {
     std::vector<int> index = getKeysFromCommand(args);
     auto lock = server->getSegmentMgr()->getAllKeysLocked(
       sess, args, index, mgl::LockMode::LOCK_X);
+    if (!lock.ok()) {
+      return lock.status();
+    }
 
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, source, RecordType::RT_SET_META);
