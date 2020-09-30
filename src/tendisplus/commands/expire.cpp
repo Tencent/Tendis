@@ -360,19 +360,17 @@ class TypeCommand : public Command {
       {RecordType::RT_SET_META, "set"},
       {RecordType::RT_ZSET_META, "zset"},
     };
-    for (const auto& typestr : {RecordType::RT_DATA_META}) {
-      Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, typestr);
-      if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-        continue;
-      } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-        continue;
-      } else if (!rv.ok()) {
-        return rv.status();
-      }
-      auto vt = rv.value().getRecordType();
-      return Command::fmtBulk(lookup.at(vt));
+    Expected<RecordValue> rv =
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+    if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
+        rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return Command::fmtStatus("none");
+    } else if (!rv.ok()) {
+      LOG_STATUS(rv.status());
+      return Command::fmtStatus("unknown");
     }
-    return Command::fmtBulk("none");
+    auto vt = rv.value().getRecordType();
+    return Command::fmtStatus(lookup.at(vt));
   }
 } typeCmd;
 

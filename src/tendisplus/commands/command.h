@@ -102,10 +102,12 @@ class Command {
   static std::string fmtBusyKey();
 
   static std::string fmtBulk(const std::string& s);
+  static std::string fmtStatus(const std::string& s);
 
   static std::string fmtZeroBulkLen();
   static std::stringstream& fmtMultiBulkLen(std::stringstream&, uint64_t);
   static std::stringstream& fmtBulk(std::stringstream&, const std::string&);
+  static std::stringstream& fmtStatus(std::stringstream&, const std::string&);
   static std::stringstream& fmtNull(std::stringstream&);
   static std::stringstream& fmtLongLong(std::stringstream&, int64_t);
 

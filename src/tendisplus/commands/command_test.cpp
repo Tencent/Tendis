@@ -1637,8 +1637,8 @@ TEST(Command, command) {
 
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
     {{"command", "info", "get"},
-     "*1\r\n*6\r\n$3\r\nget\r\n:2\r\n*2\r\n$8\r\nreadonly\r\n$"
-     "4\r\nfast\r\n:1\r\n:1\r\n:1\r\n"},
+     "*1\r\n*6\r\n$3\r\nget\r\n:2\r\n*2\r\n+readonly\r\n+fast\r\n:1\r\n:1\r\n:"
+     "1\r\n"},
     {{"command", "getkeys", "get", "a"}, "*1\r\n$1\r\na\r\n"},
     {{"command", "getkeys", "mset", "a", "b", "c", "d"},
      "*2\r\n$1\r\na\r\n$1\r\nc\r\n"},

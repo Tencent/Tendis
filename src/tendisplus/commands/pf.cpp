@@ -906,7 +906,7 @@ class PfDebugCommand : public Command {
         return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
       }
 
-      ss << Command::fmtBulk(encodingstr[keyHpll->getHdrEncoding()]);
+      ss << Command::fmtStatus(encodingstr[keyHpll->getHdrEncoding()]);
     } else if (cmd == "todense") {
       if (args.size() != 3) {
         return {ErrorCodes::ERR_WRONG_ARGS_SIZE, ""};
