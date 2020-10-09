@@ -12,6 +12,7 @@ ChunkMigrateReceiver::ChunkMigrateReceiver(
   std::shared_ptr<ServerParams> cfg)
   : _svr(svr),
     _cfg(cfg),
+    _isRunning(false),
     _storeid(storeid),
     _taskid(taskid),
     _slots(slots),
@@ -47,7 +48,15 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
   uint32_t timeoutSec = 200;
   uint32_t readNum = 0;
   while (true) {
+    if (_isRunning.load(std::memory_order_relaxed) == false) {
+      LOG(ERROR) << "stop receiver task on taskid:" << _taskid;
+      return {ErrorCodes::ERR_INTERNAL, "stop running"};
+    }
     SyncReadData(exptData, 1, timeoutSec);
+    if (!exptData.ok()) {
+      return {ErrorCodes::ERR_TIMEOUT, "receive data fail"};
+    }
+
     if (exptData.value()[0] == '0') {
       SyncReadData(keylenData, 4, timeoutSec) uint32_t keylen =
         *reinterpret_cast<const uint32_t*>(keylenData.value().c_str());
@@ -57,7 +66,11 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
           *reinterpret_cast<const uint32_t*>(valuelenData.value().c_str());
       SyncReadData(valueData, valuelen, timeoutSec)
 
-        supplySetKV(keyData.value(), valueData.value());
+        auto s = supplySetKV(keyData.value(), valueData.value());
+      if (!s.ok()) {
+        LOG(ERROR) << "supply set key: " << keyData.value() << "fail";
+        return s;
+      }
       readNum++;
     } else if (exptData.value()[0] == '1') {
       SyncWriteData("+OK")
@@ -130,6 +143,18 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key,
   }
 
   return {ErrorCodes::ERR_OK, ""};
+}
+
+void ChunkMigrateReceiver::stop() {
+  _isRunning.store(false, std::memory_order_relaxed);
+}
+
+void ChunkMigrateReceiver::start() {
+  _isRunning.store(true, std::memory_order_relaxed);
+}
+
+bool ChunkMigrateReceiver::isRunning() {
+  return _isRunning.load(std::memory_order_relaxed);
 }
 
 }  // namespace tendisplus

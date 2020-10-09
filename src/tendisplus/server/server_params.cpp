@@ -26,8 +26,8 @@ string gMappingCmdList = "";  // NOLINT
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
-  if (typeid(var) == typeid(int32_t) ||                                       \
-      typeid(var) == typeid(uint32_t) || typeid(var) == typeid(uint16_t))     \
+  if (typeid(var) == typeid(int32_t) || typeid(var) == typeid(uint32_t) ||    \
+      typeid(var) == typeid(uint16_t))                                        \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
                 new IntVar(str,                                               \
@@ -370,6 +370,8 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
   REGISTER_VARS_DIFF_NAME("domain-enabled", domainEnabled);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
+                                  slaveMigarateEnabled);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage",
                                   clusterRequireFullCoverage);

@@ -697,9 +697,10 @@ bool checkSlotInfo(std::shared_ptr<ClusterNode> node, std::string slots) {
   return false;
 }
 
-Status migrate(const std::shared_ptr<ServerEntry>& server1,
-               const std::shared_ptr<ServerEntry>& server2,
-               const std::bitset<CLUSTER_SLOTS>& slots) {
+Expected<std::string> migrate(const std::shared_ptr<ServerEntry>& server1,
+                              const std::shared_ptr<ServerEntry>& server2,
+                              const std::bitset<CLUSTER_SLOTS>& slots,
+                              bool retry = false) {
   std::vector<std::string> args;
 
   auto ctx = std::make_shared<asio::io_context>();
@@ -707,7 +708,11 @@ Status migrate(const std::shared_ptr<ServerEntry>& server1,
 
   args.push_back("cluster");
   args.push_back("setslot");
-  args.push_back("importing");
+  if (retry) {
+    args.push_back("retry");
+  } else {
+    args.push_back("importing");
+  }
   std::string nodeName =
     server1->getClusterMgr()->getClusterState()->getMyselfName();
 
@@ -720,9 +725,12 @@ Status migrate(const std::shared_ptr<ServerEntry>& server1,
   }
 
   sess->setArgs(args);
-  auto expect = Command::runSessionCmd(sess.get());
+  auto expectId = Command::runSessionCmd(sess.get());
 
-  return expect.status();
+  if (!expectId.ok()) {
+    return expectId.status();
+  }
+  return expectId.value();
 }
 
 
@@ -839,7 +847,6 @@ MYTEST(Cluster, Sequence_Meet) {
 
   servers.clear();
 }
-
 
 TEST(Cluster, Random_Meet) {
   // std::vector<std::string> dirs = { "node1", "node2", "node3", "node4",
@@ -1299,6 +1306,136 @@ TEST(Cluster, migrate) {
   servers.clear();
 }
 
+TEST(Cluster, stopMigrate) {
+  std::vector<std::string> dirs = {"node1", "node2"};
+  uint32_t startPort = 15000;
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+  }
+
+  auto& srcNode = servers[0];
+  auto& dstNode = servers[1];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(srcNode, ctx1);
+  WorkLoad work1(srcNode, sess1);
+  work1.init();
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(dstNode, ctx2);
+  WorkLoad work2(dstNode, sess2);
+  work2.init();
+
+  auto ret = work1.getStringResult(
+    {"syncversion", "nodeid", std::to_string(100), std::to_string(120), "v1"});
+  EXPECT_EQ(ret, "+OK\r\n");
+
+  ret = work2.getStringResult(
+    {"syncversion", "nodeid", std::to_string(10), std::to_string(12), "v1"});
+  EXPECT_EQ(ret, "+OK\r\n");
+
+  // meet
+  LOG(INFO) << "begin meet";
+  work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
+
+  // addSlots
+  LOG(INFO) << "begin addSlots.";
+  work1.addSlots(slots[0]);
+  work2.addSlots(slots[1]);
+  LOG(INFO) << "add slots sucess";
+  std::this_thread::sleep_for(std::chrono::seconds(6));
+
+  std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
+
+  auto bitmap = getBitSet(slotsList);
+
+  const uint32_t numData = 1000;
+  std::string taskid;
+  for (size_t j = 0; j < numData; ++j) {
+    std::string cmd = "redis-cli -c ";
+    cmd += " -h " + srcNode->getParams()->bindIp;
+    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    if (j % 2) {
+      // write to slot 8373
+      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+    } else {
+      // write to slot 5970
+      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+    }
+
+    int ret = system(cmd.c_str());
+    EXPECT_EQ(ret, 0);
+    // begin to migate when  half data been writen
+    if (j == numData / 2) {
+      uint32_t keysize = 0;
+      for (auto& vs : slotsList) {
+        keysize += srcNode->getClusterMgr()->countKeysInSlot(vs);
+      }
+      LOG(INFO) << "before migrate keys num:" << keysize;
+      auto exptTaskid = migrate(srcNode, dstNode, bitmap);
+
+      EXPECT_TRUE(exptTaskid.ok());
+      taskid = exptTaskid.value();
+    }
+  }
+  /* NOTE(wayenchen) first we stop migrate by new command(cluster setslot stop),
+   * the working task num of this taskid should be 0,
+   * than use (cluster setslot retry) to continue jobs
+   * finally all the tasks should be done */
+  work1.stopMigrate(taskid);
+  std::this_thread::sleep_for(3s);
+  auto taskNum = srcNode->getMigrateManager()->getTaskNum(taskid);
+  EXPECT_EQ(taskNum, 0);
+
+  auto exptTaskid = migrate(srcNode, dstNode, bitmap, true);
+  EXPECT_TRUE(exptTaskid.ok());
+  std::this_thread::sleep_for(15s);
+
+  uint32_t keysize = 0;
+  for (auto& vs : slotsList) {
+    LOG(INFO) << "node2->getClusterMgr()->countKeysInSlot:" << vs
+              << "is:" << dstNode->getClusterMgr()->countKeysInSlot(vs);
+    keysize += dstNode->getClusterMgr()->countKeysInSlot(vs);
+  }
+
+  std::this_thread::sleep_for(10s);
+  // bitmap should belong to dstNode
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              srcNode,
+              srcNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            false);
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              dstNode,
+              dstNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            true);
+  // dstNode should contain the keys
+  ASSERT_EQ(keysize, numData);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  LOG(INFO) << "stop servers here";
+  servers.clear();
+}
 
 TEST(Cluster, migrateAndImport) {
   std::vector<std::string> dirs = {"node1", "node2", "node3"};
@@ -1722,7 +1859,6 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
   EXPECT_NE(end, 0);
   EXPECT_LT((end - begin), 60);
 }
-
 
 // Convergence rate test
 TEST(Cluster, ConvergenceRate) {

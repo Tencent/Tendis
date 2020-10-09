@@ -72,7 +72,7 @@ func cluster_migrate(src *util.RedisServer, dst *util.RedisServer, startSlot int
     if r, err := cli.Cmd("cluster", "setslot", "importing", srcNodeName, slots).Str(); err != nil {
         log.Fatalf("do migrate failed:%v", err)
         return
-    } else if r != "OK" {
+    } else if err != nil {
         log.Fatalf("do migrate error:%s", r)
         return
     }

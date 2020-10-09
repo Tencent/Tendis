@@ -841,6 +841,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
 
   bool needReconfigure;
   bool masterNotFail;
+  bool slaveIsNotFullSync;
   {
     std::lock_guard<myMutex> lk(_mutex);
     CNodePtr myself = getMyselfNode();
@@ -876,8 +877,14 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     }
     needReconfigure =
       (newmaster && curmaster->getSlotNum() == 0) ? true : false;
+
     masterNotFail =
       (!curmaster->nodeFailed()) && myself->nodeIsSlave() ? true : false;
+    /* NOTE(wayenchen) judge if the slave is on fullsync */
+    slaveIsNotFullSync = (myself->nodeIsSlave() &&
+                          _server->getReplManager()->isSlaveFullSyncDone())
+      ? true
+      : false;
   }
   // NOTE(takenliu) save and update once at the last.
   clusterUpdateState();
@@ -902,22 +909,22 @@ void ClusterState::clusterUpdateSlotsConfigWith(
         LOG(ERROR) << "set myself master";
       }
     }
-
-    if (!inMigrateTask) {
+    /* NOTE(wayenchen) slave should not full sync when set new master*/
+    if (!inMigrateTask && (slaveIsNotFullSync || isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster fail";
       }
     }
   } else if (dirty_slots_count && !inMigrateTask) {
-    // TODO(wayenchen): use thread to delete slots
-    for (uint32_t j = 0; j < dirty_slots_count; j++) {
-      // NOTE(wayenchen) get db lock here
-      if (!_server->getClusterMgr()->emptySlot(j)) {
-        _server->delKeysInSlot(dirty_slots[j]);
-      }
+    /* NOTE(wayenchen): use gc to delete slots */
+    /*
+    auto s = _server->getGcMgr()->delGarbage();
+    if (!s.ok()) {
+      LOG(ERROR) << "delete dirty slos fail" << s.toString();
     }
     LOG(INFO) << "finish del key in slot, num is:" << dirty_slots_count;
+    */
   }
 }
 
@@ -2180,20 +2187,22 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
    * couple of seconds, so that during failovers, we give some time to
    * the natural slaves of this instance to advertise their switch from
    * the old master to the new one. */
-  if (readyMigrate) {
+  /* NOTE(wayenchen) slave should not full sync when set new master*/
+  if (readyMigrate && _server->getReplManager()->isSlaveFullSyncDone()) {
     serverLog(LL_WARNING,
               "Migrating to orphaned master begin %.40s",
               target->getNodeName().c_str());
     Status s;
-
     if (!isMasterFail) {
       LOG(INFO) << "unset master in slave migration";
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail in slave migration";
+        return;
       }
     }
 
+    LOG(INFO) << "lock OK, begin set new master" << target->getNodeName();
     s = clusterSetMaster(target);
     if (!s.ok()) {
       LOG(ERROR) << "set my master fail in slave migration";
@@ -4104,7 +4113,9 @@ void ClusterState::cronCheckFailState() {
      * the orphaned masters. Note that it does not make sense to try
      * a migration if there is no master with at least *two* working
      * slaves. */
-    if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
+    bool needSlaveChange = _server->getParams()->slaveMigarateEnabled;
+    if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves &&
+        needSlaveChange)
       clusterHandleSlaveMigration(max_slaves);
   }
 
@@ -4354,6 +4365,7 @@ Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(
 
 bool ClusterManager::hasDirtyKey(uint32_t storeid) {
   auto node = _clusterState->getMyselfNode();
+  // TODO(wayenchen) if it is a slave, judge the slots of master if it is dirty
   for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
     if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid &&
         !node->getSlotBit(chunkid) && !emptySlot(chunkid)) {
@@ -5290,7 +5302,8 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
   uint32_t nodeCount = getNodeCount();
   uint32_t freshnodes = nodeCount - 2;
 
-  /* How many gossip sections we want to add? 1/10 of the number of nodes
+  /* How many gossip sections we want to add? 1/10 of the
+   * number of nodes
    * and anyway at least 3. Why 1/10?
    *
    * If we have N masters, with N/10 entries, and we consider that in

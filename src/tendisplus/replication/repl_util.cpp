@@ -1,7 +1,7 @@
 #include <memory>
 #include <string>
 #include <utility>
-//#include "tendisplus/replication/repl_util.h"
+#include "tendisplus/replication/repl_util.h"
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 
@@ -51,7 +51,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
                                       bool needHeartBeart,
                                       std::shared_ptr<ServerEntry> svr,
                                       const std::shared_ptr<ServerParams> cfg) {
-
   uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
   size_t suggestBytes = svr->getParams()->bingLogSendBytes;
 

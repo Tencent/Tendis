@@ -37,6 +37,10 @@ class ChunkMigrateReceiver {
     _taskid = taskid;
   }
 
+  void freeDbLock() {
+    _dbWithLock.reset();
+  }
+
   uint32_t getsStoreid() const {
     return _storeid;
   }
@@ -53,11 +57,16 @@ class ChunkMigrateReceiver {
     return _binlogNum;
   }
 
+  void stop();
+  void start();
+  bool isRunning();
+
  private:
   Status supplySetKV(const string& key, const string& value);
 
   std::shared_ptr<ServerEntry> _svr;
   const std::shared_ptr<ServerParams> _cfg;
+  std::atomic<bool> _isRunning;
   std::unique_ptr<DbWithLock> _dbWithLock;
   std::shared_ptr<BlockingTcpClient> _client;
   uint32_t _storeid;
