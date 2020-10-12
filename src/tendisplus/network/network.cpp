@@ -256,7 +256,7 @@ Status NetworkAsio::startThread() {
   _acceptThd = std::make_unique<std::thread>([this] {
     std::string threadName = _name + "-accept";
     threadName.resize(15);
-    INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
+    INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
     while (_isRunning.load(std::memory_order_relaxed)) {
       // if no work-gurad, the run() returns immediately if no other tasks
       asio::io_context::work work(*_acceptCtx);
@@ -310,7 +310,7 @@ Status NetworkAsio::startThread() {
       std::thread thd([this, i] {
         std::string threadName = _name + "-rw-" + std::to_string(i);
         threadName.resize(15);
-        INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
+        INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
         while (_isRunning.load(std::memory_order_relaxed)) {
           // if no workguard, the run() returns immediately if no
           // tasks

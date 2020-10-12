@@ -437,7 +437,6 @@ void WorkLoad::clusterNodes() {
   EXPECT_TRUE(expect.ok());
 }
 
-
 void WorkLoad::addSlots(const std::string& slotsBuff) {
   _session->setArgs({"cluster", "addslots", slotsBuff});
 

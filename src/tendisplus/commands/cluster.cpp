@@ -89,6 +89,12 @@ class ClusterCommand : public Command {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots when cluster fail"};
         }
+
+        if (svr->getParams()->clusterSingleNode) {
+          return {ErrorCodes::ERR_CLUSTER,
+                  "Can't importing slots when cluster-single-node is on"};
+        }
+
         std::string nodeId = args[3];
         /* CLUSTER SETSLOT IMPORTING nodename chunkid */
         std::bitset<CLUSTER_SLOTS> slotsMap;
@@ -256,6 +262,19 @@ class ClusterCommand : public Command {
           }
           uint32_t start = startSlot.value();
           uint32_t end = endSlot.value();
+
+          if (end >= CLUSTER_SLOTS) {
+            return {ErrorCodes::ERR_CLUSTER,
+                    "Invalid slot position " + std::to_string(end)};
+          }
+
+          if (svr->getParams()->clusterSingleNode &&
+              (end - start) != (CLUSTER_SLOTS - 1)) {
+            return {
+              ErrorCodes::ERR_CLUSTER,
+              "You can only addslot 0..16383 when cluster-single-node is on"};
+          }
+
           Status s = changeSlots(start, end, arg1, clusterState, myself);
           if (!s.ok()) {
             LOG(ERROR) << "addslots fail from:" << start << "to:" << end;

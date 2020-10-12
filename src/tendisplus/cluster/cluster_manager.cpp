@@ -4406,7 +4406,10 @@ std::vector<std::string> ClusterManager::getKeyBySlot(uint32_t slot,
   }
   auto kvstore = std::move(expdb.value().store);
   auto ptxn = kvstore->createTransaction(nullptr);
-  INVARIANT_D(ptxn.ok());
+  if (!ptxn.ok()) {
+    LOG_STATUS(ptxn.status());
+    return keysList;
+  }
   auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
 
   uint32_t n = 0;
@@ -4770,8 +4773,8 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * even with a normal PING packet. If it's wrong it will be fixed
      * by MEET later. */
     /* NOTE(wayenchen) domain named will not be changed so not need to update*/
-    if ((type == ClusterMsg::Type::MEET || _myself->getNodeIp() == "")
-            && !useDomain) {
+    if ((type == ClusterMsg::Type::MEET || _myself->getNodeIp() == "") &&
+        !useDomain) {
       auto eip = sess->getLocalIp();
       if (eip.ok() && eip.value() != _myself->getNodeIp()) {
         serverLog(LL_WARNING,
@@ -5274,8 +5277,8 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
   }
   if (sess->getNode()) {
     DLOG(INFO) << "send message:" << sess->getNode()->getNodeName()
-               << "type:" << clusterMsgTypeString(type)
-               << "ip" << sess->getNode()->getNodeIp();
+               << "type:" << clusterMsgTypeString(type) << "ip"
+               << sess->getNode()->getNodeIp();
   }
   uint32_t gossipcount = 0; /* Number of gossip sections added so far. */
   uint32_t
