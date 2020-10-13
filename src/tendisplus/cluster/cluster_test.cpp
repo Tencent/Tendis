@@ -51,7 +51,8 @@ void testCommandArrayResult(
 std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
                                              uint32_t port,
                                              uint32_t storeCnt = 10,
-                                             bool general_log = true) {
+                                             bool general_log = true,
+                                             bool singleNode = false) {
   auto mDir = dir;
   auto mport = port;
   EXPECT_TRUE(setupEnv(mDir));
@@ -60,6 +61,7 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->clusterEnabled = true;
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
+  cfg1->clusterSingleNode = singleNode;
 
 #ifdef _WIN32
   cfg1->executorThreadNum = 1;
@@ -70,7 +72,6 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->logRecycleThreadnum = 1;
 
   cfg1->migrateSenderThreadnum = 1;
-  cfg1->migrateClearThreadnum = 1;
   cfg1->migrateReceiveThreadnum = 1;
 #endif
 
@@ -86,7 +87,10 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
 
 std::vector<std::shared_ptr<ServerEntry>>
 #ifdef _WIN32
-makeCluster(uint32_t startPort, uint32_t nodeNum = 3, uint32_t storeCnt = 1) {
+makeCluster(uint32_t startPort,
+            uint32_t nodeNum = 3,
+            uint32_t storeCnt = 1,
+            bool withSlave = false) {
 #else
 makeCluster(uint32_t startPort,
             uint32_t nodeNum = 3,
@@ -175,6 +179,118 @@ makeCluster(uint32_t startPort,
     work.replicate(master);
 
     idx++;
+  }
+
+  auto t = msSinceEpoch();
+  bool isok = true;
+  LOG(INFO) << "waiting servers cluster state changed to ok ";
+  while (true) {
+    isok = true;
+    for (auto node : servers) {
+      if (!node->getClusterMgr()->getClusterState()->clusterIsOK()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        isok = false;
+        break;
+      }
+    }
+    if (isok) {
+      break;
+    }
+    if (msSinceEpoch() - t > 100 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+    }
+  }
+  LOG(INFO) << "waiting servers ok using " << (msSinceEpoch() - t) << "ms.";
+
+  return std::move(servers);
+}
+
+std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
+  uint32_t startPort, uint32_t storeCnt = 10) {
+  LOG(INFO) << "Make single Cluster begin.";
+  std::vector<std::string> dirs;
+  uint32_t totalNodeNum = 4;
+
+#ifdef _WIN32
+  storeCnt = 1;
+#endif
+
+  for (uint32_t i = 0; i < totalNodeNum; ++i) {
+    dirs.push_back("node" + to_string(i));
+  }
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(
+      std::move(makeClusterNode(dir, nodePort, storeCnt, true, true)));
+  }
+
+  auto node0 = servers[0];
+  auto ctx0 = std::make_shared<asio::io_context>();
+  auto sess0 = makeSession(node0, ctx0);
+  WorkLoad work0(node0, sess0);
+  work0.init();
+
+  for (auto node : servers) {
+    work0.clusterMeet(node->getParams()->bindIp, node->getParams()->port);
+  }
+
+  auto node = servers[0];
+  auto ctx = std::make_shared<asio::io_context>();
+  auto sess = makeSession(node, ctx);
+
+  /* try to add a incorrect slots, for test */
+  sess->setArgs({"cluster", "addslots", "{0..5000}"});
+  auto expect = Command::runSessionCmd(sess.get());
+  EXPECT_TRUE(!expect.ok());
+  LOG(INFO) << expect.status().toString();
+
+  WorkLoad work(node, sess);
+  work.init();
+  work.addSlots("{0..16383}");
+
+  auto masterid = work.getStringResult({"cluster", "myid"});
+  auto master = getBulkValue(masterid, 0);
+  LOG(INFO) << "master is:" << master;
+
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  // slaveof
+  {
+    auto node1 = servers[1];
+    auto ctx1 = std::make_shared<asio::io_context>();
+    auto sess1 = makeSession(node1, ctx1);
+    WorkLoad work1(node1, sess1);
+    work1.init();
+
+    LOG(INFO) << "cluster replicate:" << master;
+    work1.replicate(master);
+
+
+    auto eid = work.getStringResult({"cluster", "myid"});
+    auto slave = getBulkValue(eid, 0);
+    LOG(INFO) << "slave is:" << slave;
+  }
+
+  std::string arbiter = "";
+  for (uint32_t i = 2; i < totalNodeNum; i++) {
+    auto nodei = servers[i];
+    auto ctxi = std::make_shared<asio::io_context>();
+    auto sessi = makeSession(nodei, ctxi);
+
+    sessi->setArgs({"cluster", "asarbiter"});
+    auto expecti = Command::runSessionCmd(sessi.get());
+    EXPECT_TRUE(expecti.ok());
+
+    WorkLoad worki(nodei, sessi);
+    worki.init();
+
+    auto eid = work.getStringResult({"cluster", "myid"});
+    arbiter = getBulkValue(eid, 0);
+    LOG(INFO) << "aribter is:" << arbiter;
   }
 
   auto t = msSinceEpoch();
@@ -1976,6 +2092,25 @@ TEST(ClusterMsg, bitsetEncodeSize) {
   taskmap.set(102);
   s = bitsetStrEncode(taskmap);
   ASSERT_EQ(s, " 0 100-102 16383 ");
+}
+
+TEST(Cluster, singleNode) {
+  uint32_t nodeNum = 4;
+  uint32_t startPort = 15000;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeSingleCluster(startPort, nodeNum);
+  auto server = servers[0];
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+    {{"mset", "a{2}", "b", "c{10}", "d"}, Command::fmtOK()},
+  };
+  testCommandArrayResult(server, resultArr);
 }
 
 }  // namespace tendisplus

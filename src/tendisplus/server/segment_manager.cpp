@@ -150,10 +150,12 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool cluster_enabled = false;
+  bool clusterSingle = false;
   if (sess && sess->getServerEntry()) {
     const auto& cfg = sess->getServerEntry()->getParams();
     lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     cluster_enabled = sess->getServerEntry()->isClusterEnabled();
+    clusterSingle = sess->getServerEntry()->getParams()->clusterSingleNode;
   }
   std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
   uint32_t last_chunkId = -1;
@@ -168,7 +170,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     if (last_chunkId == (uint32_t)-1) {
       last_chunkId = chunkId;
     } else if (last_chunkId != chunkId) {
-      if (cluster_enabled) {
+      if (cluster_enabled && !clusterSingle) {
         return {ErrorCodes::ERR_CLUSTER_REDIR_CROSS_SLOT, ""};
       }
       last_chunkId = chunkId;

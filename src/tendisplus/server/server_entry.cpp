@@ -1,10 +1,10 @@
 #include <utility>
 #include <memory>
 #include <algorithm>
-#include <chrono>
-#include <string>
+#include <chrono>         // NOLINT
+#include <string>         // NOLINT
 #include <list>
-#include <mutex>
+#include <mutex>          // NOLINT
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -619,7 +619,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   // server stats monitor
   _cronThd = std::make_unique<std::thread>([this] {
-    INVARIANT_D(!pthread_setname_np(pthread_self(), "tx-svr-cron"));
+    INVARIANT(!pthread_setname_np(pthread_self(), "tx-svr-cron"));
     serverCron();
   });
 

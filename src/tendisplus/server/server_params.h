@@ -19,7 +19,7 @@
 #include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
-using namespace std;
+using namespace std;    // NOLINT
 
 using funptr = std::function<void()>;
 using checkfunptr = std::function<bool(const string&)>;
@@ -316,7 +316,7 @@ class ServerParams {
   Status parseFile(const std::string& filename);
   bool registerOnupdate(const string& name, funptr ptr);
   string showAll() const;
-  bool showVar(const string& key, string& info) const;
+  bool showVar(const string& key, string* info) const;
   bool showVar(const string& key, vector<string>* info) const;
   bool setVar(const string& name,
               const string& value,
@@ -436,6 +436,7 @@ class ServerParams {
   bool clusterSlaveNoFailover = false;
   uint32_t clusterMigrationBarrier = 1;
   uint32_t clusterSlaveValidityFactor = 10;
+  bool clusterSingleNode = false;
 
   // TODO(takenliu) delete this two parm after performance test.
   bool netIoMultiIoContext = false;

@@ -16,7 +16,7 @@ int gettimeofday(struct timeval* tp, void* tzp) {
   return 0;
 }
 
-void sleep(unsigned long seconds) {
+void sleep(uint64_t seconds) {
   Sleep(seconds * 1000);
 }
 
@@ -46,8 +46,8 @@ void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName) {
 
   __try {
     RaiseException(
-      0x406D1388, 0, sizeof(info) / sizeof(DWORD), (ULONG_PTR*)&info);
-  } __except (EXCEPTION_CONTINUE_EXECUTION) {
+      0x406D1388, 0, sizeof(info) / sizeof(DWORD), (ULONG_PTR*)&info);    // NOLINT
+  } __except(EXCEPTION_CONTINUE_EXECUTION) {
   }
 }
 
