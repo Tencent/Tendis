@@ -920,13 +920,13 @@ struct ReplMPovStatus {
 void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     // NOTE(takenliu), only consider slaveof all rockskvstores.
     string role = "master";
-    int32_t master_repl_offset = 0;
+    uint64_t master_repl_offset = 0;
     string master_host = "";
-    uint16_t master_port = 0;
+    uint32_t master_port = 0;
     string master_link_status = "up";
     int64_t master_last_io_seconds_ago = 0;
     int32_t master_sync_in_progress = 0;
-    int32_t slave_repl_offset = 0;
+    uint64_t slave_repl_offset = 0;
     int32_t slave_priority = 100;
     int32_t slave_read_only = 1;
     SCLOCK::time_point minlastSyncTime = SCLOCK::now();
