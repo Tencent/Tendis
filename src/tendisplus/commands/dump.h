@@ -73,6 +73,7 @@ size_t easyCopy(std::vector<byte>* buf,
                 size_t len);
 template <typename T>
 size_t easyCopy(T* dest, const std::string& buf, size_t* pos);
+uint8_t decodeTypeToRedis(RecordType type);
 
 class Serializer {
  public:
@@ -136,6 +137,40 @@ class Deserializer {
   uint64_t _ttl;
   size_t _pos;
 };
+
+class IncrMeta {
+ public:
+  IncrMeta(std::string key,
+           ReplOp op,
+           uint8_t type,
+           uint64_t timestamp,
+           uint64_t ttl,
+           uint64_t ver)
+    : _key(key),
+      _op(op),
+      _timestamp(timestamp),
+      _type(type),
+      _ttl(ttl),
+      _version(ver) {}
+
+  std::string _key;
+  ReplOp _op;
+  uint64_t _timestamp;
+  uint8_t _type;
+  uint64_t _ttl;
+  uint64_t _version;
+};
+
+struct IncrMetaHash {
+  size_t operator()(const struct IncrMeta& meta) const {
+    return std::hash<std::string>()(meta._key);
+  }
+};
+
+bool operator==(const struct IncrMeta& X, const struct IncrMeta& Y) {
+  return std::hash<std::string>()(X._key) == std::hash<std::string>()(Y._key);
+}
+
 Expected<std::unique_ptr<Deserializer>> getDeserializer(
   Session* sess,
   const std::string& payload,

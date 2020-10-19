@@ -2,11 +2,13 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <unordered_set>
 #include "tendisplus/commands/dump.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/storage/record.h"
 
 namespace tendisplus {
 template <typename T>
@@ -32,6 +34,33 @@ size_t easyCopy(std::vector<byte>* buf,
   std::copy(ptr, (ptr + len * sizeof(T)), buf->begin() + *pos);
   *pos += len * sizeof(T);
   return len * sizeof(T);
+}
+
+uint8_t decodeTypeToRedis(RecordType type) {
+  uint8_t typeMask(0);
+  switch (type) {
+    case RecordType::RT_HASH_META:
+      typeMask = 4 << 4;
+      break;
+    case RecordType::RT_LIST_META:
+      typeMask = 1 << 4;
+      break;
+    case RecordType::RT_SET_META:
+      typeMask = 2 << 4;
+      break;
+    case RecordType::RT_ZSET_META:
+      typeMask = 3 << 4;
+      break;
+    case RecordType::RT_KV:
+      typeMask = 0 << 4;
+      break;
+    default:
+      LOG(ERROR) << "get invalid record type" << rt2Char(type)
+                 << "in iteration";
+      INVARIANT(0);
+  }
+
+  return typeMask;
 }
 
 template <typename T>
@@ -1570,5 +1599,261 @@ class RestoreMetaCommand : public Command {
     return ss.str();
   }
 } restoremetaCommand;
+
+class IncrMetaCommand : public Command {
+ public:
+  IncrMetaCommand() : Command("incrmeta", "r") {}
+
+  ssize_t arity() const {
+    return 3;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::unordered_set<IncrMeta, IncrMetaHash>> serializeKvStoreBinlog(
+    Transaction* txn, uint64_t startPos, uint64_t startRevision) {
+    std::unordered_set<IncrMeta, IncrMetaHash> incrKeys;
+    std::unique_ptr<RepllogCursorV2> cursor =
+      txn->createRepllogCursorV2(startPos + 1);
+    while (true) {
+      // get every binlog
+      Expected<ReplLogRawV2> explog = cursor->next();
+
+      if (explog.ok()) {
+        auto logKey = explog.value().getReplLogKey();
+        auto logValue = explog.value().getReplLogValue();
+        auto key = ReplLogKeyV2::decode(logKey);
+        if (!key.ok()) {
+          LOG(ERROR) << "ReplLogKeyV2::decode failed:"
+                     << key.status().toString();
+          return key.status();
+        }
+        auto value = ReplLogValueV2::decode(logValue);
+        if (!value.ok()) {
+          return value.status();
+        }
+
+        // parse all ReplLogValueEntryV2 && add keys to incrKeys
+        size_t offset = value.value().getHdrSize();
+        auto data = value.value().getData();
+        size_t dataSize = value.value().getDataSize();
+        // delete keys list
+        // incr keys list
+        while (offset < dataSize) {
+          size_t size = 0;
+          auto entry = ReplLogValueEntryV2::decode(
+            (const char*)data + offset, dataSize - offset, &size);
+          if (!entry.ok()) {
+            return entry.status();
+          }
+          offset += size;
+          auto eMeta = parseReplLogValueEntryV2(entry.value(), startRevision);
+          if (eMeta.ok()) {
+            auto meta = eMeta.value();
+            LOG(INFO) << "serializeKvStoreBinlog out put key: "
+                      << meta._key;
+            auto search = incrKeys.find(meta);
+            if (search != incrKeys.end()) {
+              if (search->_version < meta._version) {
+                incrKeys.erase(search);
+              }
+            }
+            incrKeys.insert(std::move(eMeta.value()));
+          } else {
+            // LOG(INFO) << "seria error: " << keys.status().toString();
+            // return keys.status();
+          }
+        }
+
+        if (offset != dataSize) {
+          return {ErrorCodes::ERR_INTERNAL, "bad binlog"};
+        }
+      } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+        // no more data
+        break;
+      }
+    }
+
+    return incrKeys;
+  }
+
+  // parse ReplLogValueEntryV2
+  Expected<IncrMeta> parseReplLogValueEntryV2(const ReplLogValueEntryV2& entry,
+                                              uint64_t startRevision) {
+    switch (entry.getOp()) {
+      // new key
+      case ReplOp::REPL_OP_SET: {
+        Expected<RecordKey> opkey = RecordKey::decode(entry.getOpKey());
+        if (!opkey.ok()) {
+          return opkey.status();
+        }
+
+        auto key = opkey.value();
+        if (key.getRecordType() == RecordType::RT_DATA_META) {
+          Expected<RecordValue> opvalue =
+            RecordValue::decode(entry.getOpValue());
+          if (!opvalue.ok()) {
+            return opvalue.status();
+          }
+          const auto& value = opvalue.value();
+          uint64_t version = value.getVersionEP();
+          uint64_t ttl = value.getTtl();
+
+          uint8_t type = decodeTypeToRedis(value.getRecordType());
+          LOG(INFO) << "Add primary key:"
+                    << "key: " << key.getPrimaryKey() << " version:" << version
+                    << "type:" << static_cast<int>((type >> 4) & 0x0f)
+                    << " startrevsion:" << startRevision;
+          // key's revision smaller than startRevision skip it
+          if (version > startRevision) {
+            IncrMeta im(key.getPrimaryKey(),
+                        ReplOp::REPL_OP_SET,
+                        type,
+                        entry.getTimestamp(),
+                        ttl,
+                        version);
+            return im;
+          }
+        }
+
+        break;
+      }
+      case ReplOp::REPL_OP_DEL: {
+        Expected<RecordKey> opkey = RecordKey::decode(entry.getOpKey());
+        if (!opkey.ok()) {
+          return opkey.status();
+        }
+
+        auto key = opkey.value();
+        // delete keys type is RT_DATA_META, we cann't get it's type, so set
+        uint8_t type = decodeTypeToRedis(RecordType::RT_SET_META);
+        if (isDataMetaType(key.getRecordType())) {
+          // TODO(jingjunli): key's revision smaller than startRevision skip it
+          // delete keys 's ttl && version is 0
+          IncrMeta im(key.getPrimaryKey(),
+                      ReplOp::REPL_OP_DEL,
+                      type,
+                      entry.getTimestamp(), 0, 0);
+          return im;
+        }
+        break;
+      }
+      case ReplOp::REPL_OP_STMT: {
+        break;
+      }
+      case ReplOp::REPL_OP_SPEC: {
+        break;
+      }
+      case ReplOp::REPL_OP_DEL_RANGE: {
+        break;
+      }
+      default:
+        INVARIANT_D(0);
+        return {ErrorCodes::ERR_DECODE, "not a valid binlog"};
+    }
+
+    return {ErrorCodes::ERR_EXHAUST, "end not has data"};
+  }
+
+  // incrmeta startRevision endRevision
+  Expected<std::string> run(Session* sess) final {
+    const auto& args = sess->getArgs();
+
+    if (args.size() < 3) {
+      return {ErrorCodes::ERR_PARSEPKT, "invalid set params"};
+    }
+
+    auto eStartRevision = tendisplus::stoul(args[1]);
+    auto eEndRevision = tendisplus::stoul(args[2]);
+    if (!eStartRevision.ok() || !eEndRevision.ok()) {
+      auto errStatus =
+        eStartRevision.ok() ? eEndRevision.status() : eStartRevision.status();
+      LOG(ERROR) << "param is not integer or out of range start: "
+                 << errStatus.toString();
+      return errStatus;
+    }
+
+    auto startRevision = static_cast<uint64_t>(eStartRevision.value());
+    auto endRevision = static_cast<uint64_t>(eEndRevision.value());
+    uint64_t diffPos = endRevision - startRevision;
+    auto server = sess->getServerEntry();
+    std::stringstream ss;
+
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "INCRMETASTART");
+    auto s = sess->setResponse(ss.str());
+    if (!s.ok()) {
+      return s;
+    }
+    ss.str(std::string());
+
+    // payload buf
+    std::vector<byte> bulkBuf;
+    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+      auto expdb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+      if (!expdb.ok()) {
+        return expdb.status();
+      }
+
+      PStore kvstore = expdb.value().store;
+      auto ptxn = kvstore->createTransaction(sess);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
+
+      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+      uint64_t startBinlogPos = kvstore->getNextBinlogSeq() > diffPos
+        ? kvstore->getNextBinlogSeq() - diffPos
+        : 0;
+      auto incrKeys =
+        serializeKvStoreBinlog(txn.get(), startBinlogPos, startRevision);
+      if (!incrKeys.ok()) {
+        return incrKeys.status();
+      }
+
+      for (auto key : incrKeys.value()) {
+        std::vector<byte> buf;
+        size_t pos(0);
+        // encode : key version ttl keyType opType(incr/del)
+        Serializer::saveString(&buf, &pos, key._key);
+        easyCopy(&buf, &pos, key._version);
+        easyCopy(&buf, &pos, key._ttl);
+        easyCopy(&buf, &pos,  key._type);
+        easyCopy(&buf, &pos, key._op);
+        LOG(INFO) << "run out put key: " << key._key;
+        if (bulkBuf.size() + buf.size() > 8 * 1024) {
+          ss.str(std::string());
+          Command::fmtMultiBulkLen(ss, 1);
+          Command::fmtBulk(ss, std::string(bulkBuf.begin(), bulkBuf.end()));
+          auto s = sess->setResponse(ss.str());
+          if (!s.ok()) {
+            return s;
+          }
+          bulkBuf.clear();
+        }
+        bulkBuf.insert(bulkBuf.end(), buf.begin(), buf.end());
+      }
+    }
+
+    ss.str(std::string());
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, std::string(bulkBuf.begin(), bulkBuf.end()));
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "INCRMETAEND");
+    return ss.str();
+  }
+} incrMetaCommand;
 
 }  // namespace tendisplus
