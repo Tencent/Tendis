@@ -773,7 +773,7 @@ Expected<int64_t> Deserializer::loadIntegerString(const std::string& payload,
 
   switch (encType) {
     case RDB_ENC_INT8: {
-      int8_t enc;
+      int8_t enc = 0;
       easyCopy(&enc, payload, pos);
       val = static_cast<int64_t>(enc);
       break;
@@ -1270,7 +1270,7 @@ class ListDeserializer : public Deserializer {
         (*pos)++;
         switch (encoding) {
           case ZIP_INT_8B: {
-            int8_t intEntry;
+            int8_t intEntry = 0;
             easyCopy(&intEntry, payload, pos);
             val = std::to_string(intEntry);
             break;

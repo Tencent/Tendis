@@ -16,8 +16,7 @@ set(SNAPPY_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/")
 #  NAMES snappy
 #  HINTS ${SNAPPY_ROOT_DIR}/lib)
 
-set(SNAPPY_LIBRARIES "${CMAKE_SOURCE_DIR}/src/thirdparty/libs/libsnappy.a")
-#set(SNAPPY_LIBRARIES "libsnappy.a")
+set(SNAPPY_LIBRARIES "${CMAKE_BINARY_DIR}/lib/libsnappy.a")
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(snappy DEFAULT_MSG SNAPPY_LIBRARIES SNAPPY_INCLUDE_DIR)

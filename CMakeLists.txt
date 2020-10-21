@@ -36,6 +36,7 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
+	#set(STDFS_LIB "")
 	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
 else()
 	set(STDFS_LIB "")
@@ -49,7 +50,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 if(CMAKE_COMPILER_IS_GNUCC)
 	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	if(ENABLE_JEMALLOC)
-		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc-5.2.1")
+		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
@@ -83,13 +84,14 @@ endif()
 add_definitions(-DWITH_SYNC_POINT)
 list(APPEND SYS_LIBS sync_point)
 
-add_subdirectory(src/thirdparty/gflags)
-add_subdirectory(src/thirdparty/snappy-1.1.7)
-add_subdirectory(src/thirdparty/lz4-1.9.2/contrib/cmake_unofficial)
-add_subdirectory(src/thirdparty/googletest-release-1.8.0)
-add_subdirectory(src/thirdparty/glog-0.3.5)
+add_subdirectory(src/thirdparty/gflag)
+add_subdirectory(src/thirdparty/snappy)
+target_compile_options(snappy PRIVATE -fPIC)
+add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
+add_subdirectory(src/thirdparty/googletest)
+add_subdirectory(src/thirdparty/glog)
 add_subdirectory(${ROCKSDB_DIR}/rocksdb)
-add_subdirectory(src/thirdparty/rapidjson-1.1.0)
+add_subdirectory(src/thirdparty/rapidjson)
 
 if(CMAKE_COMPILER_IS_GNUCC)
 set(WARN_C_CXX
@@ -99,6 +101,8 @@ set(WARN_C_CXX
 -Wno-unused-parameter \
 -Wno-unused-local-typedefs \
 -Wno-missing-field-initializers \
+-Wno-implicit-fallthrough \
+-Wno-float-equal \
 -Wendif-labels \
 -Wfloat-equal \
 -Wformat=2 \
@@ -146,11 +150,11 @@ set(WARN_C_ONLY
 
 include_directories("src/thirdparty/include")
 include_directories("src/thirdparty/include/snappy/")
-include_directories("src/thirdparty/lz4-1.9.2/lib/")
+include_directories("src/thirdparty/lz4/lib/")
 else()
 include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include")
 #include_directories("${PROJECT_SOURCE_DIR}/src/tendisplus/include/snappy")
-#include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/lz4-1.9.2/lib/")
+#include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/lz4/lib/")
 
 # gflags
 include_directories("src/thirdparty/include/Windows/")
@@ -165,11 +169,11 @@ message("${CMAKE_BUILD_TYPE}")
 message("${CMAKE_CXX_FLAGS_RELEASE}")
 include_directories("${PROJECT_SOURCE_DIR}/src")
 include_directories("${ROCKSDB_DIR}/rocksdb/include")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest-release-1.8.0/googletest/include")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio-asio-1-12-0/asio/include")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog-0.3.5/src")
-include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson-1.1.0/include")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest/googletest/include")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio/asio/include")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog/src")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson/include")
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 add_subdirectory(src/tendisplus/network)

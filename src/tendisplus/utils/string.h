@@ -241,8 +241,20 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
 #endif
 
 #ifndef _WIN32
+#if __has_include(<string_view>)
+#include <string_view>
+using std::string_view;
+#define mystring_view string_view
+
+#elif __has_include(<experimental/string_view>)
+#include <experimental/string_view>
 using std::experimental::string_view;
 #define mystring_view string_view
+
+#else
+#error "no available string_view headfile"
+#endif
+
 #else
 #define mystring_view std::string
 #endif

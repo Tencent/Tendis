@@ -1,0 +1,32 @@
+[submodule "src/thirdparty/glog"]
+	path = src/thirdparty/glog
+	url = https://github.com/google/glog.git
+	tag = v0.4.0
+[submodule "src/thirdparty/rapidjson"]
+	path = src/thirdparty/rapidjson
+	url = https://github.com/Tencent/rapidjson.git
+	#tag = v1.1.0
+[submodule "src/thirdparty/googletest"]
+	path = src/thirdparty/googletest
+	url = https://github.com/google/googletest.git
+	tag = release-1.10.0
+[submodule "src/thirdparty/snappy"]
+	path = src/thirdparty/snappy
+	url = https://github.com/google/snappy.git
+	tag = 1.1.8
+[submodule "src/thirdparty/lz4"]
+	path = src/thirdparty/lz4
+	url = https://github.com/lz4/lz4.git
+	tag = v1.9.2
+[submodule "src/thirdparty/jemalloc"]
+	path = src/thirdparty/jemalloc
+	url = https://github.com/jemalloc/jemalloc.git
+	tag = 5.2.1
+[submodule "src/thirdparty/asio"]
+	path = src/thirdparty/asio
+	url = https://github.com/chriskohlhoff/asio.git
+	tag = asio-1-12-0
+[submodule "src/thirdparty/gflag"]
+	path = src/thirdparty/gflag
+	url = https://github.com/gflags/gflags.git
+	tag = v2.2.2
