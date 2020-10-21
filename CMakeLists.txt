@@ -91,6 +91,7 @@ add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
 add_subdirectory(src/thirdparty/glog)
 add_subdirectory(${ROCKSDB_DIR}/rocksdb)
+option(RAPIDJSON_BUILD_TESTS "" OFF)
 add_subdirectory(src/thirdparty/rapidjson)
 
 if(CMAKE_COMPILER_IS_GNUCC)
