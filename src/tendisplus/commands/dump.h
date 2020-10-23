@@ -73,7 +73,7 @@ size_t easyCopy(std::vector<byte>* buf,
                 size_t len);
 template <typename T>
 size_t easyCopy(T* dest, const std::string& buf, size_t* pos);
-uint8_t decodeTypeToRedis(RecordType type);
+uint8_t decodeType(RecordType type);
 
 class Serializer {
  public:

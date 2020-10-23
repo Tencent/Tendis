@@ -36,7 +36,7 @@ size_t easyCopy(std::vector<byte>* buf,
   return len * sizeof(T);
 }
 
-uint8_t decodeTypeToRedis(RecordType type) {
+uint8_t decodeType(RecordType type) {
   uint8_t typeMask(0);
   switch (type) {
     case RecordType::RT_HASH_META:
@@ -1623,12 +1623,12 @@ class IncrMetaCommand : public Command {
   Expected<std::unordered_set<IncrMeta, IncrMetaHash>> serializeKvStoreBinlog(
     Transaction* txn, uint64_t startPos, uint64_t startRevision) {
     std::unordered_set<IncrMeta, IncrMetaHash> incrKeys;
-    std::unique_ptr<RepllogCursorV2> cursor =
-      txn->createRepllogCursorV2(startPos + 1);
-    while (true) {
-      // get every binlog
-      Expected<ReplLogRawV2> explog = cursor->next();
 
+    // scan binlog from startPos
+    std::unique_ptr<RepllogCursorV2> cursor =
+      txn->createRepllogCursorV2(startPos);
+    while (true) {
+      Expected<ReplLogRawV2> explog = cursor->next();
       if (explog.ok()) {
         auto logKey = explog.value().getReplLogKey();
         auto logValue = explog.value().getReplLogValue();
@@ -1647,8 +1647,6 @@ class IncrMetaCommand : public Command {
         size_t offset = value.value().getHdrSize();
         auto data = value.value().getData();
         size_t dataSize = value.value().getDataSize();
-        // delete keys list
-        // incr keys list
         while (offset < dataSize) {
           size_t size = 0;
           auto entry = ReplLogValueEntryV2::decode(
@@ -1660,18 +1658,18 @@ class IncrMetaCommand : public Command {
           auto eMeta = parseReplLogValueEntryV2(entry.value(), startRevision);
           if (eMeta.ok()) {
             auto meta = eMeta.value();
-            LOG(INFO) << "serializeKvStoreBinlog out put key: "
-                      << meta._key;
             auto search = incrKeys.find(meta);
+            // if keys appear multi times, use the max version one
             if (search != incrKeys.end()) {
-              if (search->_version < meta._version) {
+              if (search->_version < meta._version ||
+                  meta._op == ReplOp::REPL_OP_DEL) {
                 incrKeys.erase(search);
               }
             }
             incrKeys.insert(std::move(eMeta.value()));
           } else {
-            // LOG(INFO) << "seria error: " << keys.status().toString();
-            // return keys.status();
+            // no meta
+            continue;
           }
         }
 
@@ -1687,11 +1685,10 @@ class IncrMetaCommand : public Command {
     return incrKeys;
   }
 
-  // parse ReplLogValueEntryV2
+  // parse ReplLogValueEntryV2 key smaller than startRevision will filterd
   Expected<IncrMeta> parseReplLogValueEntryV2(const ReplLogValueEntryV2& entry,
                                               uint64_t startRevision) {
     switch (entry.getOp()) {
-      // new key
       case ReplOp::REPL_OP_SET: {
         Expected<RecordKey> opkey = RecordKey::decode(entry.getOpKey());
         if (!opkey.ok()) {
@@ -1708,12 +1705,7 @@ class IncrMetaCommand : public Command {
           const auto& value = opvalue.value();
           uint64_t version = value.getVersionEP();
           uint64_t ttl = value.getTtl();
-
-          uint8_t type = decodeTypeToRedis(value.getRecordType());
-          LOG(INFO) << "Add primary key:"
-                    << "key: " << key.getPrimaryKey() << " version:" << version
-                    << "type:" << static_cast<int>((type >> 4) & 0x0f)
-                    << " startrevsion:" << startRevision;
+          uint8_t type = decodeType(value.getRecordType());
           // key's revision smaller than startRevision skip it
           if (version > startRevision) {
             IncrMeta im(key.getPrimaryKey(),
@@ -1736,8 +1728,8 @@ class IncrMetaCommand : public Command {
 
         auto key = opkey.value();
         // delete keys type is RT_DATA_META, we cann't get it's type, so set
-        uint8_t type = decodeTypeToRedis(RecordType::RT_SET_META);
-        if (isDataMetaType(key.getRecordType())) {
+        uint8_t type = decodeType(RecordType::RT_SET_META);
+        if (key.getRecordType() == RecordType::RT_DATA_META) {
           // TODO(jingjunli): key's revision smaller than startRevision skip it
           // delete keys 's ttl && version is 0
           IncrMeta im(key.getPrimaryKey(),
@@ -1813,10 +1805,9 @@ class IncrMetaCommand : public Command {
       }
 
       std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-
-      uint64_t startBinlogPos = kvstore->getNextBinlogSeq() > diffPos
-        ? kvstore->getNextBinlogSeq() - diffPos
-        : 0;
+      auto maxBinlogSeq = kvstore->getNextBinlogSeq();
+      uint64_t startBinlogPos =
+        maxBinlogSeq > diffPos ? maxBinlogSeq - diffPos : 0;
       auto incrKeys =
         serializeKvStoreBinlog(txn.get(), startBinlogPos, startRevision);
       if (!incrKeys.ok()) {
@@ -1832,7 +1823,12 @@ class IncrMetaCommand : public Command {
         easyCopy(&buf, &pos, key._ttl);
         easyCopy(&buf, &pos,  key._type);
         easyCopy(&buf, &pos, key._op);
-        LOG(INFO) << "run out put key: " << key._key;
+#ifdef TENDIS_DEBUG
+        LOG(INFO) << "Add primary key:"
+                  << "key: " << key._key << " version:" << key._version
+                  << "type:" << static_cast<int>((key._type >> 4) & 0x0f)
+                  << " op:" << static_cast<int>(key._op);
+#endif
         if (bulkBuf.size() + buf.size() > 8 * 1024) {
           ss.str(std::string());
           Command::fmtMultiBulkLen(ss, 1);
