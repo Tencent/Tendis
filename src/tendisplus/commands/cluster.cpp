@@ -81,7 +81,7 @@ class ClusterCommand : public Command {
     if (arg1 == "setslot" && argSize >= 3) {
       Status s;
       const std::string arg2 = toLower(args[2]);
-      if ((arg2 == "importing" || arg2 == "retry") && argSize >= 5) {
+      if ((arg2 == "importing" || arg2 == "restart") && argSize >= 5) {
         if (myself->nodeIsArbiter() || myself->nodeIsSlave()) {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots to slave or arbiter node "};
@@ -110,15 +110,29 @@ class ClusterCommand : public Command {
         }
         std::vector<std::string> vec(args.begin() + 4, args.end());
         /* CLUSTER SETSLOT retry nodename chunkid */
-        bool needRetry = (arg2 == "retry") ? true : false;
+        std::bitset<CLUSTER_SLOTS> slotsMap;
+        for (auto& vs : vec) {
+          Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
+          if (!exptSlot.ok()) {
+            return exptSlot.status();
+          }
+          int32_t slot = (int32_t)exptSlot.value();
+          if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
+            LOG(ERROR) << "slot" << slot
+                       << " ERR Invalid or out of range slot ";
+            return {ErrorCodes::ERR_CLUSTER, "Invalid migrate slot position"};
+          }
+          slotsMap.set(slot);
+        }
+        bool needRetry = (arg2 == "restart") ? true : false;
         auto exptTaskid = startAllSlotsTasks(
-          vec, svr, nodeId, clusterState, srcNode, myself, needRetry);
+          slotsMap, svr, nodeId, clusterState, srcNode, myself, needRetry);
         if (!exptTaskid.ok()) {
           LOG(ERROR) << "importing task fail:"
                      << exptTaskid.status().toString();
+          return exptTaskid.status();
         }
-        return exptTaskid;
-
+        return Command::fmtBulk(exptTaskid.value());
       } else if (arg2 == "info" && argSize == 3) {
         Expected<std::string> migrateInfo = migrateMgr->getMigrateInfo();
         if (migrateInfo.ok()) {
@@ -135,12 +149,45 @@ class ClusterCommand : public Command {
         }
       } else if (arg2 == "stop" && argSize > 3) {
         for (size_t i = 3; i < args.size(); i++) {
-          LOG(ERROR) << "stopping tasks, the parent taskid is:" << args[i];
+          LOG(INFO) << "stopping tasks, the parent taskid is:" << args[i];
           auto s = migrateMgr->stopTasks(args[i]);
           if (!s.ok()) {
+            LOG(ERROR) << "error stop task" << s.toString();
             return s;
           }
         }
+        return Command::fmtOK();
+      } else if (arg2 == "stopall" && argSize == 3) {
+        /* NOTE(wayenchen) stop all migrate tasks, work on both srcNode and
+         * dstNode */
+        migrateMgr->stopAllTasks();
+        return Command::fmtOK();
+      } else if (arg2 == "restartall" && argSize == 3) {
+        /* NOTE(wayenchen) it is work on dstNode command */
+        std::map<std::string, SlotsBitmap> remainSlotsMap =
+          migrateMgr->getStopMap();
+
+        if (remainSlotsMap.size() == 0) {
+          return {ErrorCodes::ERR_CLUSTER, "no slot remain to restart"};
+        }
+
+        for (auto it = remainSlotsMap.begin(); it != remainSlotsMap.end();
+             ++it) {
+          std::string nodeId = (*it).first;
+          auto taskMap = (*it).second;
+          auto srcNode = clusterState->clusterLookupNode(nodeId);
+          auto exptTaskid = startAllSlotsTasks(
+            taskMap, svr, nodeId, clusterState, srcNode, myself, true);
+          if (!exptTaskid.ok()) {
+            LOG(ERROR) << "restart importing task fail:"
+                       << exptTaskid.status().toString();
+            return exptTaskid.status();
+          }
+          LOG(INFO) << "restart slots nodeid:" << nodeId
+                    << " slots is:" << bitsetStrEncode(taskMap);
+          migrateMgr->removeRestartSlots(nodeId, (*it).second);
+        }
+
         return Command::fmtOK();
       }
     } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
@@ -267,7 +314,6 @@ class ClusterCommand : public Command {
       clusterState->clusterSaveNodes();
       clusterState->clusterUpdateState();
       return Command::fmtOK();
-
     } else if (arg1 == "replicate" && argSize == 3) {
       auto n = clusterState->clusterLookupNode(args[2]);
       if (!n) {
@@ -316,7 +362,6 @@ class ClusterCommand : public Command {
       }
       clusterState->clusterSaveNodes();
       return Command::fmtOK();
-
     } else if (arg1 == "countkeysinslot" && argSize == 3) {
       auto eslot = ::tendisplus::stoul(args[2]);
       if (!eslot.ok()) {
@@ -328,7 +373,6 @@ class ClusterCommand : public Command {
       }
       uint64_t keyNum = svr->getClusterMgr()->countKeysInSlot(slot);
       return Command::fmtBulk(to_string(keyNum));
-
     } else if (arg1 == "keyslot" && argSize == 3) {
       std::string key = args[2];
       if (key.size() < 1) {
@@ -743,56 +787,52 @@ class ClusterCommand : public Command {
   }
 
   Expected<std::string> startAllSlotsTasks(
-    const std::vector<std::string> slots,
+    const std::bitset<CLUSTER_SLOTS>& taskMap,
     ServerEntry* svr,
     const std::string& nodeId,
     const std::shared_ptr<ClusterState> clusterState,
     const CNodePtr srcNode,
     const CNodePtr myself,
     bool retryMigrate) {
-    std::bitset<CLUSTER_SLOTS> slotsMap;
-    for (auto& vs : slots) {
-      Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
-      if (!exptSlot.ok()) {
-        return exptSlot.status();
-      }
-      int32_t slot = (int32_t)exptSlot.value();
+    std::bitset<CLUSTER_SLOTS> slotsMap(taskMap);
+    size_t slot = 0;
+    while (slot < slotsMap.size()) {
+      if (slotsMap.test(slot)) {
+        if (retryMigrate && clusterState->getNodeBySlot(slot) == myself) {
+          slotsMap.reset(slot);
+          continue;
+        }
 
-      if (retryMigrate && clusterState->getNodeBySlot(slot) == myself) {
-        continue;
+        if (svr->getGcMgr()->slotIsDeleting(slot)) {
+          LOG(ERROR) << "slot:" << slot
+                     << " ERR being deleting before migration";
+          return {ErrorCodes::ERR_CLUSTER,
+                  "slot in deleting task" + dtos(slot)};
+        }
+        if (!svr->getClusterMgr()->emptySlot(slot)) {
+          LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
+          return {ErrorCodes::ERR_CLUSTER, "slot not empty"};
+        }
+        // check meta data
+        auto thisnode = clusterState->getNodeBySlot(slot);
+        if (thisnode == myself) {
+          LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
+          return {ErrorCodes::ERR_CLUSTER,
+                  "I'm already the owner of hash slot" + dtos(slot)};
+        }
+        if (thisnode != srcNode) {
+          DLOG(ERROR) << "slot:" << slot
+                      << "is not belong to srcNode : " << nodeId;
+          return {ErrorCodes::ERR_CLUSTER,
+                  "Source node is not the owner of hash slot" + dtos(slot)};
+        }
+        // check if slot already been migrating
+        if (svr->getMigrateManager()->slotInTask(slot)) {
+          LOG(ERROR) << "migrate task already start on slot:" << slot;
+          return {ErrorCodes::ERR_CLUSTER, "already importing" + dtos(slot)};
+        }
       }
-
-      if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
-        LOG(ERROR) << "slot" << slot << " ERR Invalid or out of range slot ";
-        return {ErrorCodes::ERR_CLUSTER, "Invalid migrate slot position"};
-      }
-      if (svr->getGcMgr()->slotIsDeleting(slot)) {
-        LOG(ERROR) << "slot:" << slot << " ERR being deleting before migration";
-        return {ErrorCodes::ERR_CLUSTER, "slot in deleting task"};
-      }
-      if (!svr->getClusterMgr()->emptySlot(slot)) {
-        LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
-        return {ErrorCodes::ERR_CLUSTER, "slot not empty"};
-      }
-      // check meta data
-      auto thisnode = clusterState->getNodeBySlot(slot);
-      if (thisnode == myself) {
-        LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
-        return {ErrorCodes::ERR_CLUSTER,
-                "I'm already the owner of hash slot" + dtos(slot)};
-      }
-      if (thisnode != srcNode) {
-        DLOG(ERROR) << "slot:" << slot
-                    << "is not belong to srcNode : " << nodeId;
-        return {ErrorCodes::ERR_CLUSTER,
-                "Source node is not the owner of hash slot" + dtos(slot)};
-      }
-      // check if slot already been migrating
-      if (svr->getMigrateManager()->slotInTask(slot)) {
-        LOG(ERROR) << "migrate task already start on slot:" << slot;
-        return {ErrorCodes::ERR_CLUSTER, "already importing" + dtos(slot)};
-      }
-      slotsMap.set(slot);
+      slot++;
     }
 
     auto exptTaskid = startImportingTasks(svr, srcNode, slotsMap);
@@ -801,10 +841,9 @@ class ClusterCommand : public Command {
                  << exptTaskid.status().toString();
       return exptTaskid.status();
     }
-    return Command::fmtBulk(exptTaskid.value());
+    return exptTaskid.value();
   }
 } clusterCmd;
-
 
 class PrepareMigrateCommand : public Command {
  public:

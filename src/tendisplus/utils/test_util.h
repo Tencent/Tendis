@@ -99,6 +99,8 @@ class WorkLoad {
   void replicate(const std::string& nodeName);
   void lockDb(mstime_t locktime);
   void stopMigrate(const std::string& taskid);
+  void stopAllMigTasks();
+  void restartAllMigTasks();
   void setMaxKeyLen(uint32_t max_key_len);
   Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
   std::string getStringResult(const std::vector<std::string>& args);

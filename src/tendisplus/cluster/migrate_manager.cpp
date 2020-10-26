@@ -170,19 +170,69 @@ Status MigrateManager::stopStoreTask(uint32_t storeid) {
 /* stop the tasks which have the father taskid */
 Status MigrateManager::stopTasks(const std::string& taskid) {
   std::lock_guard<myMutex> lk(_mutex);
+  bool find = false;
   for (auto& iter : _migrateSendTaskMap) {
     if (iter.first.find(taskid) != std::string::npos) {
       LOG(INFO) << "stopping sender task:" << iter.second->_taskid;
       iter.second->stopTask();
+      find = true;
     }
   }
   for (auto& iter : _migrateReceiveTaskMap) {
     if (iter.first.find(taskid) != std::string::npos) {
       LOG(INFO) << "stopping receiver task:" << iter.second->_taskid;
       iter.second->stopTask();
+      find = true;
     }
   }
+  if (!find) {
+    return {ErrorCodes::ERR_NOTFOUND, "no task to stop"};
+  }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+/* stop all tasks which is doing now */
+void MigrateManager::stopAllTasks(bool slaveSlots) {
+  std::lock_guard<myMutex> lk(_mutex);
+  for (auto& iter : _migrateSendTaskMap) {
+    iter.second->stopTask();
+  }
+
+  if (slaveSlots) {
+    for (auto& iter : _migrateReceiveTaskMap) {
+      if (slaveSlots) {
+        _stopImportSlots |= iter.second->_slots;
+      }
+      iter.second->stopTask();
+    }
+
+    uint32_t idx = 0;
+    while (idx < CLUSTER_SLOTS) {
+      if (_stopImportSlots.test(idx)) {
+        std::string nodeId = _importNodes[idx];
+        auto iter = _stopImportMap.find(nodeId);
+        if (iter != _stopImportMap.end()) {
+          _stopImportMap[nodeId].set(idx);
+        } else {
+          std::bitset<CLUSTER_SLOTS> taskmap;
+          taskmap.set(idx);
+          _stopImportMap.insert(std::make_pair(nodeId, taskmap));
+        }
+      }
+      idx++;
+    }
+  }
+  for (auto& iter : _migrateReceiveTaskMap) {
+    iter.second->stopTask();
+  }
+  LOG(ERROR) << "stop all import slots:" << bitsetStrEncode(_stopImportSlots);
+}
+
+void MigrateManager::removeRestartSlots(const std::string& nodeid,
+                                        const SlotsBitmap& slots) {
+  std::lock_guard<myMutex> lk(_mutex);
+  _stopImportSlots ^= slots;
+  _stopImportMap.erase(nodeid);
 }
 
 void MigrateManager::controlRoutine() {
@@ -224,7 +274,6 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
       ++it;
     } else if (taskPtr->_state == MigrateSendState::START) {
       taskPtr->_isRunning = true;
-      LOG(INFO) << "MigrateSender schedule on slots ";
       _migrateSender->schedule([this, iter = taskPtr]() { iter->sendSlots(); });
       ++it;
     } else if (taskPtr->_state == MigrateSendState::CLEAR) {
@@ -319,9 +368,11 @@ void MigrateSendTask::sendSlots() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (!s.ok()) {
     if (_sender->needToWaitMetaChanged()) {
-      // middle state, wait for 10s( half node timeout) to change
+      /* middle state, wait for  half node timeout to change */
+      // TODO(wayenchen) check it for 1s one time
       _state = MigrateSendState::HALF;
-      nextSched = SCLOCK::now() + std::chrono::seconds(10);
+      auto delayTime = _svr->getParams()->clusterNodeTimeout / 2 + 1000;
+      nextSched = SCLOCK::now() + std::chrono::milliseconds(delayTime);
     } else {
       _state = MigrateSendState::ERR;
       nextSched = SCLOCK::now();
@@ -493,6 +544,11 @@ uint64_t MigrateManager::getTaskNum(const std::string& pTaskid) {
     it++;
   }
   return taskNum;
+}
+
+std::map<std::string, SlotsBitmap> MigrateManager::getStopMap() {
+  std::lock_guard<myMutex> lk(_mutex);
+  return _stopImportMap;
 }
 
 SlotsBitmap convertMap(const std::vector<uint32_t>& vec) {
@@ -849,12 +905,22 @@ void MigrateManager::insertNodes(const std::vector<uint32_t>& slots,
   }
 }
 
+std::string MigrateManager::getNodeIdBySlot(uint32_t slot, bool importFlag) {
+  std::lock_guard<myMutex> lk(_mutex);
+  if (importFlag) {
+    return _importNodes[slot];
+  } else {
+    return _migrateNodes[slot];
+  }
+}
+
 void MigrateManager::addImportPTask(std::shared_ptr<pTask> task) {
   std::lock_guard<myMutex> lk(_mutex);
   _importPTaskList.push_back(task);
   auto timeStr = timePointRepr(SCLOCK::now());
   timeStr.erase(timeStr.end() - 1);
   task->_startTime = timeStr;
+  task->_migrateTime = sinceEpoch();
 }
 
 void MigrateManager::addMigratePTask(std::shared_ptr<pTask> task) {
@@ -863,6 +929,7 @@ void MigrateManager::addMigratePTask(std::shared_ptr<pTask> task) {
   auto timeStr = timePointRepr(SCLOCK::now());
   timeStr.erase(timeStr.end() - 1);
   task->_startTime = timeStr;
+  task->_migrateTime = sinceEpoch();
 }
 
 void MigrateReceiveTask::checkMigrateStatus() {
@@ -1151,7 +1218,9 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     std::string migrateTaskStr = "migrating taskid:";
     for (auto it = _migratePTaskList.begin(); it != _migratePTaskList.end();
          ++it) {
-      migrateTaskStr += ((*it)->getTaskid() + " [" + (*it)->_startTime + "] ");
+      auto lastTime = sinceEpoch() - (*it)->_migrateTime;
+      migrateTaskStr += ((*it)->getTaskid() + " [" + (*it)->_startTime) +
+        " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);
     std::string migrateSlots =
@@ -1182,7 +1251,9 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     std::string migrateTaskStr = "importing taskid:";
     for (auto it = _importPTaskList.begin(); it != _importPTaskList.end();
          ++it) {
-      migrateTaskStr += ((*it)->getTaskid() + " [" + (*it)->_startTime + "] ");
+      auto lastTime = sinceEpoch() - (*it)->_migrateTime;
+      migrateTaskStr += ((*it)->getTaskid() + " [" + (*it)->_startTime) +
+        " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);
     std::string importSlots =
@@ -1520,6 +1591,8 @@ void MigrateSendTask::stopTask() {
     _nextSchedTime = SCLOCK::now();
     _isRunning = false;
   }
+  LOG(INFO) << "finish stop sender task on slots:" << bitsetStrEncode(_slots)
+            << "taskid is:" << _taskid;
 }
 /* NOTE(wayenchen) if task is on receiving snapshot or binlog state,
  * just stop the snapshot or binlog process,
@@ -1530,6 +1603,8 @@ void MigrateReceiveTask::stopTask() {
       _state == MigrateReceiveState::RECEIVE_BINLOG) {
     _receiver->stop();
   }
+  LOG(INFO) << "finish stop receive task on slots:" << bitsetStrEncode(_slots)
+            << "taskid is:" << _taskid;
 }
 
 }  // namespace tendisplus

@@ -709,7 +709,7 @@ Expected<std::string> migrate(const std::shared_ptr<ServerEntry>& server1,
   args.push_back("cluster");
   args.push_back("setslot");
   if (retry) {
-    args.push_back("retry");
+    args.push_back("restart");
   } else {
     args.push_back("importing");
   }
@@ -1002,7 +1002,6 @@ bool nodeIsMySlave(std::shared_ptr<ServerEntry> svr1,
 bool clusterOk(std::shared_ptr<ClusterState> state) {
   return state->getClusterState() == ClusterHealth::CLUSTER_OK;
 }
-
 
 TEST(Cluster, failover) {
   std::vector<std::string> dirs = {"node1", "node2", "node3", "node4", "node5"};
@@ -1346,24 +1345,21 @@ TEST(Cluster, stopMigrate) {
   EXPECT_EQ(ret, "+OK\r\n");
 
   // meet
-  LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
   std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
-
   // addSlots
-  LOG(INFO) << "begin addSlots.";
   work1.addSlots(slots[0]);
   work2.addSlots(slots[1]);
-  LOG(INFO) << "add slots sucess";
+
   std::this_thread::sleep_for(std::chrono::seconds(6));
 
   std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 1000;
+  const uint32_t numData = 10000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     std::string cmd = "redis-cli -c ";
@@ -1376,32 +1372,23 @@ TEST(Cluster, stopMigrate) {
       // write to slot 5970
       cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
     }
-
     int ret = system(cmd.c_str());
     EXPECT_EQ(ret, 0);
-    // begin to migate when  half data been writen
-    if (j == numData / 2) {
-      uint32_t keysize = 0;
-      for (auto& vs : slotsList) {
-        keysize += srcNode->getClusterMgr()->countKeysInSlot(vs);
-      }
-      LOG(INFO) << "before migrate keys num:" << keysize;
-      auto exptTaskid = migrate(srcNode, dstNode, bitmap);
-
-      EXPECT_TRUE(exptTaskid.ok());
-      taskid = exptTaskid.value();
-    }
   }
+  auto exptTaskid = migrate(srcNode, dstNode, bitmap);
+  EXPECT_TRUE(exptTaskid.ok());
   /* NOTE(wayenchen) first we stop migrate by new command(cluster setslot stop),
    * the working task num of this taskid should be 0,
    * than use (cluster setslot retry) to continue jobs
    * finally all the tasks should be done */
   work1.stopMigrate(taskid);
   std::this_thread::sleep_for(3s);
-  auto taskNum = srcNode->getMigrateManager()->getTaskNum(taskid);
-  EXPECT_EQ(taskNum, 0);
+  auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
+  EXPECT_EQ(taskNum1, 0);
+  auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);
+  EXPECT_EQ(taskNum2, 0);
 
-  auto exptTaskid = migrate(srcNode, dstNode, bitmap, true);
+  exptTaskid = migrate(srcNode, dstNode, bitmap, true);
   EXPECT_TRUE(exptTaskid.ok());
   std::this_thread::sleep_for(15s);
 
@@ -1426,6 +1413,124 @@ TEST(Cluster, stopMigrate) {
             true);
   // dstNode should contain the keys
   ASSERT_EQ(keysize, numData);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  LOG(INFO) << "stop servers here";
+  servers.clear();
+}
+
+TEST(Cluster, stopAllMigrate) {
+  std::vector<std::string> dirs = {"node1", "node2"};
+  uint32_t startPort = 15000;
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+  }
+
+  auto& srcNode = servers[0];
+  auto& dstNode = servers[1];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(srcNode, ctx1);
+  WorkLoad work1(srcNode, sess1);
+  work1.init();
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(dstNode, ctx2);
+  WorkLoad work2(dstNode, sess2);
+  work2.init();
+
+  auto ret = work1.getStringResult(
+    {"syncversion", "nodeid", std::to_string(100), std::to_string(120), "v1"});
+  EXPECT_EQ(ret, "+OK\r\n");
+
+  ret = work2.getStringResult(
+    {"syncversion", "nodeid", std::to_string(10), std::to_string(12), "v1"});
+  EXPECT_EQ(ret, "+OK\r\n");
+
+  // meet
+  work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
+  // addSlots
+  work1.addSlots(slots[0]);
+  work2.addSlots(slots[1]);
+
+  std::this_thread::sleep_for(std::chrono::seconds(6));
+
+  std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
+
+  auto bitmap = getBitSet(slotsList);
+
+  const uint32_t numData = 10000;
+  std::string taskid;
+  for (size_t j = 0; j < numData; ++j) {
+    std::string cmd = "redis-cli -c ";
+    cmd += " -h " + srcNode->getParams()->bindIp;
+    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    if (j % 2) {
+      // write to slot 8373
+      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+    } else {
+      // write to slot 5970
+      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+    }
+
+    int ret = system(cmd.c_str());
+    EXPECT_EQ(ret, 0);
+  }
+  auto exptTaskid = migrate(srcNode, dstNode, bitmap);
+  EXPECT_TRUE(exptTaskid.ok());
+  /* NOTE(wayenchen) first we stop migrate by new command(cluster setslot
+   * stopall), the working task num of this taskid should be 0, than use
+   * (cluster setslot restartall) to continue jobs
+   * finally all the tasks should be done */
+  std::this_thread::sleep_for(10ms);
+  work2.stopAllMigTasks();
+  std::this_thread::sleep_for(10s);
+  auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
+  EXPECT_EQ(taskNum1, 0);
+  auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);
+  EXPECT_EQ(taskNum2, 0);
+
+  work2.restartAllMigTasks();
+  std::this_thread::sleep_for(40s);
+  uint32_t keysize = 0;
+  for (auto& vs : slotsList) {
+    LOG(INFO) << "node2->getClusterMgr()->countKeysInSlot:" << vs
+              << "is:" << dstNode->getClusterMgr()->countKeysInSlot(vs);
+    keysize += dstNode->getClusterMgr()->countKeysInSlot(vs);
+  }
+  // dstNode should contain the keys
+  ASSERT_EQ(keysize, numData);
+  // bitmap should belong to dstNode
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              srcNode,
+              srcNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            false);
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              dstNode,
+              dstNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            true);
+
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -1539,7 +1644,7 @@ TEST(Cluster, migrateAndImport) {
     }
   }
 
-  std::this_thread::sleep_for(20s);
+  std::this_thread::sleep_for(50s);
 
   uint32_t keysize1 = 0;
   uint32_t keysize2 = 0;
@@ -1551,8 +1656,6 @@ TEST(Cluster, migrateAndImport) {
               << "is:" << dstNode1->getClusterMgr()->countKeysInSlot(vs);
     keysize2 += dstNode1->getClusterMgr()->countKeysInSlot(vs);
   }
-
-  std::this_thread::sleep_for(40s);
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
               bitmap1,

@@ -47,6 +47,7 @@ class pTask {
   std::string getTaskid() {
     return _taskid;
   }
+  uint64_t _migrateTime;
 };
 
 class MigrateSendTask {
@@ -115,6 +116,7 @@ class MigrateReceiveTask {
       _srcPort(port),
       _svr(svr),
       _isRunning(false),
+      _lastSyncTime(0),
       _state(MigrateReceiveState::RECEIVE_SNAPSHOT),
       _pTask(pTask_) {
     _receiver = std::make_unique<ChunkMigrateReceiver>(
@@ -148,6 +150,7 @@ class MigrateManager {
   void stop();
 
   Status stopTasks(const std::string& taskid);
+  void stopAllTasks(bool saveSlots = true);
   // sender POV
   bool senderSchedule(const SCLOCK::time_point& now);
 
@@ -191,16 +194,10 @@ class MigrateManager {
   void insertNodes(const std::vector<uint32_t>& slots,
                    const std::string& nodeid,
                    bool import);
-  void addTaskid(const std::string& taskid);
+  std::string getNodeIdBySlot(uint32_t, bool import = true);
 
   void addImportPTask(std::shared_ptr<pTask> task);
   void addMigratePTask(std::shared_ptr<pTask> task);
-
-  void removeTaskid(const std::string& taskid);
-
-  void fullReceive(MigrateReceiveTask* task);
-
-  void checkMigrateStatus(MigrateReceiveTask* task);
 
   Status applyRepllog(Session* sess,
                       uint32_t storeid,
@@ -243,6 +240,9 @@ class MigrateManager {
   uint64_t getAllTaskNum();
   uint64_t getTaskNum(const std::string& taskid);
 
+  void removeRestartSlots(const std::string& nodeid, const SlotsBitmap& slots);
+  std::map<std::string, SlotsBitmap> getStopMap();
+
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
   void controlRoutine();
@@ -283,6 +283,9 @@ class MigrateManager {
   std::vector<std::string> _succReceTask;
   std::vector<std::string> _failReceTask;
 
+  std::bitset<CLUSTER_SLOTS> _stopImportSlots;
+  std::map<std::string, SlotsBitmap> _stopImportMap;
+
   std::map<uint32_t, std::list<SlotsBitmap>> _restoreMigrateTask;
 
   // sender's pov
@@ -309,8 +312,6 @@ class MigrateManager {
   std::unique_ptr<RateLimiter> _rateLimiter;
 
   // taskid lst
-  std::list<std::string> _importPreTasks;
-  std::list<std::string> _migratePreTasks;
   std::list<std::shared_ptr<pTask>> _importPTaskList;
   std::list<std::shared_ptr<pTask>> _migratePTaskList;
 };
