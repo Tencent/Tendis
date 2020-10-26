@@ -188,7 +188,6 @@ makeMigrateEnv(uint32_t storeCnt) {
   cfg1->logRecycleThreadnum = 1;
 
   cfg1->migrateSenderThreadnum = 1;
-  cfg1->migrateClearThreadnum = 1;
   cfg1->migrateReceiveThreadnum = 1;
 
   cfg2->executorThreadNum = 1;
@@ -199,7 +198,6 @@ makeMigrateEnv(uint32_t storeCnt) {
   cfg2->logRecycleThreadnum = 1;
 
   cfg2->migrateSenderThreadnum = 1;
-  cfg2->migrateClearThreadnum = 1;
   cfg2->migrateReceiveThreadnum = 1;
 #endif
 
@@ -285,7 +283,6 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->logRecycleThreadnum = 1;
 
   cfg1->migrateSenderThreadnum = 1;
-  cfg1->migrateClearThreadnum = 1;
   cfg1->migrateReceiveThreadnum = 1;
 #endif
 

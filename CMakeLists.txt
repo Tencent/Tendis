@@ -36,7 +36,7 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
-	option(NEW_ROCKSDB "enable jemalloc" OFF)
+	option(NEW_ROCKSDB "new rocksdb version" ON)
     if(NEW_ROCKSDB)
         message("using rocksdb-6.2.2")
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")

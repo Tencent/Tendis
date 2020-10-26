@@ -69,10 +69,10 @@ struct tm* mylocaltime_r(const time_t* timep, struct tm* result) {
 }
 
 
-// struct tm * localtime_r(const time_t *timep, struct tm *tmp)
-//{
-//  localtime_s(tmp, timep);
-//  return tmp;
-//}
+struct tm* mylocaltime_r(const time_t* timep, struct tm* result) {
+  localtime_s(result, timep);
+  return result;
+}
 
 #endif  // _WIN32
+
