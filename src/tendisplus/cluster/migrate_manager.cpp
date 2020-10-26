@@ -98,6 +98,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     _pTaskIdGen(0),
     _migrateSenderMatrix(std::make_shared<PoolMatrix>()),
     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
+    _workload(0),
     _rateLimiter(
       std::make_unique<RateLimiter>(_cfg->binlogRateLimitMB * 1024 * 1024)) {
   _cluster = _svr->getClusterMgr()->getClusterState();
@@ -412,7 +413,7 @@ void MigrateSendTask::deleteSenderChunks() {
   _isRunning = false;
 }
 
-Status MigrateManager::migrating(SlotsBitmap slots,
+Status MigrateManager::migrating(const SlotsBitmap &slots,
                                  const string& ip,
                                  uint16_t port,
                                  uint32_t storeid,
@@ -832,7 +833,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
   return doSth;
 }
 
-Status MigrateManager::importing(SlotsBitmap slots,
+Status MigrateManager::importing(const SlotsBitmap &slots,
                                  const std::string& ip,
                                  uint16_t port,
                                  uint32_t storeid,

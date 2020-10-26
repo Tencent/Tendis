@@ -13,7 +13,7 @@ class Atom {
  public:
   Atom() : _data(0) {}
 
-  Atom(const T& v) : _data(v) {}
+  Atom(const T& v) : _data(v) {}  // NOLINT
 
   Atom(Atom&& v) : _data(v._data.load(RLX)) {
     v._data.store(0, RLX);

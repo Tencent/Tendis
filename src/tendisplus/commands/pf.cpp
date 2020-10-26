@@ -185,7 +185,6 @@ HPLLObject::HPLLObject(int type) {
       size_t tmphdrSize = 0;
       tmphdr = redis_port::createHLLObject(
         reinterpret_cast<const char*>(tmphdr), tmp->allocSize, &tmphdrSize);
-
       _buf = std::make_unique<MyAllocator>(HLL_DENSE_SIZE + HLL_HDR_SIZE);
       _hdr = _buf->aligned_alloc<redis_port::hllhdr>();
       ret = redis_port::hllSparseToDense(

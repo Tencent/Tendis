@@ -15,8 +15,8 @@
 #include <set>
 #include <list>
 #include <map>
-#include <thread>                 // NOLINT
-#include <chrono>                 // NOLINT
+#include <thread>  // NOLINT
+#include <chrono>  // NOLINT
 #include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
@@ -2305,9 +2305,6 @@ class InfoCommand : public Command {
         std::unique_ptr<Transaction> txn = std::move(ptxn.value());
         auto eMin = RepllogCursorV2::getMinBinlog(txn.get());
         if (!eMin.ok()) {
-          if (eMin.status().code() == ErrorCodes::ERR_EXHAUST) {
-            continue;
-          }
           continue;
         }
         auto eMax = RepllogCursorV2::getMaxBinlog(txn.get());
@@ -2392,9 +2389,9 @@ class ObjectCommand : public Command {
         "refcount -- Return the number of references of the value "
         "associated with the specified key. Always 1.");
       Command::fmtStatus(ss,
-                       "encoding -- Return the kind of internal "
-                       "representation used in order to store the value "
-                       "associated with a key.");
+                         "encoding -- Return the kind of internal "
+                         "representation used in order to store the value "
+                         "associated with a key.");
       Command::fmtStatus(
         ss,
         "idletime -- Return the idle time of the key, that is the "

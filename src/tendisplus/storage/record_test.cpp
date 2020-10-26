@@ -134,10 +134,13 @@ TEST(Record, Common) {
     auto type = randomType();
     auto pk = randomStr(5, false);
     auto sk = randomStr(5, true);
-    uint64_t ttl = genRand() * genRand();
-    uint64_t cas = genRand() * genRand();
+    uint64_t ttl =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t cas =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
     uint64_t version = 0;
-    uint64_t versionEP = genRand() * genRand();
+    uint64_t versionEP =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
     auto val = randomStr(5, true);
     uint64_t pieceSize = (uint64_t)-1;
     if (!isDataMetaType(type)) {

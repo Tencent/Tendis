@@ -1,6 +1,7 @@
-#include <chrono>
-#include <sstream>
+
 #include "tendisplus/utils/time.h"
+
+#include <sstream>
 #ifdef _WIN32
 #include <time.h>
 #endif  // !
@@ -64,9 +65,9 @@ uint32_t sinceEpoch(const SCLOCK::time_point& tp) {
 
 // timestamp in second
 std::string epochToDatetime(const time_t epoch) {
-  struct tm* dt;
+  struct tm* dt, rt;
   char buffer[64];
-  dt = localtime(&epoch);
+  dt = localtime_r(&epoch, &rt);
   strftime(buffer, sizeof(buffer), "%y%m%d %H:%M:%S", dt);
   return std::string(buffer);
 }

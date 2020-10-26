@@ -1,9 +1,6 @@
-#include "rocksdb/utilities/optimistic_transaction_db.h"
-#include "rocksdb/utilities/transaction.h"
-#include "tendisplus/utils/invariant.h"
-#include "glog/logging.h"
 #include <unistd.h>
-#include <thread>
+
+#include <thread>  // NOLINT
 #include <vector>
 #include <utility>
 #include <memory>
@@ -11,6 +8,12 @@
 #include <random>
 #include <sstream>
 #include <iostream>
+
+#include "rocksdb/utilities/optimistic_transaction_db.h"
+#include "rocksdb/utilities/transaction.h"
+#include "glog/logging.h"
+
+#include "tendisplus/utils/invariant.h"
 
 using PATOM = std::shared_ptr<std::atomic<uint64_t>>;
 using PDB = std::shared_ptr<rocksdb::OptimisticTransactionDB>;

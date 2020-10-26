@@ -99,7 +99,7 @@ struct redisCommand {
   int firstkey; /* The first argument that's a key (0 = no keys) */
   int lastkey;  /* The last argument that's a key */
   int keystep;  /* The step between first and last key */
-  long long microseconds, calls;
+  int64_t microseconds, calls;
 };
 
 uint64_t htonll(uint64_t v);
@@ -119,8 +119,7 @@ int random();
 #define ZADD_NAN (1 << 4) /* Only touch elements already exisitng. */
 #define ZADD_ADDED (1 << 5) /* The element was new and was added. */
 #define ZADD_UPDATED                                      \
-  (1 << 6) /* The element already existed, score updated. \
-            */
+  (1 << 6) /* The element already existed, score updated. */
 
 /* Flags only used by the ZADD command but not by zsetAdd() API: */
 #define ZADD_CH (1 << 16) /* Return num of elements added or updated. */
@@ -238,12 +237,12 @@ void serverLogOld(int level, const char* fmt, ...);
  * 'p' is an array of unsigned bytes. */
 #define HLL_DENSE_GET_REGISTER(target, p, regnum)             \
   do {                                                        \
-    uint8_t* _p = (uint8_t*)p;                                \
-    unsigned long _byte = regnum * HLL_BITS / 8;              \
-    unsigned long _fb = regnum * HLL_BITS & 7;                \
-    unsigned long _fb8 = 8 - _fb;                             \
-    unsigned long b0 = _p[_byte];                             \
-    unsigned long b1 = _p[_byte + 1];                         \
+    uint8_t* _p = (uint8_t*)p; /* NOLINT */                   \
+    uint64_t _byte = regnum * HLL_BITS / 8;                   \
+    uint64_t _fb = regnum * HLL_BITS & 7;                     \
+    uint64_t _fb8 = 8 - _fb;                                  \
+    uint64_t b0 = _p[_byte];                                  \
+    uint64_t b1 = _p[_byte + 1];                              \
     target = ((b0 >> _fb) | (b1 << _fb8)) & HLL_REGISTER_MAX; \
   } while (0)
 
@@ -251,11 +250,11 @@ void serverLogOld(int level, const char* fmt, ...);
  * 'p' is an array of unsigned bytes. */
 #define HLL_DENSE_SET_REGISTER(p, regnum, val)    \
   do {                                            \
-    uint8_t* _p = (uint8_t*)p;                    \
-    unsigned long _byte = regnum * HLL_BITS / 8;  \
-    unsigned long _fb = regnum * HLL_BITS & 7;    \
-    unsigned long _fb8 = 8 - _fb;                 \
-    unsigned long _v = val;                       \
+    uint8_t* _p = (uint8_t*)p; /* NOLINT */       \
+    uint64_t _byte = regnum * HLL_BITS / 8;       \
+    uint64_t _fb = regnum * HLL_BITS & 7;         \
+    uint64_t _fb8 = 8 - _fb;                      \
+    uint64_t _v = val;                            \
     _p[_byte] &= ~(HLL_REGISTER_MAX << _fb);      \
     _p[_byte] |= _v << _fb;                       \
     _p[_byte + 1] &= ~(HLL_REGISTER_MAX >> _fb8); \

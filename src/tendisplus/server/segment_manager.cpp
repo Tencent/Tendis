@@ -212,7 +212,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     }
   }
 
-  if (last_chunkId != (uint32_t)-1 &&
+  if (last_chunkId != (uint32_t)-1 && sess &&
       sess->getServerEntry()->isClusterEnabled()) {
     auto svr = sess->getServerEntry();
     const std::shared_ptr<tendisplus::ClusterState>& clusterState =

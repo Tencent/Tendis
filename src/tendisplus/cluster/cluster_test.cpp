@@ -149,7 +149,7 @@ makeCluster(uint32_t startPort,
     }
 
     char buf[128];
-    sprintf(buf, "{%u..%u}", firstslot, lastslot);  // NOLINT
+    snprintf(buf, 128, "{%u..%u}", firstslot, lastslot);  // NOLINT
 
     std::string slotstr(buf);
     LOG(INFO) << "ADD SLOTS:" << slotstr;
@@ -373,9 +373,12 @@ TEST(ClusterMsg, Common) {
     auto type1 = ClusterMsg::Type::PING;
     uint16_t count = 1;
     uint16_t ver = ClusterMsg::CLUSTER_PROTO_VER;
-    uint64_t currentEpoch = genRand() * genRand();
-    uint64_t configEpoch = genRand() * genRand();
-    uint64_t offset = genRand() * genRand();
+    uint64_t currentEpoch =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t configEpoch =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t offset =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
 
     std::string sender = getUUid(20);
     std::bitset<CLUSTER_SLOTS> slots = genBitMap();
@@ -469,9 +472,12 @@ TEST(ClusterMsg, CommonMoreGossip) {
   uint16_t port = genRand() % 55535;
   auto type1 = ClusterMsg::Type::PING;
   uint16_t count = gcount;
-  uint64_t currentEpoch = genRand() * genRand();
-  uint64_t configEpoch = genRand() * genRand();
-  uint64_t offset = genRand() * genRand();
+  uint64_t currentEpoch =
+    static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+  uint64_t configEpoch =
+    static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+  uint64_t offset =
+    static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
   uint16_t ver = ClusterMsg::CLUSTER_PROTO_VER;
   std::string sender = getUUid(20);
   std::bitset<CLUSTER_SLOTS> slots = genBitMap();
@@ -570,9 +576,12 @@ TEST(ClusterMsg, CommonUpdate) {
     uint32_t totlen = genRand();
     uint16_t port = 8000;
     auto type2 = ClusterMsg::Type::UPDATE;
-    uint64_t currentEpoch = genRand() * genRand();
-    uint64_t configEpoch = genRand() * genRand();
-    uint64_t offset = genRand() * genRand();
+    uint64_t currentEpoch =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t configEpoch =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
+    uint64_t offset =
+      static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
     std::string sender = getUUid(20);
     std::bitset<CLUSTER_SLOTS> slots = genBitMap();
     std::string slaveof = getUUid(20);

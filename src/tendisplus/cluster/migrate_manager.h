@@ -154,7 +154,7 @@ class MigrateManager {
   // sender POV
   bool senderSchedule(const SCLOCK::time_point& now);
 
-  Status migrating(SlotsBitmap slots,
+  Status migrating(const SlotsBitmap &slots,
                    const string& ip,
                    uint16_t port,
                    uint32_t storeid,
@@ -176,7 +176,7 @@ class MigrateManager {
   // receiver POV
   bool receiverSchedule(const SCLOCK::time_point& now);
 
-  Status importing(SlotsBitmap slots,
+  Status importing(const SlotsBitmap& slots,
                    const string& ip,
                    uint16_t port,
                    uint32_t storeid,

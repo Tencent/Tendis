@@ -1,9 +1,12 @@
 // Copyright [2017] <eliotwang>
+
 #include <memory>
 #include <utility>
-#include <thread>
+#include <thread>  // NOLINT
+
 #include "gtest/gtest.h"
 #include "glog/logging.h"
+
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/server/segment_manager.h"
@@ -16,12 +19,12 @@
 
 namespace tendisplus {
 
-const std::string master_dir = "repltest_master";
-const std::string slave_dir = "repltest_slave";
-const std::string slave_slave_dir = "repltest_slave_slave";
-const std::string slave1_dir = "repltest_slave1";
-const std::string slave2_dir = "repltest_slave2";
-const std::string single_dir = "repltest_single";
+const char master_dir[] = "repltest_master";
+const char slave_dir[] = "repltest_slave";
+const char slave_slave_dir[] = "repltest_slave_slave";
+const char slave1_dir[] = "repltest_slave1";
+const char slave2_dir[] = "repltest_slave2";
+const char single_dir[] = "repltest_single";
 uint32_t master_port = 1111;
 uint32_t slave_port = 1112;
 uint32_t slave_slave_port = 1113;
@@ -797,13 +800,14 @@ Status scan(const std::string& logfile) {
   if (pf == NULL) {
     return {ErrorCodes::ERR_INTERNAL, "fopen failed:" + logfile};
   }
-  const uint32_t buff_len = 4096;
-  char buff[buff_len];
+  const uint32_t kBuffLen = 4096;
+  char buff[kBuffLen];
   uint64_t id = 0;
 
   int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
   if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
     cerr << "read head failed." << endl;
+    fclose(pf);
     return {ErrorCodes::ERR_INTERNAL, "read head failed."};
   }
   buff[BINLOG_HEADER_V2_LEN] = '\0';
@@ -817,9 +821,10 @@ Status scan(const std::string& logfile) {
     ret = fread(buff, sizeof(uint32_t), 1, pf);
     if (ret != 1) {
       if (feof(pf)) {
-        // cerr << "read logfile end." << endl;
+        fclose(pf);
         return {ErrorCodes::ERR_OK, ""};  // read file end.
       }
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "read keylen failed."};
     }
     buff[sizeof(uint32_t)] = '\0';
@@ -830,6 +835,7 @@ Status scan(const std::string& logfile) {
     key.resize(keylen);
     ret = fread(const_cast<char*>(key.c_str()), keylen, 1, pf);
     if (ret != 1) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "read key failed."};
     }
 
@@ -837,6 +843,7 @@ Status scan(const std::string& logfile) {
     uint32_t valuelen = 0;
     ret = fread(buff, sizeof(uint32_t), 1, pf);
     if (ret != 1) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "read valuelen failed."};
     }
     buff[sizeof(uint32_t)] = '\0';
@@ -847,16 +854,19 @@ Status scan(const std::string& logfile) {
     value.resize(valuelen);
     ret = fread(const_cast<char*>(value.c_str()), valuelen, 1, pf);
     if (ret != 1) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "read value failed."};
     }
 
     Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
     if (!logkey.ok()) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "decode logkey failed."};
     }
 
     Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
     if (!logValue.ok()) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "decode logvalue failed."};
     }
 
@@ -864,9 +874,12 @@ Status scan(const std::string& logfile) {
       id = logkey.value().getBinlogId() + 1;
       continue;
     }
+
     if (id != logkey.value().getBinlogId()) {
+      fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "binlogId error."};
     }
+
     id++;
   }
 

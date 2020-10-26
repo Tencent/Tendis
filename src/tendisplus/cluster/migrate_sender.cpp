@@ -361,22 +361,27 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
         _curBinlogid = newBinlogId;
       }
     }
+
     if (s.ok()) {
       done = true;
       break;
     }
 
-    if (!s.ok() && needRetry) {
-      if (newBinlogId > 0) {
-        _curBinlogid = newBinlogId;
+    {
+      std::lock_guard<myMutex> lk(_mutex);
+      if (!s.ok() && needRetry) {
+        if (newBinlogId > 0) {
+          _curBinlogid = newBinlogId;
+        }
+        needRetry = false;
+        s = resetClient();
+        if (!s.ok()) {
+          LOG(ERROR) << "reset client fail on slots:"
+                     << bitsetStrEncode(_slots);
+          continue;
+        }
+        LOG(INFO) << "reconn receiver on slots:" << bitsetStrEncode(_slots);
       }
-      needRetry = false;
-      s = resetClient();
-      if (!s.ok()) {
-        LOG(ERROR) << "reset client fail on slots:" << bitsetStrEncode(_slots);
-        continue;
-      }
-      LOG(INFO) << "reconn receiver on slots:" << bitsetStrEncode(_slots);
     }
   }
 

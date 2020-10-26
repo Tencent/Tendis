@@ -1,6 +1,9 @@
-#include <algorithm>
-#include <thread>
+
 #include "tendisplus/server/session.h"
+
+#include <algorithm>
+#include <thread>   // NOLINT
+
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/server/server_entry.h"

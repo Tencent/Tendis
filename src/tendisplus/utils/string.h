@@ -201,7 +201,9 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
   std::vector<std::string> vec = stringSplit(bitmapStr, " ");
   vec.erase(vec.begin());
   for (auto& vs : vec) {
-    if (vs.find("-")) {
+    // TODO(wayenchen): the following cases should be considered:
+    // a-b; -aaa; aaaa; aaaaa-; aaa-aaa-aa;
+    if (vs.find("-") != std::string::npos) {
       std::vector<std::string> s = stringSplit(vs, "-");
       Expected<uint64_t> sPtr = ::tendisplus::stoul(s[0]);
 
@@ -247,8 +249,8 @@ using std::string_view;
 #define mystring_view string_view
 
 #elif __has_include(<experimental/string_view>)
-#include <experimental/string_view>
-using std::experimental::string_view;
+#include <experimental/string_view>  // NOLINT
+using std::experimental::string_view;  // NOLINT
 #define mystring_view string_view
 
 #else

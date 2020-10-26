@@ -2,10 +2,12 @@
 #define SRC_TENDISPLUS_NETWORK_BLOCKING_TCP_CLIENT_H_
 
 #include <string>
-#include <chrono>
+#include <chrono>  // NOLINT
 #include <memory>
+
 #include "asio.hpp"
 #include "glog/logging.h"
+
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/rate_limiter.h"
 

@@ -4,8 +4,9 @@
 #include <atomic>
 #include <string>
 #include <list>
-#include <mutex>
-#include <condition_variable>
+#include <mutex>  // NOLINT
+#include <condition_variable>  // NOLINT
+
 #include "tendisplus/lock/mgl/lock_defines.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 
@@ -20,7 +21,7 @@ class LockSchedCtx;
 // if you want to lock different targets.
 class MGLock {
  public:
-    MGLock(MGLockMgr* mgr);
+    explicit MGLock(MGLockMgr* mgr);
     MGLock(const MGLock&) = delete;
     MGLock(MGLock&&) = delete;
     ~MGLock();

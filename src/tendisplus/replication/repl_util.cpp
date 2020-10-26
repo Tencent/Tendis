@@ -1,7 +1,8 @@
+#include "tendisplus/replication/repl_util.h"
+
 #include <memory>
 #include <string>
 #include <utility>
-#include "tendisplus/replication/repl_util.h"
 #include "glog/logging.h"
 #include "tendisplus/commands/command.h"
 

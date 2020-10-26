@@ -34,8 +34,8 @@
  * either the BSD or the GPL.
  */
 
-#ifndef LZF_H
-#define LZF_H
+#ifndef SRC_TENDISPLUS_UTILS_LZF_H_
+#define SRC_TENDISPLUS_UTILS_LZF_H_
 
 /***********************************************************************
 **
@@ -98,4 +98,4 @@ unsigned int lzf_decompress(const void* const in_data,
                             void* out_data,
                             unsigned int out_len);
 
-#endif
+#endif  // SRC_TENDISPLUS_UTILS_LZF_H_

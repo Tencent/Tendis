@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -16,7 +17,6 @@
 #include "tendisplus/utils/base64.h"
 #include "gtest/gtest.h"
 #include "glog/logging.h"
-#include "unistd.h"
 
 namespace tendisplus {
 
@@ -42,7 +42,6 @@ std::string randomStr(size_t s, bool maybeEmpty) {
 }
 
 TEST(Time, Common) {
-
   auto t3 = sinceEpoch();
   auto t4 = nsSinceEpoch();
 
@@ -141,9 +140,10 @@ TEST(Base64, common) {
   EXPECT_EQ(data, decode);
 
   data =
-    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM22222222222222222222222222222222 \
-        ------------------------------****************************************************** \
-        ########################################zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM22222222222222222222222" \
+    "222222222 ------------------------------********************************"\
+    "********************** ########################################zzzzzzzzz"\
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
   encode = Base64::Encode((unsigned char*)data.c_str(), data.size());
   decode = Base64::Decode(encode.c_str(), encode.size());
   EXPECT_EQ(data, decode);
@@ -197,7 +197,7 @@ TEST(bitsetEncode, common) {
 TEST(ParamManager, common) {
   ParamManager pm;
   const char* argv[] = {"--skey1=value", "--ikey1=123"};
-  pm.init(2, (char**)argv);
+  pm.init(2, const_cast<char**>(argv));
   EXPECT_EQ(pm.getString("skey1"), "value");
   EXPECT_EQ(pm.getString("skey2"), "");
   EXPECT_EQ(pm.getString("skey3", "a"), "a");

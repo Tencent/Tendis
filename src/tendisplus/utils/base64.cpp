@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include "base64.h"
+#include "tendisplus/utils/base64.h"
 
 std::string Base64::Encode(const unsigned char* str, int bytes) {
   static const char _base64_table[] =

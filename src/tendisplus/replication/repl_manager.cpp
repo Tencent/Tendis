@@ -1,5 +1,5 @@
-#include <algorithm>
 #include <chrono>  // NOLINT
+#include <algorithm>
 #include <fstream>
 #include <limits>
 #include <list>

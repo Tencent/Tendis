@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
 #include "tendisplus/utils/param_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/kvstore.h"
@@ -8,8 +9,6 @@
 #include "tendisplus/storage/record.h"
 
 namespace tendisplus {
-
-using namespace std;
 
 // TODO(takenliu) print error to stderr or logfile?
 class BinlogScanner {
@@ -42,16 +41,18 @@ class BinlogScanner {
     return false;
   }
 
-  void process(const string& key, const string& value, uint32_t storeId) {
+  void process(const std::string& key,
+               const std::string& value,
+               uint32_t storeId) {
     Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
     if (!logkey.ok()) {
-      cerr << "decode logkey failed." << endl;
+      std::cerr << "decode logkey failed." << std::endl;
       return;
     }
 
     Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
     if (!logValue.ok()) {
-      cerr << "decode logvalue failed." << endl;
+      std::cerr << "decode logvalue failed." << std::endl;
       return;
     }
 
@@ -60,22 +61,22 @@ class BinlogScanner {
     }
 
     if (_mode == TOOL_MODE::TEXT_SHOW) {
-      cout << "storeid:" << storeId
-           << " binlogid:" << logkey.value().getBinlogId()
-           << " txnid:" << logValue.value().getTxnId()
-           << " chunkid:" << logValue.value().getChunkId()
-           << " ts:" << logValue.value().getTimestamp()
-           << " cmdstr:" << logValue.value().getCmd() << endl;
+      std::cout << "storeid:" << storeId
+                << " binlogid:" << logkey.value().getBinlogId()
+                << " txnid:" << logValue.value().getTxnId()
+                << " chunkid:" << logValue.value().getChunkId()
+                << " ts:" << logValue.value().getTimestamp()
+                << " cmdstr:" << logValue.value().getCmd() << std::endl;
 
       if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
-        cout << "  op:"
-             << "FLUSH"
-             << " cmd:" << logValue.value().getCmd() << endl;
+        std::cout << "  op:"
+                  << "FLUSH"
+                  << " cmd:" << logValue.value().getCmd() << std::endl;
       } else if (logValue.value().getChunkId() ==
                  Transaction::CHUNKID_MIGRATE) {
-        cout << "  op:"
-             << "MIGRATE"
-             << " cmd:" << logValue.value().getCmd() << endl;
+        std::cout << "  op:"
+                  << "MIGRATE"
+                  << " cmd:" << logValue.value().getCmd() << std::endl;
       }
 
       size_t offset = logValue.value().getHdrSize();
@@ -86,7 +87,7 @@ class BinlogScanner {
         auto entry = ReplLogValueEntryV2::decode(
           (const char*)data + offset, dataSize - offset, &size);
         if (!entry.ok()) {
-          cerr << "ReplLogValueEntryV2::decode failed." << endl;
+          std::cerr << "ReplLogValueEntryV2::decode failed." << std::endl;
           return;
         }
         offset += size;
@@ -95,20 +96,21 @@ class BinlogScanner {
         Expected<RecordValue> opvalue =
           RecordValue::decode(entry.value().getOpValue());
         if (!opkey.ok() || !opvalue.ok()) {
-          cerr << "decode opkey or opvalue failed.";
+          std::cerr << "decode opkey or opvalue failed.";
           return;
         }
-        cout << "  op:" << (uint32_t)entry.value().getOp()
-             << " fkey:" << opkey.value().getPrimaryKey()
-             << " skey:" << opkey.value().getSecondaryKey()
-             << " opvalue:" << opvalue.value().getValue() << endl;
+        std::cout << "  op:" << (uint32_t)entry.value().getOp()
+                  << " fkey:" << opkey.value().getPrimaryKey()
+                  << " skey:" << opkey.value().getSecondaryKey()
+                  << " opvalue:" << opvalue.value().getValue() << std::endl;
       }
     } else if (_mode == TOOL_MODE::BASE64_SHOW) {
-      string baseKey = Base64::Encode((unsigned char*)key.c_str(), key.size());
-      string baseValue =
+      std::string baseKey =
+        Base64::Encode((unsigned char*)key.c_str(), key.size());
+      std::string baseValue =
         Base64::Encode((unsigned char*)value.c_str(), value.size());
       std::cout << "restorebinlogv2 " << storeId << " " << baseKey << " "
-                << baseValue << endl;
+                << baseValue << std::endl;
     } else if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
       if (_firstbinlogid == UINT64_MAX) {
         _firstbinlogid = logkey.value().getBinlogId();
@@ -122,15 +124,16 @@ class BinlogScanner {
   void scan() {
     FILE* pf = fopen(_logfile.c_str(), "r");
     if (pf == NULL) {
-      cerr << "fopen failed:" << _logfile << endl;
+      std::cerr << "fopen failed:" << _logfile << std::endl;
       return;
     }
-    const uint32_t buff_len = 4096;
-    char buff[buff_len];
+    const uint32_t kBuffLen = 4096;
+    char buff[kBuffLen];
 
     int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
     if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
-      cerr << "read head failed." << endl;
+      std::cerr << "read head failed." << std::endl;
+      fclose(pf);
       return;
     }
     buff[BINLOG_HEADER_V2_LEN] = '\0';
@@ -143,21 +146,23 @@ class BinlogScanner {
       ret = fread(buff, sizeof(uint32_t), 1, pf);
       if (ret != 1) {
         if (feof(pf)) {
-          // cerr << "read logfile end." << endl;
+          fclose(pf);
           return;  // read file end.
         }
-        cerr << "read keylen failed." << endl;
+        std::cerr << "read keylen failed." << std::endl;
+        fclose(pf);
         return;
       }
       buff[sizeof(uint32_t)] = '\0';
       keylen = int32Decode(buff);
 
       // key
-      string key;
+      std::string key;
       key.resize(keylen);
       ret = fread(const_cast<char*>(key.c_str()), keylen, 1, pf);
       if (ret != 1) {
-        cerr << "read key failed." << endl;
+        fclose(pf);
+        std::cerr << "read key failed." << std::endl;
         return;
       }
 
@@ -165,18 +170,20 @@ class BinlogScanner {
       uint32_t valuelen = 0;
       ret = fread(buff, sizeof(uint32_t), 1, pf);
       if (ret != 1) {
-        cerr << "read valuelen failed." << endl;
+        fclose(pf);
+        std::cerr << "read valuelen failed." << std::endl;
         return;
       }
       buff[sizeof(uint32_t)] = '\0';
       valuelen = int32Decode(buff);
 
       // value
-      string value;
+      std::string value;
       value.resize(valuelen);
       ret = fread(const_cast<char*>(value.c_str()), valuelen, 1, pf);
       if (ret != 1) {
-        cerr << "read value failed." << endl;
+        fclose(pf);
+        std::cerr << "read value failed." << std::endl;
         return;
       }
 
@@ -188,15 +195,15 @@ class BinlogScanner {
   void run() {
     scan();
     if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
-      std::cout << "firstbinlogid:" << _firstbinlogid << endl;
-      std::cout << "lastbinlogid:" << _lastbinlogid << endl;
-      std::cout << "firstbinlogtime:" << _firstbinlogtime << endl;
-      std::cout << "lastbinlogtime:" << _lastbinlogtime << endl;
+      std::cout << "firstbinlogid:" << _firstbinlogid << std::endl;
+      std::cout << "lastbinlogid:" << _lastbinlogid << std::endl;
+      std::cout << "firstbinlogtime:" << _firstbinlogtime << std::endl;
+      std::cout << "lastbinlogtime:" << _lastbinlogtime << std::endl;
     }
   }
 
  private:
-  string _logfile;
+  std::string _logfile;
   TOOL_MODE _mode;
   uint64_t _startDatetime = 0;
   uint64_t _endDatetime = UINT64_MAX;

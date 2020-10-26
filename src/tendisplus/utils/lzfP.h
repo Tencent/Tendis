@@ -34,13 +34,13 @@
  * either the BSD or the GPL.
  */
 
-#ifndef LZFP_h
-#define LZFP_h
+#ifndef SRC_TENDISPLUS_UTILS_LZFP_H_
+#define SRC_TENDISPLUS_UTILS_LZFP_H_
 
 #define STANDALONE 1 /* at the moment, this is ok. */
 
 #ifndef STANDALONE
-#include "lzf.h"
+#include "src/tendisplus/utils/lzf.h"
 #endif
 
 /*
@@ -138,7 +138,6 @@
 #ifdef __cplusplus
 #include <cstring>
 #include <climits>
-using namespace std;
 #else
 #include <string.h>
 #include <limits.h>
@@ -172,9 +171,9 @@ typedef LZF_HSLOT LZF_STATE[1 << (HLOG)];
 #if !STRICT_ALIGN
 /* for unaligned accesses we need a 16 bit datatype. */
 #if USHRT_MAX == 65535
-typedef unsigned short u16;
+typedef uint16_t u16;
 #elif UINT_MAX == 65535
-typedef unsigned int u16;
+typedef uint32_t u16;
 #else
 #undef STRICT_ALIGN
 #define STRICT_ALIGN 1
@@ -185,4 +184,4 @@ typedef unsigned int u16;
 #undef VERY_FAST
 #endif
 
-#endif
+#endif  // SRC_TENDISPLUS_UTILS_LZFP_H_

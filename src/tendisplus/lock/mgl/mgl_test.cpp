@@ -1,8 +1,10 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
-#include <thread>
+#include <thread>  // NOLINT
+
 #include "gtest/gtest.h"
+
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 

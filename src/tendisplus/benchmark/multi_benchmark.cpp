@@ -1,15 +1,16 @@
 // NOTE(deyukong): this file is in bad c++ style because it's pulled from
 // elsewhere and it's only benchmark tool, doest not affect mainline. Donot pick
 // any code from it.
+#include <unistd.h>
+#include <assert.h>
+
 #include <iostream>
 #include <vector>
 #include <random>
 #include <sstream>
 #include <memory>
-#include <thread>
-#include <assert.h>
+#include <thread>  // NOLINT
 #include <fstream>
-#include <unistd.h>
 
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"

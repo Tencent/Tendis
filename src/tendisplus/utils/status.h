@@ -151,8 +151,8 @@ Expected<T> makeExpected(Args&&... args) {
   return Expected<T>{T(std::forward<Args>(args)...)};
 }
 
-#define LOG_STATUS(status)                                                   \
-      LOG(ERROR) << "Status failed:" << status.toString() << ' ' << __FILE__ \
+#define LOG_STATUS(status)                                               \
+  LOG(ERROR) << "Status failed:" << status.toString() << ' ' << __FILE__ \
              << ' ' << __LINE__;
 
 #define RET_IF_ERR(status)                                                   \

@@ -1,7 +1,8 @@
 #include <utility>
+#include <sstream>
+
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/invariant.h"
-#include <sstream>
 
 namespace tendisplus {
 Status::Status() : Status(ErrorCodes::ERR_OK, "") {}
