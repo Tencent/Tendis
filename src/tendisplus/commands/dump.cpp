@@ -4,7 +4,6 @@
 #include <utility>
 #include <unordered_set>
 #include <limits>
-
 #include "tendisplus/commands/dump.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
@@ -323,7 +322,8 @@ class DumpXCommand : public Command {
         continue;
       }
 
-      uint64_t ttl = withttl ? exps.value()->getTTL() : std::numeric_limits<uint64_t>::max();
+      uint64_t ttl =
+        withttl ? exps.value()->getTTL() : std::numeric_limits<uint64_t>::max();
       bufferlist.emplace_back(std::move(
         fmtRestorexSubCmd(args[i - 1],
                           args[i],
