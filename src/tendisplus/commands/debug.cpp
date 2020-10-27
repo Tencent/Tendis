@@ -568,7 +568,7 @@ class IterAllCommand : public Command {
       // TODO(vinchen): the ttl isn't correct. Because it isn't meta
       // record except KV.
       uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
-      if (!Command::noExpire() && 0 != targetTtl && currentTs > targetTtl) {
+      if (0 != targetTtl && currentTs > targetTtl) {
         continue;
       }
       result.emplace_back(std::move(exptRcd.value()));
