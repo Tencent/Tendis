@@ -3799,7 +3799,6 @@ class TendisadminCommand : public Command {
       } else {
         std::this_thread::sleep_for(std::chrono::seconds(time.value()));
       }
-
     } else if (operation == "recovery") {
       if (args.size() != 2) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};

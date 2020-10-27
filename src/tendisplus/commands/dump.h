@@ -97,6 +97,8 @@ class Serializer {
                            size_t* pos,
                            const std::string& str);
 
+  uint64_t getTTL() { return _rv.getTtl(); }
+
   size_t _begin, _end;
 
  protected:
