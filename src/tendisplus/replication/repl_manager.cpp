@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <chrono>
+#include <chrono>  // NOLINT
 #include <fstream>
 #include <limits>
 #include <list>
@@ -85,7 +85,6 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
     _incrCheckMatrix(std::make_shared<PoolMatrix>()),
     _logRecycleMatrix(std::make_shared<PoolMatrix>()),
     _connectMasterTimeoutMs(1000) {
-
   _cfg->serverParamsVar("incrPushThreadnum")->setUpdate([this]() {
     incrPusherResize(_cfg->incrPushThreadnum);
   });
@@ -603,6 +602,20 @@ bool ReplManager::isSlaveOfSomeone(uint32_t storeId) {
     return true;
   }
   return false;
+}
+
+bool ReplManager::isSlaveFullSyncDone() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    if (_syncMeta[i]->syncFromHost == "") {
+      return false;
+    }
+    auto rstate = _syncMeta[i]->replState;
+    if (rstate != ReplState::REPL_CONNECTED) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void ReplManager::recycleBinlog(uint32_t storeId) {

@@ -1,10 +1,10 @@
 #include <utility>
 #include <memory>
 #include <algorithm>
-#include <chrono>         // NOLINT
-#include <string>         // NOLINT
+#include <chrono>  // NOLINT
+#include <string>  // NOLINT
 #include <list>
-#include <mutex>          // NOLINT
+#include <mutex>  // NOLINT
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -984,12 +984,12 @@ bool ServerEntry::processRequest(Session* sess) {
       NetSession* ns = dynamic_cast<NetSession*>(sess);
       INVARIANT(ns != nullptr);
       std::vector<std::string> args = ns->getArgs();
-      auto esNum = ::tendisplus::stoul(args[3]);
+      auto esNum = ::tendisplus::stoul(args[4]);
       if (!esNum.ok())
-        LOG(ERROR) << "Invalid store num:" << args[3];
+        LOG(ERROR) << "Invalid store num:" << args[4];
       uint32_t storeNum = esNum.value();
       _migrateMgr->dstPrepareMigrate(
-        ns->borrowConn(), args[1], args[2], storeNum);
+        ns->borrowConn(), args[1], args[2], args[3], storeNum);
       return false;
     } else if (expCmdName == "quit") {
       LOG(INFO) << "quit command";

@@ -38,6 +38,7 @@ enum class MigrateSenderStatus {
 class ChunkMigrateSender {
  public:
   explicit ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
+                              const std::string& taskid,
                               std::shared_ptr<ServerEntry> svr,
                               std::shared_ptr<ServerParams> cfg,
                               bool is_fake = false);
@@ -102,6 +103,8 @@ class ChunkMigrateSender {
   bool needToWaitMetaChanged() const;
   Status sendVersionMeta();
   bool needToSendFail() const;
+  void stop();
+  void start();
 
  private:
   Expected<std::unique_ptr<Transaction>> initTxn();
@@ -121,6 +124,7 @@ class ChunkMigrateSender {
   std::bitset<CLUSTER_SLOTS> _slots;
   std::shared_ptr<ServerEntry> _svr;
   const std::shared_ptr<ServerParams> _cfg;
+  std::atomic<bool> _isRunning;
   bool _isFake;
 
   std::unique_ptr<DbWithLock> _dbWithLock;

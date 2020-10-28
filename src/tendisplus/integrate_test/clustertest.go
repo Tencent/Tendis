@@ -600,8 +600,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
             return
         }
         time.Sleep(1 * time.Second)*/
+        
         if r, err := cliDst.Cmd("cluster", "setslot", "importing", srcNodeName, slots).Str();
-            r != ("OK") {
+            err != nil {
             log.Fatalf("importing failed:%v %s", err, r)
             return
         }

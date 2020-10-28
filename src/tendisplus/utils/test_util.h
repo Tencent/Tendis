@@ -6,7 +6,7 @@
 #include <vector>
 #include <set>
 #include <string>
-#include <thread>
+#include <thread>  // NOLINT
 
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
@@ -98,6 +98,9 @@ class WorkLoad {
   void addSlots(const std::string& slotsBuff);
   void replicate(const std::string& nodeName);
   void lockDb(mstime_t locktime);
+  void stopMigrate(const std::string& taskid);
+  void stopAllMigTasks();
+  void restartAllMigTasks();
   void setMaxKeyLen(uint32_t max_key_len);
   Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
   std::string getStringResult(const std::vector<std::string>& args);

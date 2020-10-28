@@ -2599,7 +2599,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0 /* No flags. */
+#define EMPTYDB_NO_FLAGS 0     /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {

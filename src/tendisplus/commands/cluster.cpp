@@ -55,6 +55,7 @@ class ClusterCommand : public Command {
 
   Expected<std::string> run(Session* sess) final {
     auto svr = sess->getServerEntry();
+
     INVARIANT(svr != nullptr);
     if (!svr->isClusterEnabled()) {
       return {ErrorCodes::ERR_CLUSTER,
@@ -80,11 +81,12 @@ class ClusterCommand : public Command {
     if (arg1 == "setslot" && argSize >= 3) {
       Status s;
       const std::string arg2 = toLower(args[2]);
-      if (arg2 == "importing" && argSize >= 5) {
+      if ((arg2 == "importing" || arg2 == "restart") && argSize >= 5) {
         if (myself->nodeIsArbiter() || myself->nodeIsSlave()) {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots to slave or arbiter node "};
         }
+
         if (!clusterState->clusterIsOK()) {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots when cluster fail"};
@@ -97,9 +99,6 @@ class ClusterCommand : public Command {
 
         std::string nodeId = args[3];
         /* CLUSTER SETSLOT IMPORTING nodename chunkid */
-        std::bitset<CLUSTER_SLOTS> slotsMap;
-
-        LOG(INFO) << sess->getCmdStr();
         auto srcNode = clusterState->clusterLookupNode(nodeId);
         if (!srcNode) {
           LOG(ERROR) << "import nodeid:" << nodeId << "not exist in cluster";
@@ -109,55 +108,31 @@ class ClusterCommand : public Command {
           return {ErrorCodes::ERR_CLUSTER,
                   "Can't importing slots from arbiter node."};
         }
-
-        for (size_t i = 4; i < args.size(); i++) {
-          Expected<int64_t> exptSlot = ::tendisplus::stoll(args[i]);
+        std::vector<std::string> vec(args.begin() + 4, args.end());
+        /* CLUSTER SETSLOT retry nodename chunkid */
+        std::bitset<CLUSTER_SLOTS> slotsMap;
+        for (auto& vs : vec) {
+          Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
           if (!exptSlot.ok()) {
             return exptSlot.status();
           }
           int32_t slot = (int32_t)exptSlot.value();
-
           if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
             LOG(ERROR) << "slot" << slot
                        << " ERR Invalid or out of range slot ";
             return {ErrorCodes::ERR_CLUSTER, "Invalid migrate slot position"};
           }
-          if (svr->getGcMgr()->slotIsDeleting(slot)) {
-            LOG(ERROR) << "slot:" << slot
-                       << " ERR being deleting before migration";
-            return {ErrorCodes::ERR_CLUSTER, "slot in deleting task"};
-          }
-          if (!svr->getClusterMgr()->emptySlot(slot)) {
-            LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
-            return {ErrorCodes::ERR_CLUSTER, "slot not empty"};
-          }
-          // check meta data
-          auto thisnode = clusterState->getNodeBySlot(slot);
-          if (thisnode == myself) {
-            LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
-            return {ErrorCodes::ERR_CLUSTER,
-                    "I'm already the owner of hash slot" + dtos(slot)};
-          }
-          if (thisnode != srcNode) {
-            DLOG(ERROR) << "slot:" << slot
-                        << "is not belong to srcNode : " << nodeId;
-            return {ErrorCodes::ERR_CLUSTER,
-                    "Source node is not the owner of hash slot" + dtos(slot)};
-          }
-          // check if slot already been migrating
-          if (migrateMgr->slotInTask(slot)) {
-            LOG(ERROR) << "migrate task already start on slot:" << slot;
-            return {ErrorCodes::ERR_CLUSTER, "already importing" + dtos(slot)};
-          }
           slotsMap.set(slot);
         }
-
-        s = startImportingTasks(svr, srcNode, slotsMap);
-        if (!s.ok()) {
-          return s;
+        bool needRetry = (arg2 == "restart") ? true : false;
+        auto exptTaskid = startAllSlotsTasks(
+          slotsMap, svr, nodeId, clusterState, srcNode, myself, needRetry);
+        if (!exptTaskid.ok()) {
+          LOG(ERROR) << "importing task fail:"
+                     << exptTaskid.status().toString();
+          return exptTaskid.status();
         }
-        return Command::fmtOK();
-
+        return Command::fmtBulk(exptTaskid.value());
       } else if (arg2 == "info" && argSize == 3) {
         Expected<std::string> migrateInfo = migrateMgr->getMigrateInfo();
         if (migrateInfo.ok()) {
@@ -172,11 +147,52 @@ class ClusterCommand : public Command {
         } else {
           return {ErrorCodes::ERR_CLUSTER, "Invalid migrate info"};
         }
+      } else if (arg2 == "stop" && argSize > 3) {
+        for (size_t i = 3; i < args.size(); i++) {
+          LOG(INFO) << "stopping tasks, the parent taskid is:" << args[i];
+          auto s = migrateMgr->stopTasks(args[i]);
+          if (!s.ok()) {
+            LOG(ERROR) << "error stop task" << s.toString();
+            return s;
+          }
+        }
+        return Command::fmtOK();
+      } else if (arg2 == "stopall" && argSize == 3) {
+        /* NOTE(wayenchen) stop all migrate tasks, work on both srcNode and
+         * dstNode */
+        migrateMgr->stopAllTasks();
+        return Command::fmtOK();
+      } else if (arg2 == "restartall" && argSize == 3) {
+        /* NOTE(wayenchen) it is work on dstNode command */
+        std::map<std::string, SlotsBitmap> remainSlotsMap =
+          migrateMgr->getStopMap();
+
+        if (remainSlotsMap.size() == 0) {
+          return {ErrorCodes::ERR_CLUSTER, "no slot remain to restart"};
+        }
+
+        for (auto it = remainSlotsMap.begin(); it != remainSlotsMap.end();
+             ++it) {
+          std::string nodeId = (*it).first;
+          auto taskMap = (*it).second;
+          auto srcNode = clusterState->clusterLookupNode(nodeId);
+          auto exptTaskid = startAllSlotsTasks(
+            taskMap, svr, nodeId, clusterState, srcNode, myself, true);
+          if (!exptTaskid.ok()) {
+            LOG(ERROR) << "restart importing task fail:"
+                       << exptTaskid.status().toString();
+            return exptTaskid.status();
+          }
+          LOG(INFO) << "restart slots nodeid:" << nodeId
+                    << " slots is:" << bitsetStrEncode(taskMap);
+          migrateMgr->removeRestartSlots(nodeId, (*it).second);
+        }
+
+        return Command::fmtOK();
       }
     } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
       /* CLUSTER MEET <ip> <port> [cport] */
       uint64_t port, cport;
-
       auto& host = args[2];
       auto eport = ::tendisplus::stoul(args[3]);
       if (!eport.ok()) {
@@ -298,7 +314,6 @@ class ClusterCommand : public Command {
       clusterState->clusterSaveNodes();
       clusterState->clusterUpdateState();
       return Command::fmtOK();
-
     } else if (arg1 == "replicate" && argSize == 3) {
       auto n = clusterState->clusterLookupNode(args[2]);
       if (!n) {
@@ -308,11 +323,17 @@ class ClusterCommand : public Command {
       if (n == myself) {
         return {ErrorCodes::ERR_CLUSTER, "Can't replicate myself"};
       }
+
+      if (clusterState->getMyMaster() == n) {
+        LOG(INFO) << "I am already the slave of:" << args[2];
+        return Command::fmtOK();
+      }
       /* Can't replicate a slave. */
       if (n->nodeIsSlave()) {
         return {ErrorCodes::ERR_CLUSTER,
                 "only replicate a master, not a slave"};
       }
+
       if (myself->nodeIsArbiter()) {
         return {ErrorCodes::ERR_CLUSTER,
                 "I am an arbiter, can not replicate to others."};
@@ -328,15 +349,19 @@ class ClusterCommand : public Command {
                 "To set a master the node must be empty"};
       }
 
-      Status s = clusterState->clusterSetMaster(n);
+      if (clusterState->getMyMaster() != nullptr) {
+        LOG(ERROR) << "already have master:"
+                   << clusterState->getMyMaster()->getNodeName();
+        return {ErrorCodes::ERR_CLUSTER, "slaveof noone before set new master"};
+      }
 
+      Status s = clusterState->clusterSetMaster(n);
       if (!s.ok()) {
         LOG(ERROR) << "replicate node:" << n->getNodeName() << "fail!";
         return s;
       }
       clusterState->clusterSaveNodes();
       return Command::fmtOK();
-
     } else if (arg1 == "countkeysinslot" && argSize == 3) {
       auto eslot = ::tendisplus::stoul(args[2]);
       if (!eslot.ok()) {
@@ -348,7 +373,6 @@ class ClusterCommand : public Command {
       }
       uint64_t keyNum = svr->getClusterMgr()->countKeysInSlot(slot);
       return Command::fmtBulk(to_string(keyNum));
-
     } else if (arg1 == "keyslot" && argSize == 3) {
       std::string key = args[2];
       if (key.size() < 1) {
@@ -647,9 +671,10 @@ class ClusterCommand : public Command {
     return notEmpty;
   }
 
-  Status startImportingTasks(ServerEntry* svr,
-                             CNodePtr srcNode,
-                             const std::bitset<CLUSTER_SLOTS>& slotsMap) {
+  Expected<std::string> startImportingTasks(
+    ServerEntry* svr,
+    CNodePtr srcNode,
+    const std::bitset<CLUSTER_SLOTS>& slotsMap) {
     Status s;
     auto clusterState = svr->getClusterMgr()->getClusterState();
     auto migrateMgr = svr->getMigrateManager();
@@ -668,8 +693,11 @@ class ClusterCommand : public Command {
     std::stringstream ss;
     const std::string nodename = clusterState->getMyselfName();
     std::string bitmapStr = slotsMap.to_string();
-    ss << "preparemigrate " << bitmapStr << " " << nodename << " "
-       << svr->getKVStoreCount();
+    // PARENT TASKID
+    std::string pTaskId = migrateMgr->genPTaskid();
+
+    ss << "preparemigrate " << bitmapStr << " " << nodename << " " << pTaskId
+       << " " << svr->getKVStoreCount();
     s = client->writeLine(ss.str());
     if (!s.ok()) {
       LOG(ERROR) << "preparemigrate failed:" << s.toString();
@@ -683,7 +711,6 @@ class ClusterCommand : public Command {
     }
 
     const std::string& json = expRsp.value();
-    LOG(INFO) << "json content:" << json;
     rapidjson::Document doc;
     doc.Parse(json);
     if (doc.HasParseError()) {
@@ -714,17 +741,19 @@ class ClusterCommand : public Command {
     if (finishMsg != "+OK") {
       return {ErrorCodes::ERR_WRONG_TYPE, "sender task not finish!"};
     }
-
+    auto pTaskPtr = std::make_shared<pTask>(pTaskId);
     for (rapidjson::SizeType i = 0; i < Array.Size(); i++) {
       const rapidjson::Value& object = Array[i];
 
-      if (!object.HasMember("storeid") || !object.HasMember("migrateSlots")) {
+      if (!object.HasMember("storeid") || !object.HasMember("migrateSlots") ||
+          !object.HasMember("taskid")) {
         return {ErrorCodes::ERR_DECODE, "json contain no slots info"};
       }
       if (!object["storeid"].IsUint64()) {
         return {ErrorCodes::ERR_WRONG_TYPE, "json storeid error type"};
       }
       uint32_t storeid = static_cast<uint64_t>(object["storeid"].GetUint64());
+
       std::vector<uint32_t> slotsVec;
       const rapidjson::Value& slotArray = object["migrateSlots"];
       if (!slotArray.IsArray())
@@ -740,13 +769,79 @@ class ClusterCommand : public Command {
       for (const auto& vs : slotsVec) {
         taskmap.set(vs);
       }
-      s = migrateMgr->startTask(taskmap, ip, port, storeid, true);
+
+      if (!object["taskid"].IsString()) {
+        return {ErrorCodes::ERR_WRONG_TYPE, "json taskid error type"};
+      }
+      auto myid = pTaskId + "-" + object["taskid"].GetString();
+      s =
+        migrateMgr->startTask(taskmap, ip, port, myid, storeid, pTaskPtr, true);
       if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER, "migrate receive start task fail"};
       }
       migrateMgr->insertNodes(slotsVec, srcNode->getNodeName(), true);
     }
-    return {ErrorCodes::ERR_OK, ""};
+    migrateMgr->addImportPTask(pTaskPtr);
+
+    return pTaskId;
+  }
+
+  Expected<std::string> startAllSlotsTasks(
+    const std::bitset<CLUSTER_SLOTS>& taskMap,
+    ServerEntry* svr,
+    const std::string& nodeId,
+    const std::shared_ptr<ClusterState> clusterState,
+    const CNodePtr srcNode,
+    const CNodePtr myself,
+    bool retryMigrate) {
+    std::bitset<CLUSTER_SLOTS> slotsMap(taskMap);
+    size_t slot = 0;
+    while (slot < slotsMap.size()) {
+      if (slotsMap.test(slot)) {
+        if (retryMigrate && clusterState->getNodeBySlot(slot) == myself) {
+          slotsMap.reset(slot);
+          continue;
+        }
+
+        if (svr->getGcMgr()->slotIsDeleting(slot)) {
+          LOG(ERROR) << "slot:" << slot
+                     << " ERR being deleting before migration";
+          return {ErrorCodes::ERR_CLUSTER,
+                  "slot in deleting task" + dtos(slot)};
+        }
+        if (!svr->getClusterMgr()->emptySlot(slot)) {
+          LOG(ERROR) << "slot" << slot << " ERR not empty before migration";
+          return {ErrorCodes::ERR_CLUSTER, "slot not empty"};
+        }
+        // check meta data
+        auto thisnode = clusterState->getNodeBySlot(slot);
+        if (thisnode == myself) {
+          LOG(ERROR) << "slot:" << slot << "already belong to dstNode";
+          return {ErrorCodes::ERR_CLUSTER,
+                  "I'm already the owner of hash slot" + dtos(slot)};
+        }
+        if (thisnode != srcNode) {
+          DLOG(ERROR) << "slot:" << slot
+                      << "is not belong to srcNode : " << nodeId;
+          return {ErrorCodes::ERR_CLUSTER,
+                  "Source node is not the owner of hash slot" + dtos(slot)};
+        }
+        // check if slot already been migrating
+        if (svr->getMigrateManager()->slotInTask(slot)) {
+          LOG(ERROR) << "migrate task already start on slot:" << slot;
+          return {ErrorCodes::ERR_CLUSTER, "already importing" + dtos(slot)};
+        }
+      }
+      slot++;
+    }
+
+    auto exptTaskid = startImportingTasks(svr, srcNode, slotsMap);
+    if (!exptTaskid.ok()) {
+      LOG(ERROR) << "error start import task:"
+                 << exptTaskid.status().toString();
+      return exptTaskid.status();
+    }
+    return exptTaskid.value();
   }
 } clusterCmd;
 
@@ -755,7 +850,7 @@ class PrepareMigrateCommand : public Command {
   PrepareMigrateCommand() : Command("preparemigrate", "a") {}
 
   ssize_t arity() const {
-    return 4;
+    return 5;
   }
 
   int32_t firstkey() const {

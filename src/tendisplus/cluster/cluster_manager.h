@@ -26,7 +26,7 @@ enum class ClusterHealth : std::uint8_t {
 
 #define CLUSTER_SLOTS 16384
 
-#define CLUSTER_NAMELEN 40  // sha1 hex length
+#define CLUSTER_NAMELEN 40       // sha1 hex length
 #define CLUSTER_PORT_INCR 10000  // Cluster port = baseport + PORT_INCR
 
 
@@ -37,9 +37,9 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_DEFAULT_REQUIRE_FULL_COVERAGE 1
 #define CLUSTER_DEFAULT_SLAVE_NO_FAILOVER 0  // Failover by default.
 #define CLUSTER_FAIL_REPORT_VALIDITY_MULT 2  // Fail report validity.
-#define CLUSTER_FAIL_UNDO_TIME_MULT 2  // Undo fail if master is back.
-#define CLUSTER_FAIL_UNDO_TIME_ADD 10  // Some additional time.
-#define CLUSTER_FAILOVER_DELAY 5  // Seconds
+#define CLUSTER_FAIL_UNDO_TIME_MULT 2        // Undo fail if master is back.
+#define CLUSTER_FAIL_UNDO_TIME_ADD 10        // Some additional time.
+#define CLUSTER_FAILOVER_DELAY 5             // Seconds
 #define CLUSTER_DEFAULT_MIGRATION_BARRIER 1
 #define CLUSTER_MF_TIMEOUT 5000  // Milliseconds to do a manual failover.
 #define CLUSTER_MF_PAUSE_MULT 2  // Master pause manual failover mult.
@@ -50,27 +50,27 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTERMSG_MIN_LEN 100
 
 // Cluster node flags and macros.
-#define CLUSTER_NODE_MASTER 1  // The node is a master
-#define CLUSTER_NODE_SLAVE 2  // The node is a slave
-#define CLUSTER_NODE_PFAIL 4  // Failure? Need acknowledge
-#define CLUSTER_NODE_FAIL 8  // The node is believed to be malfunctioning
-#define CLUSTER_NODE_MYSELF 16  // This node is myself
+#define CLUSTER_NODE_MASTER 1      // The node is a master
+#define CLUSTER_NODE_SLAVE 2       // The node is a slave
+#define CLUSTER_NODE_PFAIL 4       // Failure? Need acknowledge
+#define CLUSTER_NODE_FAIL 8        // The node is believed to be malfunctioning
+#define CLUSTER_NODE_MYSELF 16     // This node is myself
 #define CLUSTER_NODE_HANDSHAKE 32  // We have still to exchange the first ping
 
-#define CLUSTER_NODE_NOADDR 64  // We don't know the address of this node
-#define CLUSTER_NODE_MEET 128  // Send a MEET message to this node
+#define CLUSTER_NODE_NOADDR 64       // We don't know the address of this node
+#define CLUSTER_NODE_MEET 128        // Send a MEET message to this node
 #define CLUSTER_NODE_MIGRATE_TO 256  // Master elegible for replica migration.
 
 #define CLUSTER_NODE_NOFAILOVER 512  // Slave will not try to failver.
-#define CLUSTER_NODE_ARBITER 1024  // arbiter node.
+#define CLUSTER_NODE_ARBITER 1024    // arbiter node.
 
 // Redirection errors returned by getNodeByQuery().
-#define CLUSTER_REDIR_NONE 0  // Node can serve the request.
-#define CLUSTER_REDIR_CROSS_SLOT 1  // -CROSSSLOT request.
-#define CLUSTER_REDIR_UNSTABLE 2  // -TRYAGAIN redirection required
-#define CLUSTER_REDIR_ASK 3  // -ASK redirection required.
-#define CLUSTER_REDIR_MOVED 4  // -MOVED redirection required.
-#define CLUSTER_REDIR_DOWN_STATE 5  // -CLUSTERDOWN, global state.
+#define CLUSTER_REDIR_NONE 0          // Node can serve the request.
+#define CLUSTER_REDIR_CROSS_SLOT 1    // -CROSSSLOT request.
+#define CLUSTER_REDIR_UNSTABLE 2      // -TRYAGAIN redirection required
+#define CLUSTER_REDIR_ASK 3           // -ASK redirection required.
+#define CLUSTER_REDIR_MOVED 4         // -MOVED redirection required.
+#define CLUSTER_REDIR_DOWN_STATE 5    // -CLUSTERDOWN, global state.
 #define CLUSTER_REDIR_DOWN_UNBOUND 6  // -CLUSTERDOWN, unbound slot.
 
 
@@ -497,7 +497,7 @@ class ClusterSession : public NetSession {
 
   Status clusterProcessPacket();
   Status clusterReadHandler();
-  Status clusterSendMessage(ClusterMsg& msg);
+  Status clusterSendMessage(ClusterMsg& msg);  // NOLINT
 
   void setNode(const CNodePtr& node);
   CNodePtr getNode() const {

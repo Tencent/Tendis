@@ -19,7 +19,7 @@
 #include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
-using namespace std;    // NOLINT
+using namespace std;  // NOLINT
 
 using funptr = std::function<void()>;
 using checkfunptr = std::function<bool(const string&)>;
@@ -427,6 +427,7 @@ class ServerParams {
   uint16_t garbageDeleteSize = 30;
   bool clusterEnabled = false;
   bool domainEnabled = false;
+  bool slaveMigarateEnabled = false;
   uint32_t migrateTaskSlotsLimit = 10;
   uint32_t migrateDistance = 10000;
   uint16_t migrateBinlogIter = 10;

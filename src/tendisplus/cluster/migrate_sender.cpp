@@ -9,14 +9,16 @@
 namespace tendisplus {
 
 ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
+                                       const std::string& taskid,
                                        std::shared_ptr<ServerEntry> svr,
                                        std::shared_ptr<ServerParams> cfg,
                                        bool is_fake)
   : _slots(slots),
     _svr(svr),
     _cfg(cfg),
+    _isRunning(false),
     _isFake(is_fake),
-    _taskid(""),
+    _taskid(taskid),
     _clusterState(svr->getClusterMgr()->getClusterState()),
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
     _storeid(0),
@@ -37,6 +39,7 @@ Status ChunkMigrateSender::sendChunk() {
   /* send Snapshot of bitmap data */
   Status s = sendSnapshot();
   if (!s.ok()) {
+    LOG(ERROR) << "send snapshot fail:" << s.toString();
     return s;
   }
   auto snapshot_binlog = _curBinlogid;
@@ -46,6 +49,7 @@ Status ChunkMigrateSender::sendChunk() {
    * make sure the diff offset of srcNode and DstNode is small enough*/
   s = sendBinlog();
   if (!s.ok()) {
+    LOG(ERROR) << "send binlog fail:" << s.toString();
     auto s2 = sendOver();
     if (!s2.ok()) {
       return s2;
@@ -172,7 +176,11 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
     if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
       break;
     }
-
+    /* NOTE(wayenchen) interuppt send snapshot if stop stask*/
+    if (_isRunning.load(std::memory_order_relaxed) == false) {
+      LOG(ERROR) << "stop sender send snapshot on taskid:" << _taskid;
+      return {ErrorCodes::ERR_INTERNAL, "stop running"};
+    }
     if (!expRcd.ok()) {
       LOG(ERROR) << "snapshot sendRange failed storeid:" << _storeid
                  << " err:" << expRcd.status().toString();
@@ -327,6 +335,11 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
   Status s;
 
   for (uint32_t i = 0; i < MigrateManager::RETRY_CNT; ++i) {
+    /* NOTE(wayenchen) interuppt send binlog if stop stask*/
+    if (_isRunning.load(std::memory_order_relaxed) == false) {
+      LOG(ERROR) << "stop sender sending binlog on taskid:" << _taskid;
+      return {ErrorCodes::ERR_INTERNAL, "stop running"};
+    }
     s = SendSlotsBinlog(_client.get(),
                         _storeid,
                         _dstStoreid,
@@ -409,9 +422,13 @@ Status ChunkMigrateSender::sendBinlog() {
             bitsetStrEncode(_slots).c_str());
 
   while (catchupTimes < iterNum) {
+    /* NOTE(wayenchen) interuppt send binlog if stop stask*/
+    if (_isRunning.load(std::memory_order_relaxed) == false) {
+      LOG(ERROR) << "stop sender sending binlog on taskid:" << _taskid;
+      return {ErrorCodes::ERR_INTERNAL, "stop running"};
+    }
     auto s = catchupBinlog(binlogHigh);
     if (!s.ok()) {
-      // retry
       return s;
     }
     catchupTimes++;
@@ -622,7 +639,6 @@ Status ChunkMigrateSender::lockChunks() {
               msSinceEpoch() - locktime);
   });
 
-
   while (chunkid < _slots.size()) {
     if (_slots.test(chunkid)) {
       uint32_t storeId = _svr->getSegmentMgr()->getStoreid(chunkid);
@@ -656,15 +672,23 @@ void ChunkMigrateSender::unlockChunks() {
   _slotsLockList.clear();
 }
 
+void ChunkMigrateSender::stop() {
+  _isRunning.store(false, std::memory_order_relaxed);
+}
+
+void ChunkMigrateSender::start() {
+  _isRunning.store(true, std::memory_order_relaxed);
+}
+
 bool ChunkMigrateSender::needToWaitMetaChanged() const {
   return _sendstate == MigrateSenderStatus::LASTBINLOG_DONE ||
     _sendstate == MigrateSenderStatus::SENDOVER_DONE;
 }
 
-
 bool ChunkMigrateSender::needToSendFail() const {
   return _sendstate == MigrateSenderStatus::SNAPSHOT_DONE ||
     _sendstate == MigrateSenderStatus::BINLOG_DONE;
 }
+
 
 }  // namespace tendisplus
