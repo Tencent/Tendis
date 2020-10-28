@@ -568,7 +568,7 @@ class IterAllCommand : public Command {
       // TODO(vinchen): the ttl isn't correct. Because it isn't meta
       // record except KV.
       uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
-      if (!Command::noExpire() && 0 != targetTtl && currentTs > targetTtl) {
+      if (0 != targetTtl && currentTs > targetTtl) {
         continue;
       }
       result.emplace_back(std::move(exptRcd.value()));
@@ -3799,7 +3799,6 @@ class TendisadminCommand : public Command {
       } else {
         std::this_thread::sleep_for(std::chrono::seconds(time.value()));
       }
-
     } else if (operation == "recovery") {
       if (args.size() != 2) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};

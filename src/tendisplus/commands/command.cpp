@@ -830,7 +830,7 @@ std::string Command::fmtStatus(const std::string& s) {
 }
 
 std::stringstream& Command::fmtStatus(std::stringstream& ss,
-                                    const std::string& s) {
+                                      const std::string& s) {
   ss << "+";
   ss.write(s.c_str(), s.size());
   ss << "\r\n";

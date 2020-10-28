@@ -3,6 +3,8 @@
 #include <string>
 #include <utility>
 #include <unordered_set>
+#include <limits>
+
 #include "tendisplus/commands/dump.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
@@ -231,19 +233,30 @@ class DumpXCommand : public Command {
   int32_t lastkey() const {
     return -1;
   }
+
   int32_t keystep() const {
     return 2;
   }
 
-  std::string fmtRestorexSubCmd(const std::string& dbid,
-                                const std::string& key,
-                                std::vector<byte>::const_iterator begin,
-                                std::vector<byte>::const_iterator end) {
+  virtual std::string fmtRestorexSubCmd(const std::string& dbid,
+                                        const std::string& key,
+                                        uint64_t ttl,
+                                        std::vector<byte>::const_iterator begin,
+                                        std::vector<byte>::const_iterator end) {
     std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, 4);
-    Command::fmtBulk(ss, "RESTOREX");
+    if (ttl != std::numeric_limits<uint64_t>::max()) {
+      Command::fmtMultiBulkLen(ss, 5);
+      Command::fmtBulk(ss, "RESTOREEX");
+    } else {
+      Command::fmtMultiBulkLen(ss, 4);
+      Command::fmtBulk(ss, "RESTOREX");
+    }
+
     Command::fmtBulk(ss, dbid);
     Command::fmtBulk(ss, key);
+    if (ttl != std::numeric_limits<int64_t>::max()) {
+      Command::fmtBulk(ss, std::to_string(ttl));
+    }
     Command::fmtBulk(ss, std::string(begin, end));
     return ss.str();
   }
@@ -264,6 +277,7 @@ class DumpXCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     const auto& args = sess->getArgs();
     auto server = sess->getServerEntry();
+    bool withttl = (args.size() - 1) % 2;
     std::vector<int> index((args.size() - 1) / 2);
     std::generate(
       index.begin(), index.end(), [n = 0]() mutable { return n += 2; });
@@ -275,11 +289,6 @@ class DumpXCommand : public Command {
     std::stringstream ss;
     std::vector<std::string> errorlist;
     std::vector<std::string> bufferlist;
-    INVARIANT_D(!((args.size() - 1) % 2));
-    if (((args.size() - 1) % 2) != 0) {
-      return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
-    }
-    bufferlist.reserve(3 * (args.size() - 1) / 2);
     for (const auto& i : index) {
       auto expDbid = tendisplus::stoul(args[i - 1]);
       if (!expDbid.ok()) {
@@ -313,9 +322,12 @@ class DumpXCommand : public Command {
           std::move(fmtDumpxError(args[i - 1], args[i], expBuf.status())));
         continue;
       }
+
+      uint64_t ttl = withttl ? exps.value()->getTTL() : std::numeric_limits<uint64_t>::max();
       bufferlist.emplace_back(std::move(
         fmtRestorexSubCmd(args[i - 1],
                           args[i],
+                          ttl,
                           expBuf.value().begin() + exps.value()->_begin,
                           expBuf.value().begin() + exps.value()->_end)));
     }
@@ -967,31 +979,6 @@ class RestoreCommand : public Command {
     return res;
   }
 } restoreCommand;
-
-class RestoreXCommand : public Command {
- public:
-  RestoreXCommand() : Command("restorex", "wm") {}
-
-  ssize_t arity() const {
-    return -4;
-  }
-
-  int32_t firstkey() const {
-    return 2;
-  }
-
-  int32_t lastkey() const {
-    return -1;
-  }
-
-  int32_t keystep() const {
-    return 3;
-  }
-
-  Expected<std::string> run(Session* sess) final {
-    return Command::fmtOK();
-  }
-} restorexCmd;
 
 class KvDeserializer : public Deserializer {
  public:
