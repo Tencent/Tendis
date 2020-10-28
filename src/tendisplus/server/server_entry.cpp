@@ -189,7 +189,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(uint64_t time,
   new_entry.id = _slowlogId.load(std::memory_order_relaxed);
   new_entry.duration = duration;
   new_entry.cname = sess->getName();
-  new_entry.unix_time = time;
+  new_entry.unix_time = time / 1000000;
   _slowlogData.push_front(new_entry);
 
   while (_slowlogData.size() > cfgs->slowlogMaxLen) {
