@@ -4,7 +4,6 @@
 #include <utility>
 #include <unordered_set>
 #include <limits>
-
 #include "tendisplus/commands/dump.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
@@ -254,7 +253,7 @@ class DumpXCommand : public Command {
 
     Command::fmtBulk(ss, dbid);
     Command::fmtBulk(ss, key);
-    if (ttl != std::numeric_limits<int64_t>::max()) {
+    if (ttl != std::numeric_limits<uint64_t>::max()) {
       Command::fmtBulk(ss, std::to_string(ttl));
     }
     Command::fmtBulk(ss, std::string(begin, end));
@@ -323,7 +322,8 @@ class DumpXCommand : public Command {
         continue;
       }
 
-      uint64_t ttl = withttl ? exps.value()->getTTL() : std::numeric_limits<uint64_t>::max();
+      uint64_t ttl =
+        withttl ? exps.value()->getTTL() : std::numeric_limits<uint64_t>::max();
       bufferlist.emplace_back(std::move(
         fmtRestorexSubCmd(args[i - 1],
                           args[i],
@@ -1722,7 +1722,9 @@ class IncrMetaCommand : public Command {
           IncrMeta im(key.getPrimaryKey(),
                       ReplOp::REPL_OP_DEL,
                       type,
-                      entry.getTimestamp(), 0, 0);
+                      entry.getTimestamp(),
+                      0,
+                      0);
           return im;
         }
         break;
@@ -1808,7 +1810,7 @@ class IncrMetaCommand : public Command {
         Serializer::saveString(&buf, &pos, key._key);
         easyCopy(&buf, &pos, key._version);
         easyCopy(&buf, &pos, key._ttl);
-        easyCopy(&buf, &pos,  key._type);
+        easyCopy(&buf, &pos, key._type);
         easyCopy(&buf, &pos, key._op);
 #ifdef TENDIS_DEBUG
         LOG(INFO) << "Add primary key:"
