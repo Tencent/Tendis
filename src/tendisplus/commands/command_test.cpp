@@ -1673,7 +1673,7 @@ void testRevisionCommand(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"object", "revision", "a"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  EXPECT_EQ(expect.value(), "100");
+  EXPECT_EQ(expect.value(), ":100\r\n");
 
   sess.setArgs({"set", "key_1", "b"});
   expect = Command::runSessionCmd(&sess);

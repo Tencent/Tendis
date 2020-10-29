@@ -421,7 +421,7 @@ start_server {
 
             # 3) Check that eventually all the elements are returned.
             unset -nocomplain auxset
-            set iterations 1000
+            set iterations 10000
             while {$iterations != 0} {
                 incr iterations -1
                 set res [r srandmember myset -10]
@@ -465,7 +465,7 @@ start_server {
 
                 # 2) Check that eventually all the elements are returned.
                 unset -nocomplain auxset
-                set iterations 1000
+                set iterations 10000
                 while {$iterations != 0} {
                     incr iterations -1
                     set res [r srandmember myset -10]

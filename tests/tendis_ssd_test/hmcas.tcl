@@ -229,7 +229,7 @@ start_server {tags {"hmcas"}} {
       assert_equal [r 0 hmgetvsn hash a] [r -1 hmgetvsn hash a]
 
       r -1 hmcasv2 hash 1 1010 1088 b 0 fuckbbbbbbbbb
-      after 1000
+      after 3000
       assert_equal [r 0 hmgetvsn hash a] [r -1 hmgetvsn hash a]
       assert_equal [r hmgetvsn hash a b] {1088 8888 fuckbbbbbbbbb}
     }
