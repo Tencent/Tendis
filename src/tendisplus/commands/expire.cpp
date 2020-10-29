@@ -451,4 +451,94 @@ class PersistCommand : public Command {
   }
 } persistCmd;
 
+class RevisionCommand : public Command {
+ public:
+  RevisionCommand() : Command("revision", "wa") {}
+
+  ssize_t arity() const {
+    return -3;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 1;
+  }
+
+  // REVISION key revision [timestamp(expire time)]
+  Expected<std::string> run(Session* sess) final {
+    const auto& args = sess->getArgs();
+    const auto& key = args[1];
+
+    auto expvs = tendisplus::stoul(args[2]);
+    if (!expvs.ok()) {
+      return expvs.status();
+    }
+
+    int64_t expire = 0;
+    if (args.size() > 3) {
+      auto emillsecs = tendisplus::stoul(args[3]);
+      if (!emillsecs.ok()) {
+        return emillsecs.status();
+      }
+      expire = emillsecs.value();
+    }
+    auto expdb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
+      sess, key, mgl::LockMode::LOCK_X);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+
+    // set expire time
+    if (expire > 0) {
+      auto s = expireGeneric(sess, expire, key);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+
+    Expected<RecordValue> exprv =
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+
+    // already expired, should return here.
+    if (exprv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return Command::fmtOK();
+    }
+
+    // other errorcode
+    if (!exprv.ok()) {
+      return exprv.status();
+    }
+
+    // set versionEP
+    RecordKey rk(expdb.value().chunkId,
+                 sess->getCtx()->getDbId(),
+                 RecordType::RT_DATA_META,
+                 key,
+                 "");
+    auto rv = std::move(exprv.value());
+    rv.setVersionEP(expvs.value());
+
+    PStore kvstore = expdb.value().store;
+    auto ptxn = kvstore->createTransaction(sess);
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    auto s = kvstore->setKV(rk, rv, txn.get());
+    if (!s.ok()) {
+      return s;
+    }
+
+    auto expCmt = txn->commit();
+    if (!expCmt.ok()) {
+      return expCmt.status();
+    }
+    return Command::fmtOK();
+  }
+} revisionCmd;
+
 }  // namespace tendisplus

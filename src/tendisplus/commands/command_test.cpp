@@ -1654,6 +1654,59 @@ TEST(Command, command) {
 #endif
 }
 
+void testRevisionCommand(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"set", "a", "b"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  // 1893430861000 :: 2030/1/1 1:1:1
+  sess.setArgs({"revision", "a", "100", "1893430861000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  sess.setArgs({"object", "revision", "a"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), ":100\r\n");
+
+  sess.setArgs({"set", "key_1", "b"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  // 1577811661000 :: 2010/1/1 1:1:1 key should be deleted
+  sess.setArgs({"revision", "key_1", "110", "1577811661000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  sess.setArgs({"exists", "key_1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtZero());
+}
+
+TEST(Command, revision) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testRevisionCommand(server);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
 TEST(Command, dexec) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
