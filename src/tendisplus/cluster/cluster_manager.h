@@ -534,6 +534,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   ClusterState(ClusterState&&) = delete;
   // get epoch
   uint64_t getCurrentEpoch() const;
+  uint64_t getLastVoteEpoch() const;
   uint64_t getFailAuthEpoch() const;
   // set epoch
   void setCurrentEpoch(uint64_t epoch);
@@ -709,10 +710,14 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   // FAILOVER
   uint64_t getPfailNodeNum() const;
   void incrPfailNodeNum();
-  void setPfailNodeNum(uint64_t);
+  void setPfailNodeNum(uint64_t t);
   mstime_t getFailAuthTime() const;
   void setFailAuthTime(mstime_t t);
   void addFailAuthTime(mstime_t t);
+  void setFailAuthCount(uint32_t t);
+  void setFailAuthSent(uint32_t t);
+  void setFailAuthRank(uint32_t t);
+
 
   uint16_t getFailAuthCount() {
     return _failoverAuthCount.load(std::memory_order_relaxed);

@@ -145,7 +145,7 @@ bool GCManager::gcSchedule(const SCLOCK::time_point& now) {
   {
     std::lock_guard<myMutex> lk(_mutex);
     for (auto it = _deleteChunkTask.begin(); it != _deleteChunkTask.end();) {
-      if ((*it)->_isRunning) {
+      if ((*it)->_isRunning || now < (*it)->_nextSchedTime) {
         ++it;
         continue;
       }

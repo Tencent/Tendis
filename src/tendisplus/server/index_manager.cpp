@@ -83,9 +83,7 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
 
   bool clusterEnabled = _svr->getParams()->clusterEnabled;
   if (clusterEnabled && _svr->getMigrateManager()->existMigrateTask()) {
-    LOG(ERROR) << "expire is forbidden when migrating";
-    return {ErrorCodes::ERR_CLUSTER,
-            "forbid scan expire key when cluster migrating"};
+    return {ErrorCodes::ERR_OK, ""};
   }
 
   _scanJobCnt[storeId]++;

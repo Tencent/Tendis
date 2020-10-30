@@ -413,7 +413,7 @@ void MigrateSendTask::deleteSenderChunks() {
   _isRunning = false;
 }
 
-Status MigrateManager::migrating(const SlotsBitmap &slots,
+Status MigrateManager::migrating(const SlotsBitmap& slots,
                                  const string& ip,
                                  uint16_t port,
                                  uint32_t storeid,
@@ -446,8 +446,8 @@ Status MigrateManager::migrating(const SlotsBitmap &slots,
   sendTask->_sender->setDstAddr(ip, port);
   _migrateSendTaskMap.insert(std::make_pair(taskid, std::move(sendTask)));
 
-  LOG(INFO) << "sender task start on slots:" << bitsetStrEncode(slots)
-            << " task id is:" << taskid;
+  LOG(INFO) << "sender task start on slots: " << bitsetStrEncode(slots)
+            << " task id is: " << taskid;
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -841,7 +841,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
   return doSth;
 }
 
-Status MigrateManager::importing(const SlotsBitmap &slots,
+Status MigrateManager::importing(const SlotsBitmap& slots,
                                  const std::string& ip,
                                  uint16_t port,
                                  uint32_t storeid,
@@ -970,6 +970,9 @@ void MigrateReceiveTask::fullReceive() {
   if (client == nullptr) {
     LOG(ERROR) << "fullReceive with: " << _srcIp << ":" << _srcPort
                << " failed, no valid client";
+    _nextSchedTime = SCLOCK::now();
+    _isRunning = false;
+    _state = MigrateReceiveState::ERR;
     return;
   }
   _receiver->setClient(client);
@@ -985,6 +988,9 @@ void MigrateReceiveTask::fullReceive() {
   if (!expdb.ok()) {
     LOG(ERROR) << "get store:" << storeid
                << " failed: " << expdb.status().toString();
+    _nextSchedTime = SCLOCK::now();
+    _isRunning = false;
+    _state = MigrateReceiveState::ERR;
     return;
   }
   _receiver->setDbWithLock(
@@ -1128,12 +1134,12 @@ Expected<std::string> MigrateManager::getMigrateInfoStr(
   std::lock_guard<myMutex> lk(_mutex);
   for (auto iter = _migrateNodes.begin(); iter != _migrateNodes.end(); ++iter) {
     if (slots.test(iter->first)) {
-      stream1 << "[" << iter->first << "-<-" << iter->second << "]"
+      stream1 << "[" << iter->first << "->-" << iter->second << "]"
               << " ";
     }
   }
   for (auto iter = _importNodes.begin(); iter != _importNodes.end(); ++iter) {
-    stream2 << "[" << iter->first << "->-" << iter->second << "]"
+    stream2 << "[" << iter->first << "-<-" << iter->second << "]"
             << " ";
   }
   if (stream1.str().size() == 0 && stream2.str().size() == 0) {

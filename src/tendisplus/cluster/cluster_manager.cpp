@@ -628,10 +628,20 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
   /* Check if this is our master and we have to change the
    * replication target as well. */
   if (isMyMaster) {
-    auto s = _server->getReplManager()->replicationSetMaster(node->getNodeIp(),
-                                                             node->getPort());
+    auto masterIp = node->getNodeIp();
+    auto masterPort = node->getPort();
+    if (_server->getReplManager()->getMasterHost() != masterIp ||
+        _server->getReplManager()->getMasterPort() != masterPort) {
+      auto s = _server->getReplManager()->replicationUnSetMaster();
+      if (!s.ok()) {
+        return false;
+      }
+    }
+    auto s =
+      _server->getReplManager()->replicationSetMaster(masterIp, masterPort);
     if (!s.ok())
       return false;
+    LOG(INFO) << "change the replication target to:" << masterIp << masterPort;
   }
 
   return true;
@@ -959,6 +969,10 @@ uint64_t ClusterState::getCurrentEpoch() const {
   return _currentEpoch;
 }
 
+uint64_t ClusterState::getLastVoteEpoch() const {
+  std::lock_guard<myMutex> lk(_mutex);
+  return _lastVoteEpoch;
+}
 uint64_t ClusterState::getFailAuthEpoch() const {
   std::lock_guard<myMutex> lk(_mutex);
   return _failoverAuthEpoch;
@@ -1196,6 +1210,19 @@ void ClusterState::addFailAuthTime(mstime_t t) {
   std::lock_guard<myMutex> lk(_mutex);
   _failoverAuthTime += t;
 }
+
+void ClusterState::setFailAuthRank(uint32_t t) {
+  _failoverAuthRank.store(t, std::memory_order_relaxed);
+}
+
+void ClusterState::setFailAuthCount(uint32_t t) {
+  _failoverAuthCount.store(t, std::memory_order_relaxed);
+}
+
+void ClusterState::setFailAuthSent(uint32_t t) {
+  _failoverAuthSent.store(t, std::memory_order_relaxed);
+}
+
 Status ClusterState::forgetNodes() {
   std::lock_guard<myMutex> lk(_mutex);
   std::vector<CNodePtr> nodesList;
@@ -1478,16 +1505,14 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
-  // how to enable chunk lock release here?
+
   s = _server->getReplManager()->replicationSetMaster(
     node->getNodeIp(), node->getPort(), false);
   if (!s.ok()) {
-    // TODO(wayenchen): check slave status in cluster routine
-    // if fail , should change back the gossip metadata slave relationship
-    // clusterSetNodeAsMasterNoLock(_myself);
     LOG(ERROR) << "relication set master fail:" << s.toString();
     return s;
   }
+
   LOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
             << "port:" << node->getPort();
 
@@ -1720,7 +1745,6 @@ void ClusterState::clusterDelNodeNoLock(CNodePtr delnode) {
     return;
   }
   for (uint32_t j = 0; j < CLUSTER_SLOTS; j++) {
-    // TODO(Wayenchen) : stop migrating on the slot
     if (_allSlots[j] == delnode) {
       clusterDelSlot(j);
     }
@@ -2278,26 +2302,28 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
       !_myself->nodeIsArbiter())
     return;
 
+  uint64_t curretEpoch = getCurrentEpoch();
   /* Request epoch must be >= our currentEpoch.
    * Note that it is impossible for it to actually be greater since
    * our currentEpoch was updated as a side effect of receiving this
    * request, if the request epoch was greater. */
-  if (requestCurrentEpoch < _currentEpoch) {
+  if (requestCurrentEpoch < curretEpoch) {
     serverLog(LL_WARNING,
               "Failover auth denied to %.40s: reqEpoch (%" PRIu64
               ") < curEpoch(%" PRIu64 ")",
               node->getNodeName().c_str(),
               requestCurrentEpoch,
-              _currentEpoch);
+              curretEpoch);
     return;
   }
 
   /* I already voted for this epoch? Return ASAP. */
-  if (_lastVoteEpoch == _currentEpoch) {
+  uint64_t lastVoteEpoch = getLastVoteEpoch();
+  if (lastVoteEpoch == curretEpoch) {
     serverLog(LL_WARNING,
               "Failover auth denied to %.40s: already voted for epoch %" PRIu64,
               node->getNodeName().c_str(),
-              _currentEpoch);
+              curretEpoch);
     return;
   }
 
@@ -2363,8 +2389,7 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   }
 
   /* We can vote for this slave. */
-  /* TODO(wayenchen): access _currentEpoch in _mutex. */
-  _lastVoteEpoch = _currentEpoch;
+  setLastVoteEpoch(curretEpoch);
   master->setVoteTime(msSinceEpoch());
 
   clusterSaveNodes();
@@ -2373,7 +2398,7 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   serverLog(LL_WARNING,
             "Failover auth granted to %.40s for epoch %" PRIu64,
             node->getNodeName().c_str(),
-            _currentEpoch);
+            curretEpoch);
 }
 
 // This function returns the "rank" of this instance, a slave, in the context
@@ -2628,9 +2653,9 @@ Status ClusterState::clusterHandleSlaveFailover() {
       redis_port::random() %
         500; /* Random delay between 0 and 500 milliseconds. */
     setFailAuthTime(delayTime);
-    _failoverAuthCount.store(0, std::memory_order_relaxed);
-    _failoverAuthSent.store(0, std::memory_order_relaxed);
-    _failoverAuthRank.store(clusterGetSlaveRank(), std::memory_order_relaxed);
+    setFailAuthCount(0);
+    setFailAuthSent(0);
+    setFailAuthRank(clusterGetSlaveRank());
 
     /* We add another delay that is proportional to the slave rank.
      * Specifically 1 second * rank. This way slaves that have a probably
@@ -2640,7 +2665,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
     /* However if this is a manual failover, no delay is needed. */
     if (getMfEnd()) {
       setFailAuthTime(msSinceEpoch());
-      _failoverAuthRank.store(0, std::memory_order_relaxed);
+      setFailAuthRank(0);
     }
     serverLog(LL_WARNING,
               "Start of election delayed for %" PRId64
@@ -2668,7 +2693,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
     if (newrank > getFailAuthRank()) {
       int64_t added_delay = (newrank - getFailAuthRank()) * 1000ULL;
       addFailAuthTime(added_delay);
-      _failoverAuthRank.store(newrank, std::memory_order_relaxed);
+      setFailAuthRank(newrank);
       serverLog(LL_WARNING,
                 "Slave rank updated to #%d, added %" PRId64
                 " milliseconds of delay.",
@@ -2698,9 +2723,9 @@ Status ClusterState::clusterHandleSlaveFailover() {
     serverLog(LL_WARNING,
               "Starting a failover election for epoch %" PRIu64 ".",
               _currentEpoch);
-    clusterRequestFailoverAuth();
-    _failoverAuthSent.store(1, std::memory_order_relaxed);
 
+    clusterRequestFailoverAuth();
+    setFailAuthSent(1);
     clusterSaveNodes();
     clusterUpdateState();
 
@@ -2730,10 +2755,10 @@ Status ClusterState::clusterHandleSlaveFailover() {
 /* Clear the migrating / importing state for all the slots.
  * This is useful at initialization and when turning a master into slave. */
 void ClusterState::clusterCloseAllSlots() {
-  // TODO(wayenchen) , make  migrate stop here
   std::lock_guard<myMutex> lk(_mutex);
-  _migratingSlots.fill(nullptr);
-  _importingSlots.fill(nullptr);
+  /* NOTE(wayenchen) clear migrate state by stop all migrate task here,
+   * do not use cluster reset command when migrating */
+  _server->getMigrateManager()->stopAllTasks(false);
 }
 
 
@@ -4369,7 +4394,6 @@ Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(
 
 bool ClusterManager::hasDirtyKey(uint32_t storeid) {
   auto node = _clusterState->getMyselfNode();
-  // TODO(wayenchen) if it is a slave, judge the slots of master if it is dirty
   for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
     auto curmaster = node->nodeIsMaster() ? node : node->getMaster();
     if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid &&
@@ -4509,7 +4533,6 @@ void ClusterSession::drainReqNet() {
   } else {
     /* Finally read the full message. */
     if (rcvbuflen == 8) {
-      // TODO(wayenchen)
       _pkgSize = int32Decode(_queryBuf.data() + 4);
       /* Perform some sanity check on the message signature
        * and length. */
@@ -4744,11 +4767,10 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   auto sender = clusterLookupNode(hdr->_sender);
   if (sender && !sender->nodeInHandshake()) {
     /* Update our curretEpoch if we see a newer epoch in the cluster. */
-    /* TODO(wayenchen): access _currentEpoch in _mutex. */
     senderCurrentEpoch = hdr->_currentEpoch;
     senderConfigEpoch = hdr->_configEpoch;
-    if (senderCurrentEpoch > _currentEpoch)
-      _currentEpoch = senderCurrentEpoch;
+    if (senderCurrentEpoch > getCurrentEpoch())
+      setCurrentEpoch(senderCurrentEpoch);
     /* Update the sender configEpoch if it is publishing a newer one. */
     if (senderConfigEpoch > sender->getConfigEpoch()) {
       sender->setConfigEpoch(senderConfigEpoch);
@@ -4898,8 +4920,8 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   "PONG contains mismatching sender ID. "
                   "About node %.40s added %d ms ago, having flags %d",
                   sessNode->getNodeName().c_str(),
-                  (uint32_t)(msSinceEpoch() - sessNode->_ctime),
-                  sessNode->_flags);
+                  (uint32_t)(msSinceEpoch() - sessNode->getCtime()),
+                  sessNode->getFlags());
         sessNode->_flags |= CLUSTER_NODE_NOADDR;
         sessNode->setNodeIp("");
         sessNode->setNodePort(0);
@@ -5086,7 +5108,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * the problem. */
     if (sender && _myself->nodeIsMaster() && sender->nodeIsMaster() &&
         senderConfigEpoch == _myself->getConfigEpoch()) {
-      // TODO(wayenchen) : nolock
       clusterHandleConfigEpochCollision(sender);
       save = true;
     }
