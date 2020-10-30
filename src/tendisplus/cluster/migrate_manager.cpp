@@ -552,6 +552,14 @@ std::map<std::string, SlotsBitmap> MigrateManager::getStopMap() {
   return _stopImportMap;
 }
 
+bool MigrateManager::existMigrateTask() {
+  std::lock_guard<myMutex> lk(_mutex);
+  if (_migrateSendTaskMap.size() == 0 && _migrateReceiveTaskMap.size() == 0) {
+    return false;
+  }
+  return true;
+}
+
 SlotsBitmap convertMap(const std::vector<uint32_t>& vec) {
   SlotsBitmap map;
   for (const auto& vs : vec) {

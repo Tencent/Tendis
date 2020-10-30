@@ -242,6 +242,7 @@ class MigrateManager {
 
   void removeRestartSlots(const std::string& nodeid, const SlotsBitmap& slots);
   std::map<std::string, SlotsBitmap> getStopMap();
+  bool existMigrateTask();
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

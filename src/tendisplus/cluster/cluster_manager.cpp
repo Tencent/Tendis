@@ -2196,7 +2196,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
               target->getNodeName().c_str());
     Status s;
     if (!isMasterFail) {
-      LOG(INFO) << "unset master in slave migration";
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail in slave migration";
@@ -4372,8 +4371,10 @@ bool ClusterManager::hasDirtyKey(uint32_t storeid) {
   auto node = _clusterState->getMyselfNode();
   // TODO(wayenchen) if it is a slave, judge the slots of master if it is dirty
   for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
+    auto curmaster = node->nodeIsMaster() ? node : node->getMaster();
     if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid &&
-        !node->getSlotBit(chunkid) && !emptySlot(chunkid)) {
+        _clusterState->getNodeBySlot(chunkid) != curmaster &&
+        !emptySlot(chunkid)) {
       LOG(WARNING) << "hasDirtyKey storeid:" << storeid
                    << " chunkid:" << chunkid;
       return true;

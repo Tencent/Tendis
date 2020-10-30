@@ -570,27 +570,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return s;
   }
 
-  if (!cfg->noexpire) {
-    _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
-    s = _indexMgr->startup();
-    if (!s.ok()) {
-      LOG(ERROR) << "ServerEntry::startup failed, _indexMgr->startup:"
-                 << s.toString();
-      return s;
-    }
-  }
-
-  // listener should be the lastone to run.
-  s = _network->run();
-  if (!s.ok()) {
-    LOG(ERROR) << "ServerEntry::startup failed, _network->run:" << s.toString();
-    return s;
-  } else {
-    LOG(WARNING) << "ready to accept connections at " << cfg->bindIp << ":"
-                 << cfg->port;
-  }
-
   // cluster init
+  /*(NOTE) wayenchen indexMgr need get task map size from migrateMgr, so init it
+   * first */
   if (_enableCluster) {
     _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
 
@@ -613,6 +595,26 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up gc manager failed";
       return s;
     }
+  }
+
+  if (!cfg->noexpire) {
+    _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
+    s = _indexMgr->startup();
+    if (!s.ok()) {
+      LOG(ERROR) << "ServerEntry::startup failed, _indexMgr->startup:"
+                 << s.toString();
+      return s;
+    }
+  }
+
+  // listener should be the lastone to run.
+  s = _network->run();
+  if (!s.ok()) {
+    LOG(ERROR) << "ServerEntry::startup failed, _network->run:" << s.toString();
+    return s;
+  } else {
+    LOG(WARNING) << "ready to accept connections at " << cfg->bindIp << ":"
+                 << cfg->port;
   }
 
   _isRunning.store(true, std::memory_order_relaxed);
