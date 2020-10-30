@@ -36,8 +36,14 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
-	#set(STDFS_LIB "")
-	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4/rocksdb")
+	option(NEW_ROCKSDB "enable jemalloc" OFF)
+    if(NEW_ROCKSDB)
+        message("using rocksdb-6.2.2")
+        set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
+    else()
+        message("using rocksdb-5.3.14")
+        set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
+    endif()
 else()
 	set(STDFS_LIB "")
 	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0/rocksdb")
@@ -59,7 +65,8 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
 				COMMAND ./autogen.sh
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
-		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a" "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
+		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a"
+                "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
 				COMMAND ${CMAKE_MAKE_PROGRAM}
 				DEPENDS "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
@@ -94,7 +101,22 @@ target_compile_options(snappy PRIVATE -fPIC)
 add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
 add_subdirectory(src/thirdparty/glog)
-add_subdirectory(${ROCKSDB_DIR})
+
+option(WITH_TESTS "" OFF)
+option(WITH_LZ4 "build with lz4" ON)
+set(snappy_FOUND TRUE)
+set(snappy_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/)
+set(snappy_LIBRARIES ${CMAKE_BINARY_DIR}/lib/libsnappy.a)
+set(LZ4_FOUND TRUE)
+set(LZ4_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/src/thirdparty/lz4/lib/")
+set(LZ4_LIBRARIES "${CMAKE_BINARY_DIR}/lib/liblz4.a")
+if(ENABLE_JEMALLOC)
+    set(JEMALLOC_FOUND TRUE)
+    set(JEMALLOC_INCLUDE_DIR "${JEMALLOC_ROOT_DIR}/include/")
+    set(JEMALLOC_LIBRARIES "${JEMALLOC_ROOT_DIR}/lib/")
+endif()
+add_subdirectory(${ROCKSDB_DIR}/rocksdb)
+
 option(RAPIDJSON_BUILD_TESTS "" OFF)
 add_subdirectory(src/thirdparty/rapidjson)
 
