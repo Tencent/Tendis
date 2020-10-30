@@ -1,7 +1,8 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
-#include <thread>
+#include <thread>  // NOLINT
+
 #include "gtest/gtest.h"
 #include "glog/logging.h"
 #include "tendisplus/lock/lock.h"

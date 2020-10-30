@@ -45,7 +45,7 @@ namespace tendisplus {
 namespace filesystem = std::experimental::filesystem::v1;
 }  // namespace tendisplus
 
-#include <optional.h>
+#include <optional.h>  // NOLINT
 namespace tendisplus {
 template <typename T>
 using optional = std::experimental::optional<T>;

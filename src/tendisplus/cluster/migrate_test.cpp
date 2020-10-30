@@ -2,12 +2,14 @@
 #include <stdlib.h>
 #include <memory>
 #include <utility>
-#include <thread>
+#include <thread>  // NOLINT
 #include <string>
 #include <vector>
 #include <algorithm>
+
 #include "gtest/gtest.h"
 #include "glog/logging.h"
+
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/server/segment_manager.h"

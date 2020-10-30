@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <memory>
 #include <vector>
-#include <mutex>
+#include <mutex>  // NOLINT
 
 namespace tendisplus {
 

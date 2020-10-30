@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <chrono>
+#include <chrono>  // NOLINT
 #include <fstream>
 #include <limits>
 #include <list>
@@ -14,6 +14,7 @@
 #include "rapidjson/error/en.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
+
 #include "tendisplus/commands/command.h"
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/replication/repl_manager.h"
@@ -167,7 +168,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   changeReplState(*newMeta, false);
 
   // 4) read backupinfo from master
-  // get binlogPos and filelist£¬other messages get from "backup_meta" file
+  // get binlogPos and filelist, other messages get from "backup_meta" file
   auto ebkInfo = getBackupInfo(client.get(),
                                metaSnapshot,
                                _svr->getParams()->bindIp,

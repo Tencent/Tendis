@@ -68,6 +68,7 @@ ClusterNode::ClusterNode(const std::string& nodeName,
     _slaveOf(nullptr),
     _pingSent(0),
     _pongReceived(0),
+    _failTime(0),
     _votedTime(0),
     _replOffsetTime(0),
     _orphanedTime(0),
@@ -702,6 +703,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _allSlots(),
     _cantFailoverReason(CLUSTER_CANT_FAILOVER_NONE),
     _lastLogTime(0),
+    _updateStateCallTime(0),
     _amongMinorityTime(0),
     _todoBeforeSleep(0) {
   _nodesBlackList.clear();
@@ -2362,6 +2364,7 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   }
 
   /* We can vote for this slave. */
+  /* TODO(wayenchen): access _currentEpoch in _mutex. */
   _lastVoteEpoch = _currentEpoch;
   master->setVoteTime(msSinceEpoch());
 
@@ -2633,7 +2636,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
     /* We add another delay that is proportional to the slave rank.
      * Specifically 1 second * rank. This way slaves that have a probably
      * less updated replication offset, are penalized. */
-    addFailAuthTime(getFailAuthRank() * 1000);
+    addFailAuthTime(static_cast<uint64_t>(getFailAuthRank()) * 1000ULL);
 
     /* However if this is a manual failover, no delay is needed. */
     if (getMfEnd()) {
@@ -2664,7 +2667,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
   if (getFailAuthSent() == 0 && getMfEnd() == 0) {
     auto newrank = clusterGetSlaveRank();
     if (newrank > getFailAuthRank()) {
-      int64_t added_delay = (newrank - getFailAuthRank()) * 1000;
+      int64_t added_delay = (newrank - getFailAuthRank()) * 1000ULL;
       addFailAuthTime(added_delay);
       _failoverAuthRank.store(newrank, std::memory_order_relaxed);
       serverLog(LL_WARNING,
@@ -3423,6 +3426,7 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr,
     _clusterNode(node),
     _clusterState(state),
     _clusterNetwork(nullptr),
+    _megPoolSize(0),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()) {}
 
@@ -3432,6 +3436,7 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr)
     _clusterNode(nullptr),
     _clusterState(nullptr),
     _clusterNetwork(nullptr),
+    _megPoolSize(0),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()) {}
 
@@ -4738,6 +4743,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   auto sender = clusterLookupNode(hdr->_sender);
   if (sender && !sender->nodeInHandshake()) {
     /* Update our curretEpoch if we see a newer epoch in the cluster. */
+    /* TODO(wayenchen): access _currentEpoch in _mutex. */
     senderCurrentEpoch = hdr->_currentEpoch;
     senderConfigEpoch = hdr->_configEpoch;
     if (senderCurrentEpoch > _currentEpoch)

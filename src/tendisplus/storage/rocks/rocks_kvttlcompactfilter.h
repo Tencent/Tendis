@@ -8,29 +8,28 @@
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 
 namespace tendisplus {
-    using rocksdb::CompactionFilterFactory;
-    using rocksdb::CompactionFilter;
+using rocksdb::CompactionFilter;
+using rocksdb::CompactionFilterFactory;
 
 struct KVTTLCompactionContext {
-    bool is_manual_compaction;
+  bool is_manual_compaction;
 };
 
 class KVTtlCompactionFilterFactory : public CompactionFilterFactory {
  public:
-    KVTtlCompactionFilterFactory(KVStore* store)
-        : _store(store) {}
+  explicit KVTtlCompactionFilterFactory(KVStore* store) : _store(store) {}
 
-    const char* Name() const override {
-      return "KVTTLCompactionFilterFactory";
-    }
+  const char* Name() const override {
+    return "KVTTLCompactionFilterFactory";
+  }
 
-    std::unique_ptr<CompactionFilter> CreateCompactionFilter(
-        const CompactionFilter::Context& /*context*/) override;
+  std::unique_ptr<CompactionFilter> CreateCompactionFilter(
+    const CompactionFilter::Context& /*context*/) override;
+
  private:
-    KVStore* _store;
+  KVStore* _store;
 };
 
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_STORAGE_ROCKS_ROCKS_KVTTLCOMPACTFILTER_H_
-

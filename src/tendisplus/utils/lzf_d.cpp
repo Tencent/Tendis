@@ -62,15 +62,14 @@ unsigned int lzf_decompress(const void* const in_data,
                             void* out_data,
                             unsigned int out_len) {
   u8 const* ip = (const u8*)in_data;
-  u8* op = (u8*)out_data;
+  u8* op = reinterpret_cast<u8*>(out_data);
   u8 const* const in_end = ip + in_len;
   u8* const out_end = op + out_len;
 
   do {
     unsigned int ctrl = *ip++;
-
-    if (ctrl < (1 << 5)) /* literal run */
-    {
+    // literal run
+    if (ctrl < (1 << 5)) {
       ctrl++;
 
       if (op + ctrl > out_end) {
@@ -155,8 +154,7 @@ unsigned int lzf_decompress(const void* const in_data,
           *op++ = *ip++;
       }
 #endif
-    } else /* back reference */
-    {
+    } else {  // back reference
       unsigned int len = ctrl >> 5;
 
       u8* ref = op - ((ctrl & 0x1f) << 8) - 1;
@@ -184,7 +182,7 @@ unsigned int lzf_decompress(const void* const in_data,
         return 0;
       }
 
-      if (ref < (u8*)out_data) {
+      if (ref < reinterpret_cast<u8*>(out_data)) {
         SET_ERRNO(EINVAL);
         return 0;
       }
@@ -203,9 +201,9 @@ unsigned int lzf_decompress(const void* const in_data,
             op += len;
           } else {
             /* overlapping, use octte by octte copying */
-            do
+            do {
               *op++ = *ref++;
-            while (--len);
+            } while (--len);
           }
 
           break;
@@ -236,7 +234,7 @@ unsigned int lzf_decompress(const void* const in_data,
     }
   } while (ip < in_end);
 
-  return op - (u8*)out_data;
+  return op - reinterpret_cast<u8*>(out_data);
 }
 }  // namespace redis_port
 }  // namespace tendisplus

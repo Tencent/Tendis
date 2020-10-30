@@ -1,17 +1,19 @@
 #include <string.h>
+
 #include <algorithm>
 #include <string>
 #include <iostream>
 #include <cmath>
 #include <cctype>
 #include <locale>
-#include <thread>
 #include <sstream>
 #include <utility>
 #include <vector>
 #include <cstdlib>
 #include <random>
 #include <limits>
+#include <thread>  // NOLINT
+
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
@@ -199,14 +201,14 @@ bool isOptionOn(const std::string& s) {
 
 
 // trim from start (in place)
-static inline void sdsltrim(std::string& s, const char* cset) {
+static inline void sdsltrim(std::string& s, const char* cset) {  // NOLINT
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [cset](int ch) {
             return !strchr(cset, ch);
           }));
 }
 
 // trim from end (in place)
-static inline void sdsrtrim(std::string& s, const char* cset) {
+static inline void sdsrtrim(std::string& s, const char* cset) {  // NOLINT
   s.erase(std::find_if(
             s.rbegin(), s.rend(), [cset](int ch) { return !strchr(cset, ch); })
             .base(),
@@ -214,7 +216,7 @@ static inline void sdsrtrim(std::string& s, const char* cset) {
 }
 
 // trim from both ends (in place)
-void sdstrim(std::string& s, const char* cset) {
+void sdstrim(std::string& s, const char* cset) {  // NOLINT
   sdsltrim(s, cset);
   sdsrtrim(s, cset);
 }

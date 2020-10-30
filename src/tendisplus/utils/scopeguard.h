@@ -10,8 +10,8 @@
 // The author makes no representations about the
 //     suitability of this software for any purpose. It is provided "as is"
 //     without express or implied warranty.
-#ifndef LOKI_SCOPEGUARD_INC_
-#define LOKI_SCOPEGUARD_INC_
+#ifndef SRC_TENDISPLUS_UTILS_SCOPEGUARD_H_
+#define SRC_TENDISPLUS_UTILS_SCOPEGUARD_H_
 
 namespace tendisplus {
 
@@ -26,7 +26,7 @@ namespace tendisplus {
 template <class T>
 class RefToValue {
  public:
-  RefToValue(T& ref) : ref_(ref) {}
+  RefToValue(T& ref) : ref_(ref) {}  // NOLINT
 
   RefToValue(const RefToValue& rhs) : ref_(rhs.ref_) {}
 
@@ -71,7 +71,7 @@ class ScopeGuardImplBase {
 
   template <typename J>
   static void SafeExecute(J& j) throw() {
-    if (!j.dismissed_)
+    if (!j.dismissed_)  // NOLINT
       try {
         j.Execute();
       } catch (...) {
@@ -108,7 +108,7 @@ class ScopeGuardImpl0 : public ScopeGuardImplBase {
   }
 
  protected:
-  ScopeGuardImpl0(F fun) : fun_(fun) {}
+  ScopeGuardImpl0(F fun) : fun_(fun) {}  // NOLINT
 
   F fun_;
 };
@@ -518,4 +518,4 @@ MakeGuard(
   ::Loki::ScopeGuard LOKI_ANONYMOUS_VARIABLE(scopeGuard) = \
     ::tendisplus::MakeObjGuard
 
-#endif  // end file guardian
+#endif  // SRC_TENDISPLUS_UTILS_SCOPEGUARD_H_

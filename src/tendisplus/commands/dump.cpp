@@ -82,7 +82,8 @@ Serializer::Serializer(Session* sess,
                        const std::string& key,
                        DumpType type,
                        RecordValue&& rv)
-  : _sess(sess), _key(key), _type(type), _pos(0), _rv(rv) {}
+  : _begin(0), _end(0), _sess(sess), _key(key), _type(type), _pos(0), _rv(rv) {
+  }
 
 Expected<size_t> Serializer::saveObjectType(std::vector<byte>* payload,
                                             size_t* pos,
@@ -1319,6 +1320,7 @@ class ListDeserializer : public Deserializer {
             int64_t intEntry;
             easyCopy(&intEntry, payload, pos);
             val = std::to_string(intEntry);
+            break;
           }
           default: {
             if (encoding >= ZIP_INT_IMM_MIN && encoding <= ZIP_INT_IMM_MAX) {

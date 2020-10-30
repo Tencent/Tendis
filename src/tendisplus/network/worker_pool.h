@@ -7,6 +7,8 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <map>
+
 #include "asio.hpp"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/time.h"

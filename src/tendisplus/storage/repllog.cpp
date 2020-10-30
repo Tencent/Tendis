@@ -26,7 +26,7 @@ Expected<ReplLogKeyV2> ReplLogKeyV2::decode(const RecordKey& rk) {
   if (type != RecordType::RT_BINLOG) {
     return {ErrorCodes::ERR_DECODE,
             "ReplLogKeyV2::decode:it is not a valid binlog type " +
-              rt2Char(type)};  // NOLINT
+              std::string(1, rt2Char(type))};  // NOLINT
   }
 
   if (rk.getChunkId() != ReplLogKeyV2::CHUNKID ||
@@ -364,7 +364,7 @@ Expected<ReplLogValueV2> ReplLogValueV2::decode(const std::string& s) {
   if (type != RecordType::RT_BINLOG) {
     return {ErrorCodes::ERR_DECODE,
             "ReplLogValueV2::decode: it is not a valid binlog type" +
-              rt2Char(type)};  // NOLINT
+              std::string(1, rt2Char(type))};  // NOLINT
   }
 
   auto hdrSize = RecordValue::decodeHdrSizeNoMeta(s);

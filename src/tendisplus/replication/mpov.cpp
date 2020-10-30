@@ -1,12 +1,13 @@
 #include <list>
-#include <chrono>
+#include <chrono>  // NOLINT
 #include <fstream>
 #include <string>
 #include <memory>
 
+#include "glog/logging.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
-#include "glog/logging.h"
+
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/utils/scopeguard.h"
 

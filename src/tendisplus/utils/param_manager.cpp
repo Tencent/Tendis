@@ -1,7 +1,8 @@
+#include "tendisplus/utils/param_manager.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include <iostream>
-#include "param_manager.h"
 
 namespace tendisplus {
 

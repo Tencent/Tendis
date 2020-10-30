@@ -386,8 +386,7 @@ int string2ll(const char* s, size_t slen, long long* value) {  // (NOLINT/int)
     return 0;
 
   if (negative) {
-    if (v > ((unsigned long long)(-(LLONG_MIN + 1)) +
-             1)) /* Overflow. (NOLINT/int)*/
+    if (v > ((uint64_t)(-(LLONG_MIN + 1)) + 1)) /* Overflow. (NOLINT/int)*/
       return 0;
     if (value != NULL)
       *value = -v;

@@ -183,6 +183,7 @@ RecordKey::RecordKey()
     _valueType(RecordType::RT_INVALID),
     _pk(""),
     _sk(""),
+    _version(0),
     _fmtVsn(0) {}
 
 RecordKey::RecordKey(RecordKey&& o)

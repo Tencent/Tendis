@@ -219,6 +219,7 @@ ServerEntry::ServerEntry()
     _poolMatrix(std::make_shared<PoolMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()),
     _cronThd(nullptr),
+    _enableCluster(false),
     _requirepass(""),
     _masterauth(""),
     _versionIncrease(true),

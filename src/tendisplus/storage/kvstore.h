@@ -302,7 +302,7 @@ struct KVStoreStat {
 
 struct TruncateBinlogResult {
   TruncateBinlogResult()
-    : newStart(0), newSave(0), timestamp(0), written(0), deleten(0) {}
+    : newStart(0), newSave(0), timestamp(0), written(0), deleten(0), ret(0) {}
 
   uint64_t newStart;
   uint64_t newSave;

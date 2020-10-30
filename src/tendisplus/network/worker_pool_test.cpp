@@ -1,14 +1,14 @@
 #include "glog/logging.h"
 #include "gtest/gtest.h"
+
 #include "tendisplus/network/worker_pool.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/test_util.h"
 
 TEST(Workerpool, resize) {
-  using namespace tendisplus;
-  auto matrix = std::make_shared<PoolMatrix>();
-  WorkerPool pool("test-pool", matrix);
-  EXPECT_TRUE(setupEnv());
+  auto matrix = std::make_shared<tendisplus::PoolMatrix>();
+  tendisplus::WorkerPool pool("test-pool", matrix);
+  EXPECT_TRUE(tendisplus::setupEnv());
 
   std::thread t([&pool]() { pool.startup(5); });
 
@@ -27,14 +27,13 @@ TEST(Workerpool, resize) {
   pool.stop();
   t.join();
 
-  auto guard = MakeGuard([]() { destroyEnv(); });
+  auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
 }
 
 TEST(Workerpool, isFull) {
-  using namespace tendisplus;
-  auto matrix = std::make_shared<PoolMatrix>();
-  WorkerPool pool("test-pool", matrix);
-  EXPECT_TRUE(setupEnv());
+  auto matrix = std::make_shared<tendisplus::PoolMatrix>();
+  tendisplus::WorkerPool pool("test-pool", matrix);
+  EXPECT_TRUE(tendisplus::setupEnv());
 
   std::thread t([&pool]() { pool.startup(5); });
 
@@ -51,13 +50,12 @@ TEST(Workerpool, isFull) {
   pool.stop();
   t.join();
 
-  auto guard = MakeGuard([]() { destroyEnv(); });
+  auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
 }
 
 TEST(Workerpool, schedule) {
-  using namespace tendisplus;
-  auto matrix = std::make_shared<PoolMatrix>();
-  WorkerPool pool("test-pool", matrix);
+  auto matrix = std::make_shared<tendisplus::PoolMatrix>();
+  tendisplus::WorkerPool pool("test-pool", matrix);
 
   std::thread t([&pool]() { pool.startup(3); });
 
@@ -69,5 +67,5 @@ TEST(Workerpool, schedule) {
 
   pool.stop();
   t.join();
-  auto guard = MakeGuard([]() { destroyEnv(); });
+  auto guard = tendisplus::MakeGuard([]() { tendisplus::destroyEnv(); });
 }

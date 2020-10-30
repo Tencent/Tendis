@@ -1,6 +1,6 @@
-// Copyright [2019] <eliotwang@tencent.com>
-#include <chrono>
+#include "tendisplus/server/index_manager.h"
 
+#include <chrono>  // NOLINT
 #include <memory>
 #include <vector>
 #include <utility>
@@ -8,7 +8,6 @@
 
 #include "glog/logging.h"
 
-#include "tendisplus/server/index_manager.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/sync_point.h"

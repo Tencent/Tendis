@@ -9,14 +9,16 @@
 #include <vector>
 #include <tuple>
 #include <unordered_map>
+#include <memory>
+
+#include "rocksdb/iostats_context.h"
+#include "rocksdb/perf_context.h"
 
 #include "tendisplus/lock/lock.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
 #include "tendisplus/storage/kvstore.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/utils/string.h"
-#include "rocksdb/iostats_context.h"
-#include "rocksdb/perf_context.h"
 
 namespace tendisplus {
 
@@ -42,7 +44,7 @@ class SessionCtx {
   };
 
  public:
-  SessionCtx(Session* sess);
+  explicit SessionCtx(Session* sess);
   SessionCtx(const SessionCtx&) = delete;
   SessionCtx(SessionCtx&&) = delete;
   bool authed() const;
