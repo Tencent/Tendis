@@ -30,6 +30,7 @@ namespace tendisplus {
 
    uint8_t rt2Char(RecordType t);
    RecordType char2Rt(uint8_t t);
+   std::string rt2Str(RecordType t);
    RecordType getRealKeyType(RecordType t);
    bool isRealEleType(RecordType keyType, RecordType valueType);
 */
@@ -53,6 +54,7 @@ enum class RecordType {
 
 uint8_t rt2Char(RecordType t);
 RecordType char2Rt(uint8_t t);
+std::string rt2Str(RecordType t);
 bool isDataMetaType(RecordType t);
 bool isKeyType(RecordType t);
 RecordType getRealKeyType(RecordType t);

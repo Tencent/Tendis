@@ -554,6 +554,7 @@ class IterAllCommand : public Command {
       }
       auto keyType = exptRcd.value().getRecordKey().getRecordType();
       auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+      auto dbid = exptRcd.value().getRecordKey().getDbId();
 
       // NOTE(vinchen):RecordType::RT_TTL_INDEX and RecordType::BINLOG is
       // always at the last of rocksdb, and the chunkid is very big
@@ -565,14 +566,33 @@ class IterAllCommand : public Command {
       if (!isRealEleType(keyType, valueType)) {
         continue;
       }
-      // TODO(vinchen): the ttl isn't correct. Because it isn't meta
-      // record except KV.
-      uint64_t targetTtl = exptRcd.value().getRecordValue().getTtl();
+
+      // NOTE(qingping209) for compound structures(list/hash/set/zset/stream)
+      // targetTtl is invalid if they are expired. it's a dirty fix and could
+      // be very slow.
+      uint64_t targetTtl = 0;
+      if (valueType != RecordType::RT_KV) {
+        auto key = exptRcd.value().getRecordKey().getPrimaryKey();
+        RecordKey mk(chunkId, dbid, RecordType::RT_DATA_META, key, "");
+        Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+        if (eValue.ok()) {
+          targetTtl = eValue.value().getTtl();
+        } else {
+          LOG(WARNING) << "Get target ttl for key " << key
+                       << " of type: " << rt2Str(keyType) << " in db:" << dbid
+                       << " from chunk: " << chunkId
+                       << " failed, error: " << eValue.status().toString();
+        }
+      } else {
+        targetTtl = exptRcd.value().getRecordValue().getTtl();
+      }
       if (0 != targetTtl && currentTs > targetTtl) {
         continue;
       }
+
       result.emplace_back(std::move(exptRcd.value()));
     }
+
     std::string nextCursor;
     if (result.size() == ebatchSize.value() + 1) {
       nextCursor = hexlify(result.back().getRecordKey().encode());
@@ -2596,7 +2616,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0     /* No flags. */
+#define EMPTYDB_NO_FLAGS 0 /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {
