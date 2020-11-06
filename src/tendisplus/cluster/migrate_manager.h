@@ -154,7 +154,7 @@ class MigrateManager {
   // sender POV
   bool senderSchedule(const SCLOCK::time_point& now);
 
-  Status migrating(const SlotsBitmap &slots,
+  Status migrating(const SlotsBitmap& slots,
                    const string& ip,
                    uint16_t port,
                    uint32_t storeid,
@@ -207,9 +207,6 @@ class MigrateManager {
   Status supplyMigrateEnd(const std::string& taskid, bool binlogDone = true);
   uint64_t getProtectBinlogid(uint32_t storeid);
 
-  Status deleteSlotsData(const SlotsBitmap& slots,
-                         uint32_t storeid,
-                         uint64_t delay = 0);
   bool slotInTask(uint32_t slot);
   bool slotsInTask(const SlotsBitmap& bitMap);
   Expected<std::string> getTaskInfo();
@@ -242,6 +239,7 @@ class MigrateManager {
 
   void removeRestartSlots(const std::string& nodeid, const SlotsBitmap& slots);
   std::map<std::string, SlotsBitmap> getStopMap();
+  bool existMigrateTask();
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

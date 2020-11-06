@@ -81,6 +81,11 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
     _scanJobStatus[storeId].store(false, std::memory_order_release);
   });
 
+  bool clusterEnabled = _svr->getParams()->clusterEnabled;
+  if (clusterEnabled && _svr->getMigrateManager()->existMigrateTask()) {
+    return {ErrorCodes::ERR_OK, ""};
+  }
+
   _scanJobCnt[storeId]++;
   LocalSessionGuard sg(_svr.get());
   auto expd = _svr->getSegmentMgr()->getDb(

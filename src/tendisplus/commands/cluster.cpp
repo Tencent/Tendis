@@ -34,7 +34,7 @@ class ClusterCommand : public Command {
   ClusterCommand() : Command("cluster", "rs") {}
 
   ssize_t arity() const {
-    return -1;
+    return -2;
   }
 
   int32_t firstkey() const {
@@ -291,7 +291,7 @@ class ClusterCommand : public Command {
               "You can only addslot 0..16383 when cluster-single-node is on"};
           }
 
-          Status s = changeSlots(start, end, arg1, clusterState, myself);
+          Status s = changeSlots(start, end, arg1, svr, clusterState, myself);
           if (!s.ok()) {
             LOG(ERROR) << "addslots fail from:" << start << "to:" << end;
             return s;
@@ -304,7 +304,7 @@ class ClusterCommand : public Command {
                     "Invalid slot  specified " + args[i]};
           }
           uint32_t slot = static_cast<uint32_t>(slotInfo.value());
-          Status s = changeSlot(slot, arg1, clusterState, myself);
+          Status s = changeSlot(slot, arg1, svr, clusterState, myself);
           if (!s.ok()) {
             LOG(ERROR) << "addslots:" << slot << "fail";
             return s;
@@ -591,6 +591,7 @@ class ClusterCommand : public Command {
   Status changeSlots(uint32_t start,
                      uint32_t end,
                      const std::string& arg,
+                     ServerEntry* svr,
                      const std::shared_ptr<ClusterState> clusterState,
                      const CNodePtr myself) {
     bool result = false;
@@ -608,6 +609,10 @@ class ClusterCommand : public Command {
             LOG(ERROR) << "slot" << index << "already delete";
             continue;
           }
+          if (svr->getMigrateManager()->slotInTask(index)) {
+            LOG(ERROR) << "slot" << index << "is migrating";
+            continue;
+          }
           result = clusterState->clusterDelSlot(index);
         }
         if (result == false) {
@@ -623,6 +628,7 @@ class ClusterCommand : public Command {
 
   Status changeSlot(uint32_t slot,
                     const std::string& arg,
+                    ServerEntry* svr,
                     const std::shared_ptr<ClusterState> clusterState,
                     const CNodePtr myself) {
     bool result = false;
@@ -635,6 +641,11 @@ class ClusterCommand : public Command {
       if (clusterState->_allSlots[slot] == nullptr) {
         LOG(WARNING) << "slot" << slot << "already delete";
         return {ErrorCodes::ERR_CLUSTER, "Slot is already delete"};
+      }
+      /* NOTE(wayenchen) forbidden deleting slot when it is migrating*/
+      if (svr->getMigrateManager()->slotInTask(slot)) {
+        LOG(ERROR) << "slot" << slot << "is migrating";
+        return {ErrorCodes::ERR_CLUSTER, "Slot is migrating"};
       }
       result = clusterState->clusterDelSlot(slot);
     }
