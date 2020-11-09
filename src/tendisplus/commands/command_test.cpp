@@ -1229,6 +1229,28 @@ void testDelTTLIndex(std::shared_ptr<ServerEntry> svr) {
   }
 
   {
+    // srem not exist key
+    sess.setArgs({"srem", "setxxx", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtZero(), expect.value());
+
+    // srem expire key
+    sess.setArgs({"sadd", "setxxx1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"expire", "setxxx1", "1"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    sess.setArgs({"srem", "setxxx1", "one"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtZero(), expect.value());
+  }
+
+  {
     sess.setArgs({"rpush", "list1", "one"});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());

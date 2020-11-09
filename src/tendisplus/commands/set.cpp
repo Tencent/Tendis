@@ -33,8 +33,10 @@ Expected<std::string> genericSRem(Session* sess,
       return exptSm.status();
     }
     sm = std::move(exptSm.value());
-  } else if (rv.status().code() != ErrorCodes::ERR_NOTFOUND &&
-             rv.status().code() != ErrorCodes::ERR_EXPIRED) {
+  } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
+             rv.status().code() == ErrorCodes::ERR_EXPIRED) {
+    return Command::fmtZero();
+  } else {
     return rv.status();
   }
 
