@@ -112,11 +112,11 @@ Status ChunkMigrateSender::sendChunk() {
 
   serverLog(LL_NOTICE,
             "ChunkMigrateSender::sendChunk success"
-            " [%s] [%s] [total used time:%lu] [snapshot time:%lu]"
+            " [%s] [total used time:%lu] [snapshot time:%lu]"
             " [send binlog time:%lu] [locked time:%lu]"
-            " [snapshot count:%lu] [binlog count:%lu] [binlog:%lu %lu %lu]",
+            " [snapshot count:%lu] [binlog count:%lu] [binlog:%lu %lu %lu]"
+            " [%s]",
             _client->getRemoteRepr().c_str(),
-            bitsetStrEncode(_slots).c_str(),
             end - start,
             sendSnapTimeEnd - start,
             lockStart - sendSnapTimeEnd,
@@ -125,7 +125,8 @@ Status ChunkMigrateSender::sendChunk() {
             _binlogNum,
             snapshot_binlog,
             send_binlog,
-            last_binlog);
+            last_binlog,
+            bitsetStrEncode(_slots).c_str());
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -457,12 +458,12 @@ Status ChunkMigrateSender::sendBinlog() {
   if (!finishCatchup) {
     serverLog(LL_NOTICE,
               "ChunkMigrateSender::sendBinlog in kvstore(%u) failed:"
-              " [%s] [%s] [Can't catchup binlog(%lu), distance:%lu]",
+              " [%s] [Can't catchup binlog(%lu), distance:%lu] [%s]",
               _storeid,
               _client->getRemoteRepr().c_str(),
-              bitsetStrEncode(_slots).c_str(),
               binlogHigh,
-              diffOffset);
+              diffOffset,
+              bitsetStrEncode(_slots).c_str());
     return {ErrorCodes::ERR_INTERNAL, "send binlog not finish"};
   }
 

@@ -10,6 +10,7 @@
 #include <map>
 
 #include "asio.hpp"
+#include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/atomic_utility.h"

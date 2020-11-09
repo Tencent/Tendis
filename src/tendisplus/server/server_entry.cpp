@@ -508,41 +508,29 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
   LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
             << " executorThreadNum:" << cfg->executorThreadNum;
-  //{
-  if (_cfg->executorMultiIoContext) {
-    for (uint32_t i = 0; i < threadnum; i += _cfg->executorWorkPoolSize) {
-      // TODO(takenliu): make sure whether multi worker_pool is ok?
-      // But each size of worker_pool should been not less than 8;
-      // uint32_t i = 0;
-      uint32_t curNum = i + _cfg->executorWorkPoolSize < threadnum
-        ? _cfg->executorWorkPoolSize
-        : threadnum - i;
-      LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
-      auto executor = std::make_unique<WorkerPool>(
-        "tx-worker-" + std::to_string(i), _poolMatrix);
-      Status s = executor->startup(curNum);
-      if (!s.ok()) {
-        LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
-                   << s.toString();
-        return s;
-      }
-      _executorList.push_back(std::move(executor));
-    }
 
-    // set the executorThreadNum when set executorMultiIoContext is true
-    for (auto& pool : _executorList) {
-      _cfg->executorThreadNum += pool->size();
-    }
-  } else {
+  for (uint32_t i = 0; i < threadnum; i += _cfg->executorWorkPoolSize) {
+    // TODO(takenliu): make sure whether multi worker_pool is ok?
+    // But each size of worker_pool should been not less than 8;
+    // uint32_t i = 0;
+    uint32_t curNum = i + _cfg->executorWorkPoolSize < threadnum
+      ? _cfg->executorWorkPoolSize
+      : threadnum - i;
+    LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
     auto executor = std::make_unique<WorkerPool>(
-      "tx-worker-" + std::to_string(0), _poolMatrix);
-    Status s = executor->startup(threadnum);
+      "tx-worker-" + std::to_string(i), _poolMatrix);
+    Status s = executor->startup(curNum);
     if (!s.ok()) {
       LOG(ERROR) << "ServerEntry::startup failed, executor->startup:"
                  << s.toString();
       return s;
     }
     _executorList.push_back(std::move(executor));
+  }
+
+  // set the executorThreadNum
+  for (auto& pool : _executorList) {
+    _cfg->executorThreadNum += pool->size();
   }
 
   // _cfg->executorThreadNum = _executorList.size() *

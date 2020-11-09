@@ -1665,6 +1665,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       // txnDbOptions.transaction_lock_timeout 1sec
       // txnDbOptions.default_lock_timeout 1sec
       // txnDbOptions.write_policy WRITE_COMMITTED
+      txnDbOptions.num_stripes = 40;
       rocksdb::Options dbOpts = options();
       dbOpts.create_missing_column_families = true;
       LOG(INFO) << "rocksdb Open,id:" << dbId() << " dbname:" << dbname;

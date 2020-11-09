@@ -61,7 +61,8 @@ int main(int argc, char* argv[]) {
               << " build=" << TENDISPLUS_BUILD_ID << std::endl;
     return 0;
   }
-  auto params = std::make_shared<tendisplus::ServerParams>();
+  tendisplus::gParams = std::make_shared<tendisplus::ServerParams>();
+  auto params = tendisplus::gParams;
   auto s = params->parseFile(argv[1]);
   if (!s.ok()) {
     std::cout << "parse config failed:" << s.toString();

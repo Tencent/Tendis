@@ -87,7 +87,6 @@ void WorkerPool::consumeTasks(size_t idx) {
     LOG(INFO) << "WorkerPool consumeTasks work:" << idx;
     // TODO(takenliu): use run_for to make threads more adaptive
     asio::io_context::work work(*_ioCtx);
-
     try {
       _ioCtx->run();
     } catch (const IOCtxException&) {

@@ -16,8 +16,7 @@ MGLock::MGLock(MGLockMgr* mgr)
      _mode(LockMode::LOCK_NONE),
      _res(LockRes::LOCKRES_UNINITED),
      _resIter(_dummyList.end()),
-     _lockMgr(mgr),
-     _threadId(getCurThreadId()) {
+     _lockMgr(mgr) {
 }
 
 MGLock::~MGLock() {
@@ -39,7 +38,8 @@ void MGLock::setLockResult(LockRes res, std::list<MGLock*>::iterator iter) {
 void MGLock::unlock() {
     LockRes status = getStatus();
     if (status != LockRes::LOCKRES_UNINITED) {
-        INVARIANT_D(status == LockRes::LOCKRES_OK || status == LockRes::LOCKRES_WAIT);
+        INVARIANT_D(status == LockRes::LOCKRES_OK ||
+            status == LockRes::LOCKRES_WAIT);
         if (!_lockMgr) {
             MGLockMgr::getInstance().unlock(this);
         } else {

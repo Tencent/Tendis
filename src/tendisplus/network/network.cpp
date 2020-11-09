@@ -207,7 +207,8 @@ Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
 
 template <typename T>
 void NetworkAsio::doAccept() {
-  auto cb = [this](const std::error_code& ec, tcp::socket socket) {
+  int index = _connCreated % _rwCtxList.size();
+  auto cb = [this, index](const std::error_code& ec, tcp::socket socket) {
     if (!_isRunning.load(std::memory_order_relaxed)) {
       LOG(INFO) << "acceptCb, server is shuting down";
       return;
@@ -220,6 +221,7 @@ void NetworkAsio::doAccept() {
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
       _server, std::move(socket), newConnId, true, _netMatrix, _reqMatrix);
+    sess->setIoCtxId(index);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
@@ -231,7 +233,6 @@ void NetworkAsio::doAccept() {
 
     doAccept<T>();
   };
-  int index = _connCreated % _rwCtxList.size();
   auto rwCtx = _rwCtxList[index];
   _acceptor->async_accept(*rwCtx, std::move(cb));
 }
@@ -280,52 +281,28 @@ Status NetworkAsio::startThread() {
   }
   LOG(INFO) << "NetworkAsio::run netIO thread num:" << threadnum
             << " _netIoThreadNum:" << _netIoThreadNum;
-  if (_server->getParams()->netIoMultiIoContext) {
-    for (size_t i = 0; i < threadnum; ++i) {
-      _rwCtxList.push_back(std::make_shared<asio::io_context>());
-    }
-    for (size_t i = 0; i < threadnum; ++i) {
-      std::thread thd([this, i] {
-        std::string threadName = _name + "-rw-" + std::to_string(i);
-        threadName.resize(15);
-        INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
-        while (_isRunning.load(std::memory_order_relaxed)) {
-          // if no workguard, the run() returns immediately if no
-          // tasks
-          asio::io_context::work work(*(_rwCtxList[i]));
-          try {
-            _rwCtxList[i]->run();
-          } catch (const std::exception& ex) {
-            LOG(FATAL) << "read/write thd failed:" << ex.what();
-          } catch (...) {
-            LOG(FATAL) << "unknown exception";
-          }
-        }
-      });
-      _rwThreads.emplace_back(std::move(thd));
-    }
-  } else {
+  for (size_t i = 0; i < threadnum; ++i) {
     _rwCtxList.push_back(std::make_shared<asio::io_context>());
-    for (size_t i = 0; i < threadnum; ++i) {
-      std::thread thd([this, i] {
-        std::string threadName = _name + "-rw-" + std::to_string(i);
-        threadName.resize(15);
-        INVARIANT(!pthread_setname_np(pthread_self(), threadName.c_str()));
-        while (_isRunning.load(std::memory_order_relaxed)) {
-          // if no workguard, the run() returns immediately if no
-          // tasks
-          asio::io_context::work work(*(_rwCtxList[0]));
-          try {
-            _rwCtxList[0]->run();
-          } catch (const std::exception& ex) {
-            LOG(FATAL) << "read/write thd failed:" << ex.what();
-          } catch (...) {
-            LOG(FATAL) << "unknown exception";
-          }
+  }
+  for (size_t i = 0; i < threadnum; ++i) {
+    std::thread thd([this, i] {
+      std::string threadName = _name + "-rw-" + std::to_string(i);
+      threadName.resize(15);
+      INVARIANT_D(!pthread_setname_np(pthread_self(), threadName.c_str()));
+      while (_isRunning.load(std::memory_order_relaxed)) {
+        // if no workguard, the run() returns immediately if no
+        // tasks
+        asio::io_context::work work(*(_rwCtxList[i]));
+        try {
+          _rwCtxList[i]->run();
+        } catch (const std::exception& ex) {
+          LOG(FATAL) << "read/write thd failed:" << ex.what();
+        } catch (...) {
+          LOG(FATAL) << "unknown exception";
         }
-      });
-      _rwThreads.emplace_back(std::move(thd));
-    }
+      }
+    });
+    _rwThreads.emplace_back(std::move(thd));
   }
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -469,7 +446,7 @@ void NetSession::schedule() {
   // incr the reference, so it's safe to remove sessions
   // from _serverEntry at executing time.
   auto self(shared_from_this());
-  _server->schedule([this, self]() { stepState(); });
+  _server->schedule([this, self]() { stepState(); }, _ioCtxId);
 }
 
 asio::ip::tcp::socket NetSession::borrowConn() {

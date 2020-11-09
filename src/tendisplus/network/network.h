@@ -153,7 +153,9 @@ class NetSession : public Session {
 
   const std::vector<std::string>& getArgs() const;
   void setArgs(const std::vector<std::string>&);
-
+  void setIoCtxId(uint32_t id) {
+    _ioCtxId = id;
+  }
   enum class State {
     Created,
     DrainReqNet,
@@ -220,6 +222,7 @@ class NetSession : public Session {
 
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
+  uint32_t _ioCtxId = UINT32_MAX;
 };
 
 }  // namespace tendisplus
