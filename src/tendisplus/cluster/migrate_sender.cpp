@@ -42,7 +42,7 @@ Status ChunkMigrateSender::sendChunk() {
     LOG(ERROR) << "send snapshot fail:" << s.toString();
     return s;
   }
-  auto snapshot_binlog = _curBinlogid;
+  auto snapshot_binlog = getProtectBinlogid();
   _sendstate = MigrateSenderStatus::SNAPSHOT_DONE;
   uint64_t sendSnapTimeEnd = msSinceEpoch();
   /* send binlog of the task slots in iteration of 10(default),
@@ -56,7 +56,7 @@ Status ChunkMigrateSender::sendChunk() {
     }
     return s;
   }
-  auto send_binlog = _curBinlogid;
+  auto send_binlog = getProtectBinlogid();
   _sendstate = MigrateSenderStatus::BINLOG_DONE;
   /* lock chunks to block the client for while */
   auto lockStart = msSinceEpoch();
@@ -86,7 +86,7 @@ Status ChunkMigrateSender::sendChunk() {
     LOG(ERROR) << "send version meta Fail:" << s.toString();
     return s;
   }
-  auto last_binlog = _curBinlogid;
+  auto last_binlog = getProtectBinlogid();
   _sendstate = MigrateSenderStatus::LASTBINLOG_DONE;
   /* send migrateend command and wait for return*/
   s = sendOver();
@@ -121,8 +121,8 @@ Status ChunkMigrateSender::sendChunk() {
             sendSnapTimeEnd - start,
             lockStart - sendSnapTimeEnd,
             end - lockStart,
-            _snapshotKeyNum,
-            _binlogNum,
+            getSnapshotNum(),
+            getBinlogNum(),
             snapshot_binlog,
             send_binlog,
             last_binlog);
@@ -169,7 +169,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
   uint32_t totalWriteNum = 0;
   uint32_t curWriteLen = 0;
   uint32_t curWriteNum = 0;
-  uint32_t timeoutSec = 100;
+  uint32_t timeoutSec = 5;
   Status s;
   while (true) {
     Expected<Record> expRcd = cursor->next();
@@ -177,7 +177,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
       break;
     }
     /* NOTE(wayenchen) interuppt send snapshot if stop stask*/
-    if (_isRunning.load(std::memory_order_relaxed) == false) {
+    if (!isRunning()) {
       LOG(ERROR) << "stop sender send snapshot on taskid:" << _taskid;
       return {ErrorCodes::ERR_INTERNAL, "stop running"};
     }
@@ -217,8 +217,8 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
 
     if (curWriteNum >= 10000 || curWriteLen > 10 * 1024 * 1024) {
       SyncWriteData("1");
-      SyncReadData(
-        exptData, _OKSTR.length(), timeoutSec) if (exptData.value() != _OKSTR) {
+      SyncReadData(exptData, _OKSTR.length(), timeoutSec);
+      if (exptData.value() != _OKSTR) {
         LOG(ERROR) << "read data is not +OK."
                    << "totalWriteNum:" << totalWriteNum
                    << " curWriteNum:" << curWriteNum
@@ -231,9 +231,9 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
   }
   // send over of one slot
   SyncWriteData("2");
-  SyncReadData(exptData, _OKSTR.length(), timeoutSec)
+  SyncReadData(exptData, _OKSTR.length(), timeoutSec);
 
-    if (exptData.value() != _OKSTR) {
+  if (exptData.value() != _OKSTR) {
     LOG(ERROR) << "read receiver data is not +OK on slot:" << begin;
     return {ErrorCodes::ERR_INTERNAL, "read +OK failed"};
   }
@@ -252,10 +252,8 @@ Status ChunkMigrateSender::sendSnapshot() {
   _dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
   auto kvstore = _dbWithLock->store;
 
-  {
-    std::lock_guard<myMutex> lk(_mutex);
-    _curBinlogid = kvstore->getHighestBinlogId();
-  }
+  _curBinlogid.store(kvstore->getHighestBinlogId(), std::memory_order_relaxed);
+
   LOG(INFO) << "sendSnapshot begin, storeid:" << _storeid
             << " _curBinlogid:" << _curBinlogid
             << " slots:" << bitsetStrEncode(_slots);
@@ -274,19 +272,19 @@ Status ChunkMigrateSender::sendSnapshot() {
         LOG(ERROR) << "sendRange failed, slot:" << i << "-" << i + 1;
         return ret.status();
       }
-      _snapshotKeyNum += ret.value();
+      _snapshotKeyNum.fetch_add(ret.value(), std::memory_order_relaxed);
     }
   }
   SyncWriteData("3");  // send over of all
-  SyncReadData(exptData, _OKSTR.length(), timeoutSec) if (exptData.value() !=
-                                                          _OKSTR) {
+  SyncReadData(exptData, _OKSTR.length(), timeoutSec);
+  if (exptData.value() != _OKSTR) {
     LOG(ERROR) << "read receiver data is not +OK, data:" << exptData.value();
     return {ErrorCodes::ERR_INTERNAL, "read +OK failed"};
   }
   uint32_t endTime = sinceEpoch();
   LOG(INFO) << "sendSnapshot finished, storeid:" << _storeid
             << " sendSlotNum:" << sendSlotNum
-            << " totalWriteNum:" << _snapshotKeyNum
+            << " totalWriteNum:" << getSnapshotNum()
             << " useTime:" << endTime - startTime
             << " slots:" << bitsetStrEncode(_slots);
   return {ErrorCodes::ERR_OK, ""};
@@ -328,13 +326,13 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
   bool needRetry = false;
   uint64_t binlogNum = 0;
   uint64_t newBinlogId = 0;
-  if (_curBinlogid >= end) {
+  if (end <= getProtectBinlogid()) {
     return {ErrorCodes::ERR_OK, ""};
   }
   bool done = false;
   Status s;
 
-  for (uint32_t i = 0; i < MigrateManager::RETRY_CNT; ++i) {
+  for (uint32_t i = 0; i < MigrateManager::SEND_RETRY_CNT; ++i) {
     /* NOTE(wayenchen) interuppt send binlog if stop stask*/
     if (_isRunning.load(std::memory_order_relaxed) == false) {
       LOG(ERROR) << "stop sender sending binlog on taskid:" << _taskid;
@@ -356,9 +354,9 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
         so update the _curbinlog first*/
     {
       std::lock_guard<myMutex> lk(_mutex);
-      _binlogNum += binlogNum;
+      _binlogNum.fetch_add(binlogNum, std::memory_order_relaxed);
       if (newBinlogId != 0) {
-        _curBinlogid = newBinlogId;
+        _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
       }
     }
 
@@ -371,7 +369,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
       std::lock_guard<myMutex> lk(_mutex);
       if (!s.ok() && needRetry) {
         if (newBinlogId > 0) {
-          _curBinlogid = newBinlogId;
+          _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
         }
         needRetry = false;
         s = resetClient();
@@ -389,7 +387,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     serverLog(LL_NOTICE,
               "ChunkMigrateSender::catchupBinlog from"
               " %lu to %lu failed: [%s] [%s] [%s]",
-              _curBinlogid,
+              getProtectBinlogid(),
               end,
               _client->getRemoteRepr().c_str(),
               bitsetStrEncode(_slots).c_str(),
@@ -400,7 +398,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     serverLog(LL_VERBOSE,
               "ChunkMigrateSender::catchupBinlog from"
               " %lu to %lu ok: [%s] [%s]",
-              _curBinlogid,
+              getProtectBinlogid(),
               end,
               _client->getRemoteRepr().c_str(),
               bitsetStrEncode(_slots).c_str());
@@ -417,7 +415,7 @@ Status ChunkMigrateSender::sendBinlog() {
   uint32_t catchupTimes = 0;
   uint64_t binlogHigh = kvstore->getHighestBinlogId();
   uint64_t diffOffset = 0;
-  auto start = _curBinlogid;
+  auto start = getProtectBinlogid();
 
   serverLog(LL_NOTICE,
             "ChunkMigrateSender::sendBinlog from"
@@ -440,7 +438,7 @@ Status ChunkMigrateSender::sendBinlog() {
 
     binlogHigh = kvstore->getHighestBinlogId();
     // judge if reach for distance
-    diffOffset = binlogHigh - _curBinlogid;
+    diffOffset = binlogHigh - getProtectBinlogid();
     if (diffOffset <= distance) {
       serverLog(LL_VERBOSE,
                 "ChunkMigrateSender::sendBinlog in"
@@ -470,7 +468,7 @@ Status ChunkMigrateSender::sendBinlog() {
             "ChunkMigrateSender::sendBinlog from"
             " %lu to %lu end: [%s] [%s]",
             start,
-            _curBinlogid,
+            getProtectBinlogid(),
             _client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str());
 
@@ -497,7 +495,7 @@ Status ChunkMigrateSender::sendLastBinlog() {
             _storeid,
             _client->getRemoteRepr().c_str(),
             bitsetStrEncode(_slots).c_str(),
-            _binlogNum);
+            getBinlogNum());
 
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -683,6 +681,10 @@ void ChunkMigrateSender::stop() {
 
 void ChunkMigrateSender::start() {
   _isRunning.store(true, std::memory_order_relaxed);
+}
+
+bool ChunkMigrateSender::isRunning() {
+  return _isRunning.load(std::memory_order_relaxed);
 }
 
 bool ChunkMigrateSender::needToWaitMetaChanged() const {

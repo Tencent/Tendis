@@ -1223,6 +1223,12 @@ void ClusterState::setFailAuthSent(uint32_t t) {
   _failoverAuthSent.store(t, std::memory_order_relaxed);
 }
 
+bool ClusterState::clusterNodeFailed(const std::string& nodeid) {
+  std::lock_guard<myMutex> lk(_mutex);
+  auto node = clusterLookupNodeNoLock(nodeid);
+  return node->nodeFailed();
+}
+
 Status ClusterState::forgetNodes() {
   std::lock_guard<myMutex> lk(_mutex);
   std::vector<CNodePtr> nodesList;
@@ -2220,6 +2226,12 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
               target->getNodeName().c_str());
     Status s;
     if (!isMasterFail) {
+      for (uint32_t i = 0; i < _server->getKVStoreCount(); ++i) {
+        if (_server->getClusterMgr()->hasDirtyKey(i)) {
+          LOG(ERROR) << "dirty key when migration";
+          return;
+        }
+      }
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail in slave migration";
@@ -2241,14 +2253,15 @@ uint32_t ClusterState::clusterCountNonFailingSlaves(CNodePtr node) {
 
 /* -----------------------------------------------------------------------------
  * SLAVE node specific functions
- * -------------------------------------------------------------------------- */
+ * --------------------------------------------------------------------------
+ */
 
-/* This function sends a FAILOVE_AUTH_REQUEST message to every node in order to
- * see if there is the quorum for this slave instance to failover its failing
- * master.
+/* This function sends a FAILOVE_AUTH_REQUEST message to every node in order
+ * to see if there is the quorum for this slave instance to failover its
+ * failing master.
  *
- * Note that we send the failover request to everybody, master and slave nodes,
- * but only the masters are supposed to reply to our query. */
+ * Note that we send the failover request to everybody, master and slave
+ * nodes, but only the masters are supposed to reply to our query. */
 void ClusterState::clusterRequestFailoverAuth(void) {
   uint64_t offset = _server->getReplManager()->replicationGetOffset();
   ClusterMsg msg(ClusterMsg::Type::FAILOVER_AUTH_REQUEST,
@@ -2285,6 +2298,7 @@ void ClusterState::clusterSendMFStart(CNodePtr node, uint64_t offset) {
 /* Vote for the node asking for our vote if there are the conditions. */
 void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
                                                    const ClusterMsg& request) {
+  std::lock_guard<myMutex> lk(_mutex);
   auto master = node->getMaster();
 
   uint64_t requestCurrentEpoch = request.getHeader()->_currentEpoch;
@@ -2407,25 +2421,29 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
 // compared to the local one (better means, greater, so they claim more data).
 //
 // A slave with rank 0 is the one with the greatest (most up to date)
-// replication offset, and so forth. Note that because how the rank is computed
-// multiple slaves may have the same rank, in case they have the same offset.
+// replication offset, and so forth. Note that because how the rank is
+// computed multiple slaves may have the same rank, in case they have the same
+// offset.
 //
 // The slave rank is used to add a delay to start an election in order to
 // get voted and replace a failing master. Slaves with better replication
 // offsets are more likely to win. */
 uint32_t ClusterState::clusterGetSlaveRank(void) {
   uint32_t rank = 0;
-
+  auto myoffset = _server->getReplManager()->replicationGetOffset();
   INVARIANT_D(_myself->nodeIsSlave());
+  std::lock_guard<myMutex> lk(_mutex);
+
   auto master = _myself->getMaster();
   if (master == nullptr)
     return 0; /* Never called by slaves without master. */
 
-  auto myoffset = _server->getReplManager()->replicationGetOffset();
-  for (uint32_t j = 0; j < master->getSlavesCount(); j++)
-    if (master->_slaves[j] != _myself &&
-        !master->_slaves[j]->nodeCantFailover() &&
-        master->_slaves[j]->_replOffset > myoffset)
+  auto exptSlaveList = master->getSlaves();
+  INVARIANT_D(exptSlaveList.ok());
+  auto slaveList = exptSlaveList.value();
+  for (uint32_t j = 0; j < slaveList.size(); j++)
+    if (slaveList[j] != _myself && !slaveList[j]->nodeCantFailover() &&
+        slaveList[j]->_replOffset > myoffset)
       rank++;
   return rank;
 }
@@ -2758,7 +2776,10 @@ void ClusterState::clusterCloseAllSlots() {
   std::lock_guard<myMutex> lk(_mutex);
   /* NOTE(wayenchen) clear migrate state by stop all migrate task here,
    * do not use cluster reset command when migrating */
-  _server->getMigrateManager()->stopAllTasks(false);
+  auto migrateMgr = _server->getMigrateManager();
+  if (migrateMgr->existMigrateTask()) {
+    migrateMgr->stopAllTasks(false);
+  }
 }
 
 
@@ -4178,13 +4199,13 @@ void ClusterState::clusterUpdateState() {
 
   if (_server->getParams()->clusterRequireFullCoverage) {
     for (size_t j = 0; j < CLUSTER_SLOTS; j++) {
-      if (_allSlots[j] == nullptr ||
-          _allSlots[j]->getFlags() & (CLUSTER_NODE_FAIL)) {
-        if (_allSlots[j] == nullptr) {
-          LOG(ERROR) << "clusterstate turn to fail: slot " << j
-                     << " belong to no node";
+      auto owner = getNodeBySlot(j);
+      if (owner == nullptr || owner->nodeFailed()) {
+        if (owner == nullptr) {
+          DLOG(ERROR) << "clusterstate turn to fail: slot " << j
+                      << " belong to no node";
         } else {
-          LOG(ERROR) << "state turn fail: node" << _allSlots[j]->getNodeName()
+          LOG(ERROR) << "state turn fail: node" << owner->getNodeName()
                      << "is marked as fail on slot:" << j;
         }
         new_state = ClusterHealth::CLUSTER_FAIL;
@@ -4813,7 +4834,8 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * However if we don't have an address at all, we update the address
      * even with a normal PING packet. If it's wrong it will be fixed
      * by MEET later. */
-    /* NOTE(wayenchen) domain named will not be changed so not need to update*/
+    /* NOTE(wayenchen) domain named will not be changed so not need to
+     * update*/
     if ((type == ClusterMsg::Type::MEET || _myself->getNodeIp() == "") &&
         !useDomain) {
       auto eip = sess->getLocalIp();

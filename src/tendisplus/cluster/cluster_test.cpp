@@ -1368,7 +1368,7 @@ TEST(Cluster, stopMigrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 10000;
+  const uint32_t numData = 30000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     std::string cmd = "redis-cli -c ";
@@ -1390,6 +1390,9 @@ TEST(Cluster, stopMigrate) {
    * the working task num of this taskid should be 0,
    * than use (cluster setslot retry) to continue jobs
    * finally all the tasks should be done */
+  std::this_thread::sleep_for(500ms);
+  work2.stopMigrate(taskid);
+  std::this_thread::sleep_for(1s);
   work1.stopMigrate(taskid);
   std::this_thread::sleep_for(3s);
   auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
@@ -1399,7 +1402,7 @@ TEST(Cluster, stopMigrate) {
 
   exptTaskid = migrate(srcNode, dstNode, bitmap, true);
   EXPECT_TRUE(exptTaskid.ok());
-  std::this_thread::sleep_for(15s);
+  std::this_thread::sleep_for(40s);
 
   uint32_t keysize = 0;
   for (auto& vs : slotsList) {
@@ -1408,7 +1411,6 @@ TEST(Cluster, stopMigrate) {
     keysize += dstNode->getClusterMgr()->countKeysInSlot(vs);
   }
 
-  std::this_thread::sleep_for(10s);
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
               bitmap,
@@ -1487,7 +1489,7 @@ TEST(Cluster, stopAllMigrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 10000;
+  const uint32_t numData = 30000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     std::string cmd = "redis-cli -c ";
@@ -1510,9 +1512,11 @@ TEST(Cluster, stopAllMigrate) {
    * stopall), the working task num of this taskid should be 0, than use
    * (cluster setslot restartall) to continue jobs
    * finally all the tasks should be done */
-  std::this_thread::sleep_for(10ms);
+  std::this_thread::sleep_for(500ms);
   work2.stopAllMigTasks();
-  std::this_thread::sleep_for(10s);
+  std::this_thread::sleep_for(1s);
+  work1.stopAllMigTasks();
+  std::this_thread::sleep_for(3s);
   auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
   EXPECT_EQ(taskNum1, 0);
   auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);
