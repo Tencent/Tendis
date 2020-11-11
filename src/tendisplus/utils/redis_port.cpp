@@ -461,7 +461,6 @@ int hex_digit_to_int(char c) {
 }
 
 int random() {
-  std::srand((uint32_t)msSinceEpoch());
   return std::rand();
 }
 
