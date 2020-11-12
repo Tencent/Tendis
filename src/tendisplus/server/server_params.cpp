@@ -20,7 +20,7 @@
 #include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
-
+std::shared_ptr<tendisplus::ServerParams> gParams;
 string gRenameCmdList = "";   // NOLINT
 string gMappingCmdList = "";  // NOLINT
 
@@ -397,9 +397,6 @@ ServerParams::ServerParams() {
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
                                   binlogUsingDefaultCF);
-
-  REGISTER_VARS(netIoMultiIoContext);
-  REGISTER_VARS(executorMultiIoContext);
 }
 
 ServerParams::~ServerParams() {
@@ -427,6 +424,7 @@ Status ServerParams::parseFile(const std::string& filename) {
       std::stringstream ss(line);
       tokens.clear();
       std::string tmp;
+      // TODO(takenliu) fix for multi space
       while (std::getline(ss, tmp, ' ')) {
         tokens.emplace_back(tmp);
       }

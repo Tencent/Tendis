@@ -148,6 +148,18 @@ std::string ldtos(const long double d, bool humanfriendly) {
   return std::string(buf, len);
 }
 
+std::string itos(int32_t d) {
+  char dbuf[128];
+  uint32_t dlen = snprintf(dbuf, sizeof(dbuf), "%d", d);
+  return std::string(dbuf, dlen);
+}
+
+std::string uitos(uint32_t d) {
+  char dbuf[128];
+  uint32_t dlen = snprintf(dbuf, sizeof(dbuf), "%u", d);
+  return std::string(dbuf, dlen);
+}
+
 std::string hexlify(const std::string& s) {
   static const char* lookup = "0123456789ABCDEF";
   std::string result;
@@ -251,8 +263,9 @@ std::string& replaceAll(std::string& str,
 }
 
 uint64_t getCurThreadId() {
+  // NOTE(takenliu): std::ostringstream has performance issue in multi thread,
+  //     because it will use std::locale()
   std::ostringstream oss;
-  // TODO(vinchen): the performance is?
   oss << std::this_thread::get_id();
   std::string stid = oss.str();
   uint64_t tid = std::stoull(stid);

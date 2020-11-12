@@ -101,9 +101,11 @@ StoreLock::StoreLock(uint32_t storeId,
   // NOTE(takenliu) : all request need get StoresLock, its a big cpu waste.
   //     then, you should not use StoresLock, you should process with every
   //     StoreLock.
-  //:ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
+  // :ILock(new StoresLock(getParentMode(mode), nullptr, mgr),
   : ILock(NULL, new mgl::MGLock(mgr), sess), _storeId(storeId) {
-  std::string target = "store_" + std::to_string(storeId);
+  // NOTE(takenliu): std::to_string() has performance issue in multi thread,
+  //     because it will use std::locale(), so use snprintf instead.
+  std::string target = "store_" + uitos(storeId);
   if (_sess) {
     _sess->getCtx()->setWaitLock(storeId, 0, "", mode);
   }
@@ -137,7 +139,9 @@ ChunkLock::ChunkLock(uint32_t storeId,
   if (_parent->getLockResult() != mgl::LockRes::LOCKRES_OK) {
     _lockResult = _parent->getLockResult();
   } else {
-    std::string target = "chunk_" + std::to_string(chunkId);
+    // NOTE(takenliu): std::to_string() has performance issue in multi thread,
+    //     because it will use std::locale(), so use snprintf instead.
+    std::string target = "chunk_" + uitos(chunkId);
     if (_sess) {
       _sess->getCtx()->setWaitLock(storeId, chunkId, "", mode);
     }

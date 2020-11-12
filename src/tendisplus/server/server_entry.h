@@ -137,10 +137,12 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
   template <typename fn>
-  void schedule(fn&& task) {
-    int32_t index = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
-      _executorList.size();
-    _executorList[index]->schedule(std::forward<fn>(task));
+  void schedule(fn&& task, uint32_t& ctxId) {
+    if (ctxId == UINT32_MAX || ctxId >= _executorList.size()) {
+      ctxId = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
+        _executorList.size();
+    }
+    _executorList[ctxId]->schedule(std::forward<fn>(task));
   }
   std::shared_ptr<ServerParams>& getParams() {
     return _cfg;

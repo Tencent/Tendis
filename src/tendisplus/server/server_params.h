@@ -11,6 +11,7 @@
 #include <functional>
 #include <atomic>
 #include <list>
+#include <memory>
 #include <vector>
 #include "glog/logging.h"
 #include "tendisplus/server/session.h"
@@ -441,11 +442,9 @@ class ServerParams {
   uint32_t clusterMigrationBarrier = 1;
   uint32_t clusterSlaveValidityFactor = 10;
   bool clusterSingleNode = false;
-
-  // TODO(takenliu) delete this two parm after performance test.
-  bool netIoMultiIoContext = false;
-  bool executorMultiIoContext = false;
 };
+
+extern std::shared_ptr<tendisplus::ServerParams> gParams;
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_SERVER_SERVER_PARAMS_H_

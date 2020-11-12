@@ -264,8 +264,5 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->clusterSlaveNoFailover, false);
   EXPECT_EQ(cfg->clusterMigrationBarrier, 1);
   EXPECT_EQ(cfg->clusterSlaveValidityFactor, 10);
-
-  EXPECT_EQ(cfg->netIoMultiIoContext, false);
-  EXPECT_EQ(cfg->executorMultiIoContext, false);
 }
 }  // namespace tendisplus

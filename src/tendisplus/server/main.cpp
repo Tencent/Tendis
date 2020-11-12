@@ -9,6 +9,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/portable.h"
+#include "tendisplus/utils/time.h"
 #include "glog/logging.h"
 #include "tendisplus/commands/version.h"
 #include "tendisplus/commands/release.h"
@@ -61,7 +62,11 @@ int main(int argc, char* argv[]) {
               << " build=" << TENDISPLUS_BUILD_ID << std::endl;
     return 0;
   }
-  auto params = std::make_shared<tendisplus::ServerParams>();
+
+  std::srand((uint32_t)tendisplus::msSinceEpoch());
+
+  tendisplus::gParams = std::make_shared<tendisplus::ServerParams>();
+  auto params = tendisplus::gParams;
   auto s = params->parseFile(argv[1]);
   if (!s.ok()) {
     std::cout << "parse config failed:" << s.toString();
