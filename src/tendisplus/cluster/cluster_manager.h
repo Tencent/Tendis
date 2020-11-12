@@ -177,7 +177,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void setAsMaster();
 
   bool clearNodeFailureIfNeeded(uint32_t timeout);
-
   bool nodeIsMaster() const;
   bool nodeIsArbiter() const;
   bool nodeIsSlave() const;
@@ -717,8 +716,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setFailAuthCount(uint32_t t);
   void setFailAuthSent(uint32_t t);
   void setFailAuthRank(uint32_t t);
-
-
+  bool clusterNodeFailed(const std::string& nodeid);
   uint16_t getFailAuthCount() {
     return _failoverAuthCount.load(std::memory_order_relaxed);
   }

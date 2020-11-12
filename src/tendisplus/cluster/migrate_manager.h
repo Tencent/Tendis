@@ -41,13 +41,15 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
 /* PARENT TASK produce by cluster setslot importing command */
 class pTask {
  public:
-  explicit pTask(const std::string& taskid) : _taskid(taskid) {}
+  explicit pTask(const std::string& taskid, const std::string& nodeid)
+    : _taskid(taskid), _nodeid(nodeid) {}
   std::string _taskid;
   std::string _startTime;
   std::string getTaskid() {
     return _taskid;
   }
   uint64_t _migrateTime;
+  std::string _nodeid;  // mark the dstNode of SrcNode, or SrcNode of dstNode
 };
 
 class MigrateSendTask {
@@ -118,7 +120,8 @@ class MigrateReceiveTask {
       _isRunning(false),
       _lastSyncTime(0),
       _state(MigrateReceiveState::RECEIVE_SNAPSHOT),
-      _pTask(pTask_) {
+      _pTask(pTask_),
+      _retryTime(0) {
     _receiver = std::make_unique<ChunkMigrateReceiver>(
       slots_, store_id, taskid_, svr, cfg);
   }
@@ -135,9 +138,13 @@ class MigrateReceiveTask {
   std::unique_ptr<ChunkMigrateReceiver> _receiver;
   std::shared_ptr<pTask> _pTask;
   mutable std::mutex _mutex;
+  std::atomic<uint32_t> _retryTime;
   void stopTask();
   void checkMigrateStatus();
   void fullReceive();
+  uint32_t getRetryCount() {
+    return _retryTime.load(std::memory_order_relaxed);
+  }
 };
 
 class MigrateManager {
@@ -232,7 +239,9 @@ class MigrateManager {
 
   size_t migrateSenderSize();
   size_t migrateReceiverSize();
-  static constexpr int32_t RETRY_CNT = 3;
+
+  static constexpr int32_t SEND_RETRY_CNT = 3;
+  static constexpr int32_t RECEIVE_RETRY_CNT = 20;
   std::string genPTaskid();
   uint64_t getAllTaskNum();
   uint64_t getTaskNum(const std::string& taskid);
@@ -244,8 +253,6 @@ class MigrateManager {
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
   void controlRoutine();
-  void sendSlots(MigrateSendTask* task);
-  void deleteSenderChunks(MigrateSendTask* task);
   bool containSlot(const SlotsBitmap& slots1, const SlotsBitmap& slots2);
   bool checkSlotOK(const SlotsBitmap& bitMap,
                    const std::string& nodeid,

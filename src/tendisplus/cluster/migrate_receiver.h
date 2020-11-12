@@ -50,11 +50,9 @@ class ChunkMigrateReceiver {
   std::string getTaskid() {
     return _taskid;
   }
-  uint64_t getSnapshotNum() {
-    return _snapshotKeyNum;
-  }
-  uint64_t getBinlogNum() {
-    return _binlogNum;
+
+  uint64_t getSnapshotNum() const {
+    return _snapshotKeyNum.load(std::memory_order_relaxed);
   }
 
   void stop();
@@ -73,8 +71,7 @@ class ChunkMigrateReceiver {
   std::string _taskid;
   std::bitset<CLUSTER_SLOTS> _slots;
 
-  uint64_t _snapshotKeyNum;
-  uint64_t _binlogNum;
+  std::atomic<uint64_t> _snapshotKeyNum;
 };
 
 }  // namespace tendisplus

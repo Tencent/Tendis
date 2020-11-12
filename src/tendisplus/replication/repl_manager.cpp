@@ -425,6 +425,8 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
   if (explog.ok()) {
     std::lock_guard<std::mutex> lk(_mutex);
     _logRecycStatus[storeId]->firstBinlogId = explog.value().getBinlogId();
+    /* NOTE(wayenchen) saveBinlog should be reset */
+    _logRecycStatus[storeId]->saveBinlogId = explog.value().getBinlogId();
     _logRecycStatus[storeId]->timestamp = explog.value().getTimestamp();
     _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
   } else {
@@ -433,6 +435,7 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
       // TODO(takenliu): fix the relative logic
       std::lock_guard<std::mutex> lk(_mutex);
       _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
+      _logRecycStatus[storeId]->saveBinlogId = Transaction::MIN_VALID_TXNID;
       _logRecycStatus[storeId]->timestamp = 0;
       _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
     } else {

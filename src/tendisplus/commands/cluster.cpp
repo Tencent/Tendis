@@ -101,7 +101,7 @@ class ClusterCommand : public Command {
         /* CLUSTER SETSLOT IMPORTING nodename chunkid */
         auto srcNode = clusterState->clusterLookupNode(nodeId);
         if (!srcNode) {
-          LOG(ERROR) << "import nodeid:" << nodeId << "not exist in cluster";
+          LOG(ERROR) << "import nodeid:" << nodeId << " not exist in cluster";
           return {ErrorCodes::ERR_CLUSTER, "import node not find"};
         }
         if (srcNode->nodeIsArbiter()) {
@@ -157,10 +157,14 @@ class ClusterCommand : public Command {
           }
         }
         return Command::fmtOK();
-      } else if (arg2 == "stopall" && argSize == 3) {
-        /* NOTE(wayenchen) stop all migrate tasks, work on both srcNode and
-         * dstNode */
+      } else if (arg2 == "stopall" && argSize >= 3) {
+        /* NOTE(wayenchen) stop all migrate tasks (save message of stop tasks),
+         * work on both srcNode and dstNode */
         migrateMgr->stopAllTasks();
+        return Command::fmtOK();
+      } else if (arg2 == "cleanall" && argSize >= 3) {
+        /* NOTE(wayenchen) clean all migrate tasks, no save message*/
+        migrateMgr->stopAllTasks(false);
         return Command::fmtOK();
       } else if (arg2 == "restartall" && argSize == 3) {
         /* NOTE(wayenchen) it is work on dstNode command */
@@ -352,7 +356,7 @@ class ClusterCommand : public Command {
       if (clusterState->getMyMaster() != nullptr) {
         LOG(ERROR) << "already have master:"
                    << clusterState->getMyMaster()->getNodeName();
-        return {ErrorCodes::ERR_CLUSTER, "slaveof noone before set new master"};
+        return {ErrorCodes::ERR_CLUSTER, "cluster reset before set new master"};
       }
 
       Status s = clusterState->clusterSetMaster(n);
@@ -752,7 +756,7 @@ class ClusterCommand : public Command {
     if (finishMsg != "+OK") {
       return {ErrorCodes::ERR_WRONG_TYPE, "sender task not finish!"};
     }
-    auto pTaskPtr = std::make_shared<pTask>(pTaskId);
+    auto pTaskPtr = std::make_shared<pTask>(pTaskId, srcNode->getNodeName());
     for (rapidjson::SizeType i = 0; i < Array.Size(); i++) {
       const rapidjson::Value& object = Array[i];
 

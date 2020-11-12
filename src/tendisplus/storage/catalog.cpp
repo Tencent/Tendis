@@ -798,7 +798,7 @@ Status Catalog::setEpochMeta(const EpochMeta& meta) {
                << sb.GetString();
     return s;
   }
-  LOG(INFO) << "Catalog::setEpochMeta sucess:" << sb.GetString();
+  DLOG(INFO) << "Catalog::setEpochMeta sucess:" << sb.GetString();
   return txn->commit().status();
 }
 

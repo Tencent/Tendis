@@ -16,8 +16,7 @@ ChunkMigrateReceiver::ChunkMigrateReceiver(
     _storeid(storeid),
     _taskid(taskid),
     _slots(slots),
-    _snapshotKeyNum(0),
-    _binlogNum(0) {}
+    _snapshotKeyNum(0) {}
 
 Status ChunkMigrateReceiver::receiveSnapshot() {
   std::stringstream ss;
@@ -43,30 +42,40 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     return {ErrorCodes::ERR_INTERNAL, "readymigrate req srcDb failed"};
   }
 
-  DLOG(INFO) << "receiveSnapshot, get response of readymigrate ok";
-
-  uint32_t timeoutSec = 200;
+  uint32_t timeoutSec = 5;
   uint32_t readNum = 0;
   while (true) {
-    if (_isRunning.load(std::memory_order_relaxed) == false) {
+    if (!isRunning()) {
       LOG(ERROR) << "stop receiver task on taskid:" << _taskid;
       return {ErrorCodes::ERR_INTERNAL, "stop running"};
     }
+
     SyncReadData(exptData, 1, timeoutSec);
     if (!exptData.ok()) {
       return {ErrorCodes::ERR_TIMEOUT, "receive data fail"};
     }
 
     if (exptData.value()[0] == '0') {
-      SyncReadData(keylenData, 4, timeoutSec) uint32_t keylen =
+      SyncReadData(keylenData, 4, timeoutSec);
+      uint32_t keylen =
         *reinterpret_cast<const uint32_t*>(keylenData.value().c_str());
-      SyncReadData(keyData, keylen, timeoutSec)
 
-        SyncReadData(valuelenData, 4, timeoutSec) uint32_t valuelen =
-          *reinterpret_cast<const uint32_t*>(valuelenData.value().c_str());
-      SyncReadData(valueData, valuelen, timeoutSec)
+      SyncReadData(keyData, keylen, timeoutSec);
+      if (!keyData.ok()) {
+        return {ErrorCodes::ERR_TIMEOUT, "receive key data fail"};
+      }
 
-        auto s = supplySetKV(keyData.value(), valueData.value());
+      SyncReadData(valuelenData, 4, timeoutSec);
+
+      uint32_t valuelen =
+        *reinterpret_cast<const uint32_t*>(valuelenData.value().c_str());
+
+      SyncReadData(valueData, valuelen, timeoutSec);
+      if (!valueData.ok()) {
+        return {ErrorCodes::ERR_TIMEOUT, "receive value data fail"};
+      }
+
+      auto s = supplySetKV(keyData.value(), valueData.value());
       if (!s.ok()) {
         LOG(ERROR) << "supply set key: " << keyData.value() << "fail";
         return s;
@@ -81,7 +90,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     }
   }
   LOG(INFO) << "migrate snapshot transfer done, readnum:" << readNum;
-  _snapshotKeyNum = readNum;
+  _snapshotKeyNum.store(readNum, std::memory_order_relaxed);
   return {ErrorCodes::ERR_OK, ""};
 }
 

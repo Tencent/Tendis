@@ -186,7 +186,16 @@ bool GCManager::gcSchedule(const SCLOCK::time_point& now) {
   /* NOTE(wayenchen) delete task is running in Db lock, so it can not be
    * running in mutex */
   for (auto it = startDeletingTask.begin(); it != startDeletingTask.end();) {
-    _gcDeleter->schedule([this, iter = (*it).get()]() { garbageDelete(iter); });
+    /*NOTE(wayenchen) if it is migrating, delay ten minutes to delete*/
+
+    if (_svr->getMigrateManager()->existMigrateTask() &&
+        !_svr->getParams()->enableGcInMigate) {
+      (*it)->_nextSchedTime = SCLOCK::now() + chrono::seconds(600);
+      (*it)->_isRunning = false;
+    } else {
+      _gcDeleter->schedule(
+        [this, iter = (*it).get()]() { garbageDelete(iter); });
+    }
     it = startDeletingTask.erase(it);
   }
   return doSth;

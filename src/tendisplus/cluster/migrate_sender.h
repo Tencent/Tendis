@@ -78,10 +78,10 @@ class ChunkMigrateSender {
     return _storeid;
   }
   uint64_t getSnapshotNum() const {
-    return _snapshotKeyNum;
+    return _snapshotKeyNum.load(std::memory_order_relaxed);
   }
   uint64_t getBinlogNum() const {
-    return _binlogNum;
+    return _binlogNum.load(std::memory_order_relaxed);
   }
   bool getConsistentInfo() const {
     return _consistency;
@@ -93,10 +93,8 @@ class ChunkMigrateSender {
 
   bool checkSlotsBlongDst();
 
-  uint64_t getProtectBinlogid() {
-    // TODO(wayenchen)  takenliu add, use atomic
-    std::lock_guard<myMutex> lk(_mutex);
-    return _curBinlogid;
+  uint64_t getProtectBinlogid() const {
+    return _curBinlogid.load(std::memory_order_relaxed);
   }
   Status lockChunks();
   void unlockChunks();
@@ -105,6 +103,7 @@ class ChunkMigrateSender {
   bool needToSendFail() const;
   void stop();
   void start();
+  bool isRunning();
 
  private:
   Expected<std::unique_ptr<Transaction>> initTxn();
@@ -133,11 +132,11 @@ class ChunkMigrateSender {
   std::shared_ptr<ClusterState> _clusterState;
   MigrateSenderStatus _sendstate;
   uint32_t _storeid;
-  uint64_t _snapshotKeyNum;
-  uint64_t _binlogNum;
+  std::atomic<uint64_t> _snapshotKeyNum;
+  std::atomic<uint64_t> _binlogNum;
   bool _consistency;
   std::string _nodeid;
-  uint64_t _curBinlogid;
+  std::atomic<uint64_t> _curBinlogid;
   string _dstIp;
   uint16_t _dstPort;
   uint32_t _dstStoreid;
