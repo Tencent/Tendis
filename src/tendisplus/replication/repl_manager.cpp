@@ -607,6 +607,15 @@ bool ReplManager::isSlaveOfSomeone(uint32_t storeId) {
   return false;
 }
 
+bool ReplManager::isSlaveOfSomeone() {
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    if (!isSlaveOfSomeone(i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool ReplManager::isSlaveFullSyncDone() {
   std::lock_guard<std::mutex> lk(_mutex);
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
@@ -1124,13 +1133,13 @@ Status ReplManager::replicationUnSetMaster() {
 
 std::string ReplManager::getMasterHost() const {
   std::lock_guard<std::mutex> lk(_mutex);
+
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     if (_syncMeta[i]->syncFromHost != "") {
       INVARIANT_D(i == 0);
       return _syncMeta[i]->syncFromHost;
     }
   }
-
   return "";
 }
 

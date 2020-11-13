@@ -292,6 +292,34 @@ class PingCommand : public Command {
   }
 } pingCmd;
 
+class DataCheckCommand : public Command {
+ public:
+  DataCheckCommand() : Command("checkdata", "tF") {}
+
+  ssize_t arity() const {
+    return -1;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto server = sess->getServerEntry();
+    int64_t containData = server->containData() ? 1 : 0;
+    return Command::fmtLongLong(containData);
+  }
+} dataCheckCmd;
+
+
 class EchoCommand : public Command {
  public:
   EchoCommand() : Command("echo", "F") {}

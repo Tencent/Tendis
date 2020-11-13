@@ -630,8 +630,11 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
   if (isMyMaster) {
     auto masterIp = node->getNodeIp();
     auto masterPort = node->getPort();
-    if (_server->getReplManager()->getMasterHost() != masterIp ||
-        _server->getReplManager()->getMasterPort() != masterPort) {
+    auto replMgr = _server->getReplManager();
+
+    if (replMgr->isSlaveOfSomeone() &&
+        (replMgr->getMasterHost() != masterIp ||
+         replMgr->getMasterPort() != masterPort)) {
       auto s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         return false;
@@ -910,7 +913,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
    *    to replicate to the new slots owner. */
   if (needReconfigure) {
     serverLog(LL_WARNING,
-              "Configuration change detected"
+              "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
     Status s;
@@ -918,14 +921,15 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     if (masterNotFail) {
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
-        LOG(ERROR) << "set myself master";
+        LOG(ERROR) << "set myself master fail" << s.toString();
       }
     }
     /* NOTE(wayenchen) slave should not full sync when set new master*/
     if (!inMigrateTask && (slaveIsNotFullSync || isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
-        LOG(ERROR) << "set newmaster fail";
+        LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
+                   << "fail:" << s.toString();
       }
     }
   } else if (dirty_slots_count && !inMigrateTask) {
@@ -1305,12 +1309,18 @@ Expected<std::string> ClusterState::getNodeInfo(CNodePtr n) {
   if (!n->nodeIsMaster()) {
     return {ErrorCodes::ERR_WRONG_TYPE, "node is not master!"};
   }
-  std::bitset<CLUSTER_SLOTS> slots = n->getSlots();
+
   // if node fail do what? mark fail flag
   std::string flags = representClusterNodeFlags(n->getFlags());
-  std::string slotStr = bitsetStrEncode(slots);
-  slotStr.erase(slotStr.begin());
-  slotStr.erase(slotStr.end() - 1);
+  std::bitset<CLUSTER_SLOTS> slots = n->getSlots();
+  std::string slotStr;
+  if (slots.count() == 0) {
+    slotStr = "contain no slots";
+  } else {
+    slotStr = bitsetStrEncode(slots);
+    slotStr.erase(slotStr.begin());
+    slotStr.erase(slotStr.end() - 1);
+  }
 
   std::stringstream stream;
   stream << "slot:" << slotStr << "\n";
@@ -1511,7 +1521,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
-
+  
   s = _server->getReplManager()->replicationSetMaster(
     node->getNodeIp(), node->getPort(), false);
   if (!s.ok()) {
@@ -2066,6 +2076,7 @@ void ClusterState::resetManualFailover() {
 
 void ClusterState::resetManualFailoverNoLock() {
   if (isClientBlock()) {
+    LOG(INFO) << "reset manual failover, lock should release";
     setClientUnBlock();
     INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
   }
@@ -2557,12 +2568,12 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   Status s;
   s = _server->getReplManager()->replicationUnSetMaster();
   if (!s.ok()) {
-    LOG(ERROR) << "replication set master fail on node";
+    LOG(ERROR) << "replication set master fail on node" << s.toString();
     return s;
   }
   s = clusterFailoverReplaceYourMasterMeta();
   if (!s.ok()) {
-    LOG(FATAL) << "replace master meta update fail";
+    LOG(ERROR) << "replace master meta update fail" << s.toString();
     return s;
   }
   /* Pong all the other nodes so that they can update the state
@@ -3572,7 +3583,7 @@ Status ClusterManager::clusterReset(uint16_t hard) {
   /* Forget all the nodes, but myself. */
   s = _clusterState->forgetNodes();
   if (!s.ok()) {
-    LOG(ERROR) << "forget nodes fail";
+    LOG(ERROR) << "forget nodes fail" << s.toString();
     return s;
   }
   /* Delete all the nodes meta, but myself. */
@@ -4133,16 +4144,7 @@ void ClusterState::cronCheckFailState() {
       clusterSendPing((*iter)->getSession(), ClusterMsg::Type::PING, offset);
     }
   }
-  /* If we are a slave node but the replication is still turned off,
-   * enable it if we know the address of our master and it appears to
-   * be up. */
-  if (isMyselfSlave() && _server->getReplManager()->getMasterHost() == "" &&
-      getMyMaster() && getMyMaster()->nodeHasAddr()) {
-    LOG(WARNING) << "replicationSetMaster of node:"
-                 << _myself->getMaster()->getNodeName();
-    _server->getReplManager()->replicationSetMaster(
-      _myself->getMaster()->getNodeIp(), _myself->getMaster()->getPort());
-  }
+ 
   /* Abort a manual failover if the timeout is reached. */
   manualFailoverCheckTimeout();
 
@@ -4155,7 +4157,7 @@ void ClusterState::cronCheckFailState() {
       LOG(INFO) << "node" << getMyselfName() << "vote success:";
       auto s2 = clusterFailoverReplaceYourMaster();
       if (!s2.ok()) {
-        LOG(ERROR) << "replace master fail";
+        LOG(ERROR) << "replace master fail" << s2.toString();
       }
     }
     /* If there are orphaned slaves, and we are a slave among the masters
@@ -4171,6 +4173,49 @@ void ClusterState::cronCheckFailState() {
 
   if (updateState || _state == ClusterHealth::CLUSTER_FAIL)
     clusterUpdateState();
+}  // namespace tendisplus
+
+
+void ClusterState::cronCheckReplicate() {
+ /* If we are a slave node but the replication is still turned off,
+   * enable it if we know the address of our master and it appears to
+   * be up. */
+  bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
+
+  if (isMyselfSlave() && !isSlaveOfNode &&
+      _server->getReplManager()->getMasterHost() == "" && getMyMaster() &&
+      getMyMaster()->nodeHasAddr()) {
+    LOG(WARNING) << "replicationSetMaster of node:"
+                 << _myself->getMaster()->getNodeName();
+    _server->getReplManager()->replicationSetMaster(
+      _myself->getMaster()->getNodeIp(), _myself->getMaster()->getPort());
+  }
+
+  if (isMyselfSlave() && getMyMaster()) {
+    auto masterIp = _myself->getMaster()->getNodeIp();
+    auto masterPort = _myself->getMaster()->getPort();
+    LOG(INFO) << "master ip 1:" <<  masterIp <<  "master port1:" << masterPort 
+             << "replication master:" << _server->getReplManager()->getMasterHost() << ":" << _server->getReplManager()->getMasterPort() ;
+     /* If we are a slave node but the replication info is error ,
+      fix it by change replication target*/
+    if (_server->getReplManager()->getMasterHost() != masterIp ||
+        _server->getReplManager()->getMasterPort() != masterPort) {
+
+      LOG(WARNING) << "change the replication target to:" << masterIp
+                   << masterPort;
+      Status s = _server->getReplManager()->replicationUnSetMaster();
+      if (!s.ok()) {
+         LOG(ERROR) << "unset old master fail" << s.toString();
+      } else {
+        s =
+          _server->getReplManager()->replicationSetMaster(masterIp, masterPort);
+        if (!s.ok()) {
+          LOG(ERROR) << "set new master fail:" << s.toString();
+        }
+      }
+    }
+  }
+
 }
 
 void ClusterState::clusterUpdateState() {
@@ -4205,8 +4250,8 @@ void ClusterState::clusterUpdateState() {
           DLOG(ERROR) << "clusterstate turn to fail: slot " << j
                       << " belong to no node";
         } else {
-          LOG(ERROR) << "state turn fail: node" << owner->getNodeName()
-                     << "is marked as fail on slot:" << j;
+          DLOG(ERROR) << "state turn fail: node" << owner->getNodeName()
+                      << "is marked as fail on slot:" << j;
         }
         new_state = ClusterHealth::CLUSTER_FAIL;
         break;
@@ -4290,9 +4335,14 @@ void ClusterState::setMfStart() {
 
 Status ClusterState::clusterBlockMyself(uint64_t locktime) {
   if (isClientBlock()) {
-    LOG(WARNING) << "aleady block!";
+    LOG(WARNING) << "already block!";
     setClientUnBlock();
     INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
+  }
+  if (_manualLockThead != nullptr) {
+    LOG(WARNING) << "maual lock thread is not nullptr";
+    _manualLockThead->detach();
+    _manualLockThead.reset();
   }
   auto exptLockList = clusterLockMySlots();
   if (!exptLockList.ok()) {
@@ -4300,6 +4350,7 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
                << exptLockList.status().toString();
     return exptLockList.status();
   }
+
   _manualLockThead = std::make_unique<std::thread>(
     [this](uint64_t time, std::list<std::unique_ptr<ChunkLock>>&& locklist) {
       std::unique_lock<std::mutex> lk(_failMutex);
@@ -4308,7 +4359,7 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     },
     locktime,
     std::move(exptLockList.value()));
-
+    
   return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
 }
 
@@ -4381,8 +4432,11 @@ void ClusterManager::controlRoutine() {
      * ping one random node every second. */
     if (!(iteration++ % 10)) {
       _clusterState->cronPingSomeNodes();
+      _clusterState->cronCheckReplicate();
     }
+
     _clusterState->cronCheckFailState();
+
     std::this_thread::sleep_for(100ms);
   }
 }

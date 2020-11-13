@@ -41,7 +41,7 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_FAIL_UNDO_TIME_ADD 10        // Some additional time.
 #define CLUSTER_FAILOVER_DELAY 5             // Seconds
 #define CLUSTER_DEFAULT_MIGRATION_BARRIER 1
-#define CLUSTER_MF_TIMEOUT 5000  // Milliseconds to do a manual failover.
+#define CLUSTER_MF_TIMEOUT 100  // Milliseconds to do a manual failover.
 #define CLUSTER_MF_PAUSE_MULT 2  // Master pause manual failover mult.
 #define CLUSTER_SLAVE_MIGRATION_DELAY 5000  // Delay for slave migration.
 
@@ -665,6 +665,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void cronRestoreSessionIfNeeded();
   void cronPingSomeNodes();
   void cronCheckFailState();
+  void cronCheckReplicate();
 
   std::string clusterGenNodesDescription(uint16_t filter, bool simple);
   std::string clusterGenNodeDescription(CNodePtr n, bool simple = false);
@@ -891,6 +892,7 @@ class ClusterManager {
   uint64_t countKeysInSlot(uint32_t slot);
   std::vector<std::string> getKeyBySlot(uint32_t slot, uint32_t count);
   bool emptySlot(uint32_t slot);
+  Status clusterDelNodeMeta(const std::string& key);
 
  protected:
   void controlRoutine();
@@ -909,7 +911,6 @@ class ClusterManager {
 
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
-  Status clusterDelNodeMeta(const std::string& key);
   Status clusterDelNodesMeta();
 
   bool clusterMetaExist(const std::string& key);

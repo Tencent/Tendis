@@ -420,6 +420,13 @@ class ClusterCommand : public Command {
       }
       clusterState->clusterBlacklistAddNode(n);
       clusterState->clusterDelNode(n, true);
+
+      auto s = svr->getClusterMgr()->clusterDelNodeMeta(args[2]);
+      if (!s.ok()) {
+        LOG(ERROR) << "delete metadata of :" << args[2] << "fail when forget nodes";
+        return {ErrorCodes::ERR_CLUSTER,
+                "delete metadata fail"};
+      }
       clusterState->clusterUpdateState();
 
       return Command::fmtOK();
@@ -546,9 +553,10 @@ class ClusterCommand : public Command {
       bool takeover = false;
 
       if (argSize == 3) {
-        if (args[2] == "force") {
+        const std::string arg2 = toLower(args[2]);
+        if (arg2 == "force") {
           force = true;
-        } else if (args[2] == "takeover") {
+        } else if (arg2 == "takeover") {
           takeover = true;
           force = true;
         } else {
