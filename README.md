@@ -68,12 +68,13 @@ DISK:NVMe SSD
 tendisplus: workers = 56
 cmd example: ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set __key__ __data__" --key-prefix="kv_" --command-key-pattern=R --random-data --data-size=128 --test-time=1800
 latency: 99.9% < 17ms
-![image.png](/uploads/D5E7C12D017E438CB2898148F4F582B2/image.png)
+![image.png](/uploads/999EF5425F2A4BC89590122B96B70083/image.png)
+
 
 #### 2. QPS on different payload
 tendisplus: workers = 56, ./memtier_benchmark -t 20 -c 50
 latency: 99.9% < 17ms
-![image.png](/uploads/D0684E6F5E2845BBB6745FA84B4443F2/image.png)
+![image.png](/uploads/C33B0FAFC4584E2BB033D431B4F3FC11/image.png)
 
 ## License
 Tencent is pleased to support the open source community by making tendis available. 
