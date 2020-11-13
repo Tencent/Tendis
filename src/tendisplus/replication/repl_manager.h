@@ -32,6 +32,7 @@ struct SPovStatus {
   uint64_t sessionId;
   SCLOCK::time_point nextSchedTime;
   SCLOCK::time_point lastSyncTime;
+  uint64_t lastBinlogTs;    // in milliseconds
 };
 
 struct MPovStatus {
@@ -39,6 +40,8 @@ struct MPovStatus {
   uint32_t dstStoreId = 0;
   // the greatest id that has been applied
   uint64_t binlogPos = 0;
+  // the binlog timestamp that has been applied(milliseconds)
+  uint64_t binlogTs = 0;
   SCLOCK::time_point nextSchedTime;
   SCLOCK::time_point lastSendBinlogTime;
   std::shared_ptr<BlockingTcpClient> client;

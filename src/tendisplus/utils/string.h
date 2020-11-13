@@ -26,6 +26,7 @@ std::string dtos(const double d);
 std::string ldtos(const long double d, bool humanfriendly);
 std::string itos(int32_t d);
 std::string uitos(uint32_t d);
+std::string ultos(uint64_t d);
 
 std::string hexlify(const std::string&);
 Expected<std::string> unhexlify(const std::string&);

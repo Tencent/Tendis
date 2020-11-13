@@ -373,7 +373,7 @@ class ReplLogValueEntryV2 {
 
  private:
   ReplOp _op;
-  uint64_t _timestamp;
+  uint64_t _timestamp;    // in milliseconds
   std::string _key;
   std::string _val;
 };

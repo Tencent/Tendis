@@ -1244,7 +1244,7 @@ struct ReplMPovStatus {
   uint64_t binlogpos = 0;
   uint64_t clientId = 0;
   string state;
-  SCLOCK::time_point lastSendBinlogTime;
+  uint64_t lastBinlogTs = 0;
   string slave_listen_ip;
   uint16_t slave_listen_port = 0;
 };
@@ -1328,10 +1328,10 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
           pstatus[key].slave_listen_ip = iter.second->slave_listen_ip;
           pstatus[key].slave_listen_port = iter.second->slave_listen_port;
           pstatus[key].state = "online";
-          pstatus[key].lastSendBinlogTime = iter.second->lastSendBinlogTime;
+          pstatus[key].lastBinlogTs = iter.second->binlogTs;
         }
-        if (iter.second->lastSendBinlogTime < pstatus[key].lastSendBinlogTime) {
-          pstatus[key].lastSendBinlogTime = iter.second->lastSendBinlogTime;
+        if (iter.second->binlogTs < pstatus[key].lastBinlogTs) {
+          pstatus[key].lastBinlogTs = iter.second->binlogTs;
         }
         pstatus[key].binlogpos += iter.second->binlogPos;
       }
@@ -1360,7 +1360,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
          << ",port=" << iter.second.slave_listen_port
          << ",state=" << iter.second.state
          << ",offset=" << iter.second.binlogpos << ",lag="
-         << (sinceEpoch() - sinceEpoch(iter.second.lastSendBinlogTime))
+         << (msSinceEpoch() - iter.second.lastBinlogTs) / 1000
          << "\r\n";
     }
   }
@@ -1379,8 +1379,9 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",src_store_id=" << _syncMeta[i]->syncFromId;
       ss << ",state=" << state;
       ss << ",binlog_pos=" << _syncMeta[i]->binlogId;
+      // lag in seconds
       ss << ",lag="
-         << (sinceEpoch() - sinceEpoch(_syncStatus[i]->lastSyncTime));
+         << (msSinceEpoch() - _syncStatus[i]->lastBinlogTs) / 1000;
       if (_syncMeta[i]->replState == ReplState::REPL_ERR) {
         ss << ",error=" << _syncMeta[i]->replErr;
       }
@@ -1405,9 +1406,8 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",state="
          << "online";  // TODO(vinchen)
       ss << ",binlog_pos=" << iter->second->binlogPos;
-      ss << ",lag="
-         << (nsSinceEpoch() - nsSinceEpoch(iter->second->lastSendBinlogTime)) /
-          1000000000;
+      // lag in seconds
+      ss << ",lag=" << (msSinceEpoch() - iter->second->binlogTs) / 1000;
       ss << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
       ss << "\r\n";
     }
@@ -1422,9 +1422,9 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",dest_store_id=" << iter->second->storeid;
       ss << ",state=" << state;
       ss << ",binlog_pos=" << iter->second->binlogPos;
+      // duration in seconds
       ss << ",duration="
-         << (nsSinceEpoch() - nsSinceEpoch(iter->second->startTime)) /
-          1000000000;
+         << (sinceEpoch() - sinceEpoch(iter->second->startTime));
       ss << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
       ss << "\r\n";
     }

@@ -777,7 +777,7 @@ class RestoreBinlogCommandV2 : public Command {
     }
 
     sess->getCtx()->setReplOnly(true);
-    Expected<uint64_t> ret = applySingleTxnV2(
+    auto ret = applySingleTxnV2(
       sess, storeId, key, value, BinlogApplyMode::KEEP_BINLOG_ID);
     if (!ret.ok()) {
       return ret.status();
@@ -992,7 +992,7 @@ class BinlogHeartbeatCommand : public Command {
   BinlogHeartbeatCommand() : Command("binlog_heartbeat", "a") {}
 
   ssize_t arity() const {
-    return 2;
+    return -2;
   }
 
   int32_t firstkey() const {
@@ -1007,14 +1007,27 @@ class BinlogHeartbeatCommand : public Command {
     return 0;
   }
 
-  // binlog_heartbeat storeId
+  // binlog_heartbeat storeId [binlogts]
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
 
     uint32_t storeId;
+    uint64_t binlogTs = 0;
+
+    if (sess->getArgs().size() != 2 && sess->getArgs().size() != 3) {
+      // Forward compatible: before 2.0.6, there is no `binlogts` in
+      // binlog_heartbeat
+      return {ErrorCodes::ERR_PARSEOPT, "invalid parameter count"};
+    }
+
     Expected<uint64_t> exptStoreId = ::tendisplus::stoul(args[1]);
-    if (!exptStoreId.ok()) {
-      return exptStoreId.status();
+    RET_IF_ERR_EXPECTED(exptStoreId);
+
+    if (sess->getArgs().size() > 2) {
+      auto eBinlogts = ::tendisplus::stoul(args[2]);
+      RET_IF_ERR_EXPECTED(eBinlogts);
+
+      binlogTs = eBinlogts.value();
     }
 
     auto svr = sess->getServerEntry();
@@ -1034,7 +1047,8 @@ class BinlogHeartbeatCommand : public Command {
       return expdb.status();
     }
 
-    Status s = replMgr->applyRepllogV2(sess, storeId, "", "");
+    Status s =
+      replMgr->applyRepllogV2(sess, storeId, "", ::tendisplus::ultos(binlogTs));
     if (!s.ok()) {
       return s;
     }

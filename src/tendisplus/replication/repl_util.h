@@ -33,7 +33,12 @@ std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
                                                 ServerEntry* svr);
 
 
-Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
+struct BinlogResult {
+  uint64_t binlogId = 0;
+  uint64_t binlogTs = 0;
+};
+
+Expected<BinlogResult> masterSendBinlogV2(BlockingTcpClient*,
                                       uint32_t storeId,
                                       uint32_t dstStoreId,
                                       uint64_t binlogPos,
@@ -42,12 +47,11 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient*,
                                       const std::shared_ptr<ServerParams> cfg);
 
 
-Expected<uint64_t> applySingleTxnV2(Session* sess,
-                                    uint32_t storeId,
-                                    const std::string& logKey,
-                                    const std::string& logValue,
-                                    BinlogApplyMode mode);
-
+Expected<BinlogResult> applySingleTxnV2(Session* sess,
+                                        uint32_t storeId,
+                                        const std::string& logKey,
+                                        const std::string& logValue,
+                                        BinlogApplyMode mode);
 
 Status sendWriter(BinlogWriter* writer,
                   BlockingTcpClient*,
