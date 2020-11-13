@@ -58,6 +58,22 @@ $ ./build/bin/tendisplus tendisplus.conf
 $ sh ./testall.sh
 ```
 
+## Performance
+
+#### Hardware
+CPU:2.50 GHz,48 core
+DISK:NVMe SSD
+
+#### 1. Commands QPS
+tendisplus: workers = 56, ./memtier_benchmark -t 20 -c 50 --data-size=128
+latency: 99.9% < 17ms
+![image.png](/uploads/D5E7C12D017E438CB2898148F4F582B2/image.png)
+
+#### 2. QPS on different payload
+tendisplus: workers = 56, ./memtier_benchmark -t 20 -c 50
+latency: 99.9% < 17ms
+![image.png](/uploads/D0684E6F5E2845BBB6745FA84B4443F2/image.png)
+
 ## License
 Tencent is pleased to support the open source community by making tendis available. 
 
