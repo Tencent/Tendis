@@ -83,7 +83,8 @@ cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --key-minimum=1 --key-maximum=500000000 --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="get \_\_key__" --key-prefix="kv_" --key-minimum=1 --key-maximum=500000000 --test-time=1800
 latency: 99.9% < 17ms
-![image.png](/uploads/C673D730ABEC4A5CB87D071603FA1FFA/image.png)
+![image.png](/uploads/8F62A67F56F044E6BF0657C90E589EE0/image.png)
+
 
 ## License
 Tencent is pleased to support the open source community by making tendis available. 
