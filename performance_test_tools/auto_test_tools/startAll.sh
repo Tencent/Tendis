@@ -13,6 +13,10 @@ function startQpsSh() {
     cd $curDir
 }
 
+function stopBenchmark() {
+    ps axu |grep memtier_benchmark |grep $USER |awk '{print $2}'|xargs kill -9 >/dev/null 2>&1
+}
+
 function stopServer() {
     $redisClient -h $ip -p $port $passwdString shutdown
     sleep 5
@@ -80,7 +84,7 @@ function benchMark() {
     then
         #cmdStr="--command=\"zadd myzset __key__ __data__\" --key-prefix=\"\" --key-minimum=1 --key-maximum=100000000 --random-data --data-size=$valueLen"
         # $valueLen is useless
-        cmdStr="--command=\"zadd __data__ __key__ __key__\" --key-prefix=\"\" --key-minimum=1 --key-maximum=100000000 --random-data --data-size=3"
+        cmdStr="--command=\"zadd __key__ __key__ __data__\" --key-prefix=\"\" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128"
     elif [ $cmd == "hset" ]
     then
         #cmdStr="--command=\"hset myhash __key__ __data__\" --command-key-pattern=R --random-data --data-size=$valueLen"
@@ -106,10 +110,17 @@ function benchMark() {
 echo ================================================
 echo `date "+%Y-%m-%d %H:%M:%S"` startAll.sh begin
 
-startQpsSh
+ulimit -n 100000
+ulimit -c unlimited
 
-rm qps_*.log
-rm memtier_*.log
+startQpsSh
+stopBenchmark
+
+#rm qps_*.log
+#rm memtier_*.log
+time=`date "+%Y-%m-%d_%H:%M:%S"`
+mmv qps_\* ${time}_qps_\#1
+mmv memtier_\* ${time}_memtier_\#1
 
 firstValueLen=${valueLenList[0]}
 for executorNum in ${executorNumList[@]}
