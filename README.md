@@ -63,6 +63,7 @@ $ sh ./testall.sh
 #### Hardware
 CPU:2.50 GHz,48 core
 DISK:NVMe SSD
+MEM:192GB
 
 #### 1. Commands QPS
 tendisplus: workers = 56
