@@ -45,7 +45,7 @@ std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
   return std::move(client);
 }
 
-Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
+Expected<BinlogResult> masterSendBinlogV2(BlockingTcpClient* client,
                                       uint32_t storeId,
                                       uint32_t dstStoreId,
                                       uint64_t binlogPos,
@@ -54,7 +54,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
                                       const std::shared_ptr<ServerParams> cfg) {
   uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
   size_t suggestBytes = svr->getParams()->bingLogSendBytes;
-
 
   LocalSessionGuard sg(svr.get());
   sg.getSession()->setArgs({"mastersendlog",
@@ -76,11 +75,12 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     return ptxn.status();
   }
 
+  BinlogResult br;
+
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
   std::unique_ptr<RepllogCursorV2> cursor =
     txn->createRepllogCursorV2(binlogPos + 1);
 
-  uint64_t binlogId = binlogPos;
   BinlogWriter writer(suggestBytes, suggestBatch);
   while (true) {
     Expected<ReplLogRawV2> explog = cursor->next();
@@ -107,8 +107,9 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
                   << storeId;
       }
 
+      br.binlogId = explog.value().getBinlogId();
+      br.binlogTs = explog.value().getTimestamp();
 
-      binlogId = explog.value().getBinlogId();
       if (writer.writeRepllogRaw(explog.value()) ||
           writer.getFlag() == BinlogFlag::FLUSH ||
           writer.getFlag() == BinlogFlag::MIGRATE) {
@@ -125,16 +126,20 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
     }
   }
 
-  // TODO(wayenchen)  takenliu add, call sendWriter(), avoid code copy.
   std::stringstream ss2;
   if (writer.getCount() == 0) {
+    br.binlogId = binlogPos;
+    br.binlogTs = 0;
+
     if (!needHeartBeart) {
-      return binlogPos;
+      return br;
     }
     // keep the client alive
-    Command::fmtMultiBulkLen(ss2, 2);
+    Command::fmtMultiBulkLen(ss2, 3);
     Command::fmtBulk(ss2, "binlog_heartbeat");
     Command::fmtBulk(ss2, std::to_string(dstStoreId));
+    /* add timestamp which binlog_heartbeat created */
+    Command::fmtBulk(ss2, std::to_string(msSinceEpoch()));
   } else {
     // TODO(vinchen): too more copy
     Command::fmtMultiBulkLen(ss2, 5);
@@ -156,7 +161,6 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
   }
 
   uint32_t secs = cfg->timeoutSecBinlogWaitRsp;
-  // TODO(vinchen): NO NEED TO READ OK?
   Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
   if (!exptOK.ok()) {
     LOG(WARNING) << "store:" << storeId << " dst Store:" << dstStoreId
@@ -170,14 +174,14 @@ Expected<uint64_t> masterSendBinlogV2(BlockingTcpClient* client,
   }
 
   if (writer.getCount() == 0) {
-    return binlogPos;
+    return br;
   } else {
-    INVARIANT_D(binlogPos + writer.getCount() <= binlogId);
-    return binlogId;
+    INVARIANT_D(binlogPos + writer.getCount() <= br.binlogId);
+    return br;
   }
 }
 
-Expected<uint64_t> applySingleTxnV2(Session* sess,
+Expected<BinlogResult> applySingleTxnV2(Session* sess,
                                     uint32_t storeId,
                                     const std::string& logKey,
                                     const std::string& logValue,
@@ -266,7 +270,11 @@ Expected<uint64_t> applySingleTxnV2(Session* sess,
   // NOTE(vinchen): store the binlog time spov when txn commited.
   // only need to set the last timestamp
   store->setBinlogTime(timestamp);
-  return binlogId;
+
+  BinlogResult br;
+  br.binlogTs = timestamp;
+  br.binlogId = binlogId;
+  return br;
 }
 
 Status sendWriter(BinlogWriter* writer,

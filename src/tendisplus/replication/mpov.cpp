@@ -104,11 +104,11 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     needHeartbeat = true;
   }
 
-  Expected<uint64_t> newPos = masterSendBinlogV2(
+  auto ret = masterSendBinlogV2(
     client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
-  if (!newPos.ok()) {
+  if (!ret.ok()) {
     LOG(WARNING) << "masterSendBinlog to client:" << client->getRemoteRepr()
-                 << " failed:" << newPos.status().toString();
+                 << " failed:" << ret.status().toString();
     std::lock_guard<std::mutex> lk(_mutex);
 #if defined(WIN32) && _MSC_VER > 1900
     if (_pushStatus[storeId][clientId] != nullptr) {
@@ -119,7 +119,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     _pushStatus[storeId].erase(clientId);
     return;
   } else {
-    if (newPos.value() > binlogPos) {
+    if (ret.value().binlogId > binlogPos) {
       nextSched = SCLOCK::now();
       lastSend = nextSched;
     } else {
@@ -129,7 +129,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
       }
     }
     std::lock_guard<std::mutex> lk(_mutex);
-    _pushStatus[storeId][clientId]->binlogPos = newPos.value();
+    _pushStatus[storeId][clientId]->binlogPos = ret.value().binlogId;
+    _pushStatus[storeId][clientId]->binlogTs = ret.value().binlogTs;
   }
 }
 
@@ -266,6 +267,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
       new MPovStatus{false,
                      static_cast<uint32_t>(dstStoreId),
                      binlogPos,
+                     0,
                      SCLOCK::now(),
                      SCLOCK::time_point::min(),
                      std::move(client),
@@ -277,6 +279,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
       new MPovStatus{false,
                      static_cast<uint32_t>(dstStoreId),
                      binlogPos,
+                     0,
                      SCLOCK::now(),
                      SCLOCK::time_point::min(),
                      std::move(client),

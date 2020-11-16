@@ -1,4 +1,5 @@
 #include <string.h>
+#include <inttypes.h>
 
 #include <algorithm>
 #include <string>
@@ -160,6 +161,12 @@ std::string uitos(uint32_t d) {
   return std::string(dbuf, dlen);
 }
 
+std::string ultos(uint64_t d) {
+  char dbuf[128];
+  uint32_t dlen = snprintf(dbuf, sizeof(dbuf), "%" PRIu64, d);
+  return std::string(dbuf, dlen);
+}
+
 std::string hexlify(const std::string& s) {
   static const char* lookup = "0123456789ABCDEF";
   std::string result;
@@ -249,7 +256,7 @@ std::string trim(const std::string& str) {
   return trim_left(trim_right(str));
 }
 
-std::string& replaceAll(std::string& str,
+std::string& replaceAll(std::string& str,         // NOLINT
                         const std::string& old_value,
                         const std::string& new_value) {
   for (std::string::size_type pos(0); pos != std::string::npos;
