@@ -74,7 +74,6 @@ cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="sadd \_\_key__ \_\_data__" --key-prefix="set_" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="zadd \_\_key__ \_\_key__ \_\_data__" --key-prefix="" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="hset \_\_key__ \_\_data__ \_\_data__" --key-prefix="hash_" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
-latency: 99.9% < 17ms
 ![image.png](/uploads/9E5C0BE69C29483584A689EFAB9DACC0/image.png)
 
 #### 2. QPS on different payload
@@ -82,9 +81,7 @@ tendisplus: workers = 56
 cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --command-key-pattern=R --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="get \_\_key__" --key-prefix="kv_" --command-key-pattern=R --test-time=1800
-latency: 99.9% < 17ms
-![image.png](/uploads/8F62A67F56F044E6BF0657C90E589EE0/image.png)
-
+![image.png](/uploads/B458C03FE6AF4294A647098C56033B24/image.png)
 
 ## License
 Tencent is pleased to support the open source community by making tendis available. 
