@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 // Copyright [2017] <eliotwang, deyukong>
 #ifndef SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_
 #define SRC_TENDISPLUS_SERVER_INDEX_MANAGER_H_

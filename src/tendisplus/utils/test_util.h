@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 // Copyright [2019] <eliotwang@tencent.com>
 #ifndef SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
 #define SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
