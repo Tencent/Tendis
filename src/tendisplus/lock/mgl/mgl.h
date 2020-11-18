@@ -32,6 +32,7 @@ class MGLock {
     LockMode getMode() const { return _mode; }
     LockRes getStatus() const;
     const std::string& getTarget() const { return _target; }
+    std::string toString() const;
 
  private:
     friend class LockSchedCtx;
@@ -52,6 +53,7 @@ class MGLock {
     LockRes _res;
     std::list<MGLock*>::iterator _resIter;
     MGLockMgr* _lockMgr;
+    uint64_t _threadId;
 
     static std::atomic<uint64_t> _idGen;
     static std::list<MGLock*> _dummyList;

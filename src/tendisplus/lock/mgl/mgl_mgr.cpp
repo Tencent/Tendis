@@ -144,6 +144,19 @@ void LockSchedCtx::decRunningRef(LockMode mode) {
     }
 }
 
+std::string LockSchedCtx::toString() {
+  std::stringstream ss;
+  for (auto i : _runningList) {
+    ss << "running: {" << i->toString() << "}\r\n";
+  }
+
+  for (auto i : _pendingList) {
+    ss << "pending: {" << i->toString() << "}\r\n";
+  }
+
+  return ss.str();
+}
+
 MGLockMgr& MGLockMgr::getInstance() {
     static MGLockMgr mgr;
     return mgr;
@@ -176,10 +189,23 @@ void MGLockMgr::unlock(MGLock *core) {
     auto iter = shard.map.find(core->getTarget());
     INVARIANT(iter != shard.map.end());
     bool empty = iter->second.unlock(core);
-    if(empty) {
+    if (empty) {
         shard.map.erase(iter);
     }
     return;
+}
+
+std::string MGLockMgr::toString() {
+  std::stringstream ss;
+  for (uint32_t i = 0; i < SHARD_NUM; i++) {
+    LockShard& shard = _shards[i];
+
+    std::lock_guard<std::mutex> lk(shard.mutex);
+    for (auto& iter : shard.map) {
+      ss << iter.second.toString();
+    }
+  }
+  return ss.str();
 }
 
 }  // namespace mgl

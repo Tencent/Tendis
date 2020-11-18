@@ -270,14 +270,11 @@ std::string& replaceAll(std::string& str,         // NOLINT
 }
 
 uint64_t getCurThreadId() {
-  // NOTE(takenliu): std::ostringstream has performance issue in multi thread,
-  //     because it will use std::locale()
-  std::ostringstream oss;
-  oss << std::this_thread::get_id();
-  std::string stid = oss.str();
-  uint64_t tid = std::stoull(stid);
-
-  return tid;
+#ifdef _WIN32
+  return 0;
+#else
+  return pthread_self();
+#endif
 }
 
 

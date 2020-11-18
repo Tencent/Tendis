@@ -22,6 +22,7 @@ class LockSchedCtx {
     LockSchedCtx(LockSchedCtx&&) = default;
     void lock(MGLock* core);
     bool unlock(MGLock* core);
+    std::string toString();
  private:
     void schedPendingLocks();
     void incrPendingRef(LockMode mode);
@@ -65,6 +66,7 @@ class MGLockMgr {
     void lock(MGLock* core);
     void unlock(MGLock* core);
     static MGLockMgr& getInstance();
+    std::string toString();
  private:
     static constexpr size_t SHARD_NUM = 32;
     LockShard _shards[SHARD_NUM];
