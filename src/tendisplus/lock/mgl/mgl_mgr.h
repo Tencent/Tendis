@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <mutex>  // NOLINT
 #include <string>
+#include <set>
 
 #include "tendisplus/lock/mgl/lock_defines.h"
 
@@ -18,23 +19,28 @@ class MGLock;
 // not thread safe, protected by LockShard's mutex
 class LockSchedCtx {
  public:
-    LockSchedCtx();
-    LockSchedCtx(LockSchedCtx&&) = default;
-    void lock(MGLock* core);
-    bool unlock(MGLock* core);
-    std::string toString();
+  LockSchedCtx();
+  LockSchedCtx(LockSchedCtx&&) = default;
+  void lock(MGLock* core);
+  bool unlock(MGLock* core);
+  std::string toString();
+
  private:
-    void schedPendingLocks();
-    void incrPendingRef(LockMode mode);
-    void incrRunningRef(LockMode mode);
-    void decPendingRef(LockMode mode);
-    void decRunningRef(LockMode mode);
-    uint16_t _runningModes;
-    uint16_t _pendingModes;
-    std::vector<uint16_t> _runningRefCnt;
-    std::vector<uint16_t> _pendingRefCnt;
-    std::list<MGLock*> _runningList;
-    std::list<MGLock*> _pendingList;
+  void schedPendingLocks();
+  void incrPendingRef(LockMode mode);
+  void incrRunningRef(LockMode mode);
+  void decPendingRef(LockMode mode);
+  void decRunningRef(LockMode mode);
+  uint16_t _runningModes;
+  uint16_t _pendingModes;
+  std::vector<uint16_t> _runningRefCnt;
+  std::vector<uint16_t> _pendingRefCnt;
+  std::list<MGLock*> _runningList;
+  std::list<MGLock*> _pendingList;
+#ifdef TENDIS_DEBUG
+  // one resource can only been locked one time for one thread
+  std::set<uint64_t> _threadIds;
+#endif
 };
 
 /* First come first lock
@@ -53,8 +59,8 @@ class LockSchedCtx {
 // hardware_destructive_interference_size requires quite high version
 // gcc. 128 should work for most cases
 struct alignas(128) LockShard {
-    std::mutex mutex;
-    std::unordered_map<std::string, LockSchedCtx> map;
+  std::mutex mutex;
+  std::unordered_map<std::string, LockSchedCtx> map;
 };
 
 // TODO(vinchen): now there is a warning here, because the MGLockMgr change from
@@ -62,14 +68,15 @@ struct alignas(128) LockShard {
 // warning C4316: tendisplus::mgl::MGLockMgr
 class MGLockMgr {
  public:
-    MGLockMgr() = default;
-    void lock(MGLock* core);
-    void unlock(MGLock* core);
-    static MGLockMgr& getInstance();
-    std::string toString();
+  MGLockMgr() = default;
+  void lock(MGLock* core);
+  void unlock(MGLock* core);
+  static MGLockMgr& getInstance();
+  std::string toString();
+
  private:
-    static constexpr size_t SHARD_NUM = 32;
-    LockShard _shards[SHARD_NUM];
+  static constexpr size_t SHARD_NUM = 32;
+  LockShard _shards[SHARD_NUM];
 };
 
 }  // namespace mgl

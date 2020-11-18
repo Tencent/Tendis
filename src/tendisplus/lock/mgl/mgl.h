@@ -33,6 +33,7 @@ class MGLock {
     LockRes getStatus() const;
     const std::string& getTarget() const { return _target; }
     std::string toString() const;
+    uint64_t getThreadId() const { return _threadId; }
 
  private:
     friend class LockSchedCtx;

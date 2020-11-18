@@ -103,11 +103,11 @@ std::string MGLock::toString() const {
   snprintf(buf,
            sizeof(buf),
            "id:%" PRIu64 " target:%s targetHash:%" PRIu64
-           " LockMode:%d LockRes:%d threadId:0x%" PRIx64,
+           " LockMode:%s LockRes:%d threadId:0x%" PRIx64,
            _id,
            _target.c_str(),
            _targetHash,
-           static_cast<int>(_mode),
+           lockModeRepr(_mode),
            static_cast<int>(_res),
            _threadId);
   return std::string(buf);
