@@ -45,13 +45,14 @@ std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
   return std::move(client);
 }
 
-Expected<BinlogResult> masterSendBinlogV2(BlockingTcpClient* client,
-                                      uint32_t storeId,
-                                      uint32_t dstStoreId,
-                                      uint64_t binlogPos,
-                                      bool needHeartBeart,
-                                      std::shared_ptr<ServerEntry> svr,
-                                      const std::shared_ptr<ServerParams> cfg) {
+Expected<BinlogResult> masterSendBinlogV2(
+  BlockingTcpClient* client,
+  uint32_t storeId,
+  uint32_t dstStoreId,
+  uint64_t binlogPos,
+  bool needHeartBeart,
+  std::shared_ptr<ServerEntry> svr,
+  const std::shared_ptr<ServerParams> cfg) {
   uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
   size_t suggestBytes = svr->getParams()->bingLogSendBytes;
 
@@ -182,10 +183,10 @@ Expected<BinlogResult> masterSendBinlogV2(BlockingTcpClient* client,
 }
 
 Expected<BinlogResult> applySingleTxnV2(Session* sess,
-                                    uint32_t storeId,
-                                    const std::string& logKey,
-                                    const std::string& logValue,
-                                    BinlogApplyMode mode) {
+                                        uint32_t storeId,
+                                        const std::string& logKey,
+                                        const std::string& logValue,
+                                        BinlogApplyMode mode) {
   auto svr = sess->getServerEntry();
   auto expdb =
     svr->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
@@ -193,6 +194,14 @@ Expected<BinlogResult> applySingleTxnV2(Session* sess,
     LOG(ERROR) << "getDb failed:" << expdb.status().toString();
     return expdb.status();
   }
+
+  if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
+    if (!sess->getCtx()->isReplOnly()) {
+      INVARIANT_D(0);
+      return {ErrorCodes::ERR_INTERNAL, "It is not a slave"};
+    }
+  }
+
   auto store = std::move(expdb.value().store);
   INVARIANT(store != nullptr);
   auto ptxn = store->createTransaction(sess);
