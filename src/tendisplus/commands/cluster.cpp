@@ -423,9 +423,9 @@ class ClusterCommand : public Command {
 
       auto s = svr->getClusterMgr()->clusterDelNodeMeta(args[2]);
       if (!s.ok()) {
-        LOG(ERROR) << "delete metadata of :" << args[2] << "fail when forget nodes";
-        return {ErrorCodes::ERR_CLUSTER,
-                "delete metadata fail"};
+        LOG(ERROR) << "delete metadata of :" << args[2]
+                   << "fail when forget nodes";
+        return {ErrorCodes::ERR_CLUSTER, "delete metadata fail"};
       }
       clusterState->clusterUpdateState();
 

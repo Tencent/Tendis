@@ -1428,7 +1428,6 @@ void ClusterState::clusterSaveNodes() {
   }
 }
 
-
 Status ClusterState::clusterSaveConfig() {
   std::lock_guard<myMutex> lk(_mutex);
   Status s = clusterSaveNodesNoLock();
@@ -1438,6 +1437,9 @@ Status ClusterState::clusterSaveConfig() {
 void ClusterState::setClientUnBlock() {
   _cv.notify_one();
   _isCliBlocked.store(false, std::memory_order_relaxed);
+  /*NOTE(wayenchen) thread should be detach */
+  _manualLockThead->detach();
+  _manualLockThead.reset();
 }
 
 Status ClusterState::forceFailover(bool force, bool takeover) {
@@ -1521,7 +1523,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
-  
+
   s = _server->getReplManager()->replicationSetMaster(
     node->getNodeIp(), node->getPort(), false);
   if (!s.ok()) {
@@ -4144,7 +4146,21 @@ void ClusterState::cronCheckFailState() {
       clusterSendPing((*iter)->getSession(), ClusterMsg::Type::PING, offset);
     }
   }
- 
+
+  /* If we are a slave node but the replication is still turned off,
+   * enable it if we know the address of our master and it appears to
+   * be up. */
+  bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
+
+  if (isMyselfSlave() && !isSlaveOfNode &&
+      _server->getReplManager()->getMasterHost() == "" && getMyMaster() &&
+      getMyMaster()->nodeHasAddr()) {
+    LOG(WARNING) << "replicationSetMaster of node:"
+                 << _myself->getMaster()->getNodeName();
+    _server->getReplManager()->replicationSetMaster(
+      _myself->getMaster()->getNodeIp(), _myself->getMaster()->getPort());
+  }
+
   /* Abort a manual failover if the timeout is reached. */
   manualFailoverCheckTimeout();
 
@@ -4177,35 +4193,22 @@ void ClusterState::cronCheckFailState() {
 
 
 void ClusterState::cronCheckReplicate() {
- /* If we are a slave node but the replication is still turned off,
-   * enable it if we know the address of our master and it appears to
-   * be up. */
-  bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
-
-  if (isMyselfSlave() && !isSlaveOfNode &&
-      _server->getReplManager()->getMasterHost() == "" && getMyMaster() &&
-      getMyMaster()->nodeHasAddr()) {
-    LOG(WARNING) << "replicationSetMaster of node:"
-                 << _myself->getMaster()->getNodeName();
-    _server->getReplManager()->replicationSetMaster(
-      _myself->getMaster()->getNodeIp(), _myself->getMaster()->getPort());
-  }
-
   if (isMyselfSlave() && getMyMaster()) {
     auto masterIp = _myself->getMaster()->getNodeIp();
     auto masterPort = _myself->getMaster()->getPort();
-    LOG(INFO) << "master ip 1:" <<  masterIp <<  "master port1:" << masterPort 
-             << "replication master:" << _server->getReplManager()->getMasterHost() << ":" << _server->getReplManager()->getMasterPort() ;
-     /* If we are a slave node but the replication info is error ,
-      fix it by change replication target*/
-    if (_server->getReplManager()->getMasterHost() != masterIp ||
-        _server->getReplManager()->getMasterPort() != masterPort) {
 
+    /* If we are a slave node but the replication info is error ,
+     fix it by change replication target*/
+    bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
+
+    if (isSlaveOfNode &&
+        (_server->getReplManager()->getMasterHost() != masterIp ||
+         _server->getReplManager()->getMasterPort() != masterPort)) {
       LOG(WARNING) << "change the replication target to:" << masterIp
                    << masterPort;
       Status s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
-         LOG(ERROR) << "unset old master fail" << s.toString();
+        LOG(ERROR) << "unset old master fail" << s.toString();
       } else {
         s =
           _server->getReplManager()->replicationSetMaster(masterIp, masterPort);
@@ -4215,7 +4218,6 @@ void ClusterState::cronCheckReplicate() {
       }
     }
   }
-
 }
 
 void ClusterState::clusterUpdateState() {
@@ -4359,7 +4361,7 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     },
     locktime,
     std::move(exptLockList.value()));
-    
+
   return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
 }
 

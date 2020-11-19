@@ -3,6 +3,7 @@
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 #include "tendisplus/lock/mgl/mgl.h"
 #include "tendisplus/lock/mgl/lock_defines.h"
+#include "tendisplus/commands/command.h"
 
 namespace tendisplus {
 namespace mgl {
@@ -145,12 +146,13 @@ void LockSchedCtx::decRunningRef(LockMode mode) {
 
 std::string LockSchedCtx::toString() {
   std::stringstream ss;
+
   for (auto i : _runningList) {
-    ss << "running: {" << i->toString() << "}\r\n";
+    ss << "running: {" << i->toString() << "}";
   }
 
   for (auto i : _pendingList) {
-    ss << "pending: {" << i->toString() << "}\r\n";
+    ss << "pending: {" << i->toString() << "}";
   }
 
   return ss.str();
@@ -194,15 +196,23 @@ void MGLockMgr::unlock(MGLock* core) {
 
 std::string MGLockMgr::toString() {
   std::stringstream ss;
-  for (uint32_t i = 0; i < SHARD_NUM; i++) {
-    LockShard& shard = _shards[i];
-
-    std::lock_guard<std::mutex> lk(shard.mutex);
-    for (auto& iter : shard.map) {
-      ss << iter.second.toString();
-    }
+  auto locklist = getLockList();
+  for (auto& vs : locklist) {
+    ss << vs;
   }
   return ss.str();
+}
+
+std::vector<std::string> MGLockMgr::getLockList() {
+  std::vector<std::string> list;
+  for (uint32_t i = 0; i < SHARD_NUM; i++) {
+    LockShard& shard = _shards[i];
+    std::lock_guard<std::mutex> lk(shard.mutex);
+    for (auto& iter : shard.map) {
+      list.push_back(iter.second.toString());
+    }
+  }
+  return list;
 }
 
 }  // namespace mgl

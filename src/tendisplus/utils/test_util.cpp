@@ -457,6 +457,12 @@ void WorkLoad::lockDb(mstime_t locktime) {
   EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::manualFailover() {
+    _session->setArgs({"cluster", "failover", "takeover"});
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+}
+
 void WorkLoad::stopMigrate(const std::string& taskid) {
   _session->setArgs({"cluster", "setslot", "stop", taskid});
   auto expect = Command::runSessionCmd(_session.get());

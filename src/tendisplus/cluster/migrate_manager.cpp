@@ -1067,13 +1067,13 @@ Status MigrateManager::applyRepllog(Session* sess,
                                     BinlogApplyMode mode,
                                     const std::string& logKey,
                                     const std::string& logValue) {
-  std::lock_guard<myMutex> lk(_mutex);
   if (logKey == "") {
     if (logValue != "") {
       /* NOTE(wayenchen) find the binlog task by taskid in migrate
        * heartbeat,
        * set the lastSyncTime of receiver in order to judge if heartbeat
        * timeout*/
+      std::lock_guard<myMutex> lk(_mutex);
       auto iter = _migrateReceiveTaskMap.find(logValue);
       if (iter != _migrateReceiveTaskMap.end()) {
         iter->second->_lastSyncTime = sinceEpoch();
@@ -1088,7 +1088,7 @@ Status MigrateManager::applyRepllog(Session* sess,
       return value.status();
     }
     // NOTE(takenliu): use the keys chunkid to check
-    if (!_importSlots.test(value.value().getChunkId())) {
+    if (!slotInTask(value.value().getChunkId())) {
       LOG(ERROR) << "applyBinlog chunkid err:" << value.value().getChunkId()
                  << "value:" << value.value().getData();
       return {ErrorCodes::ERR_INTERNAL, "chunk not be migrating"};

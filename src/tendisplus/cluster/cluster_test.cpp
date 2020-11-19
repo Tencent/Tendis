@@ -803,7 +803,6 @@ MYTEST(Cluster, Simple_MEET) {
   servers.clear();
 }
 
-
 MYTEST(Cluster, Sequence_Meet) {
   // std::vector<std::string> dirs = { "node1", "node2", "node3", "node4",
   // "node5",
@@ -1056,7 +1055,6 @@ TEST(Cluster, failover) {
 
   work1.addSlots(slots[0]);
   std::this_thread::sleep_for(std::chrono::seconds(10));
-
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node2, ctx2);
@@ -1368,7 +1366,7 @@ TEST(Cluster, stopMigrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 30000;
+  const uint32_t numData = 20000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     std::string cmd = "redis-cli -c ";
@@ -2127,7 +2125,7 @@ TEST(Cluster, ConvergenceRate) {
 TEST(Cluster, MigrateTTLIndex) {
   uint32_t nodeNum = 2;
   uint32_t migrateSlot = 8373;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 19000;
 
   LOG(INFO) << "MigrateTTLIndex begin.";
   std::vector<std::string> dirs;
@@ -2229,9 +2227,82 @@ TEST(Cluster, MigrateTTLIndex) {
   servers.clear();
 }
 
+TEST(Cluster, ChangeMaster) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15200;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  // 3 master and 3 slave *, make one master fail
+  auto& node1 = servers[0];
+  auto& node2 = servers[3];
+  // add one slave
+  auto node7 = makeClusterNode("node6", startPort + 6, storeCnt1);
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(node1, ctx1);
+  WorkLoad work1(node1, sess1);
+  work1.init();
+
+  work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
+  std::this_thread::sleep_for(5s);
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node7, ctx2);
+  WorkLoad work2(node7, sess2);
+  work2.init();
+  work2.clusterMeet(node1->getParams()->bindIp, node1->getParams()->port);
+  auto nodeName1 = node1->getClusterMgr()->getClusterState()->getMyselfName();
+  work2.replicate(nodeName1);
+
+  auto ctx3 = std::make_shared<asio::io_context>();
+  auto sess3 = makeSession(node2, ctx3);
+  WorkLoad work3(node2, sess3);
+  work3.init();
+
+  std::this_thread::sleep_for(5s);
+  // lock the node6 , && make the node2 to be master by cluster failover command
+  work2.lockDb(10);
+
+  work3.manualFailover();
+  std::this_thread::sleep_for(3s);
+  // expect node2 to be new master
+  auto state = node7->getClusterMgr()->getClusterState();
+  auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+  auto nodeName7 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+  CNodePtr node2Ptr = state->clusterLookupNode(nodeName2);
+  CNodePtr node7Ptr = state->clusterLookupNode(nodeName7);
+
+  // slave node2 become new master
+  EXPECT_EQ(node2Ptr->nodeIsMaster(), true);
+  // EXPECT_EQ(node7Ptr->getMaster()->getNodeName(), nodeName2);
+  ASSERT_TRUE(nodeIsMySlave(node2, node7));
+  // lockdb over, the replication should be fixed
+  std::this_thread::sleep_for(10s);
+  auto masterHost =
+    node2->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
+  auto masterPort =
+    node2->getClusterMgr()->getClusterState()->getMyselfNode()->getPort();
+  EXPECT_EQ(node7->getReplManager()->getMasterHost(), masterHost);
+  EXPECT_EQ(node7->getReplManager()->getMasterPort(), masterPort);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+  node7->stop();
+#endif
+  servers.push_back(std::move(node7));
+  servers.clear();
+}
+
 TEST(Cluster, lockConfict) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 15300;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -2348,7 +2419,7 @@ TEST(ClusterMsg, bitsetEncodeSize) {
 
 TEST(Cluster, singleNode) {
   uint32_t nodeNum = 4;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 15500;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);

@@ -343,37 +343,29 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
 
 /* NOTE(wayenchen) fast check if dbsize is zero or not */
 bool ServerEntry::containData() {
-  size_t chunkid = 0;
-  auto chunkSize = _segmentMgr->getChunkSize();
-  while (chunkid < chunkSize) {
-    uint32_t storeId = _segmentMgr->getStoreid(chunkid);
-    LocalSessionGuard g(this);
-    auto expdb =
-      _segmentMgr->getDb(g.getSession(), storeId, mgl::LockMode::LOCK_IS);
+  LocalSessionGuard g(this);
+  for (ssize_t i = 0; i < getKVStoreCount(); i++) {
+    auto expdb = _segmentMgr->getDb(g.getSession(), i, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
-      LOG(ERROR) << " get db lock fail:" << expdb.status().toString();
-      return false;
-    }
-    auto kvstore = std::move(expdb.value().store);
-    auto ptxn = kvstore->createTransaction(nullptr);
-    INVARIANT_D(ptxn.ok());
-    /* NOTE(wayenchen) seek slot cursor to find if contain the first key*/
-    auto slotCursor = std::move(ptxn.value()->createSlotCursor(chunkid));
-    auto v = slotCursor->next();
-
-    if (!v.ok()) {
-      if (v.status().code() == ErrorCodes::ERR_EXHAUST) {
-        chunkid++;
-        continue;
-      } else {
-        LOG(ERROR) << "check chunk" << chunkid << "error";
-        return true;
-      }
-    } else {
-      LOG(ERROR) << "chunk not empty on:" << chunkid;
+      LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
       return true;
     }
-    chunkid++;
+
+    PStore kvstore = expdb.value().store;
+    auto ptxn = kvstore->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+      return true;
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    auto cursor = txn->createDataCursor();
+    cursor->seek("");
+    auto exptRcd = cursor->next();
+
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      continue;
+    } else {
+      return true;
+    }
   }
   return false;
 }
@@ -606,7 +598,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up cluster manager failed!";
       return s;
     }
-    
+
     _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
     s = _migrateMgr->startup();
     if (!s.ok()) {
@@ -620,7 +612,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up gc manager failed";
       return s;
     }
-    
   }
 
   if (!cfg->noexpire) {

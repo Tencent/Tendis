@@ -69,6 +69,7 @@ class MGLockMgr {
   void unlock(MGLock* core);
   static MGLockMgr& getInstance();
   std::string toString();
+  std::vector<std::string> getLockList();
 
  private:
   static constexpr size_t SHARD_NUM = 32;
