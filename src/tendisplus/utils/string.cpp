@@ -256,7 +256,7 @@ std::string trim(const std::string& str) {
   return trim_left(trim_right(str));
 }
 
-std::string& replaceAll(std::string& str,         // NOLINT
+std::string& replaceAll(std::string& str,  // NOLINT
                         const std::string& old_value,
                         const std::string& new_value) {
   for (std::string::size_type pos(0); pos != std::string::npos;

@@ -3,6 +3,10 @@
 
 #include "glog/logging.h"
 
+#ifdef _WIN32
+#include "unistd.h"  // NOLINT
+#endif               // _WIN32
+
 #define INVARIANT(e)                                                    \
   do {                                                                  \
     if (!__builtin_expect(e, 1)) {                                      \

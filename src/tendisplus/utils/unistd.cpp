@@ -40,7 +40,7 @@ void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName) {
   info.dwThreadID = dwThreadID;
   info.dwFlags = 0;
 
-  if (strlen(szThreadName) >= 15) {
+  if (strlen(szThreadName) > 15) {
     abort();
   }
 
@@ -51,6 +51,17 @@ void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName) {
                    (ULONG_PTR*)&info);  // NOLINT
   } __except(EXCEPTION_CONTINUE_EXECUTION) {
   }
+}
+
+int pthread_setname_np(uint32_t id, const char* name) {
+  SetThreadName((DWORD)id, name);
+  return 0;
+}
+
+
+struct tm* mylocaltime_r(const time_t* timep, struct tm* result) {
+  localtime_s(result, timep);
+  return result;
 }
 
 
