@@ -791,7 +791,11 @@ class ShowCommand : public Command {
         return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
       }
       return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
+    } else if (args[1] == "locks") {
+      return Command::fmtBulk(
+        sess->getServerEntry()->getMGLockMgr()->toString());
     }
+
     return {ErrorCodes::ERR_PARSEOPT, "invalid show param"};
   }
 } showCmd;

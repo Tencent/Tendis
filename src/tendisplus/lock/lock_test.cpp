@@ -341,7 +341,7 @@ TEST(Lock, StoreLockTimeout) {
   auto mgr = std::make_unique<mgl::MGLockMgr>();
 
   std::thread thd1([&runFlag1, &locked1, &mgr]() {
-    StoresLock v(mgl::LockMode::LOCK_IS, nullptr, mgr.get());
+    StoreLock v(1, mgl::LockMode::LOCK_IS, nullptr, mgr.get());
     locked1 = true;
     while (runFlag1) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -351,7 +351,7 @@ TEST(Lock, StoreLockTimeout) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   std::thread thd2([&runFlag2, &locked2, &timeout, &mgr]() {
-    StoresLock v(mgl::LockMode::LOCK_X, nullptr, mgr.get(), 1000);
+    StoreLock v(1, mgl::LockMode::LOCK_X, nullptr, mgr.get(), 1000);
     if (v.getLockResult() == mgl::LockRes::LOCKRES_OK) {
       locked2 = true;
     } else {
@@ -367,11 +367,13 @@ TEST(Lock, StoreLockTimeout) {
   EXPECT_TRUE(locked1);
   EXPECT_FALSE(locked2);
   EXPECT_FALSE(timeout);
+  LOG(INFO) << mgr->toString();
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
   EXPECT_TRUE(locked1);
   EXPECT_FALSE(locked2);
   EXPECT_TRUE(timeout);
+  LOG(INFO) << mgr->toString();
 
   runFlag1 = false;
   thd1.join();
@@ -657,6 +659,50 @@ TEST(Lock, StoreAndChunkLock) {
 
   runFlag2 = false;
   thd2.join();
+}
+
+TEST(Lock, duplicateStoreLock) {
+  bool runFlag1 = true;
+  bool locked1 = false;
+
+  auto mgr = std::make_unique<mgl::MGLockMgr>();
+  auto sess = std::make_shared<LocalSession>(nullptr);
+
+  {
+    StoreLock v(1, mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
+    StoreLock v2(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+    LOG(INFO) << mgr->toString();
+
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+      auto slk = StoreLock::AquireStoreLock(
+        1, mgl::LockMode::LOCK_X, sess.get(), mgr.get(), 10000);
+      EXPECT_FALSE(slk.ok());
+      LOG(INFO) << "timeout";
+      while (runFlag1) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    StoreLock v3(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+    LOG(INFO) << "V3";
+    StoreLock v4(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+    LOG(INFO) << mgr->toString();
+
+    runFlag1 = false;
+    thd1.join();
+
+    LOG(INFO) << mgr->toString();
+  }
+
+  LOG(INFO) << "abcde";
+
+  StoreLock v(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+  LOG(INFO) << mgr->toString();
 }
 
 }  // namespace tendisplus

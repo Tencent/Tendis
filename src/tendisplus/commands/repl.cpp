@@ -440,16 +440,6 @@ class ApplyBinlogsGeneric : public Command {
     auto svr = sess->getServerEntry();
     auto replMgr = svr->getReplManager();
     INVARIANT(replMgr != nullptr);
-    // TODO(vinchen): should it remove?
-    //  ReplManager::applySingleTxnV2() should lock db with LOCK_IX
-    auto expdb =
-      svr->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
-    if (mode == BinlogApplyMode::KEEP_BINLOG_ID) {
-      INVARIANT_D(sess->getCtx()->isReplOnly());
-    }
 
     size_t cnt = 0;
     BinlogReader reader(binlogs);
@@ -768,17 +758,11 @@ class RestoreBinlogCommandV2 : public Command {
                    uint32_t storeId,
                    const std::string& key,
                    const std::string& value) {
-    auto svr = sess->getServerEntry();
-    // LOCK_IX first
-    auto expdb =
-      svr->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IX);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
-
+    bool oldReplOnly = sess->getCtx()->isReplOnly();
     sess->getCtx()->setReplOnly(true);
     auto ret = applySingleTxnV2(
       sess, storeId, key, value, BinlogApplyMode::KEEP_BINLOG_ID);
+    sess->getCtx()->setReplOnly(oldReplOnly);
     if (!ret.ok()) {
       return ret.status();
     }
@@ -1039,13 +1023,6 @@ class BinlogHeartbeatCommand : public Command {
 
     auto replMgr = svr->getReplManager();
     INVARIANT(replMgr != nullptr);
-
-    // LOCK_IS first
-    auto expdb =
-      svr->getSegmentMgr()->getDb(sess, storeId, mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
 
     Status s =
       replMgr->applyRepllogV2(sess, storeId, "", ::tendisplus::ultos(binlogTs));
