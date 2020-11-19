@@ -661,4 +661,48 @@ TEST(Lock, StoreAndChunkLock) {
   thd2.join();
 }
 
+TEST(Lock, duplicateStoreLock) {
+  bool runFlag1 = true;
+  bool locked1 = false;
+
+  auto mgr = std::make_unique<mgl::MGLockMgr>();
+  auto sess = std::make_shared<LocalSession>(nullptr);
+
+  {
+    StoreLock v(1, mgl::LockMode::LOCK_IS, sess.get(), mgr.get());
+    StoreLock v2(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+    LOG(INFO) << mgr->toString();
+
+    std::thread thd1([&runFlag1, &locked1, sess, &mgr]() {
+      auto slk = StoreLock::AquireStoreLock(
+        1, mgl::LockMode::LOCK_X, sess.get(), mgr.get(), 10000);
+      EXPECT_FALSE(slk.ok());
+      LOG(INFO) << "timeout";
+      while (runFlag1) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    StoreLock v3(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+    LOG(INFO) << "V3";
+    StoreLock v4(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+    LOG(INFO) << mgr->toString();
+
+    runFlag1 = false;
+    thd1.join();
+
+    LOG(INFO) << mgr->toString();
+  }
+
+  LOG(INFO) << "abcde";
+
+  StoreLock v(1, mgl::LockMode::LOCK_IX, sess.get(), mgr.get());
+
+  LOG(INFO) << mgr->toString();
+}
+
 }  // namespace tendisplus

@@ -58,11 +58,6 @@ void LockSchedCtx::lock(MGLock* core) {
     incrRunningRef(mode);
     core->setLockResult(LockRes::LOCKRES_OK, it);
   }
-#ifdef TENDIS_DEBUG
-  // one resource can only been locked one time for one thread
-  INVARIANT_D(_threadIds.find(core->getThreadId()) == _threadIds.end());
-  _threadIds.insert(core->getThreadId());
-#endif
 }
 
 void LockSchedCtx::schedPendingLocks() {
@@ -93,9 +88,6 @@ bool LockSchedCtx::unlock(MGLock* core) {
     decRunningRef(mode);
     core->releaseLockResult();
     if (_runningModes != 0) {
-#ifdef TENDIS_DEBUG
-      _threadIds.erase(core->getThreadId());
-#endif
       return false;
     }
     INVARIANT_D(_runningList.size() == 0);
@@ -104,15 +96,12 @@ bool LockSchedCtx::unlock(MGLock* core) {
     _pendingList.erase(core->getLockIter());
     decPendingRef(mode);
     core->releaseLockResult();
-    // no need to schedPendingLocks here
     INVARIANT_D((_pendingModes == 0 && _pendingList.size() == 0) ||
                 (_pendingModes != 0 && _pendingList.size() != 0));
+    schedPendingLocks();
   } else {
     INVARIANT_D(0);
   }
-#ifdef TENDIS_DEBUG
-  _threadIds.erase(core->getThreadId());
-#endif
   return _pendingList.empty() && _runningList.empty();
 }
 

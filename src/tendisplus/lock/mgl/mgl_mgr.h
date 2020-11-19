@@ -37,10 +37,6 @@ class LockSchedCtx {
   std::vector<uint16_t> _pendingRefCnt;
   std::list<MGLock*> _runningList;
   std::list<MGLock*> _pendingList;
-#ifdef TENDIS_DEBUG
-  // one resource can only been locked one time for one thread
-  std::set<uint64_t> _threadIds;
-#endif
 };
 
 /* First come first lock
