@@ -1138,6 +1138,33 @@ void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
   thd2.join();
 }
 
+void testDbEmptyCommand(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+  NetSession sess2(svr, std::move(socket2), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"set", "key", "value"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess2.setArgs({"dbempty"});
+  expect = Command::runSessionCmd(&sess2);
+  std::stringstream ss;
+  Command::fmtMultiBulkLen(ss, 0);
+  EXPECT_EQ(ss.str(), expect.value());
+
+  sess.setArgs({"del", "key"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess2.setArgs({"dbempty"});
+  expect = Command::runSessionCmd(&sess2);
+  std::stringstream ss2;
+  Command::fmtMultiBulkLen(ss2, 1);
+  EXPECT_EQ(ss2.str(), expect.value());
+}
+
 void testCommandCommand(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);

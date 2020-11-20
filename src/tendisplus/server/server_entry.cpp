@@ -341,6 +341,35 @@ Status ServerEntry::delKeysInSlot(uint32_t slot) {
   return {ErrorCodes::ERR_OK, "finish delte keys in slot"};
 }
 
+/* NOTE(wayenchen) fast check if dbsize is zero or not */
+bool ServerEntry::containData() {
+  LocalSessionGuard g(this);
+  for (ssize_t i = 0; i < getKVStoreCount(); i++) {
+    auto expdb = _segmentMgr->getDb(g.getSession(), i, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+      LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
+      return true;
+    }
+
+    PStore kvstore = expdb.value().store;
+    auto ptxn = kvstore->createTransaction(nullptr);
+    if (!ptxn.ok()) {
+      return true;
+    }
+    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+    auto cursor = txn->createDataCursor();
+    cursor->seek("");
+    auto exptRcd = cursor->next();
+
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      continue;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
 void ServerEntry::logWarning(const std::string& str, Session* sess) {
   std::stringstream ss;
   if (sess) {

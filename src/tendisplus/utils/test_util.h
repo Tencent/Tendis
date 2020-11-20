@@ -97,6 +97,7 @@ class WorkLoad {
   void clusterNodes();
   void addSlots(const std::string& slotsBuff);
   void replicate(const std::string& nodeName);
+  void manualFailover();
   void lockDb(mstime_t locktime);
   void stopMigrate(const std::string& taskid);
   void stopAllMigTasks();

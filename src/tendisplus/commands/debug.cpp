@@ -292,6 +292,34 @@ class PingCommand : public Command {
   }
 } pingCmd;
 
+class DbEmptyCommand : public Command {
+ public:
+  DbEmptyCommand() : Command("dbempty", "rF") {}
+
+  ssize_t arity() const {
+    return -1;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto server = sess->getServerEntry();
+    int64_t containData = server->containData() ? 0 : 1;
+    return Command::fmtLongLong(containData);
+  }
+} dbEmptyCmd;
+
+
 class EchoCommand : public Command {
  public:
   EchoCommand() : Command("echo", "F") {}
@@ -792,8 +820,16 @@ class ShowCommand : public Command {
       }
       return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
     } else if (args[1] == "locks") {
-      return Command::fmtBulk(
-        sess->getServerEntry()->getMGLockMgr()->toString());
+      auto locklist = sess->getServerEntry()->getMGLockMgr()->getLockList();
+      if (locklist.size() == 0) {
+        return {ErrorCodes::ERR_INTERNAL, "no lock"};
+      }
+      std::stringstream ss;
+      Command::fmtMultiBulkLen(ss, locklist.size());
+      for (auto& vs : locklist) {
+        Command::fmtBulk(ss, vs);
+      }
+      return ss.str();
     }
 
     return {ErrorCodes::ERR_PARSEOPT, "invalid show param"};
@@ -2620,7 +2656,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0 /* No flags. */
+#define EMPTYDB_NO_FLAGS 0     /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {

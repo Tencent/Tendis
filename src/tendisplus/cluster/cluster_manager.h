@@ -665,6 +665,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void cronRestoreSessionIfNeeded();
   void cronPingSomeNodes();
   void cronCheckFailState();
+  void cronCheckReplicate();
 
   std::string clusterGenNodesDescription(uint16_t filter, bool simple);
   std::string clusterGenNodeDescription(CNodePtr n, bool simple = false);
@@ -891,6 +892,7 @@ class ClusterManager {
   uint64_t countKeysInSlot(uint32_t slot);
   std::vector<std::string> getKeyBySlot(uint32_t slot, uint32_t count);
   bool emptySlot(uint32_t slot);
+  Status clusterDelNodeMeta(const std::string& key);
 
  protected:
   void controlRoutine();
@@ -909,7 +911,6 @@ class ClusterManager {
 
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
-  Status clusterDelNodeMeta(const std::string& key);
   Status clusterDelNodesMeta();
 
   bool clusterMetaExist(const std::string& key);

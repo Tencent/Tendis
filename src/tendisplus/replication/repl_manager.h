@@ -178,6 +178,7 @@ class ReplManager {
   void onFlush(uint32_t storeId, uint64_t binlogid);
   bool hasSomeSlave(uint32_t storeId);
   bool isSlaveOfSomeone(uint32_t storeId);
+  bool isSlaveOfSomeone();
   bool isSlaveFullSyncDone();
   Status resetRecycleState(uint32_t storeId);
   Expected<uint64_t> getSaveBinlogId(uint32_t storeId, uint32_t fileSeq);
