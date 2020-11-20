@@ -689,6 +689,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     return;
   }
 
+  updateCurBinlogFs(storeId, 0, 0);
   bool tailSlave = false;
   uint64_t highest = kvstore->getHighestBinlogId();
   end = highest;
