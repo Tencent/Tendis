@@ -572,8 +572,30 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
     v->fileSeq = currentId + 1;
     v->fileCreateTime = SCLOCK::now();
     v->fileSize = BINLOG_HEADER_V2_LEN;
+    v->needNewFile = false;
   }
   return fs;
+}
+
+bool ReplManager::newBinlogFs(uint32_t storeId) {
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    auto& v = _logRecycStatus[storeId];
+    v->needNewFile = true;
+  }
+  int wait_times = 0;
+  while (wait_times++ <= 50) {  // wait for 5 seconds
+    {
+      std::unique_lock<std::mutex> lk(_mutex);
+      auto& v = _logRecycStatus[storeId];
+      if (!v->needNewFile) {
+        return true;
+      }
+    }
+    std::this_thread::sleep_for(100ms);
+  }
+  LOG(WARNING) << "newBinlogFs failed, storeId:" << storeId;
+  return false;
 }
 
 void ReplManager::updateCurBinlogFs(uint32_t storeId,
@@ -586,7 +608,7 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
   if (v->fileSize >= _cfg->binlogFileSizeMB * 1024 * 1024 ||
       v->fileCreateTime + std::chrono::seconds(_cfg->binlogFileSecs) <=
         SCLOCK::now() ||
-      changeNewFile) {
+      changeNewFile || v->needNewFile) {
     if (v->fs) {
       v->fs->close();
       v->fs.reset();
@@ -594,6 +616,7 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
     if (ts) {
       v->timestamp = ts;
     }
+    v->needNewFile = false;
   }
 }
 

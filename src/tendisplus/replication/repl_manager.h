@@ -84,6 +84,7 @@ struct RecycleBinlogStatus {
   SCLOCK::time_point fileCreateTime;
   uint64_t fileSize;
   std::unique_ptr<std::ofstream> fs;
+  bool needNewFile;
   uint64_t saveBinlogId;
   std::string toString() const {
     std::stringstream ss;
@@ -172,7 +173,7 @@ class ReplManager {
                         const std::string& logKey,
                         const std::string& logValue);
 #endif
-  void flushCurBinlogFs(uint32_t storeId);
+  bool flushCurBinlogFs(uint32_t storeId);
   void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
   void getReplInfo(std::stringstream& ss) const;
   void onFlush(uint32_t storeId, uint64_t binlogid);
@@ -229,6 +230,7 @@ class ReplManager {
                          uint64_t ts,
                          bool changeNewFile = false);
 #endif
+  bool newBinlogFs(uint32_t storeId);
 
   void masterPushRoutine(uint32_t storeId, uint64_t clientId);
   void slaveSyncRoutine(uint32_t storeId);

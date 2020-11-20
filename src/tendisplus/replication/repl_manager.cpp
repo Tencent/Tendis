@@ -955,9 +955,9 @@ Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId,
   return logKey.value().getBinlogId();
 }
 
-void ReplManager::flushCurBinlogFs(uint32_t storeId) {
+bool ReplManager::flushCurBinlogFs(uint32_t storeId) {
   // TODO(takenliu): let truncateBinlogV2 return quickly.
-  updateCurBinlogFs(storeId, 0, 0, true);
+  return newBinlogFs(storeId);
 }
 
 Status ReplManager::changeReplSource(Session* sess,

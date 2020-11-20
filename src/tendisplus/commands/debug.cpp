@@ -1413,10 +1413,14 @@ class BinlogFlushCommand : public Command {
     auto replMgr = server->getReplManager();
     INVARIANT(replMgr != nullptr);
     const std::string& kvstore = sess->getArgs()[1];
+    bool ret = true;
     if (kvstore == "all") {
       for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
         // TODO(takenliu) updateCurBinlogFs should return result
-        replMgr->flushCurBinlogFs(i);
+        ret = replMgr->flushCurBinlogFs(i);
+        if (!ret) {
+          break;
+        }
       }
     } else {
       Expected<uint64_t> exptStoreId = ::tendisplus::stoul(kvstore.c_str());
@@ -1428,10 +1432,10 @@ class BinlogFlushCommand : public Command {
         LOG(ERROR) << "binlogflush err storeId:" << storeId;
         return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
       }
-      replMgr->flushCurBinlogFs(storeId);
+      ret = replMgr->flushCurBinlogFs(storeId);
     }
-    LOG(INFO) << "binlogflush succ:" << kvstore;
-    return Command::fmtOK();
+    LOG(INFO) << "binlogflush sotre:" << kvstore << " ret:" << ret;
+    return ret ? Command::fmtOK() : Command::fmtErr("binlogflush failed.");
   }
 } binlogFlushCommand;
 
