@@ -39,7 +39,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
     option(NEW_ROCKSDB "new rocksdb version" ON)
     if(NEW_ROCKSDB)
-        message("using rocksdb-6.2.2")
+        message("using rocksdb-6.14.5")
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
     else()
         message("using rocksdb-5.3.14")
@@ -95,8 +95,7 @@ endif()
 
 # TODO(vinchen): in the future it should disable sync_ponit in production
 add_definitions(-DWITH_SYNC_POINT)
-list(APPEND SYS_LIBS sync_point)
-list(APPEND SYS_LIBS snappy)
+
 
 add_subdirectory(src/thirdparty/gflag)
 add_subdirectory(src/thirdparty/snappy)
@@ -105,11 +104,17 @@ add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
 add_subdirectory(src/thirdparty/glog)
 
+list(APPEND SYS_LIBS sync_point)
+list(APPEND SYS_LIBS snappy)
+
 set(WITH_TESTS OFF)
 set(WITH_BENCHMARK_TOOLS OFF)
 set(WITH_TOOLS OFF)
 set(WITH_JNI OFF)
 set(WITH_GFLAGS OFF)
+set(WITH_CORE_TOOLS OFF)
+set(WITH_TOOLS OFF)
+
 
 add_definitions(-DSNAPPY)
 set(snappy_FOUND TRUE)
@@ -117,15 +122,15 @@ set(snappy_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/)
 set(snappy_LIBRARIES ${CMAKE_BINARY_DIR}/lib/libsnappy.a)
 list(APPEND THIRDPARTY_LIBS snappy)
 set(LZ4_FOUND TRUE)
-set(LZ4_LIBRARIES "${CMAKE_BINARY_DIR}/lib/liblz4.a")
+set(LZ4_LIBRARIES ${CMAKE_BINARY_DIR}/lib/liblz4.a)
 include_directories("src/thirdparty/lz4/lib/")
 list(APPEND THIRDPARTY_LIBS ${LZ4_LIBRARIES})
-add_definitions(-DLZ4)
 
 option(RAPIDJSON_BUILD_TESTS "" OFF)
 add_subdirectory(src/thirdparty/rapidjson)
 
-add_subdirectory(${ROCKSDB_DIR}/rocksdb)
+add_subdirectory(${ROCKSDB_DIR}/rocksdb rocksdb EXCLUDE_FROM_ALL)
+target_compile_options(rocksdb PRIVATE -DLZ4)
 if(CMAKE_COMPILER_IS_GNUCC)
 set(WARN_C_CXX
 "-Wall \
@@ -207,8 +212,8 @@ include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog/src")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson/include")
-include_directories(${ROCKSDB_DIR})
-include_directories(${ROCKSDB_DIR}/include)
+include_directories(${ROCKSDB_DIR}/rocksdb)
+include_directories(${ROCKSDB_DIR}/rocksdb/include)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 add_subdirectory(src/tendisplus/network)
