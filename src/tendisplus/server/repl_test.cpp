@@ -62,10 +62,24 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server, uint32_t count) {
   return std::move(all_keys);
 }
 
+void deleteExpiredKey(const std::shared_ptr<ServerEntry>& server) {
+  auto ctx = std::make_shared<asio::io_context>();
+  auto session = makeSession(server, ctx);
+
+  WorkLoad work(server, session);
+  work.init();
+  work.getStringResult({"get", "expire_test_key"});
+  work.getStringResult({"get", "expire_test_key0"});
+}
+
 void compareData(const std::shared_ptr<ServerEntry>& master,
                  const std::shared_ptr<ServerEntry>& slave,
                  bool comparebinlog = true) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
+
+  // expired key maybe not been deleted, delete it by get command.
+  deleteExpiredKey(master);
+  deleteExpiredKey(slave);
 
   for (size_t i = 0; i < master->getKVStoreCount(); i++) {
     uint64_t count1 = 0;
