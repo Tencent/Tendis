@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 #include <utility>
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
@@ -148,14 +152,26 @@ std::string LockSchedCtx::toString() {
   std::stringstream ss;
 
   for (auto i : _runningList) {
-    ss << "running: {" << i->toString() << "}";
+    ss << "running: {" << i->toString() << "}\r\n";
   }
 
   for (auto i : _pendingList) {
-    ss << "pending: {" << i->toString() << "}";
+    ss << "pending: {" << i->toString() << "}\r\n";
   }
 
   return ss.str();
+}
+
+std::vector<std::string> LockSchedCtx::getShardLocks() {
+  std::vector<std::string> tempLocks;
+  for (auto i : _runningList) {
+    tempLocks.push_back("running: {" + i->toString() + "}");
+  }
+
+  for (auto i : _pendingList) {
+    tempLocks.push_back("pending: {" + i->toString() + "}");
+  }
+  return tempLocks;
 }
 
 MGLockMgr& MGLockMgr::getInstance() {
@@ -209,7 +225,10 @@ std::vector<std::string> MGLockMgr::getLockList() {
     LockShard& shard = _shards[i];
     std::lock_guard<std::mutex> lk(shard.mutex);
     for (auto& iter : shard.map) {
-      list.push_back(iter.second.toString());
+      auto locklist = iter.second.getShardLocks();
+      for (auto& v : locklist) {
+        list.push_back(v);
+      }
     }
   }
   return list;

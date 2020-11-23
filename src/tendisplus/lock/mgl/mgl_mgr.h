@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 #ifndef SRC_TENDISPLUS_LOCK_MGL_MGL_MGR_H__
 #define SRC_TENDISPLUS_LOCK_MGL_MGL_MGR_H__
 
@@ -24,7 +28,7 @@ class LockSchedCtx {
   void lock(MGLock* core);
   bool unlock(MGLock* core);
   std::string toString();
-
+  std::vector<std::string> getShardLocks();
  private:
   void schedPendingLocks();
   void incrPendingRef(LockMode mode);
