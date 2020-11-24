@@ -57,6 +57,18 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+option(WITH_ASAN "build with ASAN" OFF)
+if(WITH_ASAN)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
+  list(APPEND SYS_LIBS "-fsanitize=address  -static-libasan")
+  add_definitions(-DWITH_ASAN)
+  set(ENABLE_JEMALLOC OFF)
+  message("ASAN would disabled JeMalloc")
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCC)
 	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	if(ENABLE_JEMALLOC)
@@ -92,17 +104,14 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
 endif()
 
-
 # TODO(vinchen): in the future it should disable sync_ponit in production
 add_definitions(-DWITH_SYNC_POINT)
-
-
 add_subdirectory(src/thirdparty/gflag)
 add_subdirectory(src/thirdparty/snappy)
 target_compile_options(snappy PRIVATE -fPIC)
 add_subdirectory(src/thirdparty/lz4/contrib/cmake_unofficial)
 add_subdirectory(src/thirdparty/googletest)
-add_subdirectory(src/thirdparty/glog)
+add_subdirectory(src/thirdparty/glog glog EXCLUDE_FROM_ALL)
 
 list(APPEND SYS_LIBS sync_point)
 list(APPEND SYS_LIBS snappy)
@@ -115,7 +124,7 @@ set(WITH_GFLAGS OFF)
 set(WITH_CORE_TOOLS OFF)
 set(WITH_TOOLS OFF)
 
-
+add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 add_definitions(-DSNAPPY)
 set(snappy_FOUND TRUE)
 set(snappy_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/)
@@ -216,6 +225,7 @@ include_directories(${ROCKSDB_DIR}/rocksdb)
 include_directories(${ROCKSDB_DIR}/rocksdb/include)
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)

@@ -262,15 +262,17 @@ proc start_server {options {code undefined}} {
     close $fp2
 
     set stdout [format "%s/%s" [dict get $config "dir"] "stdout"]
-    set stderr [format "%s/%s" [dict get $config "dir"] "stderr"]
+    set systemTime [clock seconds]
+    set tendis_master_mem_log [tmpfile tendis_master_mem_$systemTime.log]
+    set tendis_slave_mem_log [tmpfile tendis_slave_mem_$systemTime.log]
     
     if {$::valgrind} {
-        exec valgrind --suppressions=src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
-        #exec valgrind --log-file=./valgrind.log --show-reachable=no --show-possibly-lost=no --leak-check=full --show-leak-kinds=all --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
+        exec valgrind --suppressions=src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $tendis_slave_mem_log &
+        #exec valgrind --log-file=./valgrind.log --show-reachable=no --show-possibly-lost=no --leak-check=full --show-leak-kinds=all --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $tendis_slave_mem_log &
     } else {
-        exec ./build/bin/tendisplus $config_file > $stdout 2> $stderr &
+        exec ./build/bin/tendisplus $config_file > $stdout 2> $tendis_master_mem_log &
     }
-    exec ./build/bin/tendisplus $slave_cfg_file > $stdout 2> $stderr &
+    exec ./build/bin/tendisplus $slave_cfg_file > $stdout 2> $tendis_slave_mem_log &
 
     # check that the server actually started
     # ugly but tries to be as fast as possible...
@@ -292,7 +294,7 @@ proc start_server {options {code undefined}} {
 
     if {!$serverisup} {
         set err {}
-        append err [exec cat $stdout] "\n" [exec cat $stderr]
+        append err [exec cat $stdout] "\n" [exec cat $tendis_slave_mem_log]
         start_server_error $config_file $err
         return
     }
@@ -328,7 +330,6 @@ proc start_server {options {code undefined}} {
     dict set srv "host" $host
     dict set srv "port" $port
     dict set srv "stdout" $stdout
-    dict set srv "stderr" $stderr
 
     dict set slave "config_file" $slave_cfg_file
     dict set slave "config" $slave_cfg
@@ -336,8 +337,6 @@ proc start_server {options {code undefined}} {
     dict set slave "host" $host
     dict set slave "port" $slave_port
     dict set slave "stdout" $stdout
-    dict set slave "stderr" $stderr
-
     dict set srv "slave" $slave
 
     # if a block of code is supplied, we wait for the server to become

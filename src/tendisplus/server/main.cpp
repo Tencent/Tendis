@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
   }
 
   INVARIANT(sizeof(double) == 8);
-
+#ifndef WITH_ASAN
 #ifndef _WIN32
   if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
     // NOTE(deyukong): it should rarely fail.
@@ -90,6 +90,7 @@ int main(int argc, char* argv[]) {
     // /dev/null and nothing printed.
     LOG(FATAL) << "daemonlize failed:" << errno;
   }
+#endif
 #endif
 
   FLAGS_minloglevel = 0;
