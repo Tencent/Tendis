@@ -276,6 +276,131 @@ std::string randomKey(size_t maxlen) {
   return key;
 }
 
+bool isExpired(PStore store, const RecordKey& key, const RecordValue& value) {
+  // NOTE(takenliu): use real time
+  uint64_t currentTs = msSinceEpoch();
+  // uint64_t currentTs = store->getCurrentTime();
+  uint64_t ttl;
+  if (key.getRecordType() == RecordType::RT_DATA_META
+    && value.getRecordType() == RecordType::RT_KV) {
+    ttl = value.getTtl();
+    if (ttl > 0 && ttl < currentTs) {
+      // Expired
+      return true;
+    }
+  }
+  return false;
+}
+
+void compareData(const std::shared_ptr<ServerEntry>& master,
+        const std::shared_ptr<ServerEntry>& slave,
+        bool compare_binlog) {
+  INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
+
+  for (size_t i = 0; i < master->getKVStoreCount(); i++) {
+    uint64_t count1 = 0;
+    uint64_t count2 = 0;
+    auto kvstore1 = master->getStores()[i];
+    auto kvstore2 = slave->getStores()[i];
+
+    auto ptxn2 = kvstore2->createTransaction(nullptr);
+    EXPECT_TRUE(ptxn2.ok());
+    std::unique_ptr<Transaction> txn2 = std::move(ptxn2.value());
+
+    auto ptxn1 = kvstore1->createTransaction(nullptr);
+    EXPECT_TRUE(ptxn1.ok());
+    std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
+    auto cursor1 = txn1->createAllDataCursor();
+    // check the data
+    while (true) {
+      Expected<Record> exptRcd1 = cursor1->next();
+      if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+        break;
+      }
+      INVARIANT(exptRcd1.ok());
+
+      if (isExpired(kvstore1, exptRcd1.value().getRecordKey(), exptRcd1.value().getRecordValue())){
+        continue;
+      }
+
+      count1++;
+
+      auto type = exptRcd1.value().getRecordKey().getRecordType();
+      auto key = exptRcd1.value().getRecordKey();
+      auto exptRcdv2 =
+              kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+      EXPECT_TRUE(exptRcdv2.ok());
+      if (!exptRcdv2.ok()) {
+        LOG(INFO) << "key:" << key.getPrimaryKey()
+                  << ",type:" << static_cast<int>(type) << " not found!";
+        INVARIANT(0);
+      }
+      EXPECT_TRUE(exptRcdv2.ok());
+      EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+    }
+    int count1_data = count1;
+
+    if (compare_binlog) {
+      // check the binlog
+      auto cursor1_binlog = txn1->createBinlogCursor();
+      while (true) {
+        Expected<Record> exptRcd1 = cursor1_binlog->next();
+        if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
+          break;
+        }
+        INVARIANT(exptRcd1.ok());
+        count1++;
+
+        auto exptRcdv2 =
+                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+        EXPECT_TRUE(exptRcdv2.ok());
+        EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+      }
+    }
+
+    auto cursor2 = txn2->createAllDataCursor();
+    while (true) {
+      Expected<Record> exptRcd2 = cursor2->next();
+      if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+        break;
+      }
+      INVARIANT(exptRcd2.ok());
+
+      if (isExpired(kvstore2, exptRcd2.value().getRecordKey(), exptRcd2.value().getRecordValue())){
+        continue;
+      }
+      count2++;
+
+      // check the data
+      auto exptRcdv1 =
+              kvstore1->getKV(exptRcd2.value().getRecordKey(), txn1.get());
+      EXPECT_TRUE(exptRcdv1.ok());
+      if (!exptRcdv1.ok()) {
+        LOG(INFO) << exptRcd2.value().toString()
+                  << " error:" << exptRcdv1.status().toString();
+        continue;
+      }
+      EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
+    }
+    int count2_data = count2;
+
+    if (compare_binlog) {
+      auto cursor2_binlog = txn2->createBinlogCursor();
+      while (true) {
+        Expected<Record> exptRcd2 = cursor2_binlog->next();
+        if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
+          break;
+        }
+        INVARIANT(exptRcd2.ok());
+        count2++;
+      }
+    }
+    EXPECT_EQ(count1_data, count2_data);
+    EXPECT_EQ(count1, count2);
+    LOG(INFO) << "compare data: store " << i << " record count " << count1;
+  }
+}
+
 KeysWritten WorkLoad::writeWork(RecordType type,
                                 uint32_t count,
                                 uint32_t maxlen,

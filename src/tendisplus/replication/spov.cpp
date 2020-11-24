@@ -584,7 +584,9 @@ bool ReplManager::newBinlogFs(uint32_t storeId) {
     v->needNewFile = true;
   }
   int wait_times = 0;
-  while (wait_times++ <= 50) {  // wait for 5 seconds
+  int sleepInter = 100;
+  int maxWaitTimes = _svr->getParams()->truncateBinlogIntervalMs * 3 / sleepInter;
+  while (wait_times++ <= maxWaitTimes) {
     {
       std::unique_lock<std::mutex> lk(_mutex);
       auto& v = _logRecycStatus[storeId];
