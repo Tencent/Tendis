@@ -28,6 +28,7 @@
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/cluster/gc_manager.h"
+#include "tendisplus/script/script_manager.h"
 
 #define SLOWLOG_ENTRY_MAX_ARGC 32;
 #define SLOWLOG_ENTRY_MAX_STRING 128;
@@ -44,6 +45,8 @@ class MigrateManager;
 class IndexManager;
 class ClusterManager;
 class GCManager;
+class ScriptManager;
+
 
 /* Instantaneous metrics tracking. */
 #define STATS_METRIC_SAMPLES 16   /* Number of samples per metric. */
@@ -191,6 +194,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   IndexManager* getIndexMgr();
   ClusterManager* getClusterMgr();
   GCManager* getGcMgr();
+  ScriptManager* getScriptMgr();
 
   // TODO(takenliu) : args exist at two places, has better way?
   std::string requirepass() const;
@@ -322,6 +326,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::unique_ptr<mgl::MGLockMgr> _mgLockMgr;
   std::unique_ptr<ClusterManager> _clusterMgr;
   std::unique_ptr<GCManager> _gcMgr;
+  std::unique_ptr<ScriptManager> _scriptMgr;
 
   std::vector<PStore> _kvstores;
   std::unique_ptr<Catalog> _catalog;

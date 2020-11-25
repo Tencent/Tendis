@@ -218,6 +218,7 @@ ServerEntry::ServerEntry()
     _mgLockMgr(nullptr),
     _clusterMgr(nullptr),
     _gcMgr(nullptr),
+    _scriptMgr(nullptr),
     _catalog(nullptr),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -651,6 +652,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     }
   }
 
+  _scriptMgr = std::make_unique<ScriptManager>(shared_from_this());
+  s = _scriptMgr->startup();
+  if (!s.ok()) {
+    LOG(WARNING) << "start up ScriptManager failed";
+    return s;
+  }
+
   if (!cfg->noexpire) {
     _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
     s = _indexMgr->startup();
@@ -724,6 +732,10 @@ ClusterManager* ServerEntry::getClusterMgr() {
 
 GCManager* ServerEntry::getGcMgr() {
   return _gcMgr.get();
+}
+
+ScriptManager* ServerEntry::getScriptMgr() {
+  return _scriptMgr.get();
 }
 
 std::string ServerEntry::requirepass() const {
@@ -1314,6 +1326,13 @@ Status ServerEntry::destroyStore(Session* sess,
     return status;
   }
 
+  status = _scriptMgr->stopStore(storeId);
+  if (!status.ok()) {
+    LOG(ERROR) << "_scriptMgr stopStore :" << storeId
+               << " failed:" << status.toString();
+    return status;
+  }
+
   if (_indexMgr) {
     status = _indexMgr->stopStore(storeId);
     if (!status.ok()) {
@@ -1477,6 +1496,9 @@ void ServerEntry::stop() {
   if (_gcMgr) {
     _gcMgr->stop();
   }
+
+  _scriptMgr->stop();
+
   if (!_isShutdowned.load(std::memory_order_relaxed)) {
     // NOTE(vinchen): if it's not the shutdown command, it should reset the
     // workerpool to decr the referent count of share_ptr<server>
@@ -1493,6 +1515,7 @@ void ServerEntry::stop() {
     _segmentMgr.reset();
     _clusterMgr.reset();
     _gcMgr.reset();
+    _scriptMgr.reset();
   }
 
   // stop the rocksdb
