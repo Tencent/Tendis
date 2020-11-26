@@ -334,8 +334,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(fullPushThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(fullReceiveThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(logRecycleThreadnum, nullptr, nullptr, 1, 200, true);
-  REGISTER_VARS_FULL("truncateBinlogIntervalMs", truncateBinlogIntervalMs, NULL, NULL,
-      10, 5000, true)
+  REGISTER_VARS_FULL("truncateBinlogIntervalMs", truncateBinlogIntervalMs,
+    NULL, NULL, 10, 5000, true)
   REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
   REGISTER_VARS(binlogFileSizeMB);
   REGISTER_VARS(binlogFileSecs);

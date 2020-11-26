@@ -319,7 +319,8 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd1.ok());
 
-      if (isExpired(kvstore1, exptRcd1.value().getRecordKey(), exptRcd1.value().getRecordValue())){
+      if (isExpired(kvstore1, exptRcd1.value().getRecordKey(),
+        exptRcd1.value().getRecordValue())) {
         continue;
       }
 
@@ -366,7 +367,8 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd2.ok());
 
-      if (isExpired(kvstore2, exptRcd2.value().getRecordKey(), exptRcd2.value().getRecordValue())){
+      if (isExpired(kvstore2, exptRcd2.value().getRecordKey(),
+        exptRcd2.value().getRecordValue())) {
         continue;
       }
       count2++;

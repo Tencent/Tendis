@@ -396,7 +396,8 @@ void checkNumAllowDiff(std::vector<uint32_t> nums1,
       // master has one datakey less.
       // if only store one key, master2 has no datakey and binlogkey, so
       // be 2 num less.
-      LOG(INFO) << "checkNumAllowDiff, i:" << i << "nums1:" << nums1[i] << " nums2:" << nums2[i];
+      LOG(INFO) << "checkNumAllowDiff, i:" << i
+        << "nums1:" << nums1[i] << " nums2:" << nums2[i];
       EXPECT_TRUE(nums1[i] == nums2[i] + 1 || nums1[i] == nums2[i] + 2);
     }
   }

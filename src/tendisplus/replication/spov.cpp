@@ -585,7 +585,8 @@ bool ReplManager::newBinlogFs(uint32_t storeId) {
   }
   int wait_times = 0;
   int sleepInter = 100;
-  int maxWaitTimes = _svr->getParams()->truncateBinlogIntervalMs * 3 / sleepInter;
+  int maxWaitTimes =
+    _svr->getParams()->truncateBinlogIntervalMs * 3 / sleepInter;
   while (wait_times++ <= maxWaitTimes) {
     {
       std::unique_lock<std::mutex> lk(_mutex);
