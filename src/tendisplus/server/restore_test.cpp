@@ -263,92 +263,6 @@ void waitBinlogDump(const std::shared_ptr<ServerEntry>& server) {
     }
   }
 }
-void compareData(const std::shared_ptr<ServerEntry>& master,
-                 const std::shared_ptr<ServerEntry>& slave,
-                 bool com_binlog = true) {
-  INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
-
-  for (size_t i = 0; i < master->getKVStoreCount(); i++) {
-    uint64_t count1 = 0;
-    uint64_t count2 = 0;
-    auto kvstore1 = master->getStores()[i];
-    auto kvstore2 = slave->getStores()[i];
-
-    auto ptxn2 = kvstore2->createTransaction(nullptr);
-    EXPECT_TRUE(ptxn2.ok());
-    std::unique_ptr<Transaction> txn2 = std::move(ptxn2.value());
-
-    auto ptxn1 = kvstore1->createTransaction(nullptr);
-    EXPECT_TRUE(ptxn1.ok());
-    std::unique_ptr<Transaction> txn1 = std::move(ptxn1.value());
-    auto cursor1 = txn1->createAllDataCursor();
-    auto cursor1_binlog = txn1->createBinlogCursor();
-    // check the data
-    while (true) {
-      Expected<Record> exptRcd1 = cursor1->next();
-      if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
-        break;
-      }
-      INVARIANT(exptRcd1.ok());
-      count1++;
-      auto type = exptRcd1.value().getRecordKey().getRecordType();
-      auto key = exptRcd1.value().getRecordKey();
-      auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
-      if (!exptRcdv2.ok()) {
-        LOG(INFO) << "key:" << key.getPrimaryKey()
-                  << ",type:" << static_cast<int>(type) << " not found!";
-        INVARIANT(0);
-      }
-      EXPECT_TRUE(exptRcdv2.ok());
-      EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
-    }
-    // chech the binlog
-    while (com_binlog) {
-      Expected<Record> exptRcd1 = cursor1_binlog->next();
-      if (exptRcd1.status().code() == ErrorCodes::ERR_EXHAUST) {
-        break;
-      }
-      INVARIANT(exptRcd1.ok());
-      count1++;
-      auto type = exptRcd1.value().getRecordKey().getRecordType();
-      auto key = exptRcd1.value().getRecordKey();
-      auto exptRcdv2 = kvstore2->getKV(key, txn2.get());
-      if (!exptRcdv2.ok()) {
-        LOG(INFO) << "key:" << key.getPrimaryKey()
-                  << ",type:" << static_cast<int>(type) << " not found!";
-        INVARIANT(0);
-      }
-      EXPECT_TRUE(exptRcdv2.ok());
-      EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
-    }
-
-    auto cursor2 = txn2->createAllDataCursor();
-    auto cursor2_binlog = txn2->createBinlogCursor();
-    // check the data
-    while (true) {
-      Expected<Record> exptRcd2 = cursor2->next();
-      if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
-        break;
-      }
-
-      INVARIANT(exptRcd2.ok());
-      count2++;
-    }
-    // check the binlog
-    while (com_binlog) {
-      Expected<Record> exptRcd2 = cursor2_binlog->next();
-      if (exptRcd2.status().code() == ErrorCodes::ERR_EXHAUST) {
-        break;
-      }
-
-      INVARIANT(exptRcd2.ok());
-      count2++;
-    }
-
-    EXPECT_EQ(count1, count2);
-    LOG(INFO) << "compare data: store " << i << " record count " << count1;
-  }
-}
 
 void compareAllowNotFound(const std::shared_ptr<ServerEntry>& master,
                           const std::shared_ptr<ServerEntry>& slave) {
@@ -485,6 +399,8 @@ void checkNumAllowDiff(std::vector<uint32_t> nums1,
       // master has one datakey less.
       // if only store one key, master2 has no datakey and binlogkey, so
       // be 2 num less.
+      LOG(INFO) << "checkNumAllowDiff, i:" << i
+        << "nums1:" << nums1[i] << " nums2:" << nums2[i];
       EXPECT_TRUE(nums1[i] == nums2[i] + 1 || nums1[i] == nums2[i] + 2);
     }
   }

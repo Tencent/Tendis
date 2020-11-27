@@ -51,6 +51,10 @@ std::shared_ptr<ServerEntry> makeServerEntry(
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);
 
+void compareData(const std::shared_ptr<ServerEntry>& master,
+        const std::shared_ptr<ServerEntry>& slave,
+        bool comparebinlog = true);
+
 bool setupReplEnv();
 void destroyReplEnv();
 

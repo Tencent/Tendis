@@ -1534,7 +1534,15 @@ void ReplManager::stop() {
     _fullPushStatus[i].clear();
   }
 #endif
-
+  // after _logRecycler->stop(), recycleBinlog() has quit,
+  // so here can call fs->close().
+  std::unique_lock<std::mutex> lk(_mutex);
+  for (size_t i = 0; i < _logRecycStatus.size(); i++) {
+    if (_logRecycStatus[i]->fs) {
+      _logRecycStatus[i]->fs->close();
+      _logRecycStatus[i]->fs.reset();
+    }
+  }
   LOG(WARNING) << "repl manager stops succ";
 }
 

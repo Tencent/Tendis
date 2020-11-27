@@ -103,7 +103,7 @@ void waitMigrateEnd(const std::shared_ptr<ServerEntry>& server1,
   std::this_thread::sleep_for(3s);
 }
 
-void compareData(const std::shared_ptr<ServerEntry>& master,
+void checkDataMigrated(const std::shared_ptr<ServerEntry>& master,
                  const std::shared_ptr<ServerEntry>& slave) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
 
@@ -159,7 +159,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       count2++;
     }
 
-    LOG(INFO) << "compare data: store " << i << " recordCount1:" << count1
+    LOG(INFO) << "checkDataMigrated: store " << i << " recordCount1:" << count1
               << " recordCount2:" << count2;
   }
 }
@@ -247,8 +247,8 @@ TEST(Migrate, Common) {
     waitMigrateEnd(master1, master2, chunkid1);
     waitMigrateEnd(master1, master2, chunkid2);
     LOG(INFO) << ">>>>>> waitMigrateEnd success;";
-    compareData(master1, master2);  // compare data + binlog
-    LOG(INFO) << ">>>>>> compareData 1st end;";
+    checkDataMigrated(master1, master2);  // check data + binlog
+    LOG(INFO) << ">>>>>> checkDataMigrated 1st end;";
 
 #ifndef _WIN32
     master1->stop();
