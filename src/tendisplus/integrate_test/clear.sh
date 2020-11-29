@@ -10,12 +10,14 @@ user=$USER
 tpids=`ps axu |grep tendisplus|grep integrate_test| grep $user|awk '{print $2}'`
 for tpid in $tpids
 do
+  echo "killing tendisplus process : $tpid"
   kill -9 $tpid
 done
 
 ppids=`ps axu |grep predixy   |grep integrate_test| grep $user|awk '{print $2}'`
 for ppid in $ppids
 do
+  echo "killing predixy process : $ppid"
   kill -9 $ppid
 done
 
