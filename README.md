@@ -82,6 +82,7 @@ tendisplus: workers = 56
 cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --command-key-pattern=R --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="get \_\_key__" --key-prefix="kv_" --command-key-pattern=R --test-time=1800
+(we test set key for half an hour, and then test get key half an hour. because the data is not big enough, most of the data is in memory, so the get qps for diffrent payload is nearly the same.)
 ![image.png](/uploads/B458C03FE6AF4294A647098C56033B24/image.png)
 
 ## License
