@@ -11,6 +11,7 @@ mkdir -p $packname/bin/deps
 mkdir -p $packname/scripts
 
 cp ${root_dir}/build/bin/tendisplus $packname/bin
+cp ${root_dir}/build/bin/tendisplus_static $packname/bin
 cp ${root_dir}/build/bin/binlog_tool $packname/bin
 cp ${root_dir}/bin/redis-cli $packname/bin
 cp /usr/local/gcc-${gcc_version}/lib64/libstdc++.so.6 $packname/bin/deps
