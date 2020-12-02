@@ -379,8 +379,8 @@ class ServerParams {
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
   bool noexpire = false;
-  uint64_t maxBinlogKeepNum = 1000000;
-  uint32_t minBinlogKeepSec = 0;
+  uint64_t maxBinlogKeepNum = 1;
+  uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;
 
   uint32_t maxClients = CONFIG_DEFAULT_MAX_CLIENTS;
@@ -393,7 +393,7 @@ class ServerParams {
   bool binlogUsingDefaultCF = false;
   uint32_t netIoThreadNum = 0;
   uint32_t executorThreadNum = 0;
-  uint32_t executorWorkPoolSize = 8;
+  uint32_t executorWorkPoolSize = 0;
 
   uint32_t binlogRateLimitMB = 64;
   uint32_t netBatchSize = 1024 * 1024;

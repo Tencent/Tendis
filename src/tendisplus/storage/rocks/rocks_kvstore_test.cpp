@@ -1009,6 +1009,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
     rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
   uint64_t keepBinlog = 1;
   cfg->maxBinlogKeepNum = keepBinlog;
+  cfg->minBinlogKeepSec = 0;
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,

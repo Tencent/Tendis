@@ -216,8 +216,8 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->dbNum, CONFIG_DEFAULT_DBNUM);
 
   EXPECT_EQ(cfg->noexpire, false);
-  EXPECT_EQ(cfg->maxBinlogKeepNum, 1000000);
-  EXPECT_EQ(cfg->minBinlogKeepSec, 0);
+  EXPECT_EQ(cfg->maxBinlogKeepNum, 1);
+  EXPECT_EQ(cfg->minBinlogKeepSec, 3600);
   EXPECT_EQ(cfg->slaveBinlogKeepNum, 1);
 
   EXPECT_EQ(cfg->maxClients, CONFIG_DEFAULT_MAX_CLIENTS);
@@ -227,7 +227,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->slowlogMaxLen, 128);
   EXPECT_EQ(cfg->netIoThreadNum, 0);
   EXPECT_EQ(cfg->executorThreadNum, 0);
-  EXPECT_EQ(cfg->executorWorkPoolSize, 8);
+  EXPECT_EQ(cfg->executorWorkPoolSize, 0);
 
   EXPECT_EQ(cfg->binlogRateLimitMB, 64);
   EXPECT_EQ(cfg->netBatchSize, 1024 * 1024);

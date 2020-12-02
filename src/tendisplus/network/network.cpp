@@ -275,20 +275,11 @@ Status NetworkAsio::startThread() {
     }
   });
 
-  size_t cpuNum = std::thread::hardware_concurrency();
-  if (cpuNum == 0) {
-    return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
-  }
-  uint32_t threadnum = std::max(size_t(4), cpuNum / 4);
-  if (_netIoThreadNum != 0) {
-    threadnum = _netIoThreadNum;
-  }
-  LOG(INFO) << "NetworkAsio::run netIO thread num:" << threadnum
-            << " _netIoThreadNum:" << _netIoThreadNum;
-  for (size_t i = 0; i < threadnum; ++i) {
+  LOG(INFO) << "NetworkAsio::run netIO _netIoThreadNum:" << _netIoThreadNum;
+  for (size_t i = 0; i < _netIoThreadNum; ++i) {
     _rwCtxList.push_back(std::make_shared<asio::io_context>());
   }
-  for (size_t i = 0; i < threadnum; ++i) {
+  for (size_t i = 0; i < _netIoThreadNum; ++i) {
     std::thread thd([this, i] {
       std::string threadName = _name + "-rw-" + std::to_string(i);
       threadName.resize(15);

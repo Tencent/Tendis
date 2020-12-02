@@ -371,11 +371,15 @@ TEST(Repl, MasterDontSaveBinlog) {
     auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
     auto cfg4 = makeServerParam(single_port, i, single_dir, false);
     cfg1->maxBinlogKeepNum = 1;
+    cfg1->minBinlogKeepSec = 0;
     cfg2->maxBinlogKeepNum = 1;
+    cfg2->minBinlogKeepSec = 0;
     cfg2->slaveBinlogKeepNum = 1;
     cfg3->maxBinlogKeepNum = 1;
+    cfg3->minBinlogKeepSec = 0;
     cfg3->slaveBinlogKeepNum = 1;
     cfg4->maxBinlogKeepNum = 1;
+    cfg4->minBinlogKeepSec = 0;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -617,10 +621,14 @@ TEST(Repl, BinlogKeepNum_Test) {
       auto cfg4 = makeServerParam(single_port, i, single_dir, false);
       uint64_t masterBinlogNum = 10;
       cfg1->maxBinlogKeepNum = masterBinlogNum;
+      cfg1->minBinlogKeepSec = 0;
       cfg2->maxBinlogKeepNum = masterBinlogNum;
+      cfg2->minBinlogKeepSec = 0;
       cfg2->slaveBinlogKeepNum = 1;
       cfg3->slaveBinlogKeepNum = 1;
+      cfg3->minBinlogKeepSec = 0;
       cfg4->maxBinlogKeepNum = masterBinlogNum;
+      cfg4->minBinlogKeepSec = 0;
       if (j == 1) {
         cfg1->binlogDelRange = 5000;
         cfg2->binlogDelRange = 5000;
