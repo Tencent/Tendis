@@ -1797,13 +1797,13 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "8"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->incrPushThreadnum, 8);
-  usleep(10000);
+  usleep(100000);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 8);
 
   sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->incrPushThreadnum, 1);
-  usleep(10000);
+  usleep(100000);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "fullPushThreadnum", "8"});
