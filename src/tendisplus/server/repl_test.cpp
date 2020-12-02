@@ -814,6 +814,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     auto cfg = makeServerParam(single_port, i, single_dir, false);
     uint64_t masterBinlogNum = 10;
     cfg->maxBinlogKeepNum = masterBinlogNum;
+    cfg->minBinlogKeepSec = 0;
     cfg->binlogDelRange = 5000;
 
     {
@@ -861,6 +862,12 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
     checkBinlogKeepNum(single, masterBinlogNum);
 
+#ifndef _WIN32
+      single->stop();
+
+      ASSERT_EQ(single.use_count(), 1);
+#endif
+
     LOG(INFO) << ">>>>>> scanDumpFile begin.";
     std::string subpath = "./repltest_single/dump/0/";
     try {
@@ -879,7 +886,8 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
         }
         auto s = scan(path.string());
         if (!s.ok()) {
-          LOG(ERROR) << "scan failed:" << s.toString();
+          LOG(ERROR) << "scan failed:" << s.toString()
+            << " file:" << path.string();
         }
         EXPECT_TRUE(s.ok());
       }
@@ -888,12 +896,6 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       EXPECT_TRUE(0);
       return;
     }
-
-#ifndef _WIN32
-    single->stop();
-
-    ASSERT_EQ(single.use_count(), 1);
-#endif
 
     LOG(INFO) << ">>>>>> test store count:" << i << " end;";
   }
