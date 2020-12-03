@@ -373,6 +373,14 @@ class TypeCommand : public Command {
       {RecordType::RT_SET_META, "set"},
       {RecordType::RT_ZSET_META, "zset"},
     };
+
+    auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+      sess, key, Command::RdLock());
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||

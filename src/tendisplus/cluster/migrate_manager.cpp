@@ -200,17 +200,15 @@ Status MigrateManager::stopTasks(const std::string& taskid) {
 }
 
 /* stop all tasks which is doing now */
-void MigrateManager::stopAllTasks(bool slaveSlots) {
+void MigrateManager::stopAllTasks(bool saveSlots) {
   std::lock_guard<myMutex> lk(_mutex);
   for (auto& iter : _migrateSendTaskMap) {
     iter.second->stopTask();
   }
 
-  if (slaveSlots) {
+  if (saveSlots) {
     for (auto& iter : _migrateReceiveTaskMap) {
-      if (slaveSlots) {
-        _stopImportSlots |= iter.second->_slots;
-      }
+      _stopImportSlots |= iter.second->_slots;
       iter.second->stopTask();
     }
 
@@ -229,11 +227,12 @@ void MigrateManager::stopAllTasks(bool slaveSlots) {
       }
       idx++;
     }
+  } else {
+    for (auto& iter : _migrateReceiveTaskMap) {
+      iter.second->stopTask();
+    }
   }
-  for (auto& iter : _migrateReceiveTaskMap) {
-    iter.second->stopTask();
-  }
-  LOG(ERROR) << "stop all import slots:" << bitsetStrEncode(_stopImportSlots);
+  LOG(INFO) << "stop all import slots:" << bitsetStrEncode(_stopImportSlots);
 }
 
 void MigrateManager::removeRestartSlots(const std::string& nodeid,
