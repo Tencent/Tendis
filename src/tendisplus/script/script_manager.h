@@ -5,35 +5,32 @@
 #ifndef TENDIS_PLUS_SCRIPT_MANAGER_H
 #define TENDIS_PLUS_SCRIPT_MANAGER_H
 
-extern "C"{
-#include "lua.h"
-#include "lauxlib.h"
-#include "lualib.h"
-}
 #include "tendisplus/server/server_entry.h"
+#include "tendisplus/script/lua_state.h"
 
 namespace tendisplus {
 
+class LuaState;
+
 class ScriptManager {
 public:
-    explicit ScriptManager(std::shared_ptr<ServerEntry> svr);
-    Status startup();
-    Status stopStore(uint32_t storeId);
-    void stop();
-      void init(int);
-    void sha1hex(char *digest, char *script, size_t len);
-    lua_State *getLuaState() {
-      return _lua;
-    }
+  explicit ScriptManager(std::shared_ptr<ServerEntry> svr);
+  Status startup(uint32_t luaStateNum);
+  Status stopStore(uint32_t storeId);
+  void stop();
+  Expected<std::string> run(Session* sess);
+  Expected<std::string> kill();
+  Expected<std::string> flush();
 
 private:
-    void luaLoadLib(lua_State *lua, const char *libname, lua_CFunction luafunc);
-      void luaLoadLibraries(lua_State *lua);
-    void luaRemoveUnsupportedFunctions(lua_State *lua);
+  std::shared_ptr<ServerEntry> _svr;
 
-      private:
-    lua_State *_lua;
-    std::shared_ptr<ServerEntry> _svr;
+  mutable std::mutex _mutex;
+  std::map<uint32_t, std::shared_ptr<LuaState>> _luaRunningList;
+  std::list<std::shared_ptr<LuaState>> _luaIdleList;
+  std::atomic<uint32_t> _idGen;
+
+  bool _kill;
 };
 
 }  // namespace tendisplus

@@ -653,7 +653,8 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   _scriptMgr = std::make_unique<ScriptManager>(shared_from_this());
-  s = _scriptMgr->startup();
+  // TODO(takenliu): change executorThreadNum dynamic
+  s = _scriptMgr->startup(_cfg->executorThreadNum);
   if (!s.ok()) {
     LOG(WARNING) << "start up ScriptManager failed";
     return s;
