@@ -150,4 +150,8 @@ ErrorCodes Status::code() const {
 
 Status::~Status() {}
 
+const std::string& Status::getErrmsg() const {
+  return _errmsg;
+}
+
 }  // namespace tendisplus
