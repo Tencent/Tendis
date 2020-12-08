@@ -117,8 +117,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   Expected<BinlogResult> ret = br;
 
   if (_cfg->aofPsyncEnabled && (clientType == MPovClientType::respClient)) {
-    ret =
-      masterSendAof(client, storeId, dstStoreId, binlogPos, false, _svr, _cfg);
+    ret = masterSendAof(
+      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
   } else {
     ret = masterSendBinlogV2(
       client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
@@ -589,7 +589,7 @@ void ReplManager::supplyFullPsyncRoutine(
     return;
   }
 
-  // send data from snapshot
+  // create snapshot
   std::unique_ptr<BasicDataCursor> cursor;
   std::shared_ptr<KVStore> store;
   std::unique_ptr<Transaction> txn;
@@ -631,13 +631,78 @@ void ReplManager::supplyFullPsyncRoutine(
     return;
   }
 
+  // save full status
+  uint64_t clientId = _clientIdGen.fetch_add(1);
+  string remoteIP;  // always empty
+  auto remotePort = client->getRemotePort();
+  {
+    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    auto iter = _fullPushStatus[storeId].find(slaveNode);
+    if (iter != _fullPushStatus[storeId].end()) {
+      LOG(INFO) << "supplyFullPsyncRoutine already have _fullPushStatus, "
+                << iter->second->toString();
+      if (iter->second->state == FullPushState::ERR) {
+        _fullPushStatus[storeId].erase(iter);
+      } else {
+        client->writeLine("-ERR already have _fullPushStatus, " +
+                          iter->second->toString());
+        return;
+      }
+    }
+
+#if defined(_WIN32) && _MSC_VER > 1900
+    _fullPushStatus[storeId][slaveNode] =
+      new MPovFullPushStatus{storeId,
+                             FullPushState::PUSHING,
+                             binlogPos,
+                             SCLOCK::now(),
+                             SCLOCK::time_point::min(),
+                             client,
+                             clientId,
+                             remoteIP,
+                             remotePort};
+#else
+    _fullPushStatus[storeId][slaveNode] =
+      std::move(std::unique_ptr<MPovFullPushStatus>(
+        new MPovFullPushStatus{storeId,
+                               FullPushState::PUSHING,
+                               binlogPos,
+                               SCLOCK::now(),
+                               SCLOCK::time_point::min(),
+                               client,
+                               clientId,
+                               remoteIP,
+                               remotePort}));
+#endif
+  }
+
+
+  auto guard_0 = MakeGuard([this, storeId, remoteIP, remotePort]() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    auto iter = _fullPushStatus[storeId].find(slaveNode);
+    if (iter != _fullPushStatus[storeId].end()) {
+      LOG(INFO) << "supplyFullPsyncRoutine, _fullPushStatus erase, "
+                << iter->second->toString();
+      _fullPushStatus[storeId].erase(iter);
+    } else {
+      LOG(ERROR) << "supplyFullPsyncRoutine, _fullPushStatus find node "
+                    "failed, storeid:"
+                 << storeId << " slave node:" << slaveNode;
+    }
+  });
+
+
+  // send data from snapshot
   uint64_t currentTs = msSinceEpoch();
   std::list<Record> result;
   std::string prevPrimaryKey;
+  uint64_t prevTTL = 0;
   std::string sendBuf;
   while (true) {
     Expected<Record> exptRcd = cursor->next();
-    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST ||
+        exptRcd.value().getRecordKey().getChunkId() >= CLUSTER_SLOTS) {
       if (!result.empty()) {
         auto aofStr = recordList2Aof(result);
         if (!aofStr.ok()) {
@@ -668,34 +733,42 @@ void ReplManager::supplyFullPsyncRoutine(
       continue;
     }
 
-    uint64_t targetTtl = 0;
+    uint64_t targetTTL = 0;
+    auto curPrimarykey = exptRcd.value().getRecordKey().getPrimaryKey();
     if (valueType != RecordType::RT_KV) {
-      auto key = exptRcd.value().getRecordKey().getPrimaryKey();
-      RecordKey mk(chunkId, dbid, RecordType::RT_DATA_META, key, "");
-
-      Expected<RecordValue> eValue = store->getKV(mk, txn.get());
-      if (eValue.ok()) {
-        targetTtl = eValue.value().getTtl();
+      if (curPrimarykey == prevPrimaryKey) {
+        targetTTL = prevTTL;
       } else {
-        LOG(WARNING) << "Get target ttl for key " << key
-                     << " of type: " << rt2Str(keyType) << " in db:" << dbid
-                     << " from chunk: " << chunkId
-                     << " failed, error: " << eValue.status().toString();
-        client->writeLine("-ERR get ttl error");
+        RecordKey mk(
+          chunkId, dbid, RecordType::RT_DATA_META, curPrimarykey, "");
+        Expected<RecordValue> eValue = store->getKV(mk, txn.get());
+        if (eValue.ok()) {
+          targetTTL = eValue.value().getTtl();
+        } else {
+          LOG(WARNING) << "Get target ttl for key " << curPrimarykey
+                       << " of type: " << rt2Str(keyType) << " in db:" << dbid
+                       << " from chunk: " << chunkId
+                       << " failed, error: " << eValue.status().toString();
+          client->writeLine("-ERR get ttl error");
+          return;
+        }
       }
     } else {
-      targetTtl = exptRcd.value().getRecordValue().getTtl();
+      targetTTL = exptRcd.value().getRecordValue().getTtl();
     }
-    if (0 != targetTtl && currentTs > targetTtl) {
+
+    if (0 != targetTTL && currentTs > targetTTL) {
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
       continue;
     }
 
     if (prevPrimaryKey.empty()) {
-      prevPrimaryKey = exptRcd.value().getRecordKey().getPrimaryKey();
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
       result.emplace_back(std::move(exptRcd.value()));
 
-    } else if (exptRcd.value().getRecordKey().getPrimaryKey() ==
-               prevPrimaryKey) {
+    } else if (curPrimarykey == prevPrimaryKey) {
       result.emplace_back(std::move(exptRcd.value()));
       if (result.size() >= 1000) {
         auto aofStr = recordList2Aof(result);
@@ -715,7 +788,9 @@ void ReplManager::supplyFullPsyncRoutine(
         return;
       }
       sendBuf.append(aofStr.value());
-      prevPrimaryKey = exptRcd.value().getRecordKey().getPrimaryKey();
+
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
 
       result.clear();
       result.emplace_back(std::move(exptRcd.value()));
@@ -727,7 +802,10 @@ void ReplManager::supplyFullPsyncRoutine(
     }
   }
 
-  uint64_t clientId = _clientIdGen.fetch_add(1);
+  LOG(INFO) << "full psync done."
+            << "remote addr:" << client->getRemoteRepr()
+            << "sotreId:" << storeId;
+
 
 #if defined(_WIN32) && _MSC_VER > 1900
   _pushStatus[storeId][clientId] =
@@ -739,8 +817,8 @@ void ReplManager::supplyFullPsyncRoutine(
                    SCLOCK::time_point::min(),
                    std::move(client),
                    clientId,
-                   "",
-                   0,
+                   remoteIP,
+                   remotePort,
                    MPovClientType::respClient};
 #else
   _pushStatus[storeId][clientId] = std::move(
@@ -752,8 +830,8 @@ void ReplManager::supplyFullPsyncRoutine(
                                                SCLOCK::time_point::min(),
                                                std::move(client),
                                                clientId,
-                                               "",
-                                               0,
+                                               remoteIP,
+                                               remotePort,
                                                MPovClientType::respClient}));
 #endif
 
