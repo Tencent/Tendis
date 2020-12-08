@@ -275,7 +275,6 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
       // NOTE(vinchen): If it's a slave, the connection should be closed
       // when there is an error. And the error should be log
       ServerEntry::logError(v.status().toString(), sess);
-
       auto vv = dynamic_cast<NetSession*>(sess);
       if (vv) {
         vv->setCloseAfterRsp();
@@ -757,6 +756,13 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     return expdb.status();
   }
   uint32_t storeId = expdb.value().dbId;
+
+  // NOTE(wayenchen) change session args to store a del command in session
+  LocalSessionGuard sg(server, sess);
+  if (sess->getArgs().size() >= 2) {
+    sg.getSession()->setArgs({"del", key});
+  }
+
   RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
   PStore kvstore = expdb.value().store;
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
@@ -764,7 +770,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     //   because it need rewrite codes too much.
     //   so, we need new txn and commit txn in this function,
     //   and then, we can't use sess->createTransaction
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = kvstore->createTransaction(sg.getSession());
     if (!ptxn.ok()) {
       return ptxn.status();
     }
@@ -807,8 +813,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     if (cnt.value() >= 2048) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      Status s =
-        Command::delKeyPessimisticInLock(sess, storeId, mk, valueType, &ictx);
+      Status s = Command::delKeyPessimisticInLock(
+        sg.getSession(), storeId, mk, valueType, &ictx);
       if (s.ok()) {
         return {ErrorCodes::ERR_EXPIRED, ""};
       } else {
@@ -816,7 +822,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       }
     } else {
       Status s = Command::delKeyOptimismInLock(
-        sess, storeId, mk, valueType, txn.get(), &ictx);
+        sg.getSession(), storeId, mk, valueType, txn.get(), &ictx);
       if (!s.ok()) {
         return s;
       }

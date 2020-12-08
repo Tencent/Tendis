@@ -442,6 +442,7 @@ class ServerParams {
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
   bool enableGcInMigate = true;
+  bool aofPsyncEnabled = false;
 
   uint32_t snapShotRetryCnt = 1000;
   uint32_t migrateTaskSlotsLimit = 10;

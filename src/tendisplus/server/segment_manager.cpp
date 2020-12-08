@@ -40,10 +40,12 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool cluster_enabled = false;
+  bool aof_enabled = false;
   if (sess && sess->getServerEntry()) {
     const auto& cfg = sess->getServerEntry()->getParams();
     lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     cluster_enabled = sess->getServerEntry()->isClusterEnabled();
+    aof_enabled = cfg->aofPsyncEnabled;
   }
 
   if (!_instances[segId]->isOpen()) {
@@ -63,9 +65,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
     ss << "store id " << segId << " is paused";
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
-
+  /* NOTE(wayenchen) if aofPsync is Enable, slave should be able to run
+   * command*/
   if (sess && sess->getCtx() &&
-      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY &&
+      !aof_enabled) {
     sess->getCtx()->setReplOnly(true);
   }
 
@@ -87,9 +91,12 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
       auto svr = sess->getServerEntry();
       const std::shared_ptr<tendisplus::ClusterState>& clusterState =
         svr->getClusterMgr()->getClusterState();
-      auto node = clusterState->clusterHandleRedirect(chunkId, sess);
-      if (!node.ok()) {
-        return node.status();
+      bool slaveHanleAof = aof_enabled && clusterState->isMyselfSlave();
+      if (!slaveHanleAof) {
+        auto node = clusterState->clusterHandleRedirect(chunkId, sess);
+        if (!node.ok()) {
+          return node.status();
+        }
       }
     }
     return DbWithLock{
@@ -99,9 +106,12 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
       auto svr = sess->getServerEntry();
       const std::shared_ptr<tendisplus::ClusterState>& clusterState =
         svr->getClusterMgr()->getClusterState();
-      auto node = clusterState->clusterHandleRedirect(chunkId, sess);
-      if (!node.ok()) {
-        return node.status();
+      bool slavePsyncAof = aof_enabled && clusterState->isMyselfSlave();
+      if (!slavePsyncAof) {
+        auto node = clusterState->clusterHandleRedirect(chunkId, sess);
+        if (!node.ok()) {
+          return node.status();
+        }
       }
     }
     return DbWithLock{segId, chunkId, _instances[segId], nullptr, nullptr};
@@ -125,6 +135,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
+  bool aof_enabled = false;
+  if (sess && sess->getServerEntry()) {
+    aof_enabled = sess->getServerEntry()->getParams()->aofPsyncEnabled;
+  }
+
   if (_instances[segId]->isPaused()) {
     _instances[segId]->stat.pausedErrorCount.fetch_add(
       1, std::memory_order_relaxed);
@@ -133,8 +148,11 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
+  /* NOTE(wayenchen) if aofPsync is Enable, slave should be able to run
+   * command*/
   if (sess && sess->getCtx() &&
-      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY &&
+      !aof_enabled) {
     sess->getCtx()->setReplOnly(true);
   }
 
@@ -155,11 +173,13 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool cluster_enabled = false;
   bool clusterSingle = false;
+  bool aof_enabled = false;
   if (sess && sess->getServerEntry()) {
     const auto& cfg = sess->getServerEntry()->getParams();
     lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     cluster_enabled = sess->getServerEntry()->isClusterEnabled();
-    clusterSingle = sess->getServerEntry()->getParams()->clusterSingleNode;
+    clusterSingle = cfg->clusterSingleNode;
+    aof_enabled = cfg->aofPsyncEnabled;
   }
   std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
   uint32_t last_chunkId = -1;
@@ -221,10 +241,12 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     auto svr = sess->getServerEntry();
     const std::shared_ptr<tendisplus::ClusterState>& clusterState =
       svr->getClusterMgr()->getClusterState();
-
-    auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
-    if (!node.ok()) {
-      return node.status();
+    bool slavePsyncAof = aof_enabled && clusterState->isMyselfSlave();
+    if (!slavePsyncAof) {
+      auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
+      if (!node.ok()) {
+        return node.status();
+      }
     }
   }
 

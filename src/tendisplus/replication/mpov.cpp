@@ -108,8 +108,16 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     needHeartbeat = true;
   }
 
-  auto ret = masterSendBinlogV2(
-    client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  BinlogResult br;
+  Expected<BinlogResult> ret = br;
+
+  if (_cfg->aofPsyncEnabled) {
+    ret = masterSendAof(
+      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  } else {
+    ret = masterSendBinlogV2(
+      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  }
   if (!ret.ok()) {
     LOG(WARNING) << "masterSendBinlog to client:" << client->getRemoteRepr()
                  << " failed:" << ret.status().toString();

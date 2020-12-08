@@ -186,6 +186,105 @@ Expected<BinlogResult> masterSendBinlogV2(
   }
 }
 
+Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
+                                     uint32_t storeId,
+                                     uint32_t dstStoreId,
+                                     uint64_t binlogPos,
+                                     bool needHeartBeart,
+                                     std::shared_ptr<ServerEntry> svr,
+                                     const std::shared_ptr<ServerParams> cfg) {
+  LocalSessionGuard sg(svr.get());
+
+  sg.getSession()->setArgs({"mastersendlog",
+                            std::to_string(storeId),
+                            client->getRemoteRepr(),
+                            std::to_string(dstStoreId),
+                            std::to_string(binlogPos)});
+
+  auto expdb = svr->getSegmentMgr()->getDb(
+    sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+  auto store = std::move(expdb.value().store);
+  INVARIANT(store != nullptr);
+
+  auto ptxn = store->createTransaction(sg.getSession());
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+
+  BinlogResult br;
+
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  std::unique_ptr<RepllogCursorV2> cursor =
+    txn->createRepllogCursorV2(binlogPos + 1);
+
+  std::stringstream ss;
+  std::string cmdStr = "";
+  uint16_t cmdNum = 0;
+  while (true) {
+    Expected<ReplLogRawV2> explog = cursor->next();
+    if (explog.ok()) {
+      br.binlogId = explog.value().getBinlogId();
+      br.binlogTs = explog.value().getTimestamp();
+
+      std::string value = explog.value().getReplLogValue();
+      Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
+
+      if (!logValue.ok()) {
+        LOG(ERROR) << "decode logvalue failed." << logValue.status().toString();
+        return logValue.status();
+      }
+      cmdStr = logValue.value().getCmd();
+      if (cmdStr.size() > 0 && (++cmdNum) < 10000) {
+        ss << cmdStr << "\r\n";
+      } else {
+        ss << cmdStr;
+        break;
+      }
+
+    } else if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
+      // no more data
+      break;
+    } else {
+      LOG(ERROR) << "iter binlog failed:" << explog.status().toString();
+      return explog.status();
+    }
+  }
+  std::stringstream ss2;
+  if (cmdNum == 0) {
+    br.binlogId = binlogPos;
+    br.binlogTs = 0;
+    if (!needHeartBeart) {
+      return br;
+    }
+    // keep the client alive
+    Command::fmtMultiBulkLen(ss2, 3);
+    Command::fmtBulk(ss2, "binlog_heartbeat");
+    Command::fmtBulk(ss2, std::to_string(dstStoreId));
+    Command::fmtBulk(ss2, std::to_string(msSinceEpoch()));
+
+  } else {
+    Status s = client->writeLine(ss.str());
+    if (!s.ok()) {
+      LOG(ERROR) << "store:" << storeId << " dst Store:" << dstStoreId
+                 << " writeData failed:" << s.toString()
+                 << "remote:" << client->getRemoteRepr()
+                 << "; Size:" << cmdStr.size();
+      return s;
+    }
+    uint32_t secs = cfg->timeoutSecBinlogWaitRsp;
+    Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
+    if (!exptOK.ok()) {
+      LOG(ERROR) << "store:" << storeId << " dst Store:" << dstStoreId
+                 << " readLine failed:" << exptOK.status().toString();
+      return exptOK.status();
+    }
+  }
+  return br;
+}
+
 Expected<BinlogResult> applySingleTxnV2(Session* sess,
                                         uint32_t storeId,
                                         const std::string& logKey,

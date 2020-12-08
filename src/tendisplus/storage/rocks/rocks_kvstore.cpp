@@ -269,9 +269,12 @@ Expected<uint64_t> RocksTxn::commit() {
     uint16_t oriFlag = static_cast<uint16_t>(ReplFlag::REPL_GROUP_START) |
       static_cast<uint16_t>(ReplFlag::REPL_GROUP_END);
 
-    // DLOG(INFO) << "RocksTxn::commit() storeid:" << _store->dbId() << "
-    // binlogid:" << _binlogId;
-
+    std::string sessionStr = "";
+    if (_session && _session->getArgs().size() > 0) {
+      sessionStr = _session->getServerEntry()->getParams()->aofPsyncEnabled
+        ? _session->getSessionCmd()
+        : _session->getArgs()[0];
+    }
     ReplLogKeyV2 key(_binlogId);
     ReplLogValueV2 val(chunkId,
                        static_cast<ReplFlag>(oriFlag),
@@ -280,9 +283,7 @@ Expected<uint64_t> RocksTxn::commit() {
 #ifndef NO_VERSIONEP
                        _session ? _session->getCtx()->getVersionEP()
                                 : SessionCtx::VERSIONEP_UNINITED,
-                       (_session && _session->getArgs().size() > 0)
-                         ? _session->getArgs()[0]
-                         : "",
+                       sessionStr,
 #else
                        SessionCtx::VERSIONEP_UNINITED,
                        "",
@@ -477,7 +478,8 @@ Status RocksTxn::addDeleteRangeBinlog(const std::string& begin,
 }
 
 Status RocksTxn::flushall() {
-  if (_replOnly) {
+  bool aofEnable = _session->getServerEntry()->getParams()->aofPsyncEnabled;
+  if (_replOnly && !aofEnable) {
     return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
   }
   if (!_store->enableRepllog()) {
