@@ -124,7 +124,7 @@ Expected<std::string> genericSAdd(Session* sess,
                     RecordType::RT_SET_ELE,
                     metaRk.getPrimaryKey(),
                     args[i]);
-    if (rv.ok()) {
+
       Expected<RecordValue> subrv = kvstore->getKV(subRk, txn);
       if (subrv.ok()) {
         continue;
@@ -133,9 +133,7 @@ Expected<std::string> genericSAdd(Session* sess,
       } else {
         return subrv.status();
       }
-    } else {
-      cnt += 1;
-    }
+
     RecordValue subRv("", RecordType::RT_SET_ELE, -1);
     Status s = kvstore->setKV(subRk, subRv, txn);
     if (!s.ok()) {
@@ -870,13 +868,8 @@ class SdiffgenericCommand : public Command {
       if (!expdb.ok()) {
         return expdb.status();
       }
-      RecordKey metaRk(expdb.value().chunkId,
-                       pCtx->getDbId(),
-                       RecordType::RT_SET_META,
-                       args[i],
-                       "");
-      PStore kvstore = expdb.value().store;
 
+      PStore kvstore = expdb.value().store;
       auto ptxn = kvstore->createTransaction(sess);
       if (!ptxn.ok()) {
         return ptxn.status();
