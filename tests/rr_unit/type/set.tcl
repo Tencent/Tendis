@@ -79,6 +79,12 @@ start_server {
         }
     }
 
+    test {SADD set repeated members} {
+      r del myset
+      r sadd myset 1 2 3 4 5 3 2
+      assert_equal {1 2 3 4 5} [r smembers myset]
+    }
+
     test {SREM basics - regular set} {
         create_set myset {foo bar ciao}
         assert_equal 0 [r srem myset qux]
