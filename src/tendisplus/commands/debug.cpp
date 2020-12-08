@@ -3576,7 +3576,7 @@ class compactSlotsCommand : public Command {
     const auto guard = MakeGuard([this, &server] {});
 
     if (!server->isClusterEnabled()) {
-      return {ErrorCodes::ERR_MANUAL, "only cluster mode support deleteslots"};
+      return {ErrorCodes::ERR_MANUAL, "only cluster mode support compactSlots"};
     }
     auto eBeginChunkid = tendisplus::stoul(args[1]);
     if (!eBeginChunkid.ok()) {
