@@ -37,7 +37,7 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
 	set(STDFS_LIB "stdc++fs")
-    option(NEW_ROCKSDB "new rocksdb version" ON)
+    option(NEW_ROCKSDB "new rocksdb version" OFF)
     if(NEW_ROCKSDB)
         message("using rocksdb-6.14.5")
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
