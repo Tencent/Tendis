@@ -58,6 +58,21 @@ class BackupCommand : public Command {
     }
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
+    
+    // check whether current user has write permission on dir argument 
+    try {
+      auto tmpDirPath = dir + "/tmpDir";
+      filesystem::create_directory(tmpDirPath);
+      filesystem::remove(tmpDirPath);
+    } catch (const filesystem::filesystem_error &e) {
+      std::string errorInfo(e.what());
+      if (errorInfo.find("Permission denied")) {
+        return {ErrorCodes::ERR_MANUAL, "dir has no permission:" + dir};
+      } else {
+        return {ErrorCodes::ERR_MANUAL, "dir occurred unknown error:" + dir};
+      }
+    }
+    
     if (!filesystem::exists(dir)) {
       return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
     }
