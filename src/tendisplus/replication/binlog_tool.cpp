@@ -45,23 +45,21 @@ class BinlogScanner {
     return false;
   }
 
-  void process(const std::string& key,
-               const std::string& value,
-               uint32_t storeId) {
+  std::string process(const std::string& key,
+                      const std::string& value,
+                      uint32_t storeId) {
     Expected<ReplLogKeyV2> logkey = ReplLogKeyV2::decode(key);
     if (!logkey.ok()) {
-      std::cerr << "decode logkey failed." << std::endl;
-      return;
+      return "decode logkey failed";
     }
 
     Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
     if (!logValue.ok()) {
-      std::cerr << "decode logvalue failed." << std::endl;
-      return;
+      return "decode logvalue failed";
     }
 
     if (isFiltered(logkey.value(), logValue.value())) {
-      return;
+      return "";
     }
 
     if (_mode == TOOL_MODE::TEXT_SHOW) {
@@ -91,8 +89,7 @@ class BinlogScanner {
         auto entry = ReplLogValueEntryV2::decode(
           (const char*)data + offset, dataSize - offset, &size);
         if (!entry.ok()) {
-          std::cerr << "ReplLogValueEntryV2::decode failed." << std::endl;
-          return;
+          return "ReplLogValueEntryV2::decode failed";
         }
         offset += size;
 
@@ -100,8 +97,7 @@ class BinlogScanner {
         Expected<RecordValue> opvalue =
           RecordValue::decode(entry.value().getOpValue());
         if (!opkey.ok() || !opvalue.ok()) {
-          std::cerr << "decode opkey or opvalue failed.";
-          return;
+          return "decode opkey or opvalue failed";
         }
         std::cout << "  op:" << (uint32_t)entry.value().getOp()
                   << " fkey:" << opkey.value().getPrimaryKey()
@@ -123,22 +119,22 @@ class BinlogScanner {
       _lastbinlogid = logkey.value().getBinlogId();
       _lastbinlogtime = logValue.value().getTimestamp();
     }
+
+    return "";
   }
 
-  void scan() {
+  Expected<std::string> scan() {
     FILE* pf = fopen(_logfile.c_str(), "r");
     if (pf == NULL) {
-      std::cerr << "fopen failed:" << _logfile << std::endl;
-      return;
+      return {ErrorCodes::ERR_INTERNAL, "fopen failed"};
     }
     const uint32_t kBuffLen = 4096;
     char buff[kBuffLen];
 
     int ret = fread(buff, BINLOG_HEADER_V2_LEN, 1, pf);
     if (ret != 1 || strstr(buff, BINLOG_HEADER_V2) != buff) {
-      std::cerr << "read head failed." << std::endl;
       fclose(pf);
-      return;
+      return {ErrorCodes::ERR_INTERNAL, "read head failed"};
     }
     buff[BINLOG_HEADER_V2_LEN] = '\0';
     uint32_t storeId =
@@ -151,11 +147,10 @@ class BinlogScanner {
       if (ret != 1) {
         if (feof(pf)) {
           fclose(pf);
-          return;  // read file end.
+          return {ErrorCodes::ERR_OK, ""};
         }
-        std::cerr << "read keylen failed." << std::endl;
         fclose(pf);
-        return;
+        return {ErrorCodes::ERR_INTERNAL, "read keylen failed"};
       }
       buff[sizeof(uint32_t)] = '\0';
       keylen = int32Decode(buff);
@@ -166,8 +161,7 @@ class BinlogScanner {
       ret = fread(const_cast<char*>(key.c_str()), keylen, 1, pf);
       if (ret != 1) {
         fclose(pf);
-        std::cerr << "read key failed." << std::endl;
-        return;
+        return {ErrorCodes::ERR_INTERNAL, "read key failed"};
       }
 
       // valuelen
@@ -175,8 +169,7 @@ class BinlogScanner {
       ret = fread(buff, sizeof(uint32_t), 1, pf);
       if (ret != 1) {
         fclose(pf);
-        std::cerr << "read valuelen failed." << std::endl;
-        return;
+        return {ErrorCodes::ERR_INTERNAL, "read valuelen failed"};
       }
       buff[sizeof(uint32_t)] = '\0';
       valuelen = int32Decode(buff);
@@ -187,23 +180,34 @@ class BinlogScanner {
       ret = fread(const_cast<char*>(value.c_str()), valuelen, 1, pf);
       if (ret != 1) {
         fclose(pf);
-        std::cerr << "read value failed." << std::endl;
-        return;
+        return {ErrorCodes::ERR_INTERNAL, "read value failed"};
       }
 
-      process(key, value, storeId);
+      auto retStr = process(key, value, storeId);
+      if (!retStr.empty()) {
+        return retStr;
+      }
     }
 
     fclose(pf);
+    return {ErrorCodes::ERR_OK, ""};
   }
-  void run() {
-    scan();
+
+  Expected<std::string> run() {
+    auto e = scan();
     if (_mode == TOOL_MODE::TEXT_SHOW_SCOPE) {
       std::cout << "firstbinlogid:" << _firstbinlogid << std::endl;
       std::cout << "lastbinlogid:" << _lastbinlogid << std::endl;
       std::cout << "firstbinlogtime:" << _firstbinlogtime << std::endl;
       std::cout << "lastbinlogtime:" << _lastbinlogtime << std::endl;
     }
+
+    if (!e.ok()) {
+      return {e.status().code(),
+              e.status().getErrmsg() + ". file name: " + _logfile};
+    }
+
+    return e;
   }
 
  private:
@@ -239,6 +243,11 @@ int main(int argc, char** argv) {
 
   tendisplus::BinlogScanner bs;
   bs.init(pm);
-  bs.run();
-  return 0;
+  auto e = bs.run();
+  if (e.ok()) {
+    return 0;
+  }
+
+  std::cerr << e.status().getErrmsg() << std::endl;
+  return 1;
 }

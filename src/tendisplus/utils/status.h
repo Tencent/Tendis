@@ -75,6 +75,7 @@ class Status {
   std::string toString() const;
   ErrorCodes code() const;
   static std::string getErrStr(ErrorCodes code);
+  const std::string& getErrmsg() const;
 
  private:
   std::string _errmsg;
