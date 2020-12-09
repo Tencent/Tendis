@@ -167,6 +167,8 @@ class RestoreBackupCommand : public Command {
         }
       }
       for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
+        LOG(INFO) << "restorebackup store:" << i << " isForce:" << isForce
+                  << " isEmpty:" << isEmpty(svr, sess, i);
         std::string storeDir = dir + "/" + std::to_string(i) + "/";
         auto ret = restoreBackup(svr, sess, i, storeDir);
         if (!ret.ok()) {
@@ -188,6 +190,8 @@ class RestoreBackupCommand : public Command {
       if (svr->getReplManager()->hasSomeSlave(storeId)) {
         return {ErrorCodes::ERR_INTERNAL, "has slave, rm slave first"};
       }
+      LOG(INFO) << "restorebackup store:" << storeId << " isForce:" << isForce
+        << " isEmpty:" << isEmpty(svr, sess, storeId);
       auto ret = restoreBackup(svr, sess, storeId, dir);
       if (!ret.ok()) {
         return ret.status();
@@ -257,6 +261,9 @@ class RestoreBackupCommand : public Command {
 
     uint32_t flags = 0;
     BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();
+    LOG(INFO) << "store: " << storeId
+      << " binlogVersion:" << (int)binlogVersion
+      << " mybversion:" << (int)mybversion;
     if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
       if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
         flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
