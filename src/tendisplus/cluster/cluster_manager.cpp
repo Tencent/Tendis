@@ -900,7 +900,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     masterNotFail =
       (!curmaster->nodeFailed()) && myself->nodeIsSlave() ? true : false;
     /* NOTE(wayenchen) judge if the slave is on fullsync */
-    slaveIsNotFullSync = (myself->nodeIsSlave() &&
+    slaveIsNotFullSync = (myself->nodeIsSlave() && masterNotFail &&
                           _server->getReplManager()->isSlaveFullSyncDone())
       ? true
       : false;
@@ -921,7 +921,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
     Status s;
-
     if (masterNotFail) {
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
@@ -929,7 +928,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
       }
     }
     /* NOTE(wayenchen) slave should not full sync when set new master*/
-    if (!inMigrateTask && (slaveIsNotFullSync || isMyselfMaster())) {
+    if (!inMigrateTask &&
+        ((slaveIsNotFullSync || !masterNotFail) || isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
@@ -998,7 +998,7 @@ void ClusterState::incrCurrentEpoch() {
 
 void ClusterState::setFailAuthEpoch(uint64_t epoch) {
   std::lock_guard<myMutex> lk(_mutex);
-  _failoverAuthEpoch = epoch;
+  _failoverAuthEpoch.store(epoch, std::memory_order_relaxed);
 }
 
 CNodePtr ClusterState::getMyselfNode() const {
@@ -1301,7 +1301,7 @@ Status ClusterState::clusterSaveNodesNoLock() {
 }
 
 void ClusterState::setGossipBlock(uint64_t time) {
-  _blockTime = time;
+  _blockTime.store(time, std::memory_order_relaxed);
   _blockState.store(true, std::memory_order_relaxed);
 }
 
@@ -1441,9 +1441,6 @@ Status ClusterState::clusterSaveConfig() {
 void ClusterState::setClientUnBlock() {
   _cv.notify_one();
   _isCliBlocked.store(false, std::memory_order_relaxed);
-  /*NOTE(wayenchen) thread should be detach */
-  _manualLockThead->detach();
-  _manualLockThead.reset();
 }
 
 Status ClusterState::forceFailover(bool force, bool takeover) {
@@ -1978,7 +1975,7 @@ uint32_t ClusterState::clusterDelNodeSlots(CNodePtr node) {
 
 void ClusterState::addFailVoteNum() {
   std::lock_guard<myMutex> lk(_mutex);
-  _failoverAuthCount++;
+  _failoverAuthCount.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool ClusterState::clusterNodeAddFailureReport(CNodePtr failing,
@@ -4345,11 +4342,7 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     setClientUnBlock();
     INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
   }
-  if (_manualLockThead != nullptr) {
-    LOG(WARNING) << "maual lock thread is not nullptr";
-    _manualLockThead->detach();
-    _manualLockThead.reset();
-  }
+
   auto exptLockList = clusterLockMySlots();
   if (!exptLockList.ok()) {
     LOG(ERROR) << "fail lock slots on:" << getMyselfName()
@@ -4366,6 +4359,9 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     locktime,
     std::move(exptLockList.value()));
 
+  /*NOTE(wayenchen) thread should be detach */
+  _manualLockThead->detach();
+  _manualLockThead.reset();
   return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
 }
 

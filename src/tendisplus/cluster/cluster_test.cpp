@@ -25,13 +25,6 @@
 
 namespace tendisplus {
 
-// int genRand() {
-//    int grand = 0;
-//    uint32_t ms = nsSinceEpoch();
-//    grand = rand_r(reinterpret_cast<unsigned int *>(&ms));
-//    return grand;
-//}
-
 void testCommandArrayResult(
   std::shared_ptr<ServerEntry> svr,
   const std::vector<std::pair<std::vector<std::string>, std::string>>& arr) {
@@ -996,18 +989,27 @@ TEST(Cluster, AddSlot) {
 
 bool nodeIsMySlave(std::shared_ptr<ServerEntry> svr1,
                    std::shared_ptr<ServerEntry> svr2) {
-  CNodePtr myself = svr1->getClusterMgr()->getClusterState()->getMyselfNode();
-  CNodePtr node2 = svr2->getClusterMgr()->getClusterState()->getMyselfNode();
+  if (svr1->getParams()->clusterEnabled && svr2->getParams()->clusterEnabled) {
+    CNodePtr myself = svr1->getClusterMgr()->getClusterState()->getMyselfNode();
+    CNodePtr node2 = svr2->getClusterMgr()->getClusterState()->getMyselfNode();
 
-  std::string ip = svr2->getReplManager()->getMasterHost();
-
-  LOG(INFO) << "myself name:" << myself->getNodeName()
-            << "node2 master name:" << node2->getMaster()->getNodeName();
-  auto masterName = node2->getMaster()->getNodeName();
-  if (masterName == myself->getNodeName()) {
-    return true;
+    LOG(INFO) << "myself name:" << myself->getNodeName()
+              << "node2 master name:" << node2->getMaster()->getNodeName();
+    auto masterName = node2->getMaster()->getNodeName();
+    if (masterName == myself->getNodeName()) {
+      return true;
+    }
   }
-  //  LOG(INFO) << "svr1 name:" << myself->getNodeName()<< "svr2 name:" <<;
+  return false;
+}
+
+bool nodeIsMaster(std::shared_ptr<ServerEntry> svr) {
+  if (svr->getParams()->clusterEnabled) {
+    CNodePtr myself = svr->getClusterMgr()->getClusterState()->getMyselfNode();
+    if (myself->nodeIsMaster()) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -1106,7 +1108,7 @@ TEST(Cluster, failover) {
   std::this_thread::sleep_for(std::chrono::seconds(10));
   CNodePtr node4Ptr = state->clusterLookupNode(nodeName4);
   // slave become master
-  ASSERT_EQ(node4Ptr->nodeIsMaster(), true);
+  ASSERT_EQ(nodeIsMaster(node4), true);
   // cluster work ok after vote sucessful
   ASSERT_EQ(clusterOk(state), true);
 
