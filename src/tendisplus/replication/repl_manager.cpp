@@ -437,7 +437,8 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
               << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
               << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
               << " timestamp:" << _logRecycStatus[storeId]->timestamp
-              << " lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
+              << " lastFlushBinlogId:"
+              << _logRecycStatus[storeId]->lastFlushBinlogId;
   } else {
     if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
       // void compiler ud-link about static constexpr
@@ -446,12 +447,14 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
       _logRecycStatus[storeId]->firstBinlogId = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->saveBinlogId = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->timestamp = 0;
-      _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+      _logRecycStatus[storeId]->lastFlushBinlogId =
+              Transaction::TXNID_UNINITED;
       LOG(INFO) << "resetRecycleState"
                 << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
                 << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
                 << " timestamp:" << _logRecycStatus[storeId]->timestamp
-                << " lastFlushBinlogId:" << _logRecycStatus[storeId]->lastFlushBinlogId;
+                << " lastFlushBinlogId:"
+                << _logRecycStatus[storeId]->lastFlushBinlogId;
     } else {
       LOG(ERROR) << "ReplManager::restart failed, storeid:" << storeId;
       return {ErrorCodes::ERR_INTERGER, "getMinBinlog failed."};

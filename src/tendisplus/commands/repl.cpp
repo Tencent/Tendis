@@ -262,8 +262,8 @@ class RestoreBackupCommand : public Command {
     uint32_t flags = 0;
     BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();
     LOG(INFO) << "store: " << storeId
-      << " binlogVersion:" << (int)binlogVersion
-      << " mybversion:" << (int)mybversion;
+      << " binlogVersion:" << static_cast<int>(binlogVersion)
+      << " mybversion:" << static_cast<int>(mybversion);
     if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
       if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
         flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
