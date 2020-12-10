@@ -371,11 +371,15 @@ TEST(Repl, MasterDontSaveBinlog) {
     auto cfg3 = makeServerParam(slave1_port, i, slave1_dir, false);
     auto cfg4 = makeServerParam(single_port, i, single_dir, false);
     cfg1->maxBinlogKeepNum = 1;
+    cfg1->minBinlogKeepSec = 0;
     cfg2->maxBinlogKeepNum = 1;
+    cfg2->minBinlogKeepSec = 0;
     cfg2->slaveBinlogKeepNum = 1;
     cfg3->maxBinlogKeepNum = 1;
+    cfg3->minBinlogKeepSec = 0;
     cfg3->slaveBinlogKeepNum = 1;
     cfg4->maxBinlogKeepNum = 1;
+    cfg4->minBinlogKeepSec = 0;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -617,10 +621,14 @@ TEST(Repl, BinlogKeepNum_Test) {
       auto cfg4 = makeServerParam(single_port, i, single_dir, false);
       uint64_t masterBinlogNum = 10;
       cfg1->maxBinlogKeepNum = masterBinlogNum;
+      cfg1->minBinlogKeepSec = 0;
       cfg2->maxBinlogKeepNum = masterBinlogNum;
+      cfg2->minBinlogKeepSec = 0;
       cfg2->slaveBinlogKeepNum = 1;
       cfg3->slaveBinlogKeepNum = 1;
+      cfg3->minBinlogKeepSec = 0;
       cfg4->maxBinlogKeepNum = masterBinlogNum;
+      cfg4->minBinlogKeepSec = 0;
       if (j == 1) {
         cfg1->binlogDelRange = 5000;
         cfg2->binlogDelRange = 5000;
@@ -806,6 +814,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     auto cfg = makeServerParam(single_port, i, single_dir, false);
     uint64_t masterBinlogNum = 10;
     cfg->maxBinlogKeepNum = masterBinlogNum;
+    cfg->minBinlogKeepSec = 0;
     cfg->binlogDelRange = 5000;
 
     {
@@ -853,6 +862,12 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     LOG(INFO) << ">>>>>> checkBinlogKeepNum begin.";
     checkBinlogKeepNum(single, masterBinlogNum);
 
+#ifndef _WIN32
+      single->stop();
+
+      ASSERT_EQ(single.use_count(), 1);
+#endif
+
     LOG(INFO) << ">>>>>> scanDumpFile begin.";
     std::string subpath = "./repltest_single/dump/0/";
     try {
@@ -871,7 +886,8 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
         }
         auto s = scan(path.string());
         if (!s.ok()) {
-          LOG(ERROR) << "scan failed:" << s.toString();
+          LOG(ERROR) << "scan failed:" << s.toString()
+            << " file:" << path.string();
         }
         EXPECT_TRUE(s.ok());
       }
@@ -880,12 +896,6 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       EXPECT_TRUE(0);
       return;
     }
-
-#ifndef _WIN32
-    single->stop();
-
-    ASSERT_EQ(single.use_count(), 1);
-#endif
 
     LOG(INFO) << ">>>>>> test store count:" << i << " end;";
   }

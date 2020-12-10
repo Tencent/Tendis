@@ -272,7 +272,7 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
       return;
     }
 
-    bkInfo = std::move(ebkInfo.value());
+    bkInfo = std::move(ebinfo.value());
     INVARIANT(bkInfo.getBinlogPos() == ebkInfo.value().getBinlogPos());
     bkInfo.setFileList(ebkInfo.value().getFileList());
   }
@@ -280,6 +280,9 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   uint32_t flags = 0;
   auto binlogVersion = bkInfo.getBinlogVersion();
   BinlogVersion mybversion = _svr->getCatalog()->getBinlogVersion();
+  LOG(INFO) << "store: " << store->dbId()
+            << " binlogVersion:" << static_cast<int>(binlogVersion)
+            << " mybversion:" << static_cast<int>(mybversion);
   if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
     if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
       flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;

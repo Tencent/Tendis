@@ -1696,6 +1696,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 
     maxCommitId = nextBinlogSeq - 1;
     INVARIANT_D(nextBinlogSeq > maxCommitId);
+    LOG(INFO) << "RocksKVStore::restart flags: " << flags;
     if (!(flags & ROCKS_FLAGS_BINLOGVERSION_CHANGED)) {
       // if we have binlog, we will inherit latest binlogId
       // if we have no binlog, we will reset binlogId
@@ -2039,13 +2040,13 @@ Expected<BackupInfo> RocksKVStore::getBackupMeta(const std::string& dir) {
       }
     } else if (o.name == "endTimeSec") {
       if (o.value.IsUint64()) {
-        bkInfo.setEndTimeSec(o.value.IsUint64());
+        bkInfo.setEndTimeSec(o.value.GetUint64());
       } else {
         return {ErrorCodes::ERR_PARSEOPT, "Invalid backup meta"};
       }
     } else if (o.name == "binlogVersion") {
       if (o.value.IsUint64()) {
-        bkInfo.setBinlogVersion((BinlogVersion)o.value.IsUint64());
+        bkInfo.setBinlogVersion((BinlogVersion)o.value.GetUint64());
       } else {
         return {ErrorCodes::ERR_PARSEOPT, "Invalid backup meta"};
       }

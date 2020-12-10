@@ -291,6 +291,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
  private:
   ServerEntry();
+  Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);
   void serverCron();
   void replyMonitors(Session* sess);
   void DelMonitorNoLock(uint64_t connId);

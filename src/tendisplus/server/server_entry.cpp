@@ -404,6 +404,49 @@ void ServerEntry::setBackupRunning() {
   _backupRunning.fetch_add(1, std::memory_order_relaxed);
 }
 
+Status ServerEntry::adaptSomeThreadNumByCpuNum(
+        const std::shared_ptr<ServerParams>& cfg) {
+  // request executePool
+  uint32_t cpuNum = std::thread::hardware_concurrency();
+  if (cpuNum == 0) {
+    LOG(ERROR) << "ServerEntry::startup failed, cpuNum:" << cpuNum;
+    return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
+  }
+
+  if (cfg->executorWorkPoolSize == 0) {
+    cfg->executorWorkPoolSize = 4;
+    if (cpuNum > 16) {
+      cfg->executorWorkPoolSize = 8;
+    }
+    LOG(INFO) << "adaptSomeThreadNumByCpuNum executorWorkPoolSize:"
+              << cfg->executorWorkPoolSize;
+  }
+
+  if (cfg->executorThreadNum == 0) {
+    uint32_t threadnum = static_cast<uint32_t>(cpuNum * 1.5);
+    threadnum = std::max(uint32_t(8), threadnum);
+    threadnum = std::min(uint32_t(56), threadnum);
+
+    if (threadnum % cfg->executorWorkPoolSize != 0) {
+      threadnum = (threadnum / cfg->executorWorkPoolSize + 1)
+        * cfg->executorWorkPoolSize;
+    }
+
+    cfg->executorThreadNum = threadnum;
+    LOG(INFO) << "adaptSomeThreadNumByCpuNum executorThreadNum:"
+      << cfg->executorThreadNum;
+  }
+
+  if (cfg->netIoThreadNum == 0) {
+    uint32_t threadnum = static_cast<uint32_t>(cpuNum / 4);
+    threadnum = std::max(uint32_t(2), threadnum);
+    threadnum = std::min(uint32_t(12), threadnum);
+    cfg->netIoThreadNum = threadnum;
+    LOG(INFO) << "adaptSomeThreadNumByCpuNum netIoThreadNum:"
+              << cfg->netIoThreadNum;
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
 
 extern string gRenameCmdList;
 extern string gMappingCmdList;
@@ -411,6 +454,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   std::lock_guard<std::mutex> lk(_mutex);
 
   LOG(INFO) << "ServerEntry::startup,,,";
+
+  auto ret = adaptSomeThreadNumByCpuNum(cfg);
+  if (!ret.ok()) {
+    return ret;
+  }
 
   uint32_t kvStoreCount = cfg->kvStoreCount;
   uint32_t chunkSize = cfg->chunkSize;
@@ -526,29 +574,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   auto tmpMGLockMgr = std::make_unique<mgl::MGLockMgr>();
   installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
-  // request executePool
-  size_t cpuNum = std::thread::hardware_concurrency();
-  if (cpuNum == 0) {
-    LOG(ERROR) << "ServerEntry::startup failed, cpuNum:" << cpuNum;
-    return {ErrorCodes::ERR_INTERNAL, "cpu num cannot be detected"};
-  }
-  uint32_t threadnum = std::max(size_t(4), cpuNum / 2);
-  if (cfg->executorThreadNum != 0) {
-    threadnum = cfg->executorThreadNum;
-  } else {
-    _cfg->executorThreadNum =
-      threadnum;  // set the executorThreadNum when it's zero
-  }
-  LOG(INFO) << "ServerEntry::startup executor thread num:" << threadnum
-            << " executorThreadNum:" << cfg->executorThreadNum;
-
-  for (uint32_t i = 0; i < threadnum; i += _cfg->executorWorkPoolSize) {
+  for (uint32_t i = 0; i < _cfg->executorThreadNum;
+    i += _cfg->executorWorkPoolSize) {
     // TODO(takenliu): make sure whether multi worker_pool is ok?
     // But each size of worker_pool should been not less than 8;
     // uint32_t i = 0;
-    uint32_t curNum = i + _cfg->executorWorkPoolSize < threadnum
+    uint32_t curNum = i + _cfg->executorWorkPoolSize < _cfg->executorThreadNum
       ? _cfg->executorWorkPoolSize
-      : threadnum - i;
+      : _cfg->executorThreadNum - i;
     LOG(INFO) << "ServerEntry::startup WorkerPool thread num:" << curNum;
     auto executor = std::make_unique<WorkerPool>(
       "tx-worker-" + std::to_string(i), _poolMatrix);

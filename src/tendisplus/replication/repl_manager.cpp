@@ -433,20 +433,34 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
     _logRecycStatus[storeId]->saveBinlogId = explog.value().getBinlogId();
     _logRecycStatus[storeId]->timestamp = explog.value().getTimestamp();
     _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+    LOG(INFO) << "resetRecycleState"
+              << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
+              << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
+              << " timestamp:" << _logRecycStatus[storeId]->timestamp
+              << " lastFlushBinlogId:"
+              << _logRecycStatus[storeId]->lastFlushBinlogId;
   } else {
     if (explog.status().code() == ErrorCodes::ERR_EXHAUST) {
       // void compiler ud-link about static constexpr
       // TODO(takenliu): fix the relative logic
       std::lock_guard<std::mutex> lk(_mutex);
-      _logRecycStatus[storeId]->firstBinlogId = Transaction::MIN_VALID_TXNID;
-      _logRecycStatus[storeId]->saveBinlogId = Transaction::MIN_VALID_TXNID;
+      _logRecycStatus[storeId]->firstBinlogId = store->getHighestBinlogId() + 1;
+      _logRecycStatus[storeId]->saveBinlogId = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->timestamp = 0;
-      _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
+      _logRecycStatus[storeId]->lastFlushBinlogId =
+              Transaction::TXNID_UNINITED;
+      LOG(INFO) << "resetRecycleState"
+                << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
+                << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
+                << " timestamp:" << _logRecycStatus[storeId]->timestamp
+                << " lastFlushBinlogId:"
+                << _logRecycStatus[storeId]->lastFlushBinlogId;
     } else {
       LOG(ERROR) << "ReplManager::restart failed, storeid:" << storeId;
       return {ErrorCodes::ERR_INTERGER, "getMinBinlog failed."};
     }
   }
+
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -798,6 +812,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   //    << " to end:" << newStart << " success."
   //    << "addr:" << _svr->getNetwork()->getIp()
   //    << ":" << _svr->getNetwork()->getPort();
+  INVARIANT_COMPARE_D(newStart, <=, end+1);
   start = newStart;
   save = newSave;
 }
