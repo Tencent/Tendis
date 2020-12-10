@@ -1041,10 +1041,11 @@ class CommandCommand : public Command {
     } else if (arg1 == "count" && args.size() == 2) {
       Command::fmtLongLong(ss, cmdmap.size());
     } else if (arg1 == "getkeys" && args.size() >= 3) {
-      auto iter = cmdmap.find(args[2]);
+      auto arg2 = toLower(args[2]);
+      auto iter = cmdmap.find(arg2);
       if (iter == cmdmap.end()) {
         return {ErrorCodes::ERR_PARSEOPT,
-                "Invalid command specified: " + args[2]};
+                "Invalid command specified: " + arg2};
       }
 
       auto cmd = iter->second;
@@ -2487,15 +2488,17 @@ class ObjectCommand : public Command {
         return rv.status();
       }
       auto vt = rv.value().getRecordType();
-      if (args[1] == "refcount") {
+
+      auto arg1 = toLower(args[1]);
+      if (arg1 == "refcount") {
         return Command::fmtOne();
-      } else if (args[1] == "encoding") {
+      } else if (arg1 == "encoding") {
         return Command::fmtBulk(m.at(vt));
-      } else if (args[1] == "idletime") {
+      } else if (arg1 == "idletime") {
         return Command::fmtLongLong(0);
-      } else if (args[1] == "freq") {
+      } else if (arg1 == "freq") {
         return Command::fmtLongLong(0);
-      } else if (args[1] == "revision") {
+      } else if (arg1 == "revision") {
         return Command::fmtLongLong(rv.value().getVersionEP());
       }
     }
@@ -2661,7 +2664,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0     /* No flags. */
+#define EMPTYDB_NO_FLAGS 0 /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {

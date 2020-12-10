@@ -871,6 +871,46 @@ void testConfigRewrite(std::shared_ptr<ServerEntry> svr) {
   check.close();
 }
 
+void testCommand(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"command", "getkeys", "set", "a", "b"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(
+    "*1\r\n"
+    "$1\r\na\r\n",
+    expect.value());
+
+  sess.setArgs({"COMMAND", "GETKEYS", "SET", "a", "b"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(
+    "*1\r\n"
+    "$1\r\na\r\n",
+    expect.value());
+}
+
+void testObject(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"set", "a", "b"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"object", "encoding", "a"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"OBJECT", "ENCODING", "a"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+}
+
 TEST(Command, common) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -1063,6 +1103,42 @@ TEST(Command, testConfigRewrite) {
   auto server = makeServerEntry(cfg);
 
   testConfigRewrite(server);
+
+  remove(cfg->getConfFile().c_str());
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, testCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testCommand(server);
+
+  remove(cfg->getConfFile().c_str());
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, testObject) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testObject(server);
 
   remove(cfg->getConfFile().c_str());
 
