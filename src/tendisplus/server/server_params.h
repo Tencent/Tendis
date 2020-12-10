@@ -436,6 +436,7 @@ class ServerParams {
   bool slaveMigarateEnabled = false;
   bool enableGcInMigate = true;
 
+  uint32_t snapShotRetryCnt = 1000;
   uint32_t migrateTaskSlotsLimit = 10;
   uint32_t migrateDistance = 10000;
   uint16_t migrateBinlogIter = 10;

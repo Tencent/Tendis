@@ -394,6 +394,8 @@ ServerParams::ServerParams() {
                                   migrateTaskSlotsLimit);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-rate-limit",
                                   migrateRateLimitMB);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-retry-num",
+                                  snapShotRetryCnt);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-batch", bingLogSendBatch);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", bingLogSendBytes);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier",

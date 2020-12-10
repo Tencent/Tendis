@@ -217,6 +217,7 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg := "bind 127.0.0.1\n"
 	cfg = cfg + fmt.Sprintf("port %d\n", s.Port)
 	cfg = cfg + "loglevel debug\n"
+	cfg = cfg + "minBinlogKeepSec 0\n"
 	cfg = cfg + fmt.Sprintf("logdir %s/log\n", s.Path)
 	cfg = cfg + fmt.Sprintf("storage rocks\n")
 	cfg = cfg + fmt.Sprintf("dir %s/db\n", s.Path)

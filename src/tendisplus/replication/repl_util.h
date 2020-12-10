@@ -42,13 +42,14 @@ struct BinlogResult {
   uint64_t binlogTs = 0;
 };
 
-Expected<BinlogResult> masterSendBinlogV2(BlockingTcpClient*,
-                                      uint32_t storeId,
-                                      uint32_t dstStoreId,
-                                      uint64_t binlogPos,
-                                      bool needHeartBeart,
-                                      std::shared_ptr<ServerEntry> svr,
-                                      const std::shared_ptr<ServerParams> cfg);
+Expected<BinlogResult> masterSendBinlogV2(
+  BlockingTcpClient*,
+  uint32_t storeId,
+  uint32_t dstStoreId,
+  uint64_t binlogPos,
+  bool needHeartBeart,
+  std::shared_ptr<ServerEntry> svr,
+  const std::shared_ptr<ServerParams> cfg);
 
 
 Expected<BinlogResult> applySingleTxnV2(Session* sess,
@@ -77,7 +78,8 @@ Status SendSlotsBinlog(BlockingTcpClient*,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
                        uint64_t* newBinlogId,
-                       bool* needRetry);
+                       bool* needRetry,
+                       uint64_t* binlogTimeStamp);
 
 }  // namespace tendisplus
 

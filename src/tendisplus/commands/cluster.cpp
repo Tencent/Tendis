@@ -2,7 +2,6 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-
 #ifndef _WIN32
 #include <sys/time.h>
 #include <sys/utsname.h>
@@ -144,13 +143,52 @@ class ClusterCommand : public Command {
         } else {
           return {ErrorCodes::ERR_CLUSTER, "Invalid migrate info"};
         }
-      } else if (arg2 == "tasks" && argSize == 3) {
-        Expected<std::string> taskInfo = migrateMgr->getTaskInfo();
-        if (taskInfo.ok()) {
-          return taskInfo;
+      } else if (arg2 == "taskinfo" && (argSize >= 3 && argSize <= 5)) {
+        Expected<std::string> taskInfo("");
+        std::string arg3;
+        if (argSize == 3) {
+          taskInfo = migrateMgr->getTaskInfo();
+        } else if (argSize == 4) {
+          arg3 = toLower(args[3]);
+          if (arg3 == "all") {
+            taskInfo = migrateMgr->getTaskInfo(false);
+          } else if (arg3 == "fail" || arg3 == "succ") {
+            if (arg3 == "fail") {
+              taskInfo = migrateMgr->getSuccFailInfo();
+            } else {
+              taskInfo = migrateMgr->getSuccFailInfo(true);
+            }
+          } else if (arg3 == "running") {
+            taskInfo = migrateMgr->getTaskInfo();
+          } else if (arg3 == "waiting") {
+            taskInfo = migrateMgr->getTaskInfo(false, true);
+          } else {
+            return {ErrorCodes::ERR_INTERNAL, "invaild args"};
+          }
         } else {
-          return {ErrorCodes::ERR_CLUSTER, "Invalid migrate info"};
+          arg3 = toLower(args[3]);
+          const std::string arg4 = toLower(args[4]);
+          if (arg3 == "all") {
+            taskInfo = migrateMgr->getTaskInfo(arg4);
+          } else if (arg3 == "fail" || arg3 == "succ") {
+            if (arg3 == "fail") {
+              taskInfo = migrateMgr->getSuccFailInfo(arg4);
+            } else {
+              taskInfo = migrateMgr->getSuccFailInfo(arg4, true);
+            }
+          } else if (arg3 == "running") {
+            taskInfo = migrateMgr->getTaskInfo(arg4, true);
+          } else if (arg3 == "waiting") {
+            taskInfo = migrateMgr->getTaskInfo(arg4, false, true);
+          } else {
+            return {ErrorCodes::ERR_INTERNAL, "invaild args"};
+          }
         }
+        if (!taskInfo.ok()) {
+          LOG(ERROR) << "get taskinfo fail:" << taskInfo.status().toString();
+          return taskInfo.status();
+        }
+        return taskInfo.value();
       } else if (arg2 == "stop" && argSize > 3) {
         for (size_t i = 3; i < args.size(); i++) {
           LOG(INFO) << "stopping tasks, the parent taskid is:" << args[i];
