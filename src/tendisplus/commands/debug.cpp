@@ -825,9 +825,6 @@ class ShowCommand : public Command {
       return {ErrorCodes::ERR_PARSEOPT, "invalid param"};
     } else if (args[1] == "locks") {
       auto locklist = sess->getServerEntry()->getMGLockMgr()->getLockList();
-      if (locklist.size() == 0) {
-        return {ErrorCodes::ERR_INTERNAL, "no lock"};
-      }
       std::stringstream ss;
       Command::fmtMultiBulkLen(ss, locklist.size());
       for (auto& vs : locklist) {
@@ -3856,7 +3853,7 @@ class TendisadminCommand : public Command {
       if (server->isClusterEnabled() && operation != "lockdb") {
         auto cstate = server->getClusterMgr()->getClusterState();
         if (cstate->getClusterState() == ClusterHealth::CLUSTER_FAIL) {
-          return {ErrorCodes::ERR_CLUSTER_ERR, "cluste is fail"};
+          return {ErrorCodes::ERR_CLUSTER_ERR, "cluster is fail"};
         }
         cstate->setGossipBlock(time.value() * 1000);
         std::this_thread::sleep_for(std::chrono::seconds(time.value()));

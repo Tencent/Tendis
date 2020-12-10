@@ -161,12 +161,12 @@ class ClusterCommand : public Command {
           }
         }
         return Command::fmtOK();
-      } else if (arg2 == "stopall" && argSize >= 3) {
+      } else if (arg2 == "stopall" && argSize == 3) {
         /* NOTE(wayenchen) stop all migrate tasks (save message of stop tasks),
          * work on both srcNode and dstNode */
         migrateMgr->stopAllTasks();
         return Command::fmtOK();
-      } else if (arg2 == "cleanall" && argSize >= 3) {
+      } else if (arg2 == "cleanall" && argSize == 3) {
         /* NOTE(wayenchen) clean all migrate tasks, no save message*/
         migrateMgr->stopAllTasks(false);
         return Command::fmtOK();
@@ -1062,5 +1062,4 @@ class MigrateVersionMetaCommand : public Command {
     return Command::fmtOK();
   }
 } migrateVersionMetaCmd;
-
 }  // namespace tendisplus
