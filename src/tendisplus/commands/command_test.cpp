@@ -1900,7 +1900,7 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
 
   // total sleep 10s to wait thread resize ok
-  sleep(10); 
+  sleep(10);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 8);
   EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 8);
   EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 8);
@@ -1938,10 +1938,10 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
 
   // total sleep 10s to wait thread resize ok
-  sleep(10); 
+  sleep(10);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 1);
-  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 1); 
-  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 1); 
+  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 1);
+  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 1);
   EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 1);
   EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
   EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);

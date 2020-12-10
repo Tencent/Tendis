@@ -58,8 +58,8 @@ class BackupCommand : public Command {
     }
     auto svr = sess->getServerEntry();
     INVARIANT(svr != nullptr);
-    
-    // check whether current user has write permission on dir argument 
+
+    // check whether current user has write permission on dir argument
     try {
       auto tmpDirPath = dir + "/tmpDir";
       filesystem::create_directory(tmpDirPath);
@@ -72,7 +72,7 @@ class BackupCommand : public Command {
         return {ErrorCodes::ERR_MANUAL, "dir occurred unknown error:" + dir};
       }
     }
-    
+
     if (!filesystem::exists(dir)) {
       return {ErrorCodes::ERR_MANUAL, "dir not exist:" + dir};
     }
