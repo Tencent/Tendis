@@ -134,7 +134,7 @@ Expected<BinlogResult> masterSendBinlogV2(
   std::stringstream ss2;
   if (writer.getCount() == 0) {
     br.binlogId = binlogPos;
-    br.binlogTs = 0;
+    br.binlogTs = msSinceEpoch();
 
     if (!needHeartBeart) {
       return br;
@@ -144,7 +144,7 @@ Expected<BinlogResult> masterSendBinlogV2(
     Command::fmtBulk(ss2, "binlog_heartbeat");
     Command::fmtBulk(ss2, std::to_string(dstStoreId));
     /* add timestamp which binlog_heartbeat created */
-    Command::fmtBulk(ss2, std::to_string(msSinceEpoch()));
+    Command::fmtBulk(ss2, std::to_string(br.binlogTs));
   } else {
     // TODO(vinchen): too more copy
     Command::fmtMultiBulkLen(ss2, 5);

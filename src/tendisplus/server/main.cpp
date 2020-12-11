@@ -123,6 +123,8 @@ int main(int argc, char* argv[]) {
   });
 #endif
 
+  LOG(INFO) << "startup pid:" << getpid();
+
   tendisplus::getGlobalServer() =
     std::make_shared<tendisplus::ServerEntry>(params);
   s = tendisplus::getGlobalServer()->startup(params);

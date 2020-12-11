@@ -1430,7 +1430,7 @@ void ServerEntry::waitStopComplete() {
     }
 
     if (_isShutdowned.load(std::memory_order_relaxed)) {
-      LOG(INFO) << "shutdown command";
+      LOG(INFO) << "_isShutdowned is true";
       shutdowned = true;
       break;
     }

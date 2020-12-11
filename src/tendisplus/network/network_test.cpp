@@ -2,6 +2,7 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#include <stdio.h>
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -9,9 +10,10 @@
 #include "glog/logging.h"
 #include "tendisplus/network/network.h"
 #include "tendisplus/network/blocking_tcp_client.h"
-#include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/test_util.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -174,19 +176,28 @@ class session : public std::enable_shared_from_this<session> {
   char _data[max_length];
 };
 
-
 class server {
  public:
-  server(asio::io_context& io_context, uint16_t port)  // NOLINT
-    : _acceptor(io_context,
-                asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port)) {
-    _acceptor.set_option(asio::ip::tcp::acceptor::reuse_address(true));
+  server(asio::io_context& io_context, uint16_t port) {
+    try {
+    _acceptor = new asio::ip::tcp::acceptor(io_context,
+       asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+    } catch (exception e) {
+      printPortRunningInfo(port);
+      LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
+    }
+    _acceptor->set_option(asio::ip::tcp::acceptor::reuse_address(true));
     do_accept();
+  }
+  ~server() {
+    if (_acceptor) {
+      delete _acceptor;
+    }
   }
 
  private:
   void do_accept() {
-    _acceptor.async_accept(
+    _acceptor->async_accept(
       [this](std::error_code ec, asio::ip::tcp::socket socket) {
         if (!ec) {
           std::make_shared<session>(std::move(socket))->start();
@@ -194,21 +205,23 @@ class server {
         do_accept();
       });
   }
-  asio::ip::tcp::acceptor _acceptor;
+  asio::ip::tcp::acceptor* _acceptor;
 };
 
 TEST(BlockingTcpClient, Common) {
   auto ioCtx = std::make_shared<asio::io_context>();
   auto ioCtx1 = std::make_shared<asio::io_context>();
+  uint32_t port = 54001;
   /*
   BlockingTcpClient cli(ioCtx, 128);
-  Status s = cli.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  Status s = cli.connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_FALSE(s.ok());
-  s = cli.connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  s = cli.connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_FALSE(s.ok());
   EXPECT_EQ(s.toString(), "already inited sock");
   */
-  server svr(*ioCtx, 54321);
+
+  server svr(*ioCtx, port);
 
   std::thread thd([&ioCtx] {
     asio::io_context::work work(*ioCtx);
@@ -220,10 +233,10 @@ TEST(BlockingTcpClient, Common) {
   });
 
   auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx1, 128, 1024 * 1024, 10);
-  Status s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  Status s = cli1->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
 
-  s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  s = cli1->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_FALSE(s.ok());
   EXPECT_EQ(s.toString(), "-ERR:1,msg:already inited sock\r\n");
   s = cli1->writeLine("hello world\r\n hello world1\r\n trailing");
@@ -254,7 +267,7 @@ TEST(BlockingTcpClient, Common) {
 
   // more than max buf size
   auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4, 1024 * 1024, 10);
-  s = cli2->connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  s = cli2->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
   s = cli2->writeLine("hello world");
   exps = cli2->readLine(std::chrono::seconds(3));
@@ -295,16 +308,28 @@ class session2 : public std::enable_shared_from_this<session2> {
 
 class server2 {
  public:
-  server2(asio::io_context& io_context, uint16_t port)  // NOLINT
-    : _acceptor(io_context,
-                asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port)) {
-    _acceptor.set_option(asio::ip::tcp::acceptor::reuse_address(true));
+  server2(asio::io_context& io_context, uint16_t port) {
+    try {
+      _acceptor = new asio::ip::tcp::acceptor(io_context,
+        asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+    } catch (exception e) {
+      printPortRunningInfo(port);
+      LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
+    }
+
+    _acceptor->set_option(asio::ip::tcp::acceptor::reuse_address(true));
     do_accept();
+  }
+
+  ~server2() {
+    if (_acceptor) {
+      delete _acceptor;
+    }
   }
 
  private:
   void do_accept() {
-    _acceptor.async_accept(
+    _acceptor->async_accept(
       [this](std::error_code ec, asio::ip::tcp::socket socket) {
         if (!ec) {
           std::make_shared<session2>(std::move(socket))->start();
@@ -312,14 +337,15 @@ class server2 {
         do_accept();
       });
   }
-  asio::ip::tcp::acceptor _acceptor;
+  asio::ip::tcp::acceptor* _acceptor;
 };
 
-void rateLimit(uint64_t ratelimit, std::shared_ptr<asio::io_context> ioCtx) {
+void rateLimit(uint64_t ratelimit, std::shared_ptr<asio::io_context> ioCtx,
+        uint32_t port) {
   uint32_t total = ratelimit * 10;
   auto cli1 =
     std::make_shared<BlockingTcpClient>(ioCtx, 128, 1024 * 1024, 10, ratelimit);
-  Status s = cli1->connect("127.0.0.1", 54321, std::chrono::seconds(1));
+  Status s = cli1->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
 
   uint32_t count = 0;
@@ -346,7 +372,9 @@ void rateLimit(uint64_t ratelimit, std::shared_ptr<asio::io_context> ioCtx) {
 TEST(BlockingTcpClient, RateLimit) {
   auto ioCtx = std::make_shared<asio::io_context>();
   auto ioCtx1 = std::make_shared<asio::io_context>();
-  server2 svr(*ioCtx, 54321);
+  uint32_t port = 54011;
+
+  server2 svr(*ioCtx, port);
 
   std::thread thd([&ioCtx] {
     asio::io_context::work work(*ioCtx);
@@ -357,11 +385,11 @@ TEST(BlockingTcpClient, RateLimit) {
     ioCtx1->run();
   });
 
-  rateLimit(1024, ioCtx1);
-  rateLimit(102400, ioCtx1);
-  rateLimit(1024000, ioCtx1);
-  rateLimit(10240000, ioCtx1);
-  // rateLimit(102400000, ioCtx1);
+  rateLimit(1024, ioCtx1, port);
+  rateLimit(102400, ioCtx1, port);
+  rateLimit(1024000, ioCtx1, port);
+  rateLimit(10240000, ioCtx1, port);
+  // rateLimit(102400000, ioCtx1, port);
 
   ioCtx->stop();
   ioCtx1->stop();

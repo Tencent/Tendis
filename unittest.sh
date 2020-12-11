@@ -1,24 +1,42 @@
 #!/bin/sh
 
+logfile=./unittest.log
+rm $logfile
+
+function runOne() {
+    tmplog=./unittest_tmp.log
+    rm $tmplog
+    cmd=$1
+    $cmd >> $tmplog 2>&1
+    cat $tmplog
+    cat $tmplog >> $logfile
+
+    errcnt=`grep -E "Expected|FAILED" $logfile|wc -l`
+    if [ $errcnt -ne 0 ]; then
+        grep -E "Expected|FAILED" $logfile
+        exit $errcnt
+    fi
+}
+
 dir=build/bin
 
-./$dir/record_test
+runOne "./$dir/record_test"
 #./logging_unittest
 #./utilities_unittest
 #./db_sanity_test
-./$dir/lock_test
-./$dir/mgl_test
-./$dir/signalhandler_unittest
-./$dir/symbolize_unittest
-./$dir/atomic_utility_test
-./$dir/index_mgr_test
-./$dir/stacktrace_unittest
-./$dir/status_test
-./$dir/skiplist_test
-./$dir/varint_test
-./$dir/server_params_test
-./$dir/command_test
-./$dir/demangle_unittest
-./$dir/stl_logging_unittest
-./$dir/network_test
-./$dir/rocks_kvstore_test
+runOne "./$dir/lock_test"
+runOne "./$dir/mgl_test"
+runOne "./$dir/signalhandler_unittest"
+runOne "./$dir/symbolize_unittest"
+runOne "./$dir/atomic_utility_test"
+runOne "./$dir/index_mgr_test"
+runOne "./$dir/stacktrace_unittest"
+runOne "./$dir/status_test"
+runOne "./$dir/skiplist_test"
+runOne "./$dir/varint_test"
+runOne "./$dir/server_params_test"
+runOne "./$dir/command_test"
+runOne "./$dir/demangle_unittest"
+runOne "./$dir/stl_logging_unittest"
+runOne "./$dir/network_test"
+runOne "./$dir/rocks_kvstore_test"
