@@ -65,12 +65,7 @@ class BackupCommand : public Command {
       filesystem::create_directory(tmpDirPath);
       filesystem::remove(tmpDirPath);
     } catch (const filesystem::filesystem_error &e) {
-      std::string errorInfo(e.what());
-      if (errorInfo.find("Permission denied")) {
-        return {ErrorCodes::ERR_MANUAL, "dir has no permission:" + dir};
-      } else {
-        return {ErrorCodes::ERR_MANUAL, "dir occurred unknown error:" + dir};
-      }
+        return {ErrorCodes::ERR_MANUAL, e.what()};
     }
 
     if (!filesystem::exists(dir)) {

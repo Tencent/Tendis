@@ -7,6 +7,7 @@ import (
     "strconv"
     "time"
     "math"
+    "strings"
 )
 
 func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstorecount int, backup_mode string) {
@@ -37,14 +38,15 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 
     // check path cant equal dbPath
     cli := createClient(&m1)
-    if r, err := cli.Cmd("backup", m1.Path + "//db/", backup_mode).Str();
-        err.Error() != ("ERR:4,msg:dir cant be dbPath:" + m1.Path + "//db/") {
+    if r, err := cli.Cmd("backup", m1.Path + "/db", backup_mode).Str();
+        err.Error() != ("ERR:4,msg:dir cant be dbPath:" + m1.Path + "/db") {
         log.Fatalf("backup dir cant be dbPath:%v %s", err, r)
         return
     }
     // check path must exist
     if r, err := cli.Cmd("backup", "dir_not_exist", backup_mode).Str();
-        err.Error() != ("ERR:4,msg:dir not exist:dir_not_exist") {
+        err.Error() != ("ERR:4,msg:dir not exist:dir_not_exist") &&
+        !strings.Contains(err.Error(), "No such file or directory") {
         log.Fatalf("backup dir must exist:%v %s", err, r)
         return
     }
