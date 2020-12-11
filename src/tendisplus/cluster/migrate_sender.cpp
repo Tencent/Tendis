@@ -10,6 +10,7 @@
 #include "tendisplus/replication/repl_util.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/time.h"
 namespace tendisplus {
 
 ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
@@ -27,7 +28,14 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
     _sendstate(MigrateSenderStatus::SNAPSHOT_BEGIN),
     _storeid(0),
     _snapshotKeyNum(0),
+    _snapshotStartTime(0),
+    _snapshotEndTime(0),
+    _binlogEndTime(0),
     _binlogNum(0),
+    _lockStartTime(0),
+    _lockEndTime(0),
+    _taskStartTime(0),
+    _binlogTimeStamp(0),
     _consistency(false),
     _nodeid(""),
     _curBinlogid(UINT64_MAX),
@@ -40,12 +48,17 @@ Status ChunkMigrateSender::sendChunk() {
   LOG(INFO) << "sendChunk begin on store:" << _storeid
             << " slots:" << bitsetStrEncode(_slots);
   uint64_t start = msSinceEpoch();
+  _taskStartTime.store(msSinceEpoch(), std::memory_order_relaxed);
+  setStartTime(epochToDatetime(sinceEpoch()));
   /* send Snapshot of bitmap data */
   Status s = sendSnapshot();
   if (!s.ok()) {
     LOG(ERROR) << "send snapshot fail:" << s.toString();
     return s;
   }
+  setSnapShotEndTime(msSinceEpoch());
+  LOG(INFO) << "snapshot begin at:" << getSnapShotStartTime()
+            << "end at:" << getSnapShotEndTime();
   auto snapshot_binlog = getProtectBinlogid();
   _sendstate = MigrateSenderStatus::SNAPSHOT_DONE;
   uint64_t sendSnapTimeEnd = msSinceEpoch();
@@ -64,6 +77,7 @@ Status ChunkMigrateSender::sendChunk() {
   _sendstate = MigrateSenderStatus::BINLOG_DONE;
   /* lock chunks to block the client for while */
   auto lockStart = msSinceEpoch();
+  _lockStartTime.store(lockStart, std::memory_order_relaxed);
   s = lockChunks();
   if (!s.ok()) {
     return s;
@@ -92,13 +106,16 @@ Status ChunkMigrateSender::sendChunk() {
   }
   auto last_binlog = getProtectBinlogid();
   _sendstate = MigrateSenderStatus::LASTBINLOG_DONE;
+  _binlogEndTime.store(msSinceEpoch(), std::memory_order_relaxed);
   /* send migrateend command and wait for return*/
+  uint64_t sendOverStart = msSinceEpoch();
   s = sendOver();
   if (!s.ok()) {
     /* if error, it can't unlock chunks. It should
      * wait the gossip message. */
     return s;
   }
+  uint64_t sendOverEnd = msSinceEpoch();
   _sendstate = MigrateSenderStatus::SENDOVER_DONE;
   /* check the meta data of source node */
   if (!checkSlotsBlongDst()) {
@@ -117,7 +134,7 @@ Status ChunkMigrateSender::sendChunk() {
   serverLog(LL_NOTICE,
             "ChunkMigrateSender::sendChunk success"
             " [%s] [total used time:%lu] [snapshot time:%lu]"
-            " [send binlog time:%lu] [locked time:%lu]"
+            " [send binlog time:%lu] [locked time:%lu] [sendover time:%lu]"
             " [snapshot count:%lu] [binlog count:%lu] [binlog:%lu %lu %lu]"
             " [%s]",
             _client->getRemoteRepr().c_str(),
@@ -125,6 +142,7 @@ Status ChunkMigrateSender::sendChunk() {
             sendSnapTimeEnd - start,
             lockStart - sendSnapTimeEnd,
             end - lockStart,
+            sendOverEnd - sendOverStart,
             getSnapshotNum(),
             getBinlogNum(),
             snapshot_binlog,
@@ -145,7 +163,7 @@ void ChunkMigrateSender::setSenderStatus(MigrateSenderStatus s) {
 
 // check if bitmap all belong to dst node
 bool ChunkMigrateSender::checkSlotsBlongDst() {
-  std::lock_guard<myMutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex);
   for (size_t id = 0; id < _slots.size(); id++) {
     if (_slots.test(id)) {
       if (_clusterState->getNodeBySlot(id) != _dstNode) {
@@ -154,6 +172,14 @@ bool ChunkMigrateSender::checkSlotsBlongDst() {
     }
   }
   return true;
+}
+
+int64_t ChunkMigrateSender::getBinlogDelay() const {
+  std::lock_guard<std::mutex> lk(_mutex);
+  if (_binlogTimeStamp != 0) {
+    return msSinceEpoch() - _binlogTimeStamp;
+  }
+  return -1;
 }
 
 Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
@@ -269,6 +295,8 @@ Status ChunkMigrateSender::sendSnapshot() {
   }
   uint32_t timeoutSec = 10;
   uint32_t sendSlotNum = 0;
+  setSnapShotStartTime(msSinceEpoch());
+
   for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
     if (_slots.test(i)) {
       sendSlotNum++;
@@ -310,7 +338,7 @@ uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
 }
 
 Status ChunkMigrateSender::resetClient() {
-  std::lock_guard<myMutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex);
   setClient(nullptr);
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
@@ -339,7 +367,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
 
   for (uint32_t i = 0; i < MigrateManager::SEND_RETRY_CNT; ++i) {
     /* NOTE(wayenchen) interuppt send binlog if stop stask*/
-    if (_isRunning.load(std::memory_order_relaxed) == false) {
+    if (!isRunning()) {
       LOG(ERROR) << "stop sender sending binlog on taskid:" << _taskid;
       return {ErrorCodes::ERR_INTERNAL, "stop running"};
     }
@@ -354,11 +382,12 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
                         _svr,
                         &binlogNum,
                         &newBinlogId,
-                        &needRetry);
+                        &needRetry,
+                        &_binlogTimeStamp);
     /* NOTE(wayenchen) may have already sended half binlog but fail,
         so update the _curbinlog first*/
     {
-      std::lock_guard<myMutex> lk(_mutex);
+      std::lock_guard<std::mutex> lk(_mutex);
       _binlogNum.fetch_add(binlogNum, std::memory_order_relaxed);
       if (newBinlogId != 0) {
         _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
@@ -371,7 +400,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     }
 
     {
-      std::lock_guard<myMutex> lk(_mutex);
+      std::lock_guard<std::mutex> lk(_mutex);
       if (!s.ok() && needRetry) {
         if (newBinlogId > 0) {
           _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
@@ -431,7 +460,7 @@ Status ChunkMigrateSender::sendBinlog() {
 
   while (catchupTimes < iterNum) {
     /* NOTE(wayenchen) interuppt send binlog if stop stask*/
-    if (_isRunning.load(std::memory_order_relaxed) == false) {
+    if (!isRunning()) {
       LOG(ERROR) << "stop sender sending binlog on taskid:" << _taskid;
       return {ErrorCodes::ERR_INTERNAL, "stop running"};
     }
@@ -481,6 +510,7 @@ Status ChunkMigrateSender::sendBinlog() {
 }
 
 Status ChunkMigrateSender::sendLastBinlog() {
+  uint64_t lastBinlogStart = msSinceEpoch();
   PStore kvstore = _dbWithLock->store;
   auto ptxn = kvstore->createTransaction(nullptr);
   if (!ptxn.ok()) {
@@ -493,14 +523,16 @@ Status ChunkMigrateSender::sendLastBinlog() {
   if (!s.ok()) {
     return s;
   }
-
-  serverLog(LL_VERBOSE,
-            "ChunkMigrateSender::sendLastBinlog"
-            " in kvstore(%u) ok: [%s] [%s] [send binlog total num:%lu]",
-            _storeid,
-            _client->getRemoteRepr().c_str(),
-            bitsetStrEncode(_slots).c_str(),
-            getBinlogNum());
+  uint64_t lastBinlogEnd = msSinceEpoch();
+  serverLog(
+    LL_VERBOSE,
+    "ChunkMigrateSender::sendLastBinlog"
+    " in kvstore(%u) ok: [%s] [%s] [send binlog total num:%lu use time:%lu]",
+    _storeid,
+    _client->getRemoteRepr().c_str(),
+    bitsetStrEncode(_slots).c_str(),
+    getBinlogNum(),
+    lastBinlogEnd - lastBinlogStart);
 
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -676,8 +708,9 @@ Status ChunkMigrateSender::lockChunks() {
 }
 
 void ChunkMigrateSender::unlockChunks() {
-  std::lock_guard<myMutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex);
   _slotsLockList.clear();
+  _lockEndTime.store(msSinceEpoch(), std::memory_order_relaxed);
 }
 
 void ChunkMigrateSender::stop() {
@@ -700,6 +733,27 @@ bool ChunkMigrateSender::needToWaitMetaChanged() const {
 bool ChunkMigrateSender::needToSendFail() const {
   return _sendstate == MigrateSenderStatus::SNAPSHOT_DONE ||
     _sendstate == MigrateSenderStatus::BINLOG_DONE;
+}
+
+
+void ChunkMigrateSender::setStartTime(const std::string& str) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _startTime = str;
+}
+
+void ChunkMigrateSender::setTaskStartTime(uint64_t t) {
+  _taskStartTime.store(t, std::memory_order_relaxed);
+}
+void ChunkMigrateSender::setBinlogEndTime(uint64_t t) {
+  _binlogEndTime.store(t, std::memory_order_relaxed);
+}
+
+void ChunkMigrateSender::setSnapShotStartTime(uint64_t t) {
+  _snapshotStartTime.store(t, std::memory_order_relaxed);
+}
+
+void ChunkMigrateSender::setSnapShotEndTime(uint64_t t) {
+  _snapshotEndTime.store(t, std::memory_order_relaxed);
 }
 
 

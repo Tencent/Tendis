@@ -1396,9 +1396,8 @@ TEST(Cluster, stopMigrate) {
    * finally all the tasks should be done */
   std::this_thread::sleep_for(500ms);
   work2.stopMigrate(taskid);
-  std::this_thread::sleep_for(1s);
-  work1.stopMigrate(taskid);
   std::this_thread::sleep_for(3s);
+
   auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
   EXPECT_EQ(taskNum1, 0);
   auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);

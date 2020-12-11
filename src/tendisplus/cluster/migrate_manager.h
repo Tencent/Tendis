@@ -30,7 +30,9 @@ enum class BinlogApplyMode;
 using myMutex = std::recursive_mutex;
 
 // Sender POV
-enum class MigrateSendState { NONE = 0, WAIT, START, SUCC, CLEAR, HALF, ERR };
+enum class MigrateSendState { WAIT = 0, START, SUCC, CLEAR, HALF, ERR };
+
+// enum clas MigrateState { ALL = 0, RUNNING, ERROR, WAITING, SUCCESS };
 
 enum MigrateBinlogType { RECEIVE_START, RECEIVE_END, SEND_START, SEND_END };
 
@@ -46,7 +48,7 @@ Expected<uint64_t> addMigrateBinlog(MigrateBinlogType type,
 class pTask {
  public:
   explicit pTask(const std::string& taskid, const std::string& nodeid)
-    : _taskid(taskid), _nodeid(nodeid) {}
+    : _taskid(taskid), _nodeid(nodeid), _taskNum(0) {}
   std::string _taskid;
   std::string _startTime;
   std::string getTaskid() {
@@ -54,6 +56,16 @@ class pTask {
   }
   uint64_t _migrateTime;
   std::string _nodeid;  // mark the dstNode of SrcNode, or SrcNode of dstNode
+  std::atomic<uint64_t> _taskNum;
+  std::map<std::string, std::string> _failStateMap;
+  std::map<std::string, std::string> _succStateMap;
+
+  std::uint64_t getTaskNum() {
+    return _taskNum.load(std::memory_order_relaxed);
+  }
+  void addTaskNum() {
+    _taskNum.fetch_add(1, std::memory_order_relaxed);
+  }
 };
 
 class MigrateSendTask {
@@ -91,6 +103,7 @@ class MigrateSendTask {
   void stopTask();
   void sendSlots();
   void deleteSenderChunks();
+  std::string toString();
 };
 
 
@@ -149,6 +162,7 @@ class MigrateReceiveTask {
   uint32_t getRetryCount() {
     return _retryTime.load(std::memory_order_relaxed);
   }
+  std::string toString();
 };
 
 class MigrateManager {
@@ -220,9 +234,15 @@ class MigrateManager {
 
   bool slotInTask(uint32_t slot);
   bool slotsInTask(const SlotsBitmap& bitMap);
-  Expected<std::string> getTaskInfo();
   Expected<std::string> getMigrateInfo();
-
+  Expected<std::string> getTaskInfo(bool noWait = true, bool noRunning = false);
+  Expected<std::string> getSuccFailInfo(bool succ = false);
+  uint64_t getWaitTaskNum(const std::string& pTaskid);
+  Expected<std::string> getTaskInfo(const std::string& taskid,
+                                    bool noWait = true,
+                                    bool noRunning = false);
+  Expected<std::string> getSuccFailInfo(const std::string& taskid,
+                                        bool succ = false);
   Expected<std::string> getMigrateInfoStr(const SlotsBitmap& bitMap);
   Expected<std::string> getMigrateInfoStrSimple(const SlotsBitmap& bitMap);
   SlotsBitmap getSteadySlots(const SlotsBitmap& bitMap);
@@ -245,14 +265,17 @@ class MigrateManager {
   size_t migrateReceiverSize();
 
   static constexpr int32_t SEND_RETRY_CNT = 3;
-  static constexpr int32_t RECEIVE_RETRY_CNT = 20;
+
   std::string genPTaskid();
   uint64_t getAllTaskNum();
-  uint64_t getTaskNum(const std::string& taskid);
+  uint64_t getTaskNum(const std::string& taskid,
+                      bool noWait = false,
+                      bool noRunning = false);
 
   void removeRestartSlots(const std::string& nodeid, const SlotsBitmap& slots);
   std::map<std::string, SlotsBitmap> getStopMap();
   bool existMigrateTask();
+  bool existPtask(const std::string& taskid);
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
@@ -262,6 +285,10 @@ class MigrateManager {
                    const std::string& nodeid,
                    std::vector<uint32_t>* taskSlots);
   std::string genTaskid();
+  // Status stopSrcNode(const std::string& nodeid, const std::string& taskid);
+  Status stopSrcNode(const std::string& taskid,
+                     const std::string& srcIp,
+                     uint64_t port);
 
  private:
   const std::shared_ptr<ServerParams> _cfg;
@@ -320,9 +347,9 @@ class MigrateManager {
   // sender rate limiter
   std::unique_ptr<RateLimiter> _rateLimiter;
 
-  // taskid lst
-  std::list<std::shared_ptr<pTask>> _importPTaskList;
-  std::list<std::shared_ptr<pTask>> _migratePTaskList;
+  // ptaskid map
+  std::unordered_map<std::string, std::shared_ptr<pTask>> _importPtaskMap;
+  std::unordered_map<std::string, std::shared_ptr<pTask>> _migratePtaskMap;
 };
 
 }  // namespace tendisplus

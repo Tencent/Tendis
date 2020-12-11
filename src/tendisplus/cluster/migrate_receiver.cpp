@@ -20,9 +20,17 @@ ChunkMigrateReceiver::ChunkMigrateReceiver(
     _storeid(storeid),
     _taskid(taskid),
     _slots(slots),
-    _snapshotKeyNum(0) {}
+    _snapshotKeyNum(0),
+    _snapshotStartTime(0),
+    _snapshotEndTime(0),
+    _binlogEndTime(0),
+    _taskStartTime(0) {}
 
 Status ChunkMigrateReceiver::receiveSnapshot() {
+  if (!isRunning()) {
+    LOG(ERROR) << "stop receiver task on taskid:" << _taskid;
+    return {ErrorCodes::ERR_INTERNAL, "stop running"};
+  }
   std::stringstream ss;
   const std::string nodename =
     _svr->getClusterMgr()->getClusterState()->getMyselfName();
@@ -46,6 +54,9 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     return {ErrorCodes::ERR_INTERNAL, "readymigrate req srcDb failed"};
   }
 
+  setSnapShotStartTime(msSinceEpoch());
+  setTaskStartTime(msSinceEpoch());
+  setStartTime(timePointRepr(SCLOCK::now()));
   uint32_t timeoutSec = 5;
   uint32_t readNum = 0;
   while (true) {
@@ -95,6 +106,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
   }
   LOG(INFO) << "migrate snapshot transfer done, readnum:" << readNum;
   _snapshotKeyNum.store(readNum, std::memory_order_relaxed);
+  setSnapShotEndTime(msSinceEpoch());
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -170,4 +182,26 @@ bool ChunkMigrateReceiver::isRunning() {
   return _isRunning.load(std::memory_order_relaxed);
 }
 
+
+void ChunkMigrateReceiver::setTaskStartTime(uint64_t t) {
+  _taskStartTime.store(t, std::memory_order_relaxed);
+}
+
+void ChunkMigrateReceiver::setBinlogEndTime(uint64_t t) {
+  _binlogEndTime.store(t, std::memory_order_relaxed);
+}
+
+void ChunkMigrateReceiver::setSnapShotStartTime(uint64_t t) {
+  _snapshotStartTime.store(t, std::memory_order_relaxed);
+}
+
+void ChunkMigrateReceiver::setSnapShotEndTime(uint64_t t) {
+  _snapshotEndTime.store(t, std::memory_order_relaxed);
+}
+
+
+void ChunkMigrateReceiver::setStartTime(const std::string& str) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _startTime = str;
+}
 }  // namespace tendisplus

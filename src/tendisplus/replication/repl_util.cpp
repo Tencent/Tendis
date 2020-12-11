@@ -354,7 +354,8 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
                        std::shared_ptr<ServerEntry> svr,
                        uint64_t* sendBinlogNum,
                        uint64_t* newBinlogId,
-                       bool* needRetry) {
+                       bool* needRetry,
+                       uint64_t* binlogTimeStamp) {
   uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
   size_t suggestBytes = svr->getParams()->bingLogSendBytes;
   uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
@@ -424,7 +425,7 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     }
 
     auto slot = explog.value().getChunkId();
-
+    *binlogTimeStamp = explog.value().getTimestamp();
     if (slot > CLUSTER_SLOTS - 1) {
       continue;
     }

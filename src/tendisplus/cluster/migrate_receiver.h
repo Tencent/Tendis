@@ -55,8 +55,35 @@ class ChunkMigrateReceiver {
     return _taskid;
   }
 
+  uint64_t getTaskStartTime() const {
+    return _taskStartTime.load(std::memory_order_relaxed);
+  }
+
   uint64_t getSnapshotNum() const {
     return _snapshotKeyNum.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getSnapShotStartTime() const {
+    return _snapshotStartTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getSnapShotEndTime() const {
+    return _snapshotEndTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getBinlogEndTime() const {
+    return _binlogEndTime.load(std::memory_order_relaxed);
+  }
+
+  void setTaskStartTime(uint64_t t);
+  void setBinlogEndTime(uint64_t t);
+  void setSnapShotStartTime(uint64_t t);
+  void setSnapShotEndTime(uint64_t t);
+  void setStartTime(const std::string& str);
+
+  std::string getStartTime() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _startTime;
   }
 
   void stop();
@@ -65,7 +92,7 @@ class ChunkMigrateReceiver {
 
  private:
   Status supplySetKV(const string& key, const string& value);
-
+  mutable std::mutex _mutex;
   std::shared_ptr<ServerEntry> _svr;
   const std::shared_ptr<ServerParams> _cfg;
   std::atomic<bool> _isRunning;
@@ -74,8 +101,12 @@ class ChunkMigrateReceiver {
   uint32_t _storeid;
   std::string _taskid;
   std::bitset<CLUSTER_SLOTS> _slots;
-
   std::atomic<uint64_t> _snapshotKeyNum;
+  std::atomic<uint64_t> _snapshotStartTime;
+  std::atomic<uint64_t> _snapshotEndTime;
+  std::atomic<uint64_t> _binlogEndTime;
+  std::atomic<uint64_t> _taskStartTime;
+  std::string _startTime;
 };
 
 }  // namespace tendisplus

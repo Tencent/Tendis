@@ -73,7 +73,7 @@ std::string epochToDatetime(const time_t epoch) {
   struct tm* dt, rt;
   char buffer[64];
   dt = localtime_r(&epoch, &rt);
-  strftime(buffer, sizeof(buffer), "%y%m%d %H:%M:%S", dt);
+  strftime(buffer, sizeof(buffer), "%y-%m-%d %H:%M:%S", dt);
   return std::string(buffer);
 }
 

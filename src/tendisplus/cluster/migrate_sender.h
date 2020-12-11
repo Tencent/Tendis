@@ -34,7 +34,6 @@ enum class MigrateSenderStatus {
   LASTBINLOG_DONE,
   SENDOVER_DONE,
   METACHANGE_DONE,
-  META_DONE,
   DEL_DONE,
 };
 
@@ -84,22 +83,62 @@ class ChunkMigrateSender {
   uint64_t getSnapshotNum() const {
     return _snapshotKeyNum.load(std::memory_order_relaxed);
   }
+
+  uint64_t getSnapShotStartTime() const {
+    return _snapshotStartTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getSnapShotEndTime() const {
+    return _snapshotEndTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getBinlogEndTime() const {
+    return _binlogEndTime.load(std::memory_order_relaxed);
+  }
+  uint64_t getLockStartTime() const {
+    return _lockStartTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getLockEndTime() const {
+    return _lockEndTime.load(std::memory_order_relaxed);
+  }
+
+  uint64_t getTaskStartTime() const {
+    return _taskStartTime.load(std::memory_order_relaxed);
+  }
+
   uint64_t getBinlogNum() const {
     return _binlogNum.load(std::memory_order_relaxed);
   }
   bool getConsistentInfo() const {
     return _consistency;
   }
+
   MigrateSenderStatus getSenderState() {
+    std::lock_guard<std::mutex> lk(_mutex);
     return _sendstate;
   }
-  void setSenderStatus(MigrateSenderStatus s);
 
+  std::string getStartTime() const {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _startTime;
+  }
+
+  void setStartTime(const std::string& str);
+  void setTaskStartTime(uint64_t t);
+  void setBinlogEndTime(uint64_t t);
+  void setSnapShotStartTime(uint64_t t);
+  void setSnapShotEndTime(uint64_t t);
+
+  void setSenderStatus(MigrateSenderStatus s);
   bool checkSlotsBlongDst();
 
   uint64_t getProtectBinlogid() const {
     return _curBinlogid.load(std::memory_order_relaxed);
   }
+
+  int64_t getBinlogDelay() const;
+
   Status lockChunks();
   void unlockChunks();
   bool needToWaitMetaChanged() const;
@@ -108,13 +147,13 @@ class ChunkMigrateSender {
   void stop();
   void start();
   bool isRunning();
+  std::string toString();
 
  private:
   Expected<std::unique_ptr<Transaction>> initTxn();
   Status sendBinlog();
   Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
   Status sendSnapshot();
-
   Status sendLastBinlog();
   Status catchupBinlog(uint64_t end);
 
@@ -122,7 +161,7 @@ class ChunkMigrateSender {
   Status sendOver();
 
  private:
-  mutable myMutex _mutex;
+  mutable std::mutex _mutex;
 
   std::bitset<CLUSTER_SLOTS> _slots;
   std::shared_ptr<ServerEntry> _svr;
@@ -137,7 +176,15 @@ class ChunkMigrateSender {
   MigrateSenderStatus _sendstate;
   uint32_t _storeid;
   std::atomic<uint64_t> _snapshotKeyNum;
+  std::atomic<uint64_t> _snapshotStartTime;
+  std::atomic<uint64_t> _snapshotEndTime;
+  std::atomic<uint64_t> _binlogEndTime;
   std::atomic<uint64_t> _binlogNum;
+  std::atomic<uint64_t> _lockStartTime;
+  std::atomic<uint64_t> _lockEndTime;
+  std::atomic<uint64_t> _taskStartTime;
+  uint64_t _binlogTimeStamp;
+  std::string _startTime;
   bool _consistency;
   std::string _nodeid;
   std::atomic<uint64_t> _curBinlogid;
