@@ -1873,86 +1873,78 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "8"});
   auto expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->incrPushThreadnum, 8);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->incrPushThreadnum, 1);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "fullPushThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->fullPushThreadnum, 8);
-  usleep(1000000);
-  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "fullPushThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->fullPushThreadnum, 1);
-  usleep(1000000);
-  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "fullReceiveThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 8);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "fullReceiveThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 1);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "logRecycleThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->logRecycleThreadnum, 8);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "logRecycleThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 1);
-  usleep(100000);
-  EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 1);
 
   //     need _enable_cluster flag on.
   sess.setArgs({"CONFIG", "SET", "migrateSenderThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateSenderThreadnum, 8);
-  usleep(100000);
-  EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "migrateSenderThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->migrateSenderThreadnum, 1);
-  usleep(100000);
-  EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 8);
-  usleep(100000);
-  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 8);
-
-  sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
-  usleep(100000);
-  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);
 
   sess.setArgs({"CONFIG", "SET", "migrateReceiveThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
-  usleep(100000);
+
+  // total sleep 10s to wait thread resize ok
+  sleep(10);
+  EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 8);
+  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 8);
+  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 8);
+  EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 8);
+  EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 8);
+  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 8);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 8);
+
+  sess.setArgs({"CONFIG", "SET", "fullPushThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->fullPushThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "fullReceiveThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "logRecycleThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->fullReceiveThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "migrateSenderThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->migrateSenderThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->incrPushThreadnum, 1);
 
   sess.setArgs({"CONFIG", "SET", "migrateReceiveThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
-  usleep(100000);
+
+  // total sleep 10s to wait thread resize ok
+  sleep(10);
+  EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 1);
+  EXPECT_EQ(svr->getReplManager()->fullPusherSize(), 1);
+  EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 1);
+  EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 1);
+  EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
+  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 1);
 }
 
