@@ -36,6 +36,7 @@ runOne "tclsh tests/test_helper.tcl --single rr_unit/other"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/quit"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/sort"
 runOne "tclsh tests/test_helper.tcl --single rr_unit/bugs"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/scripting"
 
 runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/zscanbyscore"
 runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/hmcas"

@@ -13,13 +13,14 @@ ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
 }
 
 Expected<std::string> ScriptManager::run(Session* sess) {
-  if (_kill) {
+  if (lua_kill) {
     if (_luaRunningList.size() > 0) {
       LOG(WARNING) << "script kill not finished:" << _luaRunningList.size();
       return {ErrorCodes::ERR_LUA, "script kill not finished."};
     } else {
       std::lock_guard<std::mutex> lk(_mutex);
-      _kill = false;
+      LOG(WARNING) << "script kill all finished.";
+      lua_kill = false;
     }
   }
   std::shared_ptr<LuaState> luaState;
@@ -34,7 +35,7 @@ Expected<std::string> ScriptManager::run(Session* sess) {
     }
     _luaRunningList[luaState->Id()] = luaState;
   }
-  auto ret = luaState->run(sess);
+  auto ret = luaState->evalCommand(sess);
   {
     std::lock_guard<std::mutex> lk(_mutex);
     // may be erased by flush()
@@ -51,13 +52,29 @@ Expected<std::string> ScriptManager::run(Session* sess) {
   return ret;
 }
 
-Expected<std::string> ScriptManager::kill() {
+Expected<std::string> ScriptManager::setLuaKill() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_luaRunningList.size() <= 0) {
-    return {ErrorCodes::ERR_LUA, "-NOTBUSY No scripts in execution right now."};
+    LOG(WARNING) << "script kill, no running script.";
+    return {ErrorCodes::ERR_LUA, "-NOTBUSY No scripts in execution right now.\r\n"};
   }
-  _kill = true;
-  return {ErrorCodes::ERR_OK, ""};
+  for(auto iter = _luaRunningList.begin(); iter != _luaRunningList.end(); ++iter) {
+    if(iter->second->luaWriteDirty()) {
+      LOG(WARNING) << "script kill, luaWriteDirty:" << iter->second->Id()
+        << " size:" << _luaRunningList.size();
+      return {ErrorCodes::ERR_LUA, "-UNKILLABLE Sorry the script already "
+        "executed write commands against the dataset. You can either wait the script "
+        "termination or kill the server in a hard way using the SHUTDOWN NOSAVE command.\r\n"};
+    }
+  }
+  lua_kill = true;
+  LOG(WARNING) << "script kill set ok.";
+  return Command::fmtOK();
+}
+
+bool ScriptManager::luaKill() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  return lua_kill;
 }
 
 Expected<std::string> ScriptManager::flush() {
@@ -75,11 +92,11 @@ Expected<std::string> ScriptManager::flush() {
 }
 
 Status ScriptManager::startup(uint32_t luaStateNum) {
-  LOG(INFO) << "ScriptManager::startup begin";
+  LOG(INFO) << "ScriptManager::startup begin, luaStateNum:" << luaStateNum;
   for (uint32_t i = 0; i < luaStateNum; ++i) {
     uint32_t id = _idGen.fetch_add(1);
-    LuaState s(_svr, id);
-    _luaIdleList.push_back(std::make_shared<LuaState>(s));
+    auto s = std::make_shared<LuaState>(_svr, id);
+    _luaIdleList.push_back(s);
   }
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -89,6 +106,14 @@ Status ScriptManager::stopStore(uint32_t storeId) {
 }
 
 void ScriptManager::stop() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  LOG(INFO) << "ScriptManager stop.";
+  _stopped = true;
+}
+
+bool ScriptManager::stopped() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  return _stopped;
 }
 
 }  // namespace tendisplus

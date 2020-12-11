@@ -596,6 +596,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   // set the executorThreadNum
+  _cfg->executorThreadNum = 0;
   for (auto& pool : _executorList) {
     _cfg->executorThreadNum += pool->size();
   }
@@ -1476,6 +1477,10 @@ void ServerEntry::stop() {
   _isRunning.store(false, std::memory_order_relaxed);
   _eventCV.notify_all();
   _network->stop();
+
+  // NOTE(takenliu): _scriptMgr need stop earlier than _executorList
+  _scriptMgr->stop();
+
   for (auto& executor : _executorList) {
     executor->stop();
   }
@@ -1497,8 +1502,6 @@ void ServerEntry::stop() {
   if (_gcMgr) {
     _gcMgr->stop();
   }
-
-  _scriptMgr->stop();
 
   if (!_isShutdowned.load(std::memory_order_relaxed)) {
     // NOTE(vinchen): if it's not the shutdown command, it should reset the

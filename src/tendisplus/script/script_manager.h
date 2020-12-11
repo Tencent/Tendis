@@ -19,8 +19,10 @@ public:
   Status stopStore(uint32_t storeId);
   void stop();
   Expected<std::string> run(Session* sess);
-  Expected<std::string> kill();
+  Expected<std::string> setLuaKill();
   Expected<std::string> flush();
+  bool luaKill();
+  bool stopped();
 
 private:
   std::shared_ptr<ServerEntry> _svr;
@@ -30,7 +32,8 @@ private:
   std::list<std::shared_ptr<LuaState>> _luaIdleList;
   std::atomic<uint32_t> _idGen;
 
-  bool _kill;
+  bool lua_kill;
+  bool _stopped;
 };
 
 }  // namespace tendisplus

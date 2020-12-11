@@ -292,7 +292,9 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   bool isClusterEnabled() const {
     return _enableCluster;
   }
-
+  bool isRunning() const {
+    return _isRunning;
+  }
  private:
   ServerEntry();
   Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);

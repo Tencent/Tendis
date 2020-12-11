@@ -404,6 +404,9 @@ ServerParams::ServerParams() {
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
                                   binlogUsingDefaultCF);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit",
+                                  luaTimeLimit);
 }
 
 ServerParams::~ServerParams() {
