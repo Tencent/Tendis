@@ -738,6 +738,10 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
     return _failoverAuthEpoch.load(std::memory_order_relaxed);
   }
 
+  bool hasReciveOffset() {
+    return _isMfOffsetReceived.load(std::memory_order_relaxed);
+  }
+
  private:
   mutable myMutex _mutex;
   mutable std::mutex _failMutex;
@@ -757,6 +761,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   //  Manual failover state of slave.
   // Master offset the slave needs to start MF or zero if stil not received.
   uint64_t _mfMasterOffset;
+  std::atomic<bool> _isMfOffsetReceived;
   // If non-zero signal that the manual failover can  start requesting masters
   // vote.
   uint32_t _mfCanStart;

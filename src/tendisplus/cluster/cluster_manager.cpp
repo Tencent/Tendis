@@ -705,6 +705,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _mfEnd(0),
     _mfSlave(nullptr),
     _mfMasterOffset(0),
+    _isMfOffsetReceived(false),
     _mfCanStart(0),
     _statsPfailNodes(0),
     _isCliBlocked(false),
@@ -997,7 +998,6 @@ void ClusterState::incrCurrentEpoch() {
 }
 
 void ClusterState::setFailAuthEpoch(uint64_t epoch) {
-  std::lock_guard<myMutex> lk(_mutex);
   _failoverAuthEpoch.store(epoch, std::memory_order_relaxed);
 }
 
@@ -2055,10 +2055,8 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
   }
   /* Broadcast the failing node name to everybody, forcing all the other
    * reachable nodes to flag the node as FAIL. */
-  if (_myself->nodeIsMaster()) {
-    uint64_t offset = _server->getReplManager()->replicationGetOffset();
-    clusterSendFail(node, offset);
-  }
+  clusterSendFail(node, _server->getReplManager()->replicationGetOffset());
+
   clusterUpdateState();
   clusterSaveNodes();
   return true;
@@ -2102,7 +2100,7 @@ void ClusterState::clusterHandleManualFailover() {
     return;
   }
 
-  if (_mfMasterOffset == 0) {
+  if (_mfMasterOffset == 0 && !hasReciveOffset()) {
     LOG(ERROR) << "_mfMasterOffset is zero";
     return;
   }
@@ -2114,6 +2112,7 @@ void ClusterState::clusterHandleManualFailover() {
     /* Our replication offset matches the master replication offset
      * announced after clients were paused. We can start the failover. */
     setMfStart();
+    _isMfOffsetReceived.store(false, std::memory_order_relaxed);
     serverLog(LL_WARNING,
               "All master replication stream processed, "
               "manual failover can start.");
@@ -4862,6 +4861,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     if (msg.getMflags() & CLUSTERMSG_FLAG0_PAUSED &&
         setMfMasterOffsetIfNecessary(sender)) {
       _mfMasterOffset = sender->_replOffset;
+      _isMfOffsetReceived.store(true, std::memory_order_relaxed);
       serverLog(LL_WARNING,
                 "Received replication offset for paused "
                 "master manual failover: %lu %lu",
