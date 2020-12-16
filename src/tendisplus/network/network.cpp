@@ -24,9 +24,11 @@ void printShellResult(std::string cmd) {
   char buffer[1024];
   FILE* fp = popen(cmd.c_str(), "r");
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  fgets(buffer, sizeof(buffer), fp);
-  std::cerr << buffer;
-  LOG(ERROR) << buffer;
+  while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+    std::cerr << buffer;
+    LOG(ERROR) << buffer;
+  }
+  pclose(fp);
 }
 
 void printPortRunningInfo(uint32_t port) {
@@ -173,6 +175,7 @@ Status NetworkAsio::prepare(const std::string& ip,
     _port = port;
     _netIoThreadNum = netIoThreadNum;
     asio::ip::tcp::endpoint ep;
+    LOG(INFO) << "NetworkAsio::prepare ip:" << ip << " port:" << port;
     /*NOTE(wayenchen) if bind domain name, use resolver to get endpoint*/
     if (supportDomain) {
       asio::ip::tcp::resolver resolver(*_acceptCtx);

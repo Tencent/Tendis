@@ -6,7 +6,7 @@ rm $logfile
 function runOne() {
     tmplog=./unittest_tmp.log
     rm $tmplog
-    cmd=$1
+    cmd="$1 --gtest_throw_on_failure"
     $cmd >> $tmplog 2>&1
     cat $tmplog
     cat $tmplog >> $logfile
