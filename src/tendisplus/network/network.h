@@ -26,6 +26,9 @@
 
 namespace tendisplus {
 
+void printShellResult(std::string cmd);
+void printPortRunningInfo(uint32_t port);
+
 class ServerEntry;
 
 enum class RedisReqMode : std::uint8_t {

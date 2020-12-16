@@ -6,7 +6,7 @@ build/bin/repl_test >&repl_test.log &
 build/bin/restore_test >&restore_test.log &
 build/bin/cluster_test >&cluster_test.log &
 
-sh ./redistest.sh >&redistest.log 
+sh ./redistest.sh &
 
 cd src/tendisplus/integrate_test
 ./gotest.sh &

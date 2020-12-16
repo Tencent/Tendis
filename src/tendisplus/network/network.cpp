@@ -11,12 +11,39 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/sync_point.h"
+#include "tendisplus/utils/test_util.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/server/server_entry.h"
 
 namespace tendisplus {
 
 using asio::ip::tcp;
+
+#ifdef TENDIS_DEBUG
+void printShellResult(std::string cmd) {
+  char buffer[1024];
+  FILE* fp = popen(cmd.c_str(), "r");
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
+    std::cerr << buffer;
+    LOG(ERROR) << buffer;
+  }
+  pclose(fp);
+}
+
+void printPortRunningInfo(uint32_t port) {
+  string err = "running process info for port " + to_string(port) + ":";
+  std::cerr << err.c_str();
+  LOG(ERROR) << err;
+  string cmdPid = "pid=`lsof -i:" + to_string(port) +
+                   "|tail -1|awk '{print $2}'`;";
+  printShellResult("netstat |grep "+ to_string(port));
+  printShellResult("lsof -i:" + to_string(port));
+  printShellResult(cmdPid + "ls -l /proc/$pid/exe");
+  printShellResult(cmdPid + "ls -l /proc/$pid/cwd");
+  printShellResult(cmdPid + "ps aux|grep $pid|grep -v grep");
+}
+#endif
 
 constexpr ssize_t REDIS_IOBUF_LEN = (1024 * 16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024 * 1024 * 1024);
@@ -148,6 +175,7 @@ Status NetworkAsio::prepare(const std::string& ip,
     _port = port;
     _netIoThreadNum = netIoThreadNum;
     asio::ip::tcp::endpoint ep;
+    LOG(INFO) << "NetworkAsio::prepare ip:" << ip << " port:" << port;
     /*NOTE(wayenchen) if bind domain name, use resolver to get endpoint*/
     if (supportDomain) {
       asio::ip::tcp::resolver resolver(*_acceptCtx);
@@ -168,6 +196,9 @@ Status NetworkAsio::prepare(const std::string& ip,
       return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
   } catch (std::exception& e) {
+#ifdef TENDIS_DEBUG
+    printPortRunningInfo(port);
+#endif
     return {ErrorCodes::ERR_NETWORK, e.what()};
   }
   startThread();

@@ -2321,7 +2321,7 @@ TEST(Cluster, lockConfict) {
   auto sess = makeSession(server, ctx);
   WorkLoad work(server, sess);
   work.init();
-  work.lockDb(1000);
+  work.lockDb(60);  // 60 seconds is enough
 
   std::this_thread::sleep_for(15s);
 

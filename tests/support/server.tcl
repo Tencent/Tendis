@@ -55,6 +55,7 @@ proc kill_server config {
     }
 
     # kill server and wait for the process to be totally exited
+    puts "kill_server $pid"
     catch {exec kill -9 $pid}
     while {[is_alive $config]} {
         incr wait 10
@@ -297,17 +298,22 @@ proc start_server {options {code undefined}} {
     }
 
     # find out the pid
+    after 100
     set pidfile [dict get $config "pidfile"]
-    while {![info exists pid]} {
-        set pid [exec cat $pidfile]
-        after 100
+    wait_for_condition 100 500 {
+        [file exists $pidfile] == 1
+    } else {
+        fail "start_server cant find $pidfile."
     }
+    set pid [exec cat $pidfile]
 
     set pidfile2 [dict get $slave_cfg "pidfile"]
-    while {![info exists slave_pid]} {
-        set slave_pid [exec cat $pidfile2]
-        after 100
+    wait_for_condition 100 500 {
+        [file exists $pidfile2] == 1
+    } else {
+        fail "start_server cant find $pidfile2."
     }
+    set slave_pid [exec cat $pidfile2]
 
     # setup properties to be able to initialize a client object
     set host $::host
