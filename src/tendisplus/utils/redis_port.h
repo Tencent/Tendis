@@ -208,10 +208,10 @@ void serverLogOld(int level, const char* fmt, ...);
         DLOG(INFO) << msg;                          \
         break;                                      \
       case LL_WARNING:                              \
-        LOG(WARNING) << msg;                        \
+        LOG(ERROR) << msg;                          \
         break;                                      \
       case LL_NOTICE:                               \
-        LOG(ERROR) << msg;                          \
+        LOG(WARNING) << msg;                        \
         break;                                      \
       case LL_VERBOSE:                              \
         LOG(INFO) << msg;                           \

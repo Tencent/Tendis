@@ -19,6 +19,7 @@ namespace tendisplus {
 
 using asio::ip::tcp;
 
+#ifdef TENDIS_DEBUG
 void printShellResult(std::string cmd) {
   char buffer[1024];
   FILE* fp = popen(cmd.c_str(), "r");
@@ -40,6 +41,7 @@ void printPortRunningInfo(uint32_t port) {
   printShellResult(cmdPid + "ls -l /proc/$pid/cwd");
   printShellResult(cmdPid + "ps aux|grep $pid|grep -v grep");
 }
+#endif
 
 constexpr ssize_t REDIS_IOBUF_LEN = (1024 * 16);
 constexpr ssize_t REDIS_MAX_QUERYBUF_LEN = (1024 * 1024 * 1024);

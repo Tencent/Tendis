@@ -183,7 +183,9 @@ class server {
     _acceptor = new asio::ip::tcp::acceptor(io_context,
        asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
     } catch (exception e) {
+#ifdef TENDIS_DEBUG
       printPortRunningInfo(port);
+#endif
       LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
     }
     _acceptor->set_option(asio::ip::tcp::acceptor::reuse_address(true));
@@ -313,7 +315,9 @@ class server2 {
       _acceptor = new asio::ip::tcp::acceptor(io_context,
         asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
     } catch (exception e) {
+#ifdef TENDIS_DEBUG
       printPortRunningInfo(port);
+#endif
       LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
     }
 
