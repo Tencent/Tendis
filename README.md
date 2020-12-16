@@ -77,8 +77,4 @@ cmd example:
 ![image.png](pic/qps_payload.png)
 
 ## License
-Tencent is pleased to support the open source community by making tendis available. 
-
-Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved. 
-
-tendis is licensed under the GNU General Public License Version 3.0 except for the third-party components listed below. 
+Tendis is licensed under the GNU General Public License Version 3.0. Copyright and license information can be found in the file [LICENSE.txt](LICENSE.txt).
