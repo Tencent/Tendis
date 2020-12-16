@@ -1,35 +1,26 @@
-# Tendisplus
+<img src="pic/tendis.svg" width = "300" alt="tendis"/>
 
-Tendisplus is a high-performance distributed storage system which is fully compatible with the redis protocol. It uses rocksdb as the storage engine, and all data is stored to disk through rocksdb. Users can visit tendisplus using redis client, and the application hardly needs to be changed. However, tendisplus supports storage capacity far exceeding memory, which can greatly reduce user storage costs.
+Tendis is a high-performance distributed storage system which is fully compatible with the Redis protocol. It uses RocksDB as the storage engine, and all data is stored to disks through RocksDB. Users can access Tendis using a Redis client, and the application hardly needs to be changed. In addition, Tendis supports storage capacity far exceeding memory, which can greatly reduce user storage costs.
 
-Similar to redis cluster, tendisplus uses a decentralized distributed solution. The gossip protocol is used for communication between nodes, and all nodes in the cluster can be routed to the correct node when user visits. Cluster nodes support automatic discovery of other nodes, detect faulty nodes, and ensure the application is almost not affected when the master node failed.
+Similar to Redis clusters, Tendis uses a decentralized distributed solution. The gossip protocol is used for communication between nodes, and all nodes in a cluster can be routed to the correct node when a user accesses. Cluster nodes support automatic discovery of other nodes, detect faulty nodes, and ensure the application is almost not affected when the master node failed.
 
-## Key features
+## Key features 
 - Redis compatibility
-  
-  Redis protocol, commands supported in tendisplus are compatible with redis.
-
+  Redis protocol and commands supported in Tendis are compatible with Redis.
 - Persistent storage
-  
-  Using rocksdb as storage engine. All data is stored in rocksdb in a specific format, supporting PB-level storage capacity.
+  Using RocksDB as storage engine. All data is stored in RocksDB in a specific format, supporting PB-level storage capacity.
 
 - Decentralized distributed cluster
-  
-  Distributed implementation like redis cluster, using a gossip protocol to propagate information between nodes.
+  Distributed implementation like Redis clusters, using a gossip protocol to intercommunicate between nodes.
 
 - Horizontal scalability
-  
-  Data migration online between nodes. High performance and linear scalability up to 1000 nodes.
+  Data migration online between nodes. High performance and linear scalability up to 1,000 nodes.
 
 - Failover
-  
-  Auto detect non-working nodes, and premote slave nodes to master when a failure occurs. 
-  
-- Key component for Tendis Hybrid Storage Edition 
-  
-  Thanks to the design and internal optimization, redis and tendisplus can work together to be 
-  Hybrid Storage Edition. It is suitable for KV storage scenarios, as it balances performance and cost, and greatly reduces your business operating costs by 80% in the scenarios where cold data takes up a lot of storage space. 
+  Auto-detect non-working nodes, and promote replica nodes to master when a failure occurs.
 
+- Key component for Tendis Hybrid Storage Edition
+  Thanks to the design and internal optimization, Redis and Tendis can work together to be Hybrid Storage Edition. It is suitable for KV storage scenarios, as it balances performance and cost, and greatly reduces your business operating costs by 80% in the scenarios where cold data takes up a lot of storage space.
 
 ## Build and run
 
@@ -41,7 +32,7 @@ Similar to redis cluster, tendisplus uses a decentralized distributed solution. 
 #### Build
 
 ```
-$ git clone http://git.code.oa.com/tencentdbforkv/tendisplus.git --recursive
+$ git clone https://github.com/Tencent/tendis.git --recursive
 $ git submodule update --init --recursive
 $ mkdir bulid
 $ cd build & cmake ..
@@ -75,7 +66,7 @@ cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="sadd \_\_key__ \_\_data__" --key-prefix="set_" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="zadd \_\_key__ \_\_key__ \_\_data__" --key-prefix="" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="hset \_\_key__ \_\_data__ \_\_data__" --key-prefix="hash_" --key-minimum=1 --key-maximum=1000000 --random-data --data-size=128 --test-time=1800
-![image.png](/uploads/9E5C0BE69C29483584A689EFAB9DACC0/image.png)
+![image.png](pic/qps.png)
 
 #### 2. QPS on different payload
 tendisplus: workers = 56
@@ -83,7 +74,7 @@ cmd example:
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --command-key-pattern=R --random-data --data-size=128 --test-time=1800
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="get \_\_key__" --key-prefix="kv_" --command-key-pattern=R --test-time=1800
 (we test set key for half an hour, and then test get key half an hour. because the data is not big enough, most of the data is in memory, so the get qps for diffrent payload is nearly the same.)
-![image.png](/uploads/B458C03FE6AF4294A647098C56033B24/image.png)
+![image.png](pic/qps_payload.png)
 
 ## License
 Tencent is pleased to support the open source community by making tendis available. 
