@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 package main
 
 import (
@@ -69,7 +73,6 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 
 func main(){
     flag.Parse()
-    //rand.Seed(time.Now().UTC().UnixNano())
     testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount, "copy")
     // port+100 to avoid TIME_WAIT
     testRestore(*m1ip, *m1port+100, *m2ip, *m2port+100, *kvstorecount, "ckpt")

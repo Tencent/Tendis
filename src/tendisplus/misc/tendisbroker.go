@@ -543,11 +543,6 @@ func front2back(front *Frontend, back_host string, wg *sync.WaitGroup) {
 	if v, err := fc.Cmd("AUTH", front.Passwd).Str(); err != nil || v != "OK" {
 		log.Fatalf("auth %s failed", front.Host)
 	}
-    /*
-	if v, err := bc.Cmd("AUTH", "tt7715TTC").Str(); err != nil || v != "OK" {
-		log.Fatalf("auth %s failed", back_host)
-	}
-    */
 	state_buf := &bytes.Buffer{}
 	if err := binary.Write(state_buf, binary.LittleEndian, front.State); err != nil {
 		log.Fatalf("write state failed:%v", err)

@@ -20,15 +20,15 @@ elseif(MSVC AND MSVC_VERSION GREATER_EQUAL 1900)
 	message("using MSVC ${MSVC_VERSION}")
 	# TODO: check msvc version
 	# for rocksdb, disable warning as errors
-	add_compile_options(/WX-) 
+	add_compile_options(/WX-)
 
 	# for glog
 	add_definitions(-DGLOG_NO_ABBREVIATED_SEVERITIES)
 
-	# for asio 
+	# for asio
 	#add_definitions(-DWIN32_LEAN_AND_MEAN)
 
-	# disable warnings 
+	# disable warnings
 	#add_compile_options(/wC4099)
 else()
     message(FATAL_ERROR "gcc or vs2015(update 2)+ is required")
@@ -186,7 +186,6 @@ include_directories(${ROCKSDB_DIR}/include)
 add_subdirectory(src/tendisplus/network)
 add_subdirectory(src/tendisplus/utils)
 add_subdirectory(src/tendisplus/server)
-add_subdirectory(src/tendisplus/benchmark)
 add_subdirectory(src/tendisplus/commands)
 add_subdirectory(src/tendisplus/storage)
 add_subdirectory(src/tendisplus/replication)

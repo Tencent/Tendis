@@ -143,7 +143,6 @@ func processOneStore(storeId int, addr1 string, addr2 string, channel chan int) 
 
 	iter := "0"
 	for {
-		// fmt.Printf("iterall %d %s %d\n", storeId, iter, batch);
 		if arr, err := be.Cmd("iterall", storeId, iter, batch).Array(); err != nil {
 			log.Fatalf("iter store:%d failed:%v", storeId, err)
 		} else {
