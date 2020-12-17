@@ -6,7 +6,6 @@ import (
 	"github.com/ngaut/log"
 	"io/ioutil"
 	"math/rand"
-	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -31,20 +30,42 @@ func RandStrAlpha(n int) string {
 	return string(b)
 }
 
+// NOTE(takenliu):net.Dial failed not mean port is usable.
 func FindAvailablePort(start int) int {
-	for i := start; i < start+1024; i++ {
-		ipPort := "127.0.0.1:" + strconv.Itoa(i)
-		time.Sleep(time.Duration(5) * time.Second)
-		conn, err := net.Dial("tcp", ipPort)
-		if err != nil {
-			//log.Debugf("retry %s err dialing:%v", ipPort, err.Error())
-			return i
-		}
-		defer conn.Close()
-	}
+    time.Sleep(2 * time.Second) // wait last process listen port finish
+    log.Infof("findAvailablePort begin start:%+v", start)
+    for i := start; i < start+1024; i++ {
+        // NOTE(takenliu):cluster port +10000
+        //   use netstat to check TCP TIME_WAIT and so on
+        //   use lsof to check listening port
+        log.Infof("check port:%d", i)
+        cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
+        output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
+        log.Infof("output1:%s", string(output1))
+        log.Infof("err1:%v", err1)
 
-	fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
-	return 0
+        cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i + 10000)
+        output2, err2 := exec.Command("sh", "-c", cmd2).CombinedOutput()
+        log.Infof("output2:%s", string(output2))
+        log.Infof("err2:%v", err2)
+
+        cmd3 := fmt.Sprintf("lsof -i:%d", i)
+        output3, err3 := exec.Command("sh", "-c", cmd3).CombinedOutput()
+        log.Infof("output3:%s", string(output3))
+        log.Infof("err3:%v", err3)
+
+        cmd4 := fmt.Sprintf("lsof -i:%d", i + 10000)
+        output4, err4 := exec.Command("sh", "-c", cmd4).CombinedOutput()
+        log.Infof("output4:%s", string(output4))
+        log.Infof("err4:%v", err4)
+
+        if len(output1) == 0 && len(output2) == 0 && len(output3) == 0 && len(output4) == 0 {
+            log.Infof("findAvailablePort success port:%+v", i)
+            return i
+        }
+    }
+    fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
+    return 0
 }
 
 func FileExist(path string) (bool, error) {

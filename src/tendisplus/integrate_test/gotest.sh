@@ -13,52 +13,35 @@ go build restoretest.go common.go
 go build clustertest.go common.go common_cluster.go
 go build clustertestRestore.go common.go common_cluster.go
 
-./clear.sh
-echo "" >> $logfile
-echo "###### repl begin ######" >> $logfile
-./repl >> $logfile 2>&1
+function runOne() {
+    tmplog=./gotest_tmp.log
+    rm $tmplog
+    cmd=$1
+    ./clear.sh
+    echo "" >> $logfile
+    echo "###### $cmd begin ######" >> $logfile
 
-./clear.sh
-echo "" >> $logfile
-echo "###### repltest begin ######" >> $logfile
-./repltest >> $logfile 2>&1
+    $cmd >> $tmplog 2>&1
+    cat $tmplog
+    cat $tmplog >> $logfile
 
-./clear.sh
-echo "" >> $logfile
-echo "###### restore begin ######" >> $logfile
-./restore >> $logfile 2>&1
+    passcnt=`grep "go passed" $tmplog|wc -l`
+    if [ $passcnt -lt 1 ]; then
+        echo grep 'go passed' failed
+        exit 1
+    fi
+}
 
-./clear.sh
-echo "" >> $logfile
-echo "###### restoretest begin ######" >> $logfile
-./restoretest >> $logfile 2>&1
-
-./clear.sh
-echo "" >> $logfile
-echo "###### clustertest(set) begin ######" >> $logfile
-echo "### set ###" >> $logfile
-./clustertest -benchtype="set" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
-
-#./clear.sh
-#echo "### sadd ###" >> $logfile
-#./clustertest -benchtype="sadd" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
-
-#./clear.sh
-#echo "### hmset ###" >> $logfile
-#./clustertest -benchtype="hmset" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
-
-#./clear.sh
-#echo "### rpush ###" >> $logfile
-#./clustertest -benchtype="rpush" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
-
-#./clear.sh
-#echo "### zadd ###" >> $logfile
-#./clustertest -benchtype="zadd" -clusterNodeNum=5 -num1=10000 >> $logfile 2>&1
-
-./clear.sh
-echo "" >> $logfile
-echo "###### clustertestRestore begin ######" >> $logfile
-./clustertestRestore -benchtype="set">> $logfile 2>&1
+runOne ./repl
+runOne ./repltest
+runOne ./restore
+runOne ./restoretest
+runOne './clustertest -benchtype=set -clusterNodeNum=5 -num1=10000'
+#runOne './clustertest -benchtype=sadd -clusterNodeNum=5 -num1=10000'
+#runOne './clustertest -benchtype=hmset -clusterNodeNum=5 -num1=10000'
+#runOne './clustertest -benchtype=rpush -clusterNodeNum=5 -num1=10000'
+#runOne './clustertest -benchtype=zadd -clusterNodeNum=5 -num1=10000'
+runOne './clustertestRestore -benchtype=set'
 
 grep "go passed" $logfile
 grep -E "\[error\]|\[fatal\]" $logfile

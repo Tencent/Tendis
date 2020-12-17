@@ -128,7 +128,7 @@ TEST(Repl, Common) {
   size_t i = 0;
   {
 #else
-  for (size_t i = 0; i < 9; i++) {
+  for (size_t i = 0; i < 3; i++) {
 #endif
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
