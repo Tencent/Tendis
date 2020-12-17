@@ -527,9 +527,46 @@ Expected<uint64_t> WorkLoad::getIntResult(
   return Command::getInt64FromFmtLongLong(expect.value());
 }
 
+void WorkLoad::addClusterSession(const string& addr, TestSession sess) {
+  LOG(INFO) << "addClusterSession:" << addr;
+  _clusterSessions[addr] = sess;
+}
+
+// TODO(takenliu): change other api to call runCommand.
+// support MOVED
+Expected<string> WorkLoad::runCommand(const std::vector<std::string>& args) {
+  TestSession sess = _session;
+  int depth = 0;
+  while (true) {
+    sess->setArgs(args);
+    auto expect = Command::runSessionCmd(sess.get());
+    if (expect.ok()) {
+      return expect.value();
+    }
+    if (expect.status().code() != ErrorCodes::ERR_MOVED) {
+      LOG(ERROR) << expect.status().toString();
+      return expect.value();
+    }
+    LOG(INFO) << "moved depth:" << depth << " " << expect.status().toString();
+    auto infos = stringSplit(expect.status().toString(), " ");
+    if (infos.size() == 3) {
+      string addr = infos[2].replace(infos[2].find("\r\n"), 2, "");
+      auto iter = _clusterSessions.find(addr);
+      if (iter != _clusterSessions.end()) {
+        sess = iter->second;
+      } else {
+        LOG(ERROR) << "MOVED and has no session for:" << addr;
+        return {ErrorCodes::ERR_UNKNOWN, "MOVED and has no session"};
+      }
+    } else {
+      LOG(ERROR) << "MOVED and info not right:" << expect.status().toString();
+      return {ErrorCodes::ERR_UNKNOWN, "MOVED and info not right"};
+    }
+  }
+}
+
 std::string WorkLoad::getStringResult(const std::vector<std::string>& args) {
-  _session->setArgs(args);
-  auto expect = Command::runSessionCmd(_session.get());
+  auto expect = runCommand(args);
   if (!expect.ok()) {
     LOG(ERROR) << expect.status().toString();
   }
