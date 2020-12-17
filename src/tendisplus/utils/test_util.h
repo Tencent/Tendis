@@ -6,6 +6,7 @@
 #ifndef SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
 #define SRC_TENDISPLUS_UTILS_TEST_UTIL_H_
 
+#include <map>
 #include <memory>
 #include <vector>
 #include <set>
@@ -113,10 +114,15 @@ class WorkLoad {
   void setMaxKeyLen(uint32_t max_key_len);
   Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
   std::string getStringResult(const std::vector<std::string>& args);
+  void addClusterSession(const string& addr, TestSession sess);
+
+ private:
+  Expected<string> runCommand(const std::vector<std::string>& args);
 
  private:
   TestSession _session;
   uint32_t _max_key_len;
+  std::map<std::string, TestSession> _clusterSessions;
 };
 
 void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,

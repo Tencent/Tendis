@@ -21,8 +21,9 @@ using asio::ip::tcp;
 
 #ifdef TENDIS_DEBUG
 void printShellResult(std::string cmd) {
+  string cmdFull = cmd + " 2>&1";
   char buffer[1024];
-  FILE* fp = popen(cmd.c_str(), "r");
+  FILE* fp = popen(cmdFull.c_str(), "r");
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
     std::cerr << buffer;

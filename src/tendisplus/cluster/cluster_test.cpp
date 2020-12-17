@@ -1189,7 +1189,7 @@ TEST(Cluster, migrate) {
   // addSlots
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
 
@@ -1204,22 +1204,30 @@ TEST(Cluster, migrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 1000;
+  const uint32_t numData = 20000;
+  // for support MOVED
+  string srcAddr = srcNode->getParams()->bindIp + ":"
+    + to_string(srcNode->getParams()->port);
+  string dstAddr = dstNode->getParams()->bindIp + ":"
+    + to_string(dstNode->getParams()->port);
+  work1.addClusterSession(srcAddr, sess1);
+  work1.addClusterSession(dstAddr, sess2);
+  work2.addClusterSession(srcAddr, sess1);
+  work2.addClusterSession(dstAddr, sess2);
 
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    string key;
     if (j % 2) {
       // write to slot 8373
-      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+      key = getUUid(8) + "{12}";
     } else {
       // write to slot 5970
-      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+      key = getUUid(8) + "{123}";
     }
+    string value = getUUid(7);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
 
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
     // begin to migate when  half data been writen
     if (j == numData / 2) {
       uint32_t keysize = 0;
@@ -1232,7 +1240,7 @@ TEST(Cluster, migrate) {
     }
   }
 
-  std::this_thread::sleep_for(20s);
+  std::this_thread::sleep_for(10s);
 
   uint32_t keysize1 = 0;
   uint32_t keysize2 = 0;
@@ -1242,7 +1250,6 @@ TEST(Cluster, migrate) {
     keysize2 += dstNode->getClusterMgr()->countKeysInSlot(vs);
   }
 
-  std::this_thread::sleep_for(20s);
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
               bitmap,
@@ -1256,39 +1263,37 @@ TEST(Cluster, migrate) {
             true);
   // dstNode should contain the keys
   ASSERT_EQ(keysize2, numData);
-  std::this_thread::sleep_for(10s);
 
   // migrate from dstNode to srcNode back
   keysize1 = 0;
   keysize2 = 0;
 
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    string key;
     if (j % 2) {
       // write to slot 8373
-      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+      key = getUUid(8) + "{12}";
     } else {
       // write to slot 5970
-      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+      key = getUUid(8) + "{123}";
     }
+    string value = getUUid(7);
+    auto ret = work2.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
 
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
     // begin to migate when  half data been writen
     if (j == numData / 2) {
       auto s = migrate(dstNode, srcNode, bitmap);
       EXPECT_TRUE(s.ok());
     }
   }
+  std::this_thread::sleep_for(10s);
 
   for (auto& vs : slotsList) {
     keysize1 += dstNode->getClusterMgr()->countKeysInSlot(vs);
     keysize2 += srcNode->getClusterMgr()->countKeysInSlot(vs);
   }
 
-  std::this_thread::sleep_for(60s);
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
               bitmap,
@@ -1305,7 +1310,7 @@ TEST(Cluster, migrate) {
   auto meta1 = work1.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
   auto meta2 = work2.getStringResult({"syncversion", "nodeid", "?", "?", "v1"});
   ASSERT_EQ(meta1, meta2);
-  std::this_thread::sleep_for(30s);
+  std::this_thread::sleep_for(5s);
 
 
 #ifndef _WIN32
@@ -1375,18 +1380,17 @@ TEST(Cluster, stopMigrate) {
   const uint32_t numData = 20000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    string key;
     if (j % 2) {
       // write to slot 8373
-      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+      key = getUUid(8) + "{12}";
     } else {
       // write to slot 5970
-      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+      key = getUUid(8) + "{123}";
     }
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
+    string value = getUUid(7);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
   }
   auto exptTaskid = migrate(srcNode, dstNode, bitmap);
   EXPECT_TRUE(exptTaskid.ok());
@@ -1495,19 +1499,17 @@ TEST(Cluster, stopAllMigrate) {
   const uint32_t numData = 30000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    string key;
     if (j % 2) {
       // write to slot 8373
-      cmd += " set " + getUUid(8) + "{12} " + getUUid(7);
+      key = getUUid(8) + "{12}";
     } else {
       // write to slot 5970
-      cmd += " set " + getUUid(8) + "{123} " + getUUid(7);
+      key = getUUid(8) + "{123}";
     }
-
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
+    string value = getUUid(7);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
   }
   auto exptTaskid = migrate(srcNode, dstNode, bitmap);
   EXPECT_TRUE(exptTaskid.ok());
@@ -1598,7 +1600,7 @@ TEST(Cluster, migrateAndImport) {
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode1->getParams()->bindIp, dstNode1->getParams()->port);
   work1.clusterMeet(dstNode2->getParams()->bindIp, dstNode2->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   std::vector<std::string> slots = {
     "{0..4700}", "{4701..10000}", "{10001..16383}"};
@@ -1610,35 +1612,51 @@ TEST(Cluster, migrateAndImport) {
   work3.addSlots(slots[2]);
 
   LOG(INFO) << "add slots sucess";
-  std::this_thread::sleep_for(std::chrono::seconds(30));
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   std::vector<uint32_t> slotsList1 = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
   std::vector<uint32_t> slotsList2 = {513, 1000, 1239, 2000, 4640};
   auto bitmap1 = getBitSet(slotsList1);
   auto bitmap2 = getBitSet(slotsList2);
-  const uint32_t numData = 1000;
+  const uint32_t numData = 10000;
+
+  // for support MOVED
+  string srcAddr = srcNode->getParams()->bindIp + ":"
+                   + to_string(srcNode->getParams()->port);
+  string dstAddr1 = dstNode1->getParams()->bindIp + ":"
+                    + to_string(dstNode1->getParams()->port);
+  string dstAddr2 = dstNode2->getParams()->bindIp + ":"
+                    + to_string(dstNode2->getParams()->port);
+  work1.addClusterSession(srcAddr, sess1);
+  work1.addClusterSession(dstAddr1, sess2);
+  work1.addClusterSession(dstAddr2, sess3);
+  work2.addClusterSession(srcAddr, sess1);
+  work2.addClusterSession(dstAddr1, sess2);
+  work2.addClusterSession(dstAddr2, sess3);
+  work3.addClusterSession(srcAddr, sess1);
+  work3.addClusterSession(dstAddr1, sess2);
+  work3.addClusterSession(dstAddr2, sess3);
 
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
-    std::string cmd2 = cmd;
+    string key;
+    string key2;
     if (j % 2) {
       // write to slot 8373
-      cmd += " set " + getUUid(8) + "{12} " + getUUid(100);
+      key = getUUid(8) + "{12}";
       // write to slot 5970
-      cmd2 += " set " + getUUid(8) + "{123} " + getUUid(100);
+      key2 = getUUid(8) + "{123}";
     } else {
       // write to slot 4640
-      cmd += " set " + getUUid(8) + "{112} " + getUUid(100);
+      key = getUUid(8) + "{112}";
       // write to slot 513
-      cmd2 += " set " + getUUid(8) + "{113} " + getUUid(100);
+      key2 = getUUid(8) + "{113}";
     }
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
+    string value = getUUid(7);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
+    ret = work1.getStringResult({"set", key2, value});
+    EXPECT_EQ(ret, "+OK\r\n");
 
-    int ret2 = system(cmd2.c_str());
-    EXPECT_EQ(ret2, 0);
     // begin to migate when  half data been writen
     if (j == numData / 2) {
       uint32_t keysize = 0;
@@ -1660,7 +1678,7 @@ TEST(Cluster, migrateAndImport) {
     }
   }
 
-  std::this_thread::sleep_for(50s);
+  std::this_thread::sleep_for(10s);
 
   uint32_t keysize1 = 0;
   uint32_t keysize2 = 0;
@@ -2044,7 +2062,7 @@ TEST(Cluster, ConvergenceRate) {
     work.addSlots(slots);
     LOG(INFO) << "addSlots " << i << " " << slots;
   }
-  std::this_thread::sleep_for(std::chrono::seconds(30));
+  std::this_thread::sleep_for(std::chrono::seconds(20));
 
   auto& srcNode = servers[srcNodeIndex];
   auto& dstNode = servers[dstNodeIndex];
@@ -2063,18 +2081,25 @@ TEST(Cluster, ConvergenceRate) {
     migrateSlot - 1, migrateSlot, migrateSlot + 1};
   auto bitmap = getBitSet(slotsList);
 
+  // for support MOVED
+  string srcAddr = srcNode->getParams()->bindIp + ":"
+                   + to_string(srcNode->getParams()->port);
+  string dstAddr = dstNode->getParams()->bindIp + ":"
+                   + to_string(dstNode->getParams()->port);
+  work1.addClusterSession(srcAddr, sess1);
+  work1.addClusterSession(dstAddr, sess2);
+  work2.addClusterSession(srcAddr, sess1);
+  work2.addClusterSession(dstAddr, sess2);
+
   LOG(INFO) << "begin add keys.";
   const uint32_t numData = 1000;
   for (size_t j = 0; j < numData; ++j) {
-    std::string cmd = "redis-cli -c ";
-    cmd += " -h " + srcNode->getParams()->bindIp;
-    cmd += " -p " + std::to_string(srcNode->getParams()->port);
+    string key;
+    key = to_string(j) + "{12}";
+    string value = getUUid(7);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
 
-    // write to slot 8373
-    cmd += " set " + to_string(j) + "{12} " + getUUid(7);
-
-    int ret = system(cmd.c_str());
-    EXPECT_EQ(ret, 0);
     // begin to migrate when half data been writen
     if (j == numData / 2) {
       uint32_t keysize = 0;
@@ -2178,9 +2203,6 @@ TEST(Cluster, MigrateTTLIndex) {
 
   LOG(INFO) << "begin add keys.";
   const uint32_t numData = 10;
-  std::string cmd = "redis-cli -c ";
-  cmd += " -h " + servers[0]->getParams()->bindIp;
-  cmd += " -p " + std::to_string(servers[0]->getParams()->port);
   for (size_t j = 0; j < numData; ++j) {
     // write to slot 8373
     string key = to_string(j) + "{12}";
