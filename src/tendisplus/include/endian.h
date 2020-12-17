@@ -1,3 +1,7 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
 // "License": Public Domain
 // I, Mathias Panzenb?ck, place this file hereby into the public domain. Use it
 // at your own risk for whatever you like. In case there are jurisdictions that
@@ -7,8 +11,8 @@
 // conversion functions on different platforms.
 // https://gist.github.com/PkmX/63dd23f28ba885be53a5
 
-#ifndef PORTABLE_ENDIAN_H__
-#define PORTABLE_ENDIAN_H__
+#ifndef SRC_TENDISPLUS_INCLUDE_ENDIAN_H_
+#define SRC_TENDISPLUS_INCLUDE_ENDIAN_H_
 
 #if (defined(_WIN16) || defined(_WIN32) || defined(_WIN64)) && \
   !defined(__WINDOWS__)
@@ -122,4 +126,4 @@
 
 #endif
 
-#endif
+#endif  // SRC_TENDISPLUS_INCLUDE_ENDIAN_H_
