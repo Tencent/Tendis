@@ -2343,7 +2343,7 @@ ScanCommand::ScanCommand(const std::vector<std::string>& /*params*/,
     start_key_specified_(false),
     end_key_specified_(false),
     max_keys_scanned_(-1),
-    no_value_(false) {
+    no_value_(true) {
   std::map<std::string, std::string>::const_iterator itr =
     options.find(ARG_FROM);
   if (itr != options.end()) {
@@ -2459,41 +2459,77 @@ void ScanCommand::DoCommand() {
     auto exptRcd = Record::decode(formatted_key, formatted_value);
 
     if (!exptRcd.ok()) {
-      LOG(FATAL) << "reord decode fail:" << exptRcd.status().toString();
+      LOG(ERROR) << "reord decode fail:" << exptRcd.status().toString();
     }
 
     auto record = exptRcd.value();
     auto keyType = record.getRecordKey().getRecordType();
-    if (keyType != RecordType::RT_DATA_META) {
+    /* NOTE(wayenchen) ignore if not primary key */
+    if (keyType != RecordType::RT_DATA_META && no_value_) {
       continue;
     }
-    const auto& recordType = record.getRecordValue().getRecordType();
+    // value length of string
+    uint64_t vallen = 0;
+    // num of value of secondary key
+    uint64_t fiedlen = 0;
 
-    //std::string type = "(type:" + std::to_string(static_cast<uint32_t>(vt));
-  
-    std::string type = "(type:" + rt2Str(recordType);
-    std::string dbid =
-      "dbid: " + std::to_string(record.getRecordKey().getDbId());
-    std::string pKey = record.getRecordKey().getPrimaryKey();
-    std::string value = record.getRecordValue().getValue();
-    std::string ttl = " ttl: " + std::to_string(record.getRecordValue().getTtl()) + ")";
+    auto value = record.getRecordValue();
+    std::string type = "";
 
-    if (no_value_) {
-          fprintf(stdout, "%.*s \n", static_cast<int>(pKey.size()), pKey.data());
-    } else {
-          fprintf(stdout,
-                  "%.*s:%.*s  %.*s  %.*s %.*s\n",
-                  static_cast<int>(pKey.size()),
-                  pKey.data(),
-                  static_cast<int>(value.size()),
-                  value.data(),
-                  static_cast<int>(type.size()),
-                  type.data(),
-                  static_cast<int>(dbid.size()),
-                  dbid.data(),
-                  static_cast<int>(ttl.size()),
-                  ttl.data());
+    auto valueType = value.getRecordType();
+    if (valueType == RecordType::RT_KV) {
+      vallen = value.getValue().size();
+      type = "a";
+    } else if (valueType == RecordType::RT_HASH_META) {
+      Expected<HashMetaValue> exptHashMeta =
+        HashMetaValue::decode(value.getValue());
+      if (!exptHashMeta.ok()) {
+        LOG(ERROR) << "hash meta decode fail:"
+                   << exptHashMeta.status().toString();
+      }
+      fiedlen = exptHashMeta.value().getCount();
+      type = "H";
+    } else if (valueType == RecordType::RT_SET_META) {
+      Expected<SetMetaValue> setHashMeta =
+        SetMetaValue::decode(value.getValue());
+      if (!setHashMeta.ok()) {
+        LOG(ERROR) << "set meta decode fail:"
+                   << setHashMeta.status().toString();
+      }
+      fiedlen = setHashMeta.value().getCount();
+      type = "S";
+    } else if (valueType == RecordType::RT_ZSET_META) {
+      Expected<ZSlMetaValue> zsetHashMeta =
+        ZSlMetaValue::decode(value.getValue());
+      if (!zsetHashMeta.ok()) {
+        LOG(ERROR) << "zset meta decode fail:"
+                   << zsetHashMeta.status().toString();
+      }
+      /*NOTE(wayenchen) sam value as zcard*/
+      fiedlen = zsetHashMeta.value().getCount() - 1;
+      type = "Z";
+    } else if (valueType == RecordType::RT_LIST_META) {
+      Expected<ListMetaValue> listHashMeta =
+        ListMetaValue::decode(value.getValue());
+      if (!listHashMeta.ok()) {
+        LOG(ERROR) << "list meta decode fail:"
+                   << listHashMeta.status().toString();
+      }
+      fiedlen = listHashMeta.value().getTail() - listHashMeta.value().getHead();
+      type = "L";
     }
+
+    std::string pKey = record.getRecordKey().getPrimaryKey();
+    fprintf(stdout,
+            "%.*s %" PRIu32 " %.*s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
+            static_cast<int>(type.size()),
+            type.data(),
+            record.getRecordKey().getDbId(),
+            static_cast<int>(pKey.size()),
+            pKey.data(),
+            record.getRecordValue().getTtl(),
+            vallen,
+            fiedlen);
 
     num_keys_scanned++;
     if (max_keys_scanned_ >= 0 && num_keys_scanned >= max_keys_scanned_) {
