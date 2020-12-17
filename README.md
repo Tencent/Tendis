@@ -4,7 +4,7 @@ Tendis is a high-performance distributed storage system which is fully compatibl
 
 Similar to Redis clusters, Tendis uses a decentralized distributed solution. The gossip protocol is used for communication between nodes, and all nodes in a cluster can be routed to the correct node when a user accesses. Cluster nodes support automatic discovery of other nodes, detect faulty nodes, and ensure the application is almost not affected when the master node failed.
 
-## Documentations
+## Documentations([中文](http://tendis.cn))
 Checkout [tendis.cn](http://tendis.cn) for design, implementation and operation details.
 
 ## Features
