@@ -5,22 +5,28 @@ Tendis is a high-performance distributed storage system which is fully compatibl
 Similar to Redis clusters, Tendis uses a decentralized distributed solution. The gossip protocol is used for communication between nodes, and all nodes in a cluster can be routed to the correct node when a user accesses. Cluster nodes support automatic discovery of other nodes, detect faulty nodes, and ensure the application is almost not affected when the master node failed.
 
 ## Features
-- Redis compatibility<br/>
+- Redis compatibility
+
   Redis protocol and commands supported in Tendis are compatible with Redis.
   
-- Persistent storage<br/>
+- Persistent storage
+
   Using RocksDB as storage engine. All data is stored in RocksDB in a specific format, supporting PB-level storage capacity.
 
-- Decentralized distributed cluster<br/>
+- Decentralized distributed cluster
+
   Distributed implementation like Redis clusters, using a gossip protocol to intercommunicate between nodes.
 
-- Horizontal scalability<br/>
+- Horizontal scalability
+
   Data migration online between nodes. High performance and linear scalability up to 1,000 nodes.
 
-- Failover<br/>
+- Failover
+
   Auto-detect non-working nodes, and promote replica nodes to master when a failure occurs.
 
-- Key component for Tendis Hybrid Storage Edition<br/>
+- Key component for Tendis Hybrid Storage Edition
+
   Thanks to the design and internal optimization, Redis and Tendis can work together to be Hybrid Storage Edition. It is suitable for KV storage scenarios, as it balances performance and cost, and greatly reduces your business operating costs by 80% in the scenarios where cold data takes up a lot of storage space.
 
 ## Get Started
