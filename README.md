@@ -98,7 +98,7 @@ Checkout [releases](http://tendis.cn/#/Tendisplus/%E6%95%B4%E4%BD%93%E4%BB%8B%E7
 ## Contributing
 For more information regarding contributing issues or pull requests, checkout [CONTRIBUTING](CONTRIBUTING.md)
 ## Support
-Checkout [support](http://tendis.cn/support) for FAQs or join our discussion groups.
+Checkout [support](http://tendis.cn/#/support) for FAQs or join our discussion groups.
 
 ## License
 Tendis is licensed under the GNU General Public License Version 3.0. Copyright and license information can be found in the file [LICENSE.txt](LICENSE.txt).
