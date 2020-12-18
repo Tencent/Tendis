@@ -4,7 +4,7 @@
 
 Tendis is a high-performance distributed storage system which is fully compatible with the Redis protocol. [中文文档](http://tendis.cn)
 
-## Table of contents
+## Table of Contents
 - [Introduction](#Introduction)
 - [Features](#Features)
 - [Get Started](#Get-Started)
