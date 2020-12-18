@@ -1,13 +1,32 @@
-<img src="pic/tendis.svg" width = "300" alt="tendis"/>
+<img src="pic/tendis.svg" width = "300" alt="tendis"/> 
+
+[![](https://img.shields.io/badge/license-GPLv3-green)](https://github.com/Tencent/Tendis/blob/master/LICENSE.txt) ![](https://img.shields.io/badge/Platform-Linux_x64-orange) [![](https://img.shields.io/badge/PRs-Welcome-orange)](https://github.com/Tencent/Tendis/pulls)
+
+Tendis is a high-performance distributed storage system which is fully compatible with the Redis protocol. [中文文档](http://tendis.cn)
+
+## Table of contents
+- [Introduction](#Introduction)
+- [Features](#Features)
+- [Get Started](#Get-Started)
+  - [Requirements](#Requirements)
+  - [Build](#Build)
+  - [Run and Play](#Run-and-Play)
+  - [Test](#Test)
+- [Performance](#Performance)
+  - [Hardware Spec](#Hardware-spec)
+  - [Bechmarks and QPS numbers](#Bechmarks-and-QPS-numbers)
+  - [QPS on different payload](#QPS-on-different-payload)
+- [Contributing](#Contributing)
+- [Support](#Support)
+- [License](#License)
+## Introduction
 
 Tendis is a high-performance distributed storage system which is fully compatible with the Redis protocol. It uses RocksDB as the storage engine, and all data is stored to disks through RocksDB. Users can access Tendis using a Redis client, and the application hardly needs to be changed. In addition, Tendis supports storage capacity far exceeding memory, which can greatly reduce user storage costs.
 
 Similar to Redis clusters, Tendis uses a decentralized distributed solution. The gossip protocol is used for communication between nodes, and all nodes in a cluster can be routed to the correct node when a user accesses. Cluster nodes support automatic discovery of other nodes, detect faulty nodes, and ensure the application is almost not affected when the master node failed.
 
-## Documentations([中文](http://tendis.cn))
-Checkout [tendis.cn](http://tendis.cn) for design, implementation and operation details.
-
 ## Features
+
 - Redis compatibility
 
   Redis protocol and commands supported in Tendis are compatible with Redis.
@@ -66,12 +85,16 @@ $ sh ./testall.sh
 
 ## Performance
 
-### 1. Hardware spec 
+### Hardware spec
+
+```
 CPU:2.50 GHz,48 core
 DISK:NVMe SSD
 MEM:192GB
+```
 
-### 2. Bechmarks and QPS numbers
+### Bechmarks and QPS numbers
+
 tendisplus: workers = 56
 ```
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --key-minimum=1 --key-maximum=500000000 --random-data --data-size=128 --test-time=1800
@@ -84,7 +107,8 @@ tendisplus: workers = 56
 ```
    ![image.png](pic/qps.png)
 
-### 3. QPS on different payload
+###  QPS on different payload
+
 tendisplus: workers = 56
 ```
 ./memtier_benchmark -t 20 -c 50 -s 127.0.0.1 -p 51002 --distinct-client-seed --command="set \_\_key__ \_\_data__" --key-prefix="kv_" --command-key-pattern=R --random-data --data-size=128 --test-time=1800
@@ -94,12 +118,14 @@ tendisplus: workers = 56
 
 we test set for half an hour, and then test get key half an hour. because the data is not big enough, most of the data is in memory, so the get qps for diffrent payload is nearly the same.
 
-## Changelog
-Checkout [releases](http://tendis.cn/#/Tendisplus/%E6%95%B4%E4%BD%93%E4%BB%8B%E7%BB%8D/releasenodes) for release history.
 ## Contributing
+
 For more information regarding contributing issues or pull requests, checkout [CONTRIBUTING](CONTRIBUTING.md)
+
 ## Support
+
 Checkout [support](http://tendis.cn/#/support) for FAQs or join our discussion groups.
 
 ## License
+
 Tendis is licensed under the GNU General Public License Version 3.0. Copyright and license information can be found in the file [LICENSE.txt](LICENSE.txt).
