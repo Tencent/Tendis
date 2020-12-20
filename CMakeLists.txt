@@ -234,5 +234,6 @@ add_subdirectory(src/tendisplus/storage)
 add_subdirectory(src/tendisplus/replication)
 add_subdirectory(src/tendisplus/cluster)
 add_subdirectory(src/tendisplus/lock)
+if(NEW_ROCKSDB)
 add_subdirectory(src/tendisplus/tools)
-
+endif()
