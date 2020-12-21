@@ -197,7 +197,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 	//     then need delete chunk keys.
 	// 2.if src_restore backup id doing when deleteChunk not finish, the slot not belong to self,
 	//     so need delete chunk keys.
-	// TODO(takenliu) add gotest for the two diffrent case ???
+	// TODO(takenliu) add gotest for the two different case ???
 	restoreBinlog(src_slave, src_restore, kvstorecount, tsDeleteChunkNotFinish)
 	restoreBinlogEnd(src_restore, kvstorecount)
 

@@ -116,7 +116,7 @@ tendisplus: workers = 56
 ```
 ![image.png](pic/qps_payload.png)
 
-we test set for half an hour, and then test get key half an hour. because the data is not big enough, most of the data is in memory, so the get qps for diffrent payload is nearly the same.
+we test set for half an hour, and then test get key half an hour. because the data is not big enough, most of the data is in memory, so the get qps for different payload is nearly the same.
 
 ## Contributing
 
