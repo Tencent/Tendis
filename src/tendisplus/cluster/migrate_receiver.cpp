@@ -142,7 +142,7 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key,
     LOG(ERROR) << "setKV failed:" << s.toString();
     return s;
   }
-  // NOTE(takenliu) TTLIndex's chunkid is diffrent from key's chunkid,
+  // NOTE(takenliu) TTLIndex's chunkid is different from key's chunkid,
   // so need to recover TTLIndex.
   // only RT_*_META need recover, it's saved as RT_DATA_META in RecordKey
   // if RecordValue's type is RT_KV need ignore recovering.
