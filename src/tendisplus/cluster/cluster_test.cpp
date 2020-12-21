@@ -2062,7 +2062,8 @@ TEST(Cluster, ConvergenceRate) {
     work.addSlots(slots);
     LOG(INFO) << "addSlots " << i << " " << slots;
   }
-  std::this_thread::sleep_for(std::chrono::seconds(20));
+  // 30 nodes, wait 20 seconds is not long enough
+  std::this_thread::sleep_for(std::chrono::seconds(50));
 
   auto& srcNode = servers[srcNodeIndex];
   auto& dstNode = servers[dstNodeIndex];

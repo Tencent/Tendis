@@ -201,7 +201,7 @@ func checkDataInCoroutine2(m *[]util.RedisServer, num int, prefixkey string, cha
             log.Infof("optype is : %s", optype)
             checkSortedData2(m, num, prefixkey)
         default : 
-            log.Infof("no benchtype")
+            log.Infof("no benchtype:%s", optype)
 	}
     //checkData2(m, num, prefixkey)
     channel <- 0
@@ -419,8 +419,8 @@ func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]Nod
                 ret_array2)
         }
         // check slave port
-        if (nodeIndex != dstNodeIndex && port + clusterNodeNum != port_slave) ||
-            (nodeIndex == dstNodeIndex && port + 1 != port_slave) {
+        if (nodeIndex != dstNodeIndex && (*servers)[nodeIndex + clusterNodeNum].Port != port_slave) ||
+            (nodeIndex == dstNodeIndex && (*servers)[nodeIndex + 1].Port != port_slave) {
             log.Fatalf("cluster slots not right,master port:%v slave port:%v ret_array2:%v",
                 port, port_slave, ret_array2)
         }
