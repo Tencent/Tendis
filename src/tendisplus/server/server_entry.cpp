@@ -390,6 +390,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   uint32_t kvStoreCount = cfg->kvStoreCount;
   uint32_t chunkSize = cfg->chunkSize;
+  _cursorMaps.resize(cfg->dbNum);
 
   // set command config
   Command::setNoExpire(cfg->noexpire);
