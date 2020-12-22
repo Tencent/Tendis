@@ -27,6 +27,7 @@ const char slave_slave_dir[] = "repltest_slave_slave";
 const char slave1_dir[] = "repltest_slave1";
 const char slave2_dir[] = "repltest_slave2";
 const char single_dir[] = "repltest_single";
+const char single_dir2[] = "repltest_single2";
 uint32_t master_port = 1111;
 uint32_t slave_port = 1112;
 uint32_t slave_slave_port = 1113;
@@ -128,7 +129,7 @@ TEST(Repl, Common) {
   size_t i = 0;
   {
 #else
-  for (size_t i = 0; i < 9; i++) {
+  for (size_t i = 0; i < 3; i++) {
 #endif
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
@@ -805,13 +806,13 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
-      destroyEnv(single_dir);
+      destroyEnv(single_dir2);
       std::this_thread::sleep_for(std::chrono::seconds(5));
     });
 
-    EXPECT_TRUE(setupEnv(single_dir));
+    EXPECT_TRUE(setupEnv(single_dir2));
 
-    auto cfg = makeServerParam(single_port, i, single_dir, false);
+    auto cfg = makeServerParam(single_port, i, single_dir2, false);
     uint64_t masterBinlogNum = 10;
     cfg->maxBinlogKeepNum = masterBinlogNum;
     cfg->minBinlogKeepSec = 0;
@@ -826,8 +827,9 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
 
       single->stop();
 
+      sleep(2);
       LOG(INFO) << ">>>>>> scanDumpFile begin.";
-      std::string subpath = "./repltest_single/dump/0/";
+      std::string subpath = "./" + string(single_dir2) + "/dump/0/";
       try {
         for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
           const filesystem::path& path = p.path();
@@ -842,7 +844,11 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
             LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
             continue;
           }
+          LOG(INFO) << "scan begin, path:" << path;
           auto s = scan(path.string());
+          if (!s.ok()) {
+            LOG(ERROR) << "scan failed:" << s.toString();
+          }
           EXPECT_TRUE(s.ok());
         }
       } catch (const std::exception& ex) {
@@ -868,8 +874,9 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       ASSERT_EQ(single.use_count(), 1);
 #endif
 
+    sleep(2);
     LOG(INFO) << ">>>>>> scanDumpFile begin.";
-    std::string subpath = "./repltest_single/dump/0/";
+    std::string subpath = "./" + string(single_dir2) + "/dump/0/";
     try {
       for (auto& p : filesystem::recursive_directory_iterator(subpath)) {
         const filesystem::path& path = p.path();
@@ -884,6 +891,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
           LOG(INFO) << "maxDumpFileSeq ignore:" << relative;
           continue;
         }
+        LOG(INFO) << "scan begin, path:" << path;
         auto s = scan(path.string());
         if (!s.ok()) {
           LOG(ERROR) << "scan failed:" << s.toString()

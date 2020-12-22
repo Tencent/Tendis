@@ -16,6 +16,10 @@ function runOne() {
         grep -E "Expected|FAILED" $logfile
         exit $errcnt
     fi
+    #passcnt=`grep -E "\[  PASSED  \]" $tmplog|wc -l`
+    #if [ $passcnt -lt 1 ]; then
+    #    exit 1
+    #fi
 }
 
 dir=build/bin

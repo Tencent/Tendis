@@ -5,12 +5,12 @@
 package main
 
 import (
-	"flag"
-	"github.com/ngaut/log"
-	"math"
-	"strconv"
-	"tendisplus/integrate_test/util"
-	"time"
+       "flag"
+       "github.com/ngaut/log"
+       "math"
+       "strconv"
+       "tendisplus/integrate_test/util"
+       "time"
 )
 
 func checkSlotKeyNum(servers *util.RedisServer, slot int, expKeynum int) {
@@ -246,19 +246,6 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 
 	pwd := getCurrentDirectory()
 	log.Infof("current pwd:" + pwd)
-	portStart0 := findAvailablePort(portStart)
-	src_master.Init(ip, portStart0, pwd, "src_master_")
-	portStart1 := findAvailablePort(portStart + 1)
-	src_slave.Init(ip, portStart1, pwd, "src_slave_")
-	portStart2 := findAvailablePort(portStart + 2)
-	dst_master.Init(ip, portStart2, pwd, "dst_master_")
-	portStart3 := findAvailablePort(portStart + 3)
-	dst_slave.Init(ip, portStart3, pwd, "dst_slave_")
-
-	portStart4 := findAvailablePort(portStart + 4)
-	src_restore.Init(ip, portStart4, pwd, "src_restore_")
-	portStart5 := findAvailablePort(portStart + 5)
-	dst_restore.Init(ip, portStart5, pwd, "dst_restore_")
 
 	cfgArgs := make(map[string]string)
 	cfgArgs["maxBinlogKeepNum"] = "1"
@@ -270,21 +257,34 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 	cfgArgs["masterauth"] = "tendis+test"
 	cfgArgs["generalLog"] = "true"
 
+	portStart0 := util.FindAvailablePort(portStart)
+	src_master.Init(ip, portStart0, pwd, "src_master_")
 	if err := src_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
+	portStart1 := util.FindAvailablePort(portStart + 1)
+	src_slave.Init(ip, portStart1, pwd, "src_slave_")
 	if err := src_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
+	portStart2 := util.FindAvailablePort(portStart + 2)
+	dst_master.Init(ip, portStart2, pwd, "dst_master_")
 	if err := dst_master.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
+	portStart3 := util.FindAvailablePort(portStart + 3)
+	dst_slave.Init(ip, portStart3, pwd, "dst_slave_")
 	if err := dst_slave.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
+
+	portStart4 := util.FindAvailablePort(portStart + 4)
+	src_restore.Init(ip, portStart4, pwd, "src_restore_")
 	if err := src_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
+	portStart5 := util.FindAvailablePort(portStart + 5)
+	dst_restore.Init(ip, portStart5, pwd, "dst_restore_")
 	if err := dst_restore.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
 	}
@@ -310,9 +310,9 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 	time.Sleep(10 * time.Second)
 
 	// start predixy
-	portPredixy := portStart + 6
+	portPredixy := util.FindAvailablePort(portStart + 6)
 	predixy := util.Predixy{}
-	predixy.Init(ip, portPredixy, ip, portStart, pwd, "predixy_")
+	predixy.Init(ip, portPredixy, ip, portStart0, pwd, "predixy_")
 	predixyCfgArgs := make(map[string]string)
 	if err := predixy.Setup(false, &predixyCfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
@@ -339,8 +339,8 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 
 func main() {
 	flag.Parse()
-	testRestore(30000, 100000, 1, "set")
-	testRestore(30100, 100000, 2, "set")
+	testRestore(47000, 100000, 1, "set")
+	testRestore(47100, 100000, 2, "set")
 
 	// cmd1 := exec.Command("netstat", "-an|grep", "30200")
 	// data1, err1 := cmd1.Output()
@@ -377,3 +377,4 @@ func main() {
 	// log.Infof("clustertestRestore.go passed.")
 	log.Infof("clustertestRestore.go passed. command : %s", *benchtype)
 }
+

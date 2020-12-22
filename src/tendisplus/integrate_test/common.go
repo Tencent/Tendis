@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -58,28 +57,6 @@ func getCurrentDirectory() string {
 		log.Fatal(err)
 	}
 	return strings.Replace(dir, "\\", "/", -1)
-}
-
-func findAvailablePort(start int) int {
-	for i := start; i < start+1024; i = i + 10 {
-		ipPort := "127.0.0.1:" + strconv.Itoa(i)
-		time.Sleep(time.Duration(5) * time.Second)
-		conn, err := net.Dial("tcp", ipPort)
-		if err != nil {
-			fmt.Println("err dialing:", err.Error())
-			return i
-		}
-		defer conn.Close()
-	}
-	// for i := start; i < start+1024; i = i + 10 {
-	// 	if PortInUse(i) {
-	// 		fmt.Println("port is using:", i)
-	// 	} else {
-	// 		return i
-	// 	}
-	// }
-	log.Infof("Can't find a non busy port in the %d - %d range.", start, start+1024)
-	return 0
 }
 
 func PortInUse(port int) bool {

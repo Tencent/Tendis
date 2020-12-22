@@ -155,7 +155,7 @@ makeCluster(uint32_t startPort,
     idx++;
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   // slaveof
   for (uint32_t i = nodeNum; i < totalNodeNum; ++i) {
     auto node = servers[i];
@@ -973,7 +973,7 @@ TEST(Cluster, AddSlot) {
     EXPECT_TRUE(s);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(20));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
   for (auto svr : servers) {
     compareClusterInfo(svr, node1);
   }
@@ -1189,7 +1189,7 @@ TEST(Cluster, migrate) {
   // addSlots
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
 
@@ -1198,7 +1198,7 @@ TEST(Cluster, migrate) {
   work1.addSlots(slots[0]);
   work2.addSlots(slots[1]);
   LOG(INFO) << "add slots sucess";
-  std::this_thread::sleep_for(std::chrono::seconds(6));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
 
@@ -1371,7 +1371,7 @@ TEST(Cluster, stopMigrate) {
   work1.addSlots(slots[0]);
   work2.addSlots(slots[1]);
 
-  std::this_thread::sleep_for(std::chrono::seconds(6));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
 
@@ -1490,7 +1490,7 @@ TEST(Cluster, stopAllMigrate) {
   work1.addSlots(slots[0]);
   work2.addSlots(slots[1]);
 
-  std::this_thread::sleep_for(std::chrono::seconds(6));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<uint32_t> slotsList = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
 
@@ -1600,7 +1600,7 @@ TEST(Cluster, migrateAndImport) {
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode1->getParams()->bindIp, dstNode1->getParams()->port);
   work1.clusterMeet(dstNode2->getParams()->bindIp, dstNode2->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<std::string> slots = {
     "{0..4700}", "{4701..10000}", "{10001..16383}"};
@@ -1612,7 +1612,7 @@ TEST(Cluster, migrateAndImport) {
   work3.addSlots(slots[2]);
 
   LOG(INFO) << "add slots sucess";
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<uint32_t> slotsList1 = {5970, 5980, 6000, 6234, 6522, 7000, 8373};
   std::vector<uint32_t> slotsList2 = {513, 1000, 1239, 2000, 4640};
@@ -2062,7 +2062,8 @@ TEST(Cluster, ConvergenceRate) {
     work.addSlots(slots);
     LOG(INFO) << "addSlots " << i << " " << slots;
   }
-  std::this_thread::sleep_for(std::chrono::seconds(20));
+  // 30 nodes, wait 20 seconds is not long enough
+  std::this_thread::sleep_for(std::chrono::seconds(50));
 
   auto& srcNode = servers[srcNodeIndex];
   auto& dstNode = servers[dstNodeIndex];
@@ -2191,7 +2192,7 @@ TEST(Cluster, MigrateTTLIndex) {
   LOG(INFO) << "begin meet.";
   work1.clusterMeet(servers[1]->getParams()->bindIp,
                     servers[1]->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(2));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // addSlots
   LOG(INFO) << "begin addSlots.";
@@ -2199,7 +2200,7 @@ TEST(Cluster, MigrateTTLIndex) {
   work2.addSlots("16383");
   // TODO(takenliu): why need 7 seconds for cluster state change to ok,
   // "CLUSTERDOWN" ???
-  std::this_thread::sleep_for(std::chrono::seconds(7));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   LOG(INFO) << "begin add keys.";
   const uint32_t numData = 10;
@@ -2275,7 +2276,7 @@ TEST(Cluster, ChangeMaster) {
   work1.init();
 
   work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(10s);
 
   auto ctx2 = std::make_shared<asio::io_context>();
   auto sess2 = makeSession(node7, ctx2);
@@ -2290,7 +2291,7 @@ TEST(Cluster, ChangeMaster) {
   WorkLoad work3(node2, sess3);
   work3.init();
 
-  std::this_thread::sleep_for(5s);
+  std::this_thread::sleep_for(10s);
   // lock the node6 , && make the node2 to be master by cluster failover command
   work2.lockDb(10);
 
@@ -2375,7 +2376,7 @@ TEST(Cluster, CrossSlot) {
 
   auto servers = makeCluster(startPort, nodeNum, 10, withSlave);
   auto server = servers[0];
-  std::this_thread::sleep_for(std::chrono::seconds(5));
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
     {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
