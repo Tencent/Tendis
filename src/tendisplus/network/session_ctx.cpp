@@ -93,7 +93,7 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 void SessionCtx::clearRequestCtx() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (!_session->isInLua()) {
-    clearTxnAll("lua"); // TODO(takenliu): cmdname
+    _txnMap.clear();
   }
   _argsBrief.clear();
   _timestamp = -1;
@@ -147,18 +147,6 @@ Status SessionCtx::rollbackAll() {
     if (!s.ok()) {
       LOG(ERROR) << "rollback error at kvstore " << txn.first
                  << ". It maybe lead to partial success.";
-    }
-  }
-  _txnMap.clear();
-  return s;
-}
-
-Status SessionCtx::clearTxnAll(const std::string& cmd) {
-  Status s;
-  for (auto& txn : _txnMap) {
-    if (!txn.second->isDone()) {
-      LOG(ERROR) << cmd << " clearTxnAll, but txn not committed. storeid: " << txn.first
-                 << " txnId:" << txn.second->getTxnId() << " size:" << _txnMap.size();
     }
   }
   _txnMap.clear();

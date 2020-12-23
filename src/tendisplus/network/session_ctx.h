@@ -75,7 +75,6 @@ class SessionCtx {
   void clearRequestCtx();
   Status commitAll(const std::string& cmd);
   Status rollbackAll();
-  Status clearTxnAll(const std::string& cmd);
   Expected<Transaction*> createTransaction(const PStore& kvstore);
   void setExtendProtocol(bool v);
   void setExtendProtocolValue(uint64_t ts, uint64_t version);
