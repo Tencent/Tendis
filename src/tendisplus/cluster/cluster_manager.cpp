@@ -1662,12 +1662,11 @@ std::string ClusterState::clusterGenNodeDescription(CNodePtr n, bool simple) {
 
   if (n->nodeIsMaster()) {
     auto slots = n->getSlots();
-    auto migrateMgr = _server->getMigrateManager();
-    auto steadySlots = migrateMgr->getSteadySlots(slots);
-    std::string slotStr = bitsetStrEncode(steadySlots);
+    std::string slotStr = bitsetStrEncode(slots);
     slotStr.erase(slotStr.end() - 1);
     stream << slotStr;
 
+    auto migrateMgr = _server->getMigrateManager();
     if (n->nodeIsMyself()) {
       std::string migrateStr;
       Expected<std::string> eMigrStr("");
