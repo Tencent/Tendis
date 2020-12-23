@@ -270,7 +270,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   sess->getCtx()->setArgsBrief(sess->getArgs());
   it->second->incrCallTimes();
   auto now = nsSinceEpoch();
-  auto guard = MakeGuard([it, now, sess] {
+  auto guard = MakeGuard([it, now, sess, commandName] {
     sess->getCtx()->clearRequestCtx();
     auto duration = nsSinceEpoch() - now;
     it->second->incrNanos(duration);
@@ -673,12 +673,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
   RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
   PStore kvstore = expdb.value().store;
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+    Expected<RecordValue> eValue = kvstore->getKV(mk, ptxn.value());
     if (!eValue.ok()) {
       // maybe ErrorCodes::ERR_NOTFOUND
       ++sess->getServerEntry()->getServerStat().keyspaceMisses;
@@ -701,7 +700,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       }
       ++sess->getServerEntry()->getServerStat().keyspaceHits;
       return eValue.value();
-    } else if (txn->isReplOnly()) {
+    } else if (ptxn.value()->isReplOnly()) {
       // NOTE(vinchen): if replOnly, it can't delete record, but return
       // ErrorCodes::ERR_EXPIRED
       return {ErrorCodes::ERR_EXPIRED, ""};
@@ -715,8 +714,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     if (cnt.value() >= 2048) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      // reset txn, it is no longer used
-      txn.reset();
       Status s =
         Command::delKeyPessimisticInLock(sess, storeId, mk, valueType, &ictx);
       if (s.ok()) {
@@ -726,7 +723,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       }
     } else {
       Status s = Command::delKeyOptimismInLock(
-        sess, storeId, mk, valueType, txn.get(), &ictx);
+        sess, storeId, mk, valueType, ptxn.value(), &ictx);
       if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
         continue;
       }

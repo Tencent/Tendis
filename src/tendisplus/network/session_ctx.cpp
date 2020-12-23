@@ -92,7 +92,9 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 
 void SessionCtx::clearRequestCtx() {
   std::lock_guard<std::mutex> lk(_mutex);
-  _txnMap.clear();
+  if (!_session->isInLua()) {
+    clearTxnAll("lua"); // TODO(takenliu): cmdname
+  }
   _argsBrief.clear();
   _timestamp = -1;
   _version = -1;
@@ -108,7 +110,7 @@ void SessionCtx::clearRequestCtx() {
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
   Transaction* txn = nullptr;
-  if (_txnMap.count(kvstore->dbId()) > 0) {
+  if (_txnMap.count(kvstore->dbId()) > 0 && !_txnMap[kvstore->dbId()].get()->isDone()) {
     txn = _txnMap[kvstore->dbId()].get();
   } else {
     auto ptxn = kvstore->createTransaction(_session);
@@ -145,6 +147,18 @@ Status SessionCtx::rollbackAll() {
     if (!s.ok()) {
       LOG(ERROR) << "rollback error at kvstore " << txn.first
                  << ". It maybe lead to partial success.";
+    }
+  }
+  _txnMap.clear();
+  return s;
+}
+
+Status SessionCtx::clearTxnAll(const std::string& cmd) {
+  Status s;
+  for (auto& txn : _txnMap) {
+    if (!txn.second->isDone()) {
+      LOG(ERROR) << cmd << " clearTxnAll, but txn not committed. storeid: " << txn.first
+                 << " txnId:" << txn.second->getTxnId() << " size:" << _txnMap.size();
     }
   }
   _txnMap.clear();

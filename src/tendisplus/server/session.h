@@ -70,6 +70,12 @@ class Session : public std::enable_shared_from_this<Session> {
   std::string getTypeStr() const;
   static Session* getCurSess();
   static void setCurSess(Session* sess);
+  void setInLua(bool val) {
+    _inLua = val;
+  }
+  bool isInLua() {
+    return _inLua;
+  }
 
  protected:
   std::vector<std::string> _args;
@@ -84,6 +90,7 @@ class Session : public std::enable_shared_from_this<Session> {
   const uint64_t _sessId;
   static std::atomic<uint64_t> _idGen;
   static std::atomic<uint64_t> _aliveCnt;
+  bool _inLua;
 };
 
 class LocalSession : public Session {

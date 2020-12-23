@@ -208,11 +208,10 @@ class SetCommand : public Command {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -232,7 +231,7 @@ class SetCommand : public Command {
     for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                params.flags,
                                rk,
                                rv,
@@ -243,15 +242,10 @@ class SetCommand : public Command {
       if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return result;
       }
-      ptxn = kvstore->createTransaction(sess);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
-      txn = std::move(ptxn.value());
     }
     return setGeneric(sess,
                       kvstore,
-                      txn.get(),
+                      ptxn.value(),
                       params.flags,
                       rk,
                       rv,
@@ -954,11 +948,10 @@ class GetSetGeneral : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
 
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       const Expected<RecordValue>& newValue = newValueFromOld(sess, rv);
       if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
         return RecordValue(
@@ -969,7 +962,7 @@ class GetSetGeneral : public Command {
       }
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                newValue.value(),

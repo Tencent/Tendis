@@ -1048,6 +1048,22 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess, int evalsha) {
   luaSetGlobalArray(_lua,"KEYS",args,3,numkeys);
   luaSetGlobalArray(_lua,"ARGV",args,3+numkeys,args.size() - 3 - numkeys);
 
+  updateFakeClient();
+
+  // lock all keys
+  auto server = sess->getServerEntry();
+  std::vector<int32_t> keyidx;
+  for (uint32_t i = 3; i < 3 + numkeys; ++i) {
+    keyidx.push_back(i);
+  }
+  auto locklist = server->getSegmentMgr()->getAllKeysLocked(
+          _fakeSess->getSession(), args, keyidx, mgl::LockMode::LOCK_X);
+  if (!locklist.ok()) {
+    LOG(ERROR) << "evalGenericCommand getAllKeysLocked failed:"
+      << locklist.status().toString();
+    lua_pop(_lua,2); /* remove the Lua function and error handler. */
+    return locklist.status();
+  }
 
   lua_time_start = msSinceEpoch();
   if (_svr->getParams()->luaTimeLimit > 0) {
@@ -1068,6 +1084,12 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess, int evalsha) {
     // aeCreateFileEvent(server.el,c->fd,AE_READABLE, readQueryFromClient,c);
   }
 
+  // commit all txn
+  if (_fakeSess) {
+    _fakeSess->getSession()->setInLua(false);
+    _fakeSess->getSession()->getCtx()->commitAll("lua");
+  }
+
   if (err) {
     string errInfo = "Error running script (call to " + string(funcname) + "):"
                  + string(lua_tostring(_lua,-1));
@@ -1085,6 +1107,7 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess, int evalsha) {
 void LuaState::updateFakeClient() {
   if (_fakeSess == nullptr) {
     _fakeSess = std::make_unique<LocalSessionGuard>(_svr.get());
+    _fakeSess->getSession()->setInLua(true);
   }
   if (!_fakeSess->getSession()->getCtx()->authed() &&
       _sess->getCtx()->authed()) {
