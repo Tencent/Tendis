@@ -107,6 +107,14 @@ tendisplus: workers = 56
 ```
    ![image.png](pic/qps.png)
 
+latency:
+```
+SET    1.6ms    99%
+SET    2.2ms    99.9%
+SET    6.9ms    99.99%
+SET    9.4ms    100.00%
+```
+
 ###  QPS on different payload
 
 tendisplus: workers = 56
