@@ -407,23 +407,22 @@ class PfAddCommand : public Command {
 
     if (updated) {
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
       RecordKey rk(
         expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
       RecordValue value(
         hpll->encode(), RecordType::RT_KV, pCtx->getVersionEP(), ttl, rv);
 
-      Status s = kvstore->setKV(rk, value, txn.get());
+      Status s = kvstore->setKV(rk, value, ptxn.value());
       if (!s.ok()) {
         return s;
       }
 
-      auto c = txn->commit();
+      auto c = ptxn.value()->commit();
       if (!c.ok()) {
         return c.status();
       }
@@ -619,24 +618,23 @@ class PfMergeCommand : public Command {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey rk(
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue value(
       result->encode(), RecordType::RT_KV, pCtx->getVersionEP(), ttl);
 
-    Status s = kvstore->setKV(rk, value, txn.get());
+    Status s = kvstore->setKV(rk, value, ptxn.value());
 
     if (!s.ok()) {
       return s;
     }
 
-    auto c = txn->commit();
+    auto c = ptxn.value()->commit();
     if (!c.ok()) {
       return c.status();
     }
@@ -932,23 +930,22 @@ class PfDebugCommand : public Command {
 
     if (updated) {
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
       RecordKey rk(
         expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
       RecordValue value(
         keyHpll->encode(), RecordType::RT_KV, pCtx->getVersionEP(), ttl, rv);
 
-      Status s = kvstore->setKV(rk, value, txn.get());
+      Status s = kvstore->setKV(rk, value, ptxn.value());
       if (!s.ok()) {
         return s;
       }
 
-      auto c = txn->commit();
+      auto c = ptxn.value()->commit();
       if (!c.ok()) {
         return c.status();
       }

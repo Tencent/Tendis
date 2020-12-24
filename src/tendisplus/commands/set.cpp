@@ -202,11 +202,10 @@ class SMembersCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     ssize_t ssize = 0, cnt = 0;
     Expected<SetMetaValue> exptSm = SetMetaValue::decode(rv.value().getValue());
@@ -218,7 +217,7 @@ class SMembersCommand : public Command {
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, ssize);
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     RecordKey fake = {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
     cursor->seek(fake.prefixPk());
@@ -297,18 +296,17 @@ class SIsMemberCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey subRk(expdb.value().chunkId,
                     pCtx->getDbId(),
                     RecordType::RT_SET_ELE,
                     key,
                     subkey);
-    Expected<RecordValue> eSubVal = kvstore->getKV(subRk, txn.get());
+    Expected<RecordValue> eSubVal = kvstore->getKV(subRk, ptxn.value());
     if (eSubVal.ok()) {
       return Command::fmtOne();
     } else if (eSubVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -390,11 +388,10 @@ class SrandMemberCommand : public Command {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     ssize_t ssize = 0;
     Expected<SetMetaValue> exptSm = SetMetaValue::decode(rv.value().getValue());
@@ -408,7 +405,7 @@ class SrandMemberCommand : public Command {
       return {ErrorCodes::ERR_DECODE, "invalid set meta" + key};
     }
 
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     uint32_t beginIdx = 0;
     uint32_t cnt = 0;
     uint32_t peek = 0;
@@ -546,14 +543,13 @@ class SpopCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_META, key, "");
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     RecordKey fake = {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-    auto batch = Command::scan(fake.prefixPk(), "0", count, txn.get());
+    auto batch = Command::scan(fake.prefixPk(), "0", count, ptxn.value());
     if (!batch.ok()) {
       return batch.status();
     }
@@ -574,17 +570,16 @@ class SpopCommand : public Command {
       if (rcds.size() > 1) {
         Command::fmtMultiBulkLen(ss, rcds.size());
       }
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
       // avoid string copy, directly delete elements according to rcds.
       Status s;
       for (auto iter = rcds.begin(); iter != rcds.end(); iter++) {
         const RecordKey& subRk = iter->getRecordKey();
-        s = kvstore->delKV(subRk, txn.get());
+        s = kvstore->delKV(subRk, ptxn.value());
         if (!s.ok()) {
           return s;
         }
@@ -592,7 +587,7 @@ class SpopCommand : public Command {
       }
 
       if (deleteMeta) {
-        s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn.get());
+        s = Command::delKeyAndTTL(sess, metaRk, rv.value(), ptxn.value());
         if (!s.ok()) {
           return s;
         }
@@ -604,13 +599,13 @@ class SpopCommand : public Command {
                                        pCtx->getVersionEP(),
                                        rv.value().getTtl(),
                                        rv),
-                           txn.get());
+                           ptxn.value());
         if (!s.ok()) {
           return s;
         }
       }
 
-      auto expCmt = txn->commit();
+      auto expCmt = ptxn.value()->commit();
       if (expCmt.ok()) {
         return ss.str();
       }
@@ -677,16 +672,15 @@ class SaddCommand : public Command {
     PStore kvstore = expdb.value().store;
 
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
       Expected<std::string> s =
-        genericSAdd(sess, kvstore, txn.get(), metaRk, rv, args);
+        genericSAdd(sess, kvstore, ptxn.value(), metaRk, rv, args);
       if (s.ok()) {
-        auto s1 = txn->commit();
+        auto s1 = ptxn.value()->commit();
         if (!s1.ok()) {
           return s1.status();
         }
@@ -805,15 +799,14 @@ class SRemCommand : public Command {
       valArgs.push_back(args[i]);
     }
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       Expected<std::string> s =
-        genericSRem(sess, kvstore, txn.get(), metaRk, rv, valArgs);
+        genericSRem(sess, kvstore, ptxn.value(), metaRk, rv, valArgs);
       if (s.ok()) {
-        auto s1 = txn->commit();
+        auto s1 = ptxn.value()->commit();
         if (!s1.ok()) {
           return s1.status();
         }
@@ -870,12 +863,11 @@ class SdiffgenericCommand : public Command {
       }
 
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      auto cursor = txn->createDataCursor();
+      auto cursor = ptxn.value()->createDataCursor();
       RecordKey fake = {expdb.value().chunkId,
                         pCtx->getDbId(),
                         RecordType::RT_SET_ELE,
@@ -936,21 +928,20 @@ class SdiffgenericCommand : public Command {
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
       Expected<std::string> addStore = genericSAdd(
         sess,
         kvstore,
-        txn.get(),
+        ptxn.value(),
         storeRk,
         {ErrorCodes::ERR_NOTFOUND, ""}, /* storeKey has been deleted */
         newKeys);
       if (addStore.ok()) {
-        auto s1 = txn->commit();
+        auto s1 = ptxn.value()->commit();
         if (!s1.ok()) {
           return s1.status();
         }
@@ -1077,13 +1068,12 @@ class SintergenericCommand : public Command {
         return expdb.status();
       }
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       if (i == 0) {
-        auto cursor = txn->createDataCursor();
+        auto cursor = ptxn.value()->createDataCursor();
         RecordKey fakeRk(expdb.value().chunkId,
                          pCtx->getDbId(),
                          RecordType::RT_SET_ELE,
@@ -1124,7 +1114,7 @@ class SintergenericCommand : public Command {
                         RecordType::RT_SET_ELE,
                         key,
                         *iter);
-        Expected<RecordValue> subValue = kvstore->getKV(subRk, txn.get());
+        Expected<RecordValue> subValue = kvstore->getKV(subRk, ptxn.value());
         // if key not found, erase it
         if (!subValue.ok() ||
             subValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -1171,20 +1161,19 @@ class SintergenericCommand : public Command {
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       Expected<std::string> addStore =
         genericSAdd(sess,
                     kvstore,
-                    txn.get(),
+                    ptxn.value(),
                     storeRk,
                     {ErrorCodes::ERR_NOTFOUND, ""},
                     newKeys);
       if (addStore.ok()) {
-        auto s1 = txn->commit();
+        auto s1 = ptxn.value()->commit();
         if (!s1.ok()) {
           return s1.status();
         }
@@ -1422,12 +1411,11 @@ class SuniongenericCommand : public Command {
         return expdb.status();
       }
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      auto cursor = txn->createDataCursor();
+      auto cursor = ptxn.value()->createDataCursor();
       RecordKey fakeRk(expdb.value().chunkId,
                        pCtx->getDbId(),
                        RecordType::RT_SET_ELE,
@@ -1483,20 +1471,19 @@ class SuniongenericCommand : public Command {
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       Expected<std::string> addStore =
         genericSAdd(sess,
                     kvstore,
-                    txn.get(),
+                    ptxn.value(),
                     storeRk,
                     {ErrorCodes::ERR_NOTFOUND, ""},
                     newKeys);
       if (addStore.ok()) {
-        auto s1 = txn->commit();
+        auto s1 = ptxn.value()->commit();
         if (!s1.ok()) {
           return s1.status();
         }

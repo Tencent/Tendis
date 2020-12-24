@@ -629,20 +629,19 @@ class ApplyBinlogsGeneric : public Command {
     }
 
     // add binlog
-    auto ptxn = store->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(store);
     if (!ptxn.ok()) {
       LOG(ERROR) << "createTransaction failed:" << ptxn.status().toString();
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     uint64_t binlogId = key.value().getBinlogId();
     // store the binlog directly, same as master
-    auto s = txn->setBinlogKV(binlogId, logKey, logValue);
+    auto s = ptxn.value()->setBinlogKV(binlogId, logKey, logValue);
     if (!s.ok()) {
       return s;
     }
-    Expected<uint64_t> expCmit = txn->commit();
+    Expected<uint64_t> expCmit = ptxn.value()->commit();
     if (!expCmit.ok()) {
       return expCmit.status();
     }

@@ -334,13 +334,12 @@ Status Command::delKeyPessimisticInLock(Session* sess,
   uint64_t totalCount = 0;
   const uint32_t batchSize = 2048;
   while (true) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     Expected<uint32_t> deleteCount = partialDelSubKeys(
-      sess, storeId, batchSize, mk, valueType, false, txn.get());
+      sess, storeId, batchSize, mk, valueType, false, ptxn.value());
     if (!deleteCount.ok()) {
       return deleteCount.status();
     }
@@ -349,24 +348,23 @@ Status Command::delKeyPessimisticInLock(Session* sess,
       continue;
     }
     TEST_SYNC_POINT_CALLBACK("delKeyPessimistic::TotalCount", &totalCount);
-    ptxn = kvstore->createTransaction(sess);
+    ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    txn = std::move(ptxn.value());
-    Status s = kvstore->delKV(mk, txn.get());
+    Status s = kvstore->delKV(mk, ptxn.value());
     if (!s.ok()) {
       return s;
     }
 
     if (ictx && ictx->getType() != RecordType::RT_KV) {
-      Status s = txn->delKV(ictx->encode());
+      Status s = ptxn.value()->delKV(ictx->encode());
       if (!s.ok()) {
         return s;
       }
     }
 
-    Expected<uint64_t> commitStatus = txn->commit();
+    Expected<uint64_t> commitStatus = ptxn.value()->commit();
     return commitStatus.status();
   }
 }
@@ -615,12 +613,11 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
   RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
 
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+    Expected<RecordValue> eValue = kvstore->getKV(mk, ptxn.value());
     if (!eValue.ok()) {
       return eValue.status();
     }
@@ -646,7 +643,7 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
                                       storeId,
                                       mk,
                                       valueType,
-                                      txn.get(),
+                                      ptxn.value(),
                                       ictx.getTTL() > 0 ? &ictx : nullptr);
       if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
         continue;

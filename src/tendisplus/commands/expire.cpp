@@ -56,12 +56,11 @@ Expected<bool> expireAfterNow(Session* sess,
   //     return {ErrorCodes::ERR_BUSY, "key locked"};
   // }
   for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eValue = kvstore->getKV(rk, txn.get());
+    Expected<RecordValue> eValue = kvstore->getKV(rk, ptxn.value());
     if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return false;
     } else if (!eValue.ok()) {
@@ -78,7 +77,7 @@ Expected<bool> expireAfterNow(Session* sess,
         if (oldTTL != 0) {
           TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
 
-          s = txn->delKV(o_ictx.encode());
+          s = ptxn.value()->delKV(o_ictx.encode());
           if (!s.ok()) {
             return s;
           }
@@ -86,7 +85,7 @@ Expected<bool> expireAfterNow(Session* sess,
 
         // add new index entry
         TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
-        s = txn->setKV(n_ictx.encode(),
+        s = ptxn.value()->setKV(n_ictx.encode(),
                        RecordValue(RecordType::RT_TTL_INDEX).encode());
         if (!s.ok()) {
           return s;
@@ -97,12 +96,12 @@ Expected<bool> expireAfterNow(Session* sess,
     // update
     rv.setTtl(expireAt);
     rv.setVersionEP(pCtx->getVersionEP());
-    s = kvstore->setKV(rk, rv, txn.get());
+    s = kvstore->setKV(rk, rv, ptxn.value());
     if (!s.ok()) {
       return s;
     }
 
-    auto commitStatus = txn->commit();
+    auto commitStatus = ptxn.value()->commit();
     s = commitStatus.status();
     if (s.ok()) {
       return true;
@@ -443,18 +442,17 @@ class PersistCommand : public Command {
     RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), vt, key, "");
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-    auto s = kvstore->setKV(mk, rv.value(), txn.get());
+    auto s = kvstore->setKV(mk, rv.value(), ptxn.value());
     if (!s.ok()) {
       return s;
     }
 
-    auto s1 = txn->commit();
+    auto s1 = ptxn.value()->commit();
     if (!s1.ok()) {
       return s1.status();
     }
@@ -538,14 +536,13 @@ class RevisionCommand : public Command {
     rv.setVersionEP(expvs.value());
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto s = kvstore->setKV(rk, rv, txn.get());
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    auto s = kvstore->setKV(rk, rv, ptxn.value());
     if (!s.ok()) {
       return s;
     }
 
-    auto expCmt = txn->commit();
+    auto expCmt = ptxn.value()->commit();
     if (!expCmt.ok()) {
       return expCmt.status();
     }

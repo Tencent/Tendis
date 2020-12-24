@@ -296,14 +296,13 @@ class SetexGeneralCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
@@ -404,14 +403,13 @@ class SetNxCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NX,
                                rk,
                                rv,
@@ -485,14 +483,13 @@ class SetNxExCommand : public Command {
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
 
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NX,
                                rk,
                                rv,
@@ -1835,14 +1832,13 @@ class BitopCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, targetKey, "");
     RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto setRes = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
@@ -2699,16 +2695,15 @@ class BitFieldCommand : public Command {
       RecordValue newrv(
         value, RecordType::RT_KV, pCtx->getVersionEP(), rv.getTtl(), rv);
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      Status s = kvstore->setKV(rk, newrv, txn.get());
+      Status s = kvstore->setKV(rk, newrv, ptxn.value());
       if (!s.ok()) {
         return s;
       }
-      auto eCmt = txn->commit();
+      auto eCmt = ptxn.value()->commit();
       if (!eCmt.ok()) {
         return eCmt.status();
       }

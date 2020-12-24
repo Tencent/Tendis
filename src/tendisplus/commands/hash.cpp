@@ -25,11 +25,10 @@ Expected<std::string> hincrfloatGeneric(Session* sess,
                                         const RecordKey& subRk,
                                         long double inc,
                                         PStore kvstore) {
-  auto ptxn = kvstore->createTransaction(sess);
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
   if (!ptxn.ok()) {
     return ptxn.status();
   }
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
   if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND &&
       eValue.status().code() != ErrorCodes::ERR_EXPIRED) {
     return eValue.status();
@@ -47,7 +46,7 @@ Expected<std::string> hincrfloatGeneric(Session* sess,
     hashMeta = std::move(exptHashMeta.value());
   }  // no else, else not found , so subkeyCount = 0, ttl = 0
 
-  auto getSubkeyExpt = kvstore->getKV(subRk, txn.get());
+  auto getSubkeyExpt = kvstore->getKV(subRk, ptxn.value());
   long double nowVal = 0;
   if (getSubkeyExpt.ok()) {
     Expected<long double> val =
@@ -71,15 +70,15 @@ Expected<std::string> hincrfloatGeneric(Session* sess,
                         sess->getCtx()->getVersionEP(),
                         ttl,
                         eValue);
-  Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
+  Status setStatus = kvstore->setKV(metaRk, metaValue, ptxn.value());
   if (!setStatus.ok()) {
     return setStatus;
   }
-  setStatus = kvstore->setKV(subRk, newVal, txn.get());
+  setStatus = kvstore->setKV(subRk, newVal, ptxn.value());
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = txn->commit();
+  Expected<uint64_t> exptCommit = ptxn.value()->commit();
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -93,11 +92,10 @@ Expected<std::string> hincrGeneric(Session* sess,
                                    const RecordKey& subRk,
                                    int64_t inc,
                                    PStore kvstore) {
-  auto ptxn = kvstore->createTransaction(sess);
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
   if (!ptxn.ok()) {
     return ptxn.status();
   }
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
   if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND &&
       eValue.status().code() != ErrorCodes::ERR_EXPIRED) {
     return eValue.status();
@@ -115,7 +113,7 @@ Expected<std::string> hincrGeneric(Session* sess,
     hashMeta = std::move(exptHashMeta.value());
   }  // no else, else not found , so subkeyCount = 0, ttl = 0
 
-  auto getSubkeyExpt = kvstore->getKV(subRk, txn.get());
+  auto getSubkeyExpt = kvstore->getKV(subRk, ptxn.value());
   int64_t nowVal = 0;
   if (getSubkeyExpt.ok()) {
     Expected<int64_t> val =
@@ -142,15 +140,15 @@ Expected<std::string> hincrGeneric(Session* sess,
                         sess->getCtx()->getVersionEP(),
                         ttl,
                         eValue);
-  Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
+  Status setStatus = kvstore->setKV(metaRk, metaValue, ptxn.value());
   if (!setStatus.ok()) {
     return setStatus;
   }
-  setStatus = kvstore->setKV(subRk, newVal, txn.get());
+  setStatus = kvstore->setKV(subRk, newVal, ptxn.value());
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = txn->commit();
+  Expected<uint64_t> exptCommit = ptxn.value()->commit();
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -255,12 +253,11 @@ class HExistsCommand : public Command {
                     subkey);
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eVal = kvstore->getKV(subRk, txn.get());
+    Expected<RecordValue> eVal = kvstore->getKV(subRk, ptxn.value());
     if (eVal.ok()) {
       return Command::fmtOne();
     } else if (eVal.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -324,18 +321,17 @@ class HAllCommand : public Command {
     // uint32_t storeId = expdb.value().dbId;
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     RecordKey fakeEle(expdb.value().chunkId,
                       metaRk.getDbId(),
                       RecordType::RT_HASH_ELE,
                       metaRk.getPrimaryKey(),
                       "");
     std::string prefix = fakeEle.prefixPk();
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     cursor->seek(prefix);
 
     std::list<Record> result;
@@ -466,12 +462,11 @@ class HGetRecordCommand : public Command {
                     subkey);
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eVal = kvstore->getKV(subRk, txn.get());
+    Expected<RecordValue> eVal = kvstore->getKV(subRk, ptxn.value());
     if (eVal.ok()) {
       return std::move(Record(std::move(subRk), std::move(eVal.value())));
     } else {
@@ -771,11 +766,10 @@ class HMGetGeneric : public Command {
                      "");
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     std::stringstream ss;
     if (_returnVsn) {
@@ -791,7 +785,7 @@ class HMGetGeneric : public Command {
                        RecordType::RT_HASH_ELE,
                        key,
                        args[i]);
-      Expected<RecordValue> eValue = kvstore->getKV(subKey, txn.get());
+      Expected<RecordValue> eValue = kvstore->getKV(subKey, ptxn.value());
       if (!eValue.ok()) {
         if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
           Command::fmtNull(ss);
@@ -847,11 +841,10 @@ Status hmcas(Session* sess,
     expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_HASH_META, key, "");
   PStore kvstore = expdb.value().store;
 
-  auto ptxn = kvstore->createTransaction(sess);
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
   if (!ptxn.ok()) {
     return ptxn.status();
   }
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
   HashMetaValue hashMeta;
   uint64_t ttl = 0;
@@ -890,7 +883,7 @@ Status hmcas(Session* sess,
                  RecordType::RT_HASH_ELE,
                  key,
                  keyPos.first);
-    Expected<RecordValue> rv = kvstore->getKV(rk, txn.get());
+    Expected<RecordValue> rv = kvstore->getKV(rk, ptxn.value());
     if (rv.ok()) {
       existkvs[keyPos.first] = rv.value().getValue();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -913,7 +906,7 @@ Status hmcas(Session* sess,
     if (eop.value() == OPSET || (!exists && eop.value() == OPADD)) {
       RecordValue subrv(
         subargs[keyPos.second + 2], RecordType::RT_HASH_ELE, -1);
-      Status s = kvstore->setKV(subrk, subrv, txn.get());
+      Status s = kvstore->setKV(subrk, subrv, ptxn.value());
       if (!s.ok()) {
         return s;
       }
@@ -928,7 +921,7 @@ Status hmcas(Session* sess,
       }
       RecordValue subrv(
         std::to_string(ev1.value() + ev.value()), RecordType::RT_HASH_ELE, -1);
-      Status s = kvstore->setKV(subrk, subrv, txn.get());
+      Status s = kvstore->setKV(subrk, subrv, ptxn.value());
       if (!s.ok()) {
         return s;
       }
@@ -958,11 +951,11 @@ Status hmcas(Session* sess,
                         ttl,
                         eValue);
   metaValue.setCas(cas);
-  Status s = kvstore->setKV(metaRk, metaValue, txn.get());
+  Status s = kvstore->setKV(metaRk, metaValue, ptxn.value());
   if (!s.ok()) {
     return s;
   }
-  auto commitStat = txn->commit();
+  auto commitStat = ptxn.value()->commit();
   return commitStat.status();
 }
 
@@ -1139,11 +1132,10 @@ class HMSetGeneric : public Command {
                                      const Expected<RecordValue>& eValue,
                                      const std::vector<Record>& rcds,
                                      PStore kvstore) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     HashMetaValue hashMeta;
     uint64_t ttl = 0;
@@ -1159,7 +1151,7 @@ class HMSetGeneric : public Command {
     }  // no else, else not found , so subkeyCount = 0, ttl = 0
 
     for (const auto& v : rcds) {
-      auto getSubkeyExpt = kvstore->getKV(v.getRecordKey(), txn.get());
+      auto getSubkeyExpt = kvstore->getKV(v.getRecordKey(), ptxn.value());
       if (!getSubkeyExpt.ok()) {
         if (getSubkeyExpt.status().code() != ErrorCodes::ERR_NOTFOUND) {
           return getSubkeyExpt.status();
@@ -1167,7 +1159,7 @@ class HMSetGeneric : public Command {
         inserted += 1;
       }
       Status setStatus =
-        kvstore->setKV(v.getRecordKey(), v.getRecordValue(), txn.get());
+        kvstore->setKV(v.getRecordKey(), v.getRecordValue(), ptxn.value());
       if (!setStatus.ok()) {
         return setStatus;
       }
@@ -1179,11 +1171,11 @@ class HMSetGeneric : public Command {
                           ttl,
                           eValue);
     metaValue.setCas(-1);
-    Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
+    Status setStatus = kvstore->setKV(metaRk, metaValue, ptxn.value());
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = txn->commit();
+    Expected<uint64_t> exptCommit = ptxn.value()->commit();
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {
@@ -1331,11 +1323,10 @@ class HSetGeneric : public Command {
                                     const RecordKey& subRk,
                                     const RecordValue& subRv,
                                     PStore kvstore) {
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     HashMetaValue hashMeta;
     uint64_t ttl = 0;
@@ -1350,7 +1341,7 @@ class HSetGeneric : public Command {
     }  // no else, else not found , so subkeyCount = 0, ttl = 0
 
     bool updated = false;
-    auto getSubkeyExpt = kvstore->getKV(subRk, txn.get());
+    auto getSubkeyExpt = kvstore->getKV(subRk, ptxn.value());
     if (getSubkeyExpt.ok()) {
       updated = true;
     } else if (getSubkeyExpt.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -1369,15 +1360,15 @@ class HSetGeneric : public Command {
                           sess->getCtx()->getVersionEP(),
                           ttl,
                           eValue);
-    Status setStatus = kvstore->setKV(metaRk, metaValue, txn.get());
+    Status setStatus = kvstore->setKV(metaRk, metaValue, ptxn.value());
     if (!setStatus.ok()) {
       return setStatus;
     }
-    setStatus = kvstore->setKV(subRk, subRv, txn.get());
+    setStatus = kvstore->setKV(subRk, subRv, ptxn.value());
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = txn->commit();
+    Expected<uint64_t> exptCommit = ptxn.value()->commit();
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {
@@ -1538,13 +1529,12 @@ class HDelCommand : public Command {
     }
 
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       Expected<uint32_t> delCount =
-        delKeys(sess, kvstore, metaRk, rv, args, txn.get());
+        delKeys(sess, kvstore, metaRk, rv, args, ptxn.value());
       if (delCount.status().code() == ErrorCodes::ERR_COMMIT_RETRY) {
         if (i == RETRY_CNT - 1) {
           return delCount.status();
