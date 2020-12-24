@@ -315,9 +315,36 @@ class DbEmptyCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
+    int64_t b = containData(sess) ? 0 : 1;
+    return Command::fmtLongLong(b);
+  }
+private:
+  /* NOTE(wayenchen) fast check if dbsize is zero or not */
+  bool containData(Session* sess) {
     auto server = sess->getServerEntry();
-    int64_t containData = server->containData() ? 0 : 1;
-    return Command::fmtLongLong(containData);
+    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+      auto expdb = server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_S);
+      if (!expdb.ok()) {
+        LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
+        return true;
+      }
+
+      PStore kvstore = expdb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return true;
+      }
+      auto cursor = ptxn.value()->createDataCursor();
+      cursor->seek("");
+      auto exptRcd = cursor->next();
+
+      if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+        continue;
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 } dbEmptyCmd;
 
@@ -2714,9 +2741,10 @@ class FlushGeneric : public Command {
   }
 };
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushAllCommand : public FlushGeneric {
  public:
-  FlushAllCommand() : FlushGeneric("flushall", "w") {}
+  FlushAllCommand() : FlushGeneric("flushall", "ws") {}
 
   ssize_t arity() const {
     return -1;
@@ -2749,9 +2777,10 @@ class FlushAllCommand : public FlushGeneric {
   }
 } flushallCmd;
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushdbCommand : public FlushGeneric {
  public:
-  FlushdbCommand() : FlushGeneric("flushdb", "w") {}
+  FlushdbCommand() : FlushGeneric("flushdb", "ws") {}
 
   ssize_t arity() const {
     return -1;
@@ -2789,9 +2818,10 @@ class FlushdbCommand : public FlushGeneric {
   }
 } flushdbCmd;
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushAllDiskCommand : public FlushGeneric {
  public:
-  FlushAllDiskCommand() : FlushGeneric("flushalldisk", "w") {}
+  FlushAllDiskCommand() : FlushGeneric("flushalldisk", "ws") {}
 
   ssize_t arity() const {
     return 1;

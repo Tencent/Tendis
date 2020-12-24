@@ -285,10 +285,6 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
                       const std::string& property,
                       std::string* value) const;
 
-  Status delKeysInSlot(uint32_t slot);
-  /* Note(wayenchen) fast juage if dbsize is zero or not*/
-  bool containData();
-
   bool isClusterEnabled() const {
     return _enableCluster;
   }

@@ -132,7 +132,7 @@ class BackupCommand : public Command {
 
 class RestoreBackupCommand : public Command {
  public:
-  RestoreBackupCommand() : Command("restorebackup", "aw") {}
+  RestoreBackupCommand() : Command("restorebackup", "aws") {}
 
   ssize_t arity() const {
     return -3;

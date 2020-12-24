@@ -633,8 +633,6 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
         (valueType == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      // reset txn, it is no longer used
-      txn.reset();
       return Command::delKeyPessimisticInLock(
         sess, storeId, mk, valueType, ictx.getTTL() > 0 ? &ictx : nullptr);
     } else {
