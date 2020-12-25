@@ -874,17 +874,14 @@ std::vector<int> Command::getKeysFromCommand(
 }
 
 bool Command::isAdminCmd(const std::string& cmd) {
-  static const auto sAdmin = []() {
-    std::unordered_set<std::string> tmp;
-    for (auto iter = commandMap().begin(); iter != commandMap().end(); iter++) {
-      if (iter->second->isAdmin()) {
-        tmp.emplace(iter->first);
-      }
-    }
-    return tmp;
-  }();
 
-  return sAdmin.count(cmd);
+  auto iter = commandMap().find(cmd);
+  if(iter != commandMap().end())
+  {
+    return iter->second->isAdmin();
+  }
+
+  return false;
 }
 
 }  // namespace tendisplus
