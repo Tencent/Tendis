@@ -250,6 +250,9 @@ class RecordValue {
 
   static constexpr size_t TYPE_OFFSET = 0;
   static constexpr size_t TTL_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
+  uint64_t getEleCnt() const;
+  RecordType getEleType() const;
+  bool isBigKey(uint64_t valueSize, uint64_t eleCnt) const;
 
  private:
   // if RecordKey._type = META, _typeForMeta means the real
