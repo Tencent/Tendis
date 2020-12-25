@@ -516,6 +516,11 @@ bool ServerParams::registerOnupdate(const string& name, funptr ptr) {
 string ServerParams::showAll() const {
   string ret;
   for (auto iter : _mapServerParams) {
+    if (iter.second->getName() == "requirepass" ||
+        iter.second->getName() == "masterauth") {
+        ret += "  " + iter.second->getName() + ":******\n";
+        continue;
+    }
     ret += "  " + iter.second->getName() + ":" + iter.second->show() + "\n";
   }
 
