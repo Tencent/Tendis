@@ -263,7 +263,12 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   std::string commandName = toLower(args[0]);
   auto it = commandMap().find(commandName);
   if (it == commandMap().end()) {
-    LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
+    std::stringstream ss;
+    ss << "BUG: command:" << args[0] << " not found!";
+    //LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
+    std::string fatal_message = ss.str();
+    LOG(FATAL) << fatal_message;
+    return ServerEntry::logError(fatal_message, sess);
   }
 
   // TODO(vinchen): here there is a copy, it is a waste.
