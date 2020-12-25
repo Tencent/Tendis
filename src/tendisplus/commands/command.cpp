@@ -201,7 +201,10 @@ Command* Command::getCommand(Session* sess) {
 Expected<Command*> Command::precheck(Session* sess) {
   const auto& args = sess->getArgs();
   if (args.size() == 0) {
+    std::stringstream ss;
+    std::string fatal_message = "BUG: sess " << sess->id() << " len 0 args";
     LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
+    return {ErrorCodes::ERR_INTERNAL, fatal_message};
   }
   std::string commandName = toLower(args[0]);
   auto it = commandMap().find(commandName);
