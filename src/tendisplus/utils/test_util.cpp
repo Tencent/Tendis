@@ -295,10 +295,16 @@ bool isExpired(PStore store, const RecordKey& key, const RecordValue& value) {
   return false;
 }
 
+std::string getAofStr(const std::shared_ptr<ServerEntry>& svr,
+                      const RecordKey& v) {
+  return "a";
+}
 void compareData(const std::shared_ptr<ServerEntry>& master,
                  const std::shared_ptr<ServerEntry>& slave,
                  bool compare_binlog) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
+  bool aofMode =
+    master->getParams()->aofPsyncEnabled && slave->getParams()->aofPsyncEnabled;
 
   for (size_t i = 0; i < master->getKVStoreCount(); i++) {
     uint64_t count1 = 0;
@@ -322,30 +328,38 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd1.ok());
 
-      if (isExpired(kvstore1,
-                    exptRcd1.value().getRecordKey(),
-                    exptRcd1.value().getRecordValue())) {
+
+      auto masterKey = exptRcd1.value().getRecordKey();
+      if (isExpired(kvstore1, masterKey, exptRcd1.value().getRecordValue())) {
         continue;
       }
 
       count1++;
 
-      auto type = exptRcd1.value().getRecordKey().getRecordType();
-      auto key = exptRcd1.value().getRecordKey();
-      auto exptRcdv2 =
-        kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+      auto type = masterKey.getRecordType();
+      /* AOF PSYNC only compare primary keys*/
+      if (aofMode && type != RecordType::RT_DATA_META) {
+        continue;
+      }
+
+      auto exptRcdv2 = kvstore2->getKV(masterKey, txn2.get());
       EXPECT_TRUE(exptRcdv2.ok());
       if (!exptRcdv2.ok()) {
-        LOG(INFO) << "key:" << key.getPrimaryKey()
+        LOG(INFO) << "key:" << masterKey.getPrimaryKey()
                   << ",type:" << static_cast<int>(type) << " not found!";
         INVARIANT(0);
       }
       EXPECT_TRUE(exptRcdv2.ok());
-      EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+
+      if (aofMode) {
+        EXPECT_EQ(getAofStr(master, masterKey), getAofStr(slave, masterKey));
+      } else {
+        EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
+      }
     }
     int count1_data = count1;
 
-    if (compare_binlog) {
+    if (compare_binlog && !aofMode) {
       // check the binlog
       auto cursor1_binlog = txn1->createBinlogCursor();
       while (true) {
@@ -371,27 +385,34 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd2.ok());
 
-      if (isExpired(kvstore2,
-                    exptRcd2.value().getRecordKey(),
-                    exptRcd2.value().getRecordValue())) {
+      auto slaveKey = exptRcd2.value().getRecordKey();
+      if (isExpired(kvstore2, slaveKey, exptRcd2.value().getRecordValue())) {
         continue;
       }
       count2++;
 
+      if (aofMode && slaveKey.getRecordType() != RecordType::RT_DATA_META) {
+        continue;
+      }
+
       // check the data
-      auto exptRcdv1 =
-        kvstore1->getKV(exptRcd2.value().getRecordKey(), txn1.get());
+      auto exptRcdv1 = kvstore1->getKV(slaveKey, txn1.get());
       EXPECT_TRUE(exptRcdv1.ok());
       if (!exptRcdv1.ok()) {
         LOG(INFO) << exptRcd2.value().toString()
                   << " error:" << exptRcdv1.status().toString();
         continue;
       }
-      EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
+      if (aofMode) {
+        EXPECT_EQ(getAofStr(master, slaveKey), getAofStr(slave, slaveKey));
+      } else {
+        EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
+      }
     }
+
     int count2_data = count2;
 
-    if (compare_binlog) {
+    if (compare_binlog && !aofMode) {
       auto cursor2_binlog = txn2->createBinlogCursor();
       while (true) {
         Expected<Record> exptRcd2 = cursor2_binlog->next();

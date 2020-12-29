@@ -603,14 +603,12 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
 
     LOG(INFO) << ">>>>>> slaveof begin.";
     runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
-    // slaveof need about 3 seconds to transfer file.
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     LOG(INFO) << ">>>>>> slaveof end.";
     LOG(INFO) << ">>>>>> master add data begin.";
 
     auto thread = std::thread([this, master]() {
       testKV(master);
-      testZset(master);
     });
     thread.join();
     std::this_thread::sleep_for(std::chrono::seconds(10));
