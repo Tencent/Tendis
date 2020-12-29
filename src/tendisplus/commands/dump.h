@@ -61,7 +61,8 @@ constexpr uint32_t ZLLEN_LIMIT = 256;
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ / 2ULL;
 
-Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn);
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+        Transaction* txn);
 Expected<std::string> genericZadd(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,

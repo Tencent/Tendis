@@ -1,5 +1,9 @@
-#ifndef SHA1_H
-#define SHA1_H
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
+
+#ifndef SRC_TENDISPLUS_SCRIPT_SHA1_H_
+#define SRC_TENDISPLUS_SCRIPT_SHA1_H_
 /* ================ sha1.h ================ */
 /*
 SHA-1 in C
@@ -23,4 +27,4 @@ void SHA1Final(unsigned char digest[20], SHA1_CTX *context);
 #ifdef REDIS_TEST
 int sha1Test(int argc, char **argv);
 #endif
-#endif
+#endif  // SRC_TENDISPLUS_SCRIPT_SHA1_H_

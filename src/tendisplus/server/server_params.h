@@ -448,7 +448,7 @@ class ServerParams {
   uint32_t clusterSlaveValidityFactor = 10;
   bool clusterSingleNode = false;
 
-  int64_t luaTimeLimit = 5000; // ms
+  int64_t luaTimeLimit = 5000;  // ms
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

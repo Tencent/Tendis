@@ -1,13 +1,14 @@
-//
-// Created by takenliu on 2020/12/9.
-//
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
-#ifndef TENDIS_PLUS_REDIS_HELPER_H
-#define TENDIS_PLUS_REDIS_HELPER_H
+#ifndef SRC_TENDISPLUS_SCRIPT_REDIS_HELPER_H_
+#define SRC_TENDISPLUS_SCRIPT_REDIS_HELPER_H_
 
 #include <string>
 
-void strmapchars(std::string& s, const char *from, const char *to, size_t setlen);
+void strmapchars(std::string& s, const char *from, const char *to,
+    size_t setlen);
 
 
-#endif //TENDIS_PLUS_REDIS_HELPER_H
+#endif  // SRC_TENDISPLUS_SCRIPT_REDIS_HELPER_H_

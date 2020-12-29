@@ -1,3 +1,6 @@
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
 #include <string>
 #include "tendisplus/commands/command.h"
@@ -5,7 +8,7 @@
 namespace tendisplus {
 
 class EvalCommand : public Command {
-public:
+ public:
   EvalCommand() : Command("eval", "s") {}
 
   ssize_t arity() const {
@@ -36,7 +39,7 @@ public:
 } evalCmd;
 
 class ScriptCommand : public Command {
-public:
+ public:
   ScriptCommand() : Command("script", "s") {}
 
   ssize_t arity() const {
@@ -66,7 +69,8 @@ public:
     if (op == "kill") {
       return server->getScriptMgr()->setLuaKill();
     } else {
-      return {ErrorCodes::ERR_LUA, "Unknown SCRIPT subcommand or wrong # of args."};
+      return {ErrorCodes::ERR_LUA,
+        "Unknown SCRIPT subcommand or wrong # of args."};
     }
     return Command::fmtOK();
   }

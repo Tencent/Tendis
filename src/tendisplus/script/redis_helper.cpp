@@ -1,8 +1,8 @@
-//
-// Created by takenliu on 2020/12/9.
-//
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
-#include "redis_helper.h"
+#include "tendisplus/script/redis_helper.h"
 
 /* Modify the string substituting all the occurrences of the set of
  * characters specified in the 'from' string to the corresponding character
@@ -13,7 +13,8 @@
  *
  * The function returns the sds string pointer, that is always the same
  * as the input pointer since no resize is needed. */
-void strmapchars(std::string& s, const char *from, const char *to, size_t setlen) {
+void strmapchars(std::string& s, const char *from,
+      const char *to, size_t setlen) {
   size_t j, i, l = s.length();
 
   for (j = 0; j < l; j++) {

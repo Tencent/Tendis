@@ -1,9 +1,11 @@
-//
-// Created by takenliu on 2020/11/24.
-//
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
+
+#include <memory>
 #include <string>
-#include "script_manager.h"
+#include "tendisplus/script/script_manager.h"
 
 namespace tendisplus {
 
@@ -43,7 +45,8 @@ Expected<std::string> ScriptManager::run(Session* sess) {
       _luaIdleList.push_back(luaState);
       _luaRunningList.erase(luaState->Id());
     }
-    if (_luaIdleList.size() + _luaRunningList.size() > _svr->getParams()->executorThreadNum) {
+    if (_luaIdleList.size() + _luaRunningList.size()
+      > _svr->getParams()->executorThreadNum) {
       LOG(WARNING) << "luaState too much,_luaIdleList:" << _luaIdleList.size()
         << " _luaRunningList:" << _luaRunningList.size()
         << " executorThreadNum:" << _svr->getParams()->executorThreadNum;
@@ -56,15 +59,19 @@ Expected<std::string> ScriptManager::setLuaKill() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_luaRunningList.size() <= 0) {
     LOG(WARNING) << "script kill, no running script.";
-    return {ErrorCodes::ERR_LUA, "-NOTBUSY No scripts in execution right now.\r\n"};
+    return {ErrorCodes::ERR_LUA,
+        "-NOTBUSY No scripts in execution right now.\r\n"};
   }
-  for(auto iter = _luaRunningList.begin(); iter != _luaRunningList.end(); ++iter) {
-    if(iter->second->luaWriteDirty()) {
+  for (auto iter = _luaRunningList.begin(); iter != _luaRunningList.end();
+    ++iter) {
+    if (iter->second->luaWriteDirty()) {
       LOG(WARNING) << "script kill, luaWriteDirty:" << iter->second->Id()
         << " size:" << _luaRunningList.size();
       return {ErrorCodes::ERR_LUA, "-UNKILLABLE Sorry the script already "
-        "executed write commands against the dataset. You can either wait the script "
-        "termination or kill the server in a hard way using the SHUTDOWN NOSAVE command.\r\n"};
+        "executed write commands against the dataset."
+        " You can either wait the script "
+        "termination or kill the server in a hard way"
+        " using the SHUTDOWN NOSAVE command.\r\n"};
     }
   }
   lua_kill = true;
@@ -79,12 +86,12 @@ bool ScriptManager::luaKill() {
 
 Expected<std::string> ScriptManager::flush() {
   std::lock_guard<std::mutex> lk(_mutex);
-  for(auto iter = _luaRunningList.begin(); iter != _luaRunningList.end();) {
-    iter->second->LuaClose(); // what will happen in lua_stat.run() ???
+  for (auto iter = _luaRunningList.begin(); iter != _luaRunningList.end();) {
+    iter->second->LuaClose();  // what will happen in lua_stat.run() ???
     _luaIdleList.push_back(iter->second);
     iter = _luaRunningList.erase(iter);
   }
-  for(auto iter = _luaIdleList.begin(); iter != _luaIdleList.end();iter++) {
+  for (auto iter = _luaIdleList.begin(); iter != _luaIdleList.end(); iter++) {
     // _luaIdleList whether need lua_close() ???
     iter->get()->initLua(0);
   }

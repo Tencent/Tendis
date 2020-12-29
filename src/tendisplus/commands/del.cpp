@@ -20,7 +20,8 @@ namespace tendisplus {
 // return false if not exists
 // return true if exists and del ok
 // return error on error
-Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn) {
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+  Transaction* txn) {
   SessionCtx* pCtx = sess->getCtx();
   INVARIANT(pCtx != nullptr);
   bool atLeastOne = false;
@@ -145,7 +146,7 @@ class UnlinkCommand : public Command {
           auto expdb = server->getSegmentMgr()->getDbHasLocked(
                   sess, keys[i]);
           if (!expdb.ok()) {
-            return ;
+            return;
           }
 
           PStore kvstore = expdb.value().store;

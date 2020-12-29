@@ -21,7 +21,8 @@
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
-Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn);
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+        Transaction* txn);
 Expected<std::string> genericZrem(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
@@ -833,9 +834,9 @@ class ZIncrCommand : public Command {
         return ptxn.status();
       }
       Expected<std::string> s =
-        genericZadd(sess, kvstore, metaRk, rv, {{subkey, score.value()}}, flag,
-                ptxn.value());
-      if(!s.ok()) {
+        genericZadd(sess, kvstore, metaRk, rv, {{subkey, score.value()}},
+                flag, ptxn.value());
+      if (!s.ok()) {
         return s.status();
       }
       auto eCmt = ptxn.value()->commit();

@@ -318,12 +318,14 @@ class DbEmptyCommand : public Command {
     int64_t b = containData(sess) ? 0 : 1;
     return Command::fmtLongLong(b);
   }
-private:
+
+ private:
   /* NOTE(wayenchen) fast check if dbsize is zero or not */
   bool containData(Session* sess) {
     auto server = sess->getServerEntry();
     for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
-      auto expdb = server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_S);
+      auto expdb = server->getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_S);
       if (!expdb.ok()) {
         LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
         return true;

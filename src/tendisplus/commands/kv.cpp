@@ -1805,7 +1805,8 @@ class BitopCommand : public Command {
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV, ptxn.value());
+      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV,
+        ptxn.value());
       auto eCmt = ptxn.value()->commit();
       if (!eCmt.ok()) {
         return eCmt.status();
@@ -2108,7 +2109,8 @@ class RenameGenericCommand : public Command {
         return Command::fmtZero();
       }
 
-      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META, dptxn.value());
+      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META,
+        dptxn.value());
       if (!deleted.ok()) {
         return deleted.toString();
       }

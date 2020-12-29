@@ -18,7 +18,8 @@
 
 namespace tendisplus {
 
-Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn);
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+        Transaction* txn);
 
 Expected<std::string> genericSRem(Session* sess,
                                   PStore kvstore,

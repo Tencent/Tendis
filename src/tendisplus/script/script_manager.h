@@ -1,10 +1,14 @@
-//
-// Created by takenliu on 2020/11/24.
-//
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
-#ifndef TENDIS_PLUS_SCRIPT_MANAGER_H
-#define TENDIS_PLUS_SCRIPT_MANAGER_H
+#ifndef SRC_TENDISPLUS_SCRIPT_SCRIPT_MANAGER_H_
+#define SRC_TENDISPLUS_SCRIPT_SCRIPT_MANAGER_H_
 
+#include <list>
+#include <map>
+#include <memory>
+#include <string>
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/script/lua_state.h"
 
@@ -13,7 +17,7 @@ namespace tendisplus {
 class LuaState;
 
 class ScriptManager {
-public:
+ public:
   explicit ScriptManager(std::shared_ptr<ServerEntry> svr);
   Status startup(uint32_t luaStateNum);
   Status stopStore(uint32_t storeId);
@@ -24,7 +28,7 @@ public:
   bool luaKill();
   bool stopped();
 
-private:
+ private:
   std::shared_ptr<ServerEntry> _svr;
 
   mutable std::mutex _mutex;
@@ -38,4 +42,4 @@ private:
 
 }  // namespace tendisplus
 
-#endif //TENDIS_PLUS_SCRIPT_MANAGER_H
+#endif  // SRC_TENDISPLUS_SCRIPT_SCRIPT_MANAGER_H_

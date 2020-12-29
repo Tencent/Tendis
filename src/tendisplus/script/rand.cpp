@@ -1,9 +1,9 @@
-//
-// Created by takenliu on 2020/12/10.
-//
+// Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
+// Please refer to the license text that comes with this tendis open source
+// project for additional information.
 
 #include <stdint.h>
-#include "rand.h"
+#include "tendisplus/script/rand.h"
 
 int32_t RedisRandom::redisLrand48() {
   next();

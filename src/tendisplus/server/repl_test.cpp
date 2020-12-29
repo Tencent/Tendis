@@ -817,7 +817,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
   size_t i = 0;
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
-    bool clear = false; // dont clear if failed
+    bool clear = false;  // dont clear if failed
     const auto guard = MakeGuard([clear] {
       if (clear) {
         destroyEnv(single_dir2);

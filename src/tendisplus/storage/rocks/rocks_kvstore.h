@@ -106,6 +106,7 @@ class RocksTxn : public Transaction {
   bool isDone() {
     return _done;
   }
+
  protected:
   virtual void ensureTxn() {}
 
