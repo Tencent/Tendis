@@ -328,7 +328,6 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd1.ok());
 
-
       auto masterKey = exptRcd1.value().getRecordKey();
       if (isExpired(kvstore1, masterKey, exptRcd1.value().getRecordValue())) {
         continue;
