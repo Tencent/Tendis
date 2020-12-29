@@ -10,6 +10,7 @@
 #include <clocale>
 #include <map>
 #include "glog/logging.h"
+#include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
@@ -20,8 +21,10 @@ namespace tendisplus {
 
 Expected<bool> expireBeforeNow(Session* sess,
                                RecordType type,
-                               const std::string& key) {
-  return Command::delKeyChkExpire(sess, key, type);
+                               const std::string& key,
+                               Transaction* txn) {
+  // TODO(takenliu) pass txn to params, and commit only by top caller.
+  return Command::delKeyChkExpire(sess, key, type, txn);
 }
 
 // return true if exists
@@ -30,7 +33,8 @@ Expected<bool> expireBeforeNow(Session* sess,
 Expected<bool> expireAfterNow(Session* sess,
                               RecordType type,
                               const std::string& key,
-                              uint64_t expireAt) {
+                              uint64_t expireAt,
+                              Transaction* txn) {
   Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, type);
   if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
     return false;
@@ -55,12 +59,9 @@ Expected<bool> expireAfterNow(Session* sess,
   // if (Command::isKeyLocked(sess, storeId, rk.encode())) {
   //     return {ErrorCodes::ERR_BUSY, "key locked"};
   // }
+
   for (uint32_t i = 0; i < Command::RETRY_CNT; ++i) {
-    auto ptxn = sess->getCtx()->createTransaction(kvstore);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    Expected<RecordValue> eValue = kvstore->getKV(rk, ptxn.value());
+    Expected<RecordValue> eValue = kvstore->getKV(rk, txn);
     if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return false;
     } else if (!eValue.ok()) {
@@ -77,7 +78,7 @@ Expected<bool> expireAfterNow(Session* sess,
         if (oldTTL != 0) {
           TTLIndex o_ictx(key, vt, pCtx->getDbId(), oldTTL);
 
-          s = ptxn.value()->delKV(o_ictx.encode());
+          s = txn->delKV(o_ictx.encode());
           if (!s.ok()) {
             return s;
           }
@@ -85,7 +86,7 @@ Expected<bool> expireAfterNow(Session* sess,
 
         // add new index entry
         TTLIndex n_ictx(key, vt, pCtx->getDbId(), expireAt);
-        s = ptxn.value()->setKV(n_ictx.encode(),
+        s = txn->setKV(n_ictx.encode(),
                        RecordValue(RecordType::RT_TTL_INDEX).encode());
         if (!s.ok()) {
           return s;
@@ -96,37 +97,26 @@ Expected<bool> expireAfterNow(Session* sess,
     // update
     rv.setTtl(expireAt);
     rv.setVersionEP(pCtx->getVersionEP());
-    s = kvstore->setKV(rk, rv, ptxn.value());
+    s = kvstore->setKV(rk, rv, txn);
     if (!s.ok()) {
       return s;
     }
-
-    auto commitStatus = ptxn.value()->commit();
-    s = commitStatus.status();
-    if (s.ok()) {
-      return true;
-    } else if (s.code() != ErrorCodes::ERR_COMMIT_RETRY) {
-      return s;
-    }
-    // status == ERR_COMMIT_RETRY
-    if (i == Command::RETRY_CNT - 1) {
-      return s;
-    } else {
-      continue;
-    }
+    return true;
   }
 
   INVARIANT_D(0);
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
+// NOTE(takenliu) txn not commited, caller need commit it.
 Expected<std::string> expireGeneric(Session* sess,
                                     int64_t expireAt,
-                                    const std::string& key) {
+                                    const std::string& key,
+                                    Transaction* txn) {
   if (expireAt >= (int64_t)msSinceEpoch()) {
     bool atLeastOne = false;
     for (auto type : {RecordType::RT_DATA_META}) {
-      auto done = expireAfterNow(sess, type, key, expireAt);
+      auto done = expireAfterNow(sess, type, key, expireAt, txn);
       if (!done.ok()) {
         return done.status();
       }
@@ -136,7 +126,7 @@ Expected<std::string> expireGeneric(Session* sess,
   } else {
     bool atLeastOne = false;
     for (auto type : {RecordType::RT_DATA_META}) {
-      auto done = expireBeforeNow(sess, type, key);
+      auto done = expireBeforeNow(sess, type, key, txn);
       DLOG(INFO) << " expire before " << key << " " << rt2Char(type);
       if (!done.ok()) {
         return done.status();
@@ -176,6 +166,15 @@ class GeneralExpireCommand : public Command {
     if (!expt.ok()) {
       return expt.status();
     }
+    auto expdb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
+            sess, key, mgl::LockMode::LOCK_X);
+    if (!expdb.ok()) {
+      LOG(ERROR) << "getDbWithKeyLock failed, key" << key
+        << " err:" << expdb.status().toString();
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
 
     int64_t millsecs = 0;
     if (Command::getName() == "expire") {
@@ -189,7 +188,16 @@ class GeneralExpireCommand : public Command {
     } else {
       INVARIANT_D(0);
     }
-    return expireGeneric(sess, millsecs, key);
+
+    auto s = expireGeneric(sess, millsecs, key, ptxn.value());
+    if (!s.ok()) {
+      return s.status();
+    }
+    auto expCmt = ptxn.value()->commit();
+    if (!expCmt.ok()) {
+      return expCmt.status();
+    }
+    return s;
   }
 };
 
@@ -504,20 +512,17 @@ class RevisionCommand : public Command {
     if (!expdb.ok()) {
       return expdb.status();
     }
-
-    // set expire time
-    if (expire > 0) {
-      auto s = expireGeneric(sess, expire, key);
-      if (!s.ok()) {
-        return s;
-      }
-    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
 
     Expected<RecordValue> exprv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
-
     // already expired, should return here.
     if (exprv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      auto expCmt = ptxn.value()->commit();
+      if (!expCmt.ok()) {
+        return expCmt.status();
+      }
       return Command::fmtOK();
     }
 
@@ -534,9 +539,19 @@ class RevisionCommand : public Command {
                  "");
     auto rv = std::move(exprv.value());
     rv.setVersionEP(expvs.value());
+    // set expire time
+    if (expire > 0) {
+      if (rv.getTtl() != 0) {
+        LOG(ERROR) << "revision expire not empty,key:" << key
+          << " old ttl:" << rv.getTtl()
+          << " versionep:" << rv.getVersionEP()
+          << " new ttl:" << expire
+          << " versionep:" << expvs.value();
+        return {ErrorCodes::ERR_INTERGER, "expire not empty " + to_string(rv.getTtl())};
+      }
+      rv.setTtl(expire);
+    }
 
-    PStore kvstore = expdb.value().store;
-    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     auto s = kvstore->setKV(rk, rv, ptxn.value());
     if (!s.ok()) {
       return s;

@@ -111,7 +111,7 @@ Expected<std::string> setGeneric(Session* sess,
   if (!notExist &&
       (needExpire || diffType || (!Command::noExpire() && val.getTtl() > 0))) {
     auto s =
-      Command::delKey(sess, key.getPrimaryKey(), RecordType::RT_DATA_META);
+      Command::delKey(sess, key.getPrimaryKey(), RecordType::RT_DATA_META, txn);
     if (!s.ok() && s.code() != ErrorCodes::ERR_NOTFOUND) {
       return s;
     }
@@ -1794,7 +1794,22 @@ class BitopCommand : public Command {
       }
     }
     if (maxLen == 0) {
-      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV);
+      auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+              sess, targetKey, mgl::LockMode::LOCK_X);
+      if (!expdb.ok()) {
+        return expdb.status();
+      }
+      PStore kvstore = expdb.value().store;
+
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
+      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV, ptxn.value());
+      auto eCmt = ptxn.value()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
+      }
       return Command::fmtZero();
     }
     std::string result(maxLen, 0);
@@ -1822,7 +1837,8 @@ class BitopCommand : public Command {
     }
 
 
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+            sess, targetKey, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -2065,6 +2081,11 @@ class RenameGenericCommand : public Command {
 
     auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
     auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
+    PStore dststore = dstdb.value().store;
+    auto dptxn = pCtx->createTransaction(dststore);
+    if (!dptxn.ok()) {
+      return dptxn.status();
+    }
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, src, RecordType::RT_DATA_META);
     if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
@@ -2087,7 +2108,7 @@ class RenameGenericCommand : public Command {
         return Command::fmtZero();
       }
 
-      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META);
+      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META, dptxn.value());
       if (!deleted.ok()) {
         return deleted.toString();
       }
@@ -2119,12 +2140,6 @@ class RenameGenericCommand : public Command {
     Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value());
     if (!s.ok()) {
       return s;
-    }
-
-    PStore dststore = dstdb.value().store;
-    auto dptxn = pCtx->createTransaction(dststore);
-    if (!dptxn.ok()) {
-      return dptxn.status();
     }
 
     // set new meta k/v

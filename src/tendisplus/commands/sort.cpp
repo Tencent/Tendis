@@ -555,19 +555,25 @@ class SortCommand : public Command {
       if (!addDb.ok()) {
         return addDb.status();
       }
-      auto expDone = Command::delKeyChkExpire(
-        sess, args[storeKeyIndex], RecordType::RT_DATA_META);
-      if (!expDone.ok()) {
-        return expDone.status();
-      }
-      if (result.size() == 0) {
-        return Command::fmtZero();
-      }
       auto addStore = addDb.value().store;
       auto addPtxn = sess->getCtx()->createTransaction(addStore);
       if (!addPtxn.ok()) {
         return addPtxn.status();
       }
+
+      auto expDone = Command::delKeyChkExpire(
+        sess, args[storeKeyIndex], RecordType::RT_DATA_META, addPtxn.value());
+      if (!expDone.ok()) {
+        return expDone.status();
+      }
+      if (result.size() == 0) {
+        auto expCmt = addPtxn.value()->commit();
+        if (!expCmt.ok()) {
+          return expCmt.status();
+        }
+        return Command::fmtZero();
+      }
+
       RecordKey metaRk(addDb.value().chunkId,
                        pCtx->getDbId(),
                        RecordType::RT_LIST_META,

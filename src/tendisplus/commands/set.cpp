@@ -18,7 +18,7 @@
 
 namespace tendisplus {
 
-Expected<bool> delGeneric(Session* sess, const std::string& key);
+Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn);
 
 Expected<std::string> genericSRem(Session* sess,
                                   PStore kvstore,
@@ -905,7 +905,17 @@ class SdiffgenericCommand : public Command {
     }
 
     const std::string& storeKey = args[1];
-    Expected<bool> deleted = delGeneric(sess, storeKey);
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+
+    Expected<bool> deleted = delGeneric(sess, storeKey, ptxn.value());
     // Expected<bool> deleted = Command::delKeyChkExpire(sess, storeKey,
     // RecordType::RT_SET_META);
     if (!deleted.ok()) {
@@ -917,22 +927,12 @@ class SdiffgenericCommand : public Command {
       newKeys.push_back(std::move(v));
     }
 
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
-    PStore kvstore = expdb.value().store;
     RecordKey storeRk(expdb.value().chunkId,
                       pCtx->getDbId(),
                       RecordType::RT_SET_META,
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = sess->getCtx()->createTransaction(kvstore);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
-
       Expected<std::string> addStore = genericSAdd(
         sess,
         kvstore,
@@ -1138,7 +1138,17 @@ class SintergenericCommand : public Command {
     }
 
     const std::string& storeKey = args[1];
-    Expected<bool> deleted = delGeneric(sess, storeKey);
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+
+    Expected<bool> deleted = delGeneric(sess, storeKey, ptxn.value());
     // Expected<bool> deleted = Command::delKeyChkExpire(sess, storeKey,
     // RecordType::RT_SET_META);
     if (!deleted.ok()) {
@@ -1150,21 +1160,13 @@ class SintergenericCommand : public Command {
       newKeys.push_back(std::move(v));
     }
 
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
-    PStore kvstore = expdb.value().store;
+
     RecordKey storeRk(expdb.value().chunkId,
                       pCtx->getDbId(),
                       RecordType::RT_SET_META,
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = sess->getCtx()->createTransaction(kvstore);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
       Expected<std::string> addStore =
         genericSAdd(sess,
                     kvstore,
@@ -1179,14 +1181,7 @@ class SintergenericCommand : public Command {
         }
         return addStore.value();
       }
-      if (addStore.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-        return addStore.status();
-      }
-      if (i == RETRY_CNT - 1) {
-        return addStore.status();
-      } else {
-        continue;
-      }
+      return addStore.status();
     }
     return {ErrorCodes::ERR_INTERNAL, "currently unrechable"};
   }
@@ -1450,7 +1445,16 @@ class SuniongenericCommand : public Command {
     }
 
     const std::string& storeKey = args[1];
-    Expected<bool> deleted = delGeneric(sess, storeKey);
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+    Expected<bool> deleted = delGeneric(sess, storeKey, ptxn.value());
     if (!deleted.ok()) {
       return deleted.status();
     }
@@ -1460,21 +1464,12 @@ class SuniongenericCommand : public Command {
       newKeys.push_back(std::move(v));
     }
 
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
-    PStore kvstore = expdb.value().store;
     RecordKey storeRk(expdb.value().chunkId,
                       pCtx->getDbId(),
                       RecordType::RT_SET_META,
                       storeKey,
                       "");
     for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = sess->getCtx()->createTransaction(kvstore);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
       Expected<std::string> addStore =
         genericSAdd(sess,
                     kvstore,

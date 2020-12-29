@@ -21,7 +21,7 @@
 #include "tendisplus/storage/varint.h"
 
 namespace tendisplus {
-Expected<bool> delGeneric(Session* sess, const std::string& key);
+Expected<bool> delGeneric(Session* sess, const std::string& key, Transaction* txn);
 Expected<std::string> genericZrem(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
@@ -109,7 +109,8 @@ Expected<std::string> genericZadd(Session* sess,
                                   const RecordKey& mk,
                                   const Expected<RecordValue>& eMeta,
                                   const std::map<std::string, double>& subKeys,
-                                  int flags) {
+                                  int flags,
+                                  Transaction* txn) {
   /* The following vars are used in order to track what the command actually
    * did during the execution, to reply to the client and to trigger the
    * notification of keyspace change. */
@@ -135,11 +136,6 @@ Expected<std::string> genericZadd(Session* sess,
   }
 
   SessionCtx* pCtx = sess->getCtx();
-  INVARIANT(pCtx != nullptr);
-  auto ptxn = sess->getCtx()->createTransaction(kvstore);
-  if (!ptxn.ok()) {
-    return ptxn.status();
-  }
 
   ZSlMetaValue meta;
 
@@ -156,7 +152,7 @@ Expected<std::string> genericZadd(Session* sess,
     ZSlMetaValue tmp(1 /*lvl*/, 1 /*count*/, 0 /*tail*/);
     RecordValue rv(
       tmp.encode(), RecordType::RT_ZSET_META, pCtx->getVersionEP());
-    Status s = kvstore->setKV(mk, rv, ptxn.value());
+    Status s = kvstore->setKV(mk, rv, txn);
     if (!s.ok()) {
       return s;
     }
@@ -167,11 +163,11 @@ Expected<std::string> genericZadd(Session* sess,
                    std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
     RecordValue subRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
-    s = kvstore->setKV(head, subRv, ptxn.value());
+    s = kvstore->setKV(head, subRv, txn);
     if (!s.ok()) {
       return s;
     }
-    Expected<RecordValue> eMeta = kvstore->getKV(mk, ptxn.value());
+    Expected<RecordValue> eMeta = kvstore->getKV(mk, txn);
     if (!eMeta.ok()) {
       return eMeta.status();
     }
@@ -196,7 +192,7 @@ Expected<std::string> genericZadd(Session* sess,
     if (std::isnan(newScore)) {
       return {ErrorCodes::ERR_NAN, ""};
     }
-    Expected<RecordValue> eValue = kvstore->getKV(hk, ptxn.value());
+    Expected<RecordValue> eValue = kvstore->getKV(hk, txn);
     if (!eValue.ok() && eValue.status().code() != ErrorCodes::ERR_NOTFOUND) {
       return eValue.status();
     }
@@ -206,12 +202,12 @@ Expected<std::string> genericZadd(Session* sess,
       }
       added++;
       processed++;
-      Status s = sl.insert(entry.second, entry.first, ptxn.value());
+      Status s = sl.insert(entry.second, entry.first, txn);
       if (!s.ok()) {
         return s;
       }
       RecordValue hv(newScore, RecordType::RT_ZSET_H_ELE);
-      s = kvstore->setKV(hk, hv, ptxn.value());
+      s = kvstore->setKV(hk, hv, txn);
       if (!s.ok()) {
         return s;
       }
@@ -237,30 +233,27 @@ Expected<std::string> genericZadd(Session* sess,
       updated++;
       processed++;
       // change score
-      Status s = sl.remove(oldScore.value(), entry.first, ptxn.value());
+      Status s = sl.remove(oldScore.value(), entry.first, txn);
       if (!s.ok()) {
         return s;
       }
-      s = sl.insert(newScore, entry.first, ptxn.value());
+      s = sl.insert(newScore, entry.first, txn);
       if (!s.ok()) {
         return s;
       }
       RecordValue hv(newScore, RecordType::RT_ZSET_H_ELE);
-      s = kvstore->setKV(hk, hv, ptxn.value());
+      s = kvstore->setKV(hk, hv, txn);
       if (!s.ok()) {
         return s;
       }
     }
   }
   // NOTE(vinchen): skiplist save one time
-  Status s = sl.save(ptxn.value(), eMeta, sess->getCtx()->getVersionEP());
+  Status s = sl.save(txn, eMeta, sess->getCtx()->getVersionEP());
   if (!s.ok()) {
     return s;
   }
-  Expected<uint64_t> commitStatus = ptxn.value()->commit();
-  if (!commitStatus.ok()) {
-    return commitStatus.status();
-  }
+
   if (incr) { /* ZINCRBY or INCR option. */
     if (processed)
       return Command::fmtBulk(::tendisplus::dtos(newScore));
@@ -835,19 +828,21 @@ class ZIncrCommand : public Command {
     PStore kvstore = expdb.value().store;
     int flag = ZADD_INCR;
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
       Expected<std::string> s =
-        genericZadd(sess, kvstore, metaRk, rv, {{subkey, score.value()}}, flag);
-      if (s.ok()) {
-        return s.value();
-      }
-      if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+        genericZadd(sess, kvstore, metaRk, rv, {{subkey, score.value()}}, flag,
+                ptxn.value());
+      if(!s.ok()) {
         return s.status();
       }
-      if (i == RETRY_CNT - 1) {
-        return s.status();
-      } else {
-        continue;
+      auto eCmt = ptxn.value()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
       }
+      return s.value();
     }
 
     INVARIANT_D(0);
@@ -1625,19 +1620,20 @@ class ZAddCommand : public Command {
                      "");
     PStore kvstore = expdb.value().store;
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
       Expected<std::string> s =
-        genericZadd(sess, kvstore, metaRk, rv, scoreMap, flag);
-      if (s.ok()) {
-        return s.value();
-      }
-      if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+        genericZadd(sess, kvstore, metaRk, rv, scoreMap, flag, ptxn.value());
+      if (!s.ok()) {
         return s.status();
       }
-      if (i == RETRY_CNT - 1) {
-        return s.status();
-      } else {
-        continue;
+      auto eCmt = ptxn.value()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
       }
+      return s.value();
     }
 
     INVARIANT_D(0);
@@ -1942,15 +1938,8 @@ class ZUnionInterGenericCommand : public Command {
 
     // delete before store
     const std::string& storeKey = args[1];
-    Expected<bool> eRes = delGeneric(sess, storeKey);
-    if (!eRes.ok()) {
-      return eRes.status();
-    }
-    if (scoreMap.size() == 0) {
-      return Command::fmtZero();
-    }
-
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, storeKey);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, storeKey,
+            mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -1960,6 +1949,17 @@ class ZUnionInterGenericCommand : public Command {
       return ptxn.status();
     }
 
+    Expected<bool> eRes = delGeneric(sess, storeKey, ptxn.value());
+    if (!eRes.ok()) {
+      return eRes.status();
+    }
+    if (scoreMap.size() == 0) {
+      auto eCmt = ptxn.value()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
+      }
+      return Command::fmtZero();
+    }
 
     RecordKey storeRk(expdb.value().chunkId,
                       pCtx->getDbId(),
@@ -1972,18 +1972,16 @@ class ZUnionInterGenericCommand : public Command {
                                             storeRk,
                                             {ErrorCodes::ERR_NOTFOUND, ""},
                                             scoreMap,
-                                            ZADD_NONE);
-      if (s.ok()) {
-        return s.value();
-      }
-      if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+                                            ZADD_NONE,
+                                            ptxn.value());
+      if (!s.ok()) {
         return s.status();
       }
-      if (i == RETRY_CNT - 1) {
-        return s.status();
-      } else {
-        continue;
+      auto eCmt = ptxn.value()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
       }
+      return s.value();
     }
 
     return {ErrorCodes::ERR_INTERNAL, "Not reachable"};

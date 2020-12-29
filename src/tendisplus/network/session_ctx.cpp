@@ -109,8 +109,9 @@ void SessionCtx::clearRequestCtx() {
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
+  std::lock_guard<std::mutex> lk(_mutex);
   Transaction* txn = nullptr;
-  if (_txnMap.count(kvstore->dbId()) > 0 && !_txnMap[kvstore->dbId()].get()->isDone()) {
+  if (_txnMap.count(kvstore->dbId()) > 0) {
     txn = _txnMap[kvstore->dbId()].get();
   } else {
     auto ptxn = kvstore->createTransaction(_session);
