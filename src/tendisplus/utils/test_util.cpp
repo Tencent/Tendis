@@ -1,7 +1,6 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-
 #include <fstream>
 #include <utility>
 #include <memory>
@@ -21,6 +20,9 @@
 #include "tendisplus/utils/string.h"
 
 namespace tendisplus {
+
+Expected<std::string> key2Aof(Session* sess, const std::string& key);
+
 std::shared_ptr<ServerParams> makeServerParam(uint32_t port,
                                               uint32_t storeCnt,
                                               const std::string& dir,
@@ -295,16 +297,22 @@ bool isExpired(PStore store, const RecordKey& key, const RecordValue& value) {
   return false;
 }
 
-std::string getAofStr(const std::shared_ptr<ServerEntry>& svr,
-                      const RecordKey& v) {
-  return "a";
-}
 void compareData(const std::shared_ptr<ServerEntry>& master,
                  const std::shared_ptr<ServerEntry>& slave,
                  bool compare_binlog) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
   bool aofMode =
     master->getParams()->aofPsyncEnabled && slave->getParams()->aofPsyncEnabled;
+
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NoSchedNetSession sess1(
+    master, std::move(socket), 1, false, nullptr, nullptr);
+
+  asio::io_context ioContext2;
+  asio::ip::tcp::socket socket2(ioContext2);
+  NoSchedNetSession sess2(
+    slave, std::move(socket2), 1, false, nullptr, nullptr);
 
   for (size_t i = 0; i < master->getKVStoreCount(); i++) {
     uint64_t count1 = 0;
@@ -351,7 +359,13 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       EXPECT_TRUE(exptRcdv2.ok());
 
       if (aofMode) {
-        EXPECT_EQ(getAofStr(master, masterKey), getAofStr(slave, masterKey));
+        auto keystr1 = key2Aof(&sess1, masterKey.getPrimaryKey());
+        EXPECT_TRUE(keystr1.ok());
+
+        auto keystr2 = key2Aof(&sess2, masterKey.getPrimaryKey());
+        EXPECT_TRUE(keystr2.ok());
+
+        EXPECT_EQ(keystr1.value(), keystr2.value());
       } else {
         EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
       }
@@ -403,7 +417,13 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         continue;
       }
       if (aofMode) {
-        EXPECT_EQ(getAofStr(master, slaveKey), getAofStr(slave, slaveKey));
+        auto keystr1 = key2Aof(&sess1, slaveKey.getPrimaryKey());
+        EXPECT_TRUE(keystr1.ok());
+
+        auto keystr2 = key2Aof(&sess2, slaveKey.getPrimaryKey());
+        EXPECT_TRUE(keystr2.ok());
+
+        EXPECT_EQ(keystr1.value(), keystr2.value());
       } else {
         EXPECT_EQ(exptRcd2.value().getRecordValue(), exptRcdv1.value());
       }

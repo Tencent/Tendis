@@ -9,7 +9,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/commands/command.h"
-
+#include "gtest/gtest.h"
 
 namespace tendisplus {
 std::atomic<uint64_t> Session::_idGen(0);
@@ -108,31 +108,34 @@ std::string Session::getSessionCmd() {
   std::vector<std::string> args(_args);
   int64_t expireTime;
   size_t i = 0;
-  std::string arg1 = toLower(*args.begin());
+  std::string arg1 = toLower(args[0]);
+
+  if (args.size() == 0) {
+    return "\"\"";
+  }
   // all expire command conver to pexpireat
-  if (arg1 == "expire" || arg1 == "pexpire" || arg1 == "expireat" ||
-      arg1 == "pexpireat") {
+  if ((arg1 == "expire" || arg1 == "pexpire" || arg1 == "expireat" ||
+       arg1 == "pexpireat") &&
+      args.size() == 3) {
     std::stringstream ss;
-    auto expt = ::tendisplus::stoll(*(args.begin() + 2));
+    auto expt = ::tendisplus::stoll(args[2]);
     if (!expt.ok()) {
       LOG(ERROR) << "get expire time command fail " << expt.status().toString();
       return "\"\"";
     }
     auto pexTime = changeExpireTime(arg1, expt.value());
     /* make all expire command to be pexpireat */
-    if (args.size() == 3) {
-      args[0] = "pexpireat";
-      args[2] = std::to_string(pexTime);
+    args[0] = "pexpireat";
+    args[2] = std::to_string(pexTime);
 
-      Command::fmtMultiBulkLen(ss, args.size());
-      for (auto& arg : args) {
-        Command::fmtBulk(ss, arg);
-      }
+    Command::fmtMultiBulkLen(ss, args.size());
+    for (auto& arg : args) {
+      Command::fmtBulk(ss, arg);
     }
     return ss.str();
   } else if ((arg1 == "setex" || arg1 == "psetex") && args.size() == 4) {
     // SETex PSETEX KV -> SET KV& &pexpireat
-    auto expt = ::tendisplus::stoul(*(args.begin() + 2));
+    auto expt = ::tendisplus::stoul(args[2]);
     if (!expt.ok()) {
       LOG(ERROR) << "get EX|PX command time fail" << expt.status().toString();
       return "\"\"";
@@ -142,10 +145,10 @@ std::string Session::getSessionCmd() {
     } else {
       expireTime = msSinceEpoch() + expt.value();
     }
-    std::string key = *(args.begin() + 1);
+    std::string key = args[1];
     std::string expireStr =
       "pexpireat " + key + " " + std::to_string(expireTime);
-    expxList.push_back(std::move(expireStr));
+    expxList.emplace_back(std::move(expireStr));
 
     args[0] = "set";
     args.erase(args.begin() + 2);
@@ -168,10 +171,10 @@ std::string Session::getSessionCmd() {
       } else {
         expireTime = msSinceEpoch() + expt.value();
       }
-      std::string key = *(args.begin() + 1);
+      std::string key = args[1];
       std::string expireStr =
         "pexpireat " + key + " " + std::to_string(expireTime);
-      expxList.push_back(std::move(expireStr));
+      expxList.emplace_back(std::move(expireStr));
       // delete ex from origin command
       args.erase(it, it + 2);
     } else {
@@ -180,13 +183,9 @@ std::string Session::getSessionCmd() {
   }
 
   std::stringstream ss2;
-  if (args.size() > 0) {
-    Command::fmtMultiBulkLen(ss2, args.size());
-    for (auto& arg : args) {
-      Command::fmtBulk(ss2, arg);
-    }
-  } else {
-    return "\"\"";
+  Command::fmtMultiBulkLen(ss2, args.size());
+  for (auto& arg : args) {
+    Command::fmtBulk(ss2, arg);
   }
 
   auto expxSize = expxList.size();
