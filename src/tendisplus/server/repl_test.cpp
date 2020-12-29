@@ -578,6 +578,7 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
   size_t i = 0;
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
+
     const auto guard = MakeGuard([] {
       destroyEnv(master_dir);
       destroyEnv(slave_dir);
@@ -600,41 +601,32 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
     s = slave->startup(cfg2);
     INVARIANT(s.ok());
 
-    LOG(INFO) << ">>>>>> master add data begin.";
-    auto thread = std::thread([this, master]() {
-      testHash1(master);
-      testHash2(master);
-    });
-    uint32_t sleep_time = genRand() % 5 + 10;  // 10-15 seconds
-    sleep(sleep_time);
-
-    auto thread2 = std::thread([this, master]() {
-      testKV(master);
-      testList(master);
-    });
-    sleep(sleep_time);
-
-    auto thread3 = std::thread([this, master]() { testSet(master); });
-    sleep(sleep_time);
-
-    auto thread4 = std::thread([this, master]() {
-      testZset(master);
-      testZset2(master);
-      testZset3(master);
-    });
-    sleep(sleep_time);
-
     LOG(INFO) << ">>>>>> slaveof begin.";
     runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
     // slaveof need about 3 seconds to transfer file.
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    LOG(INFO) << ">>>>>> slaveof end.";
+    LOG(INFO) << ">>>>>> master add data begin.";
 
+    auto thread = std::thread([this, master]() {
+      testKV(master);
+      testZset(master);
+    });
     thread.join();
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    compareData(master, slave, false);
+
+    auto thread2 = std::thread([this, master]() { testSet(master); });
+
     thread2.join();
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    compareData(master, slave, false);
+
+    auto thread3 = std::thread([this, master]() { testHash1(master); });
+
     thread3.join();
-    thread4.join();
-    // waitSlaveCatchup(master, slave)
-    compareData(master, slave);
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    compareData(master, slave, false);
     LOG(INFO) << ">>>>>> compareData end.";
 
 #ifndef _WIN32

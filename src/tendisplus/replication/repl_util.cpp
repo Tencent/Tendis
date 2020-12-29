@@ -215,7 +215,6 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
   }
 
   BinlogResult br;
-
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
   std::unique_ptr<RepllogCursorV2> cursor =
     txn->createRepllogCursorV2(binlogPos + 1);
@@ -223,6 +222,7 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
   std::stringstream ss;
   std::string cmdStr = "";
   uint16_t cmdNum = 0;
+  uint32_t aofPsyncNum = svr->getParams()->aofPsyncNum;
   while (true) {
     Expected<ReplLogRawV2> explog = cursor->next();
     if (explog.ok()) {
@@ -237,10 +237,9 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
         return logValue.status();
       }
       cmdStr = logValue.value().getCmd();
-      if (cmdStr.size() > 0 && (++cmdNum) < 10000) {
-        ss << cmdStr << "\r\n";
-      } else {
-        ss << cmdStr;
+
+      ss << cmdStr;
+      if ((++cmdNum) > aofPsyncNum) {
         break;
       }
 
@@ -252,7 +251,6 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
       return explog.status();
     }
   }
-  std::stringstream ss2;
   if (cmdNum == 0) {
     br.binlogId = binlogPos;
     br.binlogTs = 0;
@@ -260,28 +258,20 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
       return br;
     }
     // keep the client alive
-    Command::fmtMultiBulkLen(ss2, 3);
-    Command::fmtBulk(ss2, "binlog_heartbeat");
-    Command::fmtBulk(ss2, std::to_string(dstStoreId));
-    Command::fmtBulk(ss2, std::to_string(msSinceEpoch()));
-
-  } else {
-    Status s = client->writeLine(ss.str());
-    if (!s.ok()) {
-      LOG(ERROR) << "store:" << storeId << " dst Store:" << dstStoreId
-                 << " writeData failed:" << s.toString()
-                 << "remote:" << client->getRemoteRepr()
-                 << "; Size:" << cmdStr.size();
-      return s;
-    }
-    uint32_t secs = cfg->timeoutSecBinlogWaitRsp;
-    Expected<std::string> exptOK = client->readLine(std::chrono::seconds(secs));
-    if (!exptOK.ok()) {
-      LOG(ERROR) << "store:" << storeId << " dst Store:" << dstStoreId
-                 << " readLine failed:" << exptOK.status().toString();
-      return exptOK.status();
-    }
+    Command::fmtMultiBulkLen(ss, 3);
+    Command::fmtBulk(ss, "binlog_heartbeat");
+    Command::fmtBulk(ss, std::to_string(dstStoreId));
+    Command::fmtBulk(ss, std::to_string(msSinceEpoch()));
   }
+  Status s = client->writeData(ss.str());
+  if (!s.ok()) {
+    LOG(ERROR) << "store:" << storeId << " dst Store:" << dstStoreId
+               << " writeData failed:" << s.toString()
+               << "remote:" << client->getRemoteRepr()
+               << "; Size:" << cmdStr.size();
+    return s;
+  }
+  
   return br;
 }
 
