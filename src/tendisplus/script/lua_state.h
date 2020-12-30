@@ -73,6 +73,8 @@ class LuaState {
                          // execution of the current script.
   int lua_replicate_commands; /* True if we are doing single commands repl. */
   int lua_multi_emitted; /* True if we already proagated MULTI. */
+  // bool has_command_error;  // if one redis command has error,
+                           // dont commit all transactions.
   RedisRandom _rand;
 };
 

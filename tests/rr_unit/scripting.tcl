@@ -103,6 +103,22 @@ start_server {tags {"scripting"}} {
         } 0
     } {table {ERR:7,msg:value is not an integer or out of range}};
 
+    test {EVAL - Redis stop when error -> Lua commands atomic} {
+        r set mykey myval
+        catch {
+            r eval "redis.call('set','mykey', 'value1'); redis.call('incr','mykey'); redis.call('set','mykey', 'value2')" 0
+        } e
+        r get mykey
+    } {value1};
+
+    test {EVAL - Redis continue when error -> Lua commands atomic} {
+        r set mykey myval
+        catch {
+            r eval "redis.pcall('set','mykey', 'value1'); redis.pcall('incr','mykey'); redis.pcall('set','mykey', 'value2')" 0
+        } e
+        r get mykey
+    } {value2};
+
     test {EVAL - Redis nil bulk reply -> Lua type conversion} {
         r del mykey
         r eval {

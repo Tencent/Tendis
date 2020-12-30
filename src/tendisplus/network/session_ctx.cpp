@@ -92,9 +92,10 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 
 void SessionCtx::clearRequestCtx() {
   std::lock_guard<std::mutex> lk(_mutex);
-  if (!_session->isInLua()) {
-    _txnMap.clear();
-  }
+  // if (!_session->isInLua()) {
+  _txnMap.clear();
+  // }
+
   _argsBrief.clear();
   _timestamp = -1;
   _version = -1;
@@ -127,9 +128,9 @@ Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
 
 Status SessionCtx::commitAll(const std::string& cmd) {
   std::lock_guard<std::mutex> lk(_mutex);
-  if (_session->isInLua()) {
-    return {ErrorCodes::ERR_OK, ""};
-  }
+  // if (_session->isInLua()) {
+  //  return {ErrorCodes::ERR_OK, ""};
+  // }
   Status s;
   for (auto& txn : _txnMap) {
     Expected<uint64_t> exptCommit = txn.second->commit();
@@ -145,9 +146,9 @@ Status SessionCtx::commitAll(const std::string& cmd) {
 
 Status SessionCtx::rollbackAll() {
   std::lock_guard<std::mutex> lk(_mutex);
-  if (_session->isInLua()) {
-    return {ErrorCodes::ERR_OK, ""};
-  }
+  // if (_session->isInLua()) {
+  //  return {ErrorCodes::ERR_OK, ""};
+  // }
   Status s = {ErrorCodes::ERR_OK, ""};
   for (auto& txn : _txnMap) {
     s = txn.second->rollback();

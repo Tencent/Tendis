@@ -6,8 +6,6 @@ rm -f tendisplus*.log
 rm -f valgrindTendis*.log
 rm benchmark_*.log
 rm predixy_* -rf
-rm gotest.log
-rm gotest_tmp.log
 rm stderr*
 
 user=$USER

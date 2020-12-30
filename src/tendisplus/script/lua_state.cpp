@@ -448,6 +448,7 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
   if (!expect.ok()) {  // TODO(takenliu) do what ???
     // luaPushError(lua, expect.status().toString().c_str());
     redisProtocolToLuaType(lua, expect.status().toString().c_str());
+    // ls->has_command_error = true;
     return 1;
   }
 
@@ -1014,6 +1015,7 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   lua_write_dirty = 0;
   int lua_always_replicate_commands = 0;  // TODO(takenliu)
   lua_replicate_commands = lua_always_replicate_commands;
+  // has_command_error = false;
 
   /* Get the number of arguments that are keys */
   Expected<int64_t> eNumkeys = ::tendisplus::stoll(args[2]);
@@ -1105,8 +1107,12 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
 
   // commit all txn
   if (_fakeSess) {
-    _fakeSess->getSession()->setInLua(false);
-    _fakeSess->getSession()->getCtx()->commitAll("lua");
+    // if (!has_command_error) {
+    //  _fakeSess->getSession()->setInLua(false);
+    //  _fakeSess->getSession()->getCtx()->commitAll("lua");
+    // } else {
+    //  DLOG(INFO) << "has_command_error txns don't commit.";
+    // }
   }
 
   if (err) {

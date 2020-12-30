@@ -232,9 +232,9 @@ std::unique_ptr<Cursor> RocksTxn::createCursor(
 }
 
 Expected<uint64_t> RocksTxn::commit() {
-  if (_session && _session->isInLua()) {
-    return {ErrorCodes::ERR_OK, "is inLua, skip commit, need commit final."};
-  }
+  // if (_session && _session->isInLua()) {
+  //  return {ErrorCodes::ERR_OK, "is inLua, skip commit, need commit final."};
+  // }
   INVARIANT_D(!_done);
   _done = true;
 
