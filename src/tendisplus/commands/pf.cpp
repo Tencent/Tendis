@@ -422,7 +422,7 @@ class PfAddCommand : public Command {
         return s;
       }
 
-      auto c = ptxn.value()->commit();
+      auto c = sess->getCtx()->commitTransaction(ptxn.value());
       if (!c.ok()) {
         return c.status();
       }
@@ -634,7 +634,7 @@ class PfMergeCommand : public Command {
       return s;
     }
 
-    auto c = ptxn.value()->commit();
+    auto c = sess->getCtx()->commitTransaction(ptxn.value());
     if (!c.ok()) {
       return c.status();
     }
@@ -945,7 +945,7 @@ class PfDebugCommand : public Command {
         return s;
       }
 
-      auto c = ptxn.value()->commit();
+      auto c = sess->getCtx()->commitTransaction(ptxn.value());
       if (!c.ok()) {
         return c.status();
       }

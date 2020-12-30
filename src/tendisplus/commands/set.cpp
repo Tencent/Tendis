@@ -606,7 +606,7 @@ class SpopCommand : public Command {
         }
       }
 
-      auto expCmt = ptxn.value()->commit();
+      auto expCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (expCmt.ok()) {
         return ss.str();
       }
@@ -681,7 +681,7 @@ class SaddCommand : public Command {
       Expected<std::string> s =
         genericSAdd(sess, kvstore, ptxn.value(), metaRk, rv, args);
       if (s.ok()) {
-        auto s1 = ptxn.value()->commit();
+        auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
         if (!s1.ok()) {
           return s1.status();
         }
@@ -807,7 +807,7 @@ class SRemCommand : public Command {
       Expected<std::string> s =
         genericSRem(sess, kvstore, ptxn.value(), metaRk, rv, valArgs);
       if (s.ok()) {
-        auto s1 = ptxn.value()->commit();
+        auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
         if (!s1.ok()) {
           return s1.status();
         }
@@ -942,7 +942,7 @@ class SdiffgenericCommand : public Command {
         {ErrorCodes::ERR_NOTFOUND, ""}, /* storeKey has been deleted */
         newKeys);
       if (addStore.ok()) {
-        auto s1 = ptxn.value()->commit();
+        auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
         if (!s1.ok()) {
           return s1.status();
         }
@@ -1176,7 +1176,7 @@ class SintergenericCommand : public Command {
                     {ErrorCodes::ERR_NOTFOUND, ""},
                     newKeys);
       if (addStore.ok()) {
-        auto s1 = ptxn.value()->commit();
+        auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
         if (!s1.ok()) {
           return s1.status();
         }
@@ -1479,7 +1479,7 @@ class SuniongenericCommand : public Command {
                     {ErrorCodes::ERR_NOTFOUND, ""},
                     newKeys);
       if (addStore.ok()) {
-        auto s1 = ptxn.value()->commit();
+        auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
         if (!s1.ok()) {
           return s1.status();
         }

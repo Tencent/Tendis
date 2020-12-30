@@ -193,7 +193,7 @@ class GeneralExpireCommand : public Command {
     if (!s.ok()) {
       return s.status();
     }
-    auto expCmt = ptxn.value()->commit();
+    auto expCmt = sess->getCtx()->commitTransaction(ptxn.value());
     if (!expCmt.ok()) {
       return expCmt.status();
     }
@@ -460,7 +460,7 @@ class PersistCommand : public Command {
       return s;
     }
 
-    auto s1 = ptxn.value()->commit();
+    auto s1 = sess->getCtx()->commitTransaction(ptxn.value());
     if (!s1.ok()) {
       return s1.status();
     }
@@ -519,7 +519,7 @@ class RevisionCommand : public Command {
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
     // already expired, should return here.
     if (exprv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-      auto expCmt = ptxn.value()->commit();
+      auto expCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!expCmt.ok()) {
         return expCmt.status();
       }
@@ -558,7 +558,7 @@ class RevisionCommand : public Command {
       return s;
     }
 
-    auto expCmt = ptxn.value()->commit();
+    auto expCmt = sess->getCtx()->commitTransaction(ptxn.value());
     if (!expCmt.ok()) {
       return expCmt.status();
     }

@@ -988,7 +988,7 @@ class RestoreCommand : public Command {
     if (!res.ok()) {
       return res;
     }
-    auto eCmt = ptxn.value()->commit();
+    auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
     if (!eCmt.ok()) {
       return eCmt.status();
     }

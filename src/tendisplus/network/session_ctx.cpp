@@ -8,6 +8,7 @@
 #include <list>
 #include <vector>
 
+#include "tendisplus/commands/command.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
@@ -124,6 +125,25 @@ Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
   }
 
   return txn;
+}
+
+Expected<uint64_t> SessionCtx::commitTransaction(Transaction* txn) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  INVARIANT_D(_txnMap.count(txn->getKVStoreId()) > 0);
+  INVARIANT_D(_txnMap[txn->getKVStoreId()].get() == txn);
+  auto eCmt = txn->commit();
+  if (!eCmt.ok()) {
+    return eCmt.status();
+  }
+  if (_txnMap.count(txn->getKVStoreId()) > 0
+    && _txnMap[txn->getKVStoreId()].get() == txn) {
+    _txnMap.erase(txn->getKVStoreId());
+  } else {
+    LOG(ERROR) << "what happend? has:" << _txnMap.count(txn->getKVStoreId())
+      << " addr1:" << _txnMap[txn->getKVStoreId()].get()
+      << " addr2:" << txn;
+  }
+  return eCmt;
 }
 
 Status SessionCtx::commitAll(const std::string& cmd) {

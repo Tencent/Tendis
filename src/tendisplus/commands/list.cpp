@@ -264,7 +264,7 @@ class ListPopWrapper : public Command {
       } else if (!s1.ok()) {
         return s1.status();
       }
-      auto s = ptxn.value()->commit();
+      auto s = sess->getCtx()->commitTransaction(ptxn.value());
       if (s.ok()) {
         return Command::fmtBulk(s1.value());
       } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -366,7 +366,7 @@ class ListPushWrapper : public Command {
       if (!s1.ok()) {
         return s1.status();
       }
-      auto s = ptxn.value()->commit();
+      auto s = sess->getCtx()->commitTransaction(ptxn.value());
       if (s.ok()) {
         return s1.value();
       } else if (s.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
@@ -636,7 +636,7 @@ class LtrimCommand : public Command {
         }
         cnt += 1;
         if (cnt % 1000 == 0) {
-          auto v = ptxn.value()->commit();
+          auto v = sess->getCtx()->commitTransaction(ptxn.value());
           if (!v.ok()) {
             return v.status();
           }
@@ -674,7 +674,7 @@ class LtrimCommand : public Command {
         return st;
       }
     }
-    auto commitstatus = ptxn.value()->commit();
+    auto commitstatus = sess->getCtx()->commitTransaction(ptxn.value());
     return commitstatus.status();
   }
 
@@ -1056,7 +1056,8 @@ class LSetCommand : public Command {
         return s;
       }
 
-      Expected<uint64_t> expCmt = ptxn.value()->commit();
+      Expected<uint64_t> expCmt = sess->getCtx()->commitTransaction(
+              ptxn.value());
       if (expCmt.ok()) {
         return Command::fmtOK();
       }
@@ -1299,7 +1300,7 @@ class LRemCommand : public Command {
       return s;
     }
 
-    Expected<uint64_t> expCmt = ptxn.value()->commit();
+    Expected<uint64_t> expCmt = sess->getCtx()->commitTransaction(ptxn.value());
     if (!expCmt.ok()) {
       return expCmt.status();
     }
@@ -1472,7 +1473,7 @@ class LInsertCommand : public Command {
       return s;
     }
 
-    Expected<uint64_t> expCmt = ptxn.value()->commit();
+    Expected<uint64_t> expCmt = sess->getCtx()->commitTransaction(ptxn.value());
     if (!expCmt.ok()) {
       return expCmt.status();
     }

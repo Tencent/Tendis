@@ -567,7 +567,7 @@ class SortCommand : public Command {
         return expDone.status();
       }
       if (result.size() == 0) {
-        auto expCmt = addPtxn.value()->commit();
+        auto expCmt = sess->getCtx()->commitTransaction(addPtxn.value());
         if (!expCmt.ok()) {
           return expCmt.status();
         }
@@ -604,7 +604,7 @@ class SortCommand : public Command {
         return s;
       }
 
-      auto expCmt = addPtxn.value()->commit();
+      auto expCmt = sess->getCtx()->commitTransaction(addPtxn.value());
       if (!expCmt.ok()) {
         return expCmt.status();
       }

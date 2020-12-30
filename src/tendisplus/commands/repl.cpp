@@ -641,7 +641,8 @@ class ApplyBinlogsGeneric : public Command {
     if (!s.ok()) {
       return s;
     }
-    Expected<uint64_t> expCmit = ptxn.value()->commit();
+    Expected<uint64_t> expCmit = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!expCmit.ok()) {
       return expCmit.status();
     }

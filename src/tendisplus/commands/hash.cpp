@@ -78,7 +78,8 @@ Expected<std::string> hincrfloatGeneric(Session* sess,
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = ptxn.value()->commit();
+  Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
+          ptxn.value());
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -148,7 +149,8 @@ Expected<std::string> hincrGeneric(Session* sess,
   if (!setStatus.ok()) {
     return setStatus;
   }
-  Expected<uint64_t> exptCommit = ptxn.value()->commit();
+  Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
+          ptxn.value());
   if (!exptCommit.ok()) {
     return exptCommit.status();
   } else {
@@ -955,7 +957,7 @@ Status hmcas(Session* sess,
   if (!s.ok()) {
     return s;
   }
-  auto commitStat = ptxn.value()->commit();
+  auto commitStat = sess->getCtx()->commitTransaction(ptxn.value());
   return commitStat.status();
 }
 
@@ -1175,7 +1177,8 @@ class HMSetGeneric : public Command {
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = ptxn.value()->commit();
+    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {
@@ -1368,7 +1371,8 @@ class HSetGeneric : public Command {
     if (!setStatus.ok()) {
       return setStatus;
     }
-    Expected<uint64_t> exptCommit = ptxn.value()->commit();
+    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!exptCommit.ok()) {
       return exptCommit.status();
     } else {
@@ -1482,7 +1486,7 @@ class HDelCommand : public Command {
     if (!s.ok()) {
       return s;
     }
-    Expected<uint64_t> commitStatus = txn->commit();
+    Expected<uint64_t> commitStatus = sess->getCtx()->commitTransaction(txn);
     if (!commitStatus.ok()) {
       return commitStatus.status();
     }

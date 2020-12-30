@@ -3112,7 +3112,8 @@ class setInStoreCommand : public Command {
       return s;
     }
 
-    Expected<uint64_t> exptCommitId = ptxn.value()->commit();
+    Expected<uint64_t> exptCommitId = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!exptCommitId.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:"
                  << exptCommitId.status().toString();

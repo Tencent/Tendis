@@ -98,7 +98,8 @@ Expected<std::string> genericZrem(Session* sess,
   if (!s.ok()) {
     return s;
   }
-  Expected<uint64_t> commitStatus = ptxn.value()->commit();
+  Expected<uint64_t> commitStatus = sess->getCtx()->commitTransaction(
+          ptxn.value());
   if (!commitStatus.ok()) {
     return commitStatus.status();
   }
@@ -451,7 +452,8 @@ class ZRemByRangeGenericCommand : public Command {
     if (!s.ok()) {
       return s;
     }
-    Expected<uint64_t> commitStatus = ptxn.value()->commit();
+    Expected<uint64_t> commitStatus = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!commitStatus.ok()) {
       return commitStatus.status();
     }
@@ -839,7 +841,7 @@ class ZIncrCommand : public Command {
       if (!s.ok()) {
         return s.status();
       }
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }
@@ -1630,7 +1632,7 @@ class ZAddCommand : public Command {
       if (!s.ok()) {
         return s.status();
       }
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }
@@ -1955,7 +1957,7 @@ class ZUnionInterGenericCommand : public Command {
       return eRes.status();
     }
     if (scoreMap.size() == 0) {
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }
@@ -1978,7 +1980,7 @@ class ZUnionInterGenericCommand : public Command {
       if (!s.ok()) {
         return s.status();
       }
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }

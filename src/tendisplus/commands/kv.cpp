@@ -124,7 +124,7 @@ Expected<std::string> setGeneric(Session* sess,
     return status;
   }
   if (endTxn) {
-    Expected<uint64_t> exptCommit = txn->commit();
+    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(txn);
     if (!exptCommit.ok()) {
       return exptCommit.status();
     }
@@ -1807,7 +1807,7 @@ class BitopCommand : public Command {
       }
       Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV,
         ptxn.value());
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }
@@ -2720,7 +2720,7 @@ class BitFieldCommand : public Command {
       if (!s.ok()) {
         return s;
       }
-      auto eCmt = ptxn.value()->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }
