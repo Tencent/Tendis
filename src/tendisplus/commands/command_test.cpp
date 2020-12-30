@@ -1929,6 +1929,7 @@ TEST(Command, restorevalue) {
     }
   }
 
+  // compare data
   for (const auto& keyset : allkeys) {
     for (const auto& key : keyset) {
       asio::io_context ioContext;
@@ -1950,8 +1951,6 @@ TEST(Command, restorevalue) {
       EXPECT_EQ(keystr1.value(), keystr2.value());
     }
   }
-
-  // compareData(server1, server2, false);
 
 #ifndef _WIN32
   server1->stop();

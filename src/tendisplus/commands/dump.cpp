@@ -1726,8 +1726,7 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
   return ss.str();
 }
 
-Expected<std::string> key2Aof(Session* sess,
-                              const std::string& key) {
+Expected<std::string> key2Aof(Session* sess, const std::string& key) {
   auto dbid = sess->getCtx()->getDbId();
   auto server = sess->getServerEntry();
   auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
@@ -1808,11 +1807,11 @@ class RestoreValueCommand : public Command {
   }
 
   int32_t firstkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t lastkey() const {
-    return 0;
+    return 1;
   }
 
   int32_t keystep() const {
@@ -1823,23 +1822,19 @@ class RestoreValueCommand : public Command {
     auto& key = (sess->getArgs()[1]);
     auto server = sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
+    RET_IF_ERR_EXPECTED(expdb);
+
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
-    if (rv.status().code() != ErrorCodes::ERR_OK) {
-      return rv.status();
-    }
+    RET_IF_ERR_EXPECTED(rv);
 
     PStore kvstore = expdb.value().store;
     auto ptxn = kvstore->createTransaction(sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
+    RET_IF_ERR_EXPECTED(ptxn);
+
     std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey fakeEle(
@@ -1853,9 +1848,8 @@ class RestoreValueCommand : public Command {
     Command::fmtMultiBulkLen(ss, 1);
     Command::fmtBulk(ss, "RESTOREVALUE_BEGIN");
     auto s = sess->setResponse(ss.str());
-    if (!s.ok()) {
-      return s;
-    }
+    RET_IF_ERR(s);
+
     ss.str(std::string());
 
     /* 2. set/hmset/sadd/rpush/zadd *n */
@@ -1866,9 +1860,8 @@ class RestoreValueCommand : public Command {
       if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
         break;
       }
-      if (!exptRcd.ok()) {
-        return exptRcd.status();
-      }
+      RET_IF_ERR_EXPECTED(exptRcd);
+
       Record& rcd = exptRcd.value();
       const RecordKey& rcdKey = rcd.getRecordKey();
       if (rcdKey.prefixPk() != prefix) {
@@ -1877,15 +1870,11 @@ class RestoreValueCommand : public Command {
       count++;
       result.emplace_back(std::move(rcd));
       if (result.size() >= 1000) {
-        auto ret = recordList2Aof(result);
-        if (!ret.ok()) {
-          return ret.status();
-        }
+        auto eAof = recordList2Aof(result);
+        RET_IF_ERR_EXPECTED(eAof);
 
-        auto s = sess->setResponse(ret.value());
-        if (!s.ok()) {
-          return s;
-        }
+        auto s = sess->setResponse(eAof.value());
+        RET_IF_ERR(s);
 
         result.clear();
       }
@@ -1893,15 +1882,11 @@ class RestoreValueCommand : public Command {
     INVARIANT_D(count == rv.value().getEleCnt());
 
     if (result.size() > 0) {
-      auto ret = recordList2Aof(result);
-      if (!ret.ok()) {
-        return ret.status();
-      }
+      auto eAof = recordList2Aof(result);
+      RET_IF_ERR_EXPECTED(eAof);
 
-      s = sess->setResponse(ret.value());
-      if (!s.ok()) {
-        return s;
-      }
+      s = sess->setResponse(eAof.value());
+      RET_IF_ERR(s);
 
       result.clear();
     }
@@ -1915,9 +1900,7 @@ class RestoreValueCommand : public Command {
       Command::fmtBulk(ss, key);
       Command::fmtBulk(ss, std::to_string(ttl));
       s = sess->setResponse(ss.str());
-      if (!s.ok()) {
-        return s;
-      }
+      RET_IF_ERR(s);
     }
 
     /* 4.restorevalue_end */
