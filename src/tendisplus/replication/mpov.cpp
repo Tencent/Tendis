@@ -7,6 +7,7 @@
 #include <fstream>
 #include <string>
 #include <memory>
+#include "tendisplus/commands/command.h"
 
 #include "glog/logging.h"
 #include "rapidjson/document.h"
@@ -14,8 +15,99 @@
 
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/test_util.h"
 
 namespace tendisplus {
+static Expected<std::string> recordList2Aof(const std::list<Record>& list) {
+  if (list.size() == 0) {
+    return std::string("");
+  }
+
+  std::stringstream ss;
+  auto type = list.front().getRecordValue().getRecordType();
+  auto key = list.front().getRecordKey().getPrimaryKey();
+  switch (type) {
+    case tendisplus::RecordType::RT_KV:
+      // INVARIANT_D(list.size() == 1);
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_LIST_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "RPUSH");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_HASH_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "HMSET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_SET_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_ZSET_H_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "ZADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    default:
+      INVARIANT_D(0);
+      break;
+  }
+
+  for (const auto& rt : list) {
+    // key and type of all records in the list is the same
+    INVARIANT_D(rt.getRecordValue().getRecordType() == type);
+    INVARIANT_D(rt.getRecordKey().getPrimaryKey() == key);
+
+    const auto& rtKey = rt.getRecordKey();
+    const auto& rtValue = rt.getRecordValue();
+
+    switch (type) {
+      case tendisplus::RecordType::RT_KV:
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_LIST_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+
+      case tendisplus::RecordType::RT_HASH_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_SET_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+
+      case tendisplus::RecordType::RT_ZSET_H_ELE: {
+        Expected<double> oldScore =
+          ::tendisplus::doubleDecode(rtValue.getValue());
+        if (!oldScore.ok()) {
+          return oldScore.status();
+        }
+        Command::fmtBulk(ss, ::tendisplus::dtos(oldScore.value()));
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+      }
+
+      default:
+        INVARIANT_D(0);
+        break;
+    }
+  }
+
+  return ss.str();
+}
 
 bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                                  const std::string& storeIdArg,
@@ -91,6 +183,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   BlockingTcpClient* client = nullptr;
   uint32_t dstStoreId = 0;
   bool needHeartbeat = false;
+  MPovClientType clientType = MPovClientType::repllogClient;
   {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_incrPaused ||
@@ -103,6 +196,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     client = _pushStatus[storeId][clientId]->client.get();
     dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
     lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
+    clientType = _pushStatus[storeId][clientId]->clientType;
   }
   if (lastSend + std::chrono::seconds(gBinlogHeartbeatSecs) < SCLOCK::now()) {
     needHeartbeat = true;
@@ -111,9 +205,9 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   BinlogResult br;
   Expected<BinlogResult> ret = br;
 
-  if (_cfg->aofPsyncEnabled) {
-    ret = masterSendAof(
-      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  if (_cfg->aofPsyncEnabled && (clientType == MPovClientType::respClient)) {
+    ret =
+      masterSendAof(client, storeId, dstStoreId, binlogPos, false, _svr, _cfg);
   } else {
     ret = masterSendBinlogV2(
       client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
@@ -520,6 +614,250 @@ void ReplManager::supplyFullSyncRoutine(
               << " reply:" << reply.value();
     hasError = false;
   }
+}
+
+bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
+                                  const std::string& storeIdArg) {
+  std::shared_ptr<BlockingTcpClient> client =
+    std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
+                                                       64 * 1024 * 1024));
+
+  // NOTE(deyukong): this judge is not precise
+  // even it's not full at this time, it can be full during schedule.
+  if (isFullSupplierFull()) {
+    LOG(WARNING) << "ReplManager::supplyFullPsync fullPusher isFull.";
+    client->writeLine("-ERR workerpool full");
+    return false;
+  }
+
+  auto expStoreId = tendisplus::stoul(storeIdArg);
+  if (!expStoreId.ok()) {
+    LOG(ERROR) << "ReplManager::supplyFullPsync storeIdArg error:"
+               << storeIdArg;
+    client->writeLine("-ERR invalid storeId");
+    return false;
+  }
+
+  uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
+  if (storeId >= _svr->getKVStoreCount()) {
+    client->writeLine("-ERR invalid storeId");
+    return false;
+  }
+
+  _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
+    supplyFullPsyncRoutine(std::move(client), storeId);
+  });
+
+  return true;
+}
+
+void ReplManager::supplyFullPsyncRoutine(
+  std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+  client->writeData("+FULLRESYNC " + genRunId(40) + " 0\r\n");
+
+  // send no keys rdb to client
+  unsigned char rdbData[] = {
+    0x52, 0x45, 0x44, 0x49, 0x53, 0x30, 0x30, 0x30, 0x39, 0xfa, 0x09, 0x72,
+    0x65, 0x64, 0x69, 0x73, 0x2d, 0x76, 0x65, 0x72, 0x05, 0x36, 0x2e, 0x30,
+    0x2e, 0x39, 0xfa, 0x0a, 0x72, 0x65, 0x64, 0x69, 0x73, 0x2d, 0x62, 0x69,
+    0x74, 0x73, 0xc0, 0x40, 0xfa, 0x05, 0x63, 0x74, 0x69, 0x6d, 0x65, 0xc2,
+    0xdf, 0x81, 0xe8, 0x5f, 0xfa, 0x08, 0x75, 0x73, 0x65, 0x64, 0x2d, 0x6d,
+    0x65, 0x6d, 0xc2, 0x50, 0x8a, 0x0f, 0x00, 0xfa, 0x0c, 0x61, 0x6f, 0x66,
+    0x2d, 0x70, 0x72, 0x65, 0x61, 0x6d, 0x62, 0x6c, 0x65, 0xc0, 0x00, 0xff,
+    0x3a, 0xd1, 0x2d, 0xca, 0x85, 0x7c, 0xdd, 0x26};
+
+  auto length = sizeof(rdbData) / sizeof(rdbData[0]);
+  client->writeData("$" + to_string(length) + "\r\n");
+
+  auto s = client->writeData(
+    std::string(reinterpret_cast<const char*>(rdbData), length));
+  if (!s.ok()) {
+    LOG(ERROR) << "write rdb data to client failed:" << s.toString();
+    return;
+  }
+
+  // send data from snapshot
+  std::unique_ptr<BasicDataCursor> cursor;
+  std::shared_ptr<KVStore> store;
+  std::unique_ptr<Transaction> txn;
+  uint64_t binlogPos;
+
+  LocalSessionGuard sg(_svr.get());
+  sg.getSession()->setArgs({
+    "masterpsync",
+    std::to_string(storeId),
+    client->getRemoteRepr(),
+  });
+
+  {
+    auto expdb = _svr->getSegmentMgr()->getDb(
+      sg.getSession(), storeId, mgl::LockMode::LOCK_S);
+    if (!expdb.ok()) {
+      return;
+    }
+
+    store = expdb.value().store;
+    binlogPos = store->getHighestBinlogId();
+
+    auto ptxn = store->createTransaction(sg.getSession());
+    if (!ptxn.ok()) {
+      LOG(ERROR) << "createTransaction failed:" << ptxn.status().toString();
+      client->writeLine("-ERR createTransaction failed");
+      return;
+    }
+
+    txn = std::move(ptxn.value());
+    txn->SetSnapshot();
+    cursor = txn->createDataCursor();
+  }
+
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+  if (!expdb.ok()) {
+    client->writeLine("-ERR getdb error");
+    return;
+  }
+
+  uint64_t currentTs = msSinceEpoch();
+  std::list<Record> result;
+  std::string prevPrimaryKey;
+  std::string sendBuf;
+  while (true) {
+    Expected<Record> exptRcd = cursor->next();
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      if (!result.empty()) {
+        auto aofStr = recordList2Aof(result);
+        if (!aofStr.ok()) {
+          LOG(WARNING) << aofStr.status().toString();
+          client->writeLine("-ERR invalid data");
+          return;
+        }
+        sendBuf.append(aofStr.value());
+      }
+
+      if (!sendBuf.empty()) {
+        client->writeData(sendBuf);
+        sendBuf.clear();
+      }
+      break;
+    }
+
+    if (!exptRcd.ok()) {
+      client->writeLine("-ERR invalid data");
+      return;
+    }
+
+    auto keyType = exptRcd.value().getRecordKey().getRecordType();
+    auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+    auto dbid = exptRcd.value().getRecordKey().getDbId();
+    auto valueType = exptRcd.value().getRecordValue().getRecordType();
+    if (!isRealEleType(keyType, valueType)) {
+      continue;
+    }
+
+    uint64_t targetTtl = 0;
+    if (valueType != RecordType::RT_KV) {
+      auto key = exptRcd.value().getRecordKey().getPrimaryKey();
+      RecordKey mk(chunkId, dbid, RecordType::RT_DATA_META, key, "");
+
+      Expected<RecordValue> eValue = store->getKV(mk, txn.get());
+      if (eValue.ok()) {
+        targetTtl = eValue.value().getTtl();
+      } else {
+        LOG(WARNING) << "Get target ttl for key " << key
+                     << " of type: " << rt2Str(keyType) << " in db:" << dbid
+                     << " from chunk: " << chunkId
+                     << " failed, error: " << eValue.status().toString();
+        client->writeLine("-ERR get ttl error");
+      }
+    } else {
+      targetTtl = exptRcd.value().getRecordValue().getTtl();
+    }
+    if (0 != targetTtl && currentTs > targetTtl) {
+      continue;
+    }
+
+    if (prevPrimaryKey.empty()) {
+      prevPrimaryKey = exptRcd.value().getRecordKey().getPrimaryKey();
+      result.emplace_back(std::move(exptRcd.value()));
+
+    } else if (exptRcd.value().getRecordKey().getPrimaryKey() ==
+               prevPrimaryKey) {
+      result.emplace_back(std::move(exptRcd.value()));
+      if (result.size() >= 1000) {
+        auto aofStr = recordList2Aof(result);
+        if (!aofStr.ok()) {
+          LOG(WARNING) << aofStr.status().toString();
+          client->writeLine("-ERR invalid data");
+          return;
+        }
+        sendBuf.append(aofStr.value());
+        result.clear();
+      }
+    } else {
+      auto aofStr = recordList2Aof(result);
+      if (!aofStr.ok()) {
+        LOG(WARNING) << aofStr.status().toString();
+        client->writeLine("-ERR invalid data");
+        return;
+      }
+      sendBuf.append(aofStr.value());
+      prevPrimaryKey = exptRcd.value().getRecordKey().getPrimaryKey();
+
+      result.clear();
+      result.emplace_back(std::move(exptRcd.value()));
+    }
+
+    if (sendBuf.size() > 10000) {
+      client->writeData(sendBuf);
+      sendBuf.clear();
+    }
+  }
+
+  uint64_t clientId = _clientIdGen.fetch_add(1);
+
+#if defined(_WIN32) && _MSC_VER > 1900
+  _pushStatus[storeId][clientId] =
+    new MPovStatus{false,
+                   static_cast<uint32_t>(storeId),
+                   binlogPos,
+                   0,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   std::move(client),
+                   clientId,
+                   "",
+                   0,
+                   MPovClientType::respClient};
+#else
+  _pushStatus[storeId][clientId] = std::move(
+    std::unique_ptr<MPovStatus>(new MPovStatus{false,
+                                               static_cast<uint32_t>(storeId),
+                                               binlogPos,
+                                               0,
+                                               SCLOCK::now(),
+                                               SCLOCK::time_point::min(),
+                                               std::move(client),
+                                               clientId,
+                                               "",
+                                               0,
+                                               MPovClientType::respClient}));
+#endif
+
+  return;
+}
+
+static const char runIdArray[] =
+  "abcdef"
+  "0123456789";
+
+string ReplManager::genRunId(uint32_t length) {
+  string ss;
+  for (uint32_t i = 0; i <= length; i++) {
+    auto tmp = random() % (sizeof(runIdArray) / sizeof(runIdArray[0]));
+    ss += runIdArray[tmp];
+  }
+  return ss;
 }
 
 }  // namespace tendisplus

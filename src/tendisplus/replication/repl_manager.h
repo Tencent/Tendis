@@ -36,7 +36,12 @@ struct SPovStatus {
   uint64_t sessionId;
   SCLOCK::time_point nextSchedTime;
   SCLOCK::time_point lastSyncTime;
-  uint64_t lastBinlogTs;    // in milliseconds
+  uint64_t lastBinlogTs;  // in milliseconds
+};
+
+enum class MPovClientType {
+  repllogClient = 0,
+  respClient = 1,  // resp = REdis Serialization Protocol
 };
 
 struct MPovStatus {
@@ -52,7 +57,9 @@ struct MPovStatus {
   uint64_t clientId = 0;
   string slave_listen_ip;
   uint16_t slave_listen_port = 0;
+  MPovClientType clientType = MPovClientType::repllogClient;
 };
+
 
 enum class FullPushState {
   PUSHING = 0,
@@ -160,6 +167,10 @@ class ReplManager {
                         const std::string& binlogPosArg,
                         const std::string& listenIpArg,
                         const std::string& listenPortArg);
+
+  bool supplyFullPsync(asio::ip::tcp::socket sock, const string& storeIdArg);
+
+
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
                               bool checkEmpty = true);
@@ -215,6 +226,10 @@ class ReplManager {
                              uint32_t storeId,
                              const string& slave_listen_ip,
                              uint16_t slave_listen_port);
+
+  void supplyFullPsyncRoutine(std::shared_ptr<BlockingTcpClient> client,
+                              uint32_t storeId);
+
   bool isFullSupplierFull() const;
 
   std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
@@ -246,6 +261,7 @@ class ReplManager {
  private:
   void changeReplState(const StoreMeta& storeMeta, bool persist);
   void changeReplStateInLock(const StoreMeta&, bool persist);
+  string genRunId(uint32_t);
 
   Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
 #ifdef BINLOG_V1

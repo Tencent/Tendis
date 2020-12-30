@@ -1031,6 +1031,22 @@ bool ServerEntry::processRequest(Session* sess) {
         return false;
       }
       return true;
+    } else if (expCmdName == "psync") {
+      NetSession* ns = dynamic_cast<NetSession*>(sess);
+      INVARIANT(ns != nullptr);
+      std::vector<std::string> args = ns->getArgs();
+      if (args[1] != "?" || args[2] != "-1") {
+        ns->setResponse("-ERR just support ? -1");
+        return true;
+      }
+
+      if (args[3].empty()) {
+        ns->setResponse("-ERR need rocksdb number");
+        return true;
+      }
+
+      _replMgr->supplyFullPsync(ns->borrowConn(), args[3]);
+      return true;
     }
   }
 
