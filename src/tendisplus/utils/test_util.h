@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 #include <thread>  // NOLINT
+#include <utility>
 
 #include "asio.hpp"
 #include "tendisplus/server/server_entry.h"
@@ -38,6 +39,29 @@ using TestSession = std::shared_ptr<NetSession>;
 using KeysWritten = std::set<std::string>;
 using AllKeys = std::vector<KeysWritten>;
 
+class NoSchedNetSession : public NetSession {
+ public:
+  NoSchedNetSession(std::shared_ptr<ServerEntry> server,
+                    asio::ip::tcp::socket sock,
+                    uint64_t connid,
+                    bool initSock,
+                    std::shared_ptr<NetworkMatrix> netMatrix,
+                    std::shared_ptr<RequestMatrix> reqMatrix)
+    : NetSession(
+        server, std::move(sock), connid, initSock, netMatrix, reqMatrix) {
+    // fake this flag as true, it can send nothing to the client
+    _isSendRunning = true;
+  }
+
+ protected:
+  virtual void schedule() {}
+
+ public:
+  // cmd using AOF format
+  void setArgsFromAof(const std::string& cmd);
+  virtual std::vector<std::string> getResponse();
+};
+
 bool setupEnv();
 void destroyEnv();
 bool setupEnv(const std::string& v);
@@ -53,8 +77,8 @@ std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
                                         std::shared_ptr<asio::io_context> ctx);
 
 void compareData(const std::shared_ptr<ServerEntry>& master,
-        const std::shared_ptr<ServerEntry>& slave,
-        bool comparebinlog = true);
+                 const std::shared_ptr<ServerEntry>& slave,
+                 bool comparebinlog = true);
 
 bool setupReplEnv();
 void destroyReplEnv();

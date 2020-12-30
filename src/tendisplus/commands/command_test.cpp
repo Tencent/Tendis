@@ -25,6 +25,9 @@
 
 namespace tendisplus {
 
+Expected<std::string> recordList2Aof(const std::list<Record>& list);
+Expected<std::string> key2Aof(Session* sess, const std::string& key);
+
 void testSetRetry(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
@@ -1833,6 +1836,129 @@ TEST(Command, revision) {
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+
+AllKeys initData(std::shared_ptr<ServerEntry> server,
+                 uint32_t count,
+                 const char* key_suffix) {
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(server, ctx1);
+  WorkLoad work(server, sess1);
+  work.init();
+  auto maxEleCnt = 2500;
+
+  AllKeys all_keys;
+
+  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
+  all_keys.emplace_back(kv_keys);
+
+  auto list_keys = work.writeWork(
+    RecordType::RT_LIST_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(list_keys);
+
+  auto hash_keys = work.writeWork(
+    RecordType::RT_HASH_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(hash_keys);
+
+  auto set_keys =
+    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(set_keys);
+
+  auto zset_keys = work.writeWork(
+    RecordType::RT_ZSET_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(zset_keys);
+
+  for (const auto& keyset : all_keys) {
+    for (const auto& key : keyset) {
+      if (std::rand() % 3 == 0) {
+        auto ttl = std::rand() % 1000 + 1000;
+        sess1->setArgs({"expire", key, std::to_string(ttl)});
+        auto expect = Command::runSessionCmd(sess1.get());
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+      }
+    }
+  }
+
+  return all_keys;
+}
+
+TEST(Command, restorevalue) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv("restore1"));
+  auto port1 = 5438;
+  auto cfg1 = makeServerParam(port1, 0, "restore1");
+  auto server1 = makeServerEntry(cfg1);
+
+  EXPECT_TRUE(setupEnv("restore2"));
+  auto port2 = 5439;
+  auto cfg2 = makeServerParam(port2, 0, "restore2");
+  auto server2 = makeServerEntry(cfg2);
+
+  auto allkeys = initData(server1, 1000, "restorevalue_");
+
+  for (const auto& keyset : allkeys) {
+    for (const auto& key : keyset) {
+      asio::io_context ioContext;
+      asio::ip::tcp::socket socket(ioContext);
+      NoSchedNetSession sess(
+        server1, std::move(socket), 1, false, nullptr, nullptr);
+
+      sess.setArgs({"restorevalue", key});
+      auto expect = Command::runSessionCmd(&sess);
+      EXPECT_TRUE(expect.ok());
+      auto cmdvec = sess.getResponse();
+      cmdvec.emplace_back(expect.value());
+
+      asio::io_context ioContext2;
+      asio::ip::tcp::socket socket2(ioContext2);
+      NoSchedNetSession sess2(
+        server2, std::move(socket2), 1, false, nullptr, nullptr);
+
+      // skip the first and last cmd
+      for (uint32_t i = 1; i < cmdvec.size() - 1; i++) {
+        auto cmd = cmdvec[i];
+        sess2.setArgsFromAof(cmd);
+
+        auto expect = Command::runSessionCmd(&sess2);
+        EXPECT_TRUE(expect.ok());
+      }
+    }
+  }
+
+  for (const auto& keyset : allkeys) {
+    for (const auto& key : keyset) {
+      asio::io_context ioContext;
+      asio::ip::tcp::socket socket(ioContext);
+      NoSchedNetSession sess(
+        server1, std::move(socket), 1, false, nullptr, nullptr);
+
+      auto keystr1 = key2Aof(&sess, key);
+      INVARIANT_D(keystr1.ok());
+
+      asio::io_context ioContext2;
+      asio::ip::tcp::socket socket2(ioContext2);
+      NoSchedNetSession sess2(
+        server2, std::move(socket2), 1, false, nullptr, nullptr);
+
+      auto keystr2 = key2Aof(&sess2, key);
+      INVARIANT_D(keystr2.ok());
+
+      EXPECT_EQ(keystr1.value(), keystr2.value());
+    }
+  }
+
+  // compareData(server1, server2, false);
+
+#ifndef _WIN32
+  server1->stop();
+  EXPECT_EQ(server1.use_count(), 1);
+
+  server2->stop();
+  EXPECT_EQ(server2.use_count(), 1);
 #endif
 }
 

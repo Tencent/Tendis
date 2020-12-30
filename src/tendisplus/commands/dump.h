@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <cstddef>
+#include <list>
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/invariant.h"
@@ -184,6 +185,9 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
   const std::string& payload,
   const std::string& key,
   const uint64_t ttl);
+
+Expected<std::string> recordList2Aof(const std::list<Record>& list);
+Expected<std::string> key2Aof(Session* sess, const std::string& key);
 
 }  // namespace tendisplus
 

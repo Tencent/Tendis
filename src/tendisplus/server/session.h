@@ -31,6 +31,10 @@ class Session : public std::enable_shared_from_this<Session> {
   virtual ~Session();
   uint64_t id() const;
   virtual Status setResponse(const std::string& s) = 0;
+  // only for unittest
+  virtual std::vector<std::string> getResponse() {
+    return std::vector<std::string>();
+  }
   const std::vector<std::string>& getArgs() const;
   Status processExtendProtocol();
   SessionCtx* getCtx() const;

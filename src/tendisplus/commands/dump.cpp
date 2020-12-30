@@ -1634,6 +1634,171 @@ class RestoreMetaCommand : public Command {
   }
 } restoremetaCommand;
 
+Expected<std::string> recordList2Aof(const std::list<Record>& list) {
+  if (list.size() == 0) {
+    return std::string("");
+  }
+
+  std::stringstream ss;
+  auto type = list.front().getRecordValue().getRecordType();
+  auto key = list.front().getRecordKey().getPrimaryKey();
+  switch (type) {
+    case tendisplus::RecordType::RT_KV:
+      INVARIANT_D(list.size() == 1);
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_LIST_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "RPUSH");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_HASH_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "HMSET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_SET_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_ZSET_H_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "ZADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    default:
+      INVARIANT_D(0);
+      break;
+  }
+
+  for (const auto& rt : list) {
+    // key and type of all records in the list is the same
+    INVARIANT_D(rt.getRecordValue().getRecordType() == type);
+    INVARIANT_D(rt.getRecordKey().getPrimaryKey() == key);
+
+    const auto& rtKey = rt.getRecordKey();
+    const auto& rtValue = rt.getRecordValue();
+
+    switch (type) {
+      case tendisplus::RecordType::RT_KV:
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_LIST_ELE:
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_HASH_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_SET_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+
+      case tendisplus::RecordType::RT_ZSET_H_ELE: {
+        Expected<double> oldScore =
+          ::tendisplus::doubleDecode(rtValue.getValue());
+        if (!oldScore.ok()) {
+          return oldScore.status();
+        }
+        Command::fmtBulk(ss, ::tendisplus::dtos(oldScore.value()));
+
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+      }
+
+      default:
+        INVARIANT_D(0);
+        break;
+    }
+  }
+
+  return ss.str();
+}
+
+Expected<std::string> key2Aof(Session* sess,
+                              const std::string& key) {
+  auto dbid = sess->getCtx()->getDbId();
+  auto server = sess->getServerEntry();
+  auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+    sess, key, mgl::LockMode::LOCK_NONE);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+
+  auto kvstore = expdb.value().store;
+  auto ptxn = kvstore->createTransaction(sess);
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+  RecordKey mk(expdb.value().chunkId, dbid, RecordType::RT_DATA_META, key, "");
+  auto eValue = kvstore->getKV(mk, txn.get());
+  RET_IF_ERR_EXPECTED(eValue);
+
+  auto type = eValue.value().getEleType();
+
+  RecordKey fakeEle(expdb.value().chunkId, dbid, type, key, "");
+  std::string prefix = fakeEle.prefixPk();
+  auto cursor = txn->createDataCursor();
+  cursor->seek(prefix);
+
+  std::list<Record> result;
+  uint64_t count = 0;
+  while (true) {
+    Expected<Record> exptRcd = cursor->next();
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      break;
+    }
+    if (!exptRcd.ok()) {
+      return exptRcd.status();
+    }
+    Record& rcd = exptRcd.value();
+    const RecordKey& rcdKey = rcd.getRecordKey();
+    if (rcdKey.prefixPk() != prefix) {
+      break;
+    }
+    count++;
+    result.emplace_back(std::move(rcd));
+  }
+
+  INVARIANT_D(result.size() > 0);
+  auto ret = recordList2Aof(result);
+  if (!ret.ok()) {
+    return ret.status();
+  }
+
+  auto ttl = eValue.value().getTtl();
+  if (ttl == 0) {
+    // no expire
+    return ret.value();
+  }
+
+  std::stringstream ss;
+  ss << ret.value();
+
+  /* pexpireat */
+  std::stringstream ss1;
+  Command::fmtMultiBulkLen(ss1, 3);
+  Command::fmtBulk(ss1, "PEXPIREAT");
+  Command::fmtBulk(ss1, key);
+  Command::fmtBulk(ss1, std::to_string(ttl));
+  ss << ss1.str();
+
+  return ss.str();
+}
+
 class RestoreValueCommand : public Command {
  public:
   RestoreValueCommand() : Command("restorevalue", "r") {}
@@ -1652,98 +1817,6 @@ class RestoreValueCommand : public Command {
 
   int32_t keystep() const {
     return 0;
-  }
-
-  static Expected<std::string> recordList2Aof(const std::list<Record>& list) {
-    if (list.size() == 0) {
-      return std::string("");
-    }
-
-    std::stringstream ss;
-    auto type = list.front().getRecordValue().getRecordType();
-    auto key = list.front().getRecordKey().getPrimaryKey();
-    switch (type) {
-      case tendisplus::RecordType::RT_KV:
-        INVARIANT_D(list.size() == 1);
-        Command::fmtMultiBulkLen(ss, 2 + list.size());
-        Command::fmtBulk(ss, "SET");
-        Command::fmtBulk(ss, key);
-        break;
-
-      case tendisplus::RecordType::RT_LIST_ELE:
-        Command::fmtMultiBulkLen(ss, 2 + list.size());
-        Command::fmtBulk(ss, "RPUSH");
-        Command::fmtBulk(ss, key);
-        break;
-
-      case tendisplus::RecordType::RT_HASH_ELE:
-        Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
-        Command::fmtBulk(ss, "HMSET");
-        Command::fmtBulk(ss, key);
-        break;
-
-      case tendisplus::RecordType::RT_SET_ELE:
-        Command::fmtMultiBulkLen(ss, 2 + list.size());
-        Command::fmtBulk(ss, "SADD");
-        Command::fmtBulk(ss, key);
-        break;
-
-      case tendisplus::RecordType::RT_ZSET_H_ELE:
-        Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
-        Command::fmtBulk(ss, "ZADD");
-        Command::fmtBulk(ss, key);
-        break;
-
-      default:
-        INVARIANT_D(0);
-        break;
-    }
-
-    for (const auto& rt : list) {
-      // key and type of all records in the list is the same
-      INVARIANT_D(rt.getRecordValue().getRecordType() == type);
-      INVARIANT_D(rt.getRecordKey().getPrimaryKey() == key);
-
-      const auto& rtKey = rt.getRecordKey();
-      const auto& rtValue = rt.getRecordValue();
-
-      switch (type) {
-        case tendisplus::RecordType::RT_KV:
-          Command::fmtBulk(ss, rtValue.getValue());
-          break;
-
-        case tendisplus::RecordType::RT_LIST_ELE:
-          Command::fmtBulk(ss, rtKey.getSecondaryKey());
-          break;
-
-        case tendisplus::RecordType::RT_HASH_ELE:
-          Command::fmtBulk(ss, rtKey.getSecondaryKey());
-          Command::fmtBulk(ss, rtValue.getValue());
-          break;
-
-        case tendisplus::RecordType::RT_SET_ELE:
-          Command::fmtBulk(ss, rtKey.getSecondaryKey());
-          break;
-
-        case tendisplus::RecordType::RT_ZSET_H_ELE: {
-          Command::fmtBulk(ss, rtKey.getSecondaryKey());
-
-          Expected<double> oldScore =
-            ::tendisplus::doubleDecode(rtValue.getValue());
-          if (!oldScore.ok()) {
-            return oldScore.status();
-          }
-          Command::fmtBulk(ss, ::tendisplus::dtos(oldScore.value()));
-          break;
-        }
-
-        default:
-          INVARIANT_D(0);
-          break;
-      }
-    }
-
-    return ss.str();
   }
 
   Expected<std::string> run(Session* sess) final {

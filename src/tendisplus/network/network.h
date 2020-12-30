@@ -196,6 +196,7 @@ class NetSession : public Session {
   FRIEND_TEST(NetSession, drainReqInvalid);
   FRIEND_TEST(NetSession, Completed);
   FRIEND_TEST(Command, common);
+  friend class NoSchedNetSession;
 
   void processMultibulkBuffer();
   void processInlineBuffer();
