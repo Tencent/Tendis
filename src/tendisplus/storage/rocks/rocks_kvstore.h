@@ -103,9 +103,6 @@ class RocksTxn : public Transaction {
   const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
     return _txn;
   }
-  bool isDone() {
-    return _done;
-  }
 
  protected:
   virtual void ensureTxn() {}

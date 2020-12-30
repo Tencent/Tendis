@@ -23,7 +23,7 @@ Expected<bool> expireBeforeNow(Session* sess,
                                RecordType type,
                                const std::string& key,
                                Transaction* txn) {
-  // TODO(takenliu) pass txn to params, and commit only by top caller.
+  // pass txn to params, and commit only by top caller.
   return Command::delKeyChkExpire(sess, key, type, txn);
 }
 

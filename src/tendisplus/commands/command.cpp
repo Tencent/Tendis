@@ -757,6 +757,7 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp,
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
+// NOTE(takenliu) txn is committed in this function.
 Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
                                                  const std::string& key,
                                                  RecordType tp,
