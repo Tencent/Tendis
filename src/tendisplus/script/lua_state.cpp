@@ -858,7 +858,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
   switch (t) {
     case LUA_TSTRING:
       // addReplyBulkCBuffer(c,(char*)lua_tostring(lua,-1),lua_strlen(lua,-1));
-      LOG(INFO) << "this is a tstring.";
+      // LOG(INFO) << "this is a tstring.";
       repl = Command::fmtBulk(string(lua_tostring(lua, -1),
               lua_strlen(lua, -1)));
       lua_pop(lua, 1);
@@ -866,14 +866,14 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
       break;
     case LUA_TBOOLEAN:
       // addReply(c,lua_toboolean(lua,-1) ? shared.cone : shared.nullbulk);
-      LOG(INFO) << "this is a tbool.";
+      // LOG(INFO) << "this is a tbool.";
       repl = lua_toboolean(lua, -1) ? Command::fmtOne() : Command::fmtNull();
       lua_pop(lua, 1);
       return repl;
       break;
     case LUA_TNUMBER:
       // addReplyLongLong(c,(long long)lua_tonumber(lua,-1));
-      LOG(INFO) << "this is a tnumber.";
+      // LOG(INFO) << "this is a tnumber.";
       repl = Command::fmtLongLong(lua_tonumber(lua, -1));
       lua_pop(lua, 1);
       return repl;
