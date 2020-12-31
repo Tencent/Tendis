@@ -3059,7 +3059,13 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
   _sender = myself->getNodeName();
 
   std::shared_ptr<ServerParams> params = svr->getParams();
-  _myIp = params->bindIp;
+  /* Node ip should not use bind ip if not use domain */
+  if (svr->getParams()->domainEnabled) {
+      _myIp = params->bindIp;
+  } else {
+      _myIp = "";
+  }
+
   _port = params->port;
   _cport = _port + CLUSTER_PORT_INCR;
 
@@ -3656,8 +3662,13 @@ Status ClusterManager::initMetaData() {
 
   // TODO(wayenchen): cluster_announce_port/cluster_announce_bus_port
   auto params = _svr->getParams();
-  std::string nodeIp = params->bindIp;
   uint16_t nodePort = params->port;
+  std::string nodeIp = "";
+  /* Node ip init as empty string if not use domain */
+  bool useDomain = params->domainEnabled;
+  if (useDomain) {
+    nodeIp = params->bindIp;
+  }
   uint16_t nodeCport = nodePort + CLUSTER_PORT_INCR;
 
   std::shared_ptr<ClusterState> gState =
@@ -3687,7 +3698,6 @@ Status ClusterManager::initMetaData() {
                                              pingTime,
                                              pongTime,
                                              nodeMeta->configEpoch);
-
         _clusterState->clusterAddNode(node);
 
         Expected<std::bitset<CLUSTER_SLOTS>> st =
