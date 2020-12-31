@@ -5,7 +5,7 @@ add_library(nwp worker_pool.cpp)
 target_link_libraries(nwp glog redis_port status server)
 
 add_executable(network_test network_test.cpp)
-target_link_libraries(network_test server network session gtest_main ${SYS_LIBS})
+target_link_libraries(network_test server network session gtest_main test_util ${SYS_LIBS})
 
 add_library(session_ctx session_ctx.cpp)
 target_link_libraries(session_ctx glog)

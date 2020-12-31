@@ -17,21 +17,6 @@
 
 namespace tendisplus {
 
-class NoSchedNetSession : public NetSession {
- public:
-  NoSchedNetSession(std::shared_ptr<ServerEntry> server,
-                    asio::ip::tcp::socket sock,
-                    uint64_t connid,
-                    bool initSock,
-                    std::shared_ptr<NetworkMatrix> netMatrix,
-                    std::shared_ptr<RequestMatrix> reqMatrix)
-    : NetSession(
-        server, std::move(sock), connid, initSock, netMatrix, reqMatrix) {}
-
- protected:
-  virtual void schedule() {}
-};
-
 TEST(NetSession, drainReqInvalid) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext);

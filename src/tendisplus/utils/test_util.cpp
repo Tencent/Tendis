@@ -284,8 +284,8 @@ bool isExpired(PStore store, const RecordKey& key, const RecordValue& value) {
   uint64_t currentTs = msSinceEpoch();
   // uint64_t currentTs = store->getCurrentTime();
   uint64_t ttl;
-  if (key.getRecordType() == RecordType::RT_DATA_META
-    && value.getRecordType() == RecordType::RT_KV) {
+  if (key.getRecordType() == RecordType::RT_DATA_META &&
+      value.getRecordType() == RecordType::RT_KV) {
     ttl = value.getTtl();
     if (ttl > 0 && ttl < currentTs) {
       // Expired
@@ -296,8 +296,8 @@ bool isExpired(PStore store, const RecordKey& key, const RecordValue& value) {
 }
 
 void compareData(const std::shared_ptr<ServerEntry>& master,
-        const std::shared_ptr<ServerEntry>& slave,
-        bool compare_binlog) {
+                 const std::shared_ptr<ServerEntry>& slave,
+                 bool compare_binlog) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
 
   for (size_t i = 0; i < master->getKVStoreCount(); i++) {
@@ -322,8 +322,9 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd1.ok());
 
-      if (isExpired(kvstore1, exptRcd1.value().getRecordKey(),
-        exptRcd1.value().getRecordValue())) {
+      if (isExpired(kvstore1,
+                    exptRcd1.value().getRecordKey(),
+                    exptRcd1.value().getRecordValue())) {
         continue;
       }
 
@@ -332,7 +333,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       auto type = exptRcd1.value().getRecordKey().getRecordType();
       auto key = exptRcd1.value().getRecordKey();
       auto exptRcdv2 =
-              kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+        kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
       EXPECT_TRUE(exptRcdv2.ok());
       if (!exptRcdv2.ok()) {
         LOG(INFO) << "key:" << key.getPrimaryKey()
@@ -356,7 +357,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
         count1++;
 
         auto exptRcdv2 =
-                kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
+          kvstore2->getKV(exptRcd1.value().getRecordKey(), txn2.get());
         EXPECT_TRUE(exptRcdv2.ok());
         EXPECT_EQ(exptRcd1.value().getRecordValue(), exptRcdv2.value());
       }
@@ -370,15 +371,16 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
       }
       INVARIANT(exptRcd2.ok());
 
-      if (isExpired(kvstore2, exptRcd2.value().getRecordKey(),
-        exptRcd2.value().getRecordValue())) {
+      if (isExpired(kvstore2,
+                    exptRcd2.value().getRecordKey(),
+                    exptRcd2.value().getRecordValue())) {
         continue;
       }
       count2++;
 
       // check the data
       auto exptRcdv1 =
-              kvstore1->getKV(exptRcd2.value().getRecordKey(), txn1.get());
+        kvstore1->getKV(exptRcd2.value().getRecordKey(), txn1.get());
       EXPECT_TRUE(exptRcdv1.ok());
       if (!exptRcdv1.ok()) {
         LOG(INFO) << exptRcd2.value().toString()
@@ -625,9 +627,9 @@ void WorkLoad::lockDb(mstime_t locktime) {
 }
 
 void WorkLoad::manualFailover() {
-    _session->setArgs({"cluster", "failover", "takeover"});
-    auto expect = Command::runSessionCmd(_session.get());
-    EXPECT_TRUE(expect.ok());
+  _session->setArgs({"cluster", "failover", "takeover"});
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
 }
 
 void WorkLoad::stopMigrate(const std::string& taskid) {
@@ -2834,6 +2836,27 @@ void runBgCommand(std::shared_ptr<ServerEntry> svr) {
   runCommand(svr, {"info", "all"});
   runCommand(svr, {"client", "list"});
   runCommand(svr, {"show", "processlist", "all"});
+}
+
+void NoSchedNetSession::setArgsFromAof(const std::string& cmd) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _queryBuf.clear();
+  _args.clear();
+  std::copy(cmd.begin(), cmd.end(), std::back_inserter(_queryBuf));
+  _queryBufPos = _queryBuf.size();
+  processMultibulkBuffer();
+
+  INVARIANT_D(_args.size() > 0);
+}
+
+std::vector<std::string> NoSchedNetSession::getResponse() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  std::vector<std::string> ret;
+  for (auto sb : _sendBuffer) {
+    ret.emplace_back(std::string(sb->buffer.data(), sb->buffer.size()));
+  }
+
+  return std::move(ret);
 }
 
 }  // namespace tendisplus
