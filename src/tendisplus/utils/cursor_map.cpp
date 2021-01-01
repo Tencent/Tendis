@@ -2,7 +2,7 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include "cursor_map.h"
+#include "tendisplus/utils/cursor_map.h"
 
 #include "tendisplus/utils/time.h"
 
@@ -33,11 +33,22 @@ void CursorMap::addMapping(uint64_t cursor, const CursorMapping &mapping) {
     auto cursorToRemove = _cursorTs.begin()->second;      // LFU {ts, cursor}
     _cursorMap.erase(cursorToRemove);
     _cursorTs.erase(_cursorTs.begin());
+    _cursorReverseTs.erase(cursorToRemove);
   }
 
-  // add new mapping, add or cover both are ok.
+  /**
+   * remove old {timestamp, cursor} from _cursorTs;
+   * search timeStamp by record in _cursorReverseTs;
+   */
+  if (_cursorReverseTs.count(cursor)) {
+     _cursorTs.erase(_cursorReverseTs[cursor]);
+     _cursorReverseTs.erase(cursor);
+  }
+
+  auto time = nsSinceEpoch();
   _cursorMap[cursor] = mapping;
-  _cursorTs[nsSinceEpoch()] = cursor;
+  _cursorTs[time] = cursor;
+  _cursorReverseTs[cursor] = time;
 }
 
 /**
@@ -61,8 +72,9 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
  * @ get cursorMap ref, only for debug
  * @return _cursorMap
  */
-auto CursorMap::getMap() const -> const std::map<uint64_t, CursorMapping> & {
+auto CursorMap::getMap() const
+      -> const std::unordered_map<uint64_t, CursorMapping> & {
   return _cursorMap;
 }
 
-}
+}  // namespace tendisplus

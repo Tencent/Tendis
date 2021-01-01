@@ -4,9 +4,6 @@ target_link_libraries(status glog)
 add_library(redis_port STATIC lzf_d.cpp redis_port.cpp hyperloglog.cpp)
 target_link_libraries(redis_port glog)
 
-add_library(cursor_map STATIC cursor_map.cpp)
-target_link_libraries(cursor_map glog)
-
 add_executable(status_test status_test.cpp)
 target_link_libraries(status_test status gtest_main ${SYS_LIBS})
 

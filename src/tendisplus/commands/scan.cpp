@@ -64,9 +64,7 @@ class ScanGenericCommand : public Command {
       j = args.size() - i;
       if (toLower(args[i]) == "count" && j >= 2) {
         Expected<uint64_t> ecnt = ::tendisplus::stoul(args[i + 1]);
-        if (!ecnt.ok()) {
-          return ecnt.status();
-        }
+        RET_IF_ERR_EXPECTED(ecnt);
         if (ecnt.value() < 1) {
           return {ErrorCodes::ERR_PARSEOPT, "syntax error"};
         }
@@ -97,25 +95,20 @@ class ScanGenericCommand : public Command {
     auto server = sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
       sess, key, mgl::LockMode::LOCK_S);
-    if (!expdb.ok()) {
-      return expdb.status();
-    }
+    RET_IF_ERR_EXPECTED(expdb);
+
     SessionCtx* pCtx = sess->getCtx();
     RecordKey metaRk(
       expdb.value().chunkId, pCtx->getDbId(), getRcdType(), key, "");
     PStore kvstore = expdb.value().store;
 
     auto ptxn = sess->getCtx()->createTransaction(kvstore);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
+    RET_IF_ERR_EXPECTED(ptxn);
 
     std::string name = getName();
     if (name == "zscanbyscore") {
       auto eMetaContent = ZSlMetaValue::decode(rv.value().getValue());
-      if (!eMetaContent.ok()) {
-        return eMetaContent.status();
-      }
+      RET_IF_ERR_EXPECTED(eMetaContent);
       ZSlMetaValue meta = eMetaContent.value();
       SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
       Zrangespec range;
@@ -123,9 +116,7 @@ class ScanGenericCommand : public Command {
         return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
       }
       auto arr = sl.scanByScore(range, 0, count + 1, false, ptxn.value());
-      if (!arr.ok()) {
-        return arr.status();
-      }
+      RET_IF_ERR_EXPECTED(arr);
       std::stringstream ss;
       Command::fmtMultiBulkLen(ss, 2);
       if (arr.value().size() == count + 1) {
@@ -145,9 +136,7 @@ class ScanGenericCommand : public Command {
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
     auto batch = Command::scan(fake.prefixPk(), cursor, count, ptxn.value());
-    if (!batch.ok()) {
-      return batch.status();
-    }
+    RET_IF_ERR_EXPECTED(batch);
     const bool NOCASE = false;
     for (std::list<Record>::iterator it = batch.value().second.begin();
          it != batch.value().second.end();) {
@@ -194,9 +183,7 @@ class ZScanCommand : public ScanGenericCommand {
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
       INVARIANT_D(d.ok());
-      if (!d.ok()) {
-        return d.status();
-      }
+      RET_IF_ERR_EXPECTED(d);
       Command::fmtBulk(ss, tendisplus::dtos(d.value()));
     }
     return ss.str();
@@ -247,9 +234,7 @@ class ZScanbyscoreCommand : public ScanGenericCommand {
       Command::fmtBulk(ss, v.getRecordValue().getValue());
       auto d = tendisplus::doubleDecode(v.getRecordKey().getSecondaryKey());
       INVARIANT_D(d.ok());
-      if (!d.ok()) {
-        return d.status();
-      }
+      RET_IF_ERR_EXPECTED(d);
       Command::fmtBulk(ss, tendisplus::dtos(d.value()));
     }
     return ss.str();
@@ -335,114 +320,95 @@ class ScanCommand : public Command {
     return false;
   }
 
-  /**
-   * @brief scanCmd core impl
-   * @param sess user session
-   * @return Expected<std::string>
-   */
-  Expected<std::string> run(Session* sess) final {
-    size_t index = 2;                        // used for parse args
-    std::string pattern;                     // subcommand "MATCH"
-    uint64_t count = sess->getServerEntry()
-            ->getParams()->scanDefaultLimit; // subcommand "COUNT"
-    std::string type;                        // subcommand "TYPE"
-    std::bitset<CLUSTER_SLOTS> slots;        // subcommand "SLOTS"
-    int64_t node{0};                        // subcommand "NODE"
-    bool enableSlots{false};                 // check whether has "SLOTS"
-    std::pair<uint64_t, std::list<RecordKey>> batch{0, {}};
-
-    // Step 1: get args and parse options. COUNT, MATCH, TYPE, SLOTS
-    uint64_t cursor{0};
-    auto &args = sess->getArgs();
+  static Status parseSessionArgs(const std::vector<std::string> &args,
+                                 std::bitset<CLUSTER_SLOTS> *slots,
+                                 std::string *pattern,
+                                 std::string *type,
+                                 uint64_t *count,
+                                 uint64_t *cursor,
+                                 int64_t *node,
+                                 bool *enableSlots) {
+    size_t index = 2;                             // used for parse args
     auto cursorCnt = tendisplus::stoul(args[1]);
-    if (!cursorCnt.ok()) {
-      return cursorCnt.status();
-    } else {
-      cursor = cursorCnt.value();
-    }
+    RET_IF_ERR_EXPECTED(cursorCnt);
+    *cursor = cursorCnt.value();
 
     while (index < args.size()) {
-      if (toLower(args[index]) == "count" && index + 1 <= args.size()) {
+      if (toLower(args[index]) == "count" && index + 1 < args.size()) {
         auto cnt = tendisplus::stoul(args[index + 1]);
-        if (!cnt.ok()) {
-          return cnt.status();
-        }
+        RET_IF_ERR_EXPECTED(cnt);
         if (cnt.value() < 1) {
           return {ErrorCodes::ERR_PARSEOPT, "Syntax Error"};
         }
-        count = cnt.value();
+        *count = cnt.value();
         index += 2;
-      } else if (toLower(args[index]) == "match" && index + 1 <= args.size()) {
-        pattern = args[index + 1];
+      } else if (toLower(args[index]) == "match" && index + 1 < args.size()) {
+        pattern->assign(args[index + 1]);
         index += 2;
-      } else if (toLower(args[index]) == "type" && index + 1 <= args.size()) {
-        type = toLower(args[index + 1]);
+      } else if (toLower(args[index]) == "type" && index + 1 < args.size()) {
+        type->assign(toLower(args[index + 1]));
         index += 2;
-      } else if (toLower(args[index]) == "slots" && index + 1 <= args.size()) {
-        auto slotsArg = args[index + 1];
-        auto slotsMeta = tendisplus::stringSplit(slotsArg, ",");
-        enableSlots = true;
+      } else if (toLower(args[index]) == "slots" && index + 1 < args.size()) {
+        *enableSlots = true;
+        auto expSlots = ClusterNode::parseClusterNodesInfo(args[index + 1]);
+        RET_IF_ERR_EXPECTED(expSlots);
 
-        for (const auto &v : slotsMeta) {
-          auto slotPair = tendisplus::stringSplit(v, "-");
-          if (slotPair.size() == 1) {
-            auto slot = tendisplus::stol(slotPair[0]);
-            if (!slot.ok()) {
-              return slot.status();
-            }
-            if (slot.value() < 0) {
-              return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
-            }
-            // set single bit as true
-            slots.set(slot.value());
-          } else {
-            auto slotStart = tendisplus::stol(slotPair[0]);
-            auto slotEnd = tendisplus::stol(slotPair[1]);
-            if (!slotStart.ok()) {
-              return slotStart.status();
-            }
-            if (slotStart.value() < 0 || slotStart.value() >= CLUSTER_SLOTS) {
-              return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
-            }
-            if (!slotEnd.ok()) {
-              return slotEnd.status();
-            }
-            if (slotEnd.value() < 0 || slotEnd.value() >= CLUSTER_SLOTS) {
-              return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
-            }
-
-            // set bit as true from start to end
-            for (int i = slotStart.value(); i <= slotEnd.value(); ++i) {
-              slots.set(i);
-            }
+        // get the intersection of slots and SLOTS result
+        // may bitwise or faster than logic or
+        // if (slots->test(i) && expSlots.value().test(i)) {
+        for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
+          if ((*slots)[i] & expSlots.value()[i]) {
+            slots->set(i, true);
           }
         }
         index += 2;
       } else if (toLower(args[index]) == "node" && index + 1 <= args.size()) {
         auto expNode = tendisplus::stoll(args[index + 1]);
-        if (!expNode.ok()) {
-          return expNode.status();
-        }
+        RET_IF_ERR_EXPECTED(expNode);
         if (expNode.value() < 0) {
           return {ErrorCodes::ERR_INTERGER, "Invalid Node"};
         }
-        node = expNode.value();
+        *node = expNode.value();
         index += 2;
       } else {
         return {ErrorCodes::ERR_PARSEOPT, "Unknown Subcommand"};
       }
     }
 
+    return {ErrorCodes::ERR_OK, ""};
+  }
+
+  /**
+   * @brief scanCmd core impl
+   * @param sess user session
+   * @return Expected<std::string>
+   */
+  Expected<std::string> run(Session* sess) final {
+    std::string pattern;                      // subcommand "MATCH"
+    uint64_t count = sess->getServerEntry()
+            ->getParams()->scanDefaultLimit;  // subcommand "COUNT"
+    std::string type;                         // subcommand "TYPE"
+    std::bitset<CLUSTER_SLOTS> slots;         // subcommand "SLOTS"
+    int64_t node{0};                          // subcommand "NODE"
+    uint64_t cursor{0};                       // used for arg "cursor"
+    bool enableSlots{false};                  // check whether has "SLOTS"
+    std::list<RecordKey> batch;
+
+    if (sess->getServerEntry()->getParams()->clusterEnabled) {
+      slots = sess->getServerEntry()->getClusterMgr()
+              ->getClusterState()->getMyselfNode()->getSlots();
+    } else {
+      slots.set();
+    }
+
+    // Step 1: get args and parse options. COUNT, MATCH, TYPE, SLOTS
+    auto status = parseSessionArgs(sess->getArgs(), &slots, &pattern, &type,
+                                   &count, &cursor, &node, &enableSlots);
+    RET_IF_ERR(status);
+
     // init _filter config.
     _filter.setPattern(pattern);
     _filter.setType(type);
-
-    // if no SLOTS, scan all slots in rocksdb
-    if (!enableSlots) {
-      for (size_t i = 0; i < slots.size(); ++i) {
-        slots.set(i);
-      }
-    }
 
     // Step 2: check if this scan command cursor has been stored in cursorMap_
     uint64_t kvstoreId{0};
@@ -459,8 +425,8 @@ class ScanCommand : public Command {
         return expMapping.status();
       }
     } else {
-      kvstoreId = expMapping.value()._kvstoreId;
-      lastScanKey = expMapping.value()._lastScanKey;
+      kvstoreId = expMapping.value().kvstoreId;
+      lastScanKey = expMapping.value().lastScanKey;
     }
 
     // use lambda return value to decode
@@ -471,17 +437,12 @@ class ScanCommand : public Command {
         return genRecordKey(0, sess->getCtx()->getDbId(), "");
       } else {
         auto expLastScanRecordKey = RecordKey::decode(lastScanKey);
-        if (!expLastScanRecordKey.ok()) {
-          return expLastScanRecordKey.status();
-        } else {
-          return expLastScanRecordKey.value();
-        }
+        RET_IF_ERR_EXPECTED(expLastScanRecordKey);
+        return expLastScanRecordKey.value();
       }
     }();
 
-    if (!expRecordKey.ok()) {
-      return expRecordKey.status();
-    }
+    RET_IF_ERR_EXPECTED(expRecordKey);
     auto lastScanRecordKey = expRecordKey.value();
 
     /*
@@ -491,17 +452,16 @@ class ScanCommand : public Command {
      */
     auto server = sess->getServerEntry();
     auto params = server->getParams();
+    uint64_t seq{0};
     uint64_t scanTimes{0};
-    uint64_t scanMaxTimes = count * params->scanDefaultCoefficient >
-                            params->scanDefaultMaxIterateTimes ?
-                            params->scanDefaultMaxIterateTimes :
-                            count * params->scanDefaultCoefficient;
+    uint64_t scanMaxTimes = params->scanDefaultMaxIterateTimes;
+
     count += 1;          // in order to add mapping, scan one more key.
 
     // Step 3: scan data across all kv-stores one by one
     size_t id = kvstoreId;
     for (; id < server->getKVStoreCount(); ++id) {
-      if (batch.second.size() >= count || scanTimes >= scanMaxTimes) {
+      if (batch.size() >= count || scanTimes >= scanMaxTimes) {
         break;
       }
 
@@ -509,16 +469,11 @@ class ScanCommand : public Command {
       {
         auto expdb = server->getSegmentMgr()->getDb(
                 sess, id, mgl::LockMode::LOCK_IS);
-        if (!expdb.ok()) {
-          return expdb.status();
-        }
+        RET_IF_ERR_EXPECTED(expdb);
         auto *pCtx = sess->getCtx();
         auto kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction(sess);
-        if (!ptxn.ok()) {
-          return ptxn.status();
-        }
-        auto txn = std::move(ptxn.value());
+        auto ptxn = sess->getCtx()->createTransaction(kvstore);
+        RET_IF_ERR_EXPECTED(ptxn);
 
         /**
          * set recordKey policy:
@@ -535,33 +490,30 @@ class ScanCommand : public Command {
           }
         }();
         auto expRecordKeys = scanKvstore(slots, recordKey, pCtx->getDbId(),
-                                         id, count - batch.first,
-                                         scanTimes, scanMaxTimes, txn.get());
-        if (!expRecordKeys.ok()) {
-          return expRecordKeys.status();
-        }
+                                         id, count - batch.size(),
+                                         &seq, &scanTimes, scanMaxTimes,
+                                         ptxn.value());
+        RET_IF_ERR_EXPECTED(expRecordKeys);
         auto recordKeys = expRecordKeys.value();
-        batch.first += recordKeys.first;
-        for (const auto &key : recordKeys.second) {
-          batch.second.emplace_back(key);
+        for (const auto &key : recordKeys) {
+          batch.emplace_back(key);
         }
       }
     }
 
     id -= 1;                        // id need operator-- after loop
     _filter.reset();                // reset _filter condition
-    cursor += scanTimes;           // scanTimes is real cursor position.
+    cursor += seq;                  // seq is real cursor position.
 
     // means ERR_EXHAUST, should set cursor to 0
-    if (batch.second.size() < count &&
-        scanTimes < scanMaxTimes) {
+    if (batch.size() < count && scanTimes < scanMaxTimes) {
       cursor = 0;
     }
 
-    if (cursor && !batch.second.empty()) {
+    if (cursor && !batch.empty()) {
       cursorMap.addMapping(
-              cursor, {static_cast<int>(id), batch.second.back().encode()});
-      batch.second.pop_back();
+              cursor, {static_cast<int>(id), batch.back().encode()});
+      batch.pop_back();
     }
 
     /**
@@ -571,11 +523,10 @@ class ScanCommand : public Command {
      */
     cursor = (cursor | (node << 48U));
 
-    return genResult(cursor, batch.second);
+    return genResult(cursor, batch);
   }
 
  private:
-
   class Filter {
    public:
     // RT_DATA_META means RT_ALL here.
@@ -639,7 +590,7 @@ class ScanCommand : public Command {
     void setType(std::string &type) {
       if (recordTypeMap.count(type)) {
         _type = recordTypeMap[type];
-      } else if (!type.empty()){
+      } else if (!type.empty()) {
         _type = RecordType::RT_INVALID;
       }
     }
@@ -674,7 +625,6 @@ class ScanCommand : public Command {
             {"zset", RecordType::RT_ZSET_META},
             // TODO(pecochen): unsupport type stream now (since redis 5.0)
     };
-
   }_filter;
 
   /**
@@ -691,15 +641,6 @@ class ScanCommand : public Command {
       }
     }
     return -1;
-  }
-  /**
-   * @brief check whether slot belong to this kvstore
-   * @param kvstoreId
-   * @return boolean, show whether slot belong to this kvstore
-   */
-  inline static bool checkSlotsBelongToKvstore(uint32_t kvstoreId,
-                                               uint32_t slot) {
-    return (slot % 10) == kvstoreId;
   }
 
   /**
@@ -741,7 +682,7 @@ class ScanCommand : public Command {
           uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS> &slots) {
     std::bitset<CLUSTER_SLOTS> kvstoreSlots;
     for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
-      if (slots[i] & checkSlotsBelongToKvstore(kvstoreId, i)) {
+      if (slots[i] & checkKvstoreSlot(kvstoreId, i)) {
         kvstoreSlots.set(i, true);
       } else {
         kvstoreSlots.set(i, false);
@@ -763,30 +704,51 @@ class ScanCommand : public Command {
    */
   auto scanKvstore(const std::bitset<CLUSTER_SLOTS> &slots,
                    const RecordKey &lastScanRecordKey,
-                   uint32_t dbId, int kvstoreId, uint64_t count,
-                   uint64_t &scanTimes, uint64_t scanMaxTimes, Transaction *txn)
-            -> Expected<std::pair<uint64_t, std::list<RecordKey>>> {
-    std::pair<uint64_t, std::list<RecordKey>> result{0, {}};
+                   uint32_t dbId,
+                   int kvstoreId,
+                   uint64_t count,
+                   uint64_t *seq,
+                   uint64_t *scanTimes,
+                   uint64_t scanMaxTimes,
+                   Transaction *txn)
+            -> Expected<std::list<RecordKey>> {
+    std::list<RecordKey> result;
     auto kvstoreSlots = getKvstoreSlots(kvstoreId, slots);
     auto cursor = txn->createDataCursor();
     cursor->seek(lastScanRecordKey.encode());
 
-    while (result.first < count && scanTimes < scanMaxTimes) {
+    while (result.size() < count && *scanTimes < scanMaxTimes) {
       // get cursor current record and iterate next cursor
       auto expRecord = cursor->next();
+      (*scanTimes)++;
 
       // ERR_EXHAUST means this kv-store has been iterated over
       if (expRecord.status().code() == ErrorCodes::ERR_EXHAUST) {
         break;
       }
-      if (!expRecord.ok()) {
-        return expRecord.status();
-      }
+      RET_IF_ERR_EXPECTED(expRecord);
       auto record = expRecord.value();
 
-      if (record.getRecordKey() == lastScanRecordKey) {
-        scanTimes -= 1;             // otherwise, calculate one more time
-      }
+      const auto &guard = MakeGuard([&]() {
+        // record the scan position when iterate each kv-store over
+        // or we'll lost record position
+        // BEHAVIOR: scan no keys suitable (NOT EMPTY)  => result.second.empty()
+        //           scan keys not suit filter          => back() != recordKey
+        // CASE: scan this kv-store over         => no need add this record
+        //       scanTimes equal to MaxScanTimes => need this record
+        //       scan "COUNT" num record         => no need this record
+        // NOTE: call back() on empty std::list is UB
+        // NOTE: no need increase seq. If it meets the criteria,
+        //     it must have been increased seq.
+        // WARNING: scan this kvstore over no need this record ! ! !
+        if (*scanTimes == scanMaxTimes &&
+            expRecord.status().code() != ErrorCodes::ERR_EXHAUST) {
+          if (result.empty() ||
+              (result.back() != record.getRecordKey())) {
+            result.emplace_back(record.getRecordKey());
+          }
+        }
+      });
 
       // check if this record match scan condition
       auto recordSlotId = record.getRecordKey().getChunkId();
@@ -795,6 +757,17 @@ class ScanCommand : public Command {
       if (!kvstoreSlots.test(recordSlotId)
           || recordDbId != dbId
           || recordType != RecordType::RT_DATA_META) {
+        // seq: this key in DBID db's position
+        // means, recordDbId == dbId && recordType == RT_DATA_META
+        // seq should NOT include this key.
+        // INVALID SLOT => this record shouldn't in this db,
+        // maybe slots import/migrate
+        //
+        // if (!kvstoreSlots.test(recordSlotId) &&
+        //     recordDbId == dbId &&
+        //     recordType == RecordType::RT_DATA_META) {
+        //   (*seq)++;
+        // }
         auto nextSlot = getNextSlot(slots, recordSlotId);
         // nextSlot == -1 means this kv-store has been iterated over
         if (nextSlot == -1) {
@@ -804,7 +777,6 @@ class ScanCommand : public Command {
         // construct new record key to seek
         auto nextRecordKey = genRecordKey(nextSlot, dbId, "");
         cursor->seek(nextRecordKey.encode());
-        scanTimes++;
         continue;
       }
 
@@ -818,37 +790,22 @@ class ScanCommand : public Command {
         continue;
       }
 
-      const auto &guard = MakeGuard([&]() {
-        if (!(result.first < count &&
-              scanTimes < scanMaxTimes)) {
-          /**
-           * record the scan position
-           * especially when iterate each kv-store over
-           * or we'll lost keys
-           * NOTE: call back() on empty list is UB
-           */
-          if (result.second.empty() ||
-             (result.second.back() != record.getRecordKey())) {
-            result.second.emplace_back(record.getRecordKey());
-          }
-        }
-      });
+      // this record should increase seq.
+      // SLOTS, DBID, TYPE, TTL
+      // NOTE: lastScanKey has increased seq.
+      if (record.getRecordKey() != lastScanRecordKey) {
+        (*seq)++;
+      }
 
       // filter
       if (!_filter.filter(record)) {
-        scanTimes++;
         continue;
       }
 
-      // this record matches all conditions
-      scanTimes++;
-      result.first++;
-      result.second.emplace_back(record.getRecordKey());
+      result.emplace_back(record.getRecordKey());
     }
 
     return result;
   }
-
 } scanCmd;
-
 }  // namespace tendisplus

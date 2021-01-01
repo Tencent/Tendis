@@ -415,7 +415,6 @@ class ServerParams {
   // parameter for scan command
   uint32_t scanDefaultLimit = 10;
   uint32_t scanDefaultMaxIterateTimes = 10000;
-  uint32_t scanDefaultCoefficient = 10;
 
   // parameter for rocksdb
   uint32_t rocksBlockcacheMB = 4096;

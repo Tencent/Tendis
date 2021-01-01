@@ -245,14 +245,14 @@ TEST(CursorMap, getMapping) {
   map.addMapping(3, {3, "3"});
   map.addMapping(4, {4, "4"});
   map.addMapping(5, {5, "5"});
-  EXPECT_EQ(map.getMapping(1).value()._kvstoreId, 1);
+  EXPECT_EQ(map.getMapping(1).value().kvstoreId, 1);
   EXPECT_FALSE(map.getMapping(10).ok());
 
   std::cout << std::endl << std::endl;
 
   map.addMapping(10, {10, "10"});
 
-  EXPECT_EQ(map.getMapping(10).value()._lastScanKey, "10");
+  EXPECT_EQ(map.getMapping(10).value().lastScanKey, "10");
   EXPECT_FALSE(map.getMapping(1).ok());
 }
 
