@@ -261,7 +261,6 @@ class ReplManager {
  private:
   void changeReplState(const StoreMeta& storeMeta, bool persist);
   void changeReplStateInLock(const StoreMeta&, bool persist);
-  string genRunId(uint32_t);
 
   Expected<uint32_t> maxDumpFileSeq(uint32_t storeId);
 #ifdef BINLOG_V1

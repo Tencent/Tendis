@@ -16,6 +16,7 @@
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 static Expected<std::string> recordList2Aof(const std::list<Record>& list) {
@@ -653,7 +654,9 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
 
 void ReplManager::supplyFullPsyncRoutine(
   std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
-  client->writeData("+FULLRESYNC " + genRunId(40) + " 0\r\n");
+  char runId[CONFIG_RUN_ID_SIZE + 1];
+  redis_port::getRandomHexChars(runId, CONFIG_RUN_ID_SIZE);
+  client->writeData("+FULLRESYNC " + string(runId) + " 0\r\n");
 
   // send no keys rdb to client
   unsigned char rdbData[] = {
@@ -846,18 +849,4 @@ void ReplManager::supplyFullPsyncRoutine(
 
   return;
 }
-
-static const char runIdArray[] =
-  "abcdef"
-  "0123456789";
-
-string ReplManager::genRunId(uint32_t length) {
-  string ss;
-  for (uint32_t i = 0; i <= length; i++) {
-    auto tmp = random() % (sizeof(runIdArray) / sizeof(runIdArray[0]));
-    ss += runIdArray[tmp];
-  }
-  return ss;
-}
-
 }  // namespace tendisplus
