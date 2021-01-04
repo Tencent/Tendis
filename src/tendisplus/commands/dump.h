@@ -178,7 +178,7 @@ struct IncrMetaHash {
   }
 };
 
-bool operator==(const struct IncrMeta& X, const struct IncrMeta& Y) {
+inline bool operator==(const struct IncrMeta& X, const struct IncrMeta& Y) {
   return std::hash<std::string>()(X._key) == std::hash<std::string>()(Y._key);
 }
 
