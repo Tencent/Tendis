@@ -337,6 +337,10 @@ unsigned int lzf_decompress(const void* const in_data,
                             unsigned int in_len,
                             void* out_data,
                             unsigned int out_len);
+
+void strmapchars(std::string& s, const char *from, const char *to,
+                 size_t setlen);
+
 }  // namespace redis_port
 }  // namespace tendisplus
 

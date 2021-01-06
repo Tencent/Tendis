@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include "tendisplus/script/lua_state.h"
-#include "tendisplus/script/redis_helper.h"
+#include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
 
 extern "C" {
@@ -888,7 +888,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
       t = lua_type(lua, -1);
       if (t == LUA_TSTRING) {
         string err = lua_tostring(lua, -1);
-        strmapchars(err, "\r\n", "  ", 2);
+        redis_port::strmapchars(err, "\r\n", "  ", 2);
         lua_pop(lua, 2);
         // return Command::fmtBulk("-" + err + "\r\n");
         return "-" + err + "\r\n";
@@ -900,7 +900,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
       t = lua_type(lua, -1);
       if (t == LUA_TSTRING) {
         string ok = lua_tostring(lua, -1);
-        strmapchars(ok, "\r\n", "  ", 2);
+        redis_port::strmapchars(ok, "\r\n", "  ", 2);
         lua_pop(lua, 2);
         // return Command::fmtBulk("+" + ok + "\r\n");
         return Command::fmtBulk(ok);
