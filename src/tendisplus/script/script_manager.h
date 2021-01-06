@@ -21,6 +21,7 @@ class ScriptManager {
   explicit ScriptManager(std::shared_ptr<ServerEntry> svr);
   Status startup(uint32_t luaStateNum);
   Status stopStore(uint32_t storeId);
+  void cron();
   void stop();
   Expected<std::string> run(Session* sess);
   Expected<std::string> setLuaKill();

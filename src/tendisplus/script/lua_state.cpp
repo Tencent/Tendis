@@ -678,7 +678,7 @@ LuaState::LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id) {
 }
 
 LuaState::~LuaState() {
-  // todo delete _lua ???
+  lua_close(_lua);
 }
 
 /* Initialize the scripting environment.

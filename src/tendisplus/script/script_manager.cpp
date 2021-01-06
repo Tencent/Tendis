@@ -34,12 +34,15 @@ Expected<std::string> ScriptManager::run(Session* sess) {
     } else {
       uint32_t id = _idGen.fetch_add(1);
       luaState = std::make_shared<LuaState>(_svr, id);
+      LOG(INFO) << "new LuaState, running size:" << _luaRunningList.size()
+        << " idle size:" << _luaIdleList.size();
     }
     _luaRunningList[luaState->Id()] = luaState;
   }
   auto ret = luaState->evalCommand(sess);
   {
     std::lock_guard<std::mutex> lk(_mutex);
+    luaState->setLastEndTime(msSinceEpoch());
     // may be erased by flush()
     if (_luaRunningList.find(luaState->Id()) != _luaRunningList.end()) {
       _luaIdleList.push_back(luaState);
@@ -99,6 +102,7 @@ Expected<std::string> ScriptManager::flush() {
 }
 
 Status ScriptManager::startup(uint32_t luaStateNum) {
+  luaStateNum = 0;  // NOTE(takenliu): new it when needed.
   LOG(INFO) << "ScriptManager::startup begin, luaStateNum:" << luaStateNum;
   for (uint32_t i = 0; i < luaStateNum; ++i) {
     uint32_t id = _idGen.fetch_add(1);
@@ -106,6 +110,20 @@ Status ScriptManager::startup(uint32_t luaStateNum) {
     _luaIdleList.push_back(s);
   }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+void ScriptManager::cron() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  uint64_t cur = msSinceEpoch();
+  static uint64_t maxIdelTime = 60*60*1000;  // 1 hour
+  for (auto iter = _luaIdleList.begin(); iter != _luaIdleList.end(); iter++) {
+    if (cur - iter->get()->lastEndTime() > maxIdelTime) {
+      LOG(INFO) << "delete LuaState, running size:" << _luaRunningList.size()
+                << " idle size:" << _luaIdleList.size()
+                << " idletime:" << cur - iter->get()->lastEndTime();
+      iter = _luaIdleList.erase(iter);
+    }
+  }
 }
 
 Status ScriptManager::stopStore(uint32_t storeId) {

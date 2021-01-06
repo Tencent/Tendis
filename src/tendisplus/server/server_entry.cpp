@@ -1360,6 +1360,10 @@ void ServerEntry::serverCron() {
       }
     }
 
+    run_with_period(1000) {
+      _scriptMgr->cron();
+    }
+
     cronLoop++;
   }
 }

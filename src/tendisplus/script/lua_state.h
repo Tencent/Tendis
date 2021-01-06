@@ -38,6 +38,12 @@ class LuaState {
   bool luaWriteDirty() {
     return lua_write_dirty;
   }
+  void setLastEndTime(uint64_t val) {
+    lua_time_end = val;
+  }
+  uint64_t lastEndTime() {
+    return lua_time_end;
+  }
 
  private:
   void updateFakeClient();
@@ -66,6 +72,7 @@ class LuaState {
   std::unique_ptr<LocalSessionGuard> _fakeSess;
   int inuse = 0;   /* Recursive calls detection. */
   uint64_t lua_time_start;  // ms
+  uint64_t lua_time_end;  // ms
   int lua_timedout;  // True if we reached the time limit for script execution.
   std::atomic<int> lua_write_dirty;  // True if a write command was called
                           // during the execution of the current script.
