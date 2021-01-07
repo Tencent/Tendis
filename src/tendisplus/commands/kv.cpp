@@ -75,8 +75,7 @@ Expected<std::string> setGeneric(Session* sess,
       return eValue.status();
     }
 
-    needExpire =
-      (!Command::noExpire() && targetTtl != 0 && currentTs >= targetTtl);
+    needExpire = (targetTtl != 0 && currentTs >= targetTtl);
     bool exists =
       (eValue.status().code() == ErrorCodes::ERR_OK) && (!needExpire);
     if ((flags & REDIS_SET_NX && exists) ||
@@ -86,16 +85,14 @@ Expected<std::string> setGeneric(Session* sess,
     }
   }
 
-  // NOTE(vinchen):
-  // For performance, set() directly without get() is more fast.
-  // But because of RT_DATA_META, the string set is possible to
-  // override other meta type. It would lead to some garbage in rocksdb.
-  // In fact, because of the redis layer, the override problem would
-  // never happen. So keep the set() directly.
+  /** NOTE(vinchen):
+   * For better performance, set() directly without get() is more fast.
+   * But because of RT_DATA_META, the string set is possible to
+   * override other meta type. It would lead to some garbage in rocksdb.
+   * In fact, because of the redis layer in hybrid storage, the override problem
+   * would never happen. So keep the set() directly when `checkKeyTypeForSet` is
+   * false. */
   if (checkType) {
-    // if you want to open this options, checkkeytypeforset on
-
-    // only check the recordtype, not care about the ttl
     Expected<RecordValue> eValue = store->getKV(key, txn);
     if (eValue.ok()) {
       if (eValue.value().getRecordType() != RecordType::RT_KV) {
@@ -108,8 +105,10 @@ Expected<std::string> setGeneric(Session* sess,
     }
   }
 
-  if (!notExist &&
-      (needExpire || diffType || (!Command::noExpire() && val.getTtl() > 0))) {
+  /**
+   * Only delete key when key type is changed.
+   */
+  if (diffType) {
     auto s =
       Command::delKey(sess, key.getPrimaryKey(), RecordType::RT_DATA_META);
     if (!s.ok() && s.code() != ErrorCodes::ERR_NOTFOUND) {
@@ -2145,17 +2144,15 @@ class RenameGenericCommand : public Command {
     }
     if (rv.value().getRecordType() != RecordType::RT_KV &&
         rv.value().getTtl() > 0) {
-      if (!Command::noExpire()) {
-        TTLIndex ictx(dst,
-                      rv.value().getRecordType(),
-                      sess->getCtx()->getDbId(),
-                      rv.value().getTtl());
-        if (ictx.getType() != RecordType::RT_KV) {
-          s = dptxn.value()->setKV(
-            ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
-          if (!s.ok()) {
-            return s;
-          }
+      TTLIndex ictx(dst,
+                    rv.value().getRecordType(),
+                    sess->getCtx()->getDbId(),
+                    rv.value().getTtl());
+      if (ictx.getType() != RecordType::RT_KV) {
+        s = dptxn.value()->setKV(
+          ictx.encode(), RecordValue(RecordType::RT_TTL_INDEX).encode());
+        if (!s.ok()) {
+          return s;
         }
       }
     }
