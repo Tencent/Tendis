@@ -29,6 +29,10 @@ class IndexManager {
   int tryDelExpiredKeysJob(uint32_t storeId);
   bool isRunning();
   Status stopStore(uint32_t storeId);
+  void indexScannerResize(size_t size);
+  void keyDeleterResize(size_t size);
+  size_t indexScannerSize();
+  size_t keyDeleterSize();
 
  private:
   std::unique_ptr<WorkerPool> _indexScanner;
@@ -44,6 +48,7 @@ class IndexManager {
 
   std::atomic<bool> _isRunning;
   std::shared_ptr<ServerEntry> _svr;
+  std::shared_ptr<ServerParams> _cfg;
   std::thread _runner;
   std::mutex _mutex;
 
@@ -52,13 +57,6 @@ class IndexManager {
 
   uint64_t _totalDequeue;
   uint64_t _totalEnqueue;
-
-  uint32_t _scanBatch;
-  uint32_t _scanPoolSize;
-  uint32_t _delBatch;
-  uint32_t _delPoolSize;
-  uint32_t _pauseTime;
-  const std::shared_ptr<ServerParams> _cfg;
 };
 
 }  // namespace tendisplus

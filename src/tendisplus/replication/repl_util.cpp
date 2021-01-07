@@ -57,8 +57,8 @@ Expected<BinlogResult> masterSendBinlogV2(
   bool needHeartBeart,
   std::shared_ptr<ServerEntry> svr,
   const std::shared_ptr<ServerParams> cfg) {
-  uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
-  size_t suggestBytes = svr->getParams()->bingLogSendBytes;
+  uint32_t suggestBatch = svr->getParams()->binlogSendBatch;
+  size_t suggestBytes = svr->getParams()->binlogSendBytes;
 
   LocalSessionGuard sg(svr.get());
   sg.getSession()->setArgs({"mastersendlog",
@@ -442,8 +442,8 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
                        uint64_t* newBinlogId,
                        bool* needRetry,
                        uint64_t* binlogTimeStamp) {
-  uint32_t suggestBatch = svr->getParams()->bingLogSendBatch;
-  size_t suggestBytes = svr->getParams()->bingLogSendBytes;
+  uint32_t suggestBatch = svr->getParams()->binlogSendBatch;
+  size_t suggestBytes = svr->getParams()->binlogSendBytes;
   uint32_t timeoutSecs = svr->getParams()->timeoutSecBinlogWaitRsp;
 
   LocalSessionGuard sg(svr.get());

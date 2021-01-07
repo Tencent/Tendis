@@ -328,21 +328,24 @@ ServerParams::ServerParams() {
   // Default false. Redis layer can guarantee that it's safe
   REGISTER_VARS_DIFF_NAME("checkkeytypeforsetcmd", checkKeyTypeForSet);
 
+  /* Disable parameter chunkSize because MACRO `CLUSTER_SLOTS` using everywhere
   REGISTER_VARS(chunkSize);
+   */
   REGISTER_VARS(kvStoreCount);
 
-  REGISTER_VARS(scanCntIndexMgr);
-  REGISTER_VARS(scanJobCntIndexMgr);
-  REGISTER_VARS(delCntIndexMgr);
-  REGISTER_VARS(delJobCntIndexMgr);
-  REGISTER_VARS(pauseTimeIndexMgr);
+  REGISTER_VARS_SAME_NAME(scanCntIndexMgr, nullptr, nullptr, 1, 1000000, true);
+  REGISTER_VARS_SAME_NAME(scanJobCntIndexMgr, nullptr, nullptr, 1, 200, true);
+  REGISTER_VARS_SAME_NAME(delCntIndexMgr, nullptr, nullptr, 1, 1000000, true);
+  REGISTER_VARS_SAME_NAME(delJobCntIndexMgr, nullptr, nullptr, 1, 200, true);
+  REGISTER_VARS_SAME_NAME(
+    pauseTimeIndexMgr, nullptr, nullptr, 1, INT_MAX, true);
 
   REGISTER_VARS_DIFF_NAME("proto-max-bulk-len", protoMaxBulkLen);
   REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpire);
   REGISTER_VARS_SAME_NAME(
-    maxBinlogKeepNum, nullptr, nullptr, 1, 10000000000000, true);
+    maxBinlogKeepNum, nullptr, nullptr, 1, INT64_MAX, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(slaveBinlogKeepNum);
 
@@ -365,10 +368,11 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(
     executorWorkPoolSize, nullptr, nullptr, 1, 200, false);
 
-  REGISTER_VARS(binlogRateLimitMB);
-  REGISTER_VARS(netBatchSize);
-  REGISTER_VARS(netBatchTimeoutSec);
-  REGISTER_VARS(timeoutSecBinlogWaitRsp);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogRateLimitMB);
+  // Only works on newly created connections(BlockingTcpClient)
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(netBatchSize);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(netBatchTimeoutSec);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(timeoutSecBinlogWaitRsp);
   REGISTER_VARS_SAME_NAME(incrPushThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(fullPushThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(fullReceiveThreadnum, nullptr, nullptr, 1, 200, true);
@@ -383,13 +387,16 @@ ServerParams::ServerParams() {
                      true);
   REGISTER_VARS_SAME_NAME(
     truncateBinlogNum, truncateBinlogNumCheck, nullptr, 1, INT_MAX, true);
-  REGISTER_VARS(binlogFileSizeMB);
-  REGISTER_VARS(binlogFileSecs);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSizeMB);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(binlogFileSecs);
   REGISTER_VARS_SAME_NAME(
-    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 10000000, true);
+    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 100000000, true);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-batch", binlogSendBatch);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", binlogSendBytes);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
+  REGISTER_VARS_DIFF_NAME("binlog-using-defaultCF", binlogUsingDefaultCF);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);
   REGISTER_VARS_SAME_NAME(
@@ -447,15 +454,10 @@ ServerParams::ServerParams() {
                                   migrateRateLimitMB);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-retry-num",
                                   snapShotRetryCnt);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-batch", bingLogSendBatch);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-send-bytes", bingLogSendBytes);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier",
                                   clusterMigrationBarrier);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor",
                                   clusterSlaveValidityFactor);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
-                                  binlogUsingDefaultCF);
-
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
 }
 

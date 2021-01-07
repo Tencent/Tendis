@@ -42,9 +42,9 @@ TEST(ServerParams, Common) {
   EXPECT_EQ(cfg->setVar("noargs", "abc", NULL), false);
 
   EXPECT_EQ(cfg->registerOnupdate("noargs", paramOnUpdate), false);
-  EXPECT_EQ(cfg->registerOnupdate("chunkSize", paramOnUpdate), true);
-  EXPECT_EQ(cfg->setVar("chunkSize", "300", NULL), true);
-  EXPECT_EQ(cfg->chunkSize, 300);
+  EXPECT_EQ(cfg->registerOnupdate("maxClients", paramOnUpdate), true);
+  EXPECT_EQ(cfg->setVar("maxClients", "300", NULL), true);
+  EXPECT_EQ(cfg->maxClients, 300);
   EXPECT_EQ(paramUpdateValue, 1);
 
   EXPECT_EQ(cfg->setVar("logLevel", "warNING", NULL), true);
@@ -88,7 +88,6 @@ TEST(ServerParams, Include) {
   myfile.close();
 
   myfile.open("gtest_serverparams_include2.cfg");
-  myfile << "chunkSize 200\n";
   myfile.close();
 
   const auto guard = MakeGuard([] {
@@ -102,7 +101,6 @@ TEST(ServerParams, Include) {
   EXPECT_EQ(cfg->port, 8903);
   EXPECT_EQ(cfg->logLevel, "debug");
   EXPECT_EQ(cfg->logDir, "./");
-  EXPECT_EQ(cfg->chunkSize, 200);
   EXPECT_EQ(cfg->getConfFile(), "gtest_serverparams_include1.cfg");
 }
 
@@ -264,8 +262,8 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->level0Compress, false);
   EXPECT_EQ(cfg->level0Compress, false);
 
-  EXPECT_EQ(cfg->bingLogSendBatch, 256);
-  EXPECT_EQ(cfg->bingLogSendBytes, 16 * 1024 * 1024);
+  EXPECT_EQ(cfg->binlogSendBatch, 256);
+  EXPECT_EQ(cfg->binlogSendBytes, 16 * 1024 * 1024);
 
   EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
   EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);

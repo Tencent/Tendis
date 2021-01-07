@@ -2042,6 +2042,15 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
 
+  // index manager
+  sess.setArgs({"CONFIG", "SET", "scanJobCntIndexMgr", "8"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 8);
+
+  sess.setArgs({"CONFIG", "SET", "delJobCntIndexMgr", "8"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
+
   // total sleep 10s to wait thread resize ok
   sleep(10);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 8);
@@ -2051,6 +2060,8 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 8);
   EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 8);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 8);
+  EXPECT_EQ(svr->getIndexMgr()->indexScannerSize(), 8);
+  EXPECT_EQ(svr->getIndexMgr()->keyDeleterSize(), 8);
 
   sess.setArgs({"CONFIG", "SET", "fullPushThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
@@ -2080,6 +2091,15 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
 
+  // index manager
+  sess.setArgs({"CONFIG", "SET", "scanJobCntIndexMgr", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
+
+  sess.setArgs({"CONFIG", "SET", "delJobCntIndexMgr", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
+
   // total sleep 10s to wait thread resize ok
   sleep(10);
   EXPECT_EQ(svr->getReplManager()->incrPusherSize(), 1);
@@ -2089,6 +2109,8 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
   EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 1);
+  EXPECT_EQ(svr->getIndexMgr()->indexScannerSize(), 1);
+  EXPECT_EQ(svr->getIndexMgr()->keyDeleterSize(), 1);
 }
 
 TEST(Command, resizeCommand) {

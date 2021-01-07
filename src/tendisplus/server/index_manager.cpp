@@ -26,16 +26,10 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
                            const std::shared_ptr<ServerParams>& cfg)
   : _isRunning(false),
     _svr(svr),
+    _cfg(cfg),
     _scannerMatrix(std::make_shared<PoolMatrix>()),
     _deleterMatrix(std::make_shared<PoolMatrix>()),
-    _totalDequeue(0),
-    _totalEnqueue(0),
-    _scanBatch(cfg->scanCntIndexMgr),
-    _scanPoolSize(cfg->scanJobCntIndexMgr),
-    _delBatch(cfg->delCntIndexMgr),
-    _delPoolSize(cfg->delJobCntIndexMgr),
-    _pauseTime(cfg->pauseTimeIndexMgr),
-    _cfg(cfg) {
+    _totalEnqueue(0) {
   for (size_t storeId = 0; storeId < svr->getKVStoreCount(); ++storeId) {
     _scanPoints[storeId] = std::move(std::string());
     _scanJobStatus[storeId] = {false};
@@ -44,19 +38,49 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
     _scanJobCnt[storeId] = {0u};
     _delJobCnt[storeId] = {0u};
   }
+
+  _cfg->serverParamsVar("scanJobCntIndexMgr")->setUpdate([this]() {
+    indexScannerResize(_cfg->scanJobCntIndexMgr);
+  });
+  _cfg->serverParamsVar("delJobCntIndexMgr")->setUpdate([this]() {
+    keyDeleterResize(_cfg->delJobCntIndexMgr);
+  });
+}
+
+void IndexManager::indexScannerResize(size_t size) {
+  if (size > _svr->getKVStoreCount()) {
+    size = _svr->getKVStoreCount();
+  }
+  _indexScanner->resize(size);
+}
+
+void IndexManager::keyDeleterResize(size_t size) {
+  if (size > _svr->getKVStoreCount()) {
+    size = _svr->getKVStoreCount();
+  }
+
+  _keyDeleter->resize(size);
+}
+
+size_t IndexManager::indexScannerSize() {
+  return _indexScanner->size();
+}
+
+size_t IndexManager::keyDeleterSize() {
+  return _keyDeleter->size();
 }
 
 Status IndexManager::startup() {
   Status s;
 
   _indexScanner = std::make_unique<WorkerPool>("tx-idx-scan", _scannerMatrix);
-  s = _indexScanner->startup(_scanPoolSize);
+  s = _indexScanner->startup(_cfg->scanJobCntIndexMgr);
   if (!s.ok()) {
     return s;
   }
 
   _keyDeleter = std::make_unique<WorkerPool>("tx-idx-del", _deleterMatrix);
-  s = _keyDeleter->startup(_delPoolSize);
+  s = _keyDeleter->startup(_cfg->delJobCntIndexMgr);
   if (!s.ok()) {
     return s;
   }
@@ -138,6 +162,7 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
     // defalut colum_family
   }
 
+  auto scanBatch = _cfg->scanCntIndexMgr;
   // TODO(takenliu) _scanPoints has error, _expiredKeys[storeId] will be
   // pushed back twice
   while (true) {
@@ -161,7 +186,7 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
       _scanPoints[storeId].assign(record.value().encode());
       _expiredKeys[storeId].push_back(std::move(record.value()));
       _totalEnqueue++;
-      if (_expiredKeys[storeId].size() == _scanBatch) {
+      if (_expiredKeys[storeId].size() >= scanBatch) {
         break;
       }
     }
@@ -200,6 +225,7 @@ int IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
   _delJobCnt[storeId]++;
   uint32_t deletes = 0;
 
+  auto delBatch = _cfg->delCntIndexMgr;
   while (true) {
     TTLIndex index;
 
@@ -226,7 +252,7 @@ int IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
     }
 
     // break if delete a number of keys in the current store
-    if (deletes == _delBatch) {
+    if (deletes >= delBatch) {
       break;
     }
 
@@ -274,7 +300,7 @@ Status IndexManager::run() {
       scheScanExpired();
       schedDelExpired();
     }
-    std::this_thread::sleep_for(std::chrono::seconds(_pauseTime));
+    std::this_thread::sleep_for(std::chrono::seconds(_cfg->pauseTimeIndexMgr));
   }
 
   LOG(WARNING) << "index manager exiting...";

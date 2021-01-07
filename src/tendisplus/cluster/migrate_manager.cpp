@@ -99,7 +99,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     _migrateReceiverMatrix(std::make_shared<PoolMatrix>()),
     _workload(0),
     _rateLimiter(
-      std::make_unique<RateLimiter>(_cfg->binlogRateLimitMB * 1024 * 1024)) {
+      std::make_unique<RateLimiter>(_cfg->migrateRateLimitMB * 1024 * 1024)) {
   _cluster = _svr->getClusterMgr()->getClusterState();
 
   _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {

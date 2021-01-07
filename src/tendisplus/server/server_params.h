@@ -430,8 +430,8 @@ class ServerParams {
   bool level0Compress = false;
   bool level1Compress = false;
 
-  uint32_t bingLogSendBatch = 256;
-  uint32_t bingLogSendBytes = 16 * 1024 * 1024;
+  uint32_t binlogSendBatch = 256;
+  uint32_t binlogSendBytes = 16 * 1024 * 1024;
 
   uint32_t migrateSenderThreadnum = 4;
   uint32_t migrateReceiveThreadnum = 4;
