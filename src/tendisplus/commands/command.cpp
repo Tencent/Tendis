@@ -787,7 +787,7 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
       ++sess->getServerEntry()->getServerStat().keyspaceMisses;
       return eValue.status();
     }
-    // TODO(vinchen) : Should it use store->getCurrentTime() instead?
+
     uint64_t currentTs = msSinceEpoch();
     uint64_t targetTtl = eValue.value().getTtl();
     RecordType valueType = eValue.value().getRecordType();

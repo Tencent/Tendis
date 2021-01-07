@@ -147,7 +147,7 @@ Status ChunkMigrateReceiver::supplySetKV(const string& key,
   // only RT_*_META need recover, it's saved as RT_DATA_META in RecordKey
   // if RecordValue's type is RT_KV need ignore recovering.
   if (expRk.value().getRecordType() == RecordType::RT_DATA_META) {
-    if (!Command::noExpire() && expRv.value().getTtl() > 0 &&
+    if (expRv.value().getTtl() > 0 &&
         expRv.value().getRecordType() != RecordType::RT_KV) {
       // add new index entry
       TTLIndex n_ictx(expRk.value().getPrimaryKey(),
