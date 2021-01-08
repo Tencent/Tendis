@@ -18,6 +18,8 @@
 
 namespace tendisplus {
 
+#define CLUSTER_SLOTS 16384
+
 std::string toLower(const std::string&);
 
 Expected<int32_t> stol(const std::string&);
@@ -55,6 +57,8 @@ std::vector<std::string> stringSplit(const std::string& s,
                                      const std::string& delim);
 
 std::string trim(const std::string& str);
+
+Expected<std::pair<uint32_t, uint32_t>> getSlotRange(const std::string& s);
 
 #define strDelete(str, c) \
   (str).erase(std::remove((str).begin(), (str).end(), (c)), (str).end())

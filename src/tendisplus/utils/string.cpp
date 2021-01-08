@@ -260,6 +260,46 @@ std::string trim(const std::string& str) {
   return trim_left(trim_right(str));
 }
 
+/* deal with slot range args like  {1..1000} */
+Expected<std::pair<uint32_t, uint32_t>> getSlotRange(const std::string& str) {
+  uint64_t len = str.size();
+  LOG(INFO) << "range len:" << len;
+  if ((str[0] == '{') && (str[len - 1] == '}') && len >= 6) {
+    std::string rangeStr = str.substr(1, str.size() - 2);
+
+    if (rangeStr.find("..") == std::string::npos) {
+      return {ErrorCodes::ERR_CLUSTER, "Invalid range input withot .."};
+    }
+    auto vs = stringSplit(rangeStr, "..");
+
+    if (vs.size() != 2) {
+      return {ErrorCodes::ERR_CLUSTER, "no find start and end position"};
+    }
+
+    auto startSlot = ::tendisplus::stoul(vs[0]);
+    auto endSlot = ::tendisplus::stoul(vs[1]);
+
+    if (!startSlot.ok() || !endSlot.ok()) {
+      return {ErrorCodes::ERR_CLUSTER, "Invalid slot position range"};
+    }
+
+    uint32_t start = startSlot.value();
+    uint32_t end = endSlot.value();
+
+    if (start >= end) {
+      return {ErrorCodes::ERR_CLUSTER,
+              "start position should be less than end"};
+    }
+
+    if (end >= CLUSTER_SLOTS) {
+      return {ErrorCodes::ERR_CLUSTER,
+              "Invalid slot position " + std::to_string(end)};
+    }
+    return std::make_pair(start, end);
+  } else {
+    return {ErrorCodes::ERR_CLUSTER, "Invalid slot range string"};
+  }
+}
 std::string& replaceAll(std::string& str,  // NOLINT
                         const std::string& old_value,
                         const std::string& new_value) {

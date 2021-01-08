@@ -443,23 +443,19 @@ bool MigrateManager::slotsInTask(const SlotsBitmap& bitMap) {
 std::string MigrateSendTask::toString() {
   std::lock_guard<std::mutex> lk(_mutex);
   std::stringstream ss;
-  int64_t snapshotTime = 0;
-  uint64_t binlogTime = 0;
-  auto snapshotEnd = _sender->getSnapShotEndTime();
+  int64_t snapshotTime = -1;
+  int64_t binlogTime = -1;
   auto snapStart = _sender->getSnapShotStartTime();
 
   if (sendTaskTypeString(_state) == "RUNNING") {
     auto senderState = _sender->getSenderState();
     if (senderState == MigrateSenderStatus::SNAPSHOT_BEGIN) {
       snapshotTime = snapStart > 0 ? msSinceEpoch() - snapStart : -1;
-      ss << "SNAPSHOT SENDING:" << _sender->getSnapshotNum()
-         << " time:" << snapshotTime << "ms";
+      ss << "SNAPSHOT SENDING";
     } else if (senderState == MigrateSenderStatus::SNAPSHOT_DONE) {
-      binlogTime = snapshotEnd > 0 ? msSinceEpoch() - snapshotEnd : -1;
-      ss << "BINLOG SENDING:" << _sender->getBinlogNum()
-         << " time:" << binlogTime << "ms";
+      ss << "BINLOG SENDING";
     } else if (senderState == MigrateSenderStatus::BINLOG_DONE) {
-      ss << "BINLOGDONE:";
+      ss << "BINLOGDONE";
     } else if (senderState == MigrateSenderStatus::LASTBINLOG_DONE) {
       ss << "LASTBINGLOG DONE";
     } else if (senderState == MigrateSenderStatus::METACHANGE_DONE) {
@@ -469,12 +465,15 @@ std::string MigrateSendTask::toString() {
     ss << "NONE";
   }
 
-  if (snapshotTime == 0) {
+  auto snapshotEnd = _sender->getSnapShotEndTime();
+  if (snapshotTime == -1 && snapshotEnd > 0) {
     snapshotTime = snapshotEnd - snapStart;
   }
   auto binlogEnd = _sender->getBinlogEndTime();
-  if (binlogTime == 0) {
-    binlogTime = binlogEnd - snapshotEnd;
+
+  if (snapStart > 0 && snapshotEnd > 0) {
+    binlogTime =
+      binlogEnd > 0 ? binlogEnd - snapshotEnd : msSinceEpoch() - snapshotEnd;
   }
 
   std::string runningState = ss.str();
@@ -487,7 +486,7 @@ std::string MigrateSendTask::toString() {
   if (endLockTime > 0) {
     lockTime = endLockTime - startLockTime;
   } else {
-    lockTime = startLockTime > 0 ? sinceEpoch() - startLockTime : -1;
+    lockTime = startLockTime > 0 ? msSinceEpoch() - startLockTime : -1;
   }
 
   uint64_t startTime = _sender->getTaskStartTime();
@@ -500,7 +499,9 @@ std::string MigrateSendTask::toString() {
       << "beginTime: " << beginTime << "\n"
       << "runTime: " << taskTime << "ms \n"
       << "snapShotTime: " << snapshotTime << "ms \n"
+      << "snapshotKeys: " << _sender->getSnapshotNum() << "\n"
       << "binlogTime: " << binlogTime << "ms \n"
+      << "binlogNum:" << _sender->getBinlogNum() << "\n"
       << "lockTime: " << lockTime << "ms \n"
       << "binlogDelay: " << _sender->getBinlogDelay() << "ms \n"
       << "State:" << sendTaskTypeString(_state) << "\n"
@@ -512,14 +513,12 @@ std::string MigrateSendTask::toString() {
 std::string MigrateReceiveTask::toString() {
   std::lock_guard<std::mutex> lk(_mutex);
   std::stringstream ss1;
-  int64_t snapshotTime = 0;
-  int64_t binlogTime = 0;
-  uint64_t snapshotEnd = _receiver->getSnapShotEndTime();
+  int64_t snapshotTime = -1;
+  int64_t binlogTime = -1;
   uint64_t snapStart = _receiver->getSnapShotStartTime();
-  uint64_t binlogEnd = _receiver->getBinlogEndTime();
-
   uint64_t startTime = _receiver->getTaskStartTime();
   auto taskTime = startTime > 0 ? msSinceEpoch() - startTime : 0;
+  int64_t snapshotEnd = _receiver->getSnapShotEndTime();
 
   if (_state == MigrateReceiveState::RECEIVE_SNAPSHOT) {
     snapshotTime =
@@ -527,18 +526,20 @@ std::string MigrateReceiveTask::toString() {
     ss1 << "SNAPSHOT RECEIVING:" << _receiver->getSnapshotNum()
         << " runtime:" << snapshotTime << "ms";
   } else if (_state == MigrateReceiveState::RECEIVE_BINLOG) {
-    binlogTime = snapshotEnd > 0 ? msSinceEpoch() - snapshotEnd : -1;
+    binlogTime = msSinceEpoch() - snapshotEnd;
     ss1 << "BINLOG RECEVING runtime:" << binlogTime << "ms";
   } else {
     ss1 << "NONE";
   }
 
-  if (snapshotTime == 0) {
+  if (snapshotEnd > 0) {
     snapshotTime = snapshotEnd - snapStart;
   }
-  if (binlogTime == 0) {
+  uint64_t binlogEnd = _receiver->getBinlogEndTime();
+  if (binlogEnd > 0) {
     binlogTime = binlogEnd - snapshotEnd;
   }
+
   std::string runningState = ss1.str();
   std::string taskState = receTaskTypeString(_state);
   auto beginTime = snapshotTime > 0 ? _receiver->getStartTime() : "-1";
@@ -551,6 +552,7 @@ std::string MigrateReceiveTask::toString() {
       << "beginTime: " + beginTime << "\n"
       << "runTime: " << taskTime << "ms \n"
       << "snapShotTime: " << snapshotTime << "ms \n"
+      << "snapshotKeys: " << _receiver->getSnapshotNum() << "\n"
       << "binlogTime: " << binlogTime << "ms \n"
       << "State: " << taskState << "\n"
       << "RunningState: " << runningState << "\n"
