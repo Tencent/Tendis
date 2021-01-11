@@ -177,7 +177,6 @@ set(WARN_C_CXX
 -Werror=uninitialized \
 -Werror=unused-function \
 -Werror=unused-label \
--Werror=unused-result \
 -Werror=unused-value \
 -Werror=unused-variable \
 -Werror=write-strings")

@@ -1,0 +1,66 @@
+name: Tendis-build-CI
+
+# Controls when the action will run. 
+on: 
+  pull_request:
+    branches: [dev-2.2, master]
+  push:
+    branches: [dev-2.2, master, feat-Actions-CI]
+#  schedule:
+#    - cron: ""
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:   
+  cpplint-check:
+    name: cpplint check
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2 
+        with:
+          fetch-depth: 2
+      - name: prepare env
+        run: |
+          python -m pip install --upgrade pip
+          pip install cpplint
+          export PATH=$PATH:~/.local/bin/
+          cpplint --version
+      - name: lint
+        run: |
+          export PATH=$PATH:~/.local/bin/
+          files=`git diff --name-only HEAD HEAD~1`
+          echo "$files" | while read file
+          do
+            if [[ $file =~ \.cc$ || $file =~ \.h$ || $file =~ \.hpp$ || $file =~ \.cpp$ ]]; then
+              if [[ -f $file ]]; then
+                if [[ $file =~ ^src/tendisplus/tools/ldb_ || $file =~ src/tendisplus/include/optional.h ]]; then
+                  echo "cpplint skip $file"
+                  continue
+                else
+                  echo "cpplint --filter=\"-runtime/reference\" $file"
+                  cpplint --filter="-runtime/reference" $file
+                  if [[ $? -ne 0 ]]; then
+                      echo "Run cpplint against $file failed..."
+                      exit 1
+                  fi
+                fi
+              fi
+            fi
+          done
+
+  build:
+    needs: [cpplint-check]
+    name: build
+    runs-on: ubuntu-18.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - name: init submodules
+        run: | 
+          git submodule update --init --recursive
+      - name: build Tendis
+        run: |
+          mkdir build && cd build
+          cmake ..
+          cmake --build . -j2

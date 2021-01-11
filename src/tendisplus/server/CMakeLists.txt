@@ -61,7 +61,4 @@ if(CMAKE_COMPILER_IS_GNUCC)
 else()
 	target_link_libraries(tendisplus commands server_params server ${SYS_LIBS})
 	set_target_properties(tendisplus PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
-
-	target_link_libraries(tendisplus_static commands server_params server ${SYS_LIBS})
-	set_target_properties(tendisplus_static PROPERTIES LINK_FLAGS "/WHOLEARCHIVE:commands")
 endif()
