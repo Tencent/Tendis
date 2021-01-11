@@ -423,7 +423,8 @@ start_server {tags {"scripting"}} {
         catch {r ping} e
         assert_match {PONG} $e
         catch {r script kill} e
-        assert_match {UNKILLABLE*} $e
+        #assert_match {UNKILLABLE*} $e
+        assert_match {OK} $e
         catch {r ping} e
         assert_match {PONG} $e
     }

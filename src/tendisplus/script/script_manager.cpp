@@ -5,123 +5,124 @@
 
 #include <memory>
 #include <string>
+#include <shared_mutex>
 #include "tendisplus/script/script_manager.h"
 
 namespace tendisplus {
 
 ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
   :_svr(svr),
-   _idGen(0) {
+   _luaKill(false),
+   _stopped(false) {
 }
 
 Expected<std::string> ScriptManager::run(Session* sess) {
-  if (lua_kill) {
-    if (_luaRunningList.size() > 0) {
-      LOG(WARNING) << "script kill not finished:" << _luaRunningList.size();
-      return {ErrorCodes::ERR_LUA, "script kill not finished."};
-    } else {
-      std::lock_guard<std::mutex> lk(_mutex);
-      LOG(WARNING) << "script kill all finished.";
-      lua_kill = false;
+  // NOTE(takenliu):
+  // _mapLuaState read use read_lock or write_lock of _mutex,
+  //              write use write_lock of _mutex
+  // lua_state::running read use write_lock of _mutex,
+  //                    write use read_lock of _mutex,
+  //                    because only one thread will write it.
+  if (_luaKill) {
+    std::unique_lock<std::shared_timed_mutex> lock(_mutex);
+    for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
+         ++iter) {
+      if (iter->second->isRunning()) {
+        LOG(WARNING) << "script kill or flush not finished:"
+          << _mapLuaState.size();
+        return {ErrorCodes::ERR_LUA, "script kill not finished."};
+      }
+    }
+    LOG(WARNING) << "script kill or flush all finished.";
+    _luaKill = false;
+  }
+  std::shared_ptr<LuaState> luaState = nullptr;
+  uint64_t threadid = getCurThreadId();
+  {
+    std::shared_lock<std::shared_timed_mutex> lock(_mutex);
+    auto iter = _mapLuaState.find(threadid);
+    if (iter != _mapLuaState.end()) {
+      luaState = iter->second;
+      luaState->setRunning(true);
     }
   }
-  std::shared_ptr<LuaState> luaState;
-  {
-    std::lock_guard<std::mutex> lk(_mutex);
-    if (_luaIdleList.size() > 0) {
-      luaState = _luaIdleList.front();
-      _luaIdleList.pop_front();
-    } else {
-      uint32_t id = _idGen.fetch_add(1);
-      luaState = std::make_shared<LuaState>(_svr, id);
-      LOG(INFO) << "new LuaState, running size:" << _luaRunningList.size()
-        << " idle size:" << _luaIdleList.size();
-    }
-    _luaRunningList[luaState->Id()] = luaState;
+  if (luaState == nullptr) {
+    luaState = std::make_shared<LuaState>(_svr, threadid);
+    luaState->setRunning(true);
+    std::unique_lock<std::shared_timed_mutex> lock(_mutex);
+    _mapLuaState[threadid] = luaState;
+    LOG(INFO) << "new LuaState, threadid:" << threadid
+      << " _mapLuaState size:" << _mapLuaState.size();
   }
   auto ret = luaState->evalCommand(sess);
   {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::shared_lock<std::shared_timed_mutex> lock(_mutex);
     luaState->setLastEndTime(msSinceEpoch());
-    // may be erased by flush()
-    if (_luaRunningList.find(luaState->Id()) != _luaRunningList.end()) {
-      _luaIdleList.push_back(luaState);
-      _luaRunningList.erase(luaState->Id());
-    }
-    if (_luaIdleList.size() + _luaRunningList.size()
-      > _svr->getParams()->executorThreadNum) {
-      LOG(WARNING) << "luaState too much,_luaIdleList:" << _luaIdleList.size()
-        << " _luaRunningList:" << _luaRunningList.size()
-        << " executorThreadNum:" << _svr->getParams()->executorThreadNum;
-    }
+    luaState->setRunning(false);
   }
   return ret;
 }
 
 Expected<std::string> ScriptManager::setLuaKill() {
-  std::lock_guard<std::mutex> lk(_mutex);
-  if (_luaRunningList.size() <= 0) {
-    LOG(WARNING) << "script kill, no running script.";
-    return {ErrorCodes::ERR_LUA,
-        "-NOTBUSY No scripts in execution right now.\r\n"};
-  }
-  for (auto iter = _luaRunningList.begin(); iter != _luaRunningList.end();
-    ++iter) {
-    if (iter->second->luaWriteDirty()) {
-      LOG(WARNING) << "script kill, luaWriteDirty:" << iter->second->Id()
-        << " size:" << _luaRunningList.size();
-      return {ErrorCodes::ERR_LUA, "-UNKILLABLE Sorry the script already "
-        "executed write commands against the dataset."
-        " You can either wait the script "
-        "termination or kill the server in a hard way"
-        " using the SHUTDOWN NOSAVE command.\r\n"};
+  std::unique_lock<std::shared_timed_mutex> lock(_mutex);
+  bool someRunning = false;
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
+       ++iter) {
+    if (iter->second->isRunning()) {
+      someRunning = true;
     }
   }
-  lua_kill = true;
+  if (!someRunning) {
+    LOG(WARNING) << "script kill, no running script.";
+    return {ErrorCodes::ERR_LUA,
+            "-NOTBUSY No scripts in execution right now.\r\n"};
+  }
+
+  // NOTE(takenliu) can kill when someone is luaWriteDirty.
+
+  _luaKill = true;
   LOG(WARNING) << "script kill set ok.";
   return Command::fmtOK();
 }
 
 bool ScriptManager::luaKill() {
-  std::lock_guard<std::mutex> lk(_mutex);
-  return lua_kill;
+  return _luaKill;
 }
 
 Expected<std::string> ScriptManager::flush() {
-  std::lock_guard<std::mutex> lk(_mutex);
-  for (auto iter = _luaRunningList.begin(); iter != _luaRunningList.end();) {
-    iter->second->LuaClose();  // what will happen in lua_stat.run() ???
-    _luaIdleList.push_back(iter->second);
-    iter = _luaRunningList.erase(iter);
+  std::unique_lock<std::shared_timed_mutex> lock(_mutex);
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
+    if (iter->second->isRunning()) {
+      return {ErrorCodes::ERR_LUA,
+          "-BUSY Redis is busy running a script."
+          " You can only call SCRIPT KILL or SHUTDOWN NOSAVE.\r\n"};
+    }
   }
-  for (auto iter = _luaIdleList.begin(); iter != _luaIdleList.end(); iter++) {
-    // _luaIdleList whether need lua_close() ???
-    iter->get()->initLua(0);
+
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
+    iter->second->LuaClose();
+    iter->second->setRunning(false);
+    iter->second->initLua(0);
   }
   return {ErrorCodes::ERR_OK, ""};
 }
 
 Status ScriptManager::startup(uint32_t luaStateNum) {
-  luaStateNum = 0;  // NOTE(takenliu): new it when needed.
-  LOG(INFO) << "ScriptManager::startup begin, luaStateNum:" << luaStateNum;
-  for (uint32_t i = 0; i < luaStateNum; ++i) {
-    uint32_t id = _idGen.fetch_add(1);
-    auto s = std::make_shared<LuaState>(_svr, id);
-    _luaIdleList.push_back(s);
-  }
+  LOG(INFO) << "ScriptManager::startup begin.";
   return {ErrorCodes::ERR_OK, ""};
 }
 
 void ScriptManager::cron() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::unique_lock<std::shared_timed_mutex> lock(_mutex);
   uint64_t cur = msSinceEpoch();
   static uint64_t maxIdelTime = 60*60*1000;  // 1 hour
-  for (auto iter = _luaIdleList.begin(); iter != _luaIdleList.end(); iter++) {
-    if (cur - iter->get()->lastEndTime() > maxIdelTime) {
-      LOG(INFO) << "delete LuaState, running size:" << _luaRunningList.size()
-                << " idle size:" << _luaIdleList.size()
-                << " idletime:" << cur - iter->get()->lastEndTime();
-      iter = _luaIdleList.erase(iter);
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end(); iter++) {
+    if (!iter->second->isRunning() &&
+      cur - iter->second->lastEndTime() > maxIdelTime) {
+      LOG(INFO) << "delete LuaState, threadid:" << iter->first
+                << " idletime:" << cur - iter->second->lastEndTime()
+                << " running size:" << _mapLuaState.size();
+      iter = _mapLuaState.erase(iter);
     }
   }
 }
@@ -131,13 +132,11 @@ Status ScriptManager::stopStore(uint32_t storeId) {
 }
 
 void ScriptManager::stop() {
-  std::lock_guard<std::mutex> lk(_mutex);
   LOG(INFO) << "ScriptManager stop.";
   _stopped = true;
 }
 
 bool ScriptManager::stopped() {
-  std::lock_guard<std::mutex> lk(_mutex);
   return _stopped;
 }
 

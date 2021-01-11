@@ -44,6 +44,12 @@ class LuaState {
   uint64_t lastEndTime() {
     return lua_time_end;
   }
+  void setRunning(bool val) {
+    running = val;
+  }
+  bool isRunning() {
+    return running;
+  }
 
  private:
   void updateFakeClient();
@@ -70,6 +76,7 @@ class LuaState {
   ScriptManager* _scriptMgr;
   Session* _sess;
   std::unique_ptr<LocalSessionGuard> _fakeSess;
+  std::atomic<bool> running{false};
   int inuse = 0;   /* Recursive calls detection. */
   uint64_t lua_time_start;  // ms
   uint64_t lua_time_end;  // ms

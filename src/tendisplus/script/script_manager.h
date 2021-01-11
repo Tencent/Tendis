@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <shared_mutex>
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/script/lua_state.h"
 
@@ -32,13 +33,11 @@ class ScriptManager {
  private:
   std::shared_ptr<ServerEntry> _svr;
 
-  mutable std::mutex _mutex;
-  std::map<uint32_t, std::shared_ptr<LuaState>> _luaRunningList;
-  std::list<std::shared_ptr<LuaState>> _luaIdleList;
-  std::atomic<uint32_t> _idGen;
+  mutable std::shared_timed_mutex _mutex;
+  std::map<uint64_t, std::shared_ptr<LuaState>> _mapLuaState;
 
-  bool lua_kill;
-  bool _stopped;
+  std::atomic<bool> _luaKill;
+  std::atomic<bool> _stopped;
 };
 
 }  // namespace tendisplus
