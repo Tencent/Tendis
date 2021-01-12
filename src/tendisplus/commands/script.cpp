@@ -68,6 +68,8 @@ class ScriptCommand : public Command {
     const std::string op = toLower(args[1]);
     if (op == "kill") {
       return server->getScriptMgr()->setLuaKill();
+    } else if (op == "flush") {
+      return server->getScriptMgr()->flush();
     } else {
       return {ErrorCodes::ERR_LUA,
         "Unknown SCRIPT subcommand or wrong # of args."};

@@ -18,11 +18,8 @@ ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
 
 Expected<std::string> ScriptManager::run(Session* sess) {
   // NOTE(takenliu):
-  // _mapLuaState read use read_lock or write_lock of _mutex,
-  //              write use write_lock of _mutex
-  // lua_state::running read use write_lock of _mutex,
-  //                    write use read_lock of _mutex,
-  //                    because only one thread will write it.
+  //   use shared_lock in every command with high frequency,
+  //   otherwise use unique_lock with low frequency.
   if (_luaKill) {
     std::unique_lock<std::shared_timed_mutex> lock(_mutex);
     for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
@@ -91,7 +88,8 @@ bool ScriptManager::luaKill() {
 
 Expected<std::string> ScriptManager::flush() {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
+    iter++) {
     if (iter->second->isRunning()) {
       return {ErrorCodes::ERR_LUA,
           "-BUSY Redis is busy running a script."
@@ -99,12 +97,13 @@ Expected<std::string> ScriptManager::flush() {
     }
   }
 
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
+    iter++) {
     iter->second->LuaClose();
     iter->second->setRunning(false);
     iter->second->initLua(0);
   }
-  return {ErrorCodes::ERR_OK, ""};
+  return Command::fmtOK();
 }
 
 Status ScriptManager::startup(uint32_t luaStateNum) {
@@ -116,13 +115,15 @@ void ScriptManager::cron() {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
   uint64_t cur = msSinceEpoch();
   static uint64_t maxIdelTime = 60*60*1000;  // 1 hour
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end(); iter++) {
+  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
     if (!iter->second->isRunning() &&
       cur - iter->second->lastEndTime() > maxIdelTime) {
       LOG(INFO) << "delete LuaState, threadid:" << iter->first
                 << " idletime:" << cur - iter->second->lastEndTime()
                 << " running size:" << _mapLuaState.size();
       iter = _mapLuaState.erase(iter);
+    } else {
+      iter++;
     }
   }
 }
