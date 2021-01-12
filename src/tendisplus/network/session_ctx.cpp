@@ -8,6 +8,7 @@
 #include <list>
 #include <vector>
 
+#include "tendisplus/commands/command.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
@@ -93,6 +94,7 @@ void SessionCtx::setArgsBrief(const std::vector<std::string>& v) {
 void SessionCtx::clearRequestCtx() {
   std::lock_guard<std::mutex> lk(_mutex);
   _txnMap.clear();
+
   _argsBrief.clear();
   _timestamp = -1;
   _version = -1;
@@ -107,6 +109,7 @@ void SessionCtx::clearRequestCtx() {
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
+  std::lock_guard<std::mutex> lk(_mutex);
   Transaction* txn = nullptr;
   if (_txnMap.count(kvstore->dbId()) > 0) {
     txn = _txnMap[kvstore->dbId()].get();
@@ -122,8 +125,28 @@ Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
   return txn;
 }
 
+Expected<uint64_t> SessionCtx::commitTransaction(Transaction* txn) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  INVARIANT_D(_txnMap.count(txn->getKVStoreId()) > 0);
+  INVARIANT_D(_txnMap[txn->getKVStoreId()].get() == txn);
+  auto eCmt = txn->commit();
+  if (!eCmt.ok()) {
+    return eCmt.status();
+  }
+  if (_txnMap.count(txn->getKVStoreId()) > 0
+    && _txnMap[txn->getKVStoreId()].get() == txn) {
+    _txnMap.erase(txn->getKVStoreId());
+  } else {
+    LOG(ERROR) << "what happend? has:" << _txnMap.count(txn->getKVStoreId())
+      << " addr1:" << _txnMap[txn->getKVStoreId()].get()
+      << " addr2:" << txn;
+  }
+  return eCmt;
+}
+
 Status SessionCtx::commitAll(const std::string& cmd) {
   std::lock_guard<std::mutex> lk(_mutex);
+
   Status s;
   for (auto& txn : _txnMap) {
     Expected<uint64_t> exptCommit = txn.second->commit();

@@ -262,7 +262,8 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
   arr->push_back(0);
 
   // NOTE(vinchen): version of key, temporarily useless
-  INVARIANT_D(_version == 0);
+  // delSubkeysRange use _version=UINT64_MAX as upper_bound
+  INVARIANT_D(_version == 0 || _version == UINT64_MAX);
   auto v = varintEncode(_version);
   arr->insert(arr->end(), v.begin(), v.end());
 }

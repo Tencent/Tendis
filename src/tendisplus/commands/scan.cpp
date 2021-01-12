@@ -103,11 +103,10 @@ class ScanGenericCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), getRcdType(), key, "");
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     std::string name = getName();
     if (name == "zscanbyscore") {
@@ -121,7 +120,7 @@ class ScanGenericCommand : public Command {
       if (zslParseRange(cursor.c_str(), maxscore.c_str(), &range) != 0) {
         return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
       }
-      auto arr = sl.scanByScore(range, 0, count + 1, false, txn.get());
+      auto arr = sl.scanByScore(range, 0, count + 1, false, ptxn.value());
       if (!arr.ok()) {
         return arr.status();
       }
@@ -143,7 +142,7 @@ class ScanGenericCommand : public Command {
 
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
-    auto batch = Command::scan(fake.prefixPk(), cursor, count, txn.get());
+    auto batch = Command::scan(fake.prefixPk(), cursor, count, ptxn.value());
     if (!batch.ok()) {
       return batch.status();
     }

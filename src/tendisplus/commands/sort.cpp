@@ -87,11 +87,10 @@ class SortCommand : public Command {
       return byRv.status();
     }
     auto byStore = expdb.value().store;
-    auto byExptxn = byStore->createTransaction(sess);
+    auto byExptxn = sess->getCtx()->createTransaction(byStore);
     if (!byExptxn.ok()) {
       return byExptxn.status();
     }
-    std::unique_ptr<Transaction> ROTxn = std::move(byExptxn.value());
 
     if (fieldKey.size() != 0) {
       RecordKey hashRk(expdb.value().chunkId,
@@ -99,7 +98,7 @@ class SortCommand : public Command {
                        RecordType::RT_HASH_ELE,
                        metaKey,
                        fieldKey);
-      auto hashVal = byStore->getKV(hashRk, ROTxn.get());
+      auto hashVal = byStore->getKV(hashRk, byExptxn.value());
       if (!hashVal.ok()) {
         return hashVal.status();
       }
@@ -107,7 +106,7 @@ class SortCommand : public Command {
     } else {
       RecordKey kvRk(
         expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, metaKey, "");
-      auto kvVal = byStore->getKV(kvRk, ROTxn.get());
+      auto kvVal = byStore->getKV(kvRk, byExptxn.value());
       if (!kvVal.ok()) {
         return kvVal.status();
       }
@@ -326,11 +325,10 @@ class SortCommand : public Command {
     std::vector<Element> records;
     records.reserve(veclen);
 
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     if (keyType == RecordType::RT_LIST_META) {
       uint64_t pos(0), stop(0);
@@ -360,7 +358,7 @@ class SortCommand : public Command {
                         RecordType::RT_LIST_ELE,
                         key,
                         std::to_string(pos));
-        Expected<RecordValue> expRv = kvstore->getKV(subRk, txn.get());
+        Expected<RecordValue> expRv = kvstore->getKV(subRk, ptxn.value());
         if (!expRv.ok()) {
           return expRv.status();
         }
@@ -368,7 +366,7 @@ class SortCommand : public Command {
         pos += sign;
       }
     } else if (keyType == RecordType::RT_SET_META) {
-      auto cursor = txn->createDataCursor();
+      auto cursor = ptxn.value()->createDataCursor();
       RecordKey fakeRk = {expdb.value().chunkId,
                           pCtx->getDbId(),
                           RecordType::RT_SET_ELE,
@@ -396,7 +394,7 @@ class SortCommand : public Command {
         pos = start;
         rangeLen = veclen;
       }
-      auto arr = sl->scanByRank(pos, rangeLen, desc, txn.get());
+      auto arr = sl->scanByRank(pos, rangeLen, desc, ptxn.value());
       if (!arr.ok()) {
         return arr.status();
       }
@@ -557,20 +555,25 @@ class SortCommand : public Command {
       if (!addDb.ok()) {
         return addDb.status();
       }
+      auto addStore = addDb.value().store;
+      auto addPtxn = sess->getCtx()->createTransaction(addStore);
+      if (!addPtxn.ok()) {
+        return addPtxn.status();
+      }
+
       auto expDone = Command::delKeyChkExpire(
-        sess, args[storeKeyIndex], RecordType::RT_DATA_META);
+        sess, args[storeKeyIndex], RecordType::RT_DATA_META, addPtxn.value());
       if (!expDone.ok()) {
         return expDone.status();
       }
       if (result.size() == 0) {
+        auto expCmt = sess->getCtx()->commitTransaction(addPtxn.value());
+        if (!expCmt.ok()) {
+          return expCmt.status();
+        }
         return Command::fmtZero();
       }
-      auto addStore = addDb.value().store;
-      auto addPtxn = addStore->createTransaction(sess);
-      if (!addPtxn.ok()) {
-        return addPtxn.status();
-      }
-      std::unique_ptr<Transaction> addTxn = std::move(addPtxn.value());
+
       RecordKey metaRk(addDb.value().chunkId,
                        pCtx->getDbId(),
                        RecordType::RT_LIST_META,
@@ -586,7 +589,7 @@ class SortCommand : public Command {
                         metaRk.getPrimaryKey(),
                         std::to_string(idx++));
         RecordValue subRv(x, RecordType::RT_LIST_ELE, -1);
-        Status s = addStore->setKV(subRk, subRv, addTxn.get());
+        Status s = addStore->setKV(subRk, subRv, addPtxn.value());
         if (!s.ok()) {
           return s;
         }
@@ -596,12 +599,12 @@ class SortCommand : public Command {
                                  RecordValue(lm.encode(),
                                              RecordType::RT_LIST_META,
                                              pCtx->getVersionEP()),
-                                 addTxn.get());
+                                 addPtxn.value());
       if (!s.ok()) {
         return s;
       }
 
-      auto expCmt = addTxn->commit();
+      auto expCmt = sess->getCtx()->commitTransaction(addPtxn.value());
       if (!expCmt.ok()) {
         return expCmt.status();
       }

@@ -270,7 +270,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   sess->getCtx()->setArgsBrief(sess->getArgs());
   it->second->incrCallTimes();
   auto now = nsSinceEpoch();
-  auto guard = MakeGuard([it, now, sess] {
+  auto guard = MakeGuard([it, now, sess, commandName] {
     sess->getCtx()->clearRequestCtx();
     auto duration = nsSinceEpoch() - now;
     it->second->incrNanos(duration);
@@ -329,46 +329,35 @@ Status Command::delKeyPessimisticInLock(Session* sess,
   if (!expdb.ok()) {
     return expdb.status();
   }
-
+  // NOTE(takenliu): use kvstore->createTransaction interface,
+  //   and commit in this function.
   PStore kvstore = expdb.value().store;
-  uint64_t totalCount = 0;
-  const uint32_t batchSize = 2048;
-  while (true) {
-    auto ptxn = kvstore->createTransaction(sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<uint32_t> deleteCount = partialDelSubKeys(
-      sess, storeId, batchSize, mk, valueType, false, txn.get());
-    if (!deleteCount.ok()) {
-      return deleteCount.status();
-    }
-    totalCount += deleteCount.value();
-    if (deleteCount.value() == batchSize) {
-      continue;
-    }
-    TEST_SYNC_POINT_CALLBACK("delKeyPessimistic::TotalCount", &totalCount);
-    ptxn = kvstore->createTransaction(sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    txn = std::move(ptxn.value());
-    Status s = kvstore->delKV(mk, txn.get());
+  auto ptxn = kvstore->createTransaction(sess);
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+
+  Expected<string> ret = delSubkeysRange(
+          sess, storeId, mk, valueType, txn.get());
+  if (!ret.ok()) {
+    return ret.status();
+  }
+
+  Status s = kvstore->delKV(mk, txn.get());
+  if (!s.ok()) {
+    return s;
+  }
+
+  if (ictx && ictx->getType() != RecordType::RT_KV) {
+    Status s = txn->delKV(ictx->encode());
     if (!s.ok()) {
       return s;
     }
-
-    if (ictx && ictx->getType() != RecordType::RT_KV) {
-      Status s = txn->delKV(ictx->encode());
-      if (!s.ok()) {
-        return s;
-      }
-    }
-
-    Expected<uint64_t> commitStatus = txn->commit();
-    return commitStatus.status();
   }
+
+  Expected<uint64_t> commitStatus = txn->commit();
+  return commitStatus.status();
 }
 
 Expected<std::pair<std::string, std::list<Record>>> Command::scan(
@@ -434,6 +423,124 @@ Status Command::delKeyOptimismInLock(Session* sess,
   return s.status();
 }
 
+Expected<string> Command::delSubkeysRange(Session* sess,
+                                          uint32_t storeId,
+                                          const RecordKey& mk,
+                                          RecordType valueType,
+                                          Transaction* txn) {
+  Status s(ErrorCodes::ERR_OK, "");
+  auto guard = MakeGuard([&s] {
+    if (!s.ok()) {
+      INVARIANT_D(0);
+    }
+  });
+
+  auto server = sess->getServerEntry();
+  INVARIANT(server != nullptr);
+  auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId,
+                  mgl::LockMode::LOCK_NONE);
+  RET_IF_ERR_EXPECTED(expdb);
+
+  PStore kvstore = expdb.value().store;
+  INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
+  if (valueType == RecordType::RT_KV) {
+    INVARIANT_D(0);
+    return {ErrorCodes::ERR_WRONG_TYPE, ""};
+  }
+  std::vector<RecordKey> prefixes;
+  if (valueType == RecordType::RT_HASH_META) {
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_HASH_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_HASH_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
+    prefixes.push_back(start);
+    prefixes.push_back(end);
+  } else if (valueType == RecordType::RT_LIST_META) {
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_LIST_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_LIST_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
+    prefixes.push_back(start);
+    prefixes.push_back(end);
+  } else if (valueType == RecordType::RT_SET_META) {
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_SET_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_SET_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
+    prefixes.push_back(start);
+    prefixes.push_back(end);
+  } else if (valueType == RecordType::RT_ZSET_META) {
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_ZSET_S_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_ZSET_S_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
+    prefixes.push_back(start);
+    prefixes.push_back(end);
+    RecordKey startH(mk.getChunkId(),
+                     mk.getDbId(),
+                     RecordType::RT_ZSET_H_ELE,
+                     mk.getPrimaryKey(),
+                     "",
+                     0);
+    RecordKey endH(mk.getChunkId(),
+                   mk.getDbId(),
+                   RecordType::RT_ZSET_H_ELE,
+                   mk.getPrimaryKey(),
+                   "",
+                   UINT64_MAX);
+    prefixes.push_back(startH);
+    prefixes.push_back(endH);
+  } else {
+    INVARIANT_D(0);
+  }
+
+  // NOTE(takenliu): deleteRange and delete meta is not in the same txn.
+  for (uint32_t i = 0; i < prefixes.size(); i+=2) {
+    string start = prefixes[i].prefixPk();
+    string end = prefixes[i+1].prefixPk();
+    auto s = kvstore->deleteRange(start, end);
+    if (!s.ok()) {
+      LOG(ERROR) << "delSubkeysRange::deleteRange commit failed, start:"
+                 << start << " end:" << end << " err:" << s.toString();
+      return s;
+    }
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
                                               uint32_t storeId,
                                               uint32_t subCount,
@@ -463,9 +570,6 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
   if (valueType == RecordType::RT_KV) {
     s = kvstore->delKV(mk, txn);
     RET_IF_ERR(s);
-
-    auto commitStatus = txn->commit();
-    RET_IF_ERR_EXPECTED(commitStatus);
 
     return 1;
   }
@@ -545,15 +649,14 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
     RET_IF_ERR(s);
   }
 
-  Expected<uint64_t> commitStatus = txn->commit();
-  RET_IF_ERR_EXPECTED(commitStatus);
-
   return pendingDelete.size();
 }
 
+// not comitted, caller need commit itself.
 Expected<bool> Command::delKeyChkExpire(Session* sess,
                                         const std::string& key,
-                                        RecordType tp) {
+                                        RecordType tp,
+                                        Transaction* txn) {
   Expected<RecordValue> rv = Command::expireKeyIfNeeded(sess, key, tp);
   if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
     return false;
@@ -564,7 +667,7 @@ Expected<bool> Command::delKeyChkExpire(Session* sess,
   }
 
   // key exists and not expired, now we delete it
-  Status s = Command::delKey(sess, key, tp);
+  Status s = Command::delKey(sess, key, tp, txn);
   if (s.code() == ErrorCodes::ERR_NOTFOUND) {
     return false;
   }
@@ -598,7 +701,9 @@ Status Command::delKeyAndTTL(Session* sess,
   return s;
 }
 
-Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
+// not comitted, caller need commit itself.
+Status Command::delKey(Session* sess, const std::string& key, RecordType tp,
+        Transaction* txn) {
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
   SessionCtx* pCtx = sess->getCtx();
@@ -615,12 +720,7 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
   RecordKey mk(expdb.value().chunkId, pCtx->getDbId(), tp, key, "");
 
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
-    auto ptxn = kvstore->createTransaction(sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+    Expected<RecordValue> eValue = kvstore->getKV(mk, txn);
     if (!eValue.ok()) {
       return eValue.status();
     }
@@ -636,8 +736,6 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
         (valueType == RecordType::RT_ZSET_META && cnt.value() >= 1024)) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      // reset txn, it is no longer used
-      txn.reset();
       return Command::delKeyPessimisticInLock(
         sess, storeId, mk, valueType, ictx.getTTL() > 0 ? &ictx : nullptr);
     } else {
@@ -646,7 +744,7 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
                                       storeId,
                                       mk,
                                       valueType,
-                                      txn.get(),
+                                      txn,
                                       ictx.getTTL() > 0 ? &ictx : nullptr);
       if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
         continue;
@@ -659,6 +757,7 @@ Status Command::delKey(Session* sess, const std::string& key, RecordType tp) {
   return {ErrorCodes::ERR_INTERNAL, "not reachable"};
 }
 
+// NOTE(takenliu) txn is committed in this function.
 Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
                                                  const std::string& key,
                                                  RecordType tp,
@@ -673,6 +772,10 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
   RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
   PStore kvstore = expdb.value().store;
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
+    // NOTE(takenliu) expireKeyIfNeeded don't use txn from params,
+    //   because it need rewrite codes too much.
+    //   so, we need new txn and commit txn in this function,
+    //   and then, we can't use sess->createTransaction
     auto ptxn = kvstore->createTransaction(sess);
     if (!ptxn.ok()) {
       return ptxn.status();
@@ -715,8 +818,6 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     if (cnt.value() >= 2048) {
       LOG(INFO) << "bigkey delete:" << hexlify(mk.getPrimaryKey())
                 << ",rcdType:" << rt2Char(valueType) << ",size:" << cnt.value();
-      // reset txn, it is no longer used
-      txn.reset();
       Status s =
         Command::delKeyPessimisticInLock(sess, storeId, mk, valueType, &ictx);
       if (s.ok()) {
@@ -727,14 +828,14 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     } else {
       Status s = Command::delKeyOptimismInLock(
         sess, storeId, mk, valueType, txn.get(), &ictx);
-      if (s.code() == ErrorCodes::ERR_COMMIT_RETRY && i != RETRY_CNT - 1) {
-        continue;
-      }
-      if (s.ok()) {
-        return {ErrorCodes::ERR_EXPIRED, ""};
-      } else {
+      if (!s.ok()) {
         return s;
       }
+      auto eCmt = txn.get()->commit();
+      if (!eCmt.ok()) {
+        return eCmt.status();
+      }
+      return {ErrorCodes::ERR_EXPIRED, ""};
     }
   }
   // should never reach here
