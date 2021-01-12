@@ -15,8 +15,6 @@
 
 namespace tendisplus {
 
-#define CLUSTER_SLOTS 16384
-
 class ServerEntry;
 class ClusterState;
 

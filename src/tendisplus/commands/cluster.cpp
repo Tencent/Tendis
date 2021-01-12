@@ -114,19 +114,34 @@ class ClusterCommand : public Command {
         std::vector<std::string> vec(args.begin() + 4, args.end());
         /* CLUSTER SETSLOT retry nodename chunkid */
         std::bitset<CLUSTER_SLOTS> slotsMap;
+
         for (auto& vs : vec) {
-          Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
-          if (!exptSlot.ok()) {
-            return exptSlot.status();
+          if ((vs.find('{') != string::npos) &&
+              (vs.find('}') != string::npos)) {
+            auto eRange = getSlotRange(vs);
+            RET_IF_ERR_EXPECTED(eRange);
+
+            uint32_t start = eRange.value().first;
+            uint32_t end = eRange.value().second;
+
+            for (uint32_t i = start; i <= end; i++) {
+              slotsMap.set(i);
+            }
+          } else {
+            Expected<int64_t> exptSlot = ::tendisplus::stoll(vs);
+            RET_IF_ERR_EXPECTED(exptSlot);
+
+            int32_t slot = (int32_t)exptSlot.value();
+
+            if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
+              LOG(ERROR) << "slot" << slot
+                         << " ERR Invalid or out of range slot ";
+              return {ErrorCodes::ERR_CLUSTER, "Invalid migrate slot position"};
+            }
+            slotsMap.set(slot);
           }
-          int32_t slot = (int32_t)exptSlot.value();
-          if (slot > CLUSTER_SLOTS - 1 || slot < 0) {
-            LOG(ERROR) << "slot" << slot
-                       << " ERR Invalid or out of range slot ";
-            return {ErrorCodes::ERR_CLUSTER, "Invalid migrate slot position"};
-          }
-          slotsMap.set(slot);
         }
+
         bool needRetry = (arg2 == "restart") ? true : false;
         auto exptTaskid = startAllSlotsTasks(
           slotsMap, svr, nodeId, clusterState, srcNode, myself, needRetry);
@@ -185,8 +200,7 @@ class ClusterCommand : public Command {
           }
         }
         if (!taskInfo.ok()) {
-          LOG(ERROR) << "get taskinfo fail:" << taskInfo.status().toString();
-          return taskInfo.status();
+          return Command::fmtNull();
         }
         return taskInfo.value();
       } else if (arg2 == "stop" && argSize > 3) {
@@ -299,36 +313,14 @@ class ClusterCommand : public Command {
       if (myself->nodeIsArbiter()) {
         return {ErrorCodes::ERR_CLUSTER, "Can not add/del slots on arbiter."};
       }
-
       for (size_t i = 2; i < argSize; ++i) {
         if ((args[i].find('{') != string::npos) &&
             (args[i].find('}') != string::npos)) {
-          std::string str = args[i];
-          str = str.substr(1, str.size() - 2);
+          auto eRange = getSlotRange(args[i]);
 
-          if (str.find("..") == std::string::npos) {
-            return {ErrorCodes::ERR_CLUSTER, "Invalid range input withot .."};
-          }
-          auto vs = stringSplit(str, "..");
-
-          if (vs.size() != 2) {
-            return {ErrorCodes::ERR_CLUSTER, "no find start and end position"};
-          }
-          auto startSlot = ::tendisplus::stoul(vs[0]);
-          auto endSlot = ::tendisplus::stoul(vs[1]);
-
-          if (!startSlot.ok() || !endSlot.ok()) {
-            LOG(ERROR) << "ERR Invalid or out of range slot ";
-            return {ErrorCodes::ERR_CLUSTER,
-                    "Invalid slot position " + args[i]};
-          }
-          uint32_t start = startSlot.value();
-          uint32_t end = endSlot.value();
-
-          if (end >= CLUSTER_SLOTS) {
-            return {ErrorCodes::ERR_CLUSTER,
-                    "Invalid slot position " + std::to_string(end)};
-          }
+          RET_IF_ERR_EXPECTED(eRange);
+          uint32_t start = eRange.value().first;
+          uint32_t end = eRange.value().second;
 
           if (svr->getParams()->clusterSingleNode &&
               (end - start) != (CLUSTER_SLOTS - 1)) {
@@ -345,10 +337,7 @@ class ClusterCommand : public Command {
         } else {
           auto slotInfo = ::tendisplus::stoul(args[i]);
 
-          if (!slotInfo.ok()) {
-            return {ErrorCodes::ERR_CLUSTER,
-                    "Invalid slot  specified " + args[i]};
-          }
+          RET_IF_ERR_EXPECTED(slotInfo);
           uint32_t slot = static_cast<uint32_t>(slotInfo.value());
           Status s = changeSlot(slot, arg1, svr, clusterState, myself);
           if (!s.ok()) {
@@ -674,7 +663,8 @@ class ClusterCommand : public Command {
         }
       }
     } else {
-      LOG(ERROR) << "ERR Invalid or out of range slot";
+      LOG(ERROR) << "ERR Invalid or out of range slot from:" << start
+                 << "to:" << end;
       return {ErrorCodes::ERR_CLUSTER, "ERR Invalid or out of range slot"};
     }
     return {ErrorCodes::ERR_OK, "finish addslots"};

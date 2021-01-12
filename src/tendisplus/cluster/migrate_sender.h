@@ -20,8 +20,6 @@
 
 namespace tendisplus {
 
-#define CLUSTER_SLOTS 16384
-
 class ClusterState;
 class ClusterNode;
 using myMutex = std::recursive_mutex;
