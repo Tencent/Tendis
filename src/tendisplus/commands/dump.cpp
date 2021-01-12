@@ -1682,21 +1682,20 @@ Expected<std::string> key2Aof(Session* sess, const std::string& key) {
   }
 
   auto kvstore = expdb.value().store;
-  auto ptxn = kvstore->createTransaction(sess);
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
   if (!ptxn.ok()) {
     return ptxn.status();
   }
-  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
   RecordKey mk(expdb.value().chunkId, dbid, RecordType::RT_DATA_META, key, "");
-  auto eValue = kvstore->getKV(mk, txn.get());
+  auto eValue = kvstore->getKV(mk, ptxn.value());
   RET_IF_ERR_EXPECTED(eValue);
 
   auto type = eValue.value().getEleType();
 
   RecordKey fakeEle(expdb.value().chunkId, dbid, type, key, "");
   std::string prefix = fakeEle.prefixPk();
-  auto cursor = txn->createDataCursor();
+  auto cursor = ptxn.value()->createDataCursor();
   cursor->seek(prefix);
 
   std::list<Record> result;
@@ -1778,15 +1777,13 @@ class RestoreValueCommand : public Command {
     RET_IF_ERR_EXPECTED(rv);
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     RET_IF_ERR_EXPECTED(ptxn);
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey fakeEle(
       expdb.value().chunkId, pCtx->getDbId(), rv.value().getEleType(), key, "");
     std::string prefix = fakeEle.prefixPk();
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     cursor->seek(prefix);
 
     /* 1.restorevalue_begin  */
