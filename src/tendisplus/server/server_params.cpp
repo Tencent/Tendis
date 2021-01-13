@@ -30,8 +30,7 @@ string gMappingCmdList = "";  // NOLINT
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
-  if (typeid(var) == typeid(int32_t) || typeid(var) == typeid(uint32_t) ||    \
-      typeid(var) == typeid(uint16_t))                                        \
+  if (typeid(var) == typeid(int32_t) || typeid(var) == typeid(uint32_t))      \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
                 new IntVar(str,                                               \
