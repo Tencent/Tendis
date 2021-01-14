@@ -23,7 +23,7 @@
 namespace tendisplus {
 
 IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
-                           std::shared_ptr<ServerParams> cfg)
+                           const std::shared_ptr<ServerParams>& cfg)
   : _isRunning(false),
     _svr(svr),
     _scannerMatrix(std::make_shared<PoolMatrix>()),
@@ -34,7 +34,8 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
     _scanPoolSize(cfg->scanJobCntIndexMgr),
     _delBatch(cfg->delCntIndexMgr),
     _delPoolSize(cfg->delJobCntIndexMgr),
-    _pauseTime(cfg->pauseTimeIndexMgr) {
+    _pauseTime(cfg->pauseTimeIndexMgr),
+    _cfg(cfg) {
   for (size_t storeId = 0; storeId < svr->getKVStoreCount(); ++storeId) {
     _scanPoints[storeId] = std::move(std::string());
     _scanJobStatus[storeId] = {false};
@@ -269,8 +270,10 @@ Status IndexManager::run() {
 
   TEST_SYNC_POINT_CALLBACK("BeforeIndexManagerLoop", &_isRunning);
   while (_isRunning.load(std::memory_order_relaxed)) {
-    scheScanExpired();
-    schedDelExpired();
+    if (!_cfg->noexpire) {
+      scheScanExpired();
+      schedDelExpired();
+    }
     std::this_thread::sleep_for(std::chrono::seconds(_pauseTime));
   }
 

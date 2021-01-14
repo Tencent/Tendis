@@ -21,7 +21,9 @@ struct KVTTLCompactionContext {
 
 class KVTtlCompactionFilterFactory : public CompactionFilterFactory {
  public:
-  explicit KVTtlCompactionFilterFactory(KVStore* store) : _store(store) {}
+  explicit KVTtlCompactionFilterFactory(KVStore* store,
+                                        const std::shared_ptr<ServerParams> cfg)
+    : _store(store), _cfg(cfg) {}
 
   const char* Name() const override {
     return "KVTTLCompactionFilterFactory";
@@ -32,6 +34,7 @@ class KVTtlCompactionFilterFactory : public CompactionFilterFactory {
 
  private:
   KVStore* _store;
+  const std::shared_ptr<ServerParams> _cfg;
 };
 
 }  // namespace tendisplus

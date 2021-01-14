@@ -22,7 +22,6 @@
 namespace tendisplus {
 
 std::mutex Command::_mutex;
-bool Command::_noexpire = false;
 mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
 
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
@@ -74,19 +73,8 @@ bool Command::isAdmin() const {
   return (_flags & CMD_ADMIN) != 0;
 }
 
-bool Command::noExpire() {
-  return _noexpire;
-}
-
 mgl::LockMode Command::RdLock() {
   return _expRdLk;
-}
-
-void Command::setNoExpire(bool cfg) {
-  _noexpire = cfg;
-  if (_noexpire) {
-    _expRdLk = mgl::LockMode::LOCK_S;
-  }
 }
 
 void Command::changeCommand(const string& changeCmdList, string mode) {
@@ -290,7 +278,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
 
       auto vv = dynamic_cast<NetSession*>(sess);
       if (vv) {
-          vv->setCloseAfterRsp();
+        vv->setCloseAfterRsp();
       }
     } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
                v.status().code() == ErrorCodes::ERR_DECODE ||
@@ -688,7 +676,8 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     uint64_t currentTs = msSinceEpoch();
     uint64_t targetTtl = eValue.value().getTtl();
     RecordType valueType = eValue.value().getRecordType();
-    if (_noexpire || targetTtl == 0 || currentTs < targetTtl) {
+    if (server->getParams()->noexpire || targetTtl == 0 ||
+        currentTs < targetTtl) {
       if (valueType != tp && tp != RecordType::RT_DATA_META) {
         return {ErrorCodes::ERR_WRONG_TYPE, ""};
       }

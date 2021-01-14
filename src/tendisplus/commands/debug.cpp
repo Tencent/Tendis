@@ -142,7 +142,7 @@ class KeysCommand : public Command {
 
         auto ttl = exptRcd.value().getRecordValue().getTtl();
         if (keyType != RecordType::RT_DATA_META ||
-            (!Command::noExpire() && ttl != 0 &&
+            (!server->getParams()->noexpire && ttl != 0 &&
              ttl < ts)) {  // skip the expired key
           continue;
         }
@@ -252,7 +252,7 @@ class DbsizeCommand : public Command {
         }
         auto ttl = exptRcd.value().getRecordValue().getTtl();
         if (!containExpire &&
-            (!Command::noExpire() && ttl != 0 &&
+            (!server->getParams()->noexpire && ttl != 0 &&
              ttl < ts)) {  // skip the expired key
           continue;
         }
@@ -1044,8 +1044,7 @@ class CommandCommand : public Command {
       auto arg2 = toLower(args[2]);
       auto iter = cmdmap.find(arg2);
       if (iter == cmdmap.end()) {
-        return {ErrorCodes::ERR_PARSEOPT,
-                "Invalid command specified: " + arg2};
+        return {ErrorCodes::ERR_PARSEOPT, "Invalid command specified: " + arg2};
       }
 
       auto cmd = iter->second;

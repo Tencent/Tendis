@@ -51,11 +51,7 @@ class Command {
   bool isMultiKey() const;
   bool isWriteable() const;
   bool isAdmin() const;
-  static bool noExpire();
-  // will be LOCK_S when _noexpire set true.
-  // should use lock upgrade in the future.
   static mgl::LockMode RdLock();
-  static void setNoExpire(bool cfg);
   static void changeCommand(const string& renameCmdList, string mode);
   int getFlags() const;
   size_t getFlagsCount() const;
@@ -123,7 +119,6 @@ class Command {
   static const uint32_t _maxUnseenCmdNum = 10000;
   static std::map<std::string, uint64_t> _unSeenCmds;
 
-  static bool _noexpire;
   static mgl::LockMode _expRdLk;
 
  private:

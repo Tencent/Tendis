@@ -766,7 +766,7 @@ Status rocksdbOptionsSet(rocksdb::Options& options,
     options.memtable_whole_key_filtering = static_cast<bool>(value);
   }
 #endif
-  else if (key == "memtable_huge_page_size") { // NOLINT
+  else if (key == "memtable_huge_page_size") {  // NOLINT
     options.memtable_huge_page_size = static_cast<size_t>(value);
   } else if (key == "bloom_locality") {
     options.bloom_locality = static_cast<uint32_t>(value);
@@ -1095,10 +1095,10 @@ rocksdb::Options RocksKVStore::options() {
   options.table_factory.reset(
     rocksdb::NewBlockBasedTableFactory(table_options));
 
-  if (_enableFilter && dbId() != CATALOG_NAME) {
+  if (dbId() != CATALOG_NAME) {
     // setup the ttlcompactionfilter expect "catalog" db
     options.compaction_filter_factory.reset(
-      new KVTtlCompactionFilterFactory(this));
+      new KVTtlCompactionFilterFactory(this, _cfg));
   }
 
   // background listener
@@ -1806,7 +1806,6 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _isRunning(false),
     _isPaused(false),
     _hasBackup(false),
-    _enableFilter(true),
     _enableRepllog(enableRepllog),
     _mode(mode),
     _txnMode(txnMode),
@@ -1818,10 +1817,6 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _highestVisible(Transaction::TXNID_UNINITED),
     _logOb(nullptr),
     _env(std::make_shared<RocksdbEnv>()) {
-  if (_cfg->noexpire) {
-    _enableFilter = false;
-  }
-
   Expected<uint64_t> s =
     restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
   if (!s.ok()) {
