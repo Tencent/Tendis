@@ -390,6 +390,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   uint32_t kvStoreCount = cfg->kvStoreCount;
   uint32_t chunkSize = cfg->chunkSize;
+  _cursorMaps.resize(cfg->dbNum);
 
   // set command config
   Command::setNoExpire(cfg->noexpire);
@@ -1510,6 +1511,16 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time,
 std::shared_ptr<ServerEntry>& getGlobalServer() {
   static std::shared_ptr<ServerEntry> gServer;
   return gServer;
+}
+
+/**
+ * @brief check whether slot belong to this kvstore
+ * @param kvstoreId kvstoreId which slots belong to
+ * @param slot slot which need to check
+ * @return boolean, show whether slot belong to this kvstore
+ */
+bool checkKvstoreSlot(uint32_t kvstoreId, uint64_t slot) {
+  return (slot % getGlobalServer()->getParams()->kvStoreCount) == kvstoreId;
 }
 
 }  // namespace tendisplus

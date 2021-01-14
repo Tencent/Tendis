@@ -147,6 +147,7 @@ class RecordKey {
     return PK_OFFSET;
   }
   bool operator==(const RecordKey& other) const;
+  bool operator!=(const RecordKey& other) const;
 
   static constexpr size_t CHUNKID_OFFSET = 0;
   static constexpr size_t TYPE_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);

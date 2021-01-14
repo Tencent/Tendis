@@ -412,6 +412,10 @@ class ServerParams {
   uint32_t keysDefaultLimit = 100;
   uint32_t lockWaitTimeOut = 3600;
 
+  // parameter for scan command
+  uint32_t scanDefaultLimit = 10;
+  uint32_t scanDefaultMaxIterateTimes = 10000;
+
   // parameter for rocksdb
   uint32_t rocksBlockcacheMB = 4096;
   bool rocksStrictCapacityLimit = false;

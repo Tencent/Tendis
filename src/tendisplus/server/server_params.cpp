@@ -348,6 +348,10 @@ ServerParams::ServerParams() {
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
 
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);
+  REGISTER_VARS_SAME_NAME(scanDefaultMaxIterateTimes,
+                          nullptr, nullptr, 10, 10000, true);
+
   REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);

@@ -2906,6 +2906,48 @@ std::string ClusterMsg::clusterGetMessageTypeString(Type type) {
   }
 }
 
+/**
+ *
+ * @param info
+ * @return
+ */
+auto ClusterNode::parseClusterNodesInfo(const std::string &info) ->
+      Expected<std::bitset<CLUSTER_SLOTS>> {
+  std::bitset<CLUSTER_SLOTS> slots;
+  auto slotsMeta = tendisplus::stringSplit(info, ",");
+
+  for (const auto &v : slotsMeta) {
+    auto slotPair = tendisplus::stringSplit(v, "-");
+    if (slotPair.size() == 1) {
+      auto slot = tendisplus::stol(slotPair[0]);
+      RET_IF_ERR_EXPECTED(slot);
+      if (slot.value() < 0) {
+        return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
+      }
+      // set single bit as true
+      slots.set(slot.value());
+    } else {
+      auto slotStart = tendisplus::stol(slotPair[0]);
+      auto slotEnd = tendisplus::stol(slotPair[1]);
+      RET_IF_ERR_EXPECTED(slotStart);
+      if (slotStart.value() < 0 || slotStart.value() >= CLUSTER_SLOTS) {
+        return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
+      }
+      RET_IF_ERR_EXPECTED(slotEnd);
+      if (slotEnd.value() < 0 || slotEnd.value() >= CLUSTER_SLOTS) {
+        return {ErrorCodes::ERR_PARSEOPT, "Wrong Slots"};
+      }
+
+      // set bit as true from start to end
+      for (int i = slotStart.value(); i <= slotEnd.value(); ++i) {
+        slots.set(i);
+      }
+    }
+  }
+
+  return slots;
+}
+
 bool ClusterMsg::clusterNodeIsInGossipSection(const CNodePtr& node) const {
   INVARIANT_D(_msgData != nullptr);
   return _msgData->clusterNodeIsInGossipSection(node);

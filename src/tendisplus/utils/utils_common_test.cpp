@@ -19,6 +19,7 @@
 #include "tendisplus/utils/test_util.h"
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/utils/base64.h"
+#include "tendisplus/utils/cursor_map.h"
 #include "gtest/gtest.h"
 #include "glog/logging.h"
 
@@ -211,5 +212,48 @@ TEST(ParamManager, common) {
   EXPECT_EQ(pm.getUint64("ikey3", 1), 1);
 }
 
+TEST(CursorMap, addmapping) {
+  CursorMap map(5);
+  auto &map_ = map.getMap();
+
+  map.addMapping(1, {1, "1"});
+  map.addMapping(2, {2, "2"});
+  map.addMapping(3, {3, "3"});
+  map.addMapping(4, {4, "4"});
+  map.addMapping(5, {5, "5"});
+  EXPECT_EQ(map_.size(), 5);
+  EXPECT_TRUE(map_.count(1));
+  EXPECT_TRUE(map_.count(2));
+  EXPECT_TRUE(map_.count(3));
+  EXPECT_TRUE(map_.count(4));
+  EXPECT_TRUE(map_.count(5));
+
+  map.addMapping(6, {6, "6"});
+  EXPECT_EQ(map_.size(), 5);
+  EXPECT_TRUE(map_.count(2));
+  EXPECT_TRUE(map_.count(3));
+  EXPECT_TRUE(map_.count(4));
+  EXPECT_TRUE(map_.count(5));
+  EXPECT_TRUE(map_.count(6));
+}
+
+TEST(CursorMap, getMapping) {
+  CursorMap map(5);
+
+  map.addMapping(1, {1, "1"});
+  map.addMapping(2, {2, "2"});
+  map.addMapping(3, {3, "3"});
+  map.addMapping(4, {4, "4"});
+  map.addMapping(5, {5, "5"});
+  EXPECT_EQ(map.getMapping(1).value().kvstoreId, 1);
+  EXPECT_FALSE(map.getMapping(10).ok());
+
+  std::cout << std::endl << std::endl;
+
+  map.addMapping(10, {10, "10"});
+
+  EXPECT_EQ(map.getMapping(10).value().lastScanKey, "10");
+  EXPECT_FALSE(map.getMapping(1).ok());
+}
 
 }  // namespace tendisplus

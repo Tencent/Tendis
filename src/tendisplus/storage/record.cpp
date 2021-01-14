@@ -571,6 +571,10 @@ bool RecordKey::operator==(const RecordKey& other) const {
     _version == other._version && _fmtVsn == other._fmtVsn;
 }
 
+bool RecordKey::operator!=(const RecordKey &other) const {
+  return !(*this == other);
+}
+
 RecordValue::RecordValue(RecordType type)
   : _type(type),
     _ttl(0),
