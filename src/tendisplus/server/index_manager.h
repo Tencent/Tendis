@@ -21,7 +21,7 @@ using JobCnt = std::unordered_map<std::size_t, std::atomic<uint32_t>>;
 class IndexManager {
  public:
   IndexManager(std::shared_ptr<ServerEntry> svr,
-               std::shared_ptr<ServerParams> cfg);
+               const std::shared_ptr<ServerParams>& cfg);
   Status startup();
   void stop();
   Status run();
@@ -58,6 +58,7 @@ class IndexManager {
   uint32_t _delBatch;
   uint32_t _delPoolSize;
   uint32_t _pauseTime;
+  const std::shared_ptr<ServerParams> _cfg;
 };
 
 }  // namespace tendisplus
