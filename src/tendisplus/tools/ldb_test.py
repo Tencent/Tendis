@@ -1,56 +1,84 @@
-import os import glob import os.path import shutil import subprocess import time import unittest import tempfile import re
+#!/usr/bin/env python3
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+from __future__ import absolute_import, division, print_function, unicode_literals
 
-  def my_check_output(* popenargs, * * kwargs) : ""
-                                                 "
-                      If we had python 2.7, we should simply use subprocess.check_output.This is a stop - gap solution for python 2.6 ""
-                                                                                                                                      "
-                                            if 'stdout' in kwargs : raise ValueError('stdout argument not allowed, it will be overridden.') process = subprocess.Popen(stderr = subprocess.PIPE, stdout = subprocess.PIPE, * popenargs, * * kwargs) output, unused_err = process.communicate() retcode = process.poll() if retcode : cmd = kwargs.get("args") if cmd is None : cmd = popenargs[0] raise Exception("Exit code is not 0.  It is %d.  Command: %s" %(retcode, cmd)) return output
+import os
+import glob
+import os.path
+import shutil
+import subprocess
+import time
+import unittest
+import tempfile
+import re
 
-                                                                                                                                                                                                                                                                                                                                                                                                                  def run_err_null(cmd) : return os.system(cmd + " 2>/dev/null ")
+def my_check_output(*popenargs, **kwargs):
+    """
+    If we had python 2.7, we should simply use subprocess.check_output.
+    This is a stop-gap solution for python 2.6
+    """
+    if 'stdout' in kwargs:
+        raise ValueError('stdout argument not allowed, it will be overridden.')
+    process = subprocess.Popen(stderr=subprocess.PIPE, stdout=subprocess.PIPE,
+                               *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    retcode = process.poll()
+    if retcode:
+        cmd = kwargs.get("args")
+        if cmd is None:
+            cmd = popenargs[0]
+        raise Exception("Exit code is not 0.  It is %d.  Command: %s" %
+                (retcode, cmd))
+    return output.decode('utf-8')
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                     class LDBTestCase(unittest.TestCase) : def setUp(self) : self.TMP_DIR = tempfile.mkdtemp(prefix = "ldb_test_") self.DB_NAME = "testdb"
+def run_err_null(cmd):
+    return os.system(cmd + " 2>/dev/null ")
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              def tearDown(self) : assert(self.TMP_DIR.strip() != "/" and self.TMP_DIR.strip() != "/tmp" and self.TMP_DIR.strip() != "/tmp/") #Just some paranoia
+class LDBTestCase(unittest.TestCase):
+    def setUp(self):
+        self.TMP_DIR  = tempfile.mkdtemp(prefix="ldb_test_")
+        self.DB_NAME = "testdb"
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             shutil.rmtree(self.TMP_DIR)
+    def tearDown(self):
+        assert(self.TMP_DIR.strip() != "/"
+                and self.TMP_DIR.strip() != "/tmp"
+                and self.TMP_DIR.strip() != "/tmp/") #Just some paranoia
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             def dbParam(self, dbName) : return "--db=%s" % os.path.join(self.TMP_DIR, dbName)
+        shutil.rmtree(self.TMP_DIR)
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           def assertRunOKFull(self, params, expectedOutput, unexpected = False, isPattern = False) : ""
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      "
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               All command - line params must be specified.Allows full flexibility in testing; for
-  example : missing db param.
+    def dbParam(self, dbName):
+        return "--db=%s" % os.path.join(self.TMP_DIR, dbName)
 
-            ""
-            "
-            output =
-    my_check_output("./ldb %s |grep -v \"Created bg thread\"" % params,
-                    shell = True) if not unexpected
-    : if isPattern : self
-                       .assertNotEqual(expectedOutput.search(output.strip()),
-                                       None) else
-    : self.assertEqual(output.strip(), expectedOutput.strip()) else
-    : if isPattern
-    : self.assertEqual(expectedOutput.search(output.strip()), None) else
-    : self.assertNotEqual(output.strip(), expectedOutput.strip())
+    def assertRunOKFull(self, params, expectedOutput, unexpected=False,
+                        isPattern=False):
+        """
+        All command-line params must be specified.
+        Allows full flexibility in testing; for example: missing db param.
+        """
+        output = my_check_output("./ldb %s |grep -v \"Created bg thread\"" %
+                            params, shell=True)
+        if not unexpected:
+            if isPattern:
+                self.assertNotEqual(expectedOutput.search(output.strip()),
+                                    None)
+            else:
+                self.assertEqual(output.strip(), expectedOutput.strip())
+        else:
+            if isPattern:
+                self.assertEqual(expectedOutput.search(output.strip()), None)
+            else:
+                self.assertNotEqual(output.strip(), expectedOutput.strip())
 
-        def assertRunFAILFull(self, params)
-    : ""
-      "
-      All command -
-    line params must be specified.Allows full flexibility in testing; for
-  example : missing db param.
+    def assertRunFAILFull(self, params):
+        """
+        All command-line params must be specified.
+        Allows full flexibility in testing; for example: missing db param.
+        """
+        try:
 
-            ""
-            "
-            try :
-
-    my_check_output(
-      "./ldb %s >/dev/null 2>&1 |grep -v \"Created bg \
-                thread\"" %
-        params,
-      shell = True) except Exception,
-    e:
+            my_check_output("./ldb %s >/dev/null 2>&1 |grep -v \"Created bg \
+                thread\"" % params, shell=True)
+        except Exception:
             return
         self.fail(
             "Exception should have been raised for command with params: %s" %
@@ -59,7 +87,6 @@ import os import glob import os.path import shutil import subprocess import time
     def assertRunOK(self, params, expectedOutput, unexpected=False):
         """
         Uses the default test db.
-
         """
         self.assertRunOKFull("%s %s" % (self.dbParam(self.DB_NAME), params),
                              expectedOutput, unexpected)
@@ -71,7 +98,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunFAILFull("%s %s" % (self.dbParam(self.DB_NAME), params))
 
     def testSimpleStringPutGet(self):
-        print "Running testSimpleStringPutGet..."
+        print("Running testSimpleStringPutGet...")
         self.assertRunFAIL("put x1 y1")
         self.assertRunOK("put --create_if_missing x1 y1", "OK")
         self.assertRunOK("get x1", "y1")
@@ -109,8 +136,8 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOK("scan", "x2 : y2\nx3 : y3")
 
         self.assertRunOK("delete NonExistentKey", "OK")
-#It is weird that GET and SCAN raise exception for
-#non - existent key, while delete does not
+        # It is weird that GET and SCAN raise exception for
+        # non-existent key, while delete does not
 
         self.assertRunOK("checkconsistency", "OK")
 
@@ -120,8 +147,16 @@ import os import glob import os.path import shutil import subprocess import time
     def loadDb(self, params, dumpFile):
         return 0 == run_err_null("cat %s | ./ldb load %s" % (dumpFile, params))
 
+    def writeExternSst(self, params, inputDumpFile, outputSst):
+        return 0 == run_err_null("cat %s | ./ldb write_extern_sst %s %s"
+                % (inputDumpFile, outputSst, params))
+
+    def ingestExternSst(self, params, inputSst):
+        return 0 == run_err_null("./ldb ingest_extern_sst %s %s"
+                                     % (inputSst, params))
+
     def testStringBatchPut(self):
-        print "Running testStringBatchPut..."
+        print("Running testStringBatchPut...")
         self.assertRunOK("batchput x1 y1 --create_if_missing", "OK")
         self.assertRunOK("scan", "x1 : y1")
         self.assertRunOK("batchput x2 y2 x3 y3 \"x4 abc\" \"y4 xyz\"", "OK")
@@ -131,7 +166,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunFAIL("batchput k1 v1 k2")
 
     def testCountDelimDump(self):
-        print "Running testCountDelimDump..."
+        print("Running testCountDelimDump...")
         self.assertRunOK("batchput x.1 x1 --create_if_missing", "OK")
         self.assertRunOK("batchput y.abc abc y.2 2 z.13c pqr", "OK")
         self.assertRunOK("dump --count_delim", "x => count:1\tsize:5\ny => count:2\tsize:12\nz => count:1\tsize:8")
@@ -140,7 +175,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOK("dump --count_delim=\",\"", "x => count:2\tsize:14\nx.1 => count:1\tsize:5\ny.2 => count:1\tsize:4\ny.abc => count:1\tsize:8\nz.13c => count:1\tsize:8")
 
     def testCountDelimIDump(self):
-        print "Running testCountDelimIDump..."
+        print("Running testCountDelimIDump...")
         self.assertRunOK("batchput x.1 x1 --create_if_missing", "OK")
         self.assertRunOK("batchput y.abc abc y.2 2 z.13c pqr", "OK")
         self.assertRunOK("idump --count_delim", "x => count:1\tsize:5\ny => count:2\tsize:12\nz => count:1\tsize:8")
@@ -149,17 +184,17 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOK("idump --count_delim=\",\"", "x => count:2\tsize:14\nx.1 => count:1\tsize:5\ny.2 => count:1\tsize:4\ny.abc => count:1\tsize:8\nz.13c => count:1\tsize:8")
 
     def testInvalidCmdLines(self):
-        print "Running testInvalidCmdLines..."
-#db not specified
+        print("Running testInvalidCmdLines...")
+        # db not specified
         self.assertRunFAILFull("put 0x6133 0x6233 --hex --create_if_missing")
-#No param called he
+        # No param called he
         self.assertRunFAIL("put 0x6133 0x6233 --he --create_if_missing")
-#max_keys is not applicable for put
+        # max_keys is not applicable for put
         self.assertRunFAIL("put 0x6133 0x6233 --max_keys=1 --create_if_missing")
-#hex has invalid boolean value
+        # hex has invalid boolean value
 
     def testHexPutGet(self):
-        print "Running testHexPutGet..."
+        print("Running testHexPutGet...")
         self.assertRunOK("put a1 b1 --create_if_missing", "OK")
         self.assertRunOK("scan", "a1 : b1")
         self.assertRunOK("scan --hex", "0x6131 : 0x6231")
@@ -189,7 +224,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOK("checkconsistency", "OK")
 
     def testTtlPutGet(self):
-        print "Running testTtlPutGet..."
+        print("Running testTtlPutGet...")
         self.assertRunOK("put a1 b1 --ttl --create_if_missing", "OK")
         self.assertRunOK("scan --hex", "0x6131 : 0x6231", True)
         self.assertRunOK("dump --ttl ", "a1 ==> b1", True)
@@ -199,29 +234,29 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOK("get --value_hex a1", "0x6231", True)
         self.assertRunOK("get --ttl a1", "b1")
         self.assertRunOK("put a3 b3 --create_if_missing", "OK")
-#fails because timstamp 's length is greater than value' s
+        # fails because timstamp's length is greater than value's
         self.assertRunFAIL("get --ttl a3")
         self.assertRunOK("checkconsistency", "OK")
 
     def testInvalidCmdLines(self):  # noqa: F811 T25377293 Grandfathered in
-        print "Running testInvalidCmdLines..."
-#db not specified
+        print("Running testInvalidCmdLines...")
+        # db not specified
         self.assertRunFAILFull("put 0x6133 0x6233 --hex --create_if_missing")
-#No param called he
+        # No param called he
         self.assertRunFAIL("put 0x6133 0x6233 --he --create_if_missing")
-#max_keys is not applicable for put
+        # max_keys is not applicable for put
         self.assertRunFAIL("put 0x6133 0x6233 --max_keys=1 --create_if_missing")
-#hex has invalid boolean value
+        # hex has invalid boolean value
         self.assertRunFAIL("put 0x6133 0x6233 --hex=Boo --create_if_missing")
 
     def testDumpLoad(self):
-        print "Running testDumpLoad..."
+        print("Running testDumpLoad...")
         self.assertRunOK("batchput --create_if_missing x1 y1 x2 y2 x3 y3 x4 y4",
                 "OK")
         self.assertRunOK("scan", "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
         origDbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
 
-#Dump and load without any additional params specified
+        # Dump and load without any additional params specified
         dumpFilePath = os.path.join(self.TMP_DIR, "dump1")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump1")
         self.assertTrue(self.dumpDb("--db=%s" % origDbPath, dumpFilePath))
@@ -230,7 +265,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#Dump and load in hex
+        # Dump and load in hex
         dumpFilePath = os.path.join(self.TMP_DIR, "dump2")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump2")
         self.assertTrue(self.dumpDb("--db=%s --hex" % origDbPath, dumpFilePath))
@@ -239,7 +274,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#Dump only a portion of the key range
+        # Dump only a portion of the key range
         dumpFilePath = os.path.join(self.TMP_DIR, "dump3")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump3")
         self.assertTrue(self.dumpDb(
@@ -248,7 +283,7 @@ import os import glob import os.path import shutil import subprocess import time
             "--db=%s --create_if_missing" % loadedDbPath, dumpFilePath))
         self.assertRunOKFull("scan --db=%s" % loadedDbPath, "x1 : y1\nx2 : y2")
 
-#Dump upto max_keys rows
+        # Dump upto max_keys rows
         dumpFilePath = os.path.join(self.TMP_DIR, "dump4")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump4")
         self.assertTrue(self.dumpDb(
@@ -258,13 +293,13 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3")
 
-#Load into an existing db, create_if_missing is not specified
+        # Load into an existing db, create_if_missing is not specified
         self.assertTrue(self.dumpDb("--db=%s" % origDbPath, dumpFilePath))
         self.assertTrue(self.loadDb("--db=%s" % loadedDbPath, dumpFilePath))
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#Dump and load with WAL disabled
+        # Dump and load with WAL disabled
         dumpFilePath = os.path.join(self.TMP_DIR, "dump5")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump5")
         self.assertTrue(self.dumpDb("--db=%s" % origDbPath, dumpFilePath))
@@ -274,7 +309,7 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#Dump and load with lots of extra params specified
+        # Dump and load with lots of extra params specified
         extraParams = " ".join(["--bloom_bits=14", "--block_size=1024",
                                 "--auto_compaction=true",
                                 "--write_buffer_size=4194304",
@@ -289,24 +324,24 @@ import os import glob import os.path import shutil import subprocess import time
         self.assertRunOKFull("scan --db=%s" % loadedDbPath,
                 "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#Dump with count_only
+        # Dump with count_only
         dumpFilePath = os.path.join(self.TMP_DIR, "dump7")
         loadedDbPath = os.path.join(self.TMP_DIR, "loaded_from_dump7")
         self.assertTrue(self.dumpDb(
             "--db=%s --count_only" % origDbPath, dumpFilePath))
         self.assertTrue(self.loadDb(
             "--db=%s --create_if_missing" % loadedDbPath, dumpFilePath))
-#DB should have atleast one value for scan to work
+        # DB should have atleast one value for scan to work
         self.assertRunOKFull("put --db=%s k1 v1" % loadedDbPath, "OK")
         self.assertRunOKFull("scan --db=%s" % loadedDbPath, "k1 : v1")
 
-#Dump command fails because of typo in params
+        # Dump command fails because of typo in params
         dumpFilePath = os.path.join(self.TMP_DIR, "dump8")
         self.assertFalse(self.dumpDb(
             "--db=%s --create_if_missing" % origDbPath, dumpFilePath))
 
     def testIDumpBasics(self):
-        print "Running testIDumpBasics..."
+        print("Running testIDumpBasics...")
         self.assertRunOK("put a val --create_if_missing", "OK")
         self.assertRunOK("put b val", "OK")
         self.assertRunOK(
@@ -318,9 +353,9 @@ import os import glob import os.path import shutil import subprocess import time
                 "'a' seq:1, type:1 => val\nInternal keys in range: 1")
 
     def testMiscAdminTask(self):
-        print "Running testMiscAdminTask..."
-#These tests need to be improved; for example with asserts about
-#whether compaction or level reduction actually took place.
+        print("Running testMiscAdminTask...")
+        # These tests need to be improved; for example with asserts about
+        # whether compaction or level reduction actually took place.
         self.assertRunOK("batchput --create_if_missing x1 y1 x2 y2 x3 y3 x4 y4",
                 "OK")
         self.assertRunOK("scan", "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
@@ -347,14 +382,14 @@ import os import glob import os.path import shutil import subprocess import time
             % origDbPath))
         self.assertRunOK("scan", "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
-#TODO(dilip) : Not sure what should be passed to WAL.Currently corrupted.
+        #TODO(dilip): Not sure what should be passed to WAL.Currently corrupted.
         self.assertTrue(0 == run_err_null(
             "./ldb dump_wal --db=%s --walfile=%s --header" % (
                 origDbPath, os.path.join(origDbPath, "LOG"))))
         self.assertRunOK("scan", "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
 
     def testCheckConsistency(self):
-        print "Running testCheckConsistency..."
+        print("Running testCheckConsistency...")
 
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
         self.assertRunOK("put x1 y1 --create_if_missing", "OK")
@@ -365,11 +400,11 @@ import os import glob import os.path import shutil import subprocess import time
         sstFilePath = my_check_output("ls %s" % os.path.join(dbPath, "*.sst"),
                                       shell=True)
 
-#Modify the file
+        # Modify the file
         my_check_output("echo 'evil' > %s" % sstFilePath, shell=True)
         self.assertRunFAIL("checkconsistency")
 
-#Delete the file
+        # Delete the file
         my_check_output("rm -f %s" % sstFilePath, shell=True)
         self.assertRunFAIL("checkconsistency")
 
@@ -378,7 +413,7 @@ import os import glob import os.path import shutil import subprocess import time
             params, dumpFile))
 
     def testDumpLiveFiles(self):
-        print "Running testDumpLiveFiles..."
+        print("Running testDumpLiveFiles...")
 
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
         self.assertRunOK("put x1 y1 --create_if_missing", "OK")
@@ -403,12 +438,12 @@ import os import glob import os.path import shutil import subprocess import time
         return 0 == run_err_null("cp " + src + " " + dest)
 
     def testManifestDump(self):
-        print "Running testManifestDump..."
+        print("Running testManifestDump...")
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
         self.assertRunOK("put 1 1 --create_if_missing", "OK")
         self.assertRunOK("put 2 2", "OK")
         self.assertRunOK("put 3 3", "OK")
-#Pattern to expect from manifest_dump.
+        # Pattern to expect from manifest_dump.
         num = "[0-9]+"
         st = ".*"
         subpat = st + " seq:" + num + ", type:" + num
@@ -417,21 +452,21 @@ import os import glob import os.path import shutil import subprocess import time
         cmd = "manifest_dump --db=%s"
         manifest_files = self.getManifests(dbPath)
         self.assertTrue(len(manifest_files) == 1)
-#Test with the default manifest file in dbPath.
+        # Test with the default manifest file in dbPath.
         self.assertRunOKFull(cmd % dbPath, expected_pattern,
                              unexpected=False, isPattern=True)
         self.copyManifests(manifest_files[0], manifest_files[0] + "1")
         manifest_files = self.getManifests(dbPath)
         self.assertTrue(len(manifest_files) == 2)
-#Test with multiple manifest files in dbPath.
+        # Test with multiple manifest files in dbPath.
         self.assertRunFAILFull(cmd % dbPath)
-#Running it with the copy we just created should pass.
+        # Running it with the copy we just created should pass.
         self.assertRunOKFull((cmd + " --path=%s")
                              % (dbPath, manifest_files[1]),
                              expected_pattern, unexpected=False,
                              isPattern=True)
-#Make sure that using the dump with-- path will result in identical
-#output as just using manifest_dump.
+        # Make sure that using the dump with --path will result in identical
+        # output as just using manifest_dump.
         cmd = "dump --path=%s"
         self.assertRunOKFull((cmd)
                              % (manifest_files[1]),
@@ -439,14 +474,14 @@ import os import glob import os.path import shutil import subprocess import time
                              isPattern=True)
 
     def testSSTDump(self):
-        print "Running testSSTDump..."
+        print("Running testSSTDump...")
 
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
         self.assertRunOK("put sst1 sst1_val --create_if_missing", "OK")
         self.assertRunOK("put sst2 sst2_val", "OK")
         self.assertRunOK("get sst1", "sst1_val")
 
-#Pattern to expect from SST dump.
+        # Pattern to expect from SST dump.
         regex = ".*Sst file format:.*"
         expected_pattern = re.compile(regex)
 
@@ -459,14 +494,14 @@ import os import glob import os.path import shutil import subprocess import time
                              isPattern=True)
 
     def testWALDump(self):
-        print "Running testWALDump..."
+        print("Running testWALDump...")
 
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
         self.assertRunOK("put wal1 wal1_val --create_if_missing", "OK")
         self.assertRunOK("put wal2 wal2_val", "OK")
         self.assertRunOK("get wal1", "wal1_val")
 
-#Pattern to expect from WAL dump.
+        # Pattern to expect from WAL dump.
         regex = "^Sequence,Count,ByteSize,Physical Offset,Key\(s\).*"
         expected_pattern = re.compile(regex)
 
@@ -479,22 +514,21 @@ import os import glob import os.path import shutil import subprocess import time
                              isPattern=True)
 
     def testListColumnFamilies(self):
-        print "Running testListColumnFamilies..."
-        dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)
+        print("Running testListColumnFamilies...")
         self.assertRunOK("put x1 y1 --create_if_missing", "OK")
-        cmd = "list_column_families %s | grep -v \"Column families\""
-#Test on valid dbPath.
-        self.assertRunOKFull(cmd % dbPath, "{default}")
-#Test on empty path.
-        self.assertRunFAILFull(cmd % "")
+        cmd = "list_column_families | grep -v \"Column families\""
+        # Test on valid dbPath.
+        self.assertRunOK(cmd, "{default}")
+        # Test on empty path.
+        self.assertRunFAIL(cmd)
 
     def testColumnFamilies(self):
-        print "Running testColumnFamilies..."
+        print("Running testColumnFamilies...")
         dbPath = os.path.join(self.TMP_DIR, self.DB_NAME)  # noqa: F841 T25377293 Grandfathered in
         self.assertRunOK("put cf1_1 1 --create_if_missing", "OK")
         self.assertRunOK("put cf1_2 2 --create_if_missing", "OK")
         self.assertRunOK("put cf1_3 3 --try_load_options", "OK")
-#Given non - default column family to single CF DB.
+        # Given non-default column family to single CF DB.
         self.assertRunFAIL("get cf1_1 --column_family=two")
         self.assertRunOK("create_column_family two", "OK")
         self.assertRunOK("put cf2_1 1 --create_if_missing --column_family=two",
@@ -518,8 +552,43 @@ import os import glob import os.path import shutil import subprocess import time
                          "1")
         self.assertRunOK("get cf3_1 --column_family=three",
                          "3")
-#non - existing column family.
+        self.assertRunOK("drop_column_family three", "OK")
+        # non-existing column family.
         self.assertRunFAIL("get cf3_1 --column_family=four")
+        self.assertRunFAIL("drop_column_family four")
+
+    def testIngestExternalSst(self):
+        print("Running testIngestExternalSst...")
+
+        # Dump, load, write external sst and ingest it in another db
+        dbPath = os.path.join(self.TMP_DIR, "db1")
+        self.assertRunOK(
+            "batchput --db=%s --create_if_missing x1 y1 x2 y2 x3 y3 x4 y4"
+            % dbPath,
+            "OK")
+        self.assertRunOK("scan --db=%s" % dbPath,
+                         "x1 : y1\nx2 : y2\nx3 : y3\nx4 : y4")
+        dumpFilePath = os.path.join(self.TMP_DIR, "dump1")
+        with open(dumpFilePath, 'w') as f:
+            f.write("x1 ==> y10\nx2 ==> y20\nx3 ==> y30\nx4 ==> y40")
+        externSstPath = os.path.join(self.TMP_DIR, "extern_data1.sst")
+        self.assertTrue(self.writeExternSst("--create_if_missing --db=%s"
+                            % dbPath,
+                        dumpFilePath,
+                        externSstPath))
+        # cannot ingest if allow_global_seqno is false
+        self.assertFalse(
+            self.ingestExternSst(
+                "--create_if_missing --allow_global_seqno=false --db=%s"
+                % dbPath,
+                externSstPath))
+        self.assertTrue(
+            self.ingestExternSst(
+                "--create_if_missing --allow_global_seqno --db=%s"
+                % dbPath,
+                externSstPath))
+        self.assertRunOKFull("scan --db=%s" % dbPath,
+                             "x1 : y10\nx2 : y20\nx3 : y30\nx4 : y40")
 
 if __name__ == "__main__":
     unittest.main()

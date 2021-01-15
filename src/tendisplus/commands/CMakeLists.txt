@@ -1,4 +1,4 @@
-add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp cluster.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp zset.cpp scan.cpp pf.cpp dump.cpp sort.cpp release.cpp)
+add_library(commands STATIC command.cpp kv.cpp auth.cpp repl.cpp cluster.cpp debug.cpp hash.cpp list.cpp expire.cpp del.cpp set.cpp zset.cpp scan.cpp pf.cpp dump.cpp sort.cpp release.cpp script.cpp)
 target_link_libraries(commands status skiplist network utils_common lock utils_common)
 
 add_executable(command_test command_test.cpp)

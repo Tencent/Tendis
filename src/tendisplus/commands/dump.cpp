@@ -8,6 +8,7 @@
 #include <utility>
 #include <unordered_set>
 #include <limits>
+#include <list>
 #include "tendisplus/commands/dump.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/storage/skiplist.h"
@@ -86,8 +87,7 @@ Serializer::Serializer(Session* sess,
                        const std::string& key,
                        DumpType type,
                        RecordValue&& rv)
-  : _begin(0), _end(0), _sess(sess), _key(key), _type(type), _pos(0), _rv(rv) {
-  }
+  : _begin(0), _end(0), _sess(sess), _key(key), _type(type), _pos(0), _rv(rv) {}
 
 Expected<size_t> Serializer::saveObjectType(std::vector<byte>* payload,
                                             size_t* pos,
@@ -451,11 +451,10 @@ class ListSerializer : public Serializer {
     }
     PStore kvstore = expdb.value().store;
 
-    auto ptxn = kvstore->createTransaction(_sess);
+    auto ptxn = _sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     /* in this loop we should emulate to build a quicklist(or to say, many
      * ziplists)
@@ -472,7 +471,7 @@ class ListSerializer : public Serializer {
                         RecordType::RT_LIST_ELE,
                         _key,
                         std::to_string(i));
-      auto expNodeVal = kvstore->getKV(nodeKey, txn.get());
+      auto expNodeVal = kvstore->getKV(nodeKey, ptxn.value());
       if (!expNodeVal.ok()) {
         return expNodeVal.status();
       }
@@ -534,13 +533,12 @@ class SetSerializer : public Serializer {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
+    auto ptxn = _sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     RecordKey fakeRk(expdb.value().chunkId,
                      _sess->getCtx()->getDbId(),
                      RecordType::RT_SET_ELE,
@@ -585,11 +583,10 @@ class ZsetSerializer : public Serializer {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
+    auto ptxn = _sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     auto eMeta = ZSlMetaValue::decode(_rv.getValue());
     if (!eMeta.ok()) {
@@ -604,7 +601,7 @@ class ZsetSerializer : public Serializer {
       return expwr.status();
     }
 
-    auto rev = zsl.scanByRank(0, zsl.getCount() - 1, true, txn.get());
+    auto rev = zsl.scanByRank(0, zsl.getCount() - 1, true, ptxn.value());
     if (!rev.ok()) {
       return rev.status();
     }
@@ -645,18 +642,17 @@ class HashSerializer : public Serializer {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
+    auto ptxn = _sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey fakeRk(expdb.value().chunkId,
                      _sess->getCtx()->getDbId(),
                      RecordType::RT_HASH_ELE,
                      _key,
                      "");
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     cursor->seek(fakeRk.prefixPk());
     while (true) {
       Expected<Record> expRcd = cursor->next();
@@ -934,8 +930,19 @@ class RestoreCommand : public Command {
       }
     }
 
-    auto lock = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
-      sess, args, {1}, mgl::LockMode::LOCK_X);
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+            sess, key, mgl::LockMode::LOCK_X);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+
     // check if key exists
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
@@ -945,7 +952,7 @@ class RestoreCommand : public Command {
         return rv.status();
       }
       if (replace) {
-        Status s = delKey(sess, key, RecordType::RT_DATA_META);
+        Status s = delKey(sess, key, RecordType::RT_DATA_META, ptxn.value());
         if (!s.ok()) {
           return s;
         }
@@ -977,11 +984,15 @@ class RestoreCommand : public Command {
       return expds.status();
     }
 
-    Status res = expds.value()->restore();
-    if (res.ok()) {
-      return Command::fmtOK();
+    Status res = expds.value()->restore(ptxn.value());
+    if (!res.ok()) {
+      return res;
     }
-    return res;
+    auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
+    if (!eCmt.ok()) {
+      return eCmt.status();
+    }
+    return Command::fmtOK();
   }
 } restoreCommand;
 
@@ -993,7 +1004,7 @@ class KvDeserializer : public Deserializer {
                           const uint64_t ttl)
     : Deserializer(sess, payload, key, ttl) {}
 
-  virtual Status restore() {
+  virtual Status restore(Transaction* txn) {
     auto ret = Deserializer::loadString(_payload, &_pos);
     auto server = _sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
@@ -1001,12 +1012,6 @@ class KvDeserializer : public Deserializer {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     SessionCtx* pCtx = _sess->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -1015,26 +1020,11 @@ class KvDeserializer : public Deserializer {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, _key, "");
     RecordValue rv(ret, RecordType::RT_KV, pCtx->getVersionEP(), _ttl);
     for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
-      Status s = kvstore->setKV(rk, rv, txn.get());
+      Status s = kvstore->setKV(rk, rv, txn);
       if (!s.ok()) {
         return s;
       }
-      Expected<uint64_t> expCmt = txn->commit();
-      if (expCmt.ok()) {
-        return {ErrorCodes::ERR_OK, "OK"};
-      } else if (expCmt.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
-        return expCmt.status();
-      }
-
-      if (i == Command::RETRY_CNT - 1) {
-        return expCmt.status();
-      }
-
-      ptxn = kvstore->createTransaction(_sess);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
-      txn = std::move(ptxn.value());
+      return {ErrorCodes::ERR_OK, "OK"};
     }
 
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
@@ -1049,7 +1039,7 @@ class SetDeserializer : public Deserializer {
                            const uint64_t ttl)
     : Deserializer(sess, payload, key, ttl) {}
 
-  virtual Status restore() {
+  virtual Status restore(Transaction* txn) {
     auto expLen = Deserializer::loadLen(_payload, &_pos);
     if (!expLen.ok()) {
       return expLen.status();
@@ -1064,11 +1054,6 @@ class SetDeserializer : public Deserializer {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     RecordKey metaRk(expdb.value().chunkId,
                      _sess->getCtx()->getDbId(),
@@ -1085,7 +1070,7 @@ class SetDeserializer : public Deserializer {
                    metaRk.getPrimaryKey(),
                    std::move(ele));
       RecordValue rv("", RecordType::RT_SET_ELE, -1);
-      Status s = kvstore->setKV(rk, rv, txn.get());
+      Status s = kvstore->setKV(rk, rv, txn);
       if (!s.ok()) {
         return s;
       }
@@ -1096,13 +1081,9 @@ class SetDeserializer : public Deserializer {
                                           RecordType::RT_SET_META,
                                           _sess->getCtx()->getVersionEP(),
                                           _ttl),
-                              txn.get());
+                              txn);
     if (!s.ok()) {
       return s;
-    }
-    Expected<uint64_t> expCmt = txn->commit();
-    if (!expCmt.ok()) {
-      return expCmt.status();
     }
     return {ErrorCodes::ERR_OK, "OK"};
   }
@@ -1116,7 +1097,7 @@ class ZsetDeserializer : public Deserializer {
                             const uint64_t ttl)
     : Deserializer(sess, payload, key, ttl) {}
 
-  virtual Status restore() {
+  virtual Status restore(Transaction* txn) {
     auto expLen = loadLen(_payload, &_pos);
     if (!expLen.ok()) {
       return expLen.status();
@@ -1143,13 +1124,8 @@ class ZsetDeserializer : public Deserializer {
                  "");
     PStore kvstore = expdb.value().store;
     // set ttl first
-    auto ptxn = kvstore->createTransaction(_sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
 
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    Expected<RecordValue> eMeta = kvstore->getKV(rk, txn.get());
+    Expected<RecordValue> eMeta = kvstore->getKV(rk, txn);
     if (!eMeta.ok() && eMeta.status().code() != ErrorCodes::ERR_NOTFOUND) {
       return eMeta.status();
     }
@@ -1159,7 +1135,7 @@ class ZsetDeserializer : public Deserializer {
                    RecordType::RT_ZSET_META,
                    _sess->getCtx()->getVersionEP(),
                    _ttl);
-    Status s = kvstore->setKV(rk, rv, txn.get());
+    Status s = kvstore->setKV(rk, rv, txn);
     if (!s.ok()) {
       return s;
     }
@@ -1170,30 +1146,19 @@ class ZsetDeserializer : public Deserializer {
                      std::to_string(ZSlMetaValue::HEAD_ID));
     ZSlEleValue headVal;
     RecordValue headRv(headVal.encode(), RecordType::RT_ZSET_S_ELE, -1);
-    s = kvstore->setKV(headRk, headRv, txn.get());
+    s = kvstore->setKV(headRk, headRv, txn);
     if (!s.ok()) {
       return s;
-    }
-    Expected<uint64_t> expCmt = txn->commit();
-    if (!expCmt.ok()) {
-      return expCmt.status();
     }
 
     for (int32_t i = 0; i < Command::RETRY_CNT; ++i) {
       // maybe very slow
       Expected<std::string> res =
-        genericZadd(_sess, kvstore, rk, rv, scoreMap, ZADD_NX);
-      if (res.ok()) {
-        return {ErrorCodes::ERR_OK, "OK"};
-      }
-      if (res.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
+        genericZadd(_sess, kvstore, rk, rv, scoreMap, ZADD_NX, txn);
+      if (!res.ok()) {
         return res.status();
       }
-      if (i == Command::RETRY_CNT - 1) {
-        return res.status();
-      } else {
-        continue;
-      }
+      return {ErrorCodes::ERR_OK, "OK"};
     }
 
     return {ErrorCodes::ERR_INTERNAL, "not reachable"};
@@ -1208,7 +1173,7 @@ class HashDeserializer : public Deserializer {
                             const uint64_t ttl)
     : Deserializer(sess, payload, key, ttl) {}
 
-  virtual Status restore() {
+  virtual Status restore(Transaction* txn) {
     auto expLen = loadLen(_payload, &_pos);
     if (!expLen.ok()) {
       return expLen.status();
@@ -1221,11 +1186,6 @@ class HashDeserializer : public Deserializer {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     for (size_t i = 0; i < len; i++) {
       std::string field = loadString(_payload, &_pos);
       std::string value = loadString(_payload, &_pos);
@@ -1236,7 +1196,7 @@ class HashDeserializer : public Deserializer {
                    _key,
                    field);
       RecordValue rv(value, RecordType::RT_HASH_ELE, -1);
-      Status s = kvstore->setKV(rk, rv, txn.get());
+      Status s = kvstore->setKV(rk, rv, txn);
       if (!s.ok()) {
         return s;
       }
@@ -1253,13 +1213,9 @@ class HashDeserializer : public Deserializer {
                        RecordType::RT_HASH_META,
                        _sess->getCtx()->getVersionEP(),
                        _ttl);
-    Status s = kvstore->setKV(metaRk, metaRv, txn.get());
+    Status s = kvstore->setKV(metaRk, metaRv, txn);
     if (!s.ok()) {
       return s;
-    }
-    Expected<uint64_t> expCmt = txn->commit();
-    if (!expCmt.ok()) {
-      return expCmt.status();
     }
     return {ErrorCodes::ERR_OK, "OK"};
   }
@@ -1356,7 +1312,7 @@ class ListDeserializer : public Deserializer {
                             const uint64_t ttl)
     : Deserializer(sess, payload, key, ttl) {}
 
-  virtual Status restore() {
+  virtual Status restore(Transaction* txn) {
     auto qlExpLen = loadLen(_payload, &_pos);
     if (!qlExpLen.ok()) {
       return qlExpLen.status();
@@ -1374,11 +1330,6 @@ class ListDeserializer : public Deserializer {
                      _key,
                      "");
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(_sess);
-    if (!ptxn.ok()) {
-      return ptxn.status();
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
     ListMetaValue lm(INITSEQ, INITSEQ);
 
     uint64_t head = lm.getHead();
@@ -1401,7 +1352,7 @@ class ListDeserializer : public Deserializer {
                      metaRk.getPrimaryKey(),
                      std::to_string(idx));
         RecordValue rv(std::move(*iter), RecordType::RT_LIST_ELE, -1);
-        Status s = kvstore->setKV(rk, rv, txn.get());
+        Status s = kvstore->setKV(rk, rv, txn);
         if (!s.ok()) {
           return s;
         }
@@ -1413,13 +1364,9 @@ class ListDeserializer : public Deserializer {
                        RecordType::RT_LIST_META,
                        _sess->getCtx()->getVersionEP(),
                        _ttl);
-    Status s = kvstore->setKV(metaRk, metaRv, txn.get());
+    Status s = kvstore->setKV(metaRk, metaRv, txn);
     if (!s.ok()) {
       return s;
-    }
-    Expected<uint64_t> expCmt = txn->commit();
-    if (!expCmt.ok()) {
-      return expCmt.status();
     }
     return {ErrorCodes::ERR_OK, "OK"};
   }
@@ -1468,7 +1415,7 @@ class RestoreMetaCommand : public Command {
   RestoreMetaCommand() : Command("restoremeta", "r") {}
 
   ssize_t arity() const {
-    return 2;
+    return -2;
   }
 
   int32_t firstkey() const {
@@ -1492,9 +1439,37 @@ class RestoreMetaCommand : public Command {
 
     auto slotId = static_cast<uint32_t>(eSlotId.value());
     auto server = sess->getServerEntry();
+    // TODO(VINCHEN): should use interface
     auto dbId = slotId % (server->getKVStoreCount());
+    bool getBigKey = false;
+    uint64_t valueSize = -1;
+    uint64_t eleCnt = -1;
 
-    // TODO(takenliu): use chunk lock is enough
+    if (sess->getArgs().size() > 2) {
+      if (sess->getArgs().size() != 5) {
+        return {ErrorCodes::ERR_PARSEOPT, "invalid args size"};
+      }
+      auto arg2 = toLower(sess->getArgs()[2]);
+      if (arg2 != "bigkeys") {
+        return {ErrorCodes::ERR_PARSEOPT, "arg2 is not bigkeys"};
+      }
+      getBigKey = true;
+
+      auto arg3 = tendisplus::stoul(sess->getArgs()[3]);
+      if (!arg3.ok()) {
+        return arg3.status();
+      }
+
+      valueSize = arg3.value();
+
+      auto arg4 = tendisplus::stoul(sess->getArgs()[4]);
+      if (!arg4.ok()) {
+        return arg4.status();
+      }
+
+      eleCnt = arg4.value();
+    }
+
     auto expdb =
       server->getSegmentMgr()->getDb(sess, dbId, mgl::LockMode::LOCK_IS);
     if (!expdb.ok()) {
@@ -1502,13 +1477,12 @@ class RestoreMetaCommand : public Command {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
 
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
 
     RecordKey tmplRk(slotId, 0, RecordType::RT_DATA_META, "", "");
     auto prefix = tmplRk.prefixSlotType();
@@ -1540,8 +1514,13 @@ class RestoreMetaCommand : public Command {
 
       const auto& valueType = value.getRecordType();
       if (!isDataMetaType(valueType)) {
+        // NOTE(vinchen): Because RecordType::RT_DATA_META is first elements in
+        // one slot
+        INVARIANT_D(key.getRecordType() != RecordType::RT_DATA_META);
         break;
       }
+
+      INVARIANT_D(key.getRecordType() == RecordType::RT_DATA_META);
 
       std::vector<byte> buf;
       size_t pos(0);
@@ -1571,6 +1550,14 @@ class RestoreMetaCommand : public Command {
                      << rt2Char(value.getRecordType()) << "in iteration";
           INVARIANT(0);
       }
+      INVARIANT_D((typeMask & 0x01) == 0);
+      if (getBigKey) {
+        if (value.isBigKey(valueSize, eleCnt)) {
+          // mean is is a big key
+          typeMask |= 0x01;
+        }
+      }
+
       easyCopy(&buf, &pos, typeMask);
       if (bulkBuf.size() + buf.size() > 8 * 1024) {
         ss.str(std::string());
@@ -1592,6 +1579,281 @@ class RestoreMetaCommand : public Command {
     return ss.str();
   }
 } restoremetaCommand;
+
+Expected<std::string> recordList2Aof(const std::list<Record>& list) {
+  if (list.size() == 0) {
+    return std::string("");
+  }
+
+  std::stringstream ss;
+  auto type = list.front().getRecordValue().getRecordType();
+  auto key = list.front().getRecordKey().getPrimaryKey();
+  switch (type) {
+    case tendisplus::RecordType::RT_KV:
+      INVARIANT_D(list.size() == 1);
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_LIST_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "RPUSH");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_HASH_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "HMSET");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_SET_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size());
+      Command::fmtBulk(ss, "SADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    case tendisplus::RecordType::RT_ZSET_H_ELE:
+      Command::fmtMultiBulkLen(ss, 2 + list.size() * 2);
+      Command::fmtBulk(ss, "ZADD");
+      Command::fmtBulk(ss, key);
+      break;
+
+    default:
+      INVARIANT_D(0);
+      break;
+  }
+
+  for (const auto& rt : list) {
+    // key and type of all records in the list is the same
+    INVARIANT_D(rt.getRecordValue().getRecordType() == type);
+    INVARIANT_D(rt.getRecordKey().getPrimaryKey() == key);
+
+    const auto& rtKey = rt.getRecordKey();
+    const auto& rtValue = rt.getRecordValue();
+
+    switch (type) {
+      case tendisplus::RecordType::RT_KV:
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_LIST_ELE:
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_HASH_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        Command::fmtBulk(ss, rtValue.getValue());
+        break;
+
+      case tendisplus::RecordType::RT_SET_ELE:
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+
+      case tendisplus::RecordType::RT_ZSET_H_ELE: {
+        Expected<double> oldScore =
+          ::tendisplus::doubleDecode(rtValue.getValue());
+        if (!oldScore.ok()) {
+          return oldScore.status();
+        }
+        Command::fmtBulk(ss, ::tendisplus::dtos(oldScore.value()));
+
+        Command::fmtBulk(ss, rtKey.getSecondaryKey());
+        break;
+      }
+
+      default:
+        INVARIANT_D(0);
+        break;
+    }
+  }
+
+  return ss.str();
+}
+
+Expected<std::string> key2Aof(Session* sess, const std::string& key) {
+  auto dbid = sess->getCtx()->getDbId();
+  auto server = sess->getServerEntry();
+  auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+    sess, key, mgl::LockMode::LOCK_NONE);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+
+  auto kvstore = expdb.value().store;
+  auto ptxn = sess->getCtx()->createTransaction(kvstore);
+  if (!ptxn.ok()) {
+    return ptxn.status();
+  }
+
+  RecordKey mk(expdb.value().chunkId, dbid, RecordType::RT_DATA_META, key, "");
+  auto eValue = kvstore->getKV(mk, ptxn.value());
+  RET_IF_ERR_EXPECTED(eValue);
+
+  auto type = eValue.value().getEleType();
+
+  RecordKey fakeEle(expdb.value().chunkId, dbid, type, key, "");
+  std::string prefix = fakeEle.prefixPk();
+  auto cursor = ptxn.value()->createDataCursor();
+  cursor->seek(prefix);
+
+  std::list<Record> result;
+  uint64_t count = 0;
+  while (true) {
+    Expected<Record> exptRcd = cursor->next();
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      break;
+    }
+    if (!exptRcd.ok()) {
+      return exptRcd.status();
+    }
+    Record& rcd = exptRcd.value();
+    const RecordKey& rcdKey = rcd.getRecordKey();
+    if (rcdKey.prefixPk() != prefix) {
+      break;
+    }
+    count++;
+    result.emplace_back(std::move(rcd));
+  }
+
+  INVARIANT_D(result.size() > 0);
+  auto ret = recordList2Aof(result);
+  if (!ret.ok()) {
+    return ret.status();
+  }
+
+  auto ttl = eValue.value().getTtl();
+  if (ttl == 0) {
+    // no expire
+    return ret.value();
+  }
+
+  std::stringstream ss;
+  ss << ret.value();
+
+  /* pexpireat */
+  std::stringstream ss1;
+  Command::fmtMultiBulkLen(ss1, 3);
+  Command::fmtBulk(ss1, "PEXPIREAT");
+  Command::fmtBulk(ss1, key);
+  Command::fmtBulk(ss1, std::to_string(ttl));
+  ss << ss1.str();
+
+  return ss.str();
+}
+
+class RestoreValueCommand : public Command {
+ public:
+  RestoreValueCommand() : Command("restorevalue", "r") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto& key = (sess->getArgs()[1]);
+    auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+    RET_IF_ERR_EXPECTED(expdb);
+
+    SessionCtx* pCtx = sess->getCtx();
+    INVARIANT(pCtx != nullptr);
+
+    Expected<RecordValue> rv =
+      Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
+    RET_IF_ERR_EXPECTED(rv);
+
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    RET_IF_ERR_EXPECTED(ptxn);
+
+    RecordKey fakeEle(
+      expdb.value().chunkId, pCtx->getDbId(), rv.value().getEleType(), key, "");
+    std::string prefix = fakeEle.prefixPk();
+    auto cursor = ptxn.value()->createDataCursor();
+    cursor->seek(prefix);
+
+    /* 1.restorevalue_begin  */
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "RESTOREVALUE_BEGIN");
+    auto s = sess->setResponse(ss.str());
+    RET_IF_ERR(s);
+
+    ss.str(std::string());
+
+    /* 2. set/hmset/sadd/rpush/zadd *n */
+    std::list<Record> result;
+    uint64_t count = 0;
+    while (true) {
+      Expected<Record> exptRcd = cursor->next();
+      if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+        break;
+      }
+      RET_IF_ERR_EXPECTED(exptRcd);
+
+      Record& rcd = exptRcd.value();
+      const RecordKey& rcdKey = rcd.getRecordKey();
+      if (rcdKey.prefixPk() != prefix) {
+        break;
+      }
+      count++;
+      result.emplace_back(std::move(rcd));
+      if (result.size() >= 1000) {
+        auto eAof = recordList2Aof(result);
+        RET_IF_ERR_EXPECTED(eAof);
+
+        auto s = sess->setResponse(eAof.value());
+        RET_IF_ERR(s);
+
+        result.clear();
+      }
+    }
+    INVARIANT_D(count == rv.value().getEleCnt());
+
+    if (result.size() > 0) {
+      auto eAof = recordList2Aof(result);
+      RET_IF_ERR_EXPECTED(eAof);
+
+      s = sess->setResponse(eAof.value());
+      RET_IF_ERR(s);
+
+      result.clear();
+    }
+
+    /* 3.pexpireat */
+    auto ttl = rv.value().getTtl();
+    if (ttl > 0) {
+      ss.str(std::string());
+      Command::fmtMultiBulkLen(ss, 3);
+      Command::fmtBulk(ss, "PEXPIREAT");
+      Command::fmtBulk(ss, key);
+      Command::fmtBulk(ss, std::to_string(ttl));
+      s = sess->setResponse(ss.str());
+      RET_IF_ERR(s);
+    }
+
+    /* 4.restorevalue_end */
+    ss.str(std::string());
+    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtBulk(ss, "RESTOREVALUE_END");
+
+    return ss.str();
+  }
+} restorevalueCommand;
 
 class IncrMetaCommand : public Command {
  public:
@@ -1723,8 +1985,8 @@ class IncrMetaCommand : public Command {
         // delete keys type is RT_DATA_META, we cann't get it's type, so set
         uint8_t type = decodeType(RecordType::RT_SET_META);
         if (key.getRecordType() == RecordType::RT_DATA_META) {
-          // TODO(jingjunli): key's revision smaller than startRevision skip it
-          // delete keys 's ttl && version is 0
+          // TODO(jingjunli): key's revision smaller than startRevision skip
+          // it delete keys 's ttl && version is 0
           IncrMeta im(key.getPrimaryKey(),
                       ReplOp::REPL_OP_DEL,
                       type,
@@ -1794,17 +2056,16 @@ class IncrMetaCommand : public Command {
       }
 
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
 
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto maxBinlogSeq = kvstore->getNextBinlogSeq();
       uint64_t startBinlogPos =
         maxBinlogSeq > diffPos ? maxBinlogSeq - diffPos : 0;
       auto incrKeys =
-        serializeKvStoreBinlog(txn.get(), startBinlogPos, startRevision);
+        serializeKvStoreBinlog(ptxn.value(), startBinlogPos, startRevision);
       if (!incrKeys.ok()) {
         return incrKeys.status();
       }

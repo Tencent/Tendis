@@ -147,6 +147,7 @@ class RecordKey {
     return PK_OFFSET;
   }
   bool operator==(const RecordKey& other) const;
+  bool operator!=(const RecordKey& other) const;
 
   static constexpr size_t CHUNKID_OFFSET = 0;
   static constexpr size_t TYPE_OFFSET = CHUNKID_OFFSET + sizeof(uint32_t);
@@ -250,6 +251,9 @@ class RecordValue {
 
   static constexpr size_t TYPE_OFFSET = 0;
   static constexpr size_t TTL_OFFSET = TYPE_OFFSET + sizeof(uint8_t);
+  uint64_t getEleCnt() const;
+  RecordType getEleType() const;
+  bool isBigKey(uint64_t valueSize, uint64_t eleCnt) const;
 
  private:
   // if RecordKey._type = META, _typeForMeta means the real

@@ -19,7 +19,7 @@ namespace tendisplus {
 
 using asio::ip::tcp;
 
-#ifdef TENDIS_DEBUG
+#if defined(TENDIS_DEBUG) && !defined(_WIN32)
 void printShellResult(std::string cmd) {
   string cmdFull = cmd + " 2>&1";
   char buffer[1024];
@@ -36,9 +36,9 @@ void printPortRunningInfo(uint32_t port) {
   string err = "running process info for port " + to_string(port) + ":";
   std::cerr << err.c_str();
   LOG(ERROR) << err;
-  string cmdPid = "pid=`lsof -i:" + to_string(port) +
-                   "|tail -1|awk '{print $2}'`;";
-  printShellResult("netstat |grep "+ to_string(port));
+  string cmdPid =
+    "pid=`lsof -i:" + to_string(port) + "|tail -1|awk '{print $2}'`;";
+  printShellResult("netstat |grep " + to_string(port));
   printShellResult("lsof -i:" + to_string(port));
   printShellResult(cmdPid + "ls -l /proc/$pid/exe");
   printShellResult(cmdPid + "ls -l /proc/$pid/cwd");
@@ -197,7 +197,7 @@ Status NetworkAsio::prepare(const std::string& ip,
       return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
   } catch (std::exception& e) {
-#ifdef TENDIS_DEBUG
+#if defined(TENDIS_DEBUG) && !defined(_WIN32)
     printPortRunningInfo(port);
 #endif
     return {ErrorCodes::ERR_NETWORK, e.what()};

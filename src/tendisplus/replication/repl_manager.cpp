@@ -1359,7 +1359,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
           pstatus[key].state = "online";
           pstatus[key].lastBinlogTs = iter.second->binlogTs;
         }
-        if (iter.second->binlogTs < pstatus[key].lastBinlogTs) {
+        if (iter.second->binlogTs > pstatus[key].lastBinlogTs) {
           pstatus[key].lastBinlogTs = iter.second->binlogTs;
         }
         pstatus[key].binlogpos += iter.second->binlogPos;

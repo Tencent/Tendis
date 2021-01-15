@@ -2492,7 +2492,6 @@ Status RocksKVStore::recoveryFromBgError() {
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
   {
     std::lock_guard<std::mutex> lk(_mutex);
-    // TODO(takenliu): upgrade rocksdb to lastest stable version
     auto s = getBaseDB()->Resume();
     if (!s.ok()) {
       return {ErrorCodes::ERR_INTERNAL, s.ToString()};

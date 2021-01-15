@@ -28,7 +28,8 @@ Session::Session(ServerEntry* svr, Type type)
     _ctx(std::make_unique<SessionCtx>(this)),
     _type(type),
     _timestamp(msSinceEpoch()),
-    _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)) {
+    _sessId(_idGen.fetch_add(1, std::memory_order_relaxed)),
+    _inLua(false) {
   _aliveCnt.fetch_add(1, std::memory_order_relaxed);
 }
 

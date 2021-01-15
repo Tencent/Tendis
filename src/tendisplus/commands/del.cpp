@@ -20,12 +20,13 @@ namespace tendisplus {
 // return false if not exists
 // return true if exists and del ok
 // return error on error
-Expected<bool> delGeneric(Session* sess, const std::string& key) {
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+  Transaction* txn) {
   SessionCtx* pCtx = sess->getCtx();
   INVARIANT(pCtx != nullptr);
   bool atLeastOne = false;
   Expected<bool> done =
-    Command::delKeyChkExpire(sess, key, RecordType::RT_DATA_META);
+    Command::delKeyChkExpire(sess, key, RecordType::RT_DATA_META, txn);
   if (!done.ok()) {
     return done.status();
   }
@@ -65,11 +66,27 @@ class DelCommand : public Command {
 
     uint64_t total = 0;
     for (size_t i = 1; i < args.size(); ++i) {
-      Expected<bool> done = delGeneric(sess, args[i]);
+      auto server = sess->getServerEntry();
+      auto expdb = server->getSegmentMgr()->getDbHasLocked(
+              sess, args[i]);
+      if (!expdb.ok()) {
+        return expdb.status();
+      }
+
+      PStore kvstore = expdb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
+      Expected<bool> done = delGeneric(sess, args[i], ptxn.value());
       if (!done.ok()) {
         return done.status();
       }
       total += done.value() ? 1 : 0;
+    }
+    auto s = sess->getCtx()->commitAll("del");
+    if (!s.ok()) {
+      LOG(ERROR) << "UnlinkCommand commitAll failed:"<< s.toString();
     }
     return Command::fmtLongLong(total);
   }
@@ -125,7 +142,25 @@ class UnlinkCommand : public Command {
          std::vector<std::string>&& keys,
          std::list<std::unique_ptr<KeyLock>>&& locklist) {
         for (size_t i = 0; i < keys.size(); ++i) {
-          delKey(sess, keys[i], RecordType::RT_DATA_META);
+          auto server = sess->getServerEntry();
+          auto expdb = server->getSegmentMgr()->getDbHasLocked(
+                  sess, keys[i]);
+          if (!expdb.ok()) {
+            return;
+          }
+
+          PStore kvstore = expdb.value().store;
+          auto ptxn = sess->getCtx()->createTransaction(kvstore);
+          if (!ptxn.ok()) {
+            LOG(ERROR) << "UnlinkCommand createTransaction failed:"
+              << ptxn.status().toString();
+            return;
+          }
+          delKey(sess, keys[i], RecordType::RT_DATA_META, ptxn.value());
+        }
+        auto s = sess->getCtx()->commitAll("mset(nx)");
+        if (!s.ok()) {
+          LOG(ERROR) << "UnlinkCommand commitAll failed:"<< s.toString();
         }
       },
       sess,

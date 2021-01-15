@@ -262,7 +262,8 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
   arr->push_back(0);
 
   // NOTE(vinchen): version of key, temporarily useless
-  INVARIANT_D(_version == 0);
+  // delSubkeysRange use _version=UINT64_MAX as upper_bound
+  INVARIANT_D(_version == 0 || _version == UINT64_MAX);
   auto v = varintEncode(_version);
   arr->insert(arr->end(), v.begin(), v.end());
 }
@@ -568,6 +569,10 @@ bool RecordKey::operator==(const RecordKey& other) const {
   return _chunkId == other._chunkId && _dbId == other._dbId &&
     _type == other._type && _pk == other._pk && _sk == other._sk &&
     _version == other._version && _fmtVsn == other._fmtVsn;
+}
+
+bool RecordKey::operator!=(const RecordKey &other) const {
+  return !(*this == other);
 }
 
 RecordValue::RecordValue(RecordType type)
@@ -1035,6 +1040,95 @@ bool RecordValue::operator==(const RecordValue& other) const {
     _version == other._version && _type == other._type &&
     _versionEP == other._versionEP && _totalSize == other._totalSize &&
     _pieceSize == other._pieceSize && _value == other._value;
+}
+
+RecordType RecordValue::getEleType() const {
+  INVARIANT_D(isDataMetaType(_type));
+
+  switch (_type) {
+    case tendisplus::RecordType::RT_KV:
+      return RecordType::RT_DATA_META;
+
+    case tendisplus::RecordType::RT_LIST_META:
+      return RecordType::RT_LIST_ELE;
+
+    case tendisplus::RecordType::RT_HASH_META:
+      return RecordType::RT_HASH_ELE;
+
+    case tendisplus::RecordType::RT_ZSET_META:
+      return RecordType::RT_ZSET_H_ELE;
+
+    case tendisplus::RecordType::RT_SET_META:
+      return RecordType::RT_SET_ELE;
+
+    default:
+      INVARIANT_D(0);
+      break;
+  }
+
+  return RecordType::RT_DATA_META;
+}
+
+uint64_t RecordValue::getEleCnt() const {
+  INVARIANT_D(isDataMetaType(_type));
+
+  switch (_type) {
+    case tendisplus::RecordType::RT_KV:
+      return 1;
+
+    case tendisplus::RecordType::RT_LIST_META: {
+      auto exptMeta = ListMetaValue::decode(_value);
+      if (!exptMeta.ok()) {
+        INVARIANT_D(0);
+        return 0;
+      }
+
+      uint64_t tail = exptMeta.value().getTail();
+      uint64_t head = exptMeta.value().getHead();
+
+      return tail - head;
+    }
+    case tendisplus::RecordType::RT_HASH_META: {
+      auto exptMeta = HashMetaValue::decode(_value);
+      if (!exptMeta.ok()) {
+        INVARIANT_D(0);
+        return 0;
+      }
+      return exptMeta.value().getCount();
+    }
+    case tendisplus::RecordType::RT_SET_META: {
+      auto exptMeta = SetMetaValue::decode(_value);
+      if (!exptMeta.ok()) {
+        INVARIANT_D(0);
+        return 0;
+      }
+
+      return exptMeta.value().getCount();
+    }
+    case tendisplus::RecordType::RT_ZSET_META: {
+      auto exptMeta = ZSlMetaValue::decode(_value);
+      if (!exptMeta.ok()) {
+        INVARIANT_D(0);
+        return 0;
+      }
+      INVARIANT_D(exptMeta.value().getCount() > 1);
+      return exptMeta.value().getCount() - 1;
+    }
+    default:
+      INVARIANT_D(0);
+      break;
+  }
+
+  return 0;
+}
+
+bool RecordValue::isBigKey(uint64_t valueSize, uint64_t eleCnt) const {
+  if (_value.size() >= valueSize) {
+    return true;
+  }
+
+  auto cnt = getEleCnt();
+  return cnt >= eleCnt;
 }
 
 Record::Record()

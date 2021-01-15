@@ -56,7 +56,7 @@ Similar to Redis clusters, Tendis uses a decentralized distributed solution. The
 ### Requirements
 
 * g++ (required by c++17, version >= 5.5)
-* cmake (version >= 2.8.0)
+* cmake (version >= 3.13.0)
 
 ### Build
 

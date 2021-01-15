@@ -18,8 +18,6 @@
 
 namespace tendisplus {
 
-#define CLUSTER_SLOTS 16384
-
 class ChunkMigrateReceiver {
  public:
   explicit ChunkMigrateReceiver(const std::bitset<CLUSTER_SLOTS>& slots,
