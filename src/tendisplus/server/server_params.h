@@ -433,7 +433,7 @@ class ServerParams {
   uint32_t migrateSenderThreadnum = 4;
   uint32_t migrateReceiveThreadnum = 4;
   uint32_t garbageDeleteThreadnum = 1;
-  uint16_t garbageDeleteSize = 30;
+  uint32_t garbageDeleteSize = 30;
 
   bool clusterEnabled = false;
   bool domainEnabled = false;
@@ -443,7 +443,7 @@ class ServerParams {
   uint32_t snapShotRetryCnt = 1000;
   uint32_t migrateTaskSlotsLimit = 10;
   uint32_t migrateDistance = 10000;
-  uint16_t migrateBinlogIter = 10;
+  uint32_t migrateBinlogIter = 10;
   uint32_t migrateRateLimitMB = 32;
   uint32_t clusterNodeTimeout = 15000;
   bool clusterRequireFullCoverage = true;
