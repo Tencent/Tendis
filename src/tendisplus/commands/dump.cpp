@@ -1590,6 +1590,7 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
   auto key = list.front().getRecordKey().getPrimaryKey();
   switch (type) {
     case tendisplus::RecordType::RT_KV:
+      INVARIANT_D(list.size() == 1);
       Command::fmtMultiBulkLen(ss, 2 + list.size());
       Command::fmtBulk(ss, "SET");
       Command::fmtBulk(ss, key);
