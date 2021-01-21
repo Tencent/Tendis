@@ -2209,6 +2209,9 @@ class InfoCommand : public Command {
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-pending-compaction-bytes", &compaction_pending);
 
+      uint64_t blockUsage = server->getBlockCache()->GetUsage();
+      uint64_t blockPinnedUsage = server->getBlockCache()->GetPinnedUsage();
+      uint64_t blockCapacity = server->getBlockCache()->GetCapacity();
 
       ss << "# Dataset\r\n";
       ss << "rocksdb.kvstore-count:" << server->getKVStoreCount() << "\r\n";
@@ -2222,9 +2225,9 @@ class InfoCommand : public Command {
          << "\r\n";
       ss << "rocksdb.cur-size-all-mem-tables:" << memtables << "\r\n";
       ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
-      ss << "rocksdb.blockcache:"
-         << (uint64_t)server->getParams()->rocksBlockcacheMB * 1024 * 1024
-         << "\r\n";
+      ss << "rocksdb.blockcache.capacity:" << blockCapacity << "\r\n";
+      ss << "rocksdb.blockcache.usage:" << blockUsage << "\r\n";
+      ss << "rocksdb.blockcache.pinnedusage:" << blockPinnedUsage << "\r\n";
       ss << "rocksdb.mem-table-flush-pending:" << mem_pending << "\r\n";
       ss << "rocksdb.estimate-pending-compaction-bytes:" << compaction_pending
          << "\r\n";

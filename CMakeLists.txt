@@ -47,7 +47,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
     endif()
 else()
 	set(STDFS_LIB "")
-	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0/rocksdb")
+	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0")
 endif()
 
 set(CMAKE_MODULE_PATH "${ROCKSDB_DIR}/cmake/modules/")

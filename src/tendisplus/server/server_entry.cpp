@@ -439,7 +439,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   // kvstore init
-  auto blockCache = rocksdb::NewLRUCache(
+  _blockCache = rocksdb::NewLRUCache(
     cfg->rocksBlockcacheMB * 1024 * 1024LL, 6, cfg->rocksStrictCapacityLimit);
   std::vector<PStore> tmpStores;
   tmpStores.reserve(kvStoreCount);
@@ -466,7 +466,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     tmpStores.emplace_back(
       std::unique_ptr<KVStore>(new RocksKVStore(std::to_string(i),
                                                 cfg,
-                                                blockCache,
+                                                _blockCache,
                                                 true,
                                                 mode,
                                                 RocksKVStore::TxnMode::TXN_PES,
