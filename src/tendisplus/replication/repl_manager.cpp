@@ -1151,6 +1151,25 @@ Status ReplManager::replicationUnSetMaster() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
+  stringstream ss;
+
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    auto expdb =
+      _svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok())
+      continue;
+
+    PStore kvstore = expdb.value().store;
+    ss << "rocksdb" + kvstore->dbId() << ":"
+       << "min=" << _logRecycStatus[i]->firstBinlogId
+       << ",save=" << _logRecycStatus[i]->saveBinlogId
+       << ",BLWM=" << kvstore->getHighestBinlogId()
+       << ",BHWM=" << kvstore->getNextBinlogSeq() << "\r\n";
+  }
+  return ss.str();
+}
+
 std::string ReplManager::getMasterHost() const {
   std::lock_guard<std::mutex> lk(_mutex);
 

@@ -2219,9 +2219,7 @@ class InfoCommand : public Command {
       ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
       ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
       ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";
-      ss << "rocksdb.total-memory:"
-         << memtables + tablereaderMem +
-          (uint64_t)server->getParams()->rocksBlockcacheMB * 1024 * 1024
+      ss << "rocksdb.total-memory:" << memtables + tablereaderMem + blockUsage
          << "\r\n";
       ss << "rocksdb.cur-size-all-mem-tables:" << memtables << "\r\n";
       ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
@@ -2379,39 +2377,11 @@ class InfoCommand : public Command {
                              const std::string& section,
                              Session* sess,
                              std::stringstream& result) {
-    if (section == "binloginfo") {
+    if (allsections || defsections || section == "binloginfo") {
       auto server = sess->getServerEntry();
 
       result << "# BinlogInfo\r\n";
-      for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expdb = server->getSegmentMgr()->getDb(
-          sess, i, mgl::LockMode::LOCK_IS, false, 0);
-        if (!expdb.ok()) {
-          continue;
-        }
-        PStore kvstore = expdb.value().store;
-        auto ptxn = sess->getCtx()->createTransaction(kvstore);
-        if (!ptxn.ok()) {
-          continue;
-        }
-        auto eMin = RepllogCursorV2::getMinBinlog(ptxn.value());
-        if (!eMin.ok()) {
-          continue;
-        }
-        auto eMax = RepllogCursorV2::getMaxBinlog(ptxn.value());
-        if (!eMax.ok()) {
-          continue;
-        }
-        result << "rocksdb" + kvstore->dbId() << ":"
-               << "min=" << eMin.value().getBinlogId()
-               << ",minTs=" << eMin.value().getTimestamp()
-               << ",minRevision=" << (int64_t)eMin.value().getVersionEp()
-               << ",max=" << eMax.value().getBinlogId()
-               << ",maxTs=" << eMax.value().getTimestamp()
-               << ",maxRevision=" << (int64_t)eMax.value().getVersionEp()
-               << ",highestVisble=" << kvstore->getHighestBinlogId() << "\r\n";
-      }
-
+      result << server->getReplManager()->getRecycleBinlogStr(sess);
       result << "\r\n";
     }
   }
