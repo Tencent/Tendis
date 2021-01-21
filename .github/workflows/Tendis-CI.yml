@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [dev-2.2, master]
   push:
-    branches: [dev-2.2, master, feat-Actions-CI]
+    branches: [dev-2.2, master]
 jobs:   
   cpplint-check:
     name: Lint
@@ -97,9 +97,9 @@ jobs:
       - name: Repl Test
         run: |
          ./$TEST_DIR/repl_test --gtest_throw_on_failure
-      - name: Cluster Test
-        run: |
-          ./$TEST_DIR/cluster_test --gtest_throw_on_failure
+      # - name: Cluster Test
+      #   run: |
+      #     ./$TEST_DIR/cluster_test --gtest_throw_on_failure
       - name: GoTest
         run: |
           cd src/tendisplus/integrate_test
