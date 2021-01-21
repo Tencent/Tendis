@@ -61,13 +61,15 @@ constexpr uint32_t ZLLEN_LIMIT = 256;
 constexpr uint64_t MAXSEQ = 9223372036854775807ULL;
 constexpr uint64_t INITSEQ = MAXSEQ / 2ULL;
 
-Expected<bool> delGeneric(Session* sess, const std::string& key);
+Expected<bool> delGeneric(Session* sess, const std::string& key,
+        Transaction* txn);
 Expected<std::string> genericZadd(Session* sess,
                                   PStore kvstore,
                                   const RecordKey& mk,
                                   const Expected<RecordValue>& eMeta,
                                   const std::map<std::string, double>& subKeys,
-                                  int flags);
+                                  int flags,
+                                  Transaction* txn);
 
 template <typename T>
 size_t easyCopy(std::vector<byte>* buf, size_t* pos, T element);
@@ -125,7 +127,7 @@ class Deserializer {
                         const std::string& key,
                         const uint64_t ttl);
   virtual ~Deserializer() = default;
-  virtual Status restore() = 0;
+  virtual Status restore(Transaction* txn) = 0;
   static Status preCheck(const std::string& payload);
   static Expected<DumpType> loadObjectType(const std::string& payload,
                                            size_t&& pos);

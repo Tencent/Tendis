@@ -218,6 +218,7 @@ ServerEntry::ServerEntry()
     _mgLockMgr(nullptr),
     _clusterMgr(nullptr),
     _gcMgr(nullptr),
+    _scriptMgr(nullptr),
     _catalog(nullptr),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _poolMatrix(std::make_shared<PoolMatrix>()),
@@ -299,79 +300,6 @@ void ServerEntry::logGeneral(Session* sess) {
     return;
   }
   LOG(INFO) << sess->getCmdStr();
-}
-
-// TODO(wayenchen)  takenliu add, delete this interface. use clusterManager's
-// function
-Status ServerEntry::delKeysInSlot(uint32_t slot) {
-  uint32_t storeId = _segmentMgr->getStoreid(slot);
-  LocalSessionGuard g(this);
-  // TODO(wayenchen) : lock chunk x, get db ix
-  auto expdb =
-    _segmentMgr->getDb(g.getSession(), storeId, mgl::LockMode::LOCK_IS);
-  if (!expdb.ok()) {
-    return expdb.status();
-  }
-  auto dbWithLock = std::make_unique<DbWithLock>(std::move(expdb.value()));
-  auto kvstore = dbWithLock->store;
-  auto ptxn = kvstore->createTransaction(NULL);
-  if (!ptxn.ok()) {
-    return ptxn.status();
-  }
-  auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
-  while (true) {
-    Expected<Record> expRcd = slotCursor->next();
-    if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-      break;
-    }
-    if (!expRcd.ok()) {
-      LOG(ERROR) << "delete cursor error on chunkid:" << slot;
-      return {ErrorCodes::ERR_CLUSTER, "delete Cursor error"};
-    }
-
-    Record& rcd = expRcd.value();
-    const RecordKey& rcdKey = rcd.getRecordKey();
-    auto s = ptxn.value()->delKV(rcdKey.encode());
-    if (!s.ok()) {
-      LOG(ERROR) << "delete key fail";
-      continue;
-    }
-  }
-  auto s = ptxn.value()->commit();
-  if (!s.ok()) {
-    return s.status();
-  }
-
-  return {ErrorCodes::ERR_OK, "finish delte keys in slot"};
-}
-
-/* NOTE(wayenchen) fast check if dbsize is zero or not */
-bool ServerEntry::containData() {
-  LocalSessionGuard g(this);
-  for (ssize_t i = 0; i < getKVStoreCount(); i++) {
-    auto expdb = _segmentMgr->getDb(g.getSession(), i, mgl::LockMode::LOCK_IS);
-    if (!expdb.ok()) {
-      LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
-      return true;
-    }
-
-    PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(nullptr);
-    if (!ptxn.ok()) {
-      return true;
-    }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto cursor = txn->createDataCursor();
-    cursor->seek("");
-    auto exptRcd = cursor->next();
-
-    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-      continue;
-    } else {
-      return true;
-    }
-  }
-  return false;
 }
 
 void ServerEntry::logWarning(const std::string& str, Session* sess) {
@@ -462,6 +390,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   uint32_t kvStoreCount = cfg->kvStoreCount;
   uint32_t chunkSize = cfg->chunkSize;
+  _cursorMaps.resize(cfg->dbNum);
 
   // set command config
   Command::changeCommand(gRenameCmdList, "rename");
@@ -594,6 +523,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   // set the executorThreadNum
+  _cfg->executorThreadNum = 0;
   for (auto& pool : _executorList) {
     _cfg->executorThreadNum += pool->size();
   }
@@ -648,6 +578,14 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up gc manager failed";
       return s;
     }
+  }
+
+  _scriptMgr = std::make_unique<ScriptManager>(shared_from_this());
+  // TODO(takenliu): change executorThreadNum dynamic
+  s = _scriptMgr->startup(_cfg->executorThreadNum);
+  if (!s.ok()) {
+    LOG(WARNING) << "start up ScriptManager failed";
+    return s;
   }
 
   _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
@@ -721,6 +659,10 @@ ClusterManager* ServerEntry::getClusterMgr() {
 
 GCManager* ServerEntry::getGcMgr() {
   return _gcMgr.get();
+}
+
+ScriptManager* ServerEntry::getScriptMgr() {
+  return _scriptMgr.get();
 }
 
 std::string ServerEntry::requirepass() const {
@@ -1311,6 +1253,13 @@ Status ServerEntry::destroyStore(Session* sess,
     return status;
   }
 
+  status = _scriptMgr->stopStore(storeId);
+  if (!status.ok()) {
+    LOG(ERROR) << "_scriptMgr stopStore :" << storeId
+               << " failed:" << status.toString();
+    return status;
+  }
+
   if (_indexMgr) {
     status = _indexMgr->stopStore(storeId);
     if (!status.ok()) {
@@ -1409,6 +1358,10 @@ void ServerEntry::serverCron() {
       }
     }
 
+    run_with_period(1000) {
+      _scriptMgr->cron();
+    }
+
     cronLoop++;
   }
 }
@@ -1453,6 +1406,10 @@ void ServerEntry::stop() {
   _isRunning.store(false, std::memory_order_relaxed);
   _eventCV.notify_all();
   _network->stop();
+
+  // NOTE(takenliu): _scriptMgr need stop earlier than _executorList
+  _scriptMgr->stop();
+
   for (auto& executor : _executorList) {
     executor->stop();
   }
@@ -1474,6 +1431,7 @@ void ServerEntry::stop() {
   if (_gcMgr) {
     _gcMgr->stop();
   }
+
   if (!_isShutdowned.load(std::memory_order_relaxed)) {
     // NOTE(vinchen): if it's not the shutdown command, it should reset the
     // workerpool to decr the referent count of share_ptr<server>
@@ -1490,6 +1448,7 @@ void ServerEntry::stop() {
     _segmentMgr.reset();
     _clusterMgr.reset();
     _gcMgr.reset();
+    _scriptMgr.reset();
   }
 
   // stop the rocksdb
@@ -1549,6 +1508,16 @@ void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time,
 std::shared_ptr<ServerEntry>& getGlobalServer() {
   static std::shared_ptr<ServerEntry> gServer;
   return gServer;
+}
+
+/**
+ * @brief check whether slot belong to this kvstore
+ * @param kvstoreId kvstoreId which slots belong to
+ * @param slot slot which need to check
+ * @return boolean, show whether slot belong to this kvstore
+ */
+bool checkKvstoreSlot(uint32_t kvstoreId, uint64_t slot) {
+  return (slot % getGlobalServer()->getParams()->kvStoreCount) == kvstoreId;
 }
 
 }  // namespace tendisplus

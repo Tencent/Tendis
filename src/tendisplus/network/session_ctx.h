@@ -76,6 +76,7 @@ class SessionCtx {
   Status commitAll(const std::string& cmd);
   Status rollbackAll();
   Expected<Transaction*> createTransaction(const PStore& kvstore);
+  Expected<uint64_t> commitTransaction(Transaction*);
   void setExtendProtocol(bool v);
   void setExtendProtocolValue(uint64_t ts, uint64_t version);
   bool setPerfLevel(const std::string& level);

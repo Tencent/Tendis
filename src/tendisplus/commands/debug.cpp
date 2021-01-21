@@ -103,12 +103,11 @@ class KeysCommand : public Command {
         return expdb.status();
       }
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      auto cursor = txn->createDataCursor();
+      auto cursor = ptxn.value()->createDataCursor();
 
       cursor->seek("");
 
@@ -218,12 +217,11 @@ class DbsizeCommand : public Command {
       }
 
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      auto cursor = txn->createDataCursor();
+      auto cursor = ptxn.value()->createDataCursor();
       cursor->seek("");
 
       while (true) {
@@ -317,9 +315,38 @@ class DbEmptyCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
+    int64_t b = containData(sess) ? 0 : 1;
+    return Command::fmtLongLong(b);
+  }
+
+ private:
+  /* NOTE(wayenchen) fast check if dbsize is zero or not */
+  bool containData(Session* sess) {
     auto server = sess->getServerEntry();
-    int64_t containData = server->containData() ? 0 : 1;
-    return Command::fmtLongLong(containData);
+    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+      auto expdb = server->getSegmentMgr()->getDb(sess, i,
+            mgl::LockMode::LOCK_S);
+      if (!expdb.ok()) {
+        LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
+        return true;
+      }
+
+      PStore kvstore = expdb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return true;
+      }
+      auto cursor = ptxn.value()->createDataCursor();
+      cursor->seek("");
+      auto exptRcd = cursor->next();
+
+      if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+        continue;
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 } dbEmptyCmd;
 
@@ -427,12 +454,11 @@ class IterAllKeysCommand : public Command {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     if (args[2] == "0") {
       cursor->seek("");
     } else {
@@ -554,12 +580,11 @@ class IterAllCommand : public Command {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto cursor = txn->createDataCursor();
+    auto cursor = ptxn.value()->createDataCursor();
     if (args[2] == "0") {
       cursor->seek("");
     } else {
@@ -606,7 +631,7 @@ class IterAllCommand : public Command {
       if (valueType != RecordType::RT_KV) {
         auto key = exptRcd.value().getRecordKey().getPrimaryKey();
         RecordKey mk(chunkId, dbid, RecordType::RT_DATA_META, key, "");
-        Expected<RecordValue> eValue = kvstore->getKV(mk, txn.get());
+        Expected<RecordValue> eValue = kvstore->getKV(mk, ptxn.value());
         if (eValue.ok()) {
           targetTtl = eValue.value().getTtl();
         } else {
@@ -667,7 +692,7 @@ class IterAllCommand : public Command {
                               RecordType::RT_DATA_META,
                               o.getRecordKey().getPrimaryKey(),
                               "");
-            auto expRv = kvstore->getKV(metakey, txn.get());
+            auto expRv = kvstore->getKV(metakey, ptxn.value());
             if (!expRv.ok()) {
               return expRv.status();
             }
@@ -1276,12 +1301,11 @@ class BinlogTimeCommand : public Command {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto cursor = txn->createRepllogCursorV2(binlogId.value(), true);
+    auto cursor = ptxn.value()->createRepllogCursorV2(binlogId.value(), true);
     auto explog = cursor->nextV2();
     if (!explog.ok()) {
       return explog.status();
@@ -1370,12 +1394,11 @@ class BinlogStartCommand : public Command {
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-    auto expBinlogid = RepllogCursorV2::getMinBinlogId(txn.get());
+    auto expBinlogid = RepllogCursorV2::getMinBinlogId(ptxn.value());
     if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
       return Command::fmtZero();
     }
@@ -2363,16 +2386,15 @@ class InfoCommand : public Command {
           continue;
         }
         PStore kvstore = expdb.value().store;
-        auto ptxn = kvstore->createTransaction(sess);
+        auto ptxn = sess->getCtx()->createTransaction(kvstore);
         if (!ptxn.ok()) {
           continue;
         }
-        std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-        auto eMin = RepllogCursorV2::getMinBinlog(txn.get());
+        auto eMin = RepllogCursorV2::getMinBinlog(ptxn.value());
         if (!eMin.ok()) {
           continue;
         }
-        auto eMax = RepllogCursorV2::getMaxBinlog(txn.get());
+        auto eMax = RepllogCursorV2::getMaxBinlog(ptxn.value());
         if (!eMax.ok()) {
           continue;
         }
@@ -2720,9 +2742,10 @@ class FlushGeneric : public Command {
   }
 };
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushAllCommand : public FlushGeneric {
  public:
-  FlushAllCommand() : FlushGeneric("flushall", "w") {}
+  FlushAllCommand() : FlushGeneric("flushall", "ws") {}
 
   ssize_t arity() const {
     return -1;
@@ -2755,9 +2778,10 @@ class FlushAllCommand : public FlushGeneric {
   }
 } flushallCmd;
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushdbCommand : public FlushGeneric {
  public:
-  FlushdbCommand() : FlushGeneric("flushdb", "w") {}
+  FlushdbCommand() : FlushGeneric("flushdb", "ws") {}
 
   ssize_t arity() const {
     return -1;
@@ -2795,9 +2819,10 @@ class FlushdbCommand : public FlushGeneric {
   }
 } flushdbCmd;
 
+// NOTE(takenliu): forbidden call flush command in lua.
 class FlushAllDiskCommand : public FlushGeneric {
  public:
-  FlushAllDiskCommand() : FlushGeneric("flushalldisk", "w") {}
+  FlushAllDiskCommand() : FlushGeneric("flushalldisk", "ws") {}
 
   ssize_t arity() const {
     return 1;
@@ -3062,11 +3087,10 @@ class setInStoreCommand : public Command {
       return {ErrorCodes::ERR_PARSEOPT, "invalid store id"};
     }
     auto kvstore = server->getStores()[storeid];
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     // need get the chunkId, otherwise can't find the key by "GET" command.
     auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, key);
@@ -3081,13 +3105,14 @@ class setInStoreCommand : public Command {
       Record(RecordKey(
                chunkId, sess->getCtx()->getDbId(), RecordType::RT_KV, key, ""),
              RecordValue(value, RecordType::RT_KV, -1)),
-      txn.get());
+      ptxn.value());
     if (!s.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:" << s.toString();
       return s;
     }
 
-    Expected<uint64_t> exptCommitId = txn->commit();
+    Expected<uint64_t> exptCommitId = sess->getCtx()->commitTransaction(
+            ptxn.value());
     if (!exptCommitId.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:"
                  << exptCommitId.status().toString();

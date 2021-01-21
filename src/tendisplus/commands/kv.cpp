@@ -110,7 +110,7 @@ Expected<std::string> setGeneric(Session* sess,
    */
   if (diffType) {
     auto s =
-      Command::delKey(sess, key.getPrimaryKey(), RecordType::RT_DATA_META);
+      Command::delKey(sess, key.getPrimaryKey(), RecordType::RT_DATA_META, txn);
     if (!s.ok() && s.code() != ErrorCodes::ERR_NOTFOUND) {
       return s;
     }
@@ -123,7 +123,7 @@ Expected<std::string> setGeneric(Session* sess,
     return status;
   }
   if (endTxn) {
-    Expected<uint64_t> exptCommit = txn->commit();
+    Expected<uint64_t> exptCommit = sess->getCtx()->commitTransaction(txn);
     if (!exptCommit.ok()) {
       return exptCommit.status();
     }
@@ -207,11 +207,10 @@ class SetCommand : public Command {
     }
 
     PStore kvstore = expdb.value().store;
-    auto ptxn = kvstore->createTransaction(sess);
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -231,7 +230,7 @@ class SetCommand : public Command {
     for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                params.flags,
                                rk,
                                rv,
@@ -242,15 +241,10 @@ class SetCommand : public Command {
       if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return result;
       }
-      ptxn = kvstore->createTransaction(sess);
-      if (!ptxn.ok()) {
-        return ptxn.status();
-      }
-      txn = std::move(ptxn.value());
     }
     return setGeneric(sess,
                       kvstore,
-                      txn.get(),
+                      ptxn.value(),
                       params.flags,
                       rk,
                       rv,
@@ -301,14 +295,13 @@ class SetexGeneralCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
@@ -409,14 +402,13 @@ class SetNxCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NX,
                                rk,
                                rv,
@@ -490,14 +482,13 @@ class SetNxExCommand : public Command {
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
 
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NX,
                                rk,
                                rv,
@@ -953,11 +944,10 @@ class GetSetGeneral : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
 
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       const Expected<RecordValue>& newValue = newValueFromOld(sess, rv);
       if (newValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
         return RecordValue(
@@ -968,7 +958,7 @@ class GetSetGeneral : public Command {
       }
       auto result = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                newValue.value(),
@@ -1803,7 +1793,23 @@ class BitopCommand : public Command {
       }
     }
     if (maxLen == 0) {
-      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV);
+      auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+              sess, targetKey, mgl::LockMode::LOCK_X);
+      if (!expdb.ok()) {
+        return expdb.status();
+      }
+      PStore kvstore = expdb.value().store;
+
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      if (!ptxn.ok()) {
+        return ptxn.status();
+      }
+      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV,
+        ptxn.value());
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
+      if (!eCmt.ok()) {
+        return eCmt.status();
+      }
       return Command::fmtZero();
     }
     std::string result(maxLen, 0);
@@ -1831,7 +1837,8 @@ class BitopCommand : public Command {
     }
 
 
-    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
+            sess, targetKey, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -1841,14 +1848,13 @@ class BitopCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, targetKey, "");
     RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
       auto setRes = setGeneric(sess,
                                kvstore,
-                               txn.get(),
+                               ptxn.value(),
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
@@ -2075,6 +2081,11 @@ class RenameGenericCommand : public Command {
 
     auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
     auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
+    PStore dststore = dstdb.value().store;
+    auto dptxn = pCtx->createTransaction(dststore);
+    if (!dptxn.ok()) {
+      return dptxn.status();
+    }
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, src, RecordType::RT_DATA_META);
     if (rv.status().code() == ErrorCodes::ERR_NOTFOUND ||
@@ -2097,7 +2108,8 @@ class RenameGenericCommand : public Command {
         return Command::fmtZero();
       }
 
-      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META);
+      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META,
+        dptxn.value());
       if (!deleted.ok()) {
         return deleted.toString();
       }
@@ -2129,12 +2141,6 @@ class RenameGenericCommand : public Command {
     Status s = Command::delKeyAndTTL(sess, rk, rv.value(), sptxn.value());
     if (!s.ok()) {
       return s;
-    }
-
-    PStore dststore = dstdb.value().store;
-    auto dptxn = pCtx->createTransaction(dststore);
-    if (!dptxn.ok()) {
-      return dptxn.status();
     }
 
     // set new meta k/v
@@ -2703,16 +2709,15 @@ class BitFieldCommand : public Command {
       RecordValue newrv(
         value, RecordType::RT_KV, pCtx->getVersionEP(), rv.getTtl(), rv);
       PStore kvstore = expdb.value().store;
-      auto ptxn = kvstore->createTransaction(sess);
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      std::unique_ptr<Transaction> txn = std::move(ptxn.value());
-      Status s = kvstore->setKV(rk, newrv, txn.get());
+      Status s = kvstore->setKV(rk, newrv, ptxn.value());
       if (!s.ok()) {
         return s;
       }
-      auto eCmt = txn->commit();
+      auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
       }

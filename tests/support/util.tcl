@@ -283,6 +283,44 @@ proc createComplexDataset {r ops {opt []}} {
     }
 }
 
+proc debugPopulateKeys {r count {type "string"} {prefix "key"}} {
+  set type [string tolower $type]
+  for {set idx 0} {$idx < $count} {incr idx} {
+    set key "key:${idx}"
+    if {[string compare prefix ""] != 0} {
+      set key "${prefix}:${idx}"                          
+    }
+    set value "value:${idx}"
+    switch $type {
+        "string" {
+            set string_key "${key}"
+            {*}$r set $string_key $value                                
+        }
+        "list" {
+            set list_key "${key}_list"
+            {*}$r lpush $list_key $value
+        }
+        "hash" {
+            set hash_key "${key}_hash"
+            set field "field:${idx}"
+            {*}$r hset $hash_key $field $value
+        }
+        "set" {
+            set set_key "${key}_set"
+            {*}$r sadd $set_key $value
+        }
+        "zset" {
+            set zset_key "${key}_zset"
+            set score "0.0"
+            {*}$r zadd $zset_key $score $value
+        }
+        default {
+            puts "Unknown populate keys type"
+        }
+    }
+  }
+}
+
 proc formatCommand {args} {
     set cmd "*[llength $args]\r\n"
     foreach a $args {

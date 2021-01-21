@@ -262,7 +262,8 @@ void RecordKey::encodePrefixPk(std::vector<uint8_t>* arr) const {
   arr->push_back(0);
 
   // NOTE(vinchen): version of key, temporarily useless
-  INVARIANT_D(_version == 0);
+  // delSubkeysRange use _version=UINT64_MAX as upper_bound
+  INVARIANT_D(_version == 0 || _version == UINT64_MAX);
   auto v = varintEncode(_version);
   arr->insert(arr->end(), v.begin(), v.end());
 }
@@ -568,6 +569,10 @@ bool RecordKey::operator==(const RecordKey& other) const {
   return _chunkId == other._chunkId && _dbId == other._dbId &&
     _type == other._type && _pk == other._pk && _sk == other._sk &&
     _version == other._version && _fmtVsn == other._fmtVsn;
+}
+
+bool RecordKey::operator!=(const RecordKey &other) const {
+  return !(*this == other);
 }
 
 RecordValue::RecordValue(RecordType type)

@@ -49,6 +49,9 @@ AllKeys initData(std::shared_ptr<ServerEntry>& server, uint32_t count) {
   auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
   all_keys.emplace_back(list_keys);
 
+  // wait binlog dump to disk
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
   // #ifdef _WIN32
   work.flush();
   // #endif
@@ -789,7 +792,16 @@ Status scan(const std::string& logfile) {
       continue;
     }
 
+    if (id != logkey.value().getBinlogId()
+      && logValue.value().getCmd() == "flushalldisk") {
+      LOG(INFO) << "flushalldisk reset id, id:" << id << " logkey:"
+        << logkey.value().getBinlogId();
+      id = logkey.value().getBinlogId();
+    }
+
     if (id != logkey.value().getBinlogId()) {
+      LOG(ERROR) << "id:" << id << " logkey:" << logkey.value().getBinlogId()
+        << " cmd:" << logValue.value().getCmd();
       fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "binlogId error."};
     }
@@ -805,8 +817,11 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
   size_t i = 0;
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
-    const auto guard = MakeGuard([] {
-      destroyEnv(single_dir2);
+    bool clear = false;  // dont clear if failed
+    const auto guard = MakeGuard([clear] {
+      if (clear) {
+        destroyEnv(single_dir2);
+      }
       std::this_thread::sleep_for(std::chrono::seconds(5));
     });
 
@@ -904,7 +919,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       EXPECT_TRUE(0);
       return;
     }
-
+    clear = true;
     LOG(INFO) << ">>>>>> test store count:" << i << " end;";
   }
 }

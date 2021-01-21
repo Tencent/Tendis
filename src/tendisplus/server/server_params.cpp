@@ -30,8 +30,7 @@ string gMappingCmdList = "";  // NOLINT
 
 #define REGISTER_VARS_FULL(                                                   \
   str, var, checkfun, prefun, minval, maxval, allowDynamicSet)                \
-  if (typeid(var) == typeid(int32_t) || typeid(var) == typeid(uint32_t) ||    \
-      typeid(var) == typeid(uint16_t))                                        \
+  if (typeid(var) == typeid(int32_t) || typeid(var) == typeid(uint32_t))      \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
                 new IntVar(str,                                               \
@@ -353,6 +352,10 @@ ServerParams::ServerParams() {
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
 
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);
+  REGISTER_VARS_SAME_NAME(scanDefaultMaxIterateTimes,
+                          nullptr, nullptr, 10, 10000, true);
+
   REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
@@ -409,6 +412,9 @@ ServerParams::ServerParams() {
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
                                   binlogUsingDefaultCF);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit",
+                                  luaTimeLimit);
 }
 
 ServerParams::~ServerParams() {

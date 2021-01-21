@@ -207,6 +207,9 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   ConnectState getConnectState();
   uint64_t getCtime() const;
 
+  static auto parseClusterNodesInfo(const std::string &info) ->
+  Expected<std::bitset<CLUSTER_SLOTS>>;
+
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
   bool clearSlotBit(uint32_t slot);
