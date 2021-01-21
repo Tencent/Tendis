@@ -124,6 +124,7 @@ class UnlinkCommand : public Command {
 
     std::vector<std::string> validKeys;
     validKeys.reserve(args.size());
+    uint64_t elesNum = 0;
     for (size_t i = 1; i < args.size(); ++i) {
       const std::string& key = args[i];
       Expected<RecordValue> rv =
@@ -134,10 +135,11 @@ class UnlinkCommand : public Command {
       } else if (!rv.status().ok()) {
         return rv.status();
       }
+      elesNum += rv.value().getEleCnt();
       validKeys.emplace_back(std::move(args[i]));
     }
     uint64_t size = validKeys.size();
-    std::thread unlink(
+    auto delKeyInTranscation =
       [](Session* sess,
          std::vector<std::string>&& keys,
          std::list<std::unique_ptr<KeyLock>>&& locklist) {
@@ -160,14 +162,19 @@ class UnlinkCommand : public Command {
         }
         auto s = sess->getCtx()->commitAll("mset(nx)");
         if (!s.ok()) {
-          LOG(ERROR) << "UnlinkCommand commitAll failed:"<< s.toString();
+          LOG(ERROR) << "UnlinkCommand commitAll failed:" << s.toString();
         }
-      },
-      sess,
-      std::move(validKeys),
-      std::move(locklist.value()));
-    unlink.detach();
-
+      };
+    if (elesNum > 1024) {
+      std::thread unlink(delKeyInTranscation,
+                         sess,
+                         std::move(validKeys),
+                         std::move(locklist.value()));
+      unlink.detach();
+    } else {
+      delKeyInTranscation(
+        sess, std::move(validKeys), std::move(locklist.value()));
+    }
     return Command::fmtLongLong(size);
   }
 } unlinkCmd;
