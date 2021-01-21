@@ -91,6 +91,10 @@ class KVTtlCompactionFilter : public CompactionFilter {
 std::unique_ptr<CompactionFilter>
 KVTtlCompactionFilterFactory::CreateCompactionFilter(
   const CompactionFilter::Context& context) {
+  if (_cfg->noexpire) {
+    return nullptr;
+  }
+
   uint64_t currentTs = 0;
   INVARIANT(_store != nullptr);
   // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
