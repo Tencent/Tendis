@@ -324,8 +324,8 @@ class DbEmptyCommand : public Command {
   bool containData(Session* sess) {
     auto server = sess->getServerEntry();
     for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
-      auto expdb = server->getSegmentMgr()->getDb(sess, i,
-            mgl::LockMode::LOCK_S);
+      auto expdb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_S);
       if (!expdb.ok()) {
         LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
         return true;
@@ -1069,8 +1069,7 @@ class CommandCommand : public Command {
       auto arg2 = toLower(args[2]);
       auto iter = cmdmap.find(arg2);
       if (iter == cmdmap.end()) {
-        return {ErrorCodes::ERR_PARSEOPT,
-                "Invalid command specified: " + arg2};
+        return {ErrorCodes::ERR_PARSEOPT, "Invalid command specified: " + arg2};
       }
 
       auto cmd = iter->second;
@@ -1850,6 +1849,8 @@ class InfoCommand : public Command {
       auto server = sess->getServerEntry();
       uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
 
+      auto mode =
+        server->getParams()->clusterEnabled ? "cluster" : "standalone";
       std::stringstream ss;
       static int call_uname = 1;
 #ifndef _WIN32
@@ -1864,9 +1865,7 @@ class InfoCommand : public Command {
          << "redis_git_sha1:" << TENDISPLUS_GIT_SHA1 << "\r\n"
          << "redis_git_dirty:" << TENDISPLUS_GIT_DIRTY << "\r\n"
          << "redis_build_id:" << redisBuildId() << "\r\n"
-         << "redis_mode:"
-         << "standalone"
-         << "\r\n"
+         << "redis_mode:" << mode << "\r\n"
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
          << "\r\n"  // NOLINT
@@ -2659,7 +2658,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0 /* No flags. */
+#define EMPTYDB_NO_FLAGS 0     /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {
@@ -3085,8 +3084,8 @@ class setInStoreCommand : public Command {
       return s;
     }
 
-    Expected<uint64_t> exptCommitId = sess->getCtx()->commitTransaction(
-            ptxn.value());
+    Expected<uint64_t> exptCommitId =
+      sess->getCtx()->commitTransaction(ptxn.value());
     if (!exptCommitId.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:"
                  << exptCommitId.status().toString();
