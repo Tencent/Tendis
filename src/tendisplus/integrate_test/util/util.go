@@ -18,7 +18,9 @@ type RedisServer struct {
 	Port int
 	Path string
 	Ip   string
+	binPath string
 }
+
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -271,7 +273,11 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		//_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
 		logFilePath := fmt.Sprintf("%s/stdout.log", s.Path)
 		var cmd string
-		cmd = fmt.Sprintf("nohup ../../../build/bin/tendisplus %s > %s 2>&1 &", cfgFilePath, logFilePath)
+		binPath := "../../../build/bin/tendisplus"
+		if s.binPath != "" {
+			binPath = s.binPath
+		}
+		cmd = fmt.Sprintf("nohup %s %s > %s 2>&1 &", binPath, cfgFilePath, logFilePath)
 		args := []string{}
 		args = append(args, cmd)
 		inShell := true
@@ -286,6 +292,14 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		panic(err)
 	}
 	return nil
+}
+
+func (s *RedisServer) Addr() string {
+	return  s.Ip +":" + strconv.Itoa(s.Port)
+}
+
+func (s *RedisServer) WithBinPath(p string)  {
+	s.binPath = p
 }
 
 type Predixy struct {
