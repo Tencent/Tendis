@@ -111,7 +111,8 @@ Expected<std::string> expireGeneric(Session* sess,
                                     int64_t expireAt,
                                     const std::string& key,
                                     Transaction* txn) {
-  if (expireAt >= (int64_t)msSinceEpoch()) {
+  if (expireAt >= (int64_t)msSinceEpoch() ||
+      sess->getServerEntry()->getParams()->noexpire) {
     bool atLeastOne = false;
     for (auto type : {RecordType::RT_DATA_META}) {
       auto done = expireAfterNow(sess, type, key, expireAt, txn);
@@ -165,10 +166,10 @@ class GeneralExpireCommand : public Command {
       return expt.status();
     }
     auto expdb = sess->getServerEntry()->getSegmentMgr()->getDbWithKeyLock(
-            sess, key, mgl::LockMode::LOCK_X);
+      sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       LOG(ERROR) << "getDbWithKeyLock failed, key" << key
-        << " err:" << expdb.status().toString();
+                 << " err:" << expdb.status().toString();
       return expdb.status();
     }
     PStore kvstore = expdb.value().store;
@@ -541,12 +542,11 @@ class RevisionCommand : public Command {
     if (expire > 0) {
       if (rv.getTtl() != 0) {
         LOG(ERROR) << "revision expire not empty,key:" << key
-          << " old ttl:" << rv.getTtl()
-          << " versionep:" << rv.getVersionEP()
-          << " new ttl:" << expire
-          << " versionep:" << expvs.value();
-        return {ErrorCodes::ERR_INTERGER, "expire not empty "
-          + to_string(rv.getTtl())};
+                   << " old ttl:" << rv.getTtl()
+                   << " versionep:" << rv.getVersionEP()
+                   << " new ttl:" << expire << " versionep:" << expvs.value();
+        return {ErrorCodes::ERR_INTERGER,
+                "expire not empty " + to_string(rv.getTtl())};
       }
       rv.setTtl(expire);
     }
