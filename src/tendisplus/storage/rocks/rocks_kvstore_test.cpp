@@ -1301,4 +1301,73 @@ TEST(RocksKVStore, Compaction) {
   testMaxBinlogId(kvstore);
 }
 
+TEST(RocksKVStore, CompactionWithNoexpire) {
+  auto cfg = genParams();
+  cfg->noexpire = true;
+  EXPECT_TRUE(filesystem::create_directory("db"));
+  // EXPECT_TRUE(filesystem::create_directory("db/0"));
+  EXPECT_TRUE(filesystem::create_directory("log"));
+  const auto guard = MakeGuard([] {
+    filesystem::remove_all("./log");
+    filesystem::remove_all("./db");
+    SyncPoint::GetInstance()->DisableProcessing();
+    SyncPoint::GetInstance()->ClearAllCallBacks();
+  });
+  auto blockCache =
+    rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+  auto kvstore = std::make_unique<RocksKVStore>("0",
+                                                cfg,
+                                                blockCache,
+                                                true,
+                                                KVStore::StoreMode::READ_WRITE,
+                                                RocksKVStore::TxnMode::TXN_PES);
+
+  SyncPoint::GetInstance()->EnableProcessing();
+  SyncPoint::GetInstance()->ClearAllCallBacks();
+
+  uint64_t totalFilter = 0;
+  SyncPoint::GetInstance()->SetCallBack(
+    "InspectKvTtlFilterCount", [&](void* arg) mutable {
+      uint64_t* tmp = reinterpret_cast<uint64_t*>(arg);
+      totalFilter = *tmp;
+    });
+
+  uint64_t totalExpired = 0;
+  bool hasCalled = false;
+  SyncPoint::GetInstance()->SetCallBack(
+    "InspectKvTtlExpiredCount", [&](void* arg) mutable {
+      hasCalled = true;
+      uint64_t* tmp = reinterpret_cast<uint64_t*>(arg);
+      totalExpired = *tmp;
+    });
+
+  uint32_t waitSec = 10;
+  // if we want to check the totalFilter, all data should be different
+  genData(kvstore.get(), 1000, 0, true);
+  genData(kvstore.get(), 1000, msSinceEpoch(), true);
+  genData(kvstore.get(), 1000, msSinceEpoch() + waitSec * 1000, true);
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  // compact data in the default column family
+  auto status = kvstore->compactRange(
+    ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
+  EXPECT_TRUE(status.ok());
+  EXPECT_FALSE(hasCalled);
+
+  EXPECT_EQ(totalFilter, 0);
+  EXPECT_EQ(totalExpired, 0);
+
+  std::this_thread::sleep_for(std::chrono::seconds(waitSec));
+
+  status = kvstore->compactRange(
+    ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
+  EXPECT_TRUE(status.ok());
+  EXPECT_FALSE(hasCalled);
+
+  EXPECT_EQ(totalFilter, 0);
+  EXPECT_EQ(totalExpired, 0);
+
+  testMaxBinlogId(kvstore);
+}
+
 }  // namespace tendisplus
