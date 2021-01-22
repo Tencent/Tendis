@@ -2681,6 +2681,9 @@ class ConfigCommand : public Command {
       if (!s.ok()) {
         return s;
       }
+    } else {
+      LOG(INFO) << "unknown sub command:" << operation;
+      return {ErrorCodes::ERR_PARSEOPT, "unknown sub command:" + operation};
     }
     return Command::fmtOK();
   }
