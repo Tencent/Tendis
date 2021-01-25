@@ -1156,7 +1156,7 @@ std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
 
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     auto expdb =
-      _svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+      _svr->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS, false, 0);
     if (!expdb.ok())
       continue;
 
