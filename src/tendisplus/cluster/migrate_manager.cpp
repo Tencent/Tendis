@@ -576,7 +576,9 @@ void MigrateSendTask::sendSlots() {
       auto delayTime = _svr->getParams()->clusterNodeTimeout / 2 + 1000;
       nextSched = SCLOCK::now() + std::chrono::milliseconds(delayTime);
     } else if (_sender->getSnapshotNum() == 0 && _sender->isRunning()) {
-      LOG(ERROR) << "send snap shot num zero, need retry:" << s.toString();
+      LOG(ERROR) << "send snap shot num zero, need retry"
+                 << bitsetStrEncode(_sender->getSlots()) << "taskid:" << _taskid
+                 << "error str:" << s.toString();
       _state = MigrateSendState::WAIT;
       _sender->stop();
       nextSched = SCLOCK::now() + std::chrono::milliseconds(100);
@@ -584,7 +586,8 @@ void MigrateSendTask::sendSlots() {
       _state = MigrateSendState::ERR;
       nextSched = SCLOCK::now();
       LOG(ERROR) << "Send slots failed, bitmap is:"
-                 << bitsetStrEncode(_sender->getSlots()) << s.toString();
+                 << bitsetStrEncode(_sender->getSlots()) << _taskid << _taskid
+                 << "error str:" << s.toString();
     }
   } else {
     nextSched = SCLOCK::now();
@@ -1283,21 +1286,23 @@ void MigrateReceiveTask::fullReceive() {
     /*NOTE(wayenchen) if srcNode not Fail
     and my receiver snapshot key num is zero,
     retry for three times*/
+
     bool srcNodeFail =
       _svr->getClusterMgr()->getClusterState()->clusterNodeFailed(
         _pTask->_nodeid);
     auto retryCnt = _svr->getParams()->snapShotRetryCnt;
     if (_receiver->getSnapshotNum() == 0 && !srcNodeFail &&
-        getRetryCount() <= retryCnt && _receiver->isRunning()) {
+        getRetryCount() <= retryCnt && _receiver->isRunning() &&
+        s.code() != ErrorCodes::ERR_MIGRATE) {
       auto delayTime = 1000 + redis_port::random() % 5000;
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(delayTime);
       _state = MigrateReceiveState::RECEIVE_SNAPSHOT;
       _retryTime++;
       LOG(ERROR) << "receiveSnapshot need retry" << bitsetStrEncode(_slots)
-                 << s.toString();
+                 << "taskid:" << _taskid << "error str:" << s.toString();
     } else {
       LOG(ERROR) << "receiveSnapshot failed:" << bitsetStrEncode(_slots)
-                 << s.toString();
+                 << "taskid:" << _taskid << "error str:" << s.toString();
       // TODO(takenliu) : clear task, and delete the kv of the chunk.
       _nextSchedTime = SCLOCK::now();
       _state = MigrateReceiveState::ERR;
