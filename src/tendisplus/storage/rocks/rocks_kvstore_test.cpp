@@ -203,8 +203,12 @@ void testMaxBinlogId(const std::unique_ptr<RocksKVStore>& kvstore) {
 TEST(RocksKVStore, RocksOptions) {
   auto cfg = genParamsRocks();
 
-  EXPECT_TRUE(filesystem::create_directory("db"));
-  EXPECT_TRUE(filesystem::create_directory("log"));
+  if (!filesystem::exists("db")) {
+    EXPECT_TRUE(filesystem::create_directory("db"));
+  }
+  if (!filesystem::exists("log")) {
+    EXPECT_TRUE(filesystem::create_directory("log"));
+  }
   const auto guard = MakeGuard([] {
     filesystem::remove_all("./log");
     filesystem::remove_all("./db");
