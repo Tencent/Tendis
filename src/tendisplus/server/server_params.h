@@ -342,6 +342,9 @@ class ServerParams {
   }
 
  private:
+  Status checkParams();
+
+ private:
   map<string, BaseVar*> _mapServerParams;
   std::unordered_map<string, int64_t> _rocksdbOptions;
   std::string _confFile = "";

@@ -472,7 +472,22 @@ Status ServerParams::parseFile(const std::string& filename) {
                << " line:" << line;
     return {ErrorCodes::ERR_PARSEOPT, ""};
   }
+
+  auto s = checkParams();
+  if (!s.ok()) {
+    return s;
+  }
   _confFile = filename;
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+// if need check, add in this function
+Status ServerParams::checkParams() {
+  if (binlogDelRange > truncateBinlogNum) {
+    LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
+      << binlogDelRange << " > " << truncateBinlogNum;
+    return {ErrorCodes::ERR_INTERNAL, ""};
+  }
   return {ErrorCodes::ERR_OK, ""};
 }
 
