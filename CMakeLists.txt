@@ -175,6 +175,7 @@ set(WARN_C_CXX
 -Werror=switch \
 -Werror=type-limits \
 -Werror=uninitialized \
+-Wno-maybe-uninitialized \
 -Werror=unused-function \
 -Werror=unused-label \
 -Werror=unused-result \

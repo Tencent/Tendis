@@ -1,3 +1,4 @@
+#!/bin/bash
 logfile=./redistest.log
 rm $logfile
 

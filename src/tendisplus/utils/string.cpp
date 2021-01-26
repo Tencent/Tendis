@@ -90,7 +90,8 @@ Expected<long double> stold(const std::string& s) {
   try {
     size_t pos = 0;
     result = std::stold(s, &pos);
-    if (s.size() == 0 || isspace(s[0]) || pos != s.size() || isnan(result)) {
+    if (s.size() == 0 || isspace(s[0]) ||
+        pos != s.size() || std::isnan(result)) {
       return {ErrorCodes::ERR_FLOAT, ""};
     }
     return result;
@@ -108,7 +109,7 @@ isspace(((const char*)o->ptr)[0]) ||
 (size_t)(eptr-(char*)o->ptr) != sdslen(o->ptr) ||
 (errno == ERANGE &&
 (value == HUGE_VAL || value == -HUGE_VAL || value == 0)) ||
-isnan(value))
+std::isnan(value))
 return C_ERR;
 
 */
@@ -122,7 +123,8 @@ Expected<double> stod(const std::string& s) {
     char* end;
     result = std::strtod(s.c_str(), &end);
     pos = end - s.c_str();
-    if (s.size() == 0 || isspace(s[0]) || pos != s.size() || isnan(result)) {
+    if (s.size() == 0 || isspace(s[0]) ||
+        pos != s.size() || std::isnan(result)) {
       return {ErrorCodes::ERR_FLOAT, ""};
     }
     return result;
