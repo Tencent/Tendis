@@ -1,3 +1,4 @@
+#!/bin/bash
 logfile="gotest.log"
 
 rm -f $logfile

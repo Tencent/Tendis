@@ -1,0 +1,118 @@
+name: Tendis-build-CI
+# Controls when the action will run. 
+on: 
+  pull_request:
+    branches: [dev-2.2, master]
+  push:
+    branches: [dev-2.2, master]
+jobs:   
+  cpplint-check:
+    name: Lint
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2 
+        with:
+          fetch-depth: 2
+      - name: Prepare Env
+        run: |
+          python -m pip install --upgrade pip
+          pip install cpplint
+          export PATH=$PATH:~/.local/bin/
+          cpplint --version
+      - name: Lint
+        run: |
+          export PATH=$PATH:~/.local/bin/
+          files=`git diff --name-only HEAD HEAD~1`
+          echo "$files" | while read file
+          do
+            if [[ $file =~ \.cc$ || $file =~ \.h$ || $file =~ \.hpp$ || $file =~ \.cpp$ ]]; then
+              if [[ -f $file ]]; then
+                if [[ $file =~ ^src/tendisplus/tools/ldb_ || $file =~ src/tendisplus/include/optional.h ]]; then
+                  echo "cpplint skip $file"
+                  continue
+                else
+                  echo "cpplint --filter=\"-runtime/reference\" $file"
+                  cpplint --filter="-runtime/reference" $file
+                  if [[ $? -ne 0 ]]; then
+                      echo "Run cpplint against $file failed..."
+                      exit 1
+                  fi
+                fi
+              fi
+            fi
+          done
+  build-test:
+    needs: [cpplint-check]
+    name: Build-Test
+    runs-on: ubuntu-18.04
+    env:
+        TEST_DIR: build/bin
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.15
+      - name: Set Up TCL
+        run: sudo apt-get install tcl8.5
+      - name: Init Submodules
+        run: | 
+          git submodule update --init --recursive
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake ..
+          cmake --build . -j2
+      - name: Unit Test
+        run: |
+          chmod +x unittest.sh
+          ./unittest.sh
+          if [ $? -ne 0 ]; then
+            exit 10
+          fi
+          errcnt1=`grep -E "Expected|FAILED" unittest.log |wc -l`
+          if [ $errcnt1 -ne 0 ]; then
+              grep -E "Expected|FAILED" unittest.log
+              exit $errcnt1
+          fi
+          exit 0
+      - name: Redis Test
+        run: |
+          chmod +x redistest.sh
+          ./redistest.sh | tee temp_redistest.log
+          if [ $? -ne 0 ]; then
+            exit 10
+          fi
+          errcnt2=`grep -E "\[err|\[exception|49merr|49mexception" redistest.log|wc -l`
+          if [ $errcnt2 -ne 0 ]; then
+              grep -E "\[err|\[exception|49merr|49mexception" redistest.log
+              exit $errcnt2
+          fi
+          exit 0
+      - name: Restore Test
+        run: |
+          ./$TEST_DIR/restore_test --gtest_throw_on_failure
+      - name: Repl Test
+        run: |
+         ./$TEST_DIR/repl_test --gtest_throw_on_failure
+      # - name: Cluster Test
+      #   run: |
+      #     ./$TEST_DIR/cluster_test --gtest_throw_on_failure
+      - name: GoTest
+        run: |
+          cd src/tendisplus/integrate_test
+          chmod +x gotest.sh
+          ./gotest.sh  | tee go-test2.log 
+          if [ $? -ne 0 ]; then
+            exit 10
+          fi
+          cd -
+          errcnt3=`grep "go passed" src/tendisplus/integrate_test/gotest.log|wc -l`
+          if [ $errcnt3 -ne 6 ]; then
+              grep "fatal" src/tendisplus/integrate_test/gotest.log
+              grep "go passed" src/tendisplus/integrate_test/gotest.log
+              exit $errcnt3
+          fi
+          exit 0
