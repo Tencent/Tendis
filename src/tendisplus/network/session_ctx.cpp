@@ -107,6 +107,7 @@ void SessionCtx::clearRequestCtx() {
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
+  std::lock_guard<std::mutex> lk(_mutex);
   Transaction* txn = nullptr;
   if (_txnMap.count(kvstore->dbId()) > 0) {
     txn = _txnMap[kvstore->dbId()].get();
@@ -237,15 +238,18 @@ void SessionCtx::setIsMonitor(bool in) {
 }
 
 void SessionCtx::setKeylock(const std::string& key, mgl::LockMode mode) {
+  std::lock_guard<std::mutex> lk(_mutex);
   _keylockmap[key] = mode;
 }
 
 void SessionCtx::unsetKeylock(const std::string& key) {
+  std::lock_guard<std::mutex> lk(_mutex);
   INVARIANT_D(_keylockmap.count(key) > 0);
   _keylockmap.erase(key);
 }
 
 bool SessionCtx::isLockedByMe(const std::string& key, mgl::LockMode mode) {
+  std::lock_guard<std::mutex> lk(_mutex);
   if (_keylockmap.count(key) > 0) {
     // TODO(comboqiu): Here, lock can't upgrade or downgrade.
     // If a key lock twice in one session , it can't lock a bigger lock.
