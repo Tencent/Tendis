@@ -324,8 +324,8 @@ class DbEmptyCommand : public Command {
   bool containData(Session* sess) {
     auto server = sess->getServerEntry();
     for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
-      auto expdb = server->getSegmentMgr()->getDb(sess, i,
-            mgl::LockMode::LOCK_S);
+      auto expdb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_S);
       if (!expdb.ok()) {
         LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
         return true;
@@ -1069,8 +1069,7 @@ class CommandCommand : public Command {
       auto arg2 = toLower(args[2]);
       auto iter = cmdmap.find(arg2);
       if (iter == cmdmap.end()) {
-        return {ErrorCodes::ERR_PARSEOPT,
-                "Invalid command specified: " + arg2};
+        return {ErrorCodes::ERR_PARSEOPT, "Invalid command specified: " + arg2};
       }
 
       auto cmd = iter->second;
@@ -1850,6 +1849,8 @@ class InfoCommand : public Command {
       auto server = sess->getServerEntry();
       uint64_t uptime = nsSinceEpoch() - server->getStartupTimeNs();
 
+      auto mode =
+        server->getParams()->clusterEnabled ? "cluster" : "standalone";
       std::stringstream ss;
       static int call_uname = 1;
 #ifndef _WIN32
@@ -1864,9 +1865,7 @@ class InfoCommand : public Command {
          << "redis_git_sha1:" << TENDISPLUS_GIT_SHA1 << "\r\n"
          << "redis_git_dirty:" << TENDISPLUS_GIT_DIRTY << "\r\n"
          << "redis_build_id:" << redisBuildId() << "\r\n"
-         << "redis_mode:"
-         << "standalone"
-         << "\r\n"
+         << "redis_mode:" << mode << "\r\n"
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
          << "\r\n"  // NOLINT
@@ -2209,6 +2208,9 @@ class InfoCommand : public Command {
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-pending-compaction-bytes", &compaction_pending);
 
+      uint64_t blockUsage = server->getBlockCache()->GetUsage();
+      uint64_t blockPinnedUsage = server->getBlockCache()->GetPinnedUsage();
+      uint64_t blockCapacity = server->getBlockCache()->GetCapacity();
 
       ss << "# Dataset\r\n";
       ss << "rocksdb.kvstore-count:" << server->getKVStoreCount() << "\r\n";
@@ -2216,15 +2218,13 @@ class InfoCommand : public Command {
       ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
       ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
       ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";
-      ss << "rocksdb.total-memory:"
-         << memtables + tablereaderMem +
-          (uint64_t)server->getParams()->rocksBlockcacheMB * 1024 * 1024
+      ss << "rocksdb.total-memory:" << memtables + tablereaderMem + blockUsage
          << "\r\n";
       ss << "rocksdb.cur-size-all-mem-tables:" << memtables << "\r\n";
       ss << "rocksdb.estimate-table-readers-mem:" << tablereaderMem << "\r\n";
-      ss << "rocksdb.blockcache:"
-         << (uint64_t)server->getParams()->rocksBlockcacheMB * 1024 * 1024
-         << "\r\n";
+      ss << "rocksdb.blockcache.capacity:" << blockCapacity << "\r\n";
+      ss << "rocksdb.blockcache.usage:" << blockUsage << "\r\n";
+      ss << "rocksdb.blockcache.pinnedusage:" << blockPinnedUsage << "\r\n";
       ss << "rocksdb.mem-table-flush-pending:" << mem_pending << "\r\n";
       ss << "rocksdb.estimate-pending-compaction-bytes:" << compaction_pending
          << "\r\n";
@@ -2376,39 +2376,11 @@ class InfoCommand : public Command {
                              const std::string& section,
                              Session* sess,
                              std::stringstream& result) {
-    if (section == "binloginfo") {
+    if (allsections || defsections || section == "binloginfo") {
       auto server = sess->getServerEntry();
 
       result << "# BinlogInfo\r\n";
-      for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expdb = server->getSegmentMgr()->getDb(
-          sess, i, mgl::LockMode::LOCK_IS, false, 0);
-        if (!expdb.ok()) {
-          continue;
-        }
-        PStore kvstore = expdb.value().store;
-        auto ptxn = sess->getCtx()->createTransaction(kvstore);
-        if (!ptxn.ok()) {
-          continue;
-        }
-        auto eMin = RepllogCursorV2::getMinBinlog(ptxn.value());
-        if (!eMin.ok()) {
-          continue;
-        }
-        auto eMax = RepllogCursorV2::getMaxBinlog(ptxn.value());
-        if (!eMax.ok()) {
-          continue;
-        }
-        result << "rocksdb" + kvstore->dbId() << ":"
-               << "min=" << eMin.value().getBinlogId()
-               << ",minTs=" << eMin.value().getTimestamp()
-               << ",minRevision=" << (int64_t)eMin.value().getVersionEp()
-               << ",max=" << eMax.value().getBinlogId()
-               << ",maxTs=" << eMax.value().getTimestamp()
-               << ",maxRevision=" << (int64_t)eMax.value().getVersionEp()
-               << ",highestVisble=" << kvstore->getHighestBinlogId() << "\r\n";
-      }
-
+      result << server->getReplManager()->getRecycleBinlogStr(sess);
       result << "\r\n";
     }
   }
@@ -2686,7 +2658,7 @@ class ConfigCommand : public Command {
   }
 } configCmd;
 
-#define EMPTYDB_NO_FLAGS 0 /* No flags. */
+#define EMPTYDB_NO_FLAGS 0     /* No flags. */
 #define EMPTYDB_ASYNC (1 << 0) /* Reclaim memory in another thread. */
 
 class FlushGeneric : public Command {
@@ -3112,8 +3084,8 @@ class setInStoreCommand : public Command {
       return s;
     }
 
-    Expected<uint64_t> exptCommitId = sess->getCtx()->commitTransaction(
-            ptxn.value());
+    Expected<uint64_t> exptCommitId =
+      sess->getCtx()->commitTransaction(ptxn.value());
     if (!exptCommitId.ok()) {
       LOG(ERROR) << "setInStoreCommand failed:"
                  << exptCommitId.status().toString();

@@ -165,10 +165,10 @@ class server {
  public:
   server(asio::io_context& io_context, uint16_t port) {
     try {
-    _acceptor = new asio::ip::tcp::acceptor(io_context,
-       asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+      _acceptor = new asio::ip::tcp::acceptor(
+        io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
     } catch (exception e) {
-#ifdef TENDIS_DEBUG
+#if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif
       LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
@@ -297,10 +297,10 @@ class server2 {
  public:
   server2(asio::io_context& io_context, uint16_t port) {
     try {
-      _acceptor = new asio::ip::tcp::acceptor(io_context,
-        asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+      _acceptor = new asio::ip::tcp::acceptor(
+        io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
     } catch (exception e) {
-#ifdef TENDIS_DEBUG
+#if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif
       LOG(FATAL) << "_acceptor async_accept catch error:" << e.what();
@@ -329,8 +329,9 @@ class server2 {
   asio::ip::tcp::acceptor* _acceptor;
 };
 
-void rateLimit(uint64_t ratelimit, std::shared_ptr<asio::io_context> ioCtx,
-        uint32_t port) {
+void rateLimit(uint64_t ratelimit,
+               std::shared_ptr<asio::io_context> ioCtx,
+               uint32_t port) {
   uint32_t total = ratelimit * 10;
   auto cli1 =
     std::make_shared<BlockingTcpClient>(ioCtx, 128, 1024 * 1024, 10, ratelimit);

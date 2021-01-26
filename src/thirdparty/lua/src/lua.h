@@ -15,6 +15,10 @@
 
 #include "luaconf.h"
 
+#ifdef _MSC_VER
+#define strcasecmp stricmp
+#define strncasecmp strnicmp
+#endif
 
 #define LUA_VERSION	"Lua 5.1"
 #define LUA_RELEASE	"Lua 5.1.5"
