@@ -4,7 +4,7 @@ project (TENDIS_PLUS)
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-option(TENDIS_DEBUG "define TENDIS_DEBUG" ON)
+option(TENDIS_DEBUG "define TENDIS_DEBUG" OFF)
 if(TENDIS_DEBUG)
     add_definitions(-DTENDIS_DEBUG)
 endif()

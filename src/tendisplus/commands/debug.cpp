@@ -1866,6 +1866,11 @@ class InfoCommand : public Command {
          << "redis_git_dirty:" << TENDISPLUS_GIT_DIRTY << "\r\n"
          << "redis_build_id:" << redisBuildId() << "\r\n"
          << "redis_mode:" << mode << "\r\n"
+#ifdef TENDIS_DEBUG
+         << "TENDIS_DEBUG:ON" << "\r\n"
+#else
+         << "TENDIS_DEBUG:OFF" << "\r\n"
+#endif
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
          << "\r\n"  // NOLINT
