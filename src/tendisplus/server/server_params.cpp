@@ -90,7 +90,7 @@ string gMappingCmdList = "";  // NOLINT
   REGISTER_VARS_FULL(                                     \
     #var, var, checkfun, prefun, minval, maxval, allowDynamicSet)
 
-bool logLevelParamCheck(const string& val) {
+bool logLevelParamCheck(const string& val, string* errinfo) {
   auto v = toLower(val);
   if (v == "debug" || v == "verbose" || v == "notice" || v == "warning") {
     return true;
@@ -98,7 +98,7 @@ bool logLevelParamCheck(const string& val) {
   return false;
 }
 
-bool compressTypeParamCheck(const string& val) {
+bool compressTypeParamCheck(const string& val, string* errinfo) {
   auto v = toLower(val);
   if (v == "snappy" || v == "lz4" || v == "none") {
     return true;
@@ -106,14 +106,50 @@ bool compressTypeParamCheck(const string& val) {
   return false;
 }
 
-bool executorThreadNumCheck(const std::string& val) {
+bool executorThreadNumCheck(const std::string& val, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (!getGlobalServer()) {
+  if (!gParams || gParams->executorWorkPoolSize == 0) {
     return true;
   }
-  auto workPoolSize = getGlobalServer()->getParams()->executorWorkPoolSize;
+  auto workPoolSize = gParams->executorWorkPoolSize;
 
-  return (num % workPoolSize) ? false : true;
+  if (num % workPoolSize) {
+    if (errinfo != NULL) {
+      *errinfo = "need executorThreadNum % executorWorkPoolSize == 0";
+    }
+    return false;
+  }
+  return true;
+}
+
+bool binlogDelRangeCheck(const std::string& val, string* errinfo) {
+  auto num = std::strtoull(val.c_str(), nullptr, 10);
+  if (!gParams) {
+    return true;
+  }
+  auto truncateBinlogNum = gParams->truncateBinlogNum;
+  if (num > truncateBinlogNum) {
+    if (errinfo != NULL) {
+      *errinfo = "need binlogDelRange < truncateBinlogNum";
+    }
+    return false;
+  }
+  return true;
+}
+
+bool truncateBinlogNumCheck(const std::string& val, string* errinfo) {
+  auto num = std::strtoull(val.c_str(), nullptr, 10);
+  if (!gParams) {
+    return true;
+  }
+  auto binlogDelRange = gParams->binlogDelRange;
+  if (num < binlogDelRange) {
+    if (errinfo != NULL) {
+      *errinfo = "need binlogDelRange < truncateBinlogNum";
+    }
+    return false;
+  }
+  return true;
 }
 
 string removeQuotes(const string& v) {
@@ -339,10 +375,12 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(logRecycleThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_FULL("truncateBinlogIntervalMs", truncateBinlogIntervalMs,
     NULL, NULL, 10, 5000, true)
-  REGISTER_VARS_ALLOW_DYNAMIC_SET(truncateBinlogNum);
+  REGISTER_VARS_SAME_NAME(
+    truncateBinlogNum, truncateBinlogNumCheck, nullptr, 1, INT_MAX, true);
   REGISTER_VARS(binlogFileSizeMB);
   REGISTER_VARS(binlogFileSecs);
-  REGISTER_VARS(binlogDelRange);
+  REGISTER_VARS_SAME_NAME(
+    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 1000000, true);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
@@ -475,7 +513,22 @@ Status ServerParams::parseFile(const std::string& filename) {
                << " line:" << line;
     return {ErrorCodes::ERR_PARSEOPT, ""};
   }
+
+  auto s = checkParams();
+  if (!s.ok()) {
+    return s;
+  }
   _confFile = filename;
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+// if need check, add in this function
+Status ServerParams::checkParams() {
+  if (binlogDelRange > truncateBinlogNum) {
+    LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
+      << binlogDelRange << " > " << truncateBinlogNum;
+    return {ErrorCodes::ERR_INTERNAL, ""};
+  }
   return {ErrorCodes::ERR_OK, ""};
 }
 

@@ -136,7 +136,8 @@ TEST(ServerParams, DynamicSet) {
 
   const auto guard =
     MakeGuard([] { remove("gtest_serverparams_dynamicset.cfg"); });
-  auto cfg = std::make_unique<ServerParams>();
+  tendisplus::gParams = std::make_shared<tendisplus::ServerParams>();
+  auto cfg = tendisplus::gParams;
   auto s = cfg->parseFile("gtest_serverparams_dynamicset.cfg");
   EXPECT_EQ(s.ok(), true) << s.toString();
 
@@ -146,6 +147,16 @@ TEST(ServerParams, DynamicSet) {
   EXPECT_EQ(errinfo, "not allow dynamic set");
   EXPECT_EQ(cfg->setVar("maxBinlogKeepNum", "100", NULL, false), true);
   EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
+
+  // check params
+  EXPECT_EQ(cfg->setVar("binlogDelRange", "60000", &errinfo, false), false);
+  EXPECT_EQ(errinfo, "need binlogDelRange < truncateBinlogNum");
+  EXPECT_EQ(cfg->binlogDelRange, 1);
+  EXPECT_EQ(cfg->setVar("binlogDelRange", "40000", NULL, false), true);
+  EXPECT_EQ(cfg->binlogDelRange, 40000);
+
+  EXPECT_EQ(cfg->setVar("truncateBinlogNum", "30000", &errinfo, false), false);
+  EXPECT_EQ(errinfo, "need binlogDelRange < truncateBinlogNum");
 }
 
 TEST(ServerParams, RocksOption) {
