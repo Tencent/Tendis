@@ -63,7 +63,7 @@ jobs:
       - name: Build
         run: |
           mkdir build && cd build
-          cmake ..
+          cmake -DTENDIS_DEBUG=ON ..
           cmake --build . -j2
       - name: Unit Test
         run: |
