@@ -749,7 +749,7 @@ void RocksPesTxn::ensureTxn() {
 }
 
 Status rocksdbOptionsSet(rocksdb::Options& options,
-                         const std::string key,
+                         const std::string& key,
                          int64_t value) {  // NOLINT(runtime/references)
   // AdvancedColumnFamilyOptions
   if (key == "max_write_buffer_number") {
@@ -1376,17 +1376,17 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       }
       // NOTE(takenliu) binlogid maybe has lag, so we need check again.
       if (explog.value().getBinlogId() > end) {
-          break;
+        break;
       }
       ts = explog.value().getTimestamp();
       uint64_t minKeepLogMs =
-              static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
+        static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
       if (minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
         break;
       }
       DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-                 << " delete:" << nextStart
-                 << " to " << explog.value().getBinlogId()
+                 << " delete:" << nextStart << " to "
+                 << explog.value().getBinlogId()
                  << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
 
       auto s = deleteRangeBinlog(nextStart, range_end);  // [start, end)
@@ -1461,8 +1461,8 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       nextStart = nextSave;
     } else if (nextSave - nextStart >= _cfg->binlogDelRange) {
       DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
-                 << " delete:" << nextStart
-                 << " to " << explog.value().getBinlogId()
+                 << " delete:" << nextStart << " to "
+                 << explog.value().getBinlogId()
                  << " time:" << (cur_ts - ts) / 1000 << " sec ago.";
       auto s = deleteRangeBinlog(nextStart, nextSave);
       if (!s.ok()) {
@@ -2555,6 +2555,40 @@ Status RocksKVStore::recoveryFromBgError() {
 #endif
 
   return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::setOption(const std::string& option, int64_t value) {
+  std::unordered_map<std::string, std::string> map;
+  if (option.substr(0, 6) != "rocks.") {
+    return {ErrorCodes::ERR_INTERNAL, option + "is not rocksdb option"};
+  }
+
+  static std::set<std::string> rocksdb_dynamic_options = {
+    "rocks.max_background_compactions", "rocks.max_open_files"};
+
+  if (rocksdb_dynamic_options.count(option) <= 0) {
+    return {ErrorCodes::ERR_INTERNAL, option + " can't change dynamically"};
+  }
+
+  auto real_option = option.substr(6, option.size() - 6);
+  map[real_option] = std::to_string(value);
+
+  auto s = getBaseDB()->SetDBOptions(map);
+  if (!s.ok()) {
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+int64_t RocksKVStore::getOption(const std::string& option) {
+  if (option == "rocks.max_background_compactions") {
+    return getBaseDB()->GetDBOptions().max_background_compactions;
+  } else if (option == "rocks.max_open_files") {
+    return getBaseDB()->GetDBOptions().max_open_files;
+  } else {
+    return -2;
+  }
 }
 
 void RocksKVStore::resetStatistics() {

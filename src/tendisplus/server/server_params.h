@@ -49,14 +49,11 @@ class BaseVar {
     }
   }
   virtual ~BaseVar() {}
-  bool setVar(const string& value, string* errinfo = NULL, bool force = true) {
-    if (!allowDynamicSet && !force) {
-      if (errinfo != NULL) {
-        *errinfo = "not allow dynamic set";
-      }
-      return false;
+  Status setVar(const string& value, bool startup = true) {
+    if (!allowDynamicSet && !startup) {
+      return {ErrorCodes::ERR_PARSEOPT, name + "can't change dynamically"};
     }
-    return set(value, errinfo);
+    return set(value);
   }
   virtual string show() const = 0;
   virtual string default_show() const = 0;
@@ -73,7 +70,7 @@ class BaseVar {
   }
 
  protected:
-  virtual bool set(const string& value, string* errinfo = NULL) = 0;
+  virtual Status set(const string& value) = 0;
   virtual bool check(const string& value, string* errinfo = NULL) {
     if (checkFun != NULL) {
       return checkFun(value, errinfo);
@@ -112,16 +109,18 @@ class StringVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val, string* errinfo = NULL) {
+  Status set(const string& val) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v, errinfo))
-      return false;
+    std::string errinfo;
+    if (!check(v, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
+    }
 
     *reinterpret_cast<string*>(value) = v;
 
     if (Onupdate != NULL)
       Onupdate();
-    return true;
+    return {ErrorCodes::ERR_OK, ""};
   }
   std::string _defaultValue;
 };
@@ -148,26 +147,27 @@ class IntVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val, string* errinfo = NULL) {
+  Status set(const string& val) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v, errinfo))
-      return false;
-    int64_t valTemp;
-
-    try {
-      valTemp = std::stoi(v);
-    } catch (...) {
-      LOG(ERROR) << "IntVar stoi err:" << v;
-      return false;
+    std::string errinfo;
+    if (!check(v, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
+
+    auto eInt = tendisplus::stoll(v);
+    if (!eInt.ok()) {
+      return eInt.status();
+    }
+    int64_t valTemp = eInt.value();
     if (valTemp < _minVal || valTemp > _maxVal) {
-      return false;
+      return {ErrorCodes::ERR_PARSEOPT, name + " is out of range"};
     }
     *reinterpret_cast<int*>(value) = valTemp;
 
     if (Onupdate != NULL)
       Onupdate();
-    return true;
+
+    return {ErrorCodes::ERR_OK, ""};
   }
   int _defaultValue;
   int64_t _minVal;
@@ -196,26 +196,27 @@ class Int64Var : public BaseVar {
   }
 
  private:
-  bool set(const string& val, string* errinfo = NULL) {
+  Status set(const string& val) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v, errinfo))
-      return false;
-    int64_t valTemp;
-
-    try {
-      valTemp = std::stoll(v);
-    } catch (...) {
-      LOG(ERROR) << "Int64Var stoll err:" << v;
-      return false;
+    std::string errinfo;
+    if (!check(v, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
+
+    auto eInt = tendisplus::stoll(v);
+    if (!eInt.ok()) {
+      return eInt.status();
+    }
+    int64_t valTemp = eInt.value();
     if (valTemp < _minVal || valTemp > _maxVal) {
-      return false;
+      return {ErrorCodes::ERR_PARSEOPT, name + " is out of range"};
     }
     *reinterpret_cast<int64_t*>(value) = valTemp;
 
     if (Onupdate != NULL)
       Onupdate();
-    return true;
+
+    return {ErrorCodes::ERR_OK, ""};
   }
   int64_t _defaultValue;
   int64_t _minVal;
@@ -239,20 +240,22 @@ class FloatVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val, string* errinfo = NULL) {
+  Status set(const string& val) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v, errinfo))
-      return false;
-
-    try {
-      *reinterpret_cast<float*>(value) = std::stof(v);
-    } catch (...) {
-      LOG(ERROR) << "FloatVar stof err:" << v;
-      return false;
+    std::string errinfo;
+    if (!check(v, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
+
+    auto eFloat = tendisplus::stold(v);
+    if (!eFloat.ok()) {
+      return eFloat.status();
+    }
+    *reinterpret_cast<float*>(value) = static_cast<float>(eFloat.value());
+
     if (Onupdate != NULL)
       Onupdate();
-    return true;
+    return {ErrorCodes::ERR_OK, ""};
   }
   float _defaultValue;
 };
@@ -274,16 +277,18 @@ class BoolVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val, string* errinfo = NULL) {
+  Status set(const string& val) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v, errinfo))
-      return false;
+    std::string errinfo;
+    if (!check(v, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
+    }
 
     *reinterpret_cast<bool*>(value) = isOptionOn(v);
 
     if (Onupdate != NULL)
       Onupdate();
-    return true;
+    return {ErrorCodes::ERR_OK, ""};
   }
   bool _defaultValue;
 };
@@ -323,10 +328,7 @@ class ServerParams {
   string showAll() const;
   bool showVar(const string& key, string* info) const;
   bool showVar(const string& key, vector<string>* info) const;
-  bool setVar(const string& name,
-              const string& value,
-              string* errinfo,
-              bool force = true);
+  Status setVar(const string& name, const string& value, bool startup = true);
   Status rewriteConfig() const;
   uint32_t paramsNum() const {
     return _mapServerParams.size();

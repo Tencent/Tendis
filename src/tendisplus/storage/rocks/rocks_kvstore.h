@@ -326,6 +326,8 @@ class RocksKVStore : public KVStore {
   std::string getBgError() const override;
   Status recoveryFromBgError() override;
   void resetStatistics();
+  Status setOption(const std::string& option, int64_t value) override;
+  int64_t getOption(const std::string& option) override;
 
   Expected<VersionMeta> getVersionMeta() override;
   Expected<VersionMeta> getVersionMeta(const std::string& name) override;

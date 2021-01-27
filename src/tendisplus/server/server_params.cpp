@@ -509,10 +509,14 @@ Status ServerParams::parseFile(const std::string& filename) {
             LOG(ERROR) << "parseFile include file failed: " << tokens[1];
             return ret;
           }
-        } else if (!setVar(tokens[0], tokens[1], NULL)) {
-          LOG(ERROR) << "err arg:" << tokens[0] << " " << tokens[1];
-          return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid parameter " + tokens[0] + " value: " + tokens[1]};
+        } else {
+          auto s = setVar(tokens[0], tokens[1]);
+          if (!s.ok()) {
+            LOG(ERROR) << "invalid parameter:" << tokens[0] << " " << tokens[1]
+                       << " " << s.toString();
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "invalid parameter " + tokens[0] + " value: " + tokens[1]};
+          }
         }
       } else {
         LOG(ERROR) << "err arg:" << line;
@@ -538,41 +542,75 @@ Status ServerParams::checkParams() {
   if (binlogDelRange > truncateBinlogNum) {
     LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
                << binlogDelRange << " > " << truncateBinlogNum;
-    return {ErrorCodes::ERR_INTERNAL, ""};
+    return {ErrorCodes::ERR_INTERNAL,
+            "not allow binlogDelRange > truncateBinlogNum"};
   }
+
+  if (scanJobCntIndexMgr > kvStoreCount)
+    scanCntIndexMgr = kvStoreCount;
+
+  if (delJobCntIndexMgr > kvStoreCount)
+    delJobCntIndexMgr = kvStoreCount;
+
+  if (incrPushThreadnum > kvStoreCount)
+    incrPushThreadnum = kvStoreCount;
+
+  if (fullPushThreadnum > kvStoreCount)
+    fullPushThreadnum = kvStoreCount;
+
+  if (fullReceiveThreadnum > kvStoreCount)
+    fullReceiveThreadnum = kvStoreCount;
+
+  if (logRecycleThreadnum > kvStoreCount)
+    logRecycleThreadnum = kvStoreCount;
+
   return {ErrorCodes::ERR_OK, ""};
 }
 
-bool ServerParams::setVar(const string& name,
-                          const string& value,
-                          string* errinfo,
-                          bool force) {
+Status ServerParams::setVar(const string& name,
+                            const string& value,
+                            bool startup) {
+  string errinfo;
+  auto argname = toLower(name);
   auto iter = _mapServerParams.find(toLower(name));
   if (iter == _mapServerParams.end()) {
-    if (name.substr(0, 6) == "rocks.") {
+    if (argname.substr(0, 6) == "rocks.") {
       auto ed = tendisplus::stoll(value);
       if (!ed.ok()) {
-        if (errinfo != NULL)
-          *errinfo = "invalid rocksdb options:" + name + " value:" + value;
-
-        return false;
+        errinfo = "invalid rocksdb options:" + argname + " value:" + value
+          + " " + ed.status().toString();
+        return {ErrorCodes::ERR_PARSEOPT, errinfo};
       }
 
-      _rocksdbOptions.insert(
-        make_pair(toLower(name.substr(6, name.length())), ed.value()));
-      return true;
+      if (startup) {
+        _rocksdbOptions.insert(
+          make_pair(toLower(argname.substr(6, argname.length())), ed.value()));
+        return {ErrorCodes::ERR_OK, ""};
+      } else {
+        auto server = getGlobalServer();
+        LocalSessionGuard sg(server.get());
+        for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
+          auto expStore = server->getSegmentMgr()->getDb(
+            sg.getSession(), i, mgl::LockMode::LOCK_IS);
+          RET_IF_ERR_EXPECTED(expStore);
+
+          // change rocksdb options dynamically
+          auto s = expStore.value().store->setOption(argname, ed.value());
+          RET_IF_ERR(s);
+        }
+
+        return {ErrorCodes::ERR_OK, ""};
+      }
     }
 
-    if (errinfo != NULL)
-      *errinfo = "not found arg:" + name;
-    return false;
+    errinfo = "not found arg:" + argname;
+    return {ErrorCodes::ERR_PARSEOPT, errinfo};
   }
-  if (!force) {
-    LOG(INFO) << "ServerParams setVar dynamic," << name << " : " << value;
+  if (!startup) {
+    LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
   }
-  return iter->second->setVar(value, errinfo, force);
+  return iter->second->setVar(value, startup);
 }
-
 
 bool ServerParams::registerOnupdate(const string& name, funptr ptr) {
   auto iter = _mapServerParams.find(toLower(name));

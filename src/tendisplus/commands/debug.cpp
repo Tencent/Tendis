@@ -2567,12 +2567,9 @@ class ConfigCommand : public Command {
       } else if (configName == "appendonly") {
         // NOTE(takenliu): donothing, for tests/*.tcl
       } else {
-        string errinfo;
-        bool force = false;
-        if (!sess->getServerEntry()->getParams()->setVar(
-              configName, args[3], &errinfo, force)) {
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
+        auto s = sess->getServerEntry()->getParams()->setVar(
+          configName, args[3], false);
+        RET_IF_ERR(s);
       }
     } else if (operation == "get") {
       if (args.size() != 3) {

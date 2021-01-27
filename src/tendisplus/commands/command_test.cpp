@@ -2008,6 +2008,49 @@ TEST(Command, dexec) {
 #endif
 }
 
+void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"CONFIG", "SET", "rocks.max_background_compactions", "3"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    EXPECT_EQ(store->getOption("rocks.max_background_compactions"), 3);
+  }
+
+  sess.setArgs({"CONFIG", "SET", "rocks.max_open_files", "3000"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    EXPECT_EQ(store->getOption("rocks.max_open_files"), 3000);
+  }
+
+  sess.setArgs({"CONFIG", "SET", "rocks.max_open_files", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    EXPECT_EQ(store->getOption("rocks.max_open_files"), -1);
+  }
+
+  sess.setArgs({"CONFIG", "SET", "rocks.abc", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_FALSE(expect.ok());
+}
+
 void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext);
@@ -2045,11 +2088,11 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   // index manager
   sess.setArgs({"CONFIG", "SET", "scanJobCntIndexMgr", "8"});
   expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 8);
+  EXPECT_EQ(svr->getParams()->scanJobCntIndexMgr, 8);
 
   sess.setArgs({"CONFIG", "SET", "delJobCntIndexMgr", "8"});
   expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
+  EXPECT_EQ(svr->getParams()->delJobCntIndexMgr, 8);
 
   // total sleep 10s to wait thread resize ok
   sleep(10);
@@ -2094,11 +2137,11 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   // index manager
   sess.setArgs({"CONFIG", "SET", "scanJobCntIndexMgr", "1"});
   expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
+  EXPECT_EQ(svr->getParams()->scanJobCntIndexMgr, 1);
 
   sess.setArgs({"CONFIG", "SET", "delJobCntIndexMgr", "1"});
   expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 1);
+  EXPECT_EQ(svr->getParams()->delJobCntIndexMgr, 1);
 
   // total sleep 10s to wait thread resize ok
   sleep(10);
@@ -2169,6 +2212,21 @@ TEST(Command, adminSet_Get_DelCommand) {
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, rocksdbOptionsCommand) {
+  const auto guard = MakeGuard([]() { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+
+  getGlobalServer() = makeServerEntry(cfg);
+
+  testRocksOptionCommand(getGlobalServer());
+
+#ifndef _WIN32
+  getGlobalServer()->stop();
+  EXPECT_EQ(getGlobalServer().use_count(), 1);
 #endif
 }
 
