@@ -881,6 +881,38 @@ void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
   }
 }
 
+string catRepr(const string& val) {
+  size_t len = val.length();
+  size_t i = 0;
+  std::stringstream s;
+  s << "\"";
+  char buf[5];
+  while (i < len) {
+    switch (val[i]) {
+      case '\\':
+      case '"':
+        s << "\\" << val[i];
+        break;
+      case '\n': s << "\\n"; break;
+      case '\r': s << "\\r"; break;
+      case '\t': s << "\\t"; break;
+      case '\a': s << "\\a"; break;
+      case '\b': s << "\\b"; break;
+      default:
+        if (isprint(val[i])) {
+          s << val[i];
+        } else {
+          snprintf(buf, sizeof(buf), "\\x%02x", val[i]);
+          s << buf;
+        }
+        break;
+    }
+    i++;
+  }
+  s << "\"";
+  return s.str();
+}
+
 void ServerEntry::replyMonitors(Session* sess) {
   if (_monitors.size() <= 0) {
     return;
@@ -901,7 +933,7 @@ void ServerEntry::replyMonitors(Session* sess) {
   info += " [" + std::to_string(dbId) + " " + sess->getRemote() + "] ";
   const auto& args = sess->getArgs();
   for (uint32_t i = 0; i < args.size(); ++i) {
-    info += "\"" + args[i] + "\"";
+    info += catRepr(args[i]);
     if (i != (args.size() - 1)) {
       info += " ";
     }
