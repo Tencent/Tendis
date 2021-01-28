@@ -314,6 +314,7 @@ ServerParams::ServerParams() {
                      -1,
                      false);
   REGISTER_VARS(logDir);
+  REGISTER_VARS(daemon);
 
   REGISTER_VARS_DIFF_NAME("storage", storageEngine);
   REGISTER_VARS_DIFF_NAME("dir", dbPath);
