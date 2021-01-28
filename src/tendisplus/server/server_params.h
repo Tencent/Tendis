@@ -352,6 +352,7 @@ class ServerParams {
   uint32_t port = 8903;
   std::string logLevel = "";
   std::string logDir = "./";
+  bool daemon = true;
 
   std::string storageEngine = "rocks";
   std::string dbPath = "./db";

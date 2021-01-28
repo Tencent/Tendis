@@ -278,6 +278,7 @@ ServerParams::ServerParams() {
                      -1,
                      false);
   REGISTER_VARS(logDir);
+  REGISTER_VARS(daemon);
 
   REGISTER_VARS_DIFF_NAME("storage", storageEngine);
   REGISTER_VARS_DIFF_NAME("dir", dbPath);
@@ -460,7 +461,7 @@ Status ServerParams::parseFile(const std::string& filename) {
             LOG(ERROR) << "parseFile include file failed: " << tokens[1];
             return ret;
           }
-        } else if (!setVar(tokens[0], tokens[1], NULL)) {
+        } else if (!setVar(tokens[0], tokens[1], nullptr)) {
           LOG(ERROR) << "err arg:" << tokens[0] << " " << tokens[1];
           return {ErrorCodes::ERR_PARSEOPT,
                   "invalid parameter " + tokens[0] + " value: " + tokens[1]};

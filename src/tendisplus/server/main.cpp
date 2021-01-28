@@ -84,11 +84,13 @@ int main(int argc, char* argv[]) {
   INVARIANT(sizeof(double) == 8);
 #ifndef WITH_ASAN
 #ifndef _WIN32
-  if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
-    // NOTE(deyukong): it should rarely fail.
-    // but if code reaches here, cerr may have been redirected to
-    // /dev/null and nothing printed.
-    LOG(FATAL) << "daemonlize failed:" << errno;
+  if (params->daemon) {
+    if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
+      // NOTE(deyukong): it should rarely fail.
+      // but if code reaches here, cerr may have been redirected to
+      // /dev/null and nothing printed.
+      LOG(FATAL) << "daemonlize failed:" << errno;
+    }
   }
 #endif
 #endif
