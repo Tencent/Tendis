@@ -913,12 +913,14 @@ string catRepr(const string& val) {
   return s.str();
 }
 
+// TODO(takenliu) add gtest
 void ServerEntry::replyMonitors(Session* sess) {
   if (_monitors.size() <= 0) {
     return;
   }
 
-  std::string info = "+";
+  stringstream info;
+  info << "+";
 
   auto timeNow = std::chrono::duration_cast<std::chrono::microseconds>(
     std::chrono::system_clock::now().time_since_epoch());
@@ -928,21 +930,21 @@ void ServerEntry::replyMonitors(Session* sess) {
   INVARIANT(pCtx != nullptr);
   uint32_t dbId = pCtx->getDbId();
 
-  info += std::to_string(timestamp / 1000000) + "." +
+  info << std::to_string(timestamp / 1000000) << "." <<
     std::to_string(timestamp % 1000000);
-  info += " [" + std::to_string(dbId) + " " + sess->getRemote() + "] ";
+  info << " [" << std::to_string(dbId) << " " << sess->getRemote() << "] ";
   const auto& args = sess->getArgs();
   for (uint32_t i = 0; i < args.size(); ++i) {
-    info += catRepr(args[i]);
+    info << catRepr(args[i]);
     if (i != (args.size() - 1)) {
-      info += " ";
+      info << " ";
     }
   }
-  info += "\r\n";
+  info << "\r\n";
 
   std::lock_guard<std::mutex> lk(_mutex);
   for (auto iter = _monitors.begin(); iter != _monitors.end();) {
-    auto s = (*iter)->setResponse(info);
+    auto s = (*iter)->setResponse(info.str());
     if (!s.ok()) {
       iter = _monitors.erase(iter);
     } else {
