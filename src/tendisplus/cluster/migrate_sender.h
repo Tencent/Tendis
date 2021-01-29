@@ -150,7 +150,10 @@ class ChunkMigrateSender {
  private:
   Expected<std::unique_ptr<Transaction>> initTxn();
   Status sendBinlog();
-  Expected<uint64_t> sendRange(Transaction* txn, uint32_t begin, uint32_t end);
+  Expected<uint64_t> sendRange(Transaction* txn,
+                               uint32_t begin,
+                               uint32_t end,
+                               uint32_t* totalNum);
   Status sendSnapshot();
   Status sendLastBinlog();
   Status catchupBinlog(uint64_t end);
