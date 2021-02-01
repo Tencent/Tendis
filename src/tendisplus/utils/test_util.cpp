@@ -2725,10 +2725,13 @@ void testExpireCommandWhenNoexpireTrue(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  svr->getParams()->noexpire = false;
+  sess.setArgs({"config", "set", "noexpire", "no"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
 
   sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
-  auto expect = Command::runSessionCmd(&sess);
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
@@ -2739,7 +2742,10 @@ void testExpireCommandWhenNoexpireTrue(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtZero());
 
-  svr->getParams()->noexpire = true;
+  sess.setArgs({"config", "set", "noexpire", "yes"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
 
   sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
   expect = Command::runSessionCmd(&sess);
@@ -2759,11 +2765,14 @@ void testExpireKeyWhenGet(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  svr->getParams()->noexpire = true;
+  sess.setArgs({"config", "set", "noexpire", "yes"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
 
   // string
   sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
-  auto expect = Command::runSessionCmd(&sess);
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
@@ -2846,7 +2855,11 @@ void testExpireKeyWhenGet(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(expect.value(), Command::fmtBulk("v"));
 
   // delete expired key when get
-  svr->getParams()->noexpire = false;
+  sess.setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
   sess.setArgs({"get", "key"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
@@ -2878,11 +2891,14 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  svr->getParams()->noexpire = true;
+  sess.setArgs({"config", "set", "noexpire", "yes"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
 
   // string
   sess.setArgs({"set", "key", "xxx", "PX", std::to_string(1)});
-  auto expect = Command::runSessionCmd(&sess);
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
 
@@ -2966,7 +2982,11 @@ void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr) {
 
 
   // delete expired key by compaction and indexMgr
-  svr->getParams()->noexpire = false;
+  sess.setArgs({"config", "set", "noexpire", "no"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
   for (const auto& store : svr->getStores()) {
     store->fullCompact();
   }
