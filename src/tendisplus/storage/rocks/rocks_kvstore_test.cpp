@@ -1344,8 +1344,9 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   uint32_t waitSec = 10;
   // if we want to check the totalFilter, all data should be different
   genData(kvstore.get(), 1000, 0, true);
-  genData(kvstore.get(), 1000, msSinceEpoch(), true);
-  genData(kvstore.get(), 1000, msSinceEpoch() + waitSec * 1000, true);
+  size_t kvCount = genData(kvstore.get(), 1000, msSinceEpoch(), true);
+  size_t kvCount2 =
+    genData(kvstore.get(), 1000, msSinceEpoch() + waitSec * 1000, true);
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
   // compact data in the default column family
@@ -1366,6 +1367,22 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
 
   EXPECT_EQ(totalFilter, 0);
   EXPECT_EQ(totalExpired, 0);
+
+  testMaxBinlogId(kvstore);
+
+  // set noexpire = false, compaction filter will be call
+  cfg->noexpire = false;
+  status = kvstore->compactRange(
+    ColumnFamilyNumber::ColumnFamily_Default, nullptr, nullptr);
+  EXPECT_TRUE(status.ok());
+  EXPECT_TRUE(hasCalled);
+
+  if (cfg->binlogUsingDefaultCF) {
+    EXPECT_EQ(totalFilter, 3000 * 2);
+  } else {
+    EXPECT_EQ(totalFilter, 3000);
+  }
+  EXPECT_EQ(totalExpired, kvCount + kvCount2);
 
   testMaxBinlogId(kvstore);
 }
