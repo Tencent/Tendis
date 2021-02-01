@@ -194,7 +194,8 @@ Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
 
 Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                                  uint32_t begin,
-                                                 uint32_t end) {
+                                                 uint32_t end,
+                                                 uint32_t* totalNum) {
   // need add IS lock for chunks ???
   auto cursor = std::move(txn->createSlotsCursor(begin, end));
   uint32_t totalWriteNum = 0;
@@ -236,7 +237,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
     SyncWriteData(value);
 
     curWriteNum++;
-    totalWriteNum++;
+    *totalNum += 1;
     uint64_t sendBytes =
       1 + sizeof(uint32_t) + keylen + sizeof(uint32_t) + valuelen;
     curWriteNum += sendBytes;
@@ -300,12 +301,14 @@ Status ChunkMigrateSender::sendSnapshot() {
   for (size_t i = 0; i < CLUSTER_SLOTS; i++) {
     if (_slots.test(i)) {
       sendSlotNum++;
-      auto ret = sendRange(eTxn.value().get(), i, i + 1);
+      uint32_t sendNum = 0;
+      auto ret = sendRange(eTxn.value().get(), i, i + 1, &sendNum);
+      _snapshotKeyNum.fetch_add(sendNum, std::memory_order_relaxed);
       if (!ret.ok()) {
-        LOG(ERROR) << "sendRange failed, slot:" << i << "-" << i + 1;
+        LOG(ERROR) << "sendRange failed, slot:" << i
+                   << "send keys num:" << getSnapshotNum();
         return ret.status();
       }
-      _snapshotKeyNum.fetch_add(ret.value(), std::memory_order_relaxed);
     }
   }
   SyncWriteData("3");  // send over of all
@@ -319,7 +322,7 @@ Status ChunkMigrateSender::sendSnapshot() {
             << " sendSlotNum:" << sendSlotNum
             << " totalWriteNum:" << getSnapshotNum()
             << " useTime:" << endTime - startTime
-            << " slots:" << bitsetStrEncode(_slots);
+            << " slots:" << bitsetStrEncode(_slots) << " taskid:" << _taskid;
   return {ErrorCodes::ERR_OK, ""};
 }
 

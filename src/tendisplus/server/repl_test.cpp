@@ -593,9 +593,9 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
     // if data not full, binlogpos-binlogstart may be smaller than num.
     if (svr->getParams()->binlogDelRange == 1 ||
         svr->getParams()->binlogDelRange == 0) {
-      EXPECT_TRUE(binlogpos - binlogstart + 1 == num);
+      EXPECT_EQ(binlogpos - binlogstart + 1, num);
     } else {
-      EXPECT_TRUE(binlogpos - binlogstart + 1 <
+      EXPECT_LT(binlogpos - binlogstart + 1,
                   num + svr->getParams()->binlogDelRange);
     }
   }

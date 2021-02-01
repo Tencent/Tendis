@@ -25,6 +25,7 @@
 #include "tendisplus/cluster/migrate_manager.h"
 #include "tendisplus/server/index_manager.h"
 #include "tendisplus/storage/kvstore.h"
+#include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/catalog.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
 #include "tendisplus/cluster/cluster_manager.h"
@@ -220,6 +221,10 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _kvstores;
   }
 
+  std::shared_ptr<rocksdb::Cache> getBlockCache() const {
+    return _blockCache;
+  }
+
   void toggleFtmc(bool enable);
   void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&,
                       const std::set<std::string>& sections) const;
@@ -338,6 +343,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::unique_ptr<GCManager> _gcMgr;
   std::unique_ptr<ScriptManager> _scriptMgr;
 
+  std::shared_ptr<rocksdb::Cache> _blockCache;
   std::vector<PStore> _kvstores;
   std::unique_ptr<Catalog> _catalog;
 

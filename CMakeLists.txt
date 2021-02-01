@@ -4,7 +4,7 @@ project (TENDIS_PLUS)
 execute_process(COMMAND ./mkreleasehdr.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-option(TENDIS_DEBUG "define TENDIS_DEBUG" ON)
+option(TENDIS_DEBUG "define TENDIS_DEBUG" OFF)
 if(TENDIS_DEBUG)
     add_definitions(-DTENDIS_DEBUG)
 endif()
@@ -47,7 +47,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
     endif()
 else()
 	set(STDFS_LIB "")
-	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0/rocksdb")
+	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0")
 endif()
 
 set(CMAKE_MODULE_PATH "${ROCKSDB_DIR}/cmake/modules/")
@@ -102,6 +102,8 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	# thirdparty code
 	# do not set unnecessary flags before thirdparty dirs
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -g -fno-omit-frame-pointer ")
+
+	add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
 
 # TODO(vinchen): in the future it should disable sync_ponit in production
@@ -124,7 +126,6 @@ set(WITH_GFLAGS OFF)
 set(WITH_CORE_TOOLS OFF)
 set(WITH_TOOLS OFF)
 
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 add_definitions(-DSNAPPY)
 set(snappy_FOUND TRUE)
 set(snappy_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/thirdparty/include/snappy/)
@@ -175,6 +176,7 @@ set(WARN_C_CXX
 -Werror=switch \
 -Werror=type-limits \
 -Werror=uninitialized \
+-Wno-maybe-uninitialized \
 -Werror=unused-function \
 -Werror=unused-label \
 -Werror=unused-result \

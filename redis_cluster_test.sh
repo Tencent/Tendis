@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 tclsh tests/cluster/run.tcl --single 00-base.tcl
 tclsh tests/cluster/run.tcl --single 01-faildet.tcl
 tclsh tests/cluster/run.tcl --single 02-failover.tcl

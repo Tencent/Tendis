@@ -933,7 +933,7 @@ class RestoreCommand : public Command {
     auto server = sess->getServerEntry();
     INVARIANT(server != nullptr);
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-            sess, key, mgl::LockMode::LOCK_X);
+      sess, key, mgl::LockMode::LOCK_X);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -1768,6 +1768,7 @@ class RestoreValueCommand : public Command {
     auto server = sess->getServerEntry();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
     RET_IF_ERR_EXPECTED(expdb);
+    auto slotId = expdb.value().chunkId;
 
     SessionCtx* pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
@@ -1781,15 +1782,16 @@ class RestoreValueCommand : public Command {
     RET_IF_ERR_EXPECTED(ptxn);
 
     RecordKey fakeEle(
-      expdb.value().chunkId, pCtx->getDbId(), rv.value().getEleType(), key, "");
+      slotId, pCtx->getDbId(), rv.value().getEleType(), key, "");
     std::string prefix = fakeEle.prefixPk();
     auto cursor = ptxn.value()->createDataCursor();
     cursor->seek(prefix);
 
     /* 1.restorevalue_begin  */
     std::stringstream ss;
-    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, "RESTOREVALUE_BEGIN");
+    Command::fmtBulk(ss, key);
     auto s = sess->setResponse(ss.str());
     RET_IF_ERR(s);
 
@@ -1847,10 +1849,13 @@ class RestoreValueCommand : public Command {
     }
 
     /* 4.restorevalue_end */
+    auto reversion = rv.value().getVersionEP();
     ss.str(std::string());
-    Command::fmtMultiBulkLen(ss, 1);
+    Command::fmtMultiBulkLen(ss, 4);
     Command::fmtBulk(ss, "RESTOREVALUE_END");
-
+    Command::fmtBulk(ss, key);
+    Command::fmtBulk(ss, std::to_string(reversion));
+    Command::fmtBulk(ss, std::to_string(ttl));
     return ss.str();
   }
 } restorevalueCommand;

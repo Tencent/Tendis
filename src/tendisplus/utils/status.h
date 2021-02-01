@@ -40,6 +40,7 @@ enum class ErrorCodes {
   ERR_UNKNOWN,
   ERR_CLUSTER,
   ERR_CONNECT_TRY,
+  ERR_MIGRATE,
 
   // error from redis
   ERR_AUTH = 100,

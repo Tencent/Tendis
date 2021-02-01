@@ -615,6 +615,9 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
   std::unique_lock<std::mutex> lk(_mutex);
   auto& v = _logRecycStatus[storeId];
   v->fileSize += written;
+  if (ts) {
+    v->timestamp = ts;
+  }
   if (v->fileSize >= _cfg->binlogFileSizeMB * 1024 * 1024 ||
       v->fileCreateTime + std::chrono::seconds(_cfg->binlogFileSecs) <=
         SCLOCK::now() ||
@@ -622,9 +625,6 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
     if (v->fs) {
       v->fs->close();
       v->fs.reset();
-    }
-    if (ts) {
-      v->timestamp = ts;
     }
     v->needNewFile = false;
   }

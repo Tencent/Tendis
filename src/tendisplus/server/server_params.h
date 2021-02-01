@@ -27,7 +27,7 @@ namespace tendisplus {
 using namespace std;  // NOLINT
 
 using funptr = std::function<void()>;
-using checkfunptr = std::function<bool(const string&)>;
+using checkfunptr = std::function<bool(const string&, string* errinfo)>;
 using preProcess = std::function<string(const string&)>;
 
 string removeQuotes(const string& v);
@@ -56,7 +56,7 @@ class BaseVar {
       }
       return false;
     }
-    return set(value);
+    return set(value, errinfo);
   }
   virtual string show() const = 0;
   virtual string default_show() const = 0;
@@ -73,10 +73,10 @@ class BaseVar {
   }
 
  protected:
-  virtual bool set(const string& value) = 0;
-  virtual bool check(const string& value) {
+  virtual bool set(const string& value, string* errinfo = NULL) = 0;
+  virtual bool check(const string& value, string* errinfo = NULL) {
     if (checkFun != NULL) {
-      return checkFun(value);
+      return checkFun(value, errinfo);
     }
     return true;
   }
@@ -112,9 +112,9 @@ class StringVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val) {
+  bool set(const string& val, string* errinfo = NULL) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v))
+    if (!check(v, errinfo))
       return false;
 
     *reinterpret_cast<string*>(value) = v;
@@ -148,9 +148,9 @@ class IntVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val) {
+  bool set(const string& val, string* errinfo = NULL) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v))
+    if (!check(v, errinfo))
       return false;
     int64_t valTemp;
 
@@ -196,9 +196,9 @@ class Int64Var : public BaseVar {
   }
 
  private:
-  bool set(const string& val) {
+  bool set(const string& val, string* errinfo = NULL) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v))
+    if (!check(v, errinfo))
       return false;
     int64_t valTemp;
 
@@ -239,9 +239,9 @@ class FloatVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val) {
+  bool set(const string& val, string* errinfo = NULL) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v))
+    if (!check(v, errinfo))
       return false;
 
     try {
@@ -274,9 +274,9 @@ class BoolVar : public BaseVar {
   }
 
  private:
-  bool set(const string& val) {
+  bool set(const string& val, string* errinfo = NULL) {
     auto v = preProcessFun ? preProcessFun(val) : val;
-    if (!check(v))
+    if (!check(v, errinfo))
       return false;
 
     *reinterpret_cast<bool*>(value) = isOptionOn(v);
@@ -340,6 +340,9 @@ class ServerParams {
   BaseVar* serverParamsVar(const std::string& key) {
     return _mapServerParams[tendisplus::toLower(key)];
   }
+
+ private:
+  Status checkParams();
 
  private:
   map<string, BaseVar*> _mapServerParams;

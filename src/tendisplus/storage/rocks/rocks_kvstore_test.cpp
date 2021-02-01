@@ -1348,6 +1348,7 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   size_t kvCount2 =
     genData(kvstore.get(), 1000, msSinceEpoch() + waitSec * 1000, true);
 
+
   std::this_thread::sleep_for(std::chrono::seconds(1));
   // compact data in the default column family
   auto status = kvstore->compactRange(

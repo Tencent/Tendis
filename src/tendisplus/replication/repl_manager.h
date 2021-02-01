@@ -198,6 +198,7 @@ class ReplManager {
   size_t incrPusherSize();
   size_t logRecycleSize();
 
+  std::string getRecycleBinlogStr(Session* sess) const;
   std::string getMasterHost() const;
   uint32_t getMasterPort() const;
   uint64_t getLastSyncTime() const;

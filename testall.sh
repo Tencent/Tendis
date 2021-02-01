@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 sh ./unittest.sh >&unittest.log &
 
