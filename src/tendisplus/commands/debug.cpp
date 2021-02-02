@@ -4005,4 +4005,256 @@ class readWriteCommand : public Command {
   }
 } readWriteCmd;
 
+class adminSetCommand : public Command {
+ public:
+  adminSetCommand() : Command("adminset", "wm") {}
+
+  ssize_t arity() const final {
+    return 3;
+  }
+
+  int32_t firstkey() const final {
+    return 1;
+  }
+
+  int32_t lastkey() const final {
+    return 1;
+  }
+
+  int32_t keystep() const final {
+    return 1;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto server = sess->getServerEntry();
+    INVARIANT(server != nullptr);
+
+    const auto& args = sess->getArgs();
+    INVARIANT_D(args.size() == 3);
+
+    auto key = args[1];
+    auto value = args[2];
+
+    // record ADMINSET data into all kv-store
+    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+      Status status {ErrorCodes::ERR_OK, ""};
+      auto expdb =
+              server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+      RET_IF_ERR_EXPECTED(expdb);
+
+      auto kvstore = expdb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      RET_IF_ERR_EXPECTED(ptxn);
+
+      auto *pCtx = sess->getCtx();
+      INVARIANT(pCtx != nullptr);
+
+      // NOTE(pecochen): record timestamp at "cas" field. TimeStamp NOT TTL !!!
+      //        In order to avoid compaction-filter expire record by "ttl" field
+      //        what's more? record as millisecond is enough
+      RecordKey rk(ADMINCMD_CHUNKID, ADMINCMD_DBID,
+                   RecordType::RT_DATA_META, key, "");
+      RecordValue rv(value, RecordType::RT_KV,
+                     pCtx->getVersionEP(), 0, msSinceEpoch());
+
+      // same behavior like setCommand, directly overwrite is OK
+      // NOTE: no need to check type or expire for ADMINSET data
+      auto eValue = kvstore->getKV(rk, ptxn.value());
+      if (eValue.ok()) {
+        status = Command::delKey(sess, rk.getPrimaryKey(),
+                        RecordType::RT_DATA_META, ptxn.value());
+        RET_IF_ERR(status);
+      }
+
+      status = kvstore->setKV(rk, rv, ptxn.value());
+      RET_IF_ERR(status);
+
+      auto expCommit = sess->getCtx()->commitTransaction(ptxn.value());
+      RET_IF_ERR_EXPECTED(expCommit);
+    }
+
+    return Command::fmtOK();
+  }
+}adminSetCmd;
+
+class adminGetCommand : public Command {
+ public:
+  adminGetCommand() : Command("adminget", "rF") {}
+
+  ssize_t arity() const final {
+    return -2;
+  }
+
+  int32_t firstkey() const final {
+    return 1;
+  }
+
+  int32_t lastkey() const final {
+    return 1;
+  }
+
+  int32_t keystep() const final {
+    return 0;
+  }
+
+  /**
+   * @brief format null result,as follow:
+   *        - dbid
+   *        - nil
+   * @param dbid
+   * @return format string
+   */
+  static std::string fmtAdminNull(uint32_t dbid) {
+    std::stringstream ss;
+
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtBulk(ss, std::to_string(dbid));
+    Command::fmtNull(ss);
+
+    return ss.str();
+  }
+
+  /**
+   * @brief format single data result, as follow:
+   *        - dbid
+   *        - value
+   *        - [timestamp]
+   * @param rv  record-value
+   * @param dbid
+   * @param ttl flag shows whether need get timestamp
+   * @return format string
+   */
+  static std::string fmtAdminData(const RecordValue &rv,
+                                  uint32_t dbid,
+                                  bool ttl = false) {
+    std::stringstream ss;
+    const auto& val = rv.getValue();
+    auto ts = rv.getCas();
+
+    if (ttl) {
+      Command::fmtMultiBulkLen(ss, 3);
+      Command::fmtBulk(ss, std::to_string(dbid));
+      Command::fmtBulk(ss, val);
+      Command::fmtLongLong(ss, ts);
+    } else {
+      Command::fmtMultiBulkLen(ss, 2);
+      Command::fmtBulk(ss, std::to_string(dbid));
+      Command::fmtBulk(ss, val);
+    }
+
+    return ss.str();
+  }
+
+  /**
+   * @brief get admin data from specific kv-store
+   * @param key key needs get
+   * @param ttl flag
+   * @param dbid
+   * @param kvstore
+   * @param txn transaction
+   * @return format string or status
+   */
+  static Expected<std::string> getAdminDataFromKvstore(
+          const std::string &key,
+          bool ttl, uint32_t dbid,
+          std::shared_ptr<KVStore> kvstore,
+          Transaction *txn) {
+    RecordKey rk(ADMINCMD_CHUNKID,
+                 ADMINCMD_DBID,
+                 RecordType::RT_DATA_META,
+                 key, "");
+    std::stringstream ss;
+
+    auto expRv = kvstore->getKV(rk, txn);
+    if (!expRv.ok()) {
+     if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+       ss << fmtAdminNull(dbid);
+     } else {
+       RET_IF_ERR_EXPECTED(expRv);
+     }
+    } else {
+      RecordValue rv = expRv.value();
+      ss << fmtAdminData(rv, dbid, ttl);
+    }
+
+    return ss.str();
+  }
+
+  /**
+   * @brief get admin data from specific db, wrapper for getAdmindataFromKvstore
+   * @param dbid
+   * @param key
+   * @param withTtl
+   * @param sess
+   * @param ss
+   * @return
+   */
+  static Status getAdminDataFromDb(
+          uint32_t dbid, const std::string &key, bool withTtl,
+          Session *sess, std::stringstream *ss) {
+    auto expDb = sess->getServerEntry()->getSegmentMgr()->
+            getDb(sess, dbid, mgl::LockMode::LOCK_IS);
+    RET_IF_ERR_EXPECTED(expDb);
+
+    auto kvstore = expDb.value().store;
+    auto pTxn = sess->getCtx()->createTransaction(kvstore);
+    RET_IF_ERR_EXPECTED(pTxn);
+
+    auto expData = getAdminDataFromKvstore(key, withTtl, dbid,
+                                           kvstore, pTxn.value());
+    RET_IF_ERR_EXPECTED(expData);
+
+    *ss << expData.value();
+    return {ErrorCodes::ERR_OK, ""};
+  }
+
+  Expected<std::string> run(Session *sess) final {
+    auto server = sess->getServerEntry();
+    auto pCtx = sess->getCtx();
+    const auto& args = sess->getArgs();
+
+    INVARIANT(server != nullptr);
+    INVARIANT(pCtx != nullptr);
+
+    int storeId;
+    bool allStore{true};
+    bool withTtl{false};
+    std::string key = args[1];
+    std::stringstream ss;
+
+    // parser options, include "storeid" and "withttl"
+    for (size_t i = 2; i < args.size(); i += 2) {
+      if (toLower(args[i]) == "storeid" && i + 1 < args.size()) {
+        if (args[i + 1] == "*") {
+          allStore = true;
+        } else {
+          auto expStoreId = tendisplus::stoul(args[i + 1]);
+          RET_IF_ERR_EXPECTED(expStoreId);
+          storeId = expStoreId.value();
+          allStore = false;
+        }
+      } else if (toLower(args[i]) == "withttl" && i + 1 < args.size()) {
+        static std::map<std::string, bool> matchMap = {
+                {"yes", true}, {"1", true}, {"on", true},
+                {"no", true}, {"0", false}, {"off", false},
+        };
+        withTtl = matchMap.count(args[i + 1]) != 0 &&
+                  matchMap[args[i + 1]];
+      }
+    }
+
+    if (allStore) {
+      Command::fmtMultiBulkLen(ss, server->getKVStoreCount());
+      for (size_t i = 0; i < server->getKVStoreCount(); ++i) {
+        getAdminDataFromDb(i, key, withTtl, sess, &ss);
+      }
+    } else {
+      Command::fmtMultiBulkLen(ss, 1);
+      getAdminDataFromDb(storeId, key, withTtl, sess, &ss);
+    }
+
+    return ss.str();
+  }
+}adminGetCmd;
+
 }  // namespace tendisplus
