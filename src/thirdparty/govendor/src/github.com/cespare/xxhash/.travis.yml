@@ -1,0 +1,11 @@
+language: go
+arch:
+  - amd64
+  - ppc64le
+go:
+  - "1.x"
+  - master
+env:
+  - TAGS=""
+  - TAGS="-tags purego"
+script: go test $TAGS -v ./...
