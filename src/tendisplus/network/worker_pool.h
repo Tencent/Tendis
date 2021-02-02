@@ -18,6 +18,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/atomic_utility.h"
+#include "tendisplus/utils/invariant.h"
 
 namespace tendisplus {
 
@@ -56,7 +57,14 @@ class WorkerPool {
       int64_t outQueueTs = nsSinceEpoch();
       _matrix->queueTime += outQueueTs - enQueueTs;
       ++_matrix->executing;
-      mytask();
+      try {
+        mytask();
+      } catch (const std::exception& ex) {
+        std::stringstream ss;
+        ss << "schedule task error:" << ex.what();
+        LOG(ERROR) << ss.str();
+        INVARIANT_D(0);
+      }
       --_matrix->inQueue;
       --_matrix->executing;
       int64_t endExeTs = nsSinceEpoch();
