@@ -1589,6 +1589,9 @@ void ReplManager::stop() {
 
 void ReplManager::fullPusherResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`fullPushThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
 
@@ -1597,6 +1600,9 @@ void ReplManager::fullPusherResize(size_t size) {
 
 void ReplManager::fullReceiverResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`fullReceiveThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
 
@@ -1605,6 +1611,9 @@ void ReplManager::fullReceiverResize(size_t size) {
 
 void ReplManager::incrPusherResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`incrPushThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
 
@@ -1613,6 +1622,9 @@ void ReplManager::incrPusherResize(size_t size) {
 
 void ReplManager::logRecyclerResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`logRecycleThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
 

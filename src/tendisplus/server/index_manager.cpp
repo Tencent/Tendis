@@ -49,6 +49,9 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
 
 void IndexManager::indexScannerResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`scanJobCntIndexMgr` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
   _indexScanner->resize(size);
@@ -56,6 +59,9 @@ void IndexManager::indexScannerResize(size_t size) {
 
 void IndexManager::keyDeleterResize(size_t size) {
   if (size > _svr->getKVStoreCount()) {
+    LOG(INFO) << "`delJobCntIndexMgr` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << size << " to " << _svr->getKVStoreCount();
     size = _svr->getKVStoreCount();
   }
 

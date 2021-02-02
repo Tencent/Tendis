@@ -546,23 +546,47 @@ Status ServerParams::checkParams() {
             "not allow binlogDelRange > truncateBinlogNum"};
   }
 
-  if (scanJobCntIndexMgr > kvStoreCount)
+  if (scanJobCntIndexMgr > kvStoreCount) {
+    LOG(INFO) << "`scanJobCntIndexMgr` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << scanJobCntIndexMgr << " to " << kvStoreCount;
     scanCntIndexMgr = kvStoreCount;
+  }
 
-  if (delJobCntIndexMgr > kvStoreCount)
+  if (delJobCntIndexMgr > kvStoreCount) {
+    LOG(INFO) << "`delJobCntIndexMgr` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << delJobCntIndexMgr << " to " << kvStoreCount;
     delJobCntIndexMgr = kvStoreCount;
+  }
 
-  if (incrPushThreadnum > kvStoreCount)
+  if (incrPushThreadnum > kvStoreCount) {
+    LOG(INFO) << "`incrPushThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << incrPushThreadnum << " to " << kvStoreCount;
     incrPushThreadnum = kvStoreCount;
+  }
 
-  if (fullPushThreadnum > kvStoreCount)
+  if (fullPushThreadnum > kvStoreCount) {
+    LOG(INFO) << "`fullPushThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << fullPushThreadnum << " to " << kvStoreCount;
     fullPushThreadnum = kvStoreCount;
+  }
 
-  if (fullReceiveThreadnum > kvStoreCount)
+  if (fullReceiveThreadnum > kvStoreCount) {
+    LOG(INFO) << "`fullReceiveThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << fullReceiveThreadnum << " to " << kvStoreCount;
     fullReceiveThreadnum = kvStoreCount;
+  }
 
-  if (logRecycleThreadnum > kvStoreCount)
+  if (logRecycleThreadnum > kvStoreCount) {
+    LOG(INFO) << "`logRecycleThreadnum` is not allowed to be greater than "
+                 "`kvstorecount`, set from "
+              << logRecycleThreadnum << " to " << kvStoreCount;
     logRecycleThreadnum = kvStoreCount;
+  }
 
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -577,8 +601,8 @@ Status ServerParams::setVar(const string& name,
     if (argname.substr(0, 6) == "rocks.") {
       auto ed = tendisplus::stoll(value);
       if (!ed.ok()) {
-        errinfo = "invalid rocksdb options:" + argname + " value:" + value
-          + " " + ed.status().toString();
+        errinfo = "invalid rocksdb options:" + argname + " value:" + value +
+          " " + ed.status().toString();
         return {ErrorCodes::ERR_PARSEOPT, errinfo};
       }
 
