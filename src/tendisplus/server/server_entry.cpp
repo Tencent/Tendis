@@ -8,7 +8,7 @@
 #include <chrono>  // NOLINT
 #include <string>  // NOLINT
 #include <list>
-#include <mutex>   // NOLINT
+#include <mutex>  // NOLINT
 #include "glog/logging.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
@@ -333,7 +333,7 @@ void ServerEntry::setBackupRunning() {
 }
 
 Status ServerEntry::adaptSomeThreadNumByCpuNum(
-        const std::shared_ptr<ServerParams>& cfg) {
+  const std::shared_ptr<ServerParams>& cfg) {
   // request executePool
   uint32_t cpuNum = std::thread::hardware_concurrency();
   if (cpuNum == 0) {
@@ -356,13 +356,13 @@ Status ServerEntry::adaptSomeThreadNumByCpuNum(
     threadnum = std::min(uint32_t(56), threadnum);
 
     if (threadnum % cfg->executorWorkPoolSize != 0) {
-      threadnum = (threadnum / cfg->executorWorkPoolSize + 1)
-        * cfg->executorWorkPoolSize;
+      threadnum =
+        (threadnum / cfg->executorWorkPoolSize + 1) * cfg->executorWorkPoolSize;
     }
 
     cfg->executorThreadNum = threadnum;
     LOG(INFO) << "adaptSomeThreadNumByCpuNum executorThreadNum:"
-      << cfg->executorThreadNum;
+              << cfg->executorThreadNum;
   }
 
   if (cfg->netIoThreadNum == 0) {
@@ -393,7 +393,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   _cursorMaps.resize(cfg->dbNum);
 
   // set command config
-  Command::setNoExpire(cfg->noexpire);
   Command::changeCommand(gRenameCmdList, "rename");
   Command::changeCommand(gMappingCmdList, "mapping");
 
@@ -504,7 +503,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   installMGLockMgrInLock(std::move(tmpMGLockMgr));
 
   for (uint32_t i = 0; i < _cfg->executorThreadNum;
-    i += _cfg->executorWorkPoolSize) {
+       i += _cfg->executorWorkPoolSize) {
     // TODO(takenliu): make sure whether multi worker_pool is ok?
     // But each size of worker_pool should been not less than 8;
     // uint32_t i = 0;
@@ -589,14 +588,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
     return s;
   }
 
-  if (!cfg->noexpire) {
-    _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
-    s = _indexMgr->startup();
-    if (!s.ok()) {
-      LOG(ERROR) << "ServerEntry::startup failed, _indexMgr->startup:"
-                 << s.toString();
-      return s;
-    }
+  _indexMgr = std::make_unique<IndexManager>(shared_from_this(), cfg);
+  s = _indexMgr->startup();
+  if (!s.ok()) {
+    LOG(ERROR) << "ServerEntry::startup failed, _indexMgr->startup:"
+               << s.toString();
+    return s;
   }
 
   // listener should be the lastone to run.

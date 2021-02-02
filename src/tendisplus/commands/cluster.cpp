@@ -142,7 +142,7 @@ class ClusterCommand : public Command {
           }
         }
 
-        bool needRetry = (arg2 == "restart") ? true : false;
+        bool needRetry = (arg2 == "restart");
         auto exptTaskid = startAllSlotsTasks(
           slotsMap, svr, nodeId, clusterState, srcNode, myself, needRetry);
         if (!exptTaskid.ok()) {
@@ -998,7 +998,7 @@ class MigrateendCommand : public Command {
     std::string taskid = args[1];
     std::string sendBinlogResult = args[2];
 
-    bool finishBinlog = (sendBinlogResult == "+OK") ? true : false;
+    bool finishBinlog = (sendBinlogResult == "+OK");
     auto s = migrateMgr->supplyMigrateEnd(taskid, finishBinlog);
     if (!s.ok()) {
       return s;

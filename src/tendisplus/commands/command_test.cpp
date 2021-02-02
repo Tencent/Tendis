@@ -167,6 +167,9 @@ TEST(Command, expire) {
   testExpire(server);
   testExpire1(server);
   testExpire2(server);
+  testExpireCommandWhenNoexpireTrue(server);
+  testExpireKeyWhenGet(server);
+  testExpireKeyWhenCompaction(server);
 
 #ifndef _WIN32
   server->stop();

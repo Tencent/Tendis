@@ -16,8 +16,10 @@
 namespace tendisplus {
 class KVTtlCompactionFilter : public CompactionFilter {
  public:
-  explicit KVTtlCompactionFilter(KVStore* store, uint64_t current_time)
-    : _store(store), _currentTime(current_time) {}
+  explicit KVTtlCompactionFilter(KVStore* store,
+                                 uint64_t current_time,
+                                 const std::shared_ptr<ServerParams> cfg)
+    : _store(store), _currentTime(current_time), _cfg(cfg) {}
 
   ~KVTtlCompactionFilter() override {
     TEST_SYNC_POINT_CALLBACK("InspectKvTtlExpiredCount", &_expiredCount);
@@ -39,6 +41,10 @@ class KVTtlCompactionFilter : public CompactionFilter {
                       const rocksdb::Slice& existing_value,
                       std::string* /*new_value*/,
                       bool* /*value_changed*/) const {
+    if (_cfg->noexpire) {
+      return false;
+    }
+
     RecordType type = RecordKey::decodeType(key.data(), key.size());
     RecordType vt;
     uint64_t ttl;
@@ -73,6 +79,7 @@ class KVTtlCompactionFilter : public CompactionFilter {
   KVStore* _store;
   // millisecond, same as ttl in the record
   const uint64_t _currentTime;
+  const std::shared_ptr<ServerParams> _cfg;
   // It is safe to not using std::atomic since the compaction filter,
   // created from a compaction filter factory, will not be called
   // from multiple threads.
@@ -84,6 +91,10 @@ class KVTtlCompactionFilter : public CompactionFilter {
 std::unique_ptr<CompactionFilter>
 KVTtlCompactionFilterFactory::CreateCompactionFilter(
   const CompactionFilter::Context& context) {
+  if (_cfg->noexpire) {
+    return nullptr;
+  }
+
   uint64_t currentTs = 0;
   INVARIANT(_store != nullptr);
   // NOTE(vinchen): It can't get time = sinceEpoch () here, because it
@@ -96,7 +107,7 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
   }
 
   return std::unique_ptr<CompactionFilter>(
-    new KVTtlCompactionFilter(_store, currentTs));
+    new KVTtlCompactionFilter(_store, currentTs, _cfg));
 }
 
 }  // namespace tendisplus

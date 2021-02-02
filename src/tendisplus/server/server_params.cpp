@@ -340,7 +340,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("proto-max-bulk-len", protoMaxBulkLen);
   REGISTER_VARS_DIFF_NAME("databases", dbNum);
 
-  REGISTER_VARS(noexpire);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(noexpire);
   REGISTER_VARS_SAME_NAME(
     maxBinlogKeepNum, nullptr, nullptr, 1, 10000000000000, true);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(minBinlogKeepSec);
@@ -373,8 +373,14 @@ ServerParams::ServerParams() {
   REGISTER_VARS_SAME_NAME(fullPushThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(fullReceiveThreadnum, nullptr, nullptr, 1, 200, true);
   REGISTER_VARS_SAME_NAME(logRecycleThreadnum, nullptr, nullptr, 1, 200, true);
-  REGISTER_VARS_FULL("truncateBinlogIntervalMs", truncateBinlogIntervalMs,
-    NULL, NULL, 10, 5000, true)
+
+  REGISTER_VARS_FULL("truncateBinlogIntervalMs",
+                     truncateBinlogIntervalMs,
+                     NULL,
+                     NULL,
+                     10,
+                     5000,
+                     true);
   REGISTER_VARS_SAME_NAME(
     truncateBinlogNum, truncateBinlogNumCheck, nullptr, 1, INT_MAX, true);
   REGISTER_VARS(binlogFileSizeMB);
@@ -386,8 +392,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);
-  REGISTER_VARS_SAME_NAME(scanDefaultMaxIterateTimes,
-                          nullptr, nullptr, 10, 10000, true);
+  REGISTER_VARS_SAME_NAME(
+    scanDefaultMaxIterateTimes, nullptr, nullptr, 10, 10000, true);
 
   REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
@@ -446,8 +452,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("binlog-using-defaultCF",
                                   binlogUsingDefaultCF);
 
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit",
-                                  luaTimeLimit);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
 }
 
 ServerParams::~ServerParams() {
@@ -526,7 +531,7 @@ Status ServerParams::parseFile(const std::string& filename) {
 Status ServerParams::checkParams() {
   if (binlogDelRange > truncateBinlogNum) {
     LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
-      << binlogDelRange << " > " << truncateBinlogNum;
+               << binlogDelRange << " > " << truncateBinlogNum;
     return {ErrorCodes::ERR_INTERNAL, ""};
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -577,8 +582,8 @@ string ServerParams::showAll() const {
   for (auto iter : _mapServerParams) {
     if (iter.second->getName() == "requirepass" ||
         iter.second->getName() == "masterauth") {
-        ret += "  " + iter.second->getName() + ":******\n";
-        continue;
+      ret += "  " + iter.second->getName() + ":******\n";
+      continue;
     }
     ret += "  " + iter.second->getName() + ":" + iter.second->show() + "\n";
   }
