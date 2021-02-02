@@ -386,7 +386,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS(binlogFileSizeMB);
   REGISTER_VARS(binlogFileSecs);
   REGISTER_VARS_SAME_NAME(
-    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 1000000, true);
+    binlogDelRange, binlogDelRangeCheck, nullptr, 1, 10000000, true);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
