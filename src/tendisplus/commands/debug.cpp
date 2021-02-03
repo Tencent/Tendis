@@ -4030,7 +4030,6 @@ class adminSetCommand : public Command {
     INVARIANT(server != nullptr);
 
     const auto& args = sess->getArgs();
-    INVARIANT_D(args.size() == 3);
 
     auto key = args[1];
     auto value = args[2];
@@ -4056,15 +4055,6 @@ class adminSetCommand : public Command {
                    RecordType::RT_DATA_META, key, "");
       RecordValue rv(value, RecordType::RT_KV,
                      pCtx->getVersionEP(), 0, msSinceEpoch());
-
-      // same behavior like setCommand, directly overwrite is OK
-      // NOTE: no need to check type or expire for ADMINSET data
-      auto eValue = kvstore->getKV(rk, ptxn.value());
-      if (eValue.ok()) {
-        status = Command::delKey(sess, rk.getPrimaryKey(),
-                        RecordType::RT_DATA_META, ptxn.value());
-        RET_IF_ERR(status);
-      }
 
       status = kvstore->setKV(rk, rv, ptxn.value());
       RET_IF_ERR(status);
@@ -4232,11 +4222,15 @@ class adminGetCommand : public Command {
           RET_IF_ERR_EXPECTED(expStoreId);
           storeId = expStoreId.value();
           allStore = false;
+
+          if (static_cast<uint32_t>(storeId) >= server->getKVStoreCount()) {
+            return {ErrorCodes::ERR_OUT_OF_RANGE, "storeid out of range"};
+          }
         }
       } else if (toLower(args[i]) == "withttl" && i + 1 < args.size()) {
         static std::map<std::string, bool> matchMap = {
                 {"yes", true}, {"1", true}, {"on", true},
-                {"no", true}, {"0", false}, {"off", false},
+                {"no", false}, {"0", false}, {"off", false},
         };
         withTtl = matchMap.count(args[i + 1]) != 0 &&
                   matchMap[args[i + 1]];
@@ -4256,5 +4250,92 @@ class adminGetCommand : public Command {
     return ss.str();
   }
 }adminGetCmd;
+
+class adminDelCommand : public Command {
+ public:
+  adminDelCommand() : Command("admindel", "w") {}
+
+  ssize_t arity() const final {
+    return -2;
+  }
+
+  int32_t firstkey() const final {
+    return 1;
+  }
+
+  int32_t lastkey() const final {
+    return 1;
+  }
+
+  int32_t keystep() const final {
+    return 1;
+  }
+
+  /**
+   * @brief delete specific key in specific db
+   * @param sess Session
+   * @param txn Transaction
+   * @param key
+   * @param kvstore
+   * @return
+   */
+  static Expected<bool> delSpecificKey(Session *sess,
+                                       Transaction *txn,
+                                       const std::string &key,
+                                       std::shared_ptr<KVStore> kvstore) {
+    RecordKey rk(ADMINCMD_CHUNKID,
+                 ADMINCMD_DBID,
+                 RecordType::RT_DATA_META,
+                 key, "");
+
+    // ADMIN data no need to expire, so directly DEL is enough.
+    // avoid increase operation steps, use KVStore::delKV NOT Command::delKey
+    // should check whether KV exists first.
+    auto expRv = kvstore->getKV(rk, txn);
+    if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return false;
+    }
+    RET_IF_ERR_EXPECTED(expRv);
+
+    auto status = kvstore->delKV(rk, txn);
+    if (status.ok()) {
+      return true;
+    }
+    return status;
+  }
+
+  Expected<std::string> run(Session *sess) final {
+    auto server = sess->getServerEntry();
+    auto pCtx = sess->getCtx();
+    const auto &args = sess->getArgs();
+
+    INVARIANT(server != nullptr);
+    INVARIANT(pCtx != nullptr);
+
+    int64_t delCount = 1;
+    for (size_t i = 0; i < sess->getServerEntry()->getKVStoreCount(); ++i) {
+      auto expDb = sess->getServerEntry()->
+              getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+      RET_IF_ERR_EXPECTED(expDb);
+
+      auto kvstore = expDb.value().store;
+      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      RET_IF_ERR_EXPECTED(ptxn);
+
+      auto expDel = delSpecificKey(sess, ptxn.value(), args[1], kvstore);
+      RET_IF_ERR_EXPECTED(expDel);
+
+      auto expCommit = sess->getCtx()->commitTransaction(ptxn.value());
+      RET_IF_ERR_EXPECTED(expCommit);
+
+      delCount = delCount && expDel.value() ? 1 : 0;
+    }
+
+    std::stringstream ss;
+    Command::fmtLongLong(ss, delCount);
+
+    return ss.str();
+  }
+} admindelCmd;
 
 }  // namespace tendisplus

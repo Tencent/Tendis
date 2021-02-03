@@ -23,13 +23,13 @@ const uint32_t VERSIONMETA_CHUNKID = 0XFFFE0000U;
 const uint32_t TTLINDEX_CHUNKID = 0XFFFF0000U;
 const uint32_t REPLLOGKEY_CHUNKID = 0XFFFFFF00U;
 const uint32_t REPLLOGKEYV2_CHUNKID = 0XFFFFFF01U;
-const uint32_t ADMINCMD_CHUNKID = 0XFFFFFFF0U;
+const uint32_t ADMINCMD_CHUNKID = 0XFFFE0001U;
 
 const uint32_t VERSIONMETA_DBID = 0XFFFE0000U;
 const uint32_t TTLINDEX_DBID = 0XFFFF0000U;
 const uint32_t REPLLOGKEY_DBID = 0XFFFFFF00U;
 const uint32_t REPLLOGKEYV2_DBID = 0XFFFFFF01U;
-const uint32_t ADMINCMD_DBID = 0XFFFFFFF0U;
+const uint32_t ADMINCMD_DBID = 0XFFFE0001U;
 
 /* NOTE(vinchen): if you want to add new RecordType, make sure you handle
    the below functions correctly.
