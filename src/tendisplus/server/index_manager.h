@@ -33,6 +33,7 @@ class IndexManager {
   void keyDeleterResize(size_t size);
   size_t indexScannerSize();
   size_t keyDeleterSize();
+  std::string getInfoString();
 
  private:
   std::unique_ptr<WorkerPool> _indexScanner;

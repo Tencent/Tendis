@@ -100,6 +100,25 @@ Status IndexManager::startup() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+std::string IndexManager::getInfoString() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  std::stringstream ss;
+  ss << "total_expire_keys:" << _totalDequeue << "\r\n";
+  ss << "deleting_expire_keys:" << _totalEnqueue - _totalDequeue << "\r\n";
+  ss << "scanner_matrix:" << _scannerMatrix->toString() << "\r\n";
+  ss << "deleter_matrix:" << _deleterMatrix->toString() << "\r\n";
+  for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
+    if (_expiredKeys.find(i) != _expiredKeys.end() &&
+        _expiredKeys[i].size() > 0) {
+      auto index = _expiredKeys[i].front();
+      ss << "scanpoint_" << i << ":" << msEpochToDatetime(index.getTTL())
+         << "\r\n";
+    }
+  }
+
+  return ss.str();
+}
+
 Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
   bool expected = false;
   if (!_scanJobStatus[storeId].compare_exchange_strong(
