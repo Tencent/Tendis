@@ -16,6 +16,7 @@
 #include "tendisplus/utils/rate_limiter.h"
 
 namespace tendisplus {
+
 class BlockingTcpClient
   : public std::enable_shared_from_this<BlockingTcpClient> {
  public:
@@ -86,6 +87,12 @@ class BlockingTcpClient
 
   asio::ip::tcp::socket borrowConn();
   void setRateLimit(uint64_t bytesPerSecond);
+  void setFlags(int64_t flags) {
+    _flags |= flags;
+  }
+  int64_t getFlags() const {
+    return _flags;
+  }
 
  private:
   void closeSocket();
@@ -102,6 +109,7 @@ class BlockingTcpClient
   std::chrono::milliseconds _timeout;  // ms
   uint64_t _ctime;
   std::unique_ptr<RateLimiter> _rateLimiter;
+  int64_t _flags;
 };
 
 }  // namespace tendisplus

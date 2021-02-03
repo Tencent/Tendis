@@ -26,9 +26,6 @@
 
 namespace tendisplus {
 
-#define InMulti (1 << 0)
-#define CLIENT_READONLY (1 << 1)
-
 // storeLock state pair
 using SLSP = std::tuple<uint32_t, uint32_t, std::string, mgl::LockMode>;
 
@@ -111,23 +108,32 @@ class SessionCtx {
   void setIsMonitor(bool in);
 
   inline bool isInMulti() const {
-    return (_flags & InMulti);
+    return (_flags & CLIENT_MULTI);
   }
   inline void setMulti() {
-    _flags |= InMulti;
+    _flags |= CLIENT_MULTI;
     _txnVersion = _version;
   }
   inline void resetMulti() {
-    _flags &= ~InMulti;
+    _flags &= ~CLIENT_MULTI;
     _txnVersion = -1;
   }
-  uint32_t getFlags() {
+
+  inline bool isMaster() {
+    return (_flags & CLIENT_MASTER);
+  }
+
+  inline bool isSlave() {
+    return (_flags & CLIENT_SLAVE);
+  }
+
+  int64_t getFlags() {
     return _flags;
   }
-  inline void setFlags(uint32_t flag) {
+  inline void setFlags(int64_t flag) {
     _flags |= flag;
   }
-  inline void resetFlags(uint32_t flag) {
+  inline void resetFlags(int64_t flag) {
     _flags &= ~flag;
   }
   bool verifyVersion(uint64_t keyVersion);
@@ -154,7 +160,7 @@ class SessionCtx {
   Session* _session;
   std::unordered_map<std::string, mgl::LockMode> _keylockmap;
   bool _isMonitor;
-  uint32_t _flags;
+  int64_t _flags;
 
   mutable std::mutex _mutex;
 

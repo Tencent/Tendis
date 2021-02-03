@@ -162,7 +162,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   });
 
   // 3) require a blocking-client
-  client = std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+  client = std::move(
+    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
   if (client == nullptr) {
     LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
                  << " with: " << metaSnapshot.syncFromHost << ":"
@@ -174,6 +175,34 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   newMeta->replState = ReplState::REPL_TRANSFER;
   newMeta->binlogId = Transaction::TXNID_UNINITED;
   changeReplState(*newMeta, false);
+
+  if (_svr->getParams()->psyncEnabled) {
+    /* Logical replications */
+    INVARIANT_D(_svr->getParams()->aofEnabled);
+
+    std::stringstream ss;
+    ss << "psync ? -1 " << store->dbId();
+    Status s = client->writeLine(ss.str());
+    if (!s.ok()) {
+      LOG(WARNING) << "sync master failed:" << s.toString();
+      INVARIANT_D(0);
+    }
+
+    // +fullsync
+    auto es = client->readLine(std::chrono::seconds(10));
+    if (!es.ok()) {
+      LOG(WARNING) << "sync master failed:" << s.toString();
+      INVARIANT_D(0);
+    }
+
+    // rdb
+    es = client->readLine(std::chrono::seconds(10));
+    if (!es.ok()) {
+      LOG(WARNING) << "sync master failed:" << s.toString();
+      INVARIANT_D(0);
+    }
+
+  }
 
   // 4) read backupinfo from master
   // get binlogPos and filelist, other messages get from "backup_meta" file
@@ -367,8 +396,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   });
 
 
-  std::shared_ptr<BlockingTcpClient> client =
-    std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+  std::shared_ptr<BlockingTcpClient> client = std::move(
+    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
   if (client == nullptr) {
     errStr = errPrefix + "reconn master failed";
     return;
@@ -525,11 +554,8 @@ Status ReplManager::applyRepllogV2(Session* sess,
       binlogTs = msSinceEpoch();
     }
   } else {
-    auto binlog = applySingleTxnV2(sess,
-                                   storeId,
-                                   logKey,
-                                   logValue,
-                                   BinlogApplyMode::KEEP_BINLOG_ID);
+    auto binlog = applySingleTxnV2(
+      sess, storeId, logKey, logValue, BinlogApplyMode::KEEP_BINLOG_ID);
     if (!binlog.ok()) {
       return binlog.status();
     } else {

@@ -250,7 +250,8 @@ class ReplManager {
   bool isFullSupplierFull() const;
 
   std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
-                                                  uint64_t timeoutMs = 1000);
+                                                  uint64_t timeoutMs = 1000,
+                                                  int64_t flags = 0);
   void slaveStartFullsync(const StoreMeta&);
   void slaveChkSyncStatus(const StoreMeta&);
   std::ofstream* getCurBinlogFs(uint32_t storeid);

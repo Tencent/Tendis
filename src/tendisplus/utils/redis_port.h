@@ -39,7 +39,7 @@ int string2ll(const char* s, size_t slen, long long* value);  // (NOLINT/int)
 std::string errorReply(const std::string& s);
 
 // port from redis source code, sds.c::sdssplitargs
-std::vector<std::string>* splitargs(std::vector<std::string>& result,
+std::vector<std::string>* splitargs(std::vector<std::string>& result,  // (NOLINT)
                                     const std::string& lineStr);
 
 // port from redis source code object.c::createStringObjectFromLongDouble
@@ -354,6 +354,14 @@ typedef uint32_t WORD;  // 32-bit word
 #define SIG0(x) (ROTRIGHT(x, 7) ^ ROTRIGHT(x, 18) ^ ((x) >> 3))
 #define SIG1(x) (ROTRIGHT(x, 17) ^ ROTRIGHT(x, 19) ^ ((x) >> 10))
 
+/* Client flags */
+#define CLIENT_SLAVE (1<<0)   /* This client is a slave server */
+#define CLIENT_MASTER (1<<1)  /* This client is a master server */
+#define CLIENT_MONITOR (1 << 2)
+                 /* This client is a slave monitor, see MONITOR */
+#define CLIENT_MULTI (1 << 3) /* This client is in a MULTI context */
+#define CLIENT_READONLY (1 << 4)
+
 static const WORD k[64] = {
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
   0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -381,7 +389,7 @@ void sha256_final(SHA256_CTX* ctx, BYTE hash[]);
 
 void getRandomHexChars(char* p, size_t len);
 void getRandomBytes(unsigned char* p, size_t len);
-void strmapchars(std::string& s, const char *from, const char *to,
+void strmapchars(std::string& s, const char *from, const char *to,    // (NOLINT)
                  size_t setlen);
 }  // namespace redis_port
 }  // namespace tendisplus

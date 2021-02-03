@@ -590,8 +590,8 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
 
     auto cfg1 = makeServerParam(master_port, i, master_dir, true);
     auto cfg2 = makeServerParam(slave_port, i, slave_dir, true);
-    cfg1->aofPsyncEnabled = true;
-    cfg2->aofPsyncEnabled = true;
+    cfg1->aofEnabled = true;
+    cfg2->aofEnabled = true;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);

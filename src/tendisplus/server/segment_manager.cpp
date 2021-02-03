@@ -40,12 +40,16 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool cluster_enabled = false;
-  bool aof_enabled = false;
+  bool slave_readonly = true;
   if (sess && sess->getServerEntry()) {
     const auto& cfg = sess->getServerEntry()->getParams();
     lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     cluster_enabled = sess->getServerEntry()->isClusterEnabled();
-    aof_enabled = cfg->aofPsyncEnabled;
+
+    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+     * session should be able to run command */
+    if (cfg->psyncEnabled && sess->getCtx()->isMaster())
+      slave_readonly = false;
   }
 
   if (!_instances[segId]->isOpen()) {
@@ -65,12 +69,10 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
     ss << "store id " << segId << " is paused";
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
-  /* NOTE(wayenchen) if aofPsync is Enable, slave should be able to run
-   * command*/
+
   if (sess && sess->getCtx() &&
-      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY &&
-      !aof_enabled) {
-    sess->getCtx()->setReplOnly(true);
+      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+    sess->getCtx()->setReplOnly(slave_readonly);
   }
 
   if (mode != mgl::LockMode::LOCK_NONE) {
@@ -91,8 +93,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
       auto svr = sess->getServerEntry();
       const std::shared_ptr<tendisplus::ClusterState>& clusterState =
         svr->getClusterMgr()->getClusterState();
-      bool slaveHanleAof = aof_enabled && clusterState->isMyselfSlave();
-      if (!slaveHanleAof) {
+      if (slave_readonly) {
         auto node = clusterState->clusterHandleRedirect(chunkId, sess);
         if (!node.ok()) {
           return node.status();
@@ -106,8 +107,7 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(
       auto svr = sess->getServerEntry();
       const std::shared_ptr<tendisplus::ClusterState>& clusterState =
         svr->getClusterMgr()->getClusterState();
-      bool slavePsyncAof = aof_enabled && clusterState->isMyselfSlave();
-      if (!slavePsyncAof) {
+      if (slave_readonly) {
         auto node = clusterState->clusterHandleRedirect(chunkId, sess);
         if (!node.ok()) {
           return node.status();
@@ -135,11 +135,6 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
-  bool aof_enabled = false;
-  if (sess && sess->getServerEntry()) {
-    aof_enabled = sess->getServerEntry()->getParams()->aofPsyncEnabled;
-  }
-
   if (_instances[segId]->isPaused()) {
     _instances[segId]->stat.pausedErrorCount.fetch_add(
       1, std::memory_order_relaxed);
@@ -148,12 +143,16 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDbHasLocked(
     return {ErrorCodes::ERR_INTERNAL, ss.str()};
   }
 
-  /* NOTE(wayenchen) if aofPsync is Enable, slave should be able to run
-   * command*/
   if (sess && sess->getCtx() &&
-      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY &&
-      !aof_enabled) {
-    sess->getCtx()->setReplOnly(true);
+      _instances[segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+    bool slave_readonly = true;
+    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+     * session should be able to run command */
+    if (sess->getServerEntry()->getParams()->psyncEnabled &&
+        sess->getCtx()->isMaster())
+      slave_readonly = false;
+
+    sess->getCtx()->setReplOnly(slave_readonly);
   }
 
   return DbWithLock{segId, chunkId, _instances[segId], nullptr, nullptr};
@@ -173,16 +172,22 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
   bool cluster_enabled = false;
   bool clusterSingle = false;
-  bool aof_enabled = false;
+  bool slave_readonly = true;
   if (sess && sess->getServerEntry()) {
     const auto& cfg = sess->getServerEntry()->getParams();
     lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     cluster_enabled = sess->getServerEntry()->isClusterEnabled();
     clusterSingle = cfg->clusterSingleNode;
-    aof_enabled = cfg->aofPsyncEnabled;
+
+    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+     * session should be able to run command */
+    if (cfg->psyncEnabled && sess->getCtx()->isMaster())
+      slave_readonly = false;
   }
+
   std::map<uint32_t, std::vector<std::pair<uint32_t, std::string>>> segList;
   uint32_t last_chunkId = -1;
+  uint32_t last_segId = 0;
   for (auto iter = index.begin(); iter != index.end(); iter++) {
     auto key = args[*iter];
     uint32_t hash = redis_port::keyHashSlot(key.c_str(), key.size());
@@ -191,6 +196,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     uint32_t segId = chunkId % _instances.size();
     segList[segId].emplace_back(std::make_pair(chunkId, std::move(key)));
 
+    last_segId = segId;
     if (last_chunkId == (uint32_t)-1) {
       last_chunkId = chunkId;
     } else if (last_chunkId != chunkId) {
@@ -199,6 +205,11 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
       }
       last_chunkId = chunkId;
     }
+  }
+
+  if (sess && sess->getCtx() &&
+      _instances[last_segId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
+    sess->getCtx()->setReplOnly(slave_readonly);
   }
 
   /* NOTE(vinchen): lock sequence
@@ -241,8 +252,7 @@ SegmentMgrFnvHash64::getAllKeysLocked(Session* sess,
     auto svr = sess->getServerEntry();
     const std::shared_ptr<tendisplus::ClusterState>& clusterState =
       svr->getClusterMgr()->getClusterState();
-    bool slavePsyncAof = aof_enabled && clusterState->isMyselfSlave();
-    if (!slavePsyncAof) {
+    if (slave_readonly) {
       auto node = clusterState->clusterHandleRedirect(last_chunkId, sess);
       if (!node.ok()) {
         return node.status();
@@ -315,7 +325,13 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
 
   if (sess && sess->getCtx() &&
       _instances[insId]->getMode() == KVStore::StoreMode::REPLICATE_ONLY) {
-    sess->getCtx()->setReplOnly(true);
+    bool slave_readonly = true;
+    /* NOTE(wayenchen) if aofPsync is enable and it is the master session, the
+     * session should be able to run command */
+    if (sess->getServerEntry()->getParams()->psyncEnabled &&
+        sess->getCtx()->isMaster())
+      slave_readonly = false;
+    sess->getCtx()->setReplOnly(slave_readonly);
   }
   return DbWithLock{insId, 0, _instances[insId], std::move(lk), nullptr};
 }

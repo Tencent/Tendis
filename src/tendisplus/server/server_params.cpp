@@ -139,8 +139,24 @@ bool binlogDelRangeCheck(
   return true;
 }
 
+<<<<<<< HEAD
 bool truncateBinlogNumCheck(
         const std::string& val, bool startup, string* errinfo) {
+=======
+bool aofEnabledCheck(const std::string& val, string* errinfo) {
+  bool v = isOptionOn(val);
+  if (!v && gParams->psyncEnabled) {
+    if (errinfo != NULL) {
+      *errinfo = "can't disable aofEnabled when psyncEnabled is yes";
+    }
+    return false;
+  }
+
+  return true;
+}
+
+bool truncateBinlogNumCheck(const std::string& val, string* errinfo) {
+>>>>>>> psync for tendis when psync-enabled is true
   auto num = std::strtoull(val.c_str(), nullptr, 10);
   if (startup || !gParams) {
     return true;
@@ -435,10 +451,14 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS_DIFF_NAME("cluster-enabled", clusterEnabled);
   REGISTER_VARS_DIFF_NAME("domain-enabled", domainEnabled);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-enabled", aofPsyncEnabled);
+  REGISTER_VARS_FULL(
+    "aof-enabled", aofEnabled, aofEnabledCheck, nullptr, 0, INT_MAX, true);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-psync-num", aofPsyncNum);
+#ifdef TENDIS_DEBUG
+  REGISTER_VARS_DIFF_NAME("psync-enabled", psyncEnabled);
+#endif
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-psync-num", aofPsyncNum);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-gc-enabled", enableGcInMigate);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
 
@@ -556,6 +576,12 @@ Status ServerParams::checkParams() {
                << binlogDelRange << " > " << truncateBinlogNum;
     return {ErrorCodes::ERR_INTERNAL,
             "not allow binlogDelRange > truncateBinlogNum"};
+  }
+
+  if (psyncEnabled && !aofEnabled) {
+    auto err = "psyncEnabled is not allowed when aofEnable is 0";
+    LOG(ERROR) << err;
+    return {ErrorCodes::ERR_INTERNAL, err};
   }
 
   if (scanJobCntIndexMgr > kvStoreCount) {
