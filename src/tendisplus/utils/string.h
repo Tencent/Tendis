@@ -21,6 +21,7 @@ namespace tendisplus {
 #define CLUSTER_SLOTS 16384
 
 std::string toLower(const std::string&);
+std::string toUpper(const std::string&);
 
 Expected<int32_t> stol(const std::string&);
 Expected<uint64_t> stoul(const std::string&);
