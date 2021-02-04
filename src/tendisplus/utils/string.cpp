@@ -33,6 +33,12 @@ std::string toLower(const std::string& s) {
   return result;
 }
 
+std::string toUpper(const std::string &s) {
+  std::string result(s);
+  std::transform(result.begin(), result.end(), result.begin(), toupper);
+  return result;
+}
+
 Expected<int32_t> stol(const std::string& s) {
   int32_t result;
   try {

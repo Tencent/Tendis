@@ -326,7 +326,7 @@ class ScanCommand : public Command {
                                  std::string *type,
                                  uint64_t *count,
                                  uint64_t *cursor,
-                                 int64_t *node,
+                                 int64_t *seq,
                                  bool *enableSlots) {
     size_t index = 2;                             // used for parse args
     auto cursorCnt = tendisplus::stoul(args[1]);
@@ -362,16 +362,17 @@ class ScanCommand : public Command {
           }
         }
         index += 2;
-      } else if (toLower(args[index]) == "node" && index + 1 <= args.size()) {
+      } else if (toLower(args[index]) == "seq" && index + 1 <= args.size()) {
         auto expNode = tendisplus::stoll(args[index + 1]);
         RET_IF_ERR_EXPECTED(expNode);
         if (expNode.value() < 0) {
           return {ErrorCodes::ERR_INTERGER, "Invalid Node"};
         }
-        *node = expNode.value();
+        *seq = expNode.value();
         index += 2;
       } else {
-        return {ErrorCodes::ERR_PARSEOPT, "Unknown Subcommand"};
+        return {ErrorCodes::ERR_PARSEOPT,
+                "Unknown Subcommand " + toUpper(args[index])};
       }
     }
 
@@ -389,7 +390,7 @@ class ScanCommand : public Command {
             ->getParams()->scanDefaultLimit;  // subcommand "COUNT"
     std::string type;                         // subcommand "TYPE"
     std::bitset<CLUSTER_SLOTS> slots;         // subcommand "SLOTS"
-    int64_t node{0};                          // subcommand "NODE"
+    int64_t seqId{0};                         // subcommand "SEQ"
     uint64_t cursor{0};                       // used for arg "cursor"
     bool enableSlots{false};                  // check whether has "SLOTS"
     std::list<RecordKey> batch;
@@ -403,7 +404,7 @@ class ScanCommand : public Command {
 
     // Step 1: get args and parse options. COUNT, MATCH, TYPE, SLOTS
     auto status = parseSessionArgs(sess->getArgs(), &slots, &pattern, &type,
-                                   &count, &cursor, &node, &enableSlots);
+                                   &count, &cursor, &seqId, &enableSlots);
     RET_IF_ERR(status);
 
     // init _filter config.
@@ -519,9 +520,9 @@ class ScanCommand : public Command {
     /**
      * for series tendis nodes
      *          |<---16bit--->|<---48bit--->|
-     * cursor = |   nodeId    | real-cursor |
+     * cursor = |   seqId    | real-cursor |
      */
-    cursor = (cursor | (node << 48U));
+    cursor = (cursor | (seqId << 48U));
 
     return genResult(cursor, batch);
   }
