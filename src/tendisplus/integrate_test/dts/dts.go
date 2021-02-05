@@ -52,6 +52,22 @@ func slaveOf(m *util.RedisServer, s *util.RedisServer) {
 	}
 }
 
+func configSet(s *util.RedisServer, k string, v string) {
+	cli := redis.NewClient(&redis.Options{
+		Addr: s.Addr(),
+	})
+	defer cli.Close()
+
+	r, err := cli.ConfigSet(context.Background(), k, v).Result()
+	if err != nil {
+		log.Fatalf("do slaveof failed:%v", err)
+	}
+
+	if r != "OK" {
+		log.Fatalf("do slaveof error:%s", r)
+	}
+}
+
 func setData(m *util.RedisServer) {
 	cli := redis.NewClient(&redis.Options{
 		Addr: m.Addr(),
@@ -59,7 +75,7 @@ func setData(m *util.RedisServer) {
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.Set(context.Background(), "set:"+ uuid.New().String(), uuid.New().String(), 0).Err(); err != nil {
+		if err := cli.Set(context.Background(), "mystr:"+ uuid.New().String(), uuid.New().String(), 0).Err(); err != nil {
 			log.Fatalf("set failed. %v", err)
 		}
 	}
@@ -72,7 +88,26 @@ func zaddData(m *util.RedisServer) {
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.ZAdd(context.Background(), "zadd:"+uuid.New().String(), &redis.Z{Score: float64(i), Member: uuid.New().String()}).Err(); err != nil {
+		if err := cli.ZAdd(context.Background(), "mysortedset:"+uuid.New().String(),
+			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()},
+			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()},
+			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()}).Err(); err != nil {
+			log.Fatalf("zadd failed. %v", err)
+		}
+	}
+}
+
+func saddData(m *util.RedisServer) {
+	cli := redis.NewClient(&redis.Options{
+		Addr: m.Addr(),
+	})
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.SAdd(context.Background(), "myset:"+uuid.New().String(),
+			uuid.New().String(),
+			uuid.New().String(),
+			uuid.New().String()).Err(); err != nil {
 			log.Fatalf("zadd failed. %v", err)
 		}
 	}
@@ -85,7 +120,10 @@ func lpushData(m *util.RedisServer) {
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.LPush(context.Background(), "lpush:"+strconv.Itoa(i), uuid.New().String(), uuid.New().String(), uuid.New().String()).Err(); err != nil {
+		if err := cli.LPush(context.Background(), "mylist:"+strconv.Itoa(i),
+			uuid.New().String(),
+			uuid.New().String(),
+			uuid.New().String()).Err(); err != nil {
 			log.Fatalf("lpush failed. %v", err)
 		}
 	}
@@ -98,31 +136,61 @@ func rpushData(m *util.RedisServer) {
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.RPush(context.Background(), "rpush:"+strconv.Itoa(i), uuid.New().String(), uuid.New().String(), uuid.New().String()).Err(); err != nil {
+		if err := cli.RPush(context.Background(), "mylist:"+strconv.Itoa(i),
+			uuid.New().String(),
+			uuid.New().String(),
+			uuid.New().String()).Err(); err != nil {
 			log.Fatalf("lpush failed. %v", err)
 		}
 	}
 }
 
-func msetData(m *util.RedisServer) {
+func hmsetData(m *util.RedisServer) {
 	cli := redis.NewClient(&redis.Options{
 		Addr: m.Addr(),
 	})
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.MSet(context.Background(), "mset:"+uuid.New().String(), uuid.New().String(), "mset:" + uuid.New().String(), uuid.New().String()).Err(); err != nil {
+		if err := cli.HMSet(context.Background(), "myhash:"+uuid.New().String(),
+			uuid.New().String(), uuid.New().String(),
+			uuid.New().String(), uuid.New().String(),
+			uuid.New().String(), uuid.New().String(),
+			uuid.New().String(), uuid.New().String()).Err(); err != nil {
 			log.Fatalf("mset failed. %v", err)
 		}
 	}
 }
 
+func otherData(m *util.RedisServer) {
+	cli := redis.NewClient(&redis.Options{
+		Addr: m.Addr(),
+	})
+	defer cli.Close()
+
+	for i:=0;i<10000;i++{
+		if err := cli.HSet(context.Background(), "", uuid.New().String(),uuid.New().String()).Err(); err != nil {
+			log.Fatalf("insert data failed. %v", err)
+		}
+	}
+
+
+	for i:=0;i<10000;i++ {
+		if err := cli.Set(context.Background(), uuid.New().String(), uuid.New().String(), time.Millisecond * time.Duration(rand.Int31n(1000))).Err(); err != nil  {
+			log.Fatalf("insert data failed. %v", err)
+		}
+	}
+}
+
+
 func writeData(m *util.RedisServer) {
 	setData(m)
 	zaddData(m)
+	saddData(m)
 	lpushData(m)
 	rpushData(m)
-	msetData(m)
+	hmsetData(m)
+	otherData(m)
 }
 
 func getCurrentDirectory() string {
@@ -140,6 +208,8 @@ func main() {
 	cfgArgs := make(map[string]string)
 	cfgArgs["aof-enabled"] = "yes"
 	cfgArgs["kvStoreCount"] = "1"
+	cfgArgs["noexpire"] = "false"
+	cfgArgs["generallog"] = "true"
 	pwd := getCurrentDirectory()
 
 	m := new(util.RedisServer)
@@ -179,7 +249,8 @@ func main() {
 
 	t.Init("127.0.0.1", targetPort, pwd, "t_")
 
-	delete(cfgArgs,"aof-enabled")
+	cfgArgs["aof-enabled"] = "false"
+	cfgArgs["noexpire"] = "yes"
 	if err := t.Setup(false, &cfgArgs); err != nil {
 		log.Fatalf("setup target failed:%v", err)
 	}
@@ -191,7 +262,7 @@ func main() {
 
 	var stdoutDTS bytes.Buffer
 	var stderrDTS bytes.Buffer
-	cmdDTS := exec.Command("../../../../bin/checkdts", s.Addr(),"", t.Addr(), "", "0", "1", "8000", "0", "0")
+	cmdDTS := exec.Command("../../../../bin/checkdts", m.Addr(),"", t.Addr(), "", "0", "1", "8000", "0", "0")
 	cmdDTS.Stdout = &stdoutDTS
 	cmdDTS.Stderr = &stderrDTS
 	err := cmdDTS.Run()
@@ -209,7 +280,24 @@ func main() {
 
 	var stdoutComp bytes.Buffer
 	var stderrComp bytes.Buffer
-	cmdComp := exec.Command("../../../../bin/compare_instances", "-addr1",m.Addr(), "-addr2", t.Addr(),"-storeNum", "1")
+	cmdComp := exec.Command("../../../../bin/compare_instances", "-addr1",s.Addr(), "-addr2", t.Addr(),"-storeNum", "1")
+	cmdComp.Stdout = &stdoutComp
+	cmdComp.Stderr = &stderrComp
+	err = cmdComp.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	//defer cmdComp.Process.Kill()
+
+	log.Println(stdoutComp.String())
+	log.Println(stderrComp.String())
+
+	if strings.Contains(stdoutComp.String(), "error") {
+		log.Fatalln(stdoutComp.String())
+	}
+
+	configSet(s, "noexpire", "false")
+	cmdComp = exec.Command("../../../../bin/compare_instances", "-addr1",t.Addr(), "-addr2", s.Addr(),"-storeNum", "1")
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp
 	err = cmdComp.Run()

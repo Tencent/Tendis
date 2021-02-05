@@ -698,6 +698,8 @@ void ReplManager::supplyFullPsyncRoutine(
   std::list<Record> result;
   std::string prevPrimaryKey;
   uint64_t prevTTL = 0;
+  uint32_t prevChunkId = CLUSTER_SLOTS;
+  uint64_t kvCount = 0;
   std::string sendBuf;
   while (true) {
     Expected<Record> exptRcd = cursor->next();
@@ -711,6 +713,16 @@ void ReplManager::supplyFullPsyncRoutine(
           return;
         }
         sendBuf.append(aofStr.value());
+        result.clear();
+
+        if (prevTTL != 0 && currentTs <= prevTTL) {
+          std::stringstream ss1;
+          Command::fmtMultiBulkLen(ss1, 3);
+          Command::fmtBulk(ss1, "PEXPIREAT");
+          Command::fmtBulk(ss1, prevPrimaryKey);
+          Command::fmtBulk(ss1, std::to_string(prevTTL));
+          sendBuf.append(ss1.str());
+        }
       }
 
       if (!sendBuf.empty()) {
@@ -733,10 +745,17 @@ void ReplManager::supplyFullPsyncRoutine(
       continue;
     }
 
+    kvCount++;
+    if (chunkId != prevChunkId) {
+      LOG(INFO) << "full psync. begin chunkId: " << chunkId
+                << " key count: " << kvCount;
+      prevChunkId = chunkId;
+    }
+
     uint64_t targetTTL = 0;
     auto curPrimarykey = exptRcd.value().getRecordKey().getPrimaryKey();
     if (valueType != RecordType::RT_KV) {
-      if (curPrimarykey == prevPrimaryKey) {
+      if (kvCount > 1 && curPrimarykey == prevPrimaryKey) {
         targetTTL = prevTTL;
       } else {
         RecordKey mk(
@@ -758,12 +777,33 @@ void ReplManager::supplyFullPsyncRoutine(
     }
 
     if (0 != targetTTL && currentTs > targetTTL) {
+      if (kvCount > 1 && currentTs <= prevTTL &&
+          prevPrimaryKey != curPrimarykey) {
+        if (!result.empty()) {
+          auto aofStr = recordList2Aof(result);
+          if (!aofStr.ok()) {
+            LOG(WARNING) << aofStr.status().toString();
+            client->writeLine("-ERR invalid data");
+            return;
+          }
+          sendBuf.append(aofStr.value());
+          result.clear();
+        }
+
+        std::stringstream ss1;
+        Command::fmtMultiBulkLen(ss1, 3);
+        Command::fmtBulk(ss1, "PEXPIREAT");
+        Command::fmtBulk(ss1, prevPrimaryKey);
+        Command::fmtBulk(ss1, std::to_string(prevTTL));
+        sendBuf.append(ss1.str());
+      }
+
       prevPrimaryKey = curPrimarykey;
       prevTTL = targetTTL;
       continue;
     }
 
-    if (prevPrimaryKey.empty()) {
+    if (kvCount == 1) {
       prevPrimaryKey = curPrimarykey;
       prevTTL = targetTTL;
       result.emplace_back(std::move(exptRcd.value()));
@@ -788,6 +828,15 @@ void ReplManager::supplyFullPsyncRoutine(
         return;
       }
       sendBuf.append(aofStr.value());
+
+      if (prevTTL != 0 && currentTs <= prevTTL) {
+        std::stringstream ss1;
+        Command::fmtMultiBulkLen(ss1, 3);
+        Command::fmtBulk(ss1, "PEXPIREAT");
+        Command::fmtBulk(ss1, prevPrimaryKey);
+        Command::fmtBulk(ss1, std::to_string(prevTTL));
+        sendBuf.append(ss1.str());
+      }
 
       prevPrimaryKey = curPrimarykey;
       prevTTL = targetTTL;

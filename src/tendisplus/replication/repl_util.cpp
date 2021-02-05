@@ -269,7 +269,6 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
                << "; Size:" << cmdStr.size();
     return s;
   }
-  
   return br;
 }
 
