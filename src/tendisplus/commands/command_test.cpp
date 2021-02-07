@@ -1629,6 +1629,20 @@ void testCommandArray(std::shared_ptr<ServerEntry> svr,
 
   for (auto& args : arr) {
     sess.setArgs(args);
+
+    // need precheck for args check, after exp.ok(), can execute runSessionCmd()
+    // EXPECT_FALSE when !exp.ok()
+    auto exp = Command::precheck(&sess);
+    if (!exp.ok()) {
+      std::stringstream ss;
+      for (auto& str : args) {
+        ss << str << " ";
+      }
+      LOG(INFO) << ss.str() << "ERROR:" << exp.status().toString();
+      EXPECT_FALSE(exp.ok());
+      continue;
+    }
+
     auto expect = Command::runSessionCmd(&sess);
     if (!expect.ok()) {
       std::stringstream ss;
@@ -2091,6 +2105,48 @@ TEST(Command, resizeCommand) {
 #ifndef _WIN32
   getGlobalServer()->stop();
   EXPECT_EQ(getGlobalServer().use_count(), 1);
+#endif
+}
+
+TEST(Command, adminSet_Get_DelCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->kvStoreCount = 3;
+  auto server = makeServerEntry(cfg);
+
+  std::vector<std::vector<std::string>> wrongArr = {
+          {"ADMINSET"},
+          {"ADMINSET", "test"},
+
+          {"ADMINGET"},
+          {"ADMINGET", "test", "storeid",
+           std::to_string(cfg->kvStoreCount + 1)},
+          {"ADMINGET", "test", "storeid", "("},
+
+          {"ADMINDEL"},
+  };
+
+  std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+          {{"ADMINSET", "test", "xx"}, Command::fmtOK()},
+
+          {{"ADMINGET", "test"}, "*3\r\n*2\r\n$1\r\n0\r\n$2\r\nxx\r\n"
+               "*2\r\n$1\r\n1\r\n$2\r\nxx\r\n*2\r\n$1\r\n2\r\n$2\r\nxx\r\n"},
+          {{"ADMINGET", "test", "storeid", "2"},
+                "*1\r\n*2\r\n$1\r\n2\r\n$2\r\nxx\r\n"},
+
+          {{"ADMINDEL", "test"}, Command::fmtOne()},
+          {{"ADMINDEL", "test"}, Command::fmtZero()},
+          {{"ADMINGET", "test"}, "*3\r\n*2\r\n$1\r\n0\r\n$-1\r\n*2\r\n"
+                                 "$1\r\n1\r\n$-1\r\n*2\r\n$1\r\n2\r\n$-1\r\n"},
+  };
+
+  testCommandArray(server, wrongArr, true);
+  testCommandArrayResult(server, resultArr);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
 #endif
 }
 
