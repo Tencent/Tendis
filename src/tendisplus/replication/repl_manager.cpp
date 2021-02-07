@@ -958,21 +958,29 @@ Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId,
     value = tempValue;
   }
 
-  Expected<ReplLogKeyV2> logKey = ReplLogKeyV2::decode(key);
-  Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
-  if (!logKey.ok() || !logValue.ok()) {
+  if (key != "" && value != "") {
+    Expected<ReplLogKeyV2> logKey = ReplLogKeyV2::decode(key);
+    Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
+    if (!logKey.ok()) {
+      return logKey.status();
+    } else if (!logValue.ok()) {
+      return logValue.status();
+    } else {
+      return logKey.value().getBinlogId();
+    }
+  }
+  if (lastKey != "" && lastValue != "") {
     Expected<ReplLogKeyV2> logLastKey = ReplLogKeyV2::decode(lastKey);
     Expected<ReplLogValueV2> logLastValue = ReplLogValueV2::decode(lastValue);
     if (!logLastKey.ok()) {
       return logLastKey.status();
-    }
-    if (!logLastValue.ok()) {
+    } else if (!logLastValue.ok()) {
       return logLastValue.status();
+    } else {
+      return logLastKey.value().getBinlogId();
     }
-    return logLastKey.value().getBinlogId();
   }
-
-  return logKey.value().getBinlogId();
+  return {ErrorCodes::ERR_INTERNAL, "read file failed"};
 }
 
 bool ReplManager::flushCurBinlogFs(uint32_t storeId) {
