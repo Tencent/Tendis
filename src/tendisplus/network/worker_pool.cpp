@@ -105,8 +105,8 @@ void WorkerPool::consumeTasks(size_t idx) {
         LOG(ERROR) << "This thread isn't in collection";
       }
     } catch (...) {
-      INVARIANT_D(0);
       LOG(ERROR) << "Workerpool: " << pname << " occurs error";
+      INVARIANT_D(0);
     }
   }
 }

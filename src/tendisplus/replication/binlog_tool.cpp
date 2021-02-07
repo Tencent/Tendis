@@ -1,11 +1,10 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-
 #include <iostream>
 #include <string>
 #include <vector>
-
+#include "tendisplus/commands/command.h"
 #include "tendisplus/utils/param_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/kvstore.h"
@@ -17,7 +16,7 @@ namespace tendisplus {
 // TODO(takenliu) print error to stderr or logfile?
 class BinlogScanner {
  public:
-  enum TOOL_MODE { TEXT_SHOW = 0, BASE64_SHOW, TEXT_SHOW_SCOPE };
+  enum TOOL_MODE { TEXT_SHOW = 0, BASE64_SHOW, TEXT_SHOW_SCOPE, AOF_SHOW };
 
   void init(const tendisplus::ParamManager& pm) {
     _logfile = pm.getString("logfile");
@@ -30,6 +29,8 @@ class BinlogScanner {
       _mode = TOOL_MODE::BASE64_SHOW;
     } else if (pm.getString("mode") == "scope") {
       _mode = TOOL_MODE::TEXT_SHOW_SCOPE;
+    } else if (pm.getString("mode") == "aof") {
+      _mode = TOOL_MODE ::AOF_SHOW;
     }
   }
 
@@ -134,6 +135,11 @@ class BinlogScanner {
       }
       _lastbinlogid = logkey.value().getBinlogId();
       _lastbinlogtime = logValue.value().getTimestamp();
+    } else if (_mode == TOOL_MODE::AOF_SHOW) {
+      std::stringstream ss;
+      std::string cmdStr = logValue.value().getCmd();
+
+      std::cout << "aof:" << std::endl << cmdStr << std::endl;
     }
 
     return "";

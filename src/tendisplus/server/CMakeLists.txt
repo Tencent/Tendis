@@ -1,5 +1,5 @@
 add_library(session session.cpp)
-target_link_libraries(session status glog)
+target_link_libraries(session status glog commands)
 
 add_library(server server_entry.cpp)
 target_link_libraries(server status network nwp time_util rocks_kvstore segment_mgr catalog repl_manager migrate gc_mgr index_mgr cluster_mgr pessimistic server_params script)

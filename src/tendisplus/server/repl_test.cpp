@@ -574,6 +574,67 @@ TEST(Repl, slaveofBenchmarkingMaster) {
   }
 }
 
+TEST(Repl, slaveofBenchmarkingMasterAOF) {
+  size_t i = 0;
+  {
+    LOG(INFO) << ">>>>>> test store count:" << i;
+
+    const auto guard = MakeGuard([] {
+      destroyEnv(master_dir);
+      destroyEnv(slave_dir);
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    EXPECT_TRUE(setupEnv(master_dir));
+    EXPECT_TRUE(setupEnv(slave_dir));
+
+    auto cfg1 = makeServerParam(master_port, i, master_dir, true);
+    auto cfg2 = makeServerParam(slave_port, i, slave_dir, true);
+    cfg1->aofPsyncEnabled = true;
+    cfg2->aofPsyncEnabled = true;
+
+    auto master = std::make_shared<ServerEntry>(cfg1);
+    auto s = master->startup(cfg1);
+    INVARIANT(s.ok());
+
+    auto slave = std::make_shared<ServerEntry>(cfg2);
+    s = slave->startup(cfg2);
+    INVARIANT(s.ok());
+
+    LOG(INFO) << ">>>>>> slaveof begin.";
+    runCmd(slave, {"slaveof", "127.0.0.1", std::to_string(master_port)});
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    LOG(INFO) << ">>>>>> slaveof end.";
+    LOG(INFO) << ">>>>>> master add data begin.";
+
+    auto thread = std::thread([this, master]() {
+      testKV(master);
+    });
+    thread.join();
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    compareData(master, slave, false);
+
+    auto thread2 = std::thread([this, master]() { testSet(master); });
+
+    thread2.join();
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    compareData(master, slave, false);
+
+    auto thread3 = std::thread([this, master]() { testHash1(master); });
+
+    thread3.join();
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    compareData(master, slave, false);
+    LOG(INFO) << ">>>>>> compareData end.";
+
+#ifndef _WIN32
+    master->stop();
+    slave->stop();
+    ASSERT_EQ(slave.use_count(), 1);
+#endif
+  }
+}
+
 void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
   auto ctx = std::make_shared<asio::io_context>();
   auto session = makeSession(svr, ctx);

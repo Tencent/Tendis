@@ -64,8 +64,8 @@ class BackupCommand : public Command {
       auto tmpDirPath = dir + "/tmpDir";
       filesystem::create_directory(tmpDirPath);
       filesystem::remove(tmpDirPath);
-    } catch (const filesystem::filesystem_error &e) {
-        return {ErrorCodes::ERR_MANUAL, e.what()};
+    } catch (const filesystem::filesystem_error& e) {
+      return {ErrorCodes::ERR_MANUAL, e.what()};
     }
 
     if (!filesystem::exists(dir)) {
@@ -201,7 +201,7 @@ class RestoreBackupCommand : public Command {
         return {ErrorCodes::ERR_INTERNAL, "has slave, rm slave first"};
       }
       LOG(INFO) << "restorebackup store:" << storeId << " isForce:" << isForce
-        << " isEmpty:" << isEmpty(svr, sess, storeId);
+                << " isEmpty:" << isEmpty(svr, sess, storeId);
       auto ret = restoreBackup(svr, sess, storeId, dir);
       if (!ret.ok()) {
         return ret.status();
@@ -272,8 +272,8 @@ class RestoreBackupCommand : public Command {
     uint32_t flags = 0;
     BinlogVersion mybversion = svr->getCatalog()->getBinlogVersion();
     LOG(INFO) << "store: " << storeId
-      << " binlogVersion:" << static_cast<int>(binlogVersion)
-      << " mybversion:" << static_cast<int>(mybversion);
+              << " binlogVersion:" << static_cast<int>(binlogVersion)
+              << " mybversion:" << static_cast<int>(mybversion);
     if (binlogVersion == BinlogVersion::BINLOG_VERSION_1) {
       if (mybversion == BinlogVersion::BINLOG_VERSION_2) {
         flags |= ROCKS_FLAGS_BINLOGVERSION_CHANGED;
@@ -1309,5 +1309,36 @@ class ReplStatusCommand : public Command {
     return Command::fmtLongLong((uint8_t)meta.value().get()->replState);
   }
 } replStatusCommand;
+
+class PsyncCommand : public Command {
+ public:
+  PsyncCommand() : Command("psync", "a") {}
+
+  ssize_t arity() const {
+    return 4;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  bool isBgCmd() const {
+    return true;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    LOG(FATAL) << "psync should not be called";
+    // void compiler complain
+    return {ErrorCodes::ERR_INTERNAL, "shouldn't be called"};
+  }
+} PsyncCommand;
 
 }  // namespace tendisplus

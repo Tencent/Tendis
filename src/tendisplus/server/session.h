@@ -40,6 +40,7 @@ class Session : public std::enable_shared_from_this<Session> {
   SessionCtx* getCtx() const;
   ServerEntry* getServerEntry() const;
   std::string getCmdStr() const;
+  std::string getSessionCmd();
   uint64_t getCtime() const;
 
   virtual void start() = 0;
@@ -70,6 +71,7 @@ class Session : public std::enable_shared_from_this<Session> {
   std::string getTypeStr() const;
   static Session* getCurSess();
   static void setCurSess(Session* sess);
+  int64_t changeExpireTime(const std::string& cmdStr, int64_t millsecs);
   void setInLua(bool val) {
     _inLua = val;
   }

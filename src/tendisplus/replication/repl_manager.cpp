@@ -447,8 +447,7 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
       _logRecycStatus[storeId]->firstBinlogId = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->saveBinlogId = store->getHighestBinlogId() + 1;
       _logRecycStatus[storeId]->timestamp = 0;
-      _logRecycStatus[storeId]->lastFlushBinlogId =
-              Transaction::TXNID_UNINITED;
+      _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
       LOG(INFO) << "resetRecycleState"
                 << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
                 << " saveBinlogId:" << _logRecycStatus[storeId]->saveBinlogId
@@ -559,6 +558,7 @@ void ReplManager::controlRoutine() {
     }
     return doSth;
   };
+
   while (_isRunning.load(std::memory_order_relaxed)) {
     bool doSth = false;
     auto now = SCLOCK::now();
@@ -812,7 +812,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   //    << " to end:" << newStart << " success."
   //    << "addr:" << _svr->getNetwork()->getIp()
   //    << ":" << _svr->getNetwork()->getPort();
-  INVARIANT_COMPARE_D(newStart, <=, end+1);
+  INVARIANT_COMPARE_D(newStart, <=, end + 1);
   start = newStart;
   save = newSave;
 }
@@ -1407,8 +1407,8 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
       ss << "slave" << i << ":ip=" << iter.second.slave_listen_ip
          << ",port=" << iter.second.slave_listen_port
          << ",state=" << iter.second.state
-         << ",offset=" << iter.second.binlogpos << ",lag="
-         << (msSinceEpoch() - iter.second.lastBinlogTs) / 1000
+         << ",offset=" << iter.second.binlogpos
+         << ",lag=" << (msSinceEpoch() - iter.second.lastBinlogTs) / 1000
          << "\r\n";
     }
   }
@@ -1428,8 +1428,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",state=" << state;
       ss << ",binlog_pos=" << _syncMeta[i]->binlogId;
       // lag in seconds
-      ss << ",lag="
-         << (msSinceEpoch() - _syncStatus[i]->lastBinlogTs) / 1000;
+      ss << ",lag=" << (msSinceEpoch() - _syncStatus[i]->lastBinlogTs) / 1000;
       if (_syncMeta[i]->replState == ReplState::REPL_ERR) {
         ss << ",error=" << _syncMeta[i]->replErr;
       }

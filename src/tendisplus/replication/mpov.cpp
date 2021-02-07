@@ -7,6 +7,7 @@
 #include <fstream>
 #include <string>
 #include <memory>
+#include "tendisplus/commands/command.h"
 
 #include "glog/logging.h"
 #include "rapidjson/document.h"
@@ -14,9 +15,11 @@
 
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/utils/test_util.h"
+#include "tendisplus/utils/redis_port.h"
+#include "tendisplus/commands/dump.h"
 
 namespace tendisplus {
-
 bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                                  const std::string& storeIdArg,
                                  const std::string& slaveIpArg,
@@ -91,6 +94,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   BlockingTcpClient* client = nullptr;
   uint32_t dstStoreId = 0;
   bool needHeartbeat = false;
+  MPovClientType clientType = MPovClientType::repllogClient;
   {
     std::lock_guard<std::mutex> lk(_mutex);
     if (_incrPaused ||
@@ -103,13 +107,22 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     client = _pushStatus[storeId][clientId]->client.get();
     dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
     lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
+    clientType = _pushStatus[storeId][clientId]->clientType;
   }
   if (lastSend + std::chrono::seconds(gBinlogHeartbeatSecs) < SCLOCK::now()) {
     needHeartbeat = true;
   }
 
-  auto ret = masterSendBinlogV2(
-    client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  BinlogResult br;
+  Expected<BinlogResult> ret = br;
+
+  if (_cfg->aofPsyncEnabled && (clientType == MPovClientType::respClient)) {
+    ret = masterSendAof(
+      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  } else {
+    ret = masterSendBinlogV2(
+      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+  }
   if (!ret.ok()) {
     LOG(WARNING) << "masterSendBinlog to client:" << client->getRemoteRepr()
                  << " failed:" << ret.status().toString();
@@ -514,4 +527,363 @@ void ReplManager::supplyFullSyncRoutine(
   }
 }
 
+bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
+                                  const std::string& storeIdArg) {
+  std::shared_ptr<BlockingTcpClient> client =
+    std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
+                                                       64 * 1024 * 1024));
+
+  // NOTE(deyukong): this judge is not precise
+  // even it's not full at this time, it can be full during schedule.
+  if (isFullSupplierFull()) {
+    LOG(WARNING) << "ReplManager::supplyFullPsync fullPusher isFull.";
+    client->writeLine("-ERR workerpool full");
+    return false;
+  }
+
+  auto expStoreId = tendisplus::stoul(storeIdArg);
+  if (!expStoreId.ok()) {
+    LOG(ERROR) << "ReplManager::supplyFullPsync storeIdArg error:"
+               << storeIdArg;
+    client->writeLine("-ERR invalid storeId");
+    return false;
+  }
+
+  uint32_t storeId = static_cast<uint32_t>(expStoreId.value());
+  if (storeId >= _svr->getKVStoreCount()) {
+    client->writeLine("-ERR invalid storeId");
+    return false;
+  }
+
+  _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
+    supplyFullPsyncRoutine(std::move(client), storeId);
+  });
+
+  return true;
+}
+
+void ReplManager::supplyFullPsyncRoutine(
+  std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+  char runId[CONFIG_RUN_ID_SIZE + 1];
+  redis_port::getRandomHexChars(runId, CONFIG_RUN_ID_SIZE);
+  client->writeData("+FULLRESYNC " + string(runId) + " 0\r\n");
+
+  // send no keys rdb to client
+  unsigned char rdbData[] = {
+    0x52, 0x45, 0x44, 0x49, 0x53, 0x30, 0x30, 0x30, 0x39, 0xfa, 0x09, 0x72,
+    0x65, 0x64, 0x69, 0x73, 0x2d, 0x76, 0x65, 0x72, 0x05, 0x36, 0x2e, 0x30,
+    0x2e, 0x39, 0xfa, 0x0a, 0x72, 0x65, 0x64, 0x69, 0x73, 0x2d, 0x62, 0x69,
+    0x74, 0x73, 0xc0, 0x40, 0xfa, 0x05, 0x63, 0x74, 0x69, 0x6d, 0x65, 0xc2,
+    0xdf, 0x81, 0xe8, 0x5f, 0xfa, 0x08, 0x75, 0x73, 0x65, 0x64, 0x2d, 0x6d,
+    0x65, 0x6d, 0xc2, 0x50, 0x8a, 0x0f, 0x00, 0xfa, 0x0c, 0x61, 0x6f, 0x66,
+    0x2d, 0x70, 0x72, 0x65, 0x61, 0x6d, 0x62, 0x6c, 0x65, 0xc0, 0x00, 0xff,
+    0x3a, 0xd1, 0x2d, 0xca, 0x85, 0x7c, 0xdd, 0x26};
+
+  auto length = sizeof(rdbData) / sizeof(rdbData[0]);
+  client->writeData("$" + to_string(length) + "\r\n");
+
+  auto s = client->writeData(
+    std::string(reinterpret_cast<const char*>(rdbData), length));
+  if (!s.ok()) {
+    LOG(ERROR) << "write rdb data to client failed:" << s.toString();
+    return;
+  }
+
+  // create snapshot
+  std::unique_ptr<BasicDataCursor> cursor;
+  std::shared_ptr<KVStore> store;
+  std::unique_ptr<Transaction> txn;
+  uint64_t binlogPos;
+
+  LocalSessionGuard sg(_svr.get());
+  sg.getSession()->setArgs({
+    "masterpsync",
+    std::to_string(storeId),
+    client->getRemoteRepr(),
+  });
+
+  {
+    auto expdb = _svr->getSegmentMgr()->getDb(
+      sg.getSession(), storeId, mgl::LockMode::LOCK_S);
+    if (!expdb.ok()) {
+      return;
+    }
+
+    store = expdb.value().store;
+    binlogPos = store->getHighestBinlogId();
+
+    auto ptxn = store->createTransaction(sg.getSession());
+    if (!ptxn.ok()) {
+      LOG(ERROR) << "createTransaction failed:" << ptxn.status().toString();
+      client->writeLine("-ERR createTransaction failed");
+      return;
+    }
+
+    txn = std::move(ptxn.value());
+    txn->SetSnapshot();
+    cursor = txn->createDataCursor();
+  }
+
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+  if (!expdb.ok()) {
+    client->writeLine("-ERR getdb error");
+    return;
+  }
+
+  // save full status
+  uint64_t clientId = _clientIdGen.fetch_add(1);
+  string remoteIP;  // always empty
+  auto remotePort = client->getRemotePort();
+  {
+    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    auto iter = _fullPushStatus[storeId].find(slaveNode);
+    if (iter != _fullPushStatus[storeId].end()) {
+      LOG(INFO) << "supplyFullPsyncRoutine already have _fullPushStatus, "
+                << iter->second->toString();
+      if (iter->second->state == FullPushState::ERR) {
+        _fullPushStatus[storeId].erase(iter);
+      } else {
+        client->writeLine("-ERR already have _fullPushStatus, " +
+                          iter->second->toString());
+        return;
+      }
+    }
+
+#if defined(_WIN32) && _MSC_VER > 1900
+    _fullPushStatus[storeId][slaveNode] =
+      new MPovFullPushStatus{storeId,
+                             FullPushState::PUSHING,
+                             binlogPos,
+                             SCLOCK::now(),
+                             SCLOCK::time_point::min(),
+                             client,
+                             clientId,
+                             remoteIP,
+                             remotePort};
+#else
+    _fullPushStatus[storeId][slaveNode] =
+      std::move(std::unique_ptr<MPovFullPushStatus>(
+        new MPovFullPushStatus{storeId,
+                               FullPushState::PUSHING,
+                               binlogPos,
+                               SCLOCK::now(),
+                               SCLOCK::time_point::min(),
+                               client,
+                               clientId,
+                               remoteIP,
+                               remotePort}));
+#endif
+  }
+
+
+  auto guard_0 = MakeGuard([this, storeId, remoteIP, remotePort]() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    string slaveNode = remoteIP + ":" + to_string(remotePort);
+    auto iter = _fullPushStatus[storeId].find(slaveNode);
+    if (iter != _fullPushStatus[storeId].end()) {
+      LOG(INFO) << "supplyFullPsyncRoutine, _fullPushStatus erase, "
+                << iter->second->toString();
+      _fullPushStatus[storeId].erase(iter);
+    } else {
+      LOG(ERROR) << "supplyFullPsyncRoutine, _fullPushStatus find node "
+                    "failed, storeid:"
+                 << storeId << " slave node:" << slaveNode;
+    }
+  });
+
+
+  // send data from snapshot
+  uint64_t currentTs = msSinceEpoch();
+  std::list<Record> result;
+  std::string prevPrimaryKey;
+  uint64_t prevTTL = 0;
+  uint32_t prevChunkId = CLUSTER_SLOTS;
+  uint64_t kvCount = 0;
+  std::string sendBuf;
+  while (true) {
+    Expected<Record> exptRcd = cursor->next();
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST ||
+        exptRcd.value().getRecordKey().getChunkId() >= CLUSTER_SLOTS) {
+      if (!result.empty()) {
+        auto aofStr = recordList2Aof(result);
+        if (!aofStr.ok()) {
+          LOG(WARNING) << aofStr.status().toString();
+          client->writeLine("-ERR invalid data");
+          return;
+        }
+        sendBuf.append(aofStr.value());
+        result.clear();
+
+        if (prevTTL != 0 && currentTs <= prevTTL) {
+          std::stringstream ss1;
+          Command::fmtMultiBulkLen(ss1, 3);
+          Command::fmtBulk(ss1, "PEXPIREAT");
+          Command::fmtBulk(ss1, prevPrimaryKey);
+          Command::fmtBulk(ss1, std::to_string(prevTTL));
+          sendBuf.append(ss1.str());
+        }
+      }
+
+      if (!sendBuf.empty()) {
+        client->writeData(sendBuf);
+        sendBuf.clear();
+      }
+      break;
+    }
+
+    if (!exptRcd.ok()) {
+      client->writeLine("-ERR invalid data");
+      return;
+    }
+
+    auto keyType = exptRcd.value().getRecordKey().getRecordType();
+    auto chunkId = exptRcd.value().getRecordKey().getChunkId();
+    auto dbid = exptRcd.value().getRecordKey().getDbId();
+    auto valueType = exptRcd.value().getRecordValue().getRecordType();
+    if (!isRealEleType(keyType, valueType)) {
+      continue;
+    }
+
+    kvCount++;
+    if (chunkId != prevChunkId) {
+      LOG(INFO) << "full psync. begin chunkId: " << chunkId
+                << " key count: " << kvCount;
+      prevChunkId = chunkId;
+    }
+
+    uint64_t targetTTL = 0;
+    auto curPrimarykey = exptRcd.value().getRecordKey().getPrimaryKey();
+    if (valueType != RecordType::RT_KV) {
+      if (kvCount > 1 && curPrimarykey == prevPrimaryKey) {
+        targetTTL = prevTTL;
+      } else {
+        RecordKey mk(
+          chunkId, dbid, RecordType::RT_DATA_META, curPrimarykey, "");
+        Expected<RecordValue> eValue = store->getKV(mk, txn.get());
+        if (eValue.ok()) {
+          targetTTL = eValue.value().getTtl();
+        } else {
+          LOG(WARNING) << "Get target ttl for key " << curPrimarykey
+                       << " of type: " << rt2Str(keyType) << " in db:" << dbid
+                       << " from chunk: " << chunkId
+                       << " failed, error: " << eValue.status().toString();
+          client->writeLine("-ERR get ttl error");
+          return;
+        }
+      }
+    } else {
+      targetTTL = exptRcd.value().getRecordValue().getTtl();
+    }
+
+    if (0 != targetTTL && currentTs > targetTTL) {
+      if (kvCount > 1 && currentTs <= prevTTL &&
+          prevPrimaryKey != curPrimarykey) {
+        if (!result.empty()) {
+          auto aofStr = recordList2Aof(result);
+          if (!aofStr.ok()) {
+            LOG(WARNING) << aofStr.status().toString();
+            client->writeLine("-ERR invalid data");
+            return;
+          }
+          sendBuf.append(aofStr.value());
+          result.clear();
+        }
+
+        std::stringstream ss1;
+        Command::fmtMultiBulkLen(ss1, 3);
+        Command::fmtBulk(ss1, "PEXPIREAT");
+        Command::fmtBulk(ss1, prevPrimaryKey);
+        Command::fmtBulk(ss1, std::to_string(prevTTL));
+        sendBuf.append(ss1.str());
+      }
+
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
+      continue;
+    }
+
+    if (kvCount == 1) {
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
+      result.emplace_back(std::move(exptRcd.value()));
+
+    } else if (curPrimarykey == prevPrimaryKey) {
+      result.emplace_back(std::move(exptRcd.value()));
+      if (result.size() >= 1000) {
+        auto aofStr = recordList2Aof(result);
+        if (!aofStr.ok()) {
+          LOG(WARNING) << aofStr.status().toString();
+          client->writeLine("-ERR invalid data");
+          return;
+        }
+        sendBuf.append(aofStr.value());
+        result.clear();
+      }
+    } else {
+      auto aofStr = recordList2Aof(result);
+      if (!aofStr.ok()) {
+        LOG(WARNING) << aofStr.status().toString();
+        client->writeLine("-ERR invalid data");
+        return;
+      }
+      sendBuf.append(aofStr.value());
+
+      if (prevTTL != 0 && currentTs <= prevTTL) {
+        std::stringstream ss1;
+        Command::fmtMultiBulkLen(ss1, 3);
+        Command::fmtBulk(ss1, "PEXPIREAT");
+        Command::fmtBulk(ss1, prevPrimaryKey);
+        Command::fmtBulk(ss1, std::to_string(prevTTL));
+        sendBuf.append(ss1.str());
+      }
+
+      prevPrimaryKey = curPrimarykey;
+      prevTTL = targetTTL;
+
+      result.clear();
+      result.emplace_back(std::move(exptRcd.value()));
+    }
+
+    if (sendBuf.size() > 10000) {
+      client->writeData(sendBuf);
+      sendBuf.clear();
+    }
+  }
+
+  LOG(INFO) << "full psync done."
+            << "remote addr:" << client->getRemoteRepr()
+            << "sotreId:" << storeId;
+
+
+#if defined(_WIN32) && _MSC_VER > 1900
+  _pushStatus[storeId][clientId] =
+    new MPovStatus{false,
+                   static_cast<uint32_t>(storeId),
+                   binlogPos,
+                   0,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   std::move(client),
+                   clientId,
+                   remoteIP,
+                   remotePort,
+                   MPovClientType::respClient};
+#else
+  _pushStatus[storeId][clientId] = std::move(
+    std::unique_ptr<MPovStatus>(new MPovStatus{false,
+                                               static_cast<uint32_t>(storeId),
+                                               binlogPos,
+                                               0,
+                                               SCLOCK::now(),
+                                               SCLOCK::time_point::min(),
+                                               std::move(client),
+                                               clientId,
+                                               remoteIP,
+                                               remotePort,
+                                               MPovClientType::respClient}));
+#endif
+
+  return;
+}
 }  // namespace tendisplus

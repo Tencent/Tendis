@@ -27,16 +27,17 @@ var (
 	addr2     = flag.String("addr2", "127.0.0.1:10002", "addr2 host")
 	password1 = flag.String("password1", "", "password1")
 	password2 = flag.String("password2", "", "password2")
+	storeNum = flag.Int("storeNum", 10, "store number")
 )
 
 func main() {
 	flag.Parse()
 	var channel chan int = make(chan int)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < *storeNum; i++ {
 		go processOneStore(i, *addr1, *addr2, channel)
 	}
 	var total int = 0
-	for i := 0; i < 10; i++ {
+	for i := 0; i < *storeNum; i++ {
 		num := <-channel
 		total += num
 	}
