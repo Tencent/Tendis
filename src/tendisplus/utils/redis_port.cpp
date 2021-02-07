@@ -8,12 +8,14 @@
 #include <stdarg.h>
 #include <sstream>
 #include <utility>
+#ifndef _WIN32
+#include "sys/time.h"
+#endif
 
 #include "glog/logging.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/time.h"
-#include "sys/time.h"
 
 namespace tendisplus {
 namespace redis_port {
@@ -1624,6 +1626,14 @@ void getRandomBytes(unsigned char* p, size_t len) {
   static unsigned char seed[64]; /* 512 bit internal block size. */
   static uint64_t counter = 0;   /* The counter we hash with the seed. */
 
+#ifdef _WIN32
+  if (!seed_initialized) {
+    for (unsigned int j = 0; j < sizeof(seed); j++) {
+      seed[j] = random();
+    }
+    seed_initialized = 1;
+  }
+#else
   if (!seed_initialized) {
     /* Initialize a seed and use SHA1 in counter mode, where we hash
      * the same seed with a progressive counter. For the goals of this
@@ -1645,6 +1655,7 @@ void getRandomBytes(unsigned char* p, size_t len) {
     if (fp)
       fclose(fp);
   }
+#endif
 
   while (len) {
     /* This implements SHA256-HMAC. */
@@ -1706,7 +1717,7 @@ void getRandomHexChars(char* p, size_t len) {
  *
  * The function returns the sds string pointer, that is always the same
  * as the input pointer since no resize is needed. */
-void strmapchars(std::string& s, const char *from,
+void strmapchars(std::string& s, const char *from,      // NOLINT
                  const char *to, size_t setlen) {
   size_t j, i, l = s.length();
 

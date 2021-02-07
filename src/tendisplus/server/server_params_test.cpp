@@ -35,42 +35,42 @@ TEST(ServerParams, Common) {
   EXPECT_EQ(cfg->logLevel, "debug");
   EXPECT_EQ(cfg->logDir, "./Log");
 
-  EXPECT_EQ(cfg->setVar("binlogRateLimitMB", "100", NULL), true);
+  EXPECT_TRUE(cfg->setVar("binlogRateLimitMB", "100").ok());
   EXPECT_EQ(cfg->binlogRateLimitMB, 100);
-  EXPECT_EQ(cfg->setVar("binlogratelimitmb", "200", NULL), true);
+  EXPECT_TRUE(cfg->setVar("binlogratelimitmb", "200").ok());
   EXPECT_EQ(cfg->binlogRateLimitMB, 200);
-  EXPECT_EQ(cfg->setVar("noargs", "abc", NULL), false);
+  EXPECT_FALSE(cfg->setVar("noargs", "abc").ok());
 
   EXPECT_EQ(cfg->registerOnupdate("noargs", paramOnUpdate), false);
-  EXPECT_EQ(cfg->registerOnupdate("chunkSize", paramOnUpdate), true);
-  EXPECT_EQ(cfg->setVar("chunkSize", "300", NULL), true);
-  EXPECT_EQ(cfg->chunkSize, 300);
+  EXPECT_EQ(cfg->registerOnupdate("maxClients", paramOnUpdate), true);
+  EXPECT_TRUE(cfg->setVar("maxClients", "300").ok());
+  EXPECT_EQ(cfg->maxClients, 300);
   EXPECT_EQ(paramUpdateValue, 1);
 
-  EXPECT_EQ(cfg->setVar("logLevel", "warNING", NULL), true);
+  EXPECT_TRUE(cfg->setVar("logLevel", "warNING").ok());
   EXPECT_EQ(cfg->logLevel, "warning");
-  EXPECT_EQ(cfg->setVar("logLevel", "nothavelevel", NULL), false);
+  EXPECT_FALSE(cfg->setVar("logLevel", "nothavelevel").ok());
   EXPECT_EQ(cfg->logLevel, "warning");
 
-  EXPECT_EQ(cfg->setVar("rocks.compress_type", "None", NULL), true);
+  EXPECT_TRUE(cfg->setVar("rocks.compress_type", "None").ok());
   EXPECT_EQ(cfg->rocksCompressType, "none");
-  EXPECT_EQ(cfg->setVar("rocks.compress_type", "nothavelevel", NULL), false);
+  EXPECT_FALSE(cfg->setVar("rocks.compress_type", "nothavelevel").ok());
   EXPECT_EQ(cfg->rocksCompressType, "none");
 
-  EXPECT_EQ(cfg->setVar("logDir", "\"./\"", NULL), true);
+  EXPECT_TRUE(cfg->setVar("logDir", "\"./\"").ok());
   EXPECT_EQ(cfg->logDir, "./");
-  EXPECT_EQ(cfg->setVar("logDir", "\"./", NULL), true);
+  EXPECT_TRUE(cfg->setVar("logDir", "\"./").ok());
   EXPECT_EQ(cfg->logDir, "\"./");
 
-  EXPECT_EQ(cfg->setVar("kvStoreCount", "12abc", NULL), true);
+  EXPECT_TRUE(cfg->setVar("kvStoreCount", "12abc").ok());
   EXPECT_EQ(cfg->kvStoreCount, 12);
-  EXPECT_EQ(cfg->setVar("kvStoreCount", "aa12abc", NULL), false);
+  EXPECT_FALSE(cfg->setVar("kvStoreCount", "aa12abc").ok());
 
   float testFloat;
   FloatVar testFloatVar("testFloatVar", &testFloat, NULL, NULL, true);
-  EXPECT_EQ(testFloatVar.setVar("1.5"), true);
+  EXPECT_TRUE(testFloatVar.setVar("1.5").ok());
   EXPECT_EQ(testFloat, 1.5);
-  EXPECT_EQ(testFloatVar.setVar("abc2.5abc"), false);
+  EXPECT_FALSE(testFloatVar.setVar("abc2.5abc").ok());
   EXPECT_EQ(testFloat, 1.5);
 
   EXPECT_EQ(cfg->executorThreadNum, 9);
@@ -88,7 +88,6 @@ TEST(ServerParams, Include) {
   myfile.close();
 
   myfile.open("gtest_serverparams_include2.cfg");
-  myfile << "chunkSize 200\n";
   myfile.close();
 
   const auto guard = MakeGuard([] {
@@ -102,7 +101,6 @@ TEST(ServerParams, Include) {
   EXPECT_EQ(cfg->port, 8903);
   EXPECT_EQ(cfg->logLevel, "debug");
   EXPECT_EQ(cfg->logDir, "./");
-  EXPECT_EQ(cfg->chunkSize, 200);
   EXPECT_EQ(cfg->getConfFile(), "gtest_serverparams_include1.cfg");
 }
 
@@ -132,6 +130,7 @@ TEST(ServerParams, DynamicSet) {
   myfile.open("gtest_serverparams_dynamicset.cfg");
   myfile << "port 8903\n";
   myfile << "masterauth testpw\n";
+  myfile << "binlogDelRange 1\n";
   myfile.close();
 
   const auto guard =
@@ -142,21 +141,18 @@ TEST(ServerParams, DynamicSet) {
   EXPECT_EQ(s.ok(), true) << s.toString();
 
   string errinfo;
-  EXPECT_EQ(cfg->setVar("port", "8904", &errinfo, false), false);
+  EXPECT_FALSE(cfg->setVar("port", "8904", false).ok());
   EXPECT_EQ(cfg->port, 8903);
-  EXPECT_EQ(errinfo, "not allow dynamic set");
-  EXPECT_EQ(cfg->setVar("maxBinlogKeepNum", "100", NULL, false), true);
+  EXPECT_TRUE(cfg->setVar("maxBinlogKeepNum", "100", false).ok());
   EXPECT_EQ(cfg->maxBinlogKeepNum, 100);
 
   // check params
-  EXPECT_EQ(cfg->setVar("binlogDelRange", "60000", &errinfo, false), false);
-  EXPECT_EQ(errinfo, "need binlogDelRange < truncateBinlogNum");
+  EXPECT_FALSE(cfg->setVar("binlogDelRange", "60000", false).ok());
   EXPECT_EQ(cfg->binlogDelRange, 1);
-  EXPECT_EQ(cfg->setVar("binlogDelRange", "40000", NULL, false), true);
+  EXPECT_TRUE(cfg->setVar("binlogDelRange", "40000", false).ok());
   EXPECT_EQ(cfg->binlogDelRange, 40000);
 
-  EXPECT_EQ(cfg->setVar("truncateBinlogNum", "30000", &errinfo, false), false);
-  EXPECT_EQ(errinfo, "need binlogDelRange < truncateBinlogNum");
+  EXPECT_FALSE(cfg->setVar("truncateBinlogNum", "30000", false).ok());
 }
 
 TEST(ServerParams, RocksOption) {
@@ -264,8 +260,8 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->level0Compress, false);
   EXPECT_EQ(cfg->level0Compress, false);
 
-  EXPECT_EQ(cfg->bingLogSendBatch, 256);
-  EXPECT_EQ(cfg->bingLogSendBytes, 16 * 1024 * 1024);
+  EXPECT_EQ(cfg->binlogSendBatch, 256);
+  EXPECT_EQ(cfg->binlogSendBytes, 16 * 1024 * 1024);
 
   EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
   EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);

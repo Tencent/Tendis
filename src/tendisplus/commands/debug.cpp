@@ -1828,10 +1828,12 @@ class InfoCommand : public Command {
     infoBinlogInfo(allsections, defsections, section, sess, result);
     infoCPU(allsections, defsections, section, sess, result);
     infoCommandStats(allsections, defsections, section, sess, result);
+    infoCluster(allsections, defsections, section, sess, result);
     infoKeyspace(allsections, defsections, section, sess, result);
     infoBackup(allsections, defsections, section, sess, result);
     infoDataset(allsections, defsections, section, sess, result);
     infoCompaction(allsections, defsections, section, sess, result);
+    infoIndexManager(allsections, defsections, section, sess, result);
     infoLevelStats(allsections, defsections, section, sess, result);
     infoRocksdbStats(allsections, defsections, section, sess, result);
     infoRocksdbPerfStats(allsections, defsections, section, sess, result);
@@ -1867,9 +1869,11 @@ class InfoCommand : public Command {
          << "redis_build_id:" << redisBuildId() << "\r\n"
          << "redis_mode:" << mode << "\r\n"
 #ifdef TENDIS_DEBUG
-         << "TENDIS_DEBUG:ON" << "\r\n"
+         << "TENDIS_DEBUG:ON"
+         << "\r\n"
 #else
-         << "TENDIS_DEBUG:OFF" << "\r\n"
+         << "TENDIS_DEBUG:OFF"
+         << "\r\n"
 #endif
 #ifndef _WIN32
          << "os:" << name.sysname << " " << name.release << " " << name.machine
@@ -2068,6 +2072,19 @@ class InfoCommand : public Command {
       replMgr->getReplInfo(ss);
       ss << "\r\n";
       result << ss.str();
+    }
+  }
+
+  static void infoCluster(bool allsections,
+                          bool defsections,
+                          const std::string& section,
+                          Session* sess,
+                          std::stringstream& result) {
+    if (allsections || defsections || section == "cluster") {
+      auto server = sess->getServerEntry();
+      auto clusterEnabled = server->isClusterEnabled() ? 1 : 0;
+      result << "# Cluster\r\n";
+      result << "cluster_enabled:" << clusterEnabled << "\r\n";
     }
   }
 
@@ -2409,8 +2426,24 @@ class InfoCommand : public Command {
         auto store = expdb.value().store;
         auto ret = store->getBgError();
         if (ret != "") {
-          result << "rocksdb" << store->dbId() << ":" << ret << "\n";
+          result << "rocksdb" << store->dbId() << ":" << ret << "\r\n";
         }
+      }
+      result << "\r\n";
+    }
+  }
+
+  static void infoIndexManager(bool allsections,
+                               bool defsections,
+                               const std::string& section,
+                               Session* sess,
+                               std::stringstream& result) {
+    if (allsections || section == "indexmanager") {
+      auto server = sess->getServerEntry();
+
+      result << "# IndexManager\r\n";
+      if (server->getIndexMgr()) {
+        result << server->getIndexMgr()->getInfoString();
       }
       result << "\r\n";
     }
@@ -2567,12 +2600,9 @@ class ConfigCommand : public Command {
       } else if (configName == "appendonly") {
         // NOTE(takenliu): donothing, for tests/*.tcl
       } else {
-        string errinfo;
-        bool force = false;
-        if (!sess->getServerEntry()->getParams()->setVar(
-              configName, args[3], &errinfo, force)) {
-          return {ErrorCodes::ERR_PARSEOPT, errinfo};
-        }
+        auto s = sess->getServerEntry()->getParams()->setVar(
+          configName, args[3], false);
+        RET_IF_ERR(s);
       }
     } else if (operation == "get") {
       if (args.size() != 3) {
@@ -4041,25 +4071,25 @@ class adminSetCommand : public Command {
 
     // record ADMINSET data into all kv-store
     for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
-      Status status {ErrorCodes::ERR_OK, ""};
+      Status status{ErrorCodes::ERR_OK, ""};
       auto expdb =
-              server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
       RET_IF_ERR_EXPECTED(expdb);
 
       auto kvstore = expdb.value().store;
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       RET_IF_ERR_EXPECTED(ptxn);
 
-      auto *pCtx = sess->getCtx();
+      auto* pCtx = sess->getCtx();
       INVARIANT(pCtx != nullptr);
 
       // NOTE(pecochen): record timestamp at "cas" field. TimeStamp NOT TTL !!!
       //        In order to avoid compaction-filter expire record by "ttl" field
       //        what's more? record as millisecond is enough
-      RecordKey rk(ADMINCMD_CHUNKID, ADMINCMD_DBID,
-                   RecordType::RT_DATA_META, key, "");
-      RecordValue rv(value, RecordType::RT_KV,
-                     pCtx->getVersionEP(), 0, msSinceEpoch());
+      RecordKey rk(
+        ADMINCMD_CHUNKID, ADMINCMD_DBID, RecordType::RT_DATA_META, key, "");
+      RecordValue rv(
+        value, RecordType::RT_KV, pCtx->getVersionEP(), 0, msSinceEpoch());
 
       status = kvstore->setKV(rk, rv, ptxn.value());
       RET_IF_ERR(status);
@@ -4070,7 +4100,7 @@ class adminSetCommand : public Command {
 
     return Command::fmtOK();
   }
-}adminSetCmd;
+} adminSetCmd;
 
 class adminGetCommand : public Command {
  public:
@@ -4119,7 +4149,7 @@ class adminGetCommand : public Command {
    * @param ttl flag shows whether need get timestamp
    * @return format string
    */
-  static std::string fmtAdminData(const RecordValue &rv,
+  static std::string fmtAdminData(const RecordValue& rv,
                                   uint32_t dbid,
                                   bool ttl = false) {
     std::stringstream ss;
@@ -4150,23 +4180,22 @@ class adminGetCommand : public Command {
    * @return format string or status
    */
   static Expected<std::string> getAdminDataFromKvstore(
-          const std::string &key,
-          bool ttl, uint32_t dbid,
-          std::shared_ptr<KVStore> kvstore,
-          Transaction *txn) {
-    RecordKey rk(ADMINCMD_CHUNKID,
-                 ADMINCMD_DBID,
-                 RecordType::RT_DATA_META,
-                 key, "");
+    const std::string& key,
+    bool ttl,
+    uint32_t dbid,
+    std::shared_ptr<KVStore> kvstore,
+    Transaction* txn) {
+    RecordKey rk(
+      ADMINCMD_CHUNKID, ADMINCMD_DBID, RecordType::RT_DATA_META, key, "");
     std::stringstream ss;
 
     auto expRv = kvstore->getKV(rk, txn);
     if (!expRv.ok()) {
-     if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-       ss << fmtAdminNull(dbid);
-     } else {
-       RET_IF_ERR_EXPECTED(expRv);
-     }
+      if (expRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        ss << fmtAdminNull(dbid);
+      } else {
+        RET_IF_ERR_EXPECTED(expRv);
+      }
     } else {
       RecordValue rv = expRv.value();
       ss << fmtAdminData(rv, dbid, ttl);
@@ -4184,26 +4213,28 @@ class adminGetCommand : public Command {
    * @param ss
    * @return
    */
-  static Status getAdminDataFromDb(
-          uint32_t dbid, const std::string &key, bool withTtl,
-          Session *sess, std::stringstream *ss) {
-    auto expDb = sess->getServerEntry()->getSegmentMgr()->
-            getDb(sess, dbid, mgl::LockMode::LOCK_IS);
+  static Status getAdminDataFromDb(uint32_t dbid,
+                                   const std::string& key,
+                                   bool withTtl,
+                                   Session* sess,
+                                   std::stringstream* ss) {
+    auto expDb = sess->getServerEntry()->getSegmentMgr()->getDb(
+      sess, dbid, mgl::LockMode::LOCK_IS);
     RET_IF_ERR_EXPECTED(expDb);
 
     auto kvstore = expDb.value().store;
     auto pTxn = sess->getCtx()->createTransaction(kvstore);
     RET_IF_ERR_EXPECTED(pTxn);
 
-    auto expData = getAdminDataFromKvstore(key, withTtl, dbid,
-                                           kvstore, pTxn.value());
+    auto expData =
+      getAdminDataFromKvstore(key, withTtl, dbid, kvstore, pTxn.value());
     RET_IF_ERR_EXPECTED(expData);
 
     *ss << expData.value();
     return {ErrorCodes::ERR_OK, ""};
   }
 
-  Expected<std::string> run(Session *sess) final {
+  Expected<std::string> run(Session* sess) final {
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
     const auto& args = sess->getArgs();
@@ -4234,11 +4265,14 @@ class adminGetCommand : public Command {
         }
       } else if (toLower(args[i]) == "withttl" && i + 1 < args.size()) {
         static std::map<std::string, bool> matchMap = {
-                {"yes", true}, {"1", true}, {"on", true},
-                {"no", false}, {"0", false}, {"off", false},
+          {"yes", true},
+          {"1", true},
+          {"on", true},
+          {"no", false},
+          {"0", false},
+          {"off", false},
         };
-        withTtl = matchMap.count(args[i + 1]) != 0 &&
-                  matchMap[args[i + 1]];
+        withTtl = matchMap.count(args[i + 1]) != 0 && matchMap[args[i + 1]];
       }
     }
 
@@ -4254,7 +4288,7 @@ class adminGetCommand : public Command {
 
     return ss.str();
   }
-}adminGetCmd;
+} adminGetCmd;
 
 class adminDelCommand : public Command {
  public:
@@ -4284,14 +4318,12 @@ class adminDelCommand : public Command {
    * @param kvstore
    * @return
    */
-  static Expected<bool> delSpecificKey(Session *sess,
-                                       Transaction *txn,
-                                       const std::string &key,
+  static Expected<bool> delSpecificKey(Session* sess,
+                                       Transaction* txn,
+                                       const std::string& key,
                                        std::shared_ptr<KVStore> kvstore) {
-    RecordKey rk(ADMINCMD_CHUNKID,
-                 ADMINCMD_DBID,
-                 RecordType::RT_DATA_META,
-                 key, "");
+    RecordKey rk(
+      ADMINCMD_CHUNKID, ADMINCMD_DBID, RecordType::RT_DATA_META, key, "");
 
     // ADMIN data no need to expire, so directly DEL is enough.
     // avoid increase operation steps, use KVStore::delKV NOT Command::delKey
@@ -4309,18 +4341,18 @@ class adminDelCommand : public Command {
     return status;
   }
 
-  Expected<std::string> run(Session *sess) final {
+  Expected<std::string> run(Session* sess) final {
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
-    const auto &args = sess->getArgs();
+    const auto& args = sess->getArgs();
 
     INVARIANT(server != nullptr);
     INVARIANT(pCtx != nullptr);
 
     int64_t delCount = 1;
     for (size_t i = 0; i < sess->getServerEntry()->getKVStoreCount(); ++i) {
-      auto expDb = sess->getServerEntry()->
-              getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+      auto expDb = sess->getServerEntry()->getSegmentMgr()->getDb(
+        sess, i, mgl::LockMode::LOCK_IX);
       RET_IF_ERR_EXPECTED(expDb);
 
       auto kvstore = expDb.value().store;

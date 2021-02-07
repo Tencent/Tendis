@@ -618,7 +618,7 @@ void ReplManager::updateCurBinlogFs(uint32_t storeId,
   if (ts) {
     v->timestamp = ts;
   }
-  if (v->fileSize >= _cfg->binlogFileSizeMB * 1024 * 1024 ||
+  if (v->fileSize >= (uint64_t)_cfg->binlogFileSizeMB * 1024 * 1024 ||
       v->fileCreateTime + std::chrono::seconds(_cfg->binlogFileSecs) <=
         SCLOCK::now() ||
       changeNewFile || v->needNewFile) {

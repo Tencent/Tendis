@@ -489,7 +489,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   installStoresInLock(tmpStores);
   INVARIANT_D(getKVStoreCount() == kvStoreCount);
-  LOG(INFO) << "enable cluster flag is" << _enableCluster;
+  LOG(INFO) << "enable cluster flag is " << _enableCluster;
 
   auto tmpSegMgr =
     std::unique_ptr<SegmentMgr>(new SegmentMgrFnvHash64(_kvstores, chunkSize));

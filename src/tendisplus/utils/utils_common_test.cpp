@@ -57,11 +57,14 @@ TEST(Time, Common) {
   EXPECT_EQ(t1, t2 / 1000000000);
   EXPECT_TRUE(t1 >= t3);
   EXPECT_TRUE(t2 >= t4);
+  EXPECT_TRUE(msEpochToDatetime(t2 / 1000000) == nsEpochToDatetime(t2));
 
   LOG(INFO) << epochToDatetime(t1);
   LOG(INFO) << epochToDatetime(t3);
   LOG(INFO) << epochToDatetime(t4 / 1000000000);
   LOG(INFO) << epochToDatetime(t2 / 1000000000);
+  LOG(INFO) << msEpochToDatetime(t2 / 1000000);
+  LOG(INFO) << nsEpochToDatetime(t2);
 }
 
 std::bitset<CLUSTER_SLOTS> genBitMap() {

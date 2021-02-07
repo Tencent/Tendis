@@ -18,7 +18,9 @@ using SCLOCK = std::chrono::steady_clock;
 std::string timePointRepr(const SCLOCK::time_point&);
 uint64_t nsSinceEpoch(const SCLOCK::time_point&);
 uint32_t sinceEpoch(const SCLOCK::time_point&);
-std::string epochToDatetime(const time_t epoch);
+std::string epochToDatetime(uint64_t epoch);
+std::string msEpochToDatetime(uint64_t msEpoch);
+std::string nsEpochToDatetime(uint64_t nsEpoch);
 
 }  // namespace tendisplus
 

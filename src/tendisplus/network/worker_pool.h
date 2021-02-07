@@ -36,6 +36,7 @@ class PoolMatrix {
   Atom<uint64_t> queueTime{0};
   Atom<uint64_t> executeTime{0};
   std::string toString() const;
+  std::string getInfoString() const;
   void reset();
 };
 

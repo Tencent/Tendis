@@ -487,6 +487,8 @@ void ReplManager::supplyFullSyncRoutine(
     size_t remain = fileInfo.second;
     while (remain) {
       size_t batchSize = std::min(remain, fileBatch);
+      _rateLimiter->SetBytesPerSecond((uint64_t)_cfg->binlogRateLimitMB * 1024 *
+                                      1024);
       _rateLimiter->Request(batchSize);
       readBuf.resize(batchSize);
       remain -= batchSize;

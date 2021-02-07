@@ -21,6 +21,14 @@ std::string PoolMatrix::toString() const {
   return ss.str();
 }
 
+std::string PoolMatrix::getInfoString() const {
+  std::stringstream ss;
+  ss << "inQueue " << inQueue << ",executing " << executing
+     << ",executed " << executed << ",queueTime " << queueTime << "ns"
+     << ",executeTime " << executeTime << "ns";
+  return ss.str();
+}
+
 void PoolMatrix::reset() {
   inQueue = 0;
   executed = 0;
@@ -88,8 +96,7 @@ void WorkerPool::consumeTasks(size_t idx) {
   });
 
   while (_isRuning.load(std::memory_order_relaxed)) {
-    LOG(INFO) << "WorkerPool consumeTasks work:" << idx;
-    // TODO(takenliu): use run_for to make threads more adaptive
+    DLOG(INFO) << "WorkerPool consumeTasks work:" << idx;
     asio::io_context::work work(*_ioCtx);
     try {
       _ioCtx->run();
@@ -104,8 +111,8 @@ void WorkerPool::consumeTasks(size_t idx) {
       } else {
         LOG(ERROR) << "This thread isn't in collection";
       }
-    } catch (...) {
-      LOG(ERROR) << "Workerpool: " << pname << " occurs error";
+    } catch (const std::exception& ex) {
+      LOG(ERROR) << "Workerpool:" << pname << " occurs error:" << ex.what();
       INVARIANT_D(0);
     }
   }
