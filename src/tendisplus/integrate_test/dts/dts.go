@@ -1,12 +1,12 @@
 package main
 
 import (
-	"github.com/google/uuid"
-	"../util"
+	"tendisplus/integrate_test/util"
 	"bytes"
 	"context"
 	"flag"
 	"github.com/go-redis/redis"
+	"github.com/google/uuid"
 	"log"
 	"math/rand"
 	"os"
@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	mport        = flag.Int("masterport", 62001, "master port")
-	sport        = flag.Int("slaveport", 62002, "slave port")
-	tport        = flag.Int("targetport", 62003, "target port")
+	mport = flag.Int("masterport", 62001, "master port")
+	sport = flag.Int("slaveport", 62002, "slave port")
+	tport = flag.Int("targetport", 62003, "target port")
 )
 
 func shutdownServer(m *util.RedisServer) {
@@ -75,7 +75,7 @@ func setData(m *util.RedisServer) {
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.Set(context.Background(), "mystr:"+ uuid.New().String(), uuid.New().String(), 0).Err(); err != nil {
+		if err := cli.Set(context.Background(), "mystr:"+uuid.New().String(), uuid.New().String(), 0).Err(); err != nil {
 			log.Fatalf("set failed. %v", err)
 		}
 	}
@@ -168,20 +168,48 @@ func otherData(m *util.RedisServer) {
 	})
 	defer cli.Close()
 
-	for i:=0;i<10000;i++{
-		if err := cli.HSet(context.Background(), "", uuid.New().String(),uuid.New().String()).Err(); err != nil {
+	for i := 0; i < 10000; i++ {
+		if err := cli.HSet(context.Background(), "", uuid.New().String(), uuid.New().String()).Err(); err != nil {
 			log.Fatalf("insert data failed. %v", err)
 		}
 	}
 
-
-	for i:=0;i<10000;i++ {
-		if err := cli.Set(context.Background(), uuid.New().String(), uuid.New().String(), time.Millisecond * time.Duration(rand.Int31n(1000))).Err(); err != nil  {
+	for i := 0; i < 10000; i++ {
+		if err := cli.Set(context.Background(), uuid.New().String(), uuid.New().String(), time.Millisecond*time.Duration(rand.Int31n(1000))).Err(); err != nil {
 			log.Fatalf("insert data failed. %v", err)
 		}
 	}
+
 }
 
+func specifHashData(m *util.RedisServer) {
+	cli := redis.NewClient(&redis.Options{
+		Addr: m.Addr(),
+	})
+	defer cli.Close()
+
+	f := func(keyCount int, expiredTime time.Duration) {
+		key := "myhash" + strconv.Itoa(keyCount) + "Expired" + expiredTime.String() + uuid.New().String()
+		for i := 0; i < keyCount; i++ {
+			if err := cli.HSet(context.Background(), key, uuid.New().String(), uuid.New().String()).Err(); err != nil {
+				log.Fatalf("insert data failed. %v", err)
+			}
+		}
+		cli.PExpire(context.Background(), key, expiredTime)
+	}
+
+	f(1000, time.Millisecond)
+	f(1000, time.Minute)
+	f(1000, time.Millisecond*time.Duration(rand.Int31n(1000)))
+
+	f(999, time.Millisecond)
+	f(999, time.Minute)
+	f(999, time.Millisecond*time.Duration(rand.Int31n(1000)))
+
+	f(1001, time.Millisecond)
+	f(1001, time.Minute)
+	f(1001, time.Millisecond*time.Duration(rand.Int31n(1000)))
+}
 
 func writeData(m *util.RedisServer) {
 	setData(m)
@@ -190,6 +218,7 @@ func writeData(m *util.RedisServer) {
 	lpushData(m)
 	rpushData(m)
 	hmsetData(m)
+	specifHashData(m)
 	otherData(m)
 }
 
@@ -213,7 +242,7 @@ func main() {
 	pwd := getCurrentDirectory()
 
 	m := new(util.RedisServer)
-	m.WithBinPath("../../../../build/bin/tendisplus")
+	m.WithBinPath("tendisplus")
 	m.Ip = "127.0.0.1"
 	masterPort := util.FindAvailablePort(*mport)
 	log.Printf("FindAvailablePort:%d", masterPort)
@@ -225,10 +254,9 @@ func main() {
 	}
 	defer shutdownServer(m)
 
-
 	s := new(util.RedisServer)
 	s.Ip = "127.0.0.1"
-	s.WithBinPath("../../../../build/bin/tendisplus")
+	s.WithBinPath("tendisplus")
 	slavePort := util.FindAvailablePort(*sport)
 	log.Printf("FindAvailablePort:%d", slavePort)
 
@@ -239,11 +267,11 @@ func main() {
 	}
 	defer shutdownServer(s)
 
-	slaveOf(m,s)
+	slaveOf(m, s)
 
 	t := new(util.RedisServer)
 	t.Ip = "127.0.0.1"
-	t.WithBinPath("../../../../build/bin/tendisplus")
+	t.WithBinPath("tendisplus")
 	targetPort := util.FindAvailablePort(*tport)
 	log.Printf("FindAvailablePort:%d", targetPort)
 
@@ -262,7 +290,7 @@ func main() {
 
 	var stdoutDTS bytes.Buffer
 	var stderrDTS bytes.Buffer
-	cmdDTS := exec.Command("../../../../bin/checkdts", m.Addr(),"", t.Addr(), "", "0", "1", "8000", "0", "0")
+	cmdDTS := exec.Command("checkdts", m.Addr(), "", t.Addr(), "", "0", "1", "8000", "0", "0")
 	cmdDTS.Stdout = &stdoutDTS
 	cmdDTS.Stderr = &stderrDTS
 	err := cmdDTS.Run()
@@ -276,11 +304,11 @@ func main() {
 	log.Println(stdoutDTS.String())
 	log.Println(stderrDTS.String())
 
-	time.Sleep(time.Second*30)
+	time.Sleep(time.Second * 30)
 
 	var stdoutComp bytes.Buffer
 	var stderrComp bytes.Buffer
-	cmdComp := exec.Command("../../../../bin/compare_instances", "-addr1",s.Addr(), "-addr2", t.Addr(),"-storeNum", "1")
+	cmdComp := exec.Command("compare_instances", "-addr1", s.Addr(), "-addr2", t.Addr(), "-storeNum", "1")
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp
 	err = cmdComp.Run()
@@ -297,7 +325,7 @@ func main() {
 	}
 
 	configSet(s, "noexpire", "false")
-	cmdComp = exec.Command("../../../../bin/compare_instances", "-addr1",t.Addr(), "-addr2", s.Addr(),"-storeNum", "1")
+	cmdComp = exec.Command("compare_instances", "-addr1", t.Addr(), "-addr2", s.Addr(), "-storeNum", "1")
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp
 	err = cmdComp.Run()
