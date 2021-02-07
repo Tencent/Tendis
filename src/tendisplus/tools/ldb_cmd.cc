@@ -36,7 +36,7 @@
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "table/sst_file_dumper.h"
-#include "tools/ldb_cmd_impl.h"
+#include "./ldb_cmd_impl.h"
 #include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/file_checksum_helper.h"
@@ -197,6 +197,9 @@ LDBCommand* LDBCommand::SelectCommand(const ParsedParams& parsed_params) {
       parsed_params.cmd_params, parsed_params.option_map, parsed_params.flags);
   } else if (parsed_params.cmd == ScanCommand::Name()) {
     return new ScanCommand(
+      parsed_params.cmd_params, parsed_params.option_map, parsed_params.flags);
+  } else if (parsed_params.cmd == TScanCommand::Name()) {
+    return new TScanCommand(
       parsed_params.cmd_params, parsed_params.option_map, parsed_params.flags);
   } else if (parsed_params.cmd == DeleteCommand::Name()) {
     return new DeleteCommand(
@@ -2743,6 +2746,171 @@ void ScanCommand::DoCommand() {
   }
   if (is_db_ttl_ && timestamp_) {
     fprintf(stdout,
+      "Scanning key-values from %s to %s\n",
+      TimeToHumanString(ttl_start).c_str(),
+      TimeToHumanString(ttl_end).c_str());
+  }
+  for (;
+    it->Valid() && (!end_key_specified_ || it->key().ToString() < end_key_);
+    it->Next()) {
+    if (is_db_ttl_) {
+      TtlIterator* it_ttl = static_cast_with_check<TtlIterator>(it);
+      int rawtime = it_ttl->ttl_timestamp();
+      if (rawtime < ttl_start || rawtime >= ttl_end) {
+        continue;
+      }
+      if (timestamp_) {
+        fprintf(stdout, "%s ", TimeToHumanString(rawtime).c_str());
+      }
+    }
+
+    Slice key_slice = it->key();
+
+    std::string formatted_key;
+    if (is_key_hex_) {
+      formatted_key = "0x" + key_slice.ToString(true /* hex */);
+      key_slice = formatted_key;
+    } else if (ldb_options_.key_formatter) {
+      formatted_key = ldb_options_.key_formatter->Format(key_slice);
+      key_slice = formatted_key;
+    }
+
+    if (no_value_) {
+      fprintf(
+        stdout, "%.*s\n", static_cast<int>(key_slice.size()), key_slice.data());
+    } else {
+      Slice val_slice = it->value();
+      std::string formatted_value;
+      if (is_value_hex_) {
+        formatted_value = "0x" + val_slice.ToString(true /* hex */);
+        val_slice = formatted_value;
+      }
+      fprintf(stdout,
+        "%.*s : %.*s\n",
+        static_cast<int>(key_slice.size()),
+        key_slice.data(),
+        static_cast<int>(val_slice.size()),
+        val_slice.data());
+    }
+    num_keys_scanned++;
+    if (max_keys_scanned_ >= 0 && num_keys_scanned >= max_keys_scanned_) {
+      break;
+    }
+  }
+  if (!it->status().ok()) {  // Check for any errors found during the scan
+    exec_state_ = LDBCommandExecuteResult::Failed(it->status().ToString());
+  }
+  delete it;
+}
+
+// ----------------------------------------------------------------------------
+
+TScanCommand::TScanCommand(const std::vector<std::string>& /*params*/,
+                         const std::map<std::string, std::string>& options,
+                         const std::vector<std::string>& flags)
+  : LDBCommand(options,
+               flags,
+               true,
+               BuildCmdLineOptions({ARG_TTL,
+                                    ARG_NO_VALUE,
+                                    ARG_HEX,
+                                    ARG_KEY_HEX,
+                                    ARG_TO,
+                                    ARG_VALUE_HEX,
+                                    ARG_FROM,
+                                    ARG_TIMESTAMP,
+                                    ARG_MAX_KEYS,
+                                    ARG_TTL_START,
+                                    ARG_TTL_END})),
+    start_key_specified_(false),
+    end_key_specified_(false),
+    max_keys_scanned_(-1),
+    no_value_(true) {
+  std::map<std::string, std::string>::const_iterator itr =
+    options.find(ARG_FROM);
+  if (itr != options.end()) {
+    start_key_ = itr->second;
+    if (is_key_hex_) {
+      start_key_ = HexToString(start_key_);
+    }
+    start_key_specified_ = true;
+  }
+  itr = options.find(ARG_TO);
+  if (itr != options.end()) {
+    end_key_ = itr->second;
+    if (is_key_hex_) {
+      end_key_ = HexToString(end_key_);
+    }
+    end_key_specified_ = true;
+  }
+
+  std::vector<std::string>::const_iterator vitr =
+    std::find(flags.begin(), flags.end(), ARG_NO_VALUE);
+  if (vitr != flags.end()) {
+    no_value_ = true;
+  }
+
+  itr = options.find(ARG_MAX_KEYS);
+  if (itr != options.end()) {
+    try {
+#if defined(CYGWIN)
+      max_keys_scanned_ = strtol(itr->second.c_str(), 0, 10);
+#else
+      max_keys_scanned_ = std::stoi(itr->second);
+#endif
+    } catch (const std::invalid_argument&) {
+      exec_state_ =
+        LDBCommandExecuteResult::Failed(ARG_MAX_KEYS + " has an invalid value");
+    } catch (const std::out_of_range&) {
+      exec_state_ = LDBCommandExecuteResult::Failed(
+        ARG_MAX_KEYS + " has a value out-of-range");
+    }
+  }
+}
+
+void TScanCommand::Help(std::string& ret) {
+  ret.append("  ");
+  ret.append(TScanCommand::Name());
+  ret.append(HelpRangeCmdArgs());
+  ret.append(" [--" + ARG_TTL + "]");
+  ret.append(" [--" + ARG_TIMESTAMP + "]");
+  ret.append(" [--" + ARG_MAX_KEYS + "=<N>q] ");
+  ret.append(" [--" + ARG_TTL_START + "=<N>:- is inclusive]");
+  ret.append(" [--" + ARG_TTL_END + "=<N>:- is exclusive]");
+  ret.append(" [--" + ARG_NO_VALUE + "]");
+  ret.append("\n");
+}
+
+void TScanCommand::DoCommand() {
+  if (!db_) {
+    assert(GetExecuteState().IsFailed());
+    return;
+  }
+
+  int num_keys_scanned = 0;
+  ReadOptions scan_read_opts;
+  scan_read_opts.total_order_seek = true;
+  Iterator* it = db_->NewIterator(scan_read_opts, GetCfHandle());
+  if (start_key_specified_) {
+    it->Seek(start_key_);
+  } else {
+    it->SeekToFirst();
+  }
+  int ttl_start;
+  if (!ParseIntOption(option_map_, ARG_TTL_START, ttl_start, exec_state_)) {
+    ttl_start = DBWithTTLImpl::kMinTimestamp;  // TTL introduction time
+  }
+  int ttl_end;
+  if (!ParseIntOption(option_map_, ARG_TTL_END, ttl_end, exec_state_)) {
+    ttl_end = DBWithTTLImpl::kMaxTimestamp;  // Max time allowed by TTL feature
+  }
+  if (ttl_end < ttl_start) {
+    fprintf(stderr, "Error: End time can't be less than start time\n");
+    delete it;
+    return;
+  }
+  if (is_db_ttl_ && timestamp_) {
+    fprintf(stdout,
             "Scanning key-values from %s to %s\n",
             TimeToHumanString(ttl_start).c_str(),
             TimeToHumanString(ttl_end).c_str());
@@ -2782,7 +2950,7 @@ void ScanCommand::DoCommand() {
     auto record = exptRcd.value();
     auto keyType = record.getRecordKey().getRecordType();
     /* NOTE(wayenchen) ignore if not primary key */
-    if (keyType != RecordType::RT_DATA_META && no_value_) {
+    if (keyType != RecordType::RT_DATA_META && keyType != RecordType::RT_BINLOG && no_value_) {
       continue;
     }
     // value length of string
@@ -2790,6 +2958,7 @@ void ScanCommand::DoCommand() {
     // num of value of secondary key
     uint64_t fiedlen = 0;
 
+    auto keyR = record.getRecordKey();
     auto value = record.getRecordValue();
     std::string type = "";
 
@@ -2834,9 +3003,13 @@ void ScanCommand::DoCommand() {
       }
       fiedlen = listHashMeta.value().getTail() - listHashMeta.value().getHead();
       type = "L";
+    } else if (keyType == RecordType::RT_BINLOG) {
+      fiedlen = value.encode().size();
+      type = "B";
     }
 
     std::string pKey = record.getRecordKey().getPrimaryKey();
+    // type dbid PrimaryKey ttl value(kv) subKeysCount(list/set/zset/hash)
     fprintf(stdout,
             "%.*s %" PRIu32 " %.*s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
             static_cast<int>(type.size()),
