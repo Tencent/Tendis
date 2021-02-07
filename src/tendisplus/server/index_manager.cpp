@@ -29,6 +29,7 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
     _cfg(cfg),
     _scannerMatrix(std::make_shared<PoolMatrix>()),
     _deleterMatrix(std::make_shared<PoolMatrix>()),
+    _totalDequeue(0),
     _totalEnqueue(0) {
   for (size_t storeId = 0; storeId < svr->getKVStoreCount(); ++storeId) {
     _scanPoints[storeId] = std::move(std::string());
@@ -105,8 +106,8 @@ std::string IndexManager::getInfoString() {
   std::stringstream ss;
   ss << "total_expire_keys:" << _totalDequeue << "\r\n";
   ss << "deleting_expire_keys:" << _totalEnqueue - _totalDequeue << "\r\n";
-  ss << "scanner_matrix:" << _scannerMatrix->toString() << "\r\n";
-  ss << "deleter_matrix:" << _deleterMatrix->toString() << "\r\n";
+  ss << "scanner_matrix:" << _scannerMatrix->getInfoString() << "\r\n";
+  ss << "deleter_matrix:" << _deleterMatrix->getInfoString() << "\r\n";
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
     if (_expiredKeys.find(i) != _expiredKeys.end() &&
         _expiredKeys[i].size() > 0) {

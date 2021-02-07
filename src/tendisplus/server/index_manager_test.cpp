@@ -291,9 +291,23 @@ TEST(IndexManager, singleJobRunning) {
   cfg->delCntIndexMgr = 2000;
   cfg->delJobCntIndexMgr = 8;
   cfg->pauseTimeIndexMgr = 1;
+  bool running = true;
+
 
   auto server = std::make_shared<ServerEntry>(cfg);
+
+  std::thread thd0([&server, &running]() {
+    while (running) {
+      auto s = runCommand(server, {"info", "indexmanager"});
+      LOG(INFO) << s;
+
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+  });
+
   testScanIndex(server, cfg, 2048 * 4, 1, true, &totalEnqueue, &totalDequeue);
+  running = false;
+  thd0.join();
 
   server->stop();
 

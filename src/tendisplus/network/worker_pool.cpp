@@ -21,6 +21,14 @@ std::string PoolMatrix::toString() const {
   return ss.str();
 }
 
+std::string PoolMatrix::getInfoString() const {
+  std::stringstream ss;
+  ss << "inQueue " << inQueue << ",executing " << executing
+     << ",executed " << executed << ",queueTime " << queueTime << "ns"
+     << ",executeTime " << executeTime << "ns";
+  return ss.str();
+}
+
 void PoolMatrix::reset() {
   inQueue = 0;
   executed = 0;

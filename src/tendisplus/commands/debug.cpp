@@ -1833,11 +1833,11 @@ class InfoCommand : public Command {
     infoBackup(allsections, defsections, section, sess, result);
     infoDataset(allsections, defsections, section, sess, result);
     infoCompaction(allsections, defsections, section, sess, result);
+    infoIndexManager(allsections, defsections, section, sess, result);
     infoLevelStats(allsections, defsections, section, sess, result);
     infoRocksdbStats(allsections, defsections, section, sess, result);
     infoRocksdbPerfStats(allsections, defsections, section, sess, result);
     infoRocksdbBgError(allsections, defsections, section, sess, result);
-    infoIndexManager(allsections, defsections, section, sess, result);
 
     return Command::fmtBulk(result.str());
   }
@@ -2076,10 +2076,10 @@ class InfoCommand : public Command {
   }
 
   static void infoCluster(bool allsections,
-                              bool defsections,
-                              const std::string& section,
-                              Session* sess,
-                              std::stringstream& result) {
+                          bool defsections,
+                          const std::string& section,
+                          Session* sess,
+                          std::stringstream& result) {
     if (allsections || defsections || section == "cluster") {
       auto server = sess->getServerEntry();
       auto clusterEnabled = server->isClusterEnabled() ? 1 : 0;
