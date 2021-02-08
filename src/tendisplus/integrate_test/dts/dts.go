@@ -1,19 +1,17 @@
 package main
 
 import (
-	"tendisplus/integrate_test/util"
 	"bytes"
-	"context"
 	"flag"
-	"github.com/go-redis/redis"
-	"github.com/google/uuid"
-	"log"
+	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/ngaut/log"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"tendisplus/integrate_test/util"
 	"time"
 )
 
@@ -24,25 +22,29 @@ var (
 )
 
 func shutdownServer(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
-	err := cli.Shutdown(context.Background()).Err()
-	if err != nil {
-		log.Printf("can't connect to %d: %v", m.Port, err)
+	if err := cli.Cmd("shutdown").Err; err != nil {
+		log.Infof("can't connect to %d: %v", m.Port, err)
 	}
+
 	m.Destroy()
 }
 
 func slaveOf(m *util.RedisServer, s *util.RedisServer) {
-	scli := redis.NewClient(&redis.Options{
-		Addr: s.Addr(),
-	})
-	defer scli.Close()
+	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", s.Port, err)
+	}
 
-	r, err := scli.SlaveOf(context.Background(), m.Ip, strconv.Itoa(m.Port)).Result()
+	defer cli.Close()
+
+	r, err := cli.Cmd("slaveof", m.Ip, strconv.Itoa(m.Port)).Str()
 	if err != nil {
 		log.Fatalf("do slaveof failed:%v", err)
 	}
@@ -53,129 +55,145 @@ func slaveOf(m *util.RedisServer, s *util.RedisServer) {
 }
 
 func configSet(s *util.RedisServer, k string, v string) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: s.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", s.Port, err)
+	}
+
 	defer cli.Close()
 
-	r, err := cli.ConfigSet(context.Background(), k, v).Result()
+	r, err := cli.Cmd("config", "set", k, v).Str()
 	if err != nil {
-		log.Fatalf("do slaveof failed:%v", err)
+		log.Fatalf("do configset failed:%v", err)
 	}
 
 	if r != "OK" {
-		log.Fatalf("do slaveof error:%s", r)
+		log.Fatalf("do configset error:%s", r)
 	}
 }
 
 func setData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.Set(context.Background(), "mystr:"+uuid.New().String(), uuid.New().String(), 0).Err(); err != nil {
+		if err := cli.Cmd("set", "mystr:"+util.RandStrAlpha(30), util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("set failed. %v", err)
 		}
 	}
 }
 
 func zaddData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.ZAdd(context.Background(), "mysortedset:"+uuid.New().String(),
-			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()},
-			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()},
-			&redis.Z{Score: float64(rand.Int()), Member: uuid.New().String()}).Err(); err != nil {
+		if err := cli.Cmd("zadd", "mysortedset:"+util.RandStrAlpha(30),
+			float64(rand.Int()), util.RandStrAlpha(30),
+			float64(rand.Int()), util.RandStrAlpha(30),
+			float64(rand.Int()), util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("zadd failed. %v", err)
 		}
 	}
 }
 
 func saddData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.SAdd(context.Background(), "myset:"+uuid.New().String(),
-			uuid.New().String(),
-			uuid.New().String(),
-			uuid.New().String()).Err(); err != nil {
+		if err := cli.Cmd("sadd", "myset:"+util.RandStrAlpha(30),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("zadd failed. %v", err)
 		}
 	}
 }
 
 func lpushData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.LPush(context.Background(), "mylist:"+strconv.Itoa(i),
-			uuid.New().String(),
-			uuid.New().String(),
-			uuid.New().String()).Err(); err != nil {
+		if err := cli.Cmd("lpush", "mylist:"+strconv.Itoa(i),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("lpush failed. %v", err)
 		}
 	}
 }
 
 func rpushData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.RPush(context.Background(), "mylist:"+strconv.Itoa(i),
-			uuid.New().String(),
-			uuid.New().String(),
-			uuid.New().String()).Err(); err != nil {
+		if err := cli.Cmd("rpush", "mylist:"+strconv.Itoa(i),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30),
+			util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("lpush failed. %v", err)
 		}
 	}
 }
 
 func hmsetData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 100; i++ {
-		if err := cli.HMSet(context.Background(), "myhash:"+uuid.New().String(),
-			uuid.New().String(), uuid.New().String(),
-			uuid.New().String(), uuid.New().String(),
-			uuid.New().String(), uuid.New().String(),
-			uuid.New().String(), uuid.New().String()).Err(); err != nil {
+		if err := cli.Cmd("hmset", "myhash:"+util.RandStrAlpha(30),
+			util.RandStrAlpha(30), util.RandStrAlpha(30),
+			util.RandStrAlpha(30), util.RandStrAlpha(30),
+			util.RandStrAlpha(30), util.RandStrAlpha(30),
+			util.RandStrAlpha(30), util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("mset failed. %v", err)
 		}
 	}
 }
 
 func otherData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
 	for i := 0; i < 10000; i++ {
-		if err := cli.HSet(context.Background(), "", uuid.New().String(), uuid.New().String()).Err(); err != nil {
+		if err := cli.Cmd("hset", "", util.RandStrAlpha(30), util.RandStrAlpha(30)).Err; err != nil {
 			log.Fatalf("insert data failed. %v", err)
 		}
 	}
 
 	for i := 0; i < 10000; i++ {
-		if err := cli.Set(context.Background(), uuid.New().String(), uuid.New().String(), time.Millisecond*time.Duration(rand.Int31n(1000))).Err(); err != nil {
+		if err := cli.Cmd("set", util.RandStrAlpha(30), util.RandStrAlpha(30), "PX", rand.Int31n(1000)+1).Err; err != nil {
 			log.Fatalf("insert data failed. %v", err)
 		}
 	}
@@ -183,32 +201,37 @@ func otherData(m *util.RedisServer) {
 }
 
 func specifHashData(m *util.RedisServer) {
-	cli := redis.NewClient(&redis.Options{
-		Addr: m.Addr(),
-	})
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
 	defer cli.Close()
 
-	f := func(keyCount int, expiredTime time.Duration) {
-		key := "myhash" + strconv.Itoa(keyCount) + "Expired" + expiredTime.String() + uuid.New().String()
+	f := func(keyCount int, expiredTime int) {
+		key := "myhash" + strconv.Itoa(keyCount) + "Expired" + strconv.Itoa(expiredTime) + util.RandStrAlpha(30)
 		for i := 0; i < keyCount; i++ {
-			if err := cli.HSet(context.Background(), key, uuid.New().String(), uuid.New().String()).Err(); err != nil {
+			if err := cli.Cmd("hset", key, util.RandStrAlpha(30), util.RandStrAlpha(30)).Err; err != nil {
 				log.Fatalf("insert data failed. %v", err)
 			}
 		}
-		cli.PExpire(context.Background(), key, expiredTime)
+
+		if err := cli.Cmd("pexpire", key, expiredTime+1).Err; err != nil {
+			log.Fatalf("insert data failed. %v", err)
+		}
 	}
 
-	f(1000, time.Millisecond)
-	f(1000, time.Minute)
-	f(1000, time.Millisecond*time.Duration(rand.Int31n(1000)))
+	f(1000, 1)
+	f(1000, 60*1000)
+	f(1000, int(rand.Int31n(1000)))
 
-	f(999, time.Millisecond)
-	f(999, time.Minute)
-	f(999, time.Millisecond*time.Duration(rand.Int31n(1000)))
+	f(999, 1)
+	f(999, 60*1000)
+	f(999, int(rand.Int31n(1000)))
 
-	f(1001, time.Millisecond)
-	f(1001, time.Minute)
-	f(1001, time.Millisecond*time.Duration(rand.Int31n(1000)))
+	f(1001, 1)
+	f(1001, 60*1000*1000)
+	f(1001, int(rand.Int31n(1000)))
 }
 
 func writeData(m *util.RedisServer) {
@@ -245,7 +268,7 @@ func main() {
 	m.WithBinPath("tendisplus")
 	m.Ip = "127.0.0.1"
 	masterPort := util.FindAvailablePort(*mport)
-	log.Printf("FindAvailablePort:%d", masterPort)
+	log.Infof("FindAvailablePort:%d", masterPort)
 
 	m.Init("127.0.0.1", masterPort, pwd, "m_")
 
@@ -258,7 +281,7 @@ func main() {
 	s.Ip = "127.0.0.1"
 	s.WithBinPath("tendisplus")
 	slavePort := util.FindAvailablePort(*sport)
-	log.Printf("FindAvailablePort:%d", slavePort)
+	log.Infof("FindAvailablePort:%d", slavePort)
 
 	s.Init("127.0.0.1", slavePort, pwd, "s_")
 
@@ -273,7 +296,7 @@ func main() {
 	t.Ip = "127.0.0.1"
 	t.WithBinPath("tendisplus")
 	targetPort := util.FindAvailablePort(*tport)
-	log.Printf("FindAvailablePort:%d", targetPort)
+	log.Infof("FindAvailablePort:%d", targetPort)
 
 	t.Init("127.0.0.1", targetPort, pwd, "t_")
 
@@ -301,8 +324,8 @@ func main() {
 
 	writeData(m)
 
-	log.Println(stdoutDTS.String())
-	log.Println(stderrDTS.String())
+	log.Info(stdoutDTS.String())
+	log.Info(stderrDTS.String())
 
 	time.Sleep(time.Second * 30)
 
@@ -317,11 +340,11 @@ func main() {
 	}
 	//defer cmdComp.Process.Kill()
 
-	log.Println(stdoutComp.String())
-	log.Println(stderrComp.String())
+	log.Info(stdoutComp.String())
+	log.Info(stderrComp.String())
 
 	if strings.Contains(stdoutComp.String(), "error") {
-		log.Fatalln(stdoutComp.String())
+		log.Fatal(stdoutComp.String())
 	}
 
 	configSet(s, "noexpire", "false")
@@ -334,11 +357,13 @@ func main() {
 	}
 	//defer cmdComp.Process.Kill()
 
-	log.Println(stdoutComp.String())
-	log.Println(stderrComp.String())
+	log.Info(stdoutComp.String())
+	log.Info(stderrComp.String())
 
 	if strings.Contains(stdoutComp.String(), "error") {
-		log.Fatalln(stdoutComp.String())
+		log.Fatal(stdoutComp.String())
 	}
+
+	log.Infof("dts.go passed.")
 
 }
