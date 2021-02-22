@@ -372,6 +372,8 @@ class ServerParams {
   bool checkKeyTypeForSet = false;
 
   uint32_t chunkSize = 0x4000;  // same as rediscluster
+  // forward compatible only
+  uint32_t fakeChunkSize = 0x4000;
   uint32_t kvStoreCount = 10;
 
   uint32_t scanCntIndexMgr = 1000;

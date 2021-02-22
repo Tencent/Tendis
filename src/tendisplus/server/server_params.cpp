@@ -332,6 +332,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS(chunkSize);
    */
   REGISTER_VARS(kvStoreCount);
+  REGISTER_VARS_DIFF_NAME("chunkSize", fakeChunkSize);
 
   REGISTER_VARS_SAME_NAME(scanCntIndexMgr, nullptr, nullptr, 1, 1000000, true);
   REGISTER_VARS_SAME_NAME(scanJobCntIndexMgr, nullptr, nullptr, 1, 200, true);
