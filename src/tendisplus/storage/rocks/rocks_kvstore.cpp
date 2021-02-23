@@ -1057,7 +1057,7 @@ rocksdb::Options RocksKVStore::options() {
   options.max_open_files = -1;
   // if we have no 'empty reads', we can disable bottom
   // level's bloomfilters
-  options.optimize_filters_for_hits = false;
+  options.optimize_filters_for_hits = true;
   options.enable_thread_tracking = true;
   options.compression_per_level.resize(ROCKSDB_NUM_LEVELS);
   for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {

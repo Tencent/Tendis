@@ -322,17 +322,18 @@ ServerParams::ServerParams() {
   REGISTER_VARS(requirepass);
   REGISTER_VARS(masterauth);
   REGISTER_VARS(pidFile);
-  REGISTER_VARS_DIFF_NAME("version-increase", versionIncrease);
-  REGISTER_VARS(generalLog);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("version-increase", versionIncrease);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(generalLog);
   // false: For command "set a b", it don't check the type of
   // "a" and update it directly. It can make set() faster.
   // Default false. Redis layer can guarantee that it's safe
-  REGISTER_VARS_DIFF_NAME("checkkeytypeforsetcmd", checkKeyTypeForSet);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("checkkeytypeforsetcmd", checkKeyTypeForSet);
 
   /* Disable parameter chunkSize because MACRO `CLUSTER_SLOTS` using everywhere
   REGISTER_VARS(chunkSize);
    */
   REGISTER_VARS(kvStoreCount);
+  REGISTER_VARS_DIFF_NAME("chunkSize", fakeChunkSize);
 
   REGISTER_VARS_SAME_NAME(scanCntIndexMgr, nullptr, nullptr, 1, 1000000, true);
   REGISTER_VARS_SAME_NAME(scanJobCntIndexMgr, nullptr, nullptr, 1, 200, true);

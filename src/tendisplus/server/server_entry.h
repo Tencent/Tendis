@@ -208,7 +208,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
   bool versionIncrease() const;
   bool checkKeyTypeForSet() const {
-    return _checkKeyTypeForSet;
+    return _cfg->checkKeyTypeForSet;
   }
   uint32_t protoMaxBulkLen() const {
     return _protoMaxBulkLen;
@@ -358,9 +358,6 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   // runtime. return by value is quite costive.
   std::string _requirepass;
   std::string _masterauth;
-  bool _versionIncrease;
-  bool _generalLog;
-  bool _checkKeyTypeForSet;
   uint32_t _protoMaxBulkLen;
   uint32_t _dbNum;
   std::atomic<uint64_t> _tsFromExtendedProtocol;

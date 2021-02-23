@@ -2415,7 +2415,8 @@ class InfoCommand : public Command {
     if (allsections || defsections || section == "rocksdbbgerror") {
       auto server = sess->getServerEntry();
 
-      result << "# RocksdbBgError\r\n";
+      uint64_t bgerrcnt = 0;
+      std::stringstream ss;
       for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
         auto expdb = server->getSegmentMgr()->getDb(
           sess, i, mgl::LockMode::LOCK_IS, false, 0);
@@ -2426,9 +2427,13 @@ class InfoCommand : public Command {
         auto store = expdb.value().store;
         auto ret = store->getBgError();
         if (ret != "") {
-          result << "rocksdb" << store->dbId() << ":" << ret << "\r\n";
+          ss << "rocksdb" << store->dbId() << ":" << ret << "\r\n";
+          bgerrcnt++;
         }
       }
+      result << "# RocksdbBgError\r\n";
+      result << "rocksdb_bg_error_count:" << bgerrcnt << "\r\n";
+      result << ss.str();
       result << "\r\n";
     }
   }

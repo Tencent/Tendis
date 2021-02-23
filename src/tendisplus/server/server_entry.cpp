@@ -227,9 +227,6 @@ ServerEntry::ServerEntry()
     _enableCluster(false),
     _requirepass(""),
     _masterauth(""),
-    _versionIncrease(true),
-    _generalLog(false),
-    _checkKeyTypeForSet(false),
     _protoMaxBulkLen(CONFIG_DEFAULT_PROTO_MAX_BULK_LEN),
     _dbNum(CONFIG_DEFAULT_DBNUM),
     _scheduleNum(0),
@@ -245,9 +242,6 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   : ServerEntry() {
   _requirepass = cfg->requirepass;
   _masterauth = cfg->masterauth;
-  _versionIncrease = cfg->versionIncrease;
-  _generalLog = cfg->generalLog;
-  _checkKeyTypeForSet = cfg->checkKeyTypeForSet;
   _protoMaxBulkLen = cfg->protoMaxBulkLen;
   _enableCluster = cfg->clusterEnabled;
   _dbNum = cfg->dbNum;
@@ -296,7 +290,7 @@ Catalog* ServerEntry::getCatalog() {
 }
 
 void ServerEntry::logGeneral(Session* sess) {
-  if (!_generalLog) {
+  if (!_cfg->generalLog) {
     return;
   }
   LOG(INFO) << sess->getCmdStr();
@@ -686,7 +680,7 @@ void ServerEntry::setMasterauth(const string& v) {
 }
 
 bool ServerEntry::versionIncrease() const {
-  return _versionIncrease;
+  return _cfg->versionIncrease;
 }
 
 bool ServerEntry::addSession(std::shared_ptr<Session> sess) {

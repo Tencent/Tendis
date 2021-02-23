@@ -31,8 +31,10 @@ IndexManager::IndexManager(std::shared_ptr<ServerEntry> svr,
     _deleterMatrix(std::make_shared<PoolMatrix>()),
     _totalDequeue(0),
     _totalEnqueue(0) {
+  _scanPonitsTtl.resize(svr->getKVStoreCount());
   for (size_t storeId = 0; storeId < svr->getKVStoreCount(); ++storeId) {
     _scanPoints[storeId] = std::move(std::string());
+    _scanPonitsTtl[storeId] = -1;
     _scanJobStatus[storeId] = {false};
     _delJobStatus[storeId] = {false};
     _disableStatus[storeId] = {false};
@@ -108,26 +110,38 @@ std::string IndexManager::getInfoString() {
   ss << "deleting_expire_keys:" << _totalEnqueue - _totalDequeue << "\r\n";
   ss << "scanner_matrix:" << _scannerMatrix->getInfoString() << "\r\n";
   ss << "deleter_matrix:" << _deleterMatrix->getInfoString() << "\r\n";
+  uint64_t minttl = -1;
+
+  auto ttlStr = [](uint64_t ttl){
+    if (ttl == (uint64_t)- 1) {
+      return std::to_string(-1);
+    } else {
+      return msEpochToDatetime(ttl);
+    }
+  };
+
+
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
-    if (_expiredKeys.find(i) != _expiredKeys.end() &&
-        _expiredKeys[i].size() > 0) {
-      auto index = _expiredKeys[i].front();
-      ss << "scanpoint_" << i << ":" << msEpochToDatetime(index.getTTL())
-         << "\r\n";
+    ss << "scanpoint_" << i << ":" << ttlStr(_scanPonitsTtl[i])
+       << "\r\n";
+    if (_scanPonitsTtl[i] < minttl) {
+      minttl = _scanPonitsTtl[i];
     }
   }
+  ss << "scanpoint" << ":" << ttlStr(minttl);
 
   return ss.str();
 }
 
 Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
   bool expected = false;
-  if (!_scanJobStatus[storeId].compare_exchange_strong(
-        expected, true, std::memory_order_acq_rel)) {
+
+  if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
     return {ErrorCodes::ERR_OK, ""};
   }
 
-  if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
+  if (!_scanJobStatus[storeId].compare_exchange_strong(
+        expected, true, std::memory_order_acq_rel)) {
     return {ErrorCodes::ERR_OK, ""};
   }
 
@@ -136,12 +150,21 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
     _scanJobStatus[storeId].store(false, std::memory_order_release);
   });
 
+  _scanJobCnt[storeId]++;
+
+  auto scanBatch = _cfg->scanCntIndexMgr;
   bool clusterEnabled = _svr->getParams()->clusterEnabled;
   if (clusterEnabled && _svr->getMigrateManager()->existMigrateTask()) {
     return {ErrorCodes::ERR_OK, ""};
   }
 
-  _scanJobCnt[storeId]++;
+  {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (_expiredKeys[storeId].size() >= scanBatch) {
+      return {ErrorCodes::ERR_OK, ""};
+    }
+  }
+
   LocalSessionGuard sg(_svr.get());
   auto expd = _svr->getSegmentMgr()->getDb(
     sg.getSession(), storeId, mgl::LockMode::LOCK_IS, true);
@@ -188,7 +211,6 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
     // defalut colum_family
   }
 
-  auto scanBatch = _cfg->scanCntIndexMgr;
   // TODO(takenliu) _scanPoints has error, _expiredKeys[storeId] will be
   // pushed back twice
   while (true) {
@@ -211,6 +233,7 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
       std::lock_guard<std::mutex> lk(_mutex);
       _scanPoints[storeId].assign(record.value().encode());
       _expiredKeys[storeId].push_back(std::move(record.value()));
+      _scanPonitsTtl[storeId] = record.value().getTTL();
       _totalEnqueue++;
       if (_expiredKeys[storeId].size() >= scanBatch) {
         break;
@@ -239,12 +262,13 @@ Status IndexManager::stopStore(uint32_t storeId) {
 
 int IndexManager::tryDelExpiredKeysJob(uint32_t storeId) {
   bool expect = false;
-  if (!_delJobStatus[storeId].compare_exchange_strong(
-        expect, true, std::memory_order_acq_rel)) {
+
+  if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
     return 0;
   }
 
-  if (_disableStatus[storeId].load(std::memory_order_relaxed)) {
+  if (!_delJobStatus[storeId].compare_exchange_strong(
+        expect, true, std::memory_order_acq_rel)) {
     return 0;
   }
 
