@@ -227,6 +227,7 @@ class SetCommand : public Command {
     }
     RecordValue rv(params.value, RecordType::RT_KV, pCtx->getVersionEP(), ts);
 
+    bool checkKeyTypeForSet = server->checkKeyTypeForSet();
     for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
       auto result = setGeneric(sess,
                                kvstore,
@@ -234,7 +235,7 @@ class SetCommand : public Command {
                                params.flags,
                                rk,
                                rv,
-                               server->checkKeyTypeForSet(),
+                               checkKeyTypeForSet,
                                true,
                                "",
                                "");
@@ -248,7 +249,7 @@ class SetCommand : public Command {
                       params.flags,
                       rk,
                       rv,
-                      server->checkKeyTypeForSet(),
+                      checkKeyTypeForSet,
                       true,
                       "",
                       "");
@@ -294,6 +295,8 @@ class SetexGeneralCommand : public Command {
     RecordKey rk(
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
+
+    bool checkKeyTypeForSet = server->checkKeyTypeForSet();
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
@@ -305,7 +308,7 @@ class SetexGeneralCommand : public Command {
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
-                               server->checkKeyTypeForSet(),
+                               checkKeyTypeForSet,
                                true,
                                "",
                                "");
@@ -401,6 +404,8 @@ class SetNxCommand : public Command {
     RecordKey rk(
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP());
+
+    bool checkKeyTypeForSet = server->checkKeyTypeForSet();
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
@@ -412,7 +417,7 @@ class SetNxCommand : public Command {
                                REDIS_SET_NX,
                                rk,
                                rv,
-                               server->checkKeyTypeForSet(),
+                               checkKeyTypeForSet,
                                true,
                                Command::fmtOne(),
                                Command::fmtZero());
@@ -481,6 +486,7 @@ class SetNxExCommand : public Command {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, key, "");
     RecordValue rv(val, RecordType::RT_KV, pCtx->getVersionEP(), ttl);
 
+    bool checkKeyTypeForSet = server->checkKeyTypeForSet();
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
@@ -492,7 +498,7 @@ class SetNxExCommand : public Command {
                                REDIS_SET_NX,
                                rk,
                                rv,
-                               server->checkKeyTypeForSet(),
+                               checkKeyTypeForSet,
                                true,
                                Command::fmtOne(),
                                Command::fmtZero());
@@ -1847,6 +1853,7 @@ class BitopCommand : public Command {
     RecordKey rk(
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_KV, targetKey, "");
     RecordValue rv(result, RecordType::RT_KV, pCtx->getVersionEP());
+    bool checkKeyTypeForSet = server->checkKeyTypeForSet();
     for (int32_t i = 0; i < RETRY_CNT; ++i) {
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
@@ -1858,7 +1865,7 @@ class BitopCommand : public Command {
                                REDIS_SET_NO_FLAGS,
                                rk,
                                rv,
-                               server->checkKeyTypeForSet(),
+                               checkKeyTypeForSet,
                                true,
                                "",
                                "");
