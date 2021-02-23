@@ -10,6 +10,7 @@
 #include <list>
 #include <string>
 #include <memory>
+#include <vector>
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/network/worker_pool.h"
 
@@ -40,6 +41,7 @@ class IndexManager {
   std::unique_ptr<WorkerPool> _keyDeleter;
   std::unordered_map<std::size_t, std::list<TTLIndex>> _expiredKeys;
   std::unordered_map<std::size_t, std::string> _scanPoints;
+  std::vector<uint64_t> _scanPonitsTtl;
   JobStatus _scanJobStatus;
   JobStatus _delJobStatus;
   // when destroystore, _disableStatus[storeId] = true

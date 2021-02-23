@@ -1417,6 +1417,8 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
          << ",state=" << iter.second.state
          << ",offset=" << iter.second.binlogpos
          << ",lag=" << (msSinceEpoch() - iter.second.lastBinlogTs) / 1000
+         << ",binlog_lag="
+         << (int64_t)master_repl_offset - (int64_t)iter.second.binlogpos
          << "\r\n";
     }
   }
