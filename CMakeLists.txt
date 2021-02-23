@@ -76,7 +76,9 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
-				COMMAND ./autogen.sh
+                # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
+                #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
+				COMMAND ./autogen.sh --enable-prof
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a"
                 "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
