@@ -225,6 +225,7 @@ include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/googletest/googletest/
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/asio/asio/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/glog/src")
+include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/rapidjson/include")
 include_directories("${PROJECT_SOURCE_DIR}/src/thirdparty/lua/src")
 include_directories(${ROCKSDB_DIR}/rocksdb)
