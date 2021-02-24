@@ -2669,7 +2669,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
     if (!manual_failover) {
       clusterLogCantFailover(CLUSTER_CANT_FAILOVER_DATA_AGE);
       LOG(WARNING) << "data age to large:" << data_age
-                   << "limtTime is:" << limitTime;
+                   << ", limtTime is:" << limitTime;
       return {ErrorCodes::ERR_CLUSTER, "data age to big"};
     }
   }
