@@ -22,6 +22,7 @@
 #include <thread>  // NOLINT
 #include <chrono>  // NOLINT
 #include "glog/logging.h"
+#include "jemalloc/jemalloc.h"
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -4379,5 +4380,30 @@ class adminDelCommand : public Command {
     return ss.str();
   }
 } admindelCmd;
+
+class JeprofCommand : public Command {
+ public:
+  JeprofCommand() : Command("jeprof", "a") {}
+
+  ssize_t arity() const {
+    return 1;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+  Expected<std::string> run(Session* sess) final {
+    mallctl("prof.dump", NULL, NULL, NULL, 0);
+    return Command::fmtOK();
+  }
+} jeprofCommand;
 
 }  // namespace tendisplus
