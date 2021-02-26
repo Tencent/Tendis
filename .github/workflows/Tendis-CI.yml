@@ -15,8 +15,8 @@ jobs:
           fetch-depth: 2
       - name: Prepare Env
         run: |
-          python -m pip install --upgrade pip
-          pip install cpplint
+          python3 -m pip install --upgrade pip
+          pip3 install cpplint
           export PATH=$PATH:~/.local/bin/
           cpplint --version
       - name: Lint
@@ -110,7 +110,7 @@ jobs:
           fi
           cd -
           errcnt3=`grep "go passed" src/tendisplus/integrate_test/gotest.log|wc -l`
-          if [ $errcnt3 -ne 6 ]; then
+          if [ $errcnt3 -ne 7 ]; then
               grep "fatal" src/tendisplus/integrate_test/gotest.log
               grep "go passed" src/tendisplus/integrate_test/gotest.log
               exit $errcnt3
