@@ -714,6 +714,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _failoverAuthSent(0),
     _failoverAuthRank(0),
     _failoverAuthEpoch(0),
+    _isVoteFailByDataAge(false),
     _state(ClusterHealth::CLUSTER_FAIL),
     _size(1),
     _migratingSlots(),
@@ -1235,6 +1236,17 @@ bool ClusterState::clusterNodeFailed(const std::string& nodeid) {
   std::lock_guard<myMutex> lk(_mutex);
   auto node = clusterLookupNodeNoLock(nodeid);
   return node->nodeFailed();
+}
+
+bool ClusterState::isDataAgeTooLarge() {
+  std::lock_guard<myMutex> lk(_mutex);
+  if (!_myself->nodeIsSlave()) {
+    return false;
+  }
+  if (!_myself->getMaster()->nodeFailed()) {
+    return false;
+  }
+  return _isVoteFailByDataAge.load(std::memory_order_relaxed);
 }
 
 Status ClusterState::forgetNodes() {
@@ -2667,9 +2679,10 @@ Status ClusterState::clusterHandleSlaveFailover() {
     ((mstime_t)gBinlogHeartbeatSecs * 1000) + nodeTimeout * slavefactor;
   if (slavefactor && data_age > limitTime) {
     if (!manual_failover) {
+      _isVoteFailByDataAge.store(true, std::memory_order_relaxed);
       clusterLogCantFailover(CLUSTER_CANT_FAILOVER_DATA_AGE);
-      LOG(WARNING) << "data age to large:" << data_age
-                   << ", limtTime is:" << limitTime;
+      LOG(ERROR) << "vote fail, data age to large:" << data_age
+                 << " limtTime is:" << limitTime;
       return {ErrorCodes::ERR_CLUSTER, "data age to big"};
     }
   }
@@ -2911,12 +2924,12 @@ std::string ClusterMsg::clusterGetMessageTypeString(Type type) {
  * @param info
  * @return
  */
-auto ClusterNode::parseClusterNodesInfo(const std::string &info) ->
-      Expected<std::bitset<CLUSTER_SLOTS>> {
+auto ClusterNode::parseClusterNodesInfo(const std::string& info)
+  -> Expected<std::bitset<CLUSTER_SLOTS>> {
   std::bitset<CLUSTER_SLOTS> slots;
   auto slotsMeta = tendisplus::stringSplit(info, ",");
 
-  for (const auto &v : slotsMeta) {
+  for (const auto& v : slotsMeta) {
     auto slotPair = tendisplus::stringSplit(v, "-");
     if (slotPair.size() == 1) {
       auto slot = tendisplus::stol(slotPair[0]);
@@ -3103,9 +3116,9 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
   std::shared_ptr<ServerParams> params = svr->getParams();
   /* Node ip should not use bind ip if not use domain */
   if (svr->getParams()->domainEnabled) {
-      _myIp = params->bindIp;
+    _myIp = params->bindIp;
   } else {
-      _myIp = "";
+    _myIp = "";
   }
 
   _port = params->port;
@@ -3622,6 +3635,7 @@ Status ClusterManager::clusterReset(uint16_t hard) {
     if (!s.ok()) {
       LOG(ERROR) << "set myself master fail when cluster reset";
     }
+    return s;
   }
   std::lock_guard<mutex> lk(_mutex);
   /* Close slots, reset manual failover state. */
@@ -4222,6 +4236,7 @@ void ClusterState::cronCheckFailState() {
     if (s1.ok()) {
       /* Take responsability for the cluster slots. */
       LOG(INFO) << "node" << getMyselfName() << "vote success:";
+      _isVoteFailByDataAge.store(false, std::memory_order_relaxed);
       auto s2 = clusterFailoverReplaceYourMaster();
       if (!s2.ok()) {
         LOG(ERROR) << "replace master fail" << s2.toString();

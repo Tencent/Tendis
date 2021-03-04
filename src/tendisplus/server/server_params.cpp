@@ -401,6 +401,7 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(keysDefaultLimit);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
+  REGISTER_VARS_ALLOW_DYNAMIC_SET(lockDbXWaitTimeout);
   REGISTER_VARS_DIFF_NAME("binlog-using-defaultCF", binlogUsingDefaultCF);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);

@@ -98,7 +98,11 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
 // send +OK
 void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   LOG(INFO) << "store:" << metaSnapshot.id << " fullsync start";
-
+  // NOTE(wayenchen):lastsyncTime should be inited if fullsync to new master
+  {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _syncStatus[metaSnapshot.id]->lastSyncTime = getGmtUtcTime();
+  }
   LocalSessionGuard sg(_svr.get());
   // NOTE(deyukong): there is no need to setup a guard to clean the temp ctx
   // since it's on stack
