@@ -41,7 +41,7 @@ namespace tendisplus {
 
 class KeysCommand : public Command {
  public:
-  KeysCommand() : Command("keys", "rs") {}
+  KeysCommand() : Command("keys", "rS") {}
 
   ssize_t arity() const {
     return -2;
@@ -4386,7 +4386,7 @@ class JeprofCommand : public Command {
   JeprofCommand() : Command("jeprof", "a") {}
 
   ssize_t arity() const {
-    return 1;
+    return 2;
   }
 
   int32_t firstkey() const {
@@ -4401,7 +4401,20 @@ class JeprofCommand : public Command {
     return 0;
   }
   Expected<std::string> run(Session* sess) final {
-    mallctl("prof.dump", NULL, NULL, NULL, 0);
+    const std::vector<std::string>& args = sess->getArgs();
+    auto action  = toLower(args[1]);
+    if (action == "on") {
+      bool active = true;
+      mallctl("prof.active", NULL, NULL, &active, sizeof(active));
+    } else if (action == "off") {
+      bool active = false;
+      mallctl("prof.active", NULL, NULL, &active, sizeof(active));
+    } else if (action == "dump") {
+      mallctl("prof.dump", NULL, NULL, NULL, 0);
+    } else {
+      return {ErrorCodes::ERR_UNKNOWN,
+              "args wrong, only support: jeprof [on/off/dump]"};
+    }
     return Command::fmtOK();
   }
 } jeprofCommand;

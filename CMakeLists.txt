@@ -98,6 +98,10 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		list(APPEND THIRDPARTY_LIBS jemalloc)
 		add_dependencies(jemalloc build_jemalloc)
 		add_dependencies(jemalloc_SHARED build_jemalloc)
+
+		link_directories(
+			${JEMALLOC_ROOT_DIR}/lib/
+		)
 	endif()
 
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")

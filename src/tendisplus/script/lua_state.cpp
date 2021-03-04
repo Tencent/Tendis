@@ -465,7 +465,6 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
   /* If the debugger is active, log the reply from Redis. */
 
 
-  // TODO(takenliu) check CMD_SORT_FOR_SCRIPT for all commands
   /* Sort the output array if needed, assuming it is a non-null multi bulk
    * reply as expected. */
   if ((command->second->getFlags() & CMD_SORT_FOR_SCRIPT) &&
