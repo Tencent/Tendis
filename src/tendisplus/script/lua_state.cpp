@@ -1070,6 +1070,15 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
 
   updateFakeClient();
 
+  // NOTE(takenliu): _fakeSess need erase at the end of evalGenericCommand,
+  //    otherwise it will be erase in ScriptManager::cron(),
+  //    it will cause deadlock between ScriptManager::_mutex
+  //    and ServerEntry::_mutex
+  auto guard = MakeGuard([this] {
+    _sess = nullptr;
+    _fakeSess = nullptr;
+  });
+
   // lock all keys
   auto server = sess->getServerEntry();
   std::vector<int32_t> keyidx;
