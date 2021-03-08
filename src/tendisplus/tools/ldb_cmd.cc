@@ -2821,11 +2821,13 @@ TScanCommand::TScanCommand(const std::vector<std::string>& /*params*/,
                                     ARG_TIMESTAMP,
                                     ARG_MAX_KEYS,
                                     ARG_TTL_START,
-                                    ARG_TTL_END})),
+                                    ARG_TTL_END,
+                                    "printlog"})),
     start_key_specified_(false),
     end_key_specified_(false),
     max_keys_scanned_(-1),
-    no_value_(true) {
+    no_value_(true),
+    print_log_(false) {
   std::map<std::string, std::string>::const_iterator itr =
     options.find(ARG_FROM);
   if (itr != options.end()) {
@@ -2866,6 +2868,11 @@ TScanCommand::TScanCommand(const std::vector<std::string>& /*params*/,
         ARG_MAX_KEYS + " has a value out-of-range");
     }
   }
+
+  vitr = std::find(flags.begin(), flags.end(), "printlog");
+  if (vitr != flags.end()) {
+    print_log_ = true;
+  }
 }
 
 void TScanCommand::Help(std::string& ret) {
@@ -2878,7 +2885,71 @@ void TScanCommand::Help(std::string& ret) {
   ret.append(" [--" + ARG_TTL_START + "=<N>:- is inclusive]");
   ret.append(" [--" + ARG_TTL_END + "=<N>:- is exclusive]");
   ret.append(" [--" + ARG_NO_VALUE + "]");
+  ret.append(" [--printlog]");
   ret.append("\n");
+}
+
+void TScanCommand::printLog(const std::string& value) {
+  Expected<ReplLogValueV2> logValue = ReplLogValueV2::decode(value);
+  if (!logValue.ok()) {
+    std::cout << "decode logvalue failed";
+  }
+
+  std::cout << " txnid:" << logValue.value().getTxnId()
+            << " chunkid:" << logValue.value().getChunkId()
+            << " ts:" << logValue.value().getTimestamp()
+            << " cmdstr:" << logValue.value().getCmd() << std::endl;
+
+  if (logValue.value().getChunkId() == Transaction::CHUNKID_FLUSH) {
+    std::cout << "  op:"
+              << "FLUSH"
+              << " cmd:" << logValue.value().getCmd() << std::endl;
+  } else if (logValue.value().getChunkId() ==
+             Transaction::CHUNKID_MIGRATE) {
+    std::cout << "  op:"
+              << "MIGRATE"
+              << " cmd:" << logValue.value().getCmd() << std::endl;
+  }
+
+  size_t offset = logValue.value().getHdrSize();
+  auto data = logValue.value().getData();
+  size_t dataSize = logValue.value().getDataSize();
+  while (offset < dataSize) {
+    size_t size = 0;
+    auto entry = ReplLogValueEntryV2::decode(
+            (const char*)data + offset, dataSize - offset, &size);
+    if (!entry.ok()) {
+      std::cout <<  "ReplLogValueEntryV2::decode failed";
+    }
+    offset += size;
+
+    Expected<RecordKey> opkey =
+            RecordKey::decode(entry.value().getOpKey());
+    if (!opkey.ok()) {
+      std::cerr << "decode opkey failed, err:" << opkey.status().toString()
+                << std::endl;
+      std::cout <<  "RecordKey::decode failed.";
+    }
+    if (entry.value().getOp() == ReplOp::REPL_OP_DEL) {
+      std::cout << "  op:" << (uint32_t)entry.value().getOp()
+                << " fkey:" << opkey.value().getPrimaryKey()
+                << " skey:" << opkey.value().getSecondaryKey()
+                << std::endl;
+    } else {
+      Expected<RecordValue> opvalue =
+              RecordValue::decode(entry.value().getOpValue());
+      if (!opvalue.ok()) {
+        std::cerr << "decode opvalue failed, err:"
+                  << opvalue.status().toString() << std::endl;
+        std::cout << "RecordValue::decode failed.";
+      }
+      std::cout << "  op:" << (uint32_t)entry.value().getOp()
+                << " fkey:" << opkey.value().getPrimaryKey()
+                << " skey:" << opkey.value().getSecondaryKey()
+                << " opvalue:" << opvalue.value().getValue()
+                << std::endl;
+    }
+  }
 }
 
 void TScanCommand::DoCommand() {
@@ -3006,6 +3077,9 @@ void TScanCommand::DoCommand() {
     } else if (keyType == RecordType::RT_BINLOG) {
       fiedlen = value.encode().size();
       type = "B";
+      if (print_log_) {
+        printLog(formatted_value);
+      }
     }
 
     std::string pKey = record.getRecordKey().getPrimaryKey();
