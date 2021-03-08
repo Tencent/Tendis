@@ -902,7 +902,7 @@ class ClusterCommand : public Command {
 
 class PrepareMigrateCommand : public Command {
  public:
-  PrepareMigrateCommand() : Command("preparemigrate", "a") {}
+  PrepareMigrateCommand() : Command("preparemigrate", "as") {}
 
   ssize_t arity() const {
     return 5;
@@ -934,7 +934,7 @@ class PrepareMigrateCommand : public Command {
 
 class ReadymigrateCommand : public Command {
  public:
-  ReadymigrateCommand() : Command("readymigrate", "a") {}
+  ReadymigrateCommand() : Command("readymigrate", "as") {}
 
   ssize_t arity() const {
     return 5;

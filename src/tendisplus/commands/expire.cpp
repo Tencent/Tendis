@@ -470,7 +470,7 @@ class PersistCommand : public Command {
 
 class RevisionCommand : public Command {
  public:
-  RevisionCommand() : Command("revision", "wa") {}
+  RevisionCommand() : Command("revision", "was") {}
 
   ssize_t arity() const {
     return -3;

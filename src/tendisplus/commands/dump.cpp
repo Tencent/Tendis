@@ -225,7 +225,7 @@ class DumpCommand : public Command {
 
 class DumpXCommand : public Command {
  public:
-  DumpXCommand() : Command("dumpx", "r") {}
+  DumpXCommand() : Command("dumpx", "rs") {}
 
   ssize_t arity() const {
     return -3;
@@ -1412,7 +1412,7 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
 
 class RestoreMetaCommand : public Command {
  public:
-  RestoreMetaCommand() : Command("restoremeta", "r") {}
+  RestoreMetaCommand() : Command("restoremeta", "rs") {}
 
   ssize_t arity() const {
     return -2;
@@ -1745,7 +1745,7 @@ Expected<std::string> key2Aof(Session* sess, const std::string& key) {
 
 class RestoreValueCommand : public Command {
  public:
-  RestoreValueCommand() : Command("restorevalue", "r") {}
+  RestoreValueCommand() : Command("restorevalue", "rs") {}
 
   ssize_t arity() const {
     return 2;
@@ -1862,7 +1862,7 @@ class RestoreValueCommand : public Command {
 
 class IncrMetaCommand : public Command {
  public:
-  IncrMetaCommand() : Command("incrmeta", "r") {}
+  IncrMetaCommand() : Command("incrmeta", "rs") {}
 
   ssize_t arity() const {
     return 3;

@@ -649,7 +649,7 @@ class PfMergeCommand : public Command {
 #define HLL_TEST_CYCLES 1000
 class PfSelfTestCommand : public Command {
  public:
-  PfSelfTestCommand() : Command("pfselftest", "a") {}
+  PfSelfTestCommand() : Command("pfselftest", "as") {}
 
   ssize_t arity() const {
     return 1;

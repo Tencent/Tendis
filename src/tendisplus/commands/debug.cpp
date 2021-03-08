@@ -41,7 +41,7 @@ namespace tendisplus {
 
 class KeysCommand : public Command {
  public:
-  KeysCommand() : Command("keys", "rS") {}
+  KeysCommand() : Command("keys", "rs") {}
 
   ssize_t arity() const {
     return -2;
@@ -167,7 +167,7 @@ class KeysCommand : public Command {
 
 class DbsizeCommand : public Command {
  public:
-  DbsizeCommand() : Command("dbsize", "rF") {}
+  DbsizeCommand() : Command("dbsize", "rFs") {}
 
   ssize_t arity() const {
     return -1;
@@ -737,7 +737,7 @@ class IterAllCommand : public Command {
 
 class ShowCommand : public Command {
  public:
-  ShowCommand() : Command("show", "a") {}
+  ShowCommand() : Command("show", "as") {}
 
   ssize_t arity() const {
     return -1;
@@ -865,7 +865,7 @@ class ShowCommand : public Command {
 
 class ToggleFtmcCommand : public Command {
  public:
-  ToggleFtmcCommand() : Command("toggleftmc", "a") {}
+  ToggleFtmcCommand() : Command("toggleftmc", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -902,7 +902,7 @@ class ToggleFtmcCommand : public Command {
 
 class RocksPropertyCommand : public Command {
  public:
-  RocksPropertyCommand() : Command("rocksproperty", "a") {}
+  RocksPropertyCommand() : Command("rocksproperty", "as") {}
 
   ssize_t arity() const {
     return -2;
@@ -1105,7 +1105,7 @@ class CommandCommand : public Command {
 
 class CommandListCommand : public Command {
  public:
-  CommandListCommand() : Command("commandlist", "a") {}
+  CommandListCommand() : Command("commandlist", "as") {}
 
   ssize_t arity() const {
     return -1;
@@ -1261,7 +1261,7 @@ class CommandListCommand : public Command {
 
 class BinlogTimeCommand : public Command {
  public:
-  BinlogTimeCommand() : Command("binlogtime", "a") {}
+  BinlogTimeCommand() : Command("binlogtime", "as") {}
 
   ssize_t arity() const {
     return 3;
@@ -1317,7 +1317,7 @@ class BinlogTimeCommand : public Command {
 
 class BinlogPosCommand : public Command {
  public:
-  BinlogPosCommand() : Command("binlogpos", "a") {}
+  BinlogPosCommand() : Command("binlogpos", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -1359,7 +1359,7 @@ class BinlogPosCommand : public Command {
 
 class BinlogStartCommand : public Command {
  public:
-  BinlogStartCommand() : Command("binlogstart", "a") {}
+  BinlogStartCommand() : Command("binlogstart", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -1413,7 +1413,7 @@ class BinlogStartCommand : public Command {
 
 class BinlogFlushCommand : public Command {
  public:
-  BinlogFlushCommand() : Command("binlogflush", "a") {}
+  BinlogFlushCommand() : Command("binlogflush", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -1466,7 +1466,7 @@ class BinlogFlushCommand : public Command {
 
 class DebugCommand : public Command {
  public:
-  DebugCommand() : Command("debug", "a") {}
+  DebugCommand() : Command("debug", "as") {}
 
   ssize_t arity() const {
     return -1;
@@ -1490,7 +1490,7 @@ class DebugCommand : public Command {
 
 class tendisstatCommand : public Command {
  public:
-  tendisstatCommand() : Command("tendisstat", "a") {}
+  tendisstatCommand() : Command("tendisstat", "as") {}
 
   ssize_t arity() const {
     return -1;
@@ -1599,7 +1599,7 @@ class tendisstatCommand : public Command {
 
 class ShutdownCommand : public Command {
  public:
-  ShutdownCommand() : Command("shutdown", "a") {}
+  ShutdownCommand() : Command("shutdown", "as") {}
 
   ssize_t arity() const {
     return -1;
@@ -2548,7 +2548,7 @@ class ObjectCommand : public Command {
 
 class ConfigCommand : public Command {
  public:
-  ConfigCommand() : Command("config", "lat") {}
+  ConfigCommand() : Command("config", "lats") {}
 
   ssize_t arity() const {
     return -2;
@@ -2908,7 +2908,7 @@ class MonitorCommand : public Command {
 // if force, no check
 class DestroyStoreCommand : public Command {
  public:
-  DestroyStoreCommand() : Command("destroystore", "a") {}
+  DestroyStoreCommand() : Command("destroystore", "as") {}
 
   ssize_t arity() const {
     return -2;
@@ -2962,7 +2962,7 @@ class DestroyStoreCommand : public Command {
 // It should be safe to pausestore first, and destroystore later
 class PauseStoreCommand : public Command {
  public:
-  PauseStoreCommand() : Command("pausestore", "a") {}
+  PauseStoreCommand() : Command("pausestore", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -3014,7 +3014,7 @@ class PauseStoreCommand : public Command {
 // resumestore storeId
 class ResumeStoreCommand : public Command {
  public:
-  ResumeStoreCommand() : Command("resumestore", "a") {}
+  ResumeStoreCommand() : Command("resumestore", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -3067,7 +3067,7 @@ class ResumeStoreCommand : public Command {
 // only used for test. set key to a fixed storeid
 class setInStoreCommand : public Command {
  public:
-  setInStoreCommand() : Command("setinstore", "wm") {}
+  setInStoreCommand() : Command("setinstore", "awms") {}
 
   ssize_t arity() const {
     return -3;
@@ -3142,7 +3142,7 @@ class setInStoreCommand : public Command {
 
 class SyncVersionCommand : public Command {
  public:
-  SyncVersionCommand() : Command("syncversion", "a") {}
+  SyncVersionCommand() : Command("syncversion", "as") {}
 
   ssize_t arity() const {
     return 5;
@@ -3224,7 +3224,7 @@ class SyncVersionCommand : public Command {
 
 class StoreCommand : public Command {
  public:
-  StoreCommand() : Command("store", "a") {}
+  StoreCommand() : Command("store", "as") {}
 
   ssize_t arity() const {
     return -2;
@@ -3249,7 +3249,7 @@ class StoreCommand : public Command {
 
 class EvictCommand : public Command {
  public:
-  EvictCommand() : Command("evict", "w") {}
+  EvictCommand() : Command("evict", "ws") {}
 
   ssize_t arity() const {
     return 2;
@@ -3850,7 +3850,7 @@ class EmptyMultiBulkCommand : public Command {
 
 class TendisadminCommand : public Command {
  public:
-  TendisadminCommand() : Command("tendisadmin", "lat") {}
+  TendisadminCommand() : Command("tendisadmin", "lats") {}
 
   ssize_t arity() const {
     return -2;
@@ -3928,7 +3928,7 @@ class TendisadminCommand : public Command {
 
 class DExecCommand : public Command {
  public:
-  DExecCommand() : Command("dexec", "lat") {}
+  DExecCommand() : Command("dexec", "lats") {}
 
   ssize_t arity() const {
     return -3;
@@ -4048,7 +4048,7 @@ class readWriteCommand : public Command {
 
 class adminSetCommand : public Command {
  public:
-  adminSetCommand() : Command("adminset", "wm") {}
+  adminSetCommand() : Command("adminset", "awms") {}
 
   ssize_t arity() const final {
     return 3;
@@ -4110,7 +4110,7 @@ class adminSetCommand : public Command {
 
 class adminGetCommand : public Command {
  public:
-  adminGetCommand() : Command("adminget", "rF") {}
+  adminGetCommand() : Command("adminget", "arFs") {}
 
   ssize_t arity() const final {
     return -2;
@@ -4298,7 +4298,7 @@ class adminGetCommand : public Command {
 
 class adminDelCommand : public Command {
  public:
-  adminDelCommand() : Command("admindel", "w") {}
+  adminDelCommand() : Command("admindel", "aws") {}
 
   ssize_t arity() const final {
     return -2;
@@ -4383,7 +4383,7 @@ class adminDelCommand : public Command {
 
 class JeprofCommand : public Command {
  public:
-  JeprofCommand() : Command("jeprof", "a") {}
+  JeprofCommand() : Command("jeprof", "as") {}
 
   ssize_t arity() const {
     return 2;
