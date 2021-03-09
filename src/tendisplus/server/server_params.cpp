@@ -464,6 +464,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor",
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
+  REGISTER_VARS(luaStateMaxIdleTime);
 }
 
 ServerParams::~ServerParams() {
@@ -544,6 +545,11 @@ Status ServerParams::parseFile(const std::string& filename) {
 
 // if need check, add in this function
 Status ServerParams::checkParams() {
+  if (executorWorkPoolSize != 0 && executorThreadNum % executorWorkPoolSize) {
+    return {ErrorCodes::ERR_INTERNAL,
+            "need executorThreadNum % executorWorkPoolSize == 0"};
+  }
+
   if (binlogDelRange > truncateBinlogNum) {
     LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
                << binlogDelRange << " > " << truncateBinlogNum;

@@ -114,7 +114,7 @@ Status ScriptManager::startup(uint32_t luaStateNum) {
 void ScriptManager::cron() {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
   uint64_t cur = msSinceEpoch();
-  static uint64_t maxIdelTime = 60*60*1000;  // 1 hour
+  static uint64_t maxIdelTime = _svr->getParams()->luaStateMaxIdleTime;
   for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();) {
     if (!iter->second->isRunning() &&
       cur - iter->second->lastEndTime() > maxIdelTime) {

@@ -465,6 +465,7 @@ class ServerParams {
   bool clusterSingleNode = false;
 
   int64_t luaTimeLimit = 5000;  // ms
+  int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
