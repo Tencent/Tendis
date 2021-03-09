@@ -684,7 +684,7 @@ bool ServerEntry::versionIncrease() const {
 }
 
 bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {
     LOG(WARNING) << "session:" << sess->id()
                  << " comes when stopping, ignore it";
@@ -710,7 +710,7 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
 }
 
 std::shared_ptr<Session> ServerEntry::getSession(uint64_t id) const {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   auto it = _sessions.find(id);
   if (it == _sessions.end()) {
     return nullptr;
@@ -720,12 +720,12 @@ std::shared_ptr<Session> ServerEntry::getSession(uint64_t id) const {
 }
 
 size_t ServerEntry::getSessionCount() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   return _sessions.size();
 }
 
 Status ServerEntry::cancelSession(uint64_t connId) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {
     return {ErrorCodes::ERR_BUSY, "server is shutting down"};
   }
@@ -740,7 +740,7 @@ Status ServerEntry::cancelSession(uint64_t connId) {
 }
 //
 void ServerEntry::endSession(uint64_t connId) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {
     return;
   }
@@ -768,7 +768,7 @@ void ServerEntry::endSession(uint64_t connId) {
 }
 
 std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   uint64_t start = nsSinceEpoch();
   std::list<std::shared_ptr<Session>> sesses;
   for (const auto& kv : _sessions) {
@@ -783,7 +783,7 @@ std::list<std::shared_ptr<Session>> ServerEntry::getAllSessions() const {
 }
 
 void ServerEntry::AddMonitor(uint64_t sessId) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   for (const auto& monSess : _monitors) {
     if (monSess->id() == sessId) {
       return;
@@ -1472,7 +1472,7 @@ void ServerEntry::stop() {
   if (_indexMgr)
     _indexMgr->stop();
   {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<std::mutex> lk(_mutex_session);
     _sessions.clear();
   }
   if (_clusterMgr) {
