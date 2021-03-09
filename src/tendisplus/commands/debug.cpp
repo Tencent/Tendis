@@ -22,7 +22,9 @@
 #include <thread>  // NOLINT
 #include <chrono>  // NOLINT
 #include "glog/logging.h"
+#ifndef WIN32
 #include "jemalloc/jemalloc.h"
+#endif  // !WIN32
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -2085,7 +2087,8 @@ class InfoCommand : public Command {
       auto server = sess->getServerEntry();
       auto clusterEnabled = server->isClusterEnabled() ? 1 : 0;
       result << "# Cluster\r\n";
-      result << "cluster_enabled:" << clusterEnabled << "\r\n";
+      result << "cluster_enabled:" << clusterEnabled << "\r\n"
+             << "\r\n";
     }
   }
 
@@ -4381,6 +4384,7 @@ class adminDelCommand : public Command {
   }
 } admindelCmd;
 
+#ifndef WIN32
 class JeprofCommand : public Command {
  public:
   JeprofCommand() : Command("jeprof", "a") {}
@@ -4405,5 +4409,6 @@ class JeprofCommand : public Command {
     return Command::fmtOK();
   }
 } jeprofCommand;
+#endif
 
 }  // namespace tendisplus

@@ -128,7 +128,7 @@ std::string IndexManager::getInfoString() {
       minttl = _scanPonitsTtl[i];
     }
   }
-  ss << "scanpoint" << ":" << ttlStr(minttl);
+  ss << "scanpoint" << ":" << ttlStr(minttl) << "\r\n";
 
   return ss.str();
 }
