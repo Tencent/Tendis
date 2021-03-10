@@ -90,7 +90,7 @@ string gMappingCmdList = "";  // NOLINT
   REGISTER_VARS_FULL(                                     \
     #var, var, checkfun, prefun, minval, maxval, allowDynamicSet)
 
-bool logLevelParamCheck(const string& val, string* errinfo) {
+bool logLevelParamCheck(const string& val, bool startup, string* errinfo) {
   auto v = toLower(val);
   if (v == "debug" || v == "verbose" || v == "notice" || v == "warning") {
     return true;
@@ -98,7 +98,7 @@ bool logLevelParamCheck(const string& val, string* errinfo) {
   return false;
 }
 
-bool compressTypeParamCheck(const string& val, string* errinfo) {
+bool compressTypeParamCheck(const string& val, bool startup, string* errinfo) {
   auto v = toLower(val);
   if (v == "snappy" || v == "lz4" || v == "none") {
     return true;
@@ -106,9 +106,10 @@ bool compressTypeParamCheck(const string& val, string* errinfo) {
   return false;
 }
 
-bool executorThreadNumCheck(const std::string& val, string* errinfo) {
+bool executorThreadNumCheck(
+        const std::string& val, bool startup, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (!gParams || gParams->executorWorkPoolSize == 0) {
+  if (startup || !gParams || gParams->executorWorkPoolSize == 0) {
     return true;
   }
   auto workPoolSize = gParams->executorWorkPoolSize;
@@ -122,9 +123,10 @@ bool executorThreadNumCheck(const std::string& val, string* errinfo) {
   return true;
 }
 
-bool binlogDelRangeCheck(const std::string& val, string* errinfo) {
+bool binlogDelRangeCheck(
+        const std::string& val, bool startup, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (!gParams) {
+  if (startup || !gParams) {
     return true;
   }
   auto truncateBinlogNum = gParams->truncateBinlogNum;
@@ -137,9 +139,10 @@ bool binlogDelRangeCheck(const std::string& val, string* errinfo) {
   return true;
 }
 
-bool truncateBinlogNumCheck(const std::string& val, string* errinfo) {
+bool truncateBinlogNumCheck(
+        const std::string& val, bool startup, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
-  if (!gParams) {
+  if (startup || !gParams) {
     return true;
   }
   auto binlogDelRange = gParams->binlogDelRange;
@@ -461,6 +464,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor",
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
+  REGISTER_VARS(luaStateMaxIdleTime);
 }
 
 ServerParams::~ServerParams() {
@@ -541,6 +545,11 @@ Status ServerParams::parseFile(const std::string& filename) {
 
 // if need check, add in this function
 Status ServerParams::checkParams() {
+  if (executorWorkPoolSize != 0 && executorThreadNum % executorWorkPoolSize) {
+    return {ErrorCodes::ERR_INTERNAL,
+            "need executorThreadNum % executorWorkPoolSize == 0"};
+  }
+
   if (binlogDelRange > truncateBinlogNum) {
     LOG(ERROR) << "not allow binlogDelRange > truncateBinlogNum : "
                << binlogDelRange << " > " << truncateBinlogNum;

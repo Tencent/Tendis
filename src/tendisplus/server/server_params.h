@@ -27,7 +27,8 @@ namespace tendisplus {
 using namespace std;  // NOLINT
 
 using funptr = std::function<void()>;
-using checkfunptr = std::function<bool(const string&, string* errinfo)>;
+using checkfunptr = std::function<bool(
+        const string&, bool startup, string* errinfo)>;
 using preProcess = std::function<string(const string&)>;
 
 string removeQuotes(const string& v);
@@ -53,7 +54,7 @@ class BaseVar {
     if (!allowDynamicSet && !startup) {
       return {ErrorCodes::ERR_PARSEOPT, name + "can't change dynamically"};
     }
-    return set(value);
+    return set(value, startup);
   }
   virtual string show() const = 0;
   virtual string default_show() const = 0;
@@ -70,10 +71,11 @@ class BaseVar {
   }
 
  protected:
-  virtual Status set(const string& value) = 0;
-  virtual bool check(const string& value, string* errinfo = NULL) {
+  virtual Status set(const string& value, bool startup) = 0;
+  virtual bool check(
+          const string& value, bool startup, string* errinfo = NULL) {
     if (checkFun != NULL) {
-      return checkFun(value, errinfo);
+      return checkFun(value, startup, errinfo);
     }
     return true;
   }
@@ -109,10 +111,10 @@ class StringVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val) {
+  Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
-    if (!check(v, &errinfo)) {
+    if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
@@ -147,10 +149,10 @@ class IntVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val) {
+  Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
-    if (!check(v, &errinfo)) {
+    if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
@@ -196,10 +198,10 @@ class Int64Var : public BaseVar {
   }
 
  private:
-  Status set(const string& val) {
+  Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
-    if (!check(v, &errinfo)) {
+    if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
@@ -240,10 +242,10 @@ class FloatVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val) {
+  Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
-    if (!check(v, &errinfo)) {
+    if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
@@ -277,10 +279,10 @@ class BoolVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val) {
+  Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
-    if (!check(v, &errinfo)) {
+    if (!check(v, startup, &errinfo)) {
       return {ErrorCodes::ERR_PARSEOPT, errinfo};
     }
 
@@ -463,6 +465,7 @@ class ServerParams {
   bool clusterSingleNode = false;
 
   int64_t luaTimeLimit = 5000;  // ms
+  int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

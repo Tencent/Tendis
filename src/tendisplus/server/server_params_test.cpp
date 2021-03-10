@@ -130,7 +130,9 @@ TEST(ServerParams, DynamicSet) {
   myfile.open("gtest_serverparams_dynamicset.cfg");
   myfile << "port 8903\n";
   myfile << "masterauth testpw\n";
-  myfile << "binlogDelRange 1\n";
+  myfile << "truncateBinlogNum 10000\n";
+  myfile << "binlogDelRange 20000\n";
+  myfile << "truncateBinlogNum 30000\n";
   myfile.close();
 
   const auto guard =
@@ -148,11 +150,11 @@ TEST(ServerParams, DynamicSet) {
 
   // check params
   EXPECT_FALSE(cfg->setVar("binlogDelRange", "60000", false).ok());
-  EXPECT_EQ(cfg->binlogDelRange, 1);
-  EXPECT_TRUE(cfg->setVar("binlogDelRange", "40000", false).ok());
-  EXPECT_EQ(cfg->binlogDelRange, 40000);
+  EXPECT_EQ(cfg->binlogDelRange, 20000);
+  EXPECT_TRUE(cfg->setVar("binlogDelRange", "25000", false).ok());
+  EXPECT_EQ(cfg->binlogDelRange, 25000);
 
-  EXPECT_FALSE(cfg->setVar("truncateBinlogNum", "30000", false).ok());
+  EXPECT_FALSE(cfg->setVar("truncateBinlogNum", "20000", false).ok());
 }
 
 TEST(ServerParams, RocksOption) {

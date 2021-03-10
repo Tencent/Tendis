@@ -455,12 +455,16 @@ class TScanCommand : public LDBCommand {
   static void Help(std::string& ret);
 
  private:
+  void printLog(const std::string& value);
+
+ private:
   std::string start_key_;
   std::string end_key_;
   bool start_key_specified_;
   bool end_key_specified_;
   int max_keys_scanned_;
   bool no_value_;
+  bool print_log_;
 };
 
 class DeleteCommand : public LDBCommand {

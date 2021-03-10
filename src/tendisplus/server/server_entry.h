@@ -330,7 +330,12 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   mutable std::mutex _mutex;
   std::condition_variable _eventCV;
   std::unique_ptr<NetworkAsio> _network;
+
+  // NOTE(takenliu) _mutex_session is used only for _sessions and _monitors.
+  mutable std::mutex _mutex_session;
   std::map<uint64_t, std::shared_ptr<Session>> _sessions;
+  std::list<std::shared_ptr<Session>> _monitors;
+
   std::vector<std::unique_ptr<WorkerPool>> _executorList;
   std::set<std::unique_ptr<WorkerPool>> _executorRecycleSet;
   std::unique_ptr<SegmentMgr> _segmentMgr;
@@ -363,7 +368,6 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::atomic<uint64_t> _tsFromExtendedProtocol;
   std::deque<CursorMap> _cursorMaps;             // deque NOT vector ! ! !
 
-  std::list<std::shared_ptr<Session>> _monitors;
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;
   std::atomic<uint64_t> _lastBackupTime;

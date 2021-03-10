@@ -465,7 +465,6 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
   /* If the debugger is active, log the reply from Redis. */
 
 
-  // TODO(takenliu) check CMD_SORT_FOR_SCRIPT for all commands
   /* Sort the output array if needed, assuming it is a non-null multi bulk
    * reply as expected. */
   if ((command->second->getFlags() & CMD_SORT_FOR_SCRIPT) &&
@@ -1070,6 +1069,12 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
         args.size() - 3 - numkeys);
 
   updateFakeClient();
+
+  auto guard = MakeGuard([this] {
+    _sess = nullptr;
+    // NOTE(takenliu): _fakeSess should be reused for better performance
+    // _fakeSess = nullptr;
+  });
 
   // lock all keys
   auto server = sess->getServerEntry();

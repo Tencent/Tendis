@@ -25,7 +25,7 @@ namespace tendisplus {
 
 class BackupCommand : public Command {
  public:
-  BackupCommand() : Command("backup", "a") {}
+  BackupCommand() : Command("backup", "as") {}
 
   ssize_t arity() const {
     return -2;
@@ -310,7 +310,7 @@ class RestoreBackupCommand : public Command {
 // fullSync storeId dstStoreId ip port
 class FullSyncCommand : public Command {
  public:
-  FullSyncCommand() : Command("fullsync", "a") {}
+  FullSyncCommand() : Command("fullsync", "as") {}
 
   ssize_t arity() const {
     return 4;
@@ -341,7 +341,7 @@ class FullSyncCommand : public Command {
 
 class QuitCommand : public Command {
  public:
-  QuitCommand() : Command("quit", "a") {}
+  QuitCommand() : Command("quit", "as") {}
 
   ssize_t arity() const {
     return 0;
@@ -372,7 +372,7 @@ class QuitCommand : public Command {
 
 class ToggleIncrSyncCommand : public Command {
  public:
-  ToggleIncrSyncCommand() : Command("toggleincrsync", "a") {}
+  ToggleIncrSyncCommand() : Command("toggleincrsync", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -407,7 +407,7 @@ class ToggleIncrSyncCommand : public Command {
 
 class IncrSyncCommand : public Command {
  public:
-  IncrSyncCommand() : Command("incrsync", "a") {}
+  IncrSyncCommand() : Command("incrsync", "as") {}
 
   ssize_t arity() const {
     return 6;
@@ -713,7 +713,7 @@ class ApplyBinlogsCommandV2 : public ApplyBinlogsGeneric {
  public:
   ApplyBinlogsCommandV2()
     : ApplyBinlogsGeneric(
-        "applybinlogsv2", "aw", BinlogApplyMode::KEEP_BINLOG_ID) {}
+        "applybinlogsv2", "aws", BinlogApplyMode::KEEP_BINLOG_ID) {}
 
   ssize_t arity() const {
     return 5;
@@ -736,7 +736,7 @@ class MigrateBinlogsCommand : public ApplyBinlogsGeneric {
  public:
   MigrateBinlogsCommand()
     : ApplyBinlogsGeneric(
-        "migratebinlogs", "aw", BinlogApplyMode::NEW_BINLOG_ID) {}
+        "migratebinlogs", "aws", BinlogApplyMode::NEW_BINLOG_ID) {}
 
   ssize_t arity() const {
     return 5;
@@ -757,7 +757,7 @@ class MigrateBinlogsCommand : public ApplyBinlogsGeneric {
 
 class RestoreBinlogCommandV2 : public Command {
  public:
-  RestoreBinlogCommandV2() : Command("restorebinlogv2", "aw") {}
+  RestoreBinlogCommandV2() : Command("restorebinlogv2", "aws") {}
 
   ssize_t arity() const {
     return 4;
@@ -944,7 +944,7 @@ class RestoreBinlogCommandV2 : public Command {
 
 class restoreEndCommand : public Command {
  public:
-  restoreEndCommand() : Command("restoreend", "aw") {}
+  restoreEndCommand() : Command("restoreend", "aws") {}
 
   ssize_t arity() const {
     return 2;
@@ -994,7 +994,7 @@ class restoreEndCommand : public Command {
 
 class BinlogHeartbeatCommand : public Command {
  public:
-  BinlogHeartbeatCommand() : Command("binlog_heartbeat", "a") {}
+  BinlogHeartbeatCommand() : Command("binlog_heartbeat", "as") {}
 
   ssize_t arity() const {
     return -2;
@@ -1056,7 +1056,7 @@ class BinlogHeartbeatCommand : public Command {
 
 class MigateHeartbeatCommand : public Command {
  public:
-  MigateHeartbeatCommand() : Command("migrate_heartbeat", "a") {}
+  MigateHeartbeatCommand() : Command("migrate_heartbeat", "as") {}
 
   ssize_t arity() const {
     return 3;
@@ -1266,7 +1266,7 @@ class SlaveofCommand : public Command {
 
 class ReplStatusCommand : public Command {
  public:
-  ReplStatusCommand() : Command("replstatus", "a") {}
+  ReplStatusCommand() : Command("replstatus", "as") {}
 
   ssize_t arity() const {
     return 2;
@@ -1312,7 +1312,7 @@ class ReplStatusCommand : public Command {
 
 class PsyncCommand : public Command {
  public:
-  PsyncCommand() : Command("psync", "a") {}
+  PsyncCommand() : Command("psync", "ars") {}
 
   ssize_t arity() const {
     return 4;

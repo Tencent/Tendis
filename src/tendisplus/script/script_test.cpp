@@ -124,4 +124,48 @@ TEST(Lua, Common) {
   ASSERT_EQ(server.use_count(), 1);
 }
 
+TEST(Lua, LuaStateMaxIdleTime) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  cfg->luaStateMaxIdleTime = 1000;  // 1s
+  cfg->generalLog = true;
+  auto server = std::make_shared<ServerEntry>(cfg);
+  auto s = server->startup(cfg);
+  ASSERT_TRUE(s.ok());
+
+  LOG(INFO) << "first add data begin.";
+  auto ctx = std::make_shared<asio::io_context>();
+  auto session = makeSession(server, ctx);
+  WorkLoad work(server, session);
+  work.init();
+  int i = 0;
+  while (i++ < 200) {
+    auto ret = work.getStringResult({"eval",
+      "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
+      "1", "key1"});
+    ASSERT_EQ(ret, "$6\r\nvalue1\r\n");
+  }
+  LOG(INFO) << "first add data end.";
+
+  // sleep longer than luaStateMaxIdleTime
+  uint32_t sleepSec = cfg->luaStateMaxIdleTime/1000 + 2;
+  std::this_thread::sleep_for(std::chrono::seconds(sleepSec));
+
+  LOG(INFO) << "second add data begin.";
+  i = 0;
+  while (i++ < 200) {
+    auto ret = work.getStringResult({"eval",
+      "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
+      "1", "key1"});
+    ASSERT_EQ(ret, "$6\r\nvalue1\r\n");
+  }
+  LOG(INFO) << "second add data end.";
+
+  server->stop();
+  ASSERT_EQ(server.use_count(), 1);
+}
+
 }  // namespace tendisplus
