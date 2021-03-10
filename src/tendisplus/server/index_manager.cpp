@@ -350,7 +350,8 @@ Status IndexManager::run() {
       scheScanExpired();
       schedDelExpired();
     }
-    std::this_thread::sleep_for(std::chrono::seconds(_cfg->pauseTimeIndexMgr));
+
+    THREAD_SLEEP(_cfg->pauseTimeIndexMgr);
   }
 
   LOG(WARNING) << "index manager exiting...";

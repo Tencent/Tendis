@@ -137,6 +137,14 @@ class SlowlogStat {
   mutable std::mutex _mutex;
 };
 
+#define THREAD_SLEEP(n_secs) \
+do {\
+  uint64_t loop = 0;\
+  while (loop++ < n_secs) {\
+    std::this_thread::sleep_for(std::chrono::seconds(1));\
+  }\
+} while (0)
+
 class ServerEntry;
 
 class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
@@ -148,7 +156,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
   template <typename fn>
-  void schedule(fn&& task, uint32_t& ctxId) {
+  void schedule(fn&& task, uint32_t& ctxId) {     // NOLINT
     if (ctxId == UINT32_MAX || ctxId >= _executorList.size()) {
       ctxId = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
         _executorList.size();

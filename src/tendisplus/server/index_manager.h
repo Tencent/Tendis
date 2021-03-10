@@ -34,6 +34,12 @@ class IndexManager {
   void keyDeleterResize(size_t size);
   size_t indexScannerSize();
   size_t keyDeleterSize();
+  size_t scanExpiredCount() const {
+    return _totalEnqueue;
+  }
+  size_t delExpiredCount() const {
+    return _totalDequeue;
+  }
   std::string getInfoString();
 
  private:

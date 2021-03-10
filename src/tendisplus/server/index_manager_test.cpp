@@ -192,6 +192,57 @@ TEST(IndexManager, generateIndex) {
   ASSERT_EQ(server.use_count(), 1);
 }
 
+
+TEST(IndexManager, changePauseTime) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  cfg->pauseTimeIndexMgr = 1;
+  auto server = std::make_shared<ServerEntry>(cfg);
+  auto s = server->startup(cfg);
+  ASSERT_TRUE(s.ok());
+
+  {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"config", "set", "pauseTimeIndexMgr", "1000000"});
+    auto expect = Command::runSessionCmd(&sess);
+    auto val = expect.value();
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"sadd", "a", "b", "c", "d"});
+    expect = Command::runSessionCmd(&sess);
+    val = expect.value();
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"pexpire", "a", "10"});
+    expect = Command::runSessionCmd(&sess);
+    val = expect.value();
+    EXPECT_TRUE(expect.ok());
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    // index manager is sleeping, scanExpiredCount == 0
+    EXPECT_EQ(server->getIndexMgr()->scanExpiredCount(), 0);
+
+    // wake up index manager
+    sess.setArgs({"config", "set", "pauseTimeIndexMgr", "1"});
+    expect = Command::runSessionCmd(&sess);
+    val = expect.value();
+    EXPECT_TRUE(expect.ok());
+
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    EXPECT_EQ(server->getIndexMgr()->scanExpiredCount(), 1);
+  }
+
+  server->stop();
+  ASSERT_EQ(server.use_count(), 1);
+}
+
 TEST(IndexManager, scanJobRunning) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
