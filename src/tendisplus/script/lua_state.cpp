@@ -1082,6 +1082,8 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   for (uint32_t i = 3; i < 3 + numkeys; ++i) {
     keyidx.push_back(i);
   }
+  // NOTE(takenliu) lock keys need use _fakeSess, can't use sess,
+  //   because we need a recursive lock.
   auto locklist = server->getSegmentMgr()->getAllKeysLocked(
           _fakeSess->getSession(), args, keyidx, mgl::LockMode::LOCK_X);
   if (!locklist.ok()) {

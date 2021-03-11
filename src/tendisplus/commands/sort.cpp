@@ -177,20 +177,16 @@ class SortCommand : public Command {
         } else {
           /* If BY is specified with a real patter, we can't accept
            * it in cluster mode. */
-          // below lines commented are port from redis-cluster
-          // disable to support cluster one shard mode
-          // if (server.cluster_enabled) {
-          //     addReplyError(c,"BY option of SORT denied in Cluster
-          //     mode."); syntax_error++; break;
-          // }
+          if (sess->getServerEntry()->isClusterEnabled()) {
+            return {ErrorCodes::ERR_PARSEOPT,
+              "BY option of SORT denied in Cluster mode."};
+          }
         }
       } else if (!::strcasecmp(args[i].c_str(), "get") && leftargs >= 1) {
-        // below lines commented are port from redis-cluster
-        // disable to support cluster one shard mode
-        // if (server.cluster_enabled) {
-        //     addReplyError(c,"GET option of SORT denied in Cluster
-        //     mode."); syntax_error++; break;
-        // }
+        if (sess->getServerEntry()->isClusterEnabled()) {
+          return {ErrorCodes::ERR_PARSEOPT,
+                  "GET option of SORT denied in Cluster mode."};
+        }
         mystring_view cmd("get");
         ops.emplace_back(SortOp{
           "get",

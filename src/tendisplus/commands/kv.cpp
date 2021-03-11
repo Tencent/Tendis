@@ -2068,6 +2068,12 @@ class RenameGenericCommand : public Command {
     return 1;
   }
 
+  std::vector<int> getKeysFromCommand(
+          const std::vector<std::string>& argv) {
+    std::vector<int32_t> index = {1, 2};
+    return index;
+  }
+
   Expected<std::string> run(Session* sess) final {
     auto& args = sess->getArgs();
     const std::string& src = args[1];
@@ -2079,7 +2085,7 @@ class RenameGenericCommand : public Command {
 
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
-    std::vector<int32_t> keyidx = {1, 2};
+    std::vector<int32_t> keyidx = getKeysFromCommand(args);
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
       sess, args, keyidx, mgl::LockMode::LOCK_X);
     if (!locklist.ok()) {

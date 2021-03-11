@@ -2256,4 +2256,90 @@ TEST(Command, renameCommand) {
 #endif
 }
 
+void testSort(bool clusterEnabled) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->clusterEnabled = clusterEnabled;
+  cfg->generalLog = true;
+  cfg->logLevel = "debug";
+  auto server = makeServerEntry(cfg);
+
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  if (clusterEnabled) {
+    sess.setArgs({"cluster", "addslots", "{0..16383}"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(3));
+
+  // uid
+  sess.setArgs({"LPUSH", "uid", "2", "3", "1"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  // name
+  sess.setArgs({"set", "user_name_1", "admin"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"set", "user_name_2", "jack"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"set", "user_name_3", "mary"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  // level
+  sess.setArgs({"set", "user_level_1", "10"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"set", "user_level_2", "5"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  sess.setArgs({"set", "user_level_3", "8"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  // sort
+  sess.setArgs({"sort", "uid"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_EQ(expect.value(), "*3\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n");
+
+  // sort by
+  sess.setArgs({"sort", "uid", "by", "user_level_*"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_EQ(expect.value(),
+            "*3\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n1\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+            "-ERR BY option of SORT denied in Cluster mode.\r\n");
+  }
+
+  // sort get
+  sess.setArgs({"sort", "uid", "get", "user_name_*"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_EQ(expect.value(),
+            "*3\r\n$5\r\nadmin\r\n$4\r\njack\r\n$4\r\nmary\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+            "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, sort_cluster) {
+  testSort(false);
+  testSort(true);
+}
+
 }  // namespace tendisplus
