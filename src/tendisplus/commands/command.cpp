@@ -32,8 +32,10 @@ std::map<std::string, Command*>& commandMap() {
 }
 
 Command::Command(const std::string& name, const char* sflags)
-  : _name(name), _sflags(sflags), _flags(redis_port::getCommandFlags(sflags)) {
-  commandMap()[name] = this;
+  : _name(toLower(name)),
+    _sflags(sflags),
+    _flags(redis_port::getCommandFlags(sflags)) {
+  commandMap()[_name] = this;
   if (_flags & CMD_ADMIN && !(_flags & CMD_NOSCRIPT)) {
     std::cerr << name << " command with a flags and dont contain s flags"
       << std::endl;

@@ -2242,6 +2242,9 @@ TEST(Cluster, MigrateTTLIndex) {
   // RT_LIST_META and RT_LIST_ELE will be deleted.
   EXPECT_EQ(dbsize.value(), numData);
 
+  auto ret = work2.getStringResult({"compactSlots", "8000", "10000"});
+  EXPECT_EQ(ret, Command::fmtOK());
+
   dbsize = work2.getIntResult({"dbsize"});
   // all is expired.
   EXPECT_EQ(dbsize.value(), 0);
