@@ -182,6 +182,9 @@ Status ReplManager::startup() {
   if (!s.ok()) {
     return s;
   }
+  SCLOCK::time_point tp = getGmtUtcTime();
+  DLOG(INFO) << "init last sync time:"
+             << epochToDatetime(nsSinceEpoch(tp) / 1000000);
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); i++) {
     // here we are starting up, dont acquire a storelock.
@@ -194,7 +197,6 @@ Status ReplManager::startup() {
     INVARIANT(store != nullptr);
 
     bool isOpen = store->isOpen();
-    SCLOCK::time_point tp = SCLOCK::now();
     uint32_t fileSeq = std::numeric_limits<uint32_t>::max();
 
     if (!isOpen) {

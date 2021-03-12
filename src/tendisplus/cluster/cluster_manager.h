@@ -207,8 +207,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   ConnectState getConnectState();
   uint64_t getCtime() const;
 
-  static auto parseClusterNodesInfo(const std::string &info) ->
-  Expected<std::bitset<CLUSTER_SLOTS>>;
+  static auto parseClusterNodesInfo(const std::string& info)
+    -> Expected<std::bitset<CLUSTER_SLOTS>>;
 
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -725,6 +725,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setFailAuthSent(uint32_t t);
   void setFailAuthRank(uint32_t t);
   bool clusterNodeFailed(const std::string& nodeid);
+  bool isDataAgeTooLarge();
   uint16_t getFailAuthCount() {
     return _failoverAuthCount.load(std::memory_order_relaxed);
   }
@@ -782,6 +783,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::atomic<uint32_t> _failoverAuthRank;
   // Epoch of the current election.
   std::atomic<uint64_t> _failoverAuthEpoch;
+  std::atomic<bool> _isVoteFailByDataAge;
   Status clusterSaveNodesNoLock();
   void clusterAddNodeNoLock(CNodePtr node);
   void clusterDelNodeNoLock(CNodePtr node);

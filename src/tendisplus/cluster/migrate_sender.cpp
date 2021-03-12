@@ -240,7 +240,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
     *totalNum += 1;
     uint64_t sendBytes =
       1 + sizeof(uint32_t) + keylen + sizeof(uint32_t) + valuelen;
-    curWriteNum += sendBytes;
+    curWriteLen += sendBytes;
 
     /* *
      * rate limit for migration

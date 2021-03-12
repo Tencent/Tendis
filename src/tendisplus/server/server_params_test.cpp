@@ -251,6 +251,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->binlogFileSizeMB, 64);
   EXPECT_EQ(cfg->binlogFileSecs, 20 * 60);
   EXPECT_EQ(cfg->lockWaitTimeOut, 3600);
+  EXPECT_EQ(cfg->lockDbXWaitTimeout, 1);
 
   EXPECT_EQ(cfg->rocksBlockcacheMB, 4096);
   EXPECT_EQ(cfg->rocksDisableWAL, false);

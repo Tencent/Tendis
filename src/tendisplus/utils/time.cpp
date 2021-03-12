@@ -86,4 +86,16 @@ std::string nsEpochToDatetime(uint64_t nsEpoch) {
   return epochToDatetime(nsEpoch / 1000000000);
 }
 
+SCLOCK::time_point getGmtUtcTime() {
+  // get GMT UTC timepoint
+  std::chrono::time_point<TCLOCK, std::chrono::duration<uint64_t>> tp_seconds(
+            std::chrono::duration<uint64_t>(1));
+    TCLOCK::time_point tp(tp_seconds);
+  // convert system_clock to steady_clock
+  auto sdy_now = SCLOCK::now();
+  auto sys_now = TCLOCK::now();
+
+  return tp - sys_now + sdy_now;
+}
+
 }  // namespace tendisplus

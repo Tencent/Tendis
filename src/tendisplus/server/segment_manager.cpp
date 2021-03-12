@@ -275,6 +275,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
 
   // a duration of 49 days.
   uint64_t lockTimeoutMs = std::numeric_limits<uint32_t>::max();
+  std::shared_ptr<ServerParams> cfg = (sess && sess->getServerEntry())
+    ? sess->getServerEntry()->getParams()
+    : nullptr;
   if (lock_wait_timeout == (uint64_t)-1) {
     if (mode == mgl::LockMode::LOCK_X) {
       /* *
@@ -282,9 +285,9 @@ Expected<DbWithLock> SegmentMgrFnvHash64::getDb(Session* sess,
        * a long time. Otherwise, the waiting LOCK_X
        * would block all following the requests.
        */
-      lockTimeoutMs = 1000;
-    } else if (sess && sess->getServerEntry()) {
-      const auto& cfg = sess->getServerEntry()->getParams();
+      lockTimeoutMs =
+        (cfg == nullptr) ? 1000 : (uint64_t)cfg->lockDbXWaitTimeout * 1000;
+    } else if (cfg) {
       lockTimeoutMs = (uint64_t)cfg->lockWaitTimeOut * 1000;
     }
   } else {
