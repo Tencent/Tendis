@@ -2068,12 +2068,6 @@ class RenameGenericCommand : public Command {
     return 1;
   }
 
-  std::vector<int> getKeysFromCommand(
-          const std::vector<std::string>& argv) {
-    std::vector<int32_t> index = {1, 2};
-    return index;
-  }
-
   Expected<std::string> run(Session* sess) final {
     auto& args = sess->getArgs();
     const std::string& src = args[1];
@@ -2093,7 +2087,9 @@ class RenameGenericCommand : public Command {
     }
 
     auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
+    RET_IF_ERR_EXPECTED(srcdb);
     auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
+    RET_IF_ERR_EXPECTED(dstdb);
     PStore dststore = dstdb.value().store;
     auto dptxn = pCtx->createTransaction(dststore);
     if (!dptxn.ok()) {

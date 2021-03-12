@@ -1113,14 +1113,14 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   }
 
   // commit all txn
-  if (_fakeSess) {
+  // if (_fakeSess) {
     // if (!has_command_error) {
     //  _fakeSess->getSession()->setInLua(false);
     //  _fakeSess->getSession()->getCtx()->commitAll("lua");
     // } else {
     //  DLOG(INFO) << "has_command_error txns don't commit.";
     // }
-  }
+  // }
 
   if (err) {
     string errInfo = "Error running script (call to " + string(funcname) + "):"
