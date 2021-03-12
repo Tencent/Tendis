@@ -638,6 +638,7 @@ void ReplManager::supplyFullPsyncRoutine(
   string remoteIP;  // always empty
   auto remotePort = client->getRemotePort();
   {
+    std::lock_guard<std::mutex> lk(_mutex);
     string slaveNode = remoteIP + ":" + to_string(remotePort);
     auto iter = _fullPushStatus[storeId].find(slaveNode);
     if (iter != _fullPushStatus[storeId].end()) {

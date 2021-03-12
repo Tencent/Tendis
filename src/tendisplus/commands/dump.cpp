@@ -278,13 +278,21 @@ class DumpXCommand : public Command {
     return ss.str();
   }
 
+  std::vector<int> getKeysFromCommand(
+          const std::vector<std::string>& argv) {
+    std::vector<int> index((argv.size() - 1) / 2);
+    std::generate(
+            index.begin(), index.end(), [n = 0]() mutable { return n += 2; });
+    return index;
+  }
+
+  // args: dumpx [dbid key] withttl
   Expected<std::string> run(Session* sess) final {
     const auto& args = sess->getArgs();
     auto server = sess->getServerEntry();
     bool withttl = (args.size() - 1) % 2;
-    std::vector<int> index((args.size() - 1) / 2);
-    std::generate(
-      index.begin(), index.end(), [n = 0]() mutable { return n += 2; });
+
+    auto index = getKeysFromCommand(args);
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
       sess, args, index, Command::RdLock());
     if (!locklist.ok()) {

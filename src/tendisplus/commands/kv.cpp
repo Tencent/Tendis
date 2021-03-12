@@ -2079,7 +2079,7 @@ class RenameGenericCommand : public Command {
 
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
-    std::vector<int32_t> keyidx = {1, 2};
+    std::vector<int32_t> keyidx = getKeysFromCommand(args);
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
       sess, args, keyidx, mgl::LockMode::LOCK_X);
     if (!locklist.ok()) {
@@ -2087,7 +2087,9 @@ class RenameGenericCommand : public Command {
     }
 
     auto srcdb = server->getSegmentMgr()->getDbHasLocked(sess, src);
+    RET_IF_ERR_EXPECTED(srcdb);
     auto dstdb = server->getSegmentMgr()->getDbHasLocked(sess, dst);
+    RET_IF_ERR_EXPECTED(dstdb);
     PStore dststore = dstdb.value().store;
     auto dptxn = pCtx->createTransaction(dststore);
     if (!dptxn.ok()) {
