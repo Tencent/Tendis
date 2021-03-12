@@ -9,7 +9,7 @@ namespace tendisplus {
 
 class EvalCommand : public Command {
  public:
-  EvalCommand() : Command("eval", "s") {}
+  EvalCommand() : Command("eval", "sw") {}
 
   ssize_t arity() const {
     return -3;
