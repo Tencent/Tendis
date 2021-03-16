@@ -392,6 +392,22 @@ start_server {tags {"scripting"}} {
               end
         } 0
     }
+
+    test {cjson encode} {
+        r eval {return cjson.encode({1, 2})} 0
+    } {[1,2]}
+
+    test {cjson decode} {
+        r eval {return cjson.decode("[1,2]")} 0
+    } {1 2}
+
+    test {cmsgpack} {
+        r eval {local p=cmsgpack.pack({2,3}); local d=cmsgpack.unpack(p); return d} 0
+    } {2 3}
+
+    test {struct} {
+        r eval {local p=struct.pack("ii",2,4); local d1,d2=struct.unpack("ii",p); return {d1,d2}} 0
+    } {2 4}
 }
 
 # Start a new server since the last test in this stanza will kill the
