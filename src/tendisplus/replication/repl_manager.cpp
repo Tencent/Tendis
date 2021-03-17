@@ -679,7 +679,9 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     } else if (start != Transaction::MIN_VALID_TXNID) {
       v->firstBinlogId = start;
     }
-    v->saveBinlogId = save;
+    if (save != Transaction::MIN_VALID_TXNID) {
+      v->saveBinlogId = save;
+    }
     // DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId
     // reset:" << start;
 

@@ -57,19 +57,21 @@ namespace tendisplus {
 #endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
-  : Cursor(), _it(std::move(it)) {
-  _it->Seek("");
+  : Cursor(), _it(std::move(it)), _seeked(false) {
 }
 
 void RocksKVCursor::seek(const std::string& prefix) {
   _it->Seek(rocksdb::Slice(prefix.c_str(), prefix.size()));
+  _seeked = true;
 }
 
 void RocksKVCursor::seekToLast() {
   _it->SeekToLast();
+  _seeked = true;
 }
 
 Expected<Record> RocksKVCursor::next() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -89,6 +91,7 @@ Expected<Record> RocksKVCursor::next() {
 }
 
 Status RocksKVCursor::prev() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -1358,6 +1361,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t max_cnt = _cfg->truncateBinlogNum;
   uint64_t size = 0;
   uint64_t cur_ts = msSinceEpoch();
+  INVARIANT_COMPARE(start, <=, save);
 
   // TODO(takenliu) change binlogDelRange scope to (1000, 1000000)
   INVARIANT_D(_cfg->binlogDelRange >= 1);
@@ -1402,6 +1406,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     result.written = written;
     result.timestamp = ts;
     result.newStart = nextStart;
+    nextSave = nextStart;
     result.newSave = nextSave;
     result.ret = ret;
 

@@ -626,11 +626,10 @@ TEST(RocksKVStore, CursorUpperBound) {
   std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
   RecordKey upper(1, 0, RecordType::RT_INVALID, "", "");
   string upperBound = upper.prefixChunkid();
-  std::unique_ptr<Cursor> cursor =
-    txn2->createCursor(ColumnFamilyNumber::ColumnFamily_Default, &upperBound);
+  // NOTE(takenliu) RocksTxn::createCursor not be public anymore
+  std::unique_ptr<SlotCursor> cursor =
+    txn2->createSlotCursor(0);
 
-  RecordKey start(0, 0, RecordType::RT_INVALID, "", "");
-  cursor->seek(start.prefixChunkid());
   int32_t cnt = 0;
   while (true) {
     Expected<Record> v = cursor->next();
@@ -642,8 +641,7 @@ TEST(RocksKVStore, CursorUpperBound) {
   }
   EXPECT_EQ(cnt, 30000);
 
-  RecordKey start2(0, 0, RecordType::RT_KV, "b", "");
-  cursor->seek(start2.encode());
+  cursor = txn2->createSlotCursor(1);
   cnt = 0;
   while (true) {
     Expected<Record> v = cursor->next();
@@ -653,7 +651,7 @@ TEST(RocksKVStore, CursorUpperBound) {
     }
     cnt += 1;
   }
-  EXPECT_EQ(cnt, 20000);
+  EXPECT_EQ(cnt, 10000);
 }
 
 TEST(RocksKVStore, BackupCkptInter) {

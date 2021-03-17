@@ -21,7 +21,7 @@ Status RepllogCursorV2::seekToLast() {
             "RepllogCursorV2 error, detailed at the error log"};
   }
   if (!_baseCursor) {
-    _baseCursor = _txn->createCursor(ColumnFamilyNumber::ColumnFamily_Binlog);
+    _baseCursor = std::move(_txn->createBinlogCursor());
   }
 
   // NOTE(vinchen): it works because binlog has a maximum prefix.
