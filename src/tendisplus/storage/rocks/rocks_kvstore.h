@@ -345,6 +345,13 @@ class RocksKVStore : public KVStore {
       return _cfHandles[1];
     }
   }
+  ColumnFamilyNumber getBinlogColumnFamilyNumber() {
+    if (_cfg->binlogUsingDefaultCF == true) {
+      return ColumnFamilyNumber::ColumnFamily_Default;
+    } else {
+      return ColumnFamilyNumber::ColumnFamily_Binlog;
+    }
+  }
 
  private:
   rocksdb::DB* getBaseDB() const;

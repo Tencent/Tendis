@@ -2413,8 +2413,13 @@ Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
   ReplLogKeyV2 endKey(end);
   auto beginKeyStr = beginKey.encode();
   auto endKeyStr = endKey.encode();
-  return deleteRangeWithoutBinlog(
+  auto s = deleteRangeWithoutBinlog(
     getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
+  RET_IF_ERR(s);
+  // NOTE(takenliu) if dont real delete,maybe cause performance problem
+  // for example: when server restart, in ReplManager::startup(),
+  //       getMinBinlog() will take a long time
+  return compactRange(getBinlogColumnFamilyNumber(), &beginKeyStr, &endKeyStr);
 }
 
 void RocksKVStore::initRocksProperties() {
