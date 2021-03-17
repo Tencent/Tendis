@@ -106,6 +106,7 @@ Status RocksKVCursor::prev() {
 }
 
 Expected<std::string> RocksKVCursor::key() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -1354,6 +1355,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
   }
 #endif
+  INVARIANT_COMPARE_D(start, <=, save);
+  if (start > save) {
+    LOG(WARNING) << "truncateBinlogV2 start:" << start << " > save:" << save
+      << ", set save=start";
+    save = start;
+  }
+
   uint64_t nextStart;
   uint64_t nextSave;
   nextStart = start;
@@ -1361,7 +1369,6 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t max_cnt = _cfg->truncateBinlogNum;
   uint64_t size = 0;
   uint64_t cur_ts = msSinceEpoch();
-  INVARIANT_COMPARE(start, <=, save);
 
   // TODO(takenliu) change binlogDelRange scope to (1000, 1000000)
   INVARIANT_D(_cfg->binlogDelRange >= 1);

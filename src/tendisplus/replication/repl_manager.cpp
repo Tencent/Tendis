@@ -662,8 +662,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   uint32_t fileSeq = 0;
   bool saveLogs;
 
-  bool hasError = false;
-  auto guard = MakeGuard([this, &nextSched, &start, &save, storeId, &hasError] {
+  auto guard = MakeGuard([this, &nextSched, &start, &save, storeId] {
     std::lock_guard<std::mutex> lk(_mutex);
     auto& v = _logRecycStatus[storeId];
     INVARIANT_D(v->isRunning);
@@ -672,11 +671,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     if (v->nextSchedTime < nextSched) {
       v->nextSchedTime = nextSched;
     }
-    // NOTE(vinchen): like flushdb, the binlog is deleted, is should
-    // reset the firstBinlogId
-    if (hasError) {
-      v->firstBinlogId = Transaction::TXNID_UNINITED;
-    } else if (start != Transaction::MIN_VALID_TXNID) {
+    if (start != Transaction::MIN_VALID_TXNID) {
       v->firstBinlogId = start;
     }
     if (save != Transaction::MIN_VALID_TXNID) {
@@ -695,7 +690,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   auto expdb = segMgr->getDb(sg.getSession(), storeId, mgl::LockMode::LOCK_IX);
   if (!expdb.ok()) {
     LOG(ERROR) << "recycleBinlog getDb failed:" << expdb.status().toString();
-    hasError = true;
     return;
   }
   auto kvstore = std::move(expdb.value().store);
@@ -766,13 +760,11 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   if (!ptxn.ok()) {
     LOG(ERROR) << "recycleBinlog create txn failed:"
                << ptxn.status().toString();
-    hasError = true;
     return;
   }
   auto txn = std::move(ptxn.value());
 
   uint64_t newStart = 0;
-  uint64_t newSave = 0;
   {
     std::ofstream* fs = nullptr;
     int64_t maxWriteLen = 0;
@@ -780,7 +772,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
       fs = getCurBinlogFs(storeId);
       if (!fs) {
         LOG(ERROR) << "getCurBinlogFs() store;" << storeId << "failed:";
-        hasError = true;
         return;
       }
       std::lock_guard<std::mutex> lk(_mutex);
@@ -794,7 +785,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     if (!s.ok()) {
       LOG(ERROR) << "kvstore->truncateBinlogV2 store:" << storeId
                  << "failed:" << s.status().toString();
-      hasError = true;
       return;
     }
     bool changeNewFile = s.value().ret < 0;
@@ -802,14 +792,13 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
       storeId, s.value().written, s.value().timestamp, changeNewFile);
     // TODO(vinchen): stat for binlog deleted
     newStart = s.value().newStart;
-    newSave = s.value().newSave;
+    save = s.value().newSave;
   }
 
   auto commitStat = txn->commit();
   if (!commitStat.ok()) {
     LOG(ERROR) << "truncate binlog store:" << storeId
                << "commit failed:" << commitStat.status().toString();
-    hasError = true;
     return;
   }
   // DLOG(INFO) << "storeid:" << storeId << " truncate binlog from:" << start
@@ -818,7 +807,6 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   //    << ":" << _svr->getNetwork()->getPort();
   INVARIANT_COMPARE_D(newStart, <=, end + 1);
   start = newStart;
-  save = newSave;
 }
 
 Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId,

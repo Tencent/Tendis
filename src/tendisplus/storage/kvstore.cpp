@@ -152,14 +152,19 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
             "RepllogCursorV2 error, detailed at the error log"};
   }
 
+  uint64_t num = 0;
   while (_cur <= _end) {
     ReplLogKeyV2 key(_cur);
     auto keyStr = key.encode();
     auto eval = _txn->getKV(keyStr);
     if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
-      _cur++;
       DLOG(WARNING) << "binlogid " << _cur << " is not exists";
-
+      _cur++;
+      if (num++ % 1000 == 0) {
+        LOG(WARNING) << "RepllogCursorV2::next ERR_NOTFOUND too much,"
+          << " num:" << num << " _cur:" << _cur
+          << " _end:" << _end;
+      }
       continue;
     } else if (!eval.ok()) {
       LOG(WARNING) << "get binlogid " << _cur
@@ -181,14 +186,20 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
             "RepllogCursorV2 error, detailed at the error log"};
   }
 
+  uint64_t num = 0;
   while (_cur <= _end) {
     ReplLogKeyV2 key(_cur);
     auto keyStr = key.encode();
     auto eval = _txn->getKV(keyStr);
     if (eval.status().code() == ErrorCodes::ERR_NOTFOUND) {
       _cur++;
-      LOG(WARNING) << "binlogid " << _cur << " is not exists";
+      DLOG(WARNING) << "binlogid " << _cur << " is not exists";
 
+      if (num++ % 1000 == 0) {
+        LOG(WARNING) << "RepllogCursorV2::nextV2 ERR_NOTFOUND too much,"
+                     << " num:" << num << " _cur:" << _cur
+                     << " _end:" << _end;
+      }
       continue;
     } else if (!eval.ok()) {
       LOG(WARNING) << "get binlogid " << _cur
