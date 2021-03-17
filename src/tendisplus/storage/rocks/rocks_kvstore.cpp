@@ -28,6 +28,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
+#include "rocksdb/statistics.h"
 
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
@@ -2529,6 +2530,26 @@ std::string RocksKVStore::getStatistics() const {
   } else {
     return "";
   }
+}
+
+uint64_t RocksKVStore::getStatCountById(uint32_t id) const {
+  if (_isRunning) {
+    return _stats->getTickerCount(id);
+  }
+  return 0;
+}
+
+uint64_t RocksKVStore::getStatCountByName(const std::string& name) const {
+  static std::map<std::string, rocksdb::Tickers> tickersNameMap = {
+    {"rocksdb.number.iter.skip", rocksdb::Tickers::NUMBER_ITER_SKIP},
+  };
+  if (tickersNameMap.find(name) != tickersNameMap.end()) {
+    return getStatCountById(tickersNameMap[name]);
+  }
+
+  INVARIANT_D(0);
+
+  return 0;
 }
 
 std::string RocksKVStore::getBgError() const {
