@@ -325,7 +325,8 @@ class MigrateManager {
   std::map<uint32_t, std::list<SlotsBitmap>> _restoreMigrateTask;
 
   // sender's pov
-  std::map<std::string, std::unique_ptr<MigrateSendTask>> _migrateSendTaskMap;
+  std::unordered_map<std::string, std::unique_ptr<MigrateSendTask>>
+    _migrateSendTaskMap;
 
   std::unique_ptr<WorkerPool> _migrateSender;
   std::unique_ptr<WorkerPool> _migrateClear;
@@ -333,7 +334,7 @@ class MigrateManager {
   std::shared_ptr<PoolMatrix> _migrateClearMatrix;
 
   // receiver's pov
-  std::map<std::string, std::unique_ptr<MigrateReceiveTask>>
+  std::unordered_map<std::string, std::unique_ptr<MigrateReceiveTask>>
     _migrateReceiveTaskMap;
 
   std::unique_ptr<WorkerPool> _migrateReceiver;

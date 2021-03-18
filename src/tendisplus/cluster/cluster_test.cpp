@@ -1174,7 +1174,22 @@ TEST(Cluster, migrate) {
   uint32_t index = 0;
   for (auto dir : dirs) {
     uint32_t nodePort = startPort + index++;
-    servers.emplace_back(std::move(makeClusterNode(dir, nodePort, storeCnt)));
+    EXPECT_TRUE(setupEnv(dir));
+
+    auto cfg1 = makeServerParam(nodePort, storeCnt, dir, true);
+    cfg1->clusterEnabled = true;
+    cfg1->pauseTimeIndexMgr = 1;
+    cfg1->rocksBlockcacheMB = 24;
+    // this test will migrate back
+    cfg1->enableGcInMigate = true;
+
+    auto master = std::make_shared<ServerEntry>(cfg1);
+    auto s = master->startup(cfg1);
+    if (!s.ok()) {
+      LOG(ERROR) << "server start fail:" << s.toString();
+    }
+    INVARIANT(s.ok());
+    servers.emplace_back(std::move(master));
   }
 
   auto& srcNode = servers[0];

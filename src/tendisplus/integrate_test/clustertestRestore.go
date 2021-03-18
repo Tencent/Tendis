@@ -125,8 +125,12 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
 		if r, err := cli.Cmd("cluster", "clear").Str(); r != ("OK") {
 			log.Infof("clear failed:%v %s", err, r)
 		}
+		cli2 := createClient(src_master)
+		if r, err := cli2.Cmd("cluster", "clear").Str(); r != ("OK") {
+			log.Infof("clear failed:%v %s", err, r)
+		}
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(6 * time.Second)
 
 	log.Infof("checkData begin")
 	checkSlotEmpty(src_restore, migSlot, false)
@@ -215,8 +219,12 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 		if r, err := cli.Cmd("cluster", "clear").Str(); r != ("OK") {
 			log.Infof("clear failed:%v %s", err, r)
 		}
+		cli2 := createClient(src_master)
+		if r, err := cli2.Cmd("cluster", "clear").Str(); r != ("OK") {
+			log.Infof("clear failed:%v %s", err, r)
+		}
 	}
-	time.Sleep(3 * time.Second)
+	time.Sleep(6 * time.Second)
 	checkSlotEmpty(src_restore, migSlot, true)
 
 	checkSlotEmpty(dst_restore, migSlot, false)
