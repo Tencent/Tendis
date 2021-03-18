@@ -278,11 +278,10 @@ class DumpXCommand : public Command {
     return ss.str();
   }
 
-  std::vector<int> getKeysFromCommand(
-          const std::vector<std::string>& argv) {
+  std::vector<int> getKeysFromCommand(const std::vector<std::string>& argv) {
     std::vector<int> index((argv.size() - 1) / 2);
     std::generate(
-            index.begin(), index.end(), [n = 0]() mutable { return n += 2; });
+      index.begin(), index.end(), [n = 0]() mutable { return n += 2; });
     return index;
   }
 
@@ -753,7 +752,6 @@ Expected<size_t> Deserializer::loadLen(const std::string& payload,
     if (isencoded) {
       *isencoded = true;
     }
-    LOG(INFO) << "return encType " << static_cast<int>(ret);
   } else if (encType == RDB_6BITLEN) {
     ret = buf[0] & 0x3F;
   } else if (encType == RDB_14BITLEN) {
@@ -781,7 +779,6 @@ std::string Deserializer::loadString(const std::string& payload, size_t* pos) {
   }
   size_t len = expLen.value();
   if (isencoded) {
-    LOG(INFO) << "is encoded";
     switch (static_cast<uint8_t>(len)) {
       case RDB_ENC_INT8:
       case RDB_ENC_INT16:
@@ -795,7 +792,6 @@ std::string Deserializer::loadString(const std::string& payload, size_t* pos) {
         break;
       }
       case RDB_ENC_LZF: {
-        LOG(INFO) << "is encoded LZF";
         auto expLzf = loadLzfString(payload, pos);
         if (!expLzf.ok()) {
           return std::string();
@@ -850,17 +846,14 @@ Expected<int64_t> Deserializer::loadIntegerString(const std::string& payload,
 Expected<std::string> Deserializer::loadLzfString(const std::string& payload,
                                                   size_t* pos) {
   auto expClen = loadLen(payload, pos);
-  if (!expClen.ok()) {
-    return expClen.status();
-  }
-  LOG(INFO) << "load clen " << expClen.value();
+  RET_IF_ERR_EXPECTED(expClen);
+
   auto expLen = loadLen(payload, pos);
-  if (!expLen.ok()) {
-    return expLen.status();
-  }
-  LOG(INFO) << "load len " << expLen.value();
+  RET_IF_ERR_EXPECTED(expLen);
+
   const auto lzfEnd = payload.begin() + *pos + expClen.value();
   if (lzfEnd > payload.cend()) {
+    LOG(ERROR) << "Wrong lzf buffer length";
     return {ErrorCodes::ERR_PARSEOPT, "Wrong lzf buffer length"};
   }
   std::string lzfBuf(payload.begin() + *pos, lzfEnd);
@@ -869,7 +862,7 @@ Expected<std::string> Deserializer::loadLzfString(const std::string& payload,
 
   if (redis_port::lzf_decompress(
         lzfBuf.c_str(), lzfBuf.size(), outBuf.data(), outBuf.size()) == 0) {
-    LOG(INFO) << "Invalid LZF";
+    LOG(ERROR) << "Invalid LZF";
     return {ErrorCodes::ERR_PARSEPKT, "Invalid LZF compressed string"};
   }
 
