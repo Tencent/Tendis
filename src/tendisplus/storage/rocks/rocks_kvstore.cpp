@@ -57,19 +57,21 @@ namespace tendisplus {
 #endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
-  : Cursor(), _it(std::move(it)) {
-  _it->Seek("");
+  : Cursor(), _it(std::move(it)), _seeked(false) {
 }
 
 void RocksKVCursor::seek(const std::string& prefix) {
   _it->Seek(rocksdb::Slice(prefix.c_str(), prefix.size()));
+  _seeked = true;
 }
 
 void RocksKVCursor::seekToLast() {
   _it->SeekToLast();
+  _seeked = true;
 }
 
 Expected<Record> RocksKVCursor::next() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -89,6 +91,7 @@ Expected<Record> RocksKVCursor::next() {
 }
 
 Status RocksKVCursor::prev() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -103,6 +106,7 @@ Status RocksKVCursor::prev() {
 }
 
 Expected<std::string> RocksKVCursor::key() {
+  INVARIANT(_seeked);
   if (!_it->status().ok()) {
     return {ErrorCodes::ERR_INTERNAL, _it->status().ToString()};
   }
@@ -1351,6 +1355,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
   }
 #endif
+  INVARIANT_COMPARE_D(start, <=, save);
+  if (start > save) {
+    LOG(WARNING) << "truncateBinlogV2 start:" << start << " > save:" << save
+      << ", set save=start";
+    save = start;
+  }
+
   uint64_t nextStart;
   uint64_t nextSave;
   nextStart = start;
@@ -1402,6 +1413,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     result.written = written;
     result.timestamp = ts;
     result.newStart = nextStart;
+    nextSave = nextStart;
     result.newSave = nextSave;
     result.ret = ret;
 
@@ -2408,8 +2420,13 @@ Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
   ReplLogKeyV2 endKey(end);
   auto beginKeyStr = beginKey.encode();
   auto endKeyStr = endKey.encode();
-  return deleteRangeWithoutBinlog(
+  auto s = deleteRangeWithoutBinlog(
     getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
+  RET_IF_ERR(s);
+  // NOTE(takenliu) if dont real delete,maybe cause performance problem
+  // for example: when server restart, in ReplManager::startup(),
+  //       getMinBinlog() will take a long time
+  return compactRange(getBinlogColumnFamilyNumber(), &beginKeyStr, &endKeyStr);
 }
 
 void RocksKVStore::initRocksProperties() {

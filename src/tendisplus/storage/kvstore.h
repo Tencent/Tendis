@@ -64,29 +64,6 @@ class Cursor {
   virtual Status prev() = 0;
   virtual Expected<std::string> key() = 0;
 };
-class RepllogCursorV2 {
- public:
-  RepllogCursorV2() = delete;
-  // NOTE(vinchen): in range of [begin, end], be careful both close interval
-  RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end);
-  ~RepllogCursorV2() = default;
-  Expected<ReplLogRawV2> next();
-  Expected<ReplLogV2> nextV2();
-  Status seekToLast();
-  static Expected<uint64_t> getMinBinlogId(Transaction* txn);
-  static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
-  static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
-  static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
-
- protected:
-  Transaction* _txn;
-  std::unique_ptr<Cursor> _baseCursor;
-
- private:
-  uint64_t _start;
-  uint64_t _cur;
-  const uint64_t _end;
-};
 
 class BasicDataCursor {
  public:
@@ -194,6 +171,30 @@ class SlotsCursor {
   std::unique_ptr<Cursor> _baseCursor;
 };
 
+class RepllogCursorV2 {
+ public:
+  RepllogCursorV2() = delete;
+  // NOTE(vinchen): in range of [begin, end], be careful both close interval
+  RepllogCursorV2(Transaction* txn, uint64_t begin, uint64_t end);
+  ~RepllogCursorV2() = default;
+  Expected<ReplLogRawV2> next();
+  Expected<ReplLogV2> nextV2();
+  Status seekToLast();
+  static Expected<uint64_t> getMinBinlogId(Transaction* txn);
+  static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
+  static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
+  static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
+
+ protected:
+  Transaction* _txn;
+  std::unique_ptr<BinlogCursor> _baseCursor;
+
+ private:
+  uint64_t _start;
+  uint64_t _cur;
+  const uint64_t _end;
+};
+
 class Transaction {
  public:
   Transaction() = default;
@@ -202,8 +203,6 @@ class Transaction {
   virtual ~Transaction() = default;
   virtual Expected<uint64_t> commit() = 0;
   virtual Status rollback() = 0;
-  virtual std::unique_ptr<Cursor> createCursor(
-    ColumnFamilyNumber cf, const std::string* iterate_upper_bound = NULL) = 0;
   virtual Status flushall() = 0;
   virtual Status migrate(const std::string& logKey,
                          const std::string& logValue) = 0;
@@ -246,6 +245,11 @@ class Transaction {
   virtual bool isReplOnly() const = 0;
   virtual uint64_t getTxnId() const = 0;
 
+ protected:
+  virtual std::unique_ptr<Cursor> createCursor(ColumnFamilyNumber cf,
+          const std::string* iterate_upper_bound = NULL) = 0;
+
+ public:
   static constexpr uint64_t MAX_VALID_TXNID =
     std::numeric_limits<uint64_t>::max() / 2;
   static constexpr uint64_t MIN_VALID_TXNID = 1;

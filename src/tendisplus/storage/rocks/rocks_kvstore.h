@@ -42,8 +42,6 @@ class RocksTxn : public Transaction {
   RocksTxn(const RocksTxn&) = delete;
   RocksTxn(RocksTxn&&) = delete;
   virtual ~RocksTxn();
-  std::unique_ptr<Cursor> createCursor(
-    ColumnFamilyNumber cf, const std::string* iterate_upper_bound = NULL) final;
 #ifdef BINLOG_V1
   std::unique_ptr<BinlogCursor> createBinlogCursor(
     uint64_t begin, bool ignoreReadBarrier) final;
@@ -106,6 +104,8 @@ class RocksTxn : public Transaction {
 
  protected:
   virtual void ensureTxn() {}
+  std::unique_ptr<Cursor> createCursor(ColumnFamilyNumber cf,
+      const std::string* iterate_upper_bound = NULL) final;
 
   uint64_t _txnId;
   uint64_t _binlogId;
@@ -187,6 +187,7 @@ class RocksKVCursor : public Cursor {
 
  private:
   std::unique_ptr<rocksdb::Iterator> _it;
+  bool _seeked;
 };
 
 typedef struct sstMetaData {
@@ -342,6 +343,13 @@ class RocksKVStore : public KVStore {
       return _cfHandles[0];
     } else {
       return _cfHandles[1];
+    }
+  }
+  ColumnFamilyNumber getBinlogColumnFamilyNumber() {
+    if (_cfg->binlogUsingDefaultCF == true) {
+      return ColumnFamilyNumber::ColumnFamily_Default;
+    } else {
+      return ColumnFamilyNumber::ColumnFamily_Binlog;
     }
   }
 
