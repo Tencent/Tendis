@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include <random>
 #include <clocale>
 #include <map>
 #include <list>
@@ -767,12 +768,26 @@ class ClusterCommand : public Command {
 
     const std::string& json = expRsp.value();
     rapidjson::Document doc;
+
+    struct taskinfo {
+      taskinfo(uint32_t storeid,
+               const SlotsBitmap& taskmap,
+               const std::string& taskid)
+        : _storeid(storeid), _taskmap(taskmap), _taskid(taskid) {}
+      uint32_t _storeid;
+      SlotsBitmap _taskmap;
+      std::string _taskid;
+    };
+
+    vector<taskinfo> taskInfoArray;
+
     doc.Parse(json);
     if (doc.HasParseError()) {
       LOG(ERROR) << "parse task failed"
                  << rapidjson::GetParseError_En(doc.GetParseError());
       return {ErrorCodes::ERR_NETWORK, "json parse fail"};
     }
+
     if (!doc.HasMember("errMsg"))
       return {ErrorCodes::ERR_DECODE, "json contain no errMsg"};
 
@@ -828,13 +843,25 @@ class ClusterCommand : public Command {
       if (!object["taskid"].IsString()) {
         return {ErrorCodes::ERR_WRONG_TYPE, "json taskid error type"};
       }
+
       auto myid = pTaskId + "-" + object["taskid"].GetString();
-      s =
-        migrateMgr->startTask(taskmap, ip, port, myid, storeid, pTaskPtr, true);
+      taskInfoArray.emplace_back(storeid, taskmap, myid);
+    }
+    /*NOTE(wayenchen) shuffle receiver task before starting*/
+    unsigned seed = TCLOCK::now().time_since_epoch().count();
+    shuffle(taskInfoArray.begin(),
+            taskInfoArray.end(),
+            std::default_random_engine(seed));
+
+    LOG(INFO) << "taskInfo array shuffle finished, tasksize is:"
+              << taskInfoArray.size();
+    for (auto& ele : taskInfoArray) {
+      s = migrateMgr->startTask(
+        ele._taskmap, ip, port, ele._taskid, ele._storeid, pTaskPtr, true);
       if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER, "migrate receive start task fail"};
       }
-      migrateMgr->insertNodes(slotsVec, srcNode->getNodeName(), true);
+      migrateMgr->insertNodes(ele._taskmap, srcNode->getNodeName(), true);
     }
     migrateMgr->addImportPTask(pTaskPtr);
 

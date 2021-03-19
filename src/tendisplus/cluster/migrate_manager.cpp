@@ -1183,16 +1183,20 @@ Status MigrateManager::startTask(const SlotsBitmap& taskmap,
   return {ErrorCodes::ERR_OK, ""};
 }
 
-void MigrateManager::insertNodes(const std::vector<uint32_t>& slots,
+void MigrateManager::insertNodes(const SlotsBitmap& slots,
                                  const std::string& nodeid,
                                  bool importFlag) {
   std::lock_guard<myMutex> lk(_mutex);
-  for (auto& vs : slots) {
-    if (importFlag) {
-      _importNodes[vs] = nodeid;
-    } else {
-      _migrateNodes[vs] = nodeid;
+  size_t idx = 0;
+  while (idx < CLUSTER_SLOTS) {
+    if (slots.test(idx)) {
+      if (importFlag) {
+        _importNodes[idx] = nodeid;
+      } else {
+        _migrateNodes[idx] = nodeid;
+      }
     }
+    idx++;
   }
 }
 
