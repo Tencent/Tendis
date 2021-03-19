@@ -216,7 +216,7 @@ class MigrateManager {
                    const std::shared_ptr<pTask> task,
                    bool import = false);
 
-  void insertNodes(const std::vector<uint32_t>& slots,
+  void insertNodes(const SlotsBitmap& slots,
                    const std::string& nodeid,
                    bool import);
   std::string getNodeIdBySlot(uint32_t, bool import = true);
