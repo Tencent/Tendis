@@ -396,6 +396,8 @@ class KVStore {
                            std::string* value) const = 0;
   virtual std::string getAllProperty() const = 0;
   virtual std::string getStatistics() const = 0;
+  virtual uint64_t getStatCountById(uint32_t id) const = 0;
+  virtual uint64_t getStatCountByName(const std::string& name) const = 0;
   virtual std::string getBgError() const = 0;
   virtual Status recoveryFromBgError() = 0;
   virtual void resetStatistics() = 0;

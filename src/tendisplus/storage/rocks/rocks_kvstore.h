@@ -324,6 +324,8 @@ class RocksKVStore : public KVStore {
   bool getProperty(const std::string& property, std::string* value) const;
   std::string getAllProperty() const override;
   std::string getStatistics() const override;
+  uint64_t getStatCountById(uint32_t id) const override;
+  uint64_t getStatCountByName(const std::string& name) const override;
   std::string getBgError() const override;
   Status recoveryFromBgError() override;
   void resetStatistics();

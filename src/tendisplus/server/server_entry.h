@@ -300,6 +300,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   bool getAllProperty(Session* sess,
                       const std::string& property,
                       std::string* value) const;
+  uint64_t getStatCountByName(Session* sess, const std::string& ticker) const;
 
   Status delKeysInSlot(uint32_t slot);
   /* Note(wayenchen) fast judge if dbsize is zero or not*/

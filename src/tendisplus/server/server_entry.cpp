@@ -1196,6 +1196,23 @@ bool ServerEntry::getTotalIntProperty(Session* sess,
   return true;
 }
 
+uint64_t ServerEntry::getStatCountByName(Session* sess,
+  const std::string& ticker) const {
+  uint64_t value = 0;
+  for (uint64_t i = 0; i < getKVStoreCount(); i++) {
+    auto expdb =
+      getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS, false, 0);
+    if (!expdb.ok()) {
+      return 0;
+    }
+
+    auto store = expdb.value().store;
+    value += store->getStatCountByName(ticker);
+  }
+
+  return value;
+}
+
 bool ServerEntry::getAllProperty(Session* sess,
                                  const std::string& property,
                                  std::string* value) const {

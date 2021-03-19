@@ -2234,6 +2234,9 @@ class InfoCommand : public Command {
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-pending-compaction-bytes", &compaction_pending);
 
+      auto iter_skip =
+        server->getStatCountByName(sess, "rocksdb.number.iter.skip");
+
       uint64_t blockUsage = server->getBlockCache()->GetUsage();
       uint64_t blockPinnedUsage = server->getBlockCache()->GetPinnedUsage();
       uint64_t blockCapacity = server->getBlockCache()->GetCapacity();
@@ -2255,6 +2258,7 @@ class InfoCommand : public Command {
       ss << "rocksdb.estimate-pending-compaction-bytes:" << compaction_pending
          << "\r\n";
       ss << "rocksdb.compaction-pending:" << numCompaction << "\r\n";
+      ss << "rocksdb.number.iter.skip:" << iter_skip << "\r\n";
       ss << "\r\n";
       result << ss.str();
     }
@@ -4406,7 +4410,7 @@ class JeprofCommand : public Command {
   }
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
-    auto action  = toLower(args[1]);
+    auto action = toLower(args[1]);
     if (action == "on") {
       bool active = true;
       mallctl("prof.active", NULL, NULL, &active, sizeof(active));
