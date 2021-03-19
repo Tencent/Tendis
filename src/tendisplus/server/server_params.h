@@ -449,7 +449,7 @@ class ServerParams {
   bool clusterEnabled = false;
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
-  bool enableGcInMigate = true;
+  bool enableGcInMigate = false;
   bool aofPsyncEnabled = false;
 
   uint32_t aofPsyncNum = 500;
