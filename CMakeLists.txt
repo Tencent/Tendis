@@ -73,6 +73,11 @@ if(CMAKE_COMPILER_IS_GNUCC)
 	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	if(ENABLE_JEMALLOC)
 		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
+
+		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
+		message("jemalloc git patch, we force set jemalloc  prof:true")
+		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
+
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
