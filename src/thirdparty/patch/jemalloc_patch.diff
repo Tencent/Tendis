@@ -1,13 +1,13 @@
-diff --git a/src/jemalloc.c b/src/jemalloc.c
-index ed13718..bd21074 100644
---- a/src/jemalloc.c
-+++ b/src/jemalloc.c
-@@ -1032,6 +1032,8 @@ malloc_conf_init_helper(sc_data_t *sc_data, unsigned bin_shard_sizes[SC_NBINS],
- 	const char *opts, *k, *v;
- 	size_t klen, vlen;
+diff --git a/src/prof.c b/src/prof.c
+index 13334cb..0d5c446 100644
+--- a/src/prof.c
++++ b/src/prof.c
+@@ -30,7 +30,7 @@
+ /******************************************************************************/
+ /* Data. */
  
-+	printf("we force set jemalloc profiling prof:true!!!\n");
-+	opt_prof=true;
- 	for (i = 0; i < MALLOC_CONF_NSOURCES; i++) {
- 		/* Get runtime configuration. */
- 		if (initial_call) {
+-bool		opt_prof = false;
++bool		opt_prof = true;
+ bool		opt_prof_active = true;
+ bool		opt_prof_thread_active_init = true;
+ size_t		opt_lg_prof_sample = LG_PROF_SAMPLE_DEFAULT;
