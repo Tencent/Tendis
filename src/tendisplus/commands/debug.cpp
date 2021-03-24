@@ -71,7 +71,6 @@ class KeysCommand : public Command {
     const std::vector<std::string>& args = sess->getArgs();
     auto pattern = args[1];
     bool allkeys = false;
-
     if (pattern == "*") {
       allkeys = true;
     }
@@ -95,6 +94,14 @@ class KeysCommand : public Command {
 
     auto ts = msSinceEpoch();
 
+    std::bitset<CLUSTER_SLOTS> checkSlots;
+    bool enableCluster = server->getParams()->clusterEnabled;
+    if (enableCluster) {
+      auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
+      checkSlots = myself->nodeIsMaster() ? myself->getSlots()
+                            : myself->getMaster()->getSlots();
+    }
+
     std::list<std::string> result;
     for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
       auto expdb =
@@ -105,6 +112,7 @@ class KeysCommand : public Command {
         }
         return expdb.status();
       }
+
       PStore kvstore = expdb.value().store;
       auto ptxn = sess->getCtx()->createTransaction(kvstore);
       if (!ptxn.ok()) {
@@ -113,7 +121,6 @@ class KeysCommand : public Command {
       auto cursor = ptxn.value()->createDataCursor();
 
       cursor->seek("");
-
       while (true) {
         Expected<Record> exptRcd = cursor->next();
         if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -134,6 +141,11 @@ class KeysCommand : public Command {
         if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
           break;
         }
+        // NOTE(wayenchen) ignore slot not belong to me
+        if (enableCluster && !checkSlots.test(chunkId)) {
+          continue;
+        }
+
         auto key = exptRcd.value().getRecordKey().getPrimaryKey();
 
         if (!allkeys &&
@@ -209,6 +221,15 @@ class DbsizeCommand : public Command {
 
     // TODO(vinchen): should use a faster way
     std::list<std::string> result;
+
+    std::bitset<CLUSTER_SLOTS> checkSlots;
+    bool enableCluster = server->getParams()->clusterEnabled;
+    if (enableCluster) {
+      auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
+      checkSlots = myself->nodeIsMaster() ? myself->getSlots()
+                            : myself->getMaster()->getSlots();
+    }
+
     for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
       auto expdb =
         server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
@@ -227,6 +248,7 @@ class DbsizeCommand : public Command {
       auto cursor = ptxn.value()->createDataCursor();
       cursor->seek("");
 
+
       while (true) {
         Expected<Record> exptRcd = cursor->next();
         if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -242,6 +264,10 @@ class DbsizeCommand : public Command {
         auto chunkId = exptRcd.value().getRecordKey().getChunkId();
         if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
           break;
+        }
+        // NOTE(wayenchen) ignore slot not belong to me
+        if (enableCluster && !checkSlots.test(chunkId)) {
+          continue;
         }
 
         auto dbid = exptRcd.value().getRecordKey().getDbId();
@@ -461,6 +487,7 @@ class IterAllKeysCommand : public Command {
     if (!ptxn.ok()) {
       return ptxn.status();
     }
+
     auto cursor = ptxn.value()->createDataCursor();
     if (args[2] == "0") {
       cursor->seek("");
@@ -470,6 +497,14 @@ class IterAllKeysCommand : public Command {
         return unhex.status();
       }
       cursor->seek(unhex.value());
+    }
+
+    std::bitset<CLUSTER_SLOTS> checkSlots;
+    bool enableCluster = server->getParams()->clusterEnabled;
+    if (enableCluster) {
+      auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
+      checkSlots = myself->nodeIsMaster() ? myself->getSlots()
+                            : myself->getMaster()->getSlots();
     }
 
     std::unordered_map<std::string, uint64_t> lIdx;
@@ -493,6 +528,11 @@ class IterAllKeysCommand : public Command {
       // always at the last of rocksdb, and the chunkid is very big
       if (chunkId >= server->getSegmentMgr()->getChunkSize()) {
         break;
+      }
+
+      // NOTE(wayenchen) ignore slot not belong to me
+      if (enableCluster && !checkSlots.test(chunkId)) {
+        continue;
       }
 
       auto valueType = exptRcd.value().getRecordValue().getRecordType();

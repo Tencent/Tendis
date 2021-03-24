@@ -1122,6 +1122,15 @@ CNodePtr ClusterState::getNodeBySlot(uint32_t slot) const {
   return _allSlots[slot];
 }
 
+bool ClusterState::isSlotBelongToMe(uint32_t slot) {
+  std::lock_guard<myMutex> lk(_mutex);
+  auto owner = getNodeBySlot(slot);
+  if (!owner) {
+    return false;
+  }
+  return owner == _myself;
+}
+
 Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
                                                        Session* sess) const {
   std::lock_guard<myMutex> lk(_mutex);
@@ -4536,8 +4545,8 @@ Expected<std::shared_ptr<ClusterSession>> ClusterManager::clusterCreateSession(
 
 bool ClusterManager::hasDirtyKey(uint32_t storeid) {
   auto node = _clusterState->getMyselfNode();
+  auto curmaster = node->nodeIsMaster() ? node : node->getMaster();
   for (uint32_t chunkid = 0; chunkid < CLUSTER_SLOTS; chunkid++) {
-    auto curmaster = node->nodeIsMaster() ? node : node->getMaster();
     if (_svr->getSegmentMgr()->getStoreid(chunkid) == storeid &&
         _clusterState->getNodeBySlot(chunkid) != curmaster &&
         !emptySlot(chunkid)) {

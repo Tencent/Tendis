@@ -396,8 +396,12 @@ class ScanCommand : public Command {
     std::list<RecordKey> batch;
 
     if (sess->getServerEntry()->getParams()->clusterEnabled) {
-      slots = sess->getServerEntry()->getClusterMgr()
-              ->getClusterState()->getMyselfNode()->getSlots();
+      auto myself = sess->getServerEntry()
+                      ->getClusterMgr()
+                      ->getClusterState()
+                      ->getMyselfNode();
+      slots = myself->nodeIsMaster() ? myself->getSlots()
+                : myself->getMaster()->getSlots();
     } else {
       slots.set();
     }
