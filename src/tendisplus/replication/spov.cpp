@@ -313,6 +313,10 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   newMeta = metaSnapshot.copy();
   newMeta->replState = ReplState::REPL_CONNECTED;
   newMeta->binlogId = bkInfo.getBinlogPos();
+  {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _syncStatus[metaSnapshot.id]->fullsyncSuccTimes++;
+  }
 
   changeReplState(*newMeta, true);
   // NOTE(takenliu):should reset firstBinlogId to the MinBinlog,

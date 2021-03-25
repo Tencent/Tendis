@@ -15,6 +15,7 @@ go build restore.go common.go
 go build restoretest.go common.go
 go build clustertest.go common.go common_cluster.go
 go build clustertestRestore.go common.go common_cluster.go
+go build clustertestFailover.go common.go common_cluster.go
 go build -o dts/dts dts/dts.go
 
 function runOne() {
@@ -36,6 +37,8 @@ function runOne() {
     fi
 }
 
+testNum=8
+
 runOne ./repl
 runOne ./repltest
 runOne ./restore
@@ -46,6 +49,7 @@ runOne './clustertest -benchtype=set -clusterNodeNum=5 -num1=10000'
 #runOne './clustertest -benchtype=rpush -clusterNodeNum=5 -num1=10000'
 #runOne './clustertest -benchtype=zadd -clusterNodeNum=5 -num1=10000'
 runOne './clustertestRestore -benchtype=set'
+runOne './clustertestFailover -benchtype=set'
 runOne './dts/dts'
 
 grep "go passed" $logfile

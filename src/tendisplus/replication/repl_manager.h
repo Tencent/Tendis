@@ -37,6 +37,7 @@ struct SPovStatus {
   SCLOCK::time_point nextSchedTime;
   SCLOCK::time_point lastSyncTime;
   uint64_t lastBinlogTs;  // in milliseconds
+  uint32_t fullsyncSuccTimes;
 };
 
 enum class MPovClientType {
@@ -157,9 +158,8 @@ class ReplManager {
                                 uint32_t port,
                                 uint32_t sourceStoreId,
                                 bool checkEmpty = true,
-                                bool needLock = true);
-
-
+                                bool needLock = true,
+                                bool incrSync = false);
   bool supplyFullSync(asio::ip::tcp::socket sock,
                       const std::string& storeIdArg,
                       const std::string& slaveIpArg,
@@ -173,15 +173,19 @@ class ReplManager {
 
   bool supplyFullPsync(asio::ip::tcp::socket sock, const string& storeIdArg);
 
+  void AddFakeFullPushStatus(
+          uint64_t offset, const std::string& ip, uint64_t port);
+  void DelFakeFullPushStatus(
+          const std::string& ip, uint64_t port);
 
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
-                              bool checkEmpty = true);
+                              bool checkEmpty = true,
+                              bool incrSync = false);
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
                               uint32_t storeid,
                               bool checkEmpty = true);
-
   Status replicationUnSetMaster();
   Status replicationUnSetMaster(uint32_t storeid);
 #ifdef BINLOG_V1

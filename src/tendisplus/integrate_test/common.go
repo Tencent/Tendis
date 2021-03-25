@@ -138,6 +138,7 @@ func addData(m *util.RedisServer, num int, prefixkey string) {
 	var cmd string
 	cmd = fmt.Sprintf("../../../bin/redis-benchmark -h %s -p %d -c 20 -n %d -r 8 -i -f %s -t %s -a %s > %s 2>&1",
 		m.Ip, m.Port, num, prefixkey, *benchtype, *auth, logFilePath)
+	log.Infof("addData cmd:%s", cmd)
 	args := []string{}
 	args = append(args, cmd)
 	inShell := true

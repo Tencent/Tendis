@@ -1542,20 +1542,26 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
     }
   }
   if (!ignoreRepl) {
+    bool incrSync = false;
+    {
+      std::lock_guard<myMutex> lk(_mutex);
+      if (_mfEnd != 0 && _mfSlave == node) {
+        incrSync = true;
+      }
+    }
+    LOG(INFO) << "clusterSetMaster incrSync:" << incrSync;
+
     s = _server->getReplManager()->replicationSetMaster(
-      node->getNodeIp(), node->getPort(), false);
+      node->getNodeIp(), node->getPort(), false, incrSync);
     if (!s.ok()) {
       LOG(ERROR) << "relication set master fail:" << s.toString();
       return s;
     }
-
-    LOG(INFO) << "replication set node:" << node->getNodeName()
-              << "as my master"
-              << "ip" << node->getNodeIp() << "port" << node->getPort();
   }
-
-  LOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
-            << "ip" << node->getNodeIp() << "port" << node->getPort();
+  LOG(INFO) << "replication set node:" << node->getNodeName()
+            << " as my master,"
+            << "ip:" << node->getNodeIp() << " port:" << node->getPort()
+            << ",ignoreRepl:" << ignoreRepl;
 
   resetManualFailover();
 
@@ -2084,10 +2090,25 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
 }
 
 void ClusterState::manualFailoverCheckTimeout() {
-  std::lock_guard<myMutex> lk(_mutex);
-  if (_mfEnd && _mfEnd < msSinceEpoch()) {
-    serverLog(LL_WARNING, "Manual failover timed out.");
-    resetManualFailoverNoLock();
+  bool delFakeTask = false;
+  string masterIp = "";
+  uint64_t masterPort = 0;
+  {
+    std::lock_guard<myMutex> lk(_mutex);
+    if (_mfEnd && _mfEnd < msSinceEpoch()) {
+      serverLog(LL_WARNING, "Manual failover timed out.");
+      resetManualFailoverNoLock();
+
+      if (_mfCanStart && _myself->getMaster()) {
+        delFakeTask = true;
+        masterIp = _myself->getMaster()->getNodeIp();
+        masterPort = _myself->getMaster()->getPort();
+      }
+    }
+  }
+  if (delFakeTask) {
+    _server->getReplManager()->DelFakeFullPushStatus(
+            masterIp, masterPort);
   }
 }
 
@@ -2110,34 +2131,49 @@ void ClusterState::resetManualFailoverNoLock() {
 }
 
 void ClusterState::clusterHandleManualFailover() {
-  std::lock_guard<myMutex> lk(_mutex);
-  /* Return ASAP if no manual failover is in progress. */
-  if (_mfEnd == 0)
-    return;
+  bool addFakeTask = false;
+  uint64_t slaveOffset = 0;
+  string masterIp = "";
+  uint64_t masterPort = 0;
+  {
+    std::lock_guard<myMutex> lk(_mutex);
+    /* Return ASAP if no manual failover is in progress. */
+    if (_mfEnd == 0)
+      return;
 
-  /* If mf_can_start is non-zero, the failover was already triggered so the
-   * next steps are performed by clusterHandleSlaveFailover(). */
-  if (_mfCanStart) {
-    LOG(ERROR) << "mf_can_start is non-zero";
-    return;
+    /* If mf_can_start is non-zero, the failover was already triggered so the
+     * next steps are performed by clusterHandleSlaveFailover(). */
+    if (_mfCanStart) {
+      LOG(ERROR) << "mf_can_start is non-zero";
+      return;
+    }
+
+    if (_mfMasterOffset == 0 && !hasReciveOffset()) {
+      LOG(ERROR) << "_mfMasterOffset is zero";
+      return;
+    }
+
+    slaveOffset = _server->getReplManager()->replicationGetOffset();
+    LOG(INFO) << "mfMasterOffset:" << _mfMasterOffset
+              << " slaveOffset: " << slaveOffset;
+    if (_mfMasterOffset <= slaveOffset) {
+      /* Our replication offset matches the master replication offset
+       * announced after clients were paused. We can start the failover. */
+      setMfStart();
+      _isMfOffsetReceived.store(false, std::memory_order_relaxed);
+      addFakeTask = true;
+      masterIp = _myself->getMaster()->getNodeIp();
+      masterPort = _myself->getMaster()->getPort();
+      serverLog(LL_WARNING,
+                "All master replication stream processed, "
+                "manual failover can start.");
+    }
   }
-
-  if (_mfMasterOffset == 0 && !hasReciveOffset()) {
-    LOG(ERROR) << "_mfMasterOffset is zero";
-    return;
-  }
-
-  auto slaveOffset = _server->getReplManager()->replicationGetOffset();
-  LOG(INFO) << "mfMasterOffset:" << _mfMasterOffset
-            << " slaveOffset: " << slaveOffset;
-  if (_mfMasterOffset <= slaveOffset) {
-    /* Our replication offset matches the master replication offset
-     * announced after clients were paused. We can start the failover. */
-    setMfStart();
-    _isMfOffsetReceived.store(false, std::memory_order_relaxed);
-    serverLog(LL_WARNING,
-              "All master replication stream processed, "
-              "manual failover can start.");
+  if (addFakeTask) {
+    // NOTE(takenliu): add fake FullPushStatus,
+    //   to protect binlog not be recycled.
+    _server->getReplManager()->AddFakeFullPushStatus(
+            slaveOffset, masterIp, masterPort);
   }
 }
 
