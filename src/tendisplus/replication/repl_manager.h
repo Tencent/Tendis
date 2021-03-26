@@ -156,7 +156,10 @@ class ReplManager {
                                 std::string ip,
                                 uint32_t port,
                                 uint32_t sourceStoreId,
-                                bool checkEmpty = true);
+                                bool checkEmpty = true,
+                                bool needLock = true);
+
+
   bool supplyFullSync(asio::ip::tcp::socket sock,
                       const std::string& storeIdArg,
                       const std::string& slaveIpArg,
@@ -174,7 +177,13 @@ class ReplManager {
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
                               bool checkEmpty = true);
+  Status replicationSetMaster(std::string ip,
+                              uint32_t port,
+                              uint32_t storeid,
+                              bool checkEmpty = true);
+
   Status replicationUnSetMaster();
+  Status replicationUnSetMaster(uint32_t storeid);
 #ifdef BINLOG_V1
   Status applyBinlogs(uint32_t storeId,
                       uint64_t sessionId,
@@ -211,6 +220,10 @@ class ReplManager {
 
   std::string getRecycleBinlogStr(Session* sess) const;
   std::string getMasterHost() const;
+  std::string getMasterHost(uint32_t storeid) const;
+  std::vector<uint32_t> checkMasterHost(const std::string& hostname,
+                                        uint32_t port);
+
   uint32_t getMasterPort() const;
   uint64_t getLastSyncTime() const;
   uint64_t replicationGetOffset() const;
@@ -333,6 +346,7 @@ class ReplManager {
   std::shared_ptr<PoolMatrix> _incrCheckMatrix;
   std::shared_ptr<PoolMatrix> _logRecycleMatrix;
   uint64_t _connectMasterTimeoutMs;
+
 };
 
 }  // namespace tendisplus

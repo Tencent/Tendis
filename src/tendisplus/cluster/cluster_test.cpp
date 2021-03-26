@@ -67,7 +67,6 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->fullPushThreadnum = 1;
   cfg1->fullReceiveThreadnum = 1;
   cfg1->logRecycleThreadnum = 1;
-
   cfg1->migrateSenderThreadnum = 1;
   cfg1->migrateReceiveThreadnum = 1;
 #endif
@@ -2298,7 +2297,7 @@ TEST(Cluster, ChangeMaster) {
   auto& node1 = servers[0];
   auto& node2 = servers[3];
   // add one slave
-  auto node7 = makeClusterNode("node6", startPort + 6, storeCnt1);
+  auto node7 = makeClusterNode("node6", startPort + 6, storeCnt2);
   auto ctx1 = std::make_shared<asio::io_context>();
   auto sess1 = makeSession(node1, ctx1);
   WorkLoad work1(node1, sess1);
@@ -2327,9 +2326,9 @@ TEST(Cluster, ChangeMaster) {
   work3.manualFailover();
   std::this_thread::sleep_for(3s);
   // expect node2 to be new master
-  auto state = node7->getClusterMgr()->getClusterState();
+  auto state = node1->getClusterMgr()->getClusterState();
   auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
-  auto nodeName7 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+  auto nodeName7 = node7->getClusterMgr()->getClusterState()->getMyselfName();
   CNodePtr node2Ptr = state->clusterLookupNode(nodeName2);
   CNodePtr node7Ptr = state->clusterLookupNode(nodeName7);
 
@@ -2343,8 +2342,10 @@ TEST(Cluster, ChangeMaster) {
     node2->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
   auto masterPort =
     node2->getClusterMgr()->getClusterState()->getMyselfNode()->getPort();
-  EXPECT_EQ(node7->getReplManager()->getMasterHost(), masterHost);
-  EXPECT_EQ(node7->getReplManager()->getMasterPort(), masterPort);
+  // check all storeid is right
+  auto vecCheck =
+    node7->getReplManager()->checkMasterHost(masterHost, masterPort);
+  EXPECT_EQ(vecCheck.size(), 0);
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -2356,6 +2357,85 @@ TEST(Cluster, ChangeMaster) {
   servers.push_back(std::move(node7));
   servers.clear();
 }
+
+TEST(Cluster, FixReplication) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15200;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  // 3 master and 3 slave *, make one master fail
+  auto& node1 = servers[0];
+  auto& node2 = servers[3];
+  // add one slave
+  auto node7 = makeClusterNode("node7", startPort + 7, 10);
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(node1, ctx1);
+  WorkLoad work1(node1, sess1);
+  work1.init();
+  work1.clusterMeet(node7->getParams()->bindIp, node7->getParams()->port);
+  std::this_thread::sleep_for(3s);
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node7, ctx2);
+  WorkLoad work2(node7, sess2);
+  work2.init();
+  auto nodeName1 = node1->getClusterMgr()->getClusterState()->getMyselfName();
+  work2.replicate(nodeName1);
+  std::this_thread::sleep_for(10s);
+  // EXPECT_EQ(node7->getReplManager()->isSlaveFullSyncDone(), true);
+
+  auto ctx3 = std::make_shared<asio::io_context>();
+  auto sess3 = makeSession(node2, ctx3);
+  WorkLoad work3(node2, sess3);
+  work3.init();
+  // make the node7 to be master by cluster failover command
+  work2.manualFailover();
+  // lock the node2 , so the replication will set new Master will fail
+  work3.lockDb(10);
+  std::this_thread::sleep_for(5s);
+  // expect node7 to be new master
+  auto state = node1->getClusterMgr()->getClusterState();
+  auto nodeName7 = node7->getClusterMgr()->getClusterState()->getMyselfName();
+  CNodePtr node1Ptr = state->clusterLookupNode(nodeName1);
+  CNodePtr node7Ptr = state->clusterLookupNode(nodeName7);
+  // slave node2 become new master
+
+  EXPECT_EQ(node7Ptr->nodeIsMaster(), true);
+  ASSERT_TRUE(nodeIsMySlave(node7, node1));
+  ASSERT_TRUE(nodeIsMySlave(node7, node2));
+  auto masterHost =
+    node7->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
+  auto masterPort =
+    node7->getClusterMgr()->getClusterState()->getMyselfNode()->getPort();
+
+  auto vecCheck1 =
+    node2->getReplManager()->checkMasterHost(masterHost, masterPort);
+
+  // lockdb over, the replication should be fixed
+  std::this_thread::sleep_for(5s);
+  ASSERT_TRUE(nodeIsMySlave(node7, node2));
+
+  // check all storeid is right，gossip cron fix the replicatipn data
+  auto vecCheck =
+    node2->getReplManager()->checkMasterHost(masterHost, masterPort);
+  EXPECT_EQ(vecCheck.size(), 0);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+  node7->stop();
+#endif
+  servers.push_back(std::move(node7));
+  servers.clear();
+}
+
 
 TEST(Cluster, lockConfict) {
   uint32_t nodeNum = 3;
