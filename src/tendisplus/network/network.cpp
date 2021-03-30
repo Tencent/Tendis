@@ -155,7 +155,13 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
 }
 
 std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
-  asio::ip::tcp::socket socket, size_t readBuf, uint64_t rateLimit) {
+  asio::ip::tcp::socket socket,
+  size_t readBuf,
+  uint64_t rateLimit,
+  uint32_t netBatchTimeoutSec) {
+  if (netBatchTimeoutSec == 0) {
+    netBatchTimeoutSec =  _cfg->netBatchTimeoutSec;
+  }
   auto rwCtx = getRwCtx(socket);
   INVARIANT(rwCtx != nullptr);
   return std::move(std::make_unique<BlockingTcpClient>(rwCtx,

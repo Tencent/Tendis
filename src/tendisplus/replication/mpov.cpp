@@ -532,8 +532,11 @@ void ReplManager::supplyFullSyncRoutine(
 bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
                                   const std::string& storeIdArg) {
   std::shared_ptr<BlockingTcpClient> client =
-    std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
-                                                       64 * 1024 * 1024));
+    std::move(_svr->getNetwork()->
+              createBlockingClient(std::move(sock),
+                                   64 * 1024 * 1024,
+                                   0,
+                                   3600));  // set timeout 1 hour
 
   // NOTE(deyukong): this judge is not precise
   // even it's not full at this time, it can be full during schedule.
