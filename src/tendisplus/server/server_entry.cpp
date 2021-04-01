@@ -933,7 +933,7 @@ void ServerEntry::replyMonitors(Session* sess) {
   }
   info << "\r\n";
 
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<std::mutex> lk(_mutex_session);
   for (auto iter = _monitors.begin(); iter != _monitors.end();) {
     auto s = (*iter)->setResponse(info.str());
     if (!s.ok()) {
