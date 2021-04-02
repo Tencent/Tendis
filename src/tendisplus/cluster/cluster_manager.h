@@ -565,7 +565,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterSaveNodes();
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);
-  Status clusterSetMaster(CNodePtr node);
+  Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false);
   Status clusterSetMasterNoLock(CNodePtr node);
 
   Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
@@ -702,6 +702,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setGossipUnBlock();
 
   bool clusterIsOK() const;
+  bool isRightReplicate();
 
   Expected<std::string> getNodeInfo(CNodePtr n);
   Expected<std::string> getBackupInfo();

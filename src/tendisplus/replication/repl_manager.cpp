@@ -101,9 +101,6 @@ ReplManager::ReplManager(std::shared_ptr<ServerEntry> svr,
   _cfg->serverParamsVar("logRecycleThreadnum")->setUpdate([this]() {
     logRecyclerResize(_cfg->logRecycleThreadnum);
   });
-  for (uint32_t id = 0; id < _svr->getKVStoreCount(); ++id) {
-    _waitStoreMap[id] = false;
-  }
 }
 
 Status ReplManager::stopStore(uint32_t storeId) {

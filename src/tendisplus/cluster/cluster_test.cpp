@@ -1029,6 +1029,18 @@ bool nodeIsMaster(std::shared_ptr<ServerEntry> svr) {
   return false;
 }
 
+void setNodeAsMySlave(std::shared_ptr<ServerEntry> svr1,
+                      std::shared_ptr<ServerEntry> svr2) {
+  if (svr1->getParams()->clusterEnabled) {
+    CNodePtr exptMaster =
+      svr1->getClusterMgr()->getClusterState()->getMyselfNode();
+    if (exptMaster != nullptr) {
+      auto state = svr2->getClusterMgr()->getClusterState();
+      state->clusterSetMaster(exptMaster, true);
+    }
+  }
+}
+
 bool clusterOk(std::shared_ptr<ClusterState> state) {
   return state->getClusterState() == ClusterHealth::CLUSTER_OK;
 }
@@ -2436,6 +2448,47 @@ TEST(Cluster, FixReplication) {
   servers.clear();
 }
 
+TEST(Cluster, ManualfailoverCheck) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15200;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  // 3 master and 3 slave *, make one master fail
+  auto& master = servers[0];
+  // add one slave
+  auto slave = makeClusterNode("node7", startPort + 7, 10);
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(master, ctx1);
+  WorkLoad work1(master, sess1);
+  work1.init();
+  work1.clusterMeet(slave->getParams()->bindIp, slave->getParams()->port);
+  std::this_thread::sleep_for(3s);
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(slave, ctx2);
+  WorkLoad work2(slave, sess2);
+  work2.init();
+  // just set cluster meta, ignore the replication
+  setNodeAsMySlave(master, slave);
+  // replication is error , so manual failover should not ok
+  bool res = work2.manualFailover();
+  ASSERT_FALSE(res);
+  // slave node2 become new master
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+  slave->stop();
+#endif
+  servers.push_back(std::move(slave));
+  servers.clear();
+}
 
 TEST(Cluster, lockConfict) {
   uint32_t nodeNum = 3;

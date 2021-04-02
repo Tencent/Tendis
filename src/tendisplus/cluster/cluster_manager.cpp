@@ -1432,6 +1432,24 @@ void ClusterState::setClientUnBlock() {
   _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
+bool ClusterState::isRightReplicate() {
+  if (!getMyMaster()) {
+    return false;
+  }
+  auto masterIp = getMyMaster()->getNodeIp();
+  auto masterPort = getMyMaster()->getPort();
+  auto replMgr = _server->getReplManager();
+
+  Status s;
+  std::vector<uint32_t> errList =
+    replMgr->checkMasterHost(masterIp, masterPort);
+
+  if (errList.size() > 0) {
+    return false;
+  }
+  return true;
+}
+
 Status ClusterState::forceFailover(bool force, bool takeover) {
   resetManualFailoverNoLock();
   setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
@@ -1454,12 +1472,20 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
     }
 
   } else if (force) {
+    if (!isRightReplicate()) {
+      serverLog(LL_WARNING, "slave replication is not right");
+      return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
+    }
     /* If this is a forced failover, we don't need to talk with our
      * master to agree about the offset. We just failover taking over
      * it without coordination. */
     serverLog(LL_WARNING, "Forced failover user request accepted.");
     setMfStart();
   } else {
+    if (!isRightReplicate()) {
+      serverLog(LL_WARNING, "slave replication is not right");
+      return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
+    }
     serverLog(LL_WARNING, "Manual failover user request accepted.");
     uint64_t offset = _server->getReplManager()->replicationGetOffset();
     clusterSendMFStart(_myself->getMaster(), offset);
@@ -1494,7 +1520,9 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
   return true;
 }
 
-Status ClusterState::clusterSetMaster(CNodePtr node) {
+/* NOTE(wayenchen) if set ignoreRepl as true, setMaster will not replicate
+ * data*/
+Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   Status s;
   {
     std::lock_guard<myMutex> lk(_mutex);
@@ -1513,12 +1541,17 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
+  if (!ignoreRepl) {
+    s = _server->getReplManager()->replicationSetMaster(
+      node->getNodeIp(), node->getPort(), false);
+    if (!s.ok()) {
+      LOG(ERROR) << "relication set master fail:" << s.toString();
+      return s;
+    }
 
-  s = _server->getReplManager()->replicationSetMaster(
-    node->getNodeIp(), node->getPort(), false);
-  if (!s.ok()) {
-    LOG(ERROR) << "relication set master fail:" << s.toString();
-    return s;
+    LOG(INFO) << "replication set node:" << node->getNodeName()
+              << "as my master"
+              << "ip" << node->getNodeIp() << "port" << node->getPort();
   }
 
   LOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
@@ -2406,7 +2439,6 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   /* We can vote for this slave. */
   setLastVoteEpoch(curretEpoch);
   master->setVoteTime(msSinceEpoch());
-
   clusterSaveNodes();
 
   clusterSendFailoverAuth(node);
@@ -2561,6 +2593,7 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     LOG(ERROR) << "replication unset master fail on node" << s.toString();
     return s;
   }
+  LOG(INFO) << "replication unsetMaster success";
   s = clusterFailoverReplaceYourMasterMeta();
   if (!s.ok()) {
     LOG(ERROR) << "replace master meta update fail" << s.toString();
@@ -2573,6 +2606,7 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
   /* If there was a manual failover in progress, clear the state. */
   resetManualFailover();
+
 
   /* 5) Update state and save config. */
   clusterUpdateState();
@@ -4476,9 +4510,9 @@ void ClusterManager::controlRoutine() {
      * ping one random node every second. */
     if (!(iteration++ % 10)) {
       _clusterState->cronPingSomeNodes();
+      _clusterState->cronCheckReplicate();
     }
 
-    _clusterState->cronCheckReplicate();
     _clusterState->cronCheckFailState();
 
     std::this_thread::sleep_for(100ms);
