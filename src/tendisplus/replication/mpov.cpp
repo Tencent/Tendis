@@ -732,9 +732,13 @@ void ReplManager::supplyFullPsyncRoutine(
       }
 
       if (!sendBuf.empty()) {
-        client->writeData(sendBuf);
+        Status s = client->writeData(sendBuf);
+        if (!s.ok()) {
+          LOG(ERROR) << "full psync write data error." << s.toString();
+        }
         sendBuf.clear();
       }
+
       break;
     }
 
@@ -852,7 +856,11 @@ void ReplManager::supplyFullPsyncRoutine(
     }
 
     if (sendBuf.size() > 10000) {
-      client->writeData(sendBuf);
+      Status s = client->writeData(sendBuf);
+      if (!s.ok()) {
+        LOG(ERROR) << "full psync write data error." << s.toString();
+        break;
+      }
       sendBuf.clear();
     }
   }

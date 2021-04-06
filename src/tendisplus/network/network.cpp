@@ -168,7 +168,7 @@ std::unique_ptr<BlockingTcpClient> NetworkAsio::createBlockingClient(
                                                        std::move(socket),
                                                        readBuf,
                                                        _cfg->netBatchSize,
-                                                       _cfg->netBatchTimeoutSec,
+                                                       netBatchTimeoutSec,
                                                        rateLimit));
 }
 
