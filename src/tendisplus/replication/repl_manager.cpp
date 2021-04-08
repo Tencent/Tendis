@@ -1008,7 +1008,8 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
                                            std::string ip,
                                            uint32_t port,
                                            uint32_t sourceStoreId,
-                                           bool checkEmpty) {
+                                           bool checkEmpty,
+                                           bool needLock) {
   uint64_t oldTimeout = _connectMasterTimeoutMs;
   if (ip != "") {
     _connectMasterTimeoutMs = 1000;
@@ -1016,18 +1017,22 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
     _connectMasterTimeoutMs = 1;
   }
 
-  LOG(INFO) << "wait for store:" << storeId << " to yield work";
-  std::unique_lock<std::mutex> lk(_mutex);
   // NOTE(deyukong): we must wait for the target to stop before change meta,
   // or the meta may be rewrited
-  if (!_cv.wait_for(
-        lk, std::chrono::milliseconds(oldTimeout + 2000), [this, storeId] {
-          return !_syncStatus[storeId]->isRunning;
-        })) {
-    return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+  if (needLock) {
+    LOG(INFO) << "wait for store:" << storeId << " to yield work";
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cv.wait_for(
+          lk, std::chrono::milliseconds(oldTimeout + 2000), [this, storeId] {
+            return !_syncStatus[storeId]->isRunning;
+          })) {
+      return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
+    INVARIANT_D(!_syncStatus[storeId]->isRunning);
+  } else {
+    INVARIANT_D(_syncStatus[storeId]->isRunning);
   }
-  LOG(INFO) << "wait for store:" << storeId << " to yield work succ";
-  INVARIANT_D(!_syncStatus[storeId]->isRunning);
 
   if (storeId >= _syncMeta.size()) {
     return {ErrorCodes::ERR_INTERNAL, "invalid storeId"};
@@ -1061,6 +1066,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
               << newMeta->syncFromHost << ":" << newMeta->syncFromPort << ":"
               << newMeta->syncFromId;
     changeReplStateInLock(*newMeta, true);
+
     return {ErrorCodes::ERR_OK, ""};
   } else {  // ip == ""
     if (newMeta->syncFromHost == "") {
@@ -1082,13 +1088,13 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
     if (!s.ok()) {
       return s;
     }
-
     newMeta->syncFromHost = ip;
     newMeta->syncFromPort = port;
     newMeta->syncFromId = sourceStoreId;
     newMeta->replState = ReplState::REPL_NONE;
     newMeta->binlogId = Transaction::TXNID_UNINITED;
     changeReplStateInLock(*newMeta, true);
+
     return {ErrorCodes::ERR_OK, ""};
   }
 }
@@ -1096,6 +1102,25 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
 Status ReplManager::replicationSetMaster(std::string ip,
                                          uint32_t port,
                                          bool checkEmpty) {
+  std::vector<uint32_t> storeVec;
+  auto guard = MakeGuard([this, &storeVec] {
+    std::lock_guard<std::mutex> lk(_mutex);
+    for (auto& id : storeVec) {
+      _syncStatus[id]->isRunning = false;
+    }
+  });
+
+  for (uint32_t id = 0; id < _svr->getKVStoreCount(); ++id) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cv.wait_for(lk, std::chrono::milliseconds(2000), [this, id] {
+          return !_syncStatus[id]->isRunning;
+        })) {
+      return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    _syncStatus[id]->isRunning = true;
+    storeVec.push_back(id);
+  }
+
   LocalSessionGuard sg(_svr.get());
   // NOTE(takenliu): ensure automic operation for all store
   std::list<Expected<DbWithLock>> expdbList;
@@ -1115,16 +1140,79 @@ Status ReplManager::replicationSetMaster(std::string ip,
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInLock(i, ip, port, i, checkEmpty);
+    Status s = changeReplSourceInLock(i, ip, port, i, checkEmpty, false);
     if (!s.ok()) {
       return s;
     }
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+Status ReplManager::replicationSetMaster(std::string ip,
+                                         uint32_t port,
+                                         uint32_t storeId,
+                                         bool checkEmpty) {
+  bool isStoreDone = false;
+  auto guard = MakeGuard([this, storeId, &isStoreDone] {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (isStoreDone) {
+      _syncStatus[storeId]->isRunning = false;
+    }
+  });
+
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cv.wait_for(lk, std::chrono::milliseconds(2000), [this, storeId] {
+          return !_syncStatus[storeId]->isRunning;
+        })) {
+      return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    _syncStatus[storeId]->isRunning = true;
+    isStoreDone = true;
+  }
+
+  LocalSessionGuard sg(_svr.get());
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sg.getSession(), storeId, mgl::LockMode::LOCK_X);
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+  if (!expdb.value().store->isOpen()) {
+    return {ErrorCodes::ERR_INTERNAL, "store not open"};
+  }
+
+  Status s =
+    changeReplSourceInLock(storeId, ip, port, storeId, checkEmpty, false);
+  if (!s.ok()) {
+    return s;
   }
 
   return {ErrorCodes::ERR_OK, ""};
 }
 
 Status ReplManager::replicationUnSetMaster() {
+  std::vector<uint32_t> storeVec;
+  auto guard = MakeGuard([this, &storeVec] {
+    std::lock_guard<std::mutex> lk(_mutex);
+    for (auto& id : storeVec) {
+      _syncStatus[id]->isRunning = false;
+    }
+  });
+
+  // NOTE(wayenchen): avoid dead lock in applyRepllogV2 or controlRoutine
+  for (uint32_t id = 0; id < _svr->getKVStoreCount(); ++id) {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cv.wait_for(lk, std::chrono::milliseconds(3000), [this, id] {
+          return !_syncStatus[id]->isRunning;
+        })) {
+      return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    _syncStatus[id]->isRunning = true;
+    _syncStatus[id]->sessionId = std::numeric_limits<uint64_t>::max();
+    storeVec.push_back(id);
+  }
+
   LocalSessionGuard sg(_svr.get());
   // NOTE(takenliu): ensure automic operation for all store
   std::list<Expected<DbWithLock>> expdbList;
@@ -1142,14 +1230,55 @@ Status ReplManager::replicationUnSetMaster() {
   }
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInLock(i, "", 0, i);
+    Status s = changeReplSourceInLock(i, "", 0, i, true, false);
     if (!s.ok()) {
       return s;
     }
   }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
+  bool isStoreDone = false;
+  auto guard = MakeGuard([this, storeId, &isStoreDone] {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (isStoreDone) {
+      _syncStatus[storeId]->isRunning = false;
+    }
+  });
+  // NOTE(wayenchen): avoid dead lock in applyRepllogV2 or controlRoutine
+  {
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_cv.wait_for(lk, std::chrono::milliseconds(3000), [this, storeId] {
+          return !_syncStatus[storeId]->isRunning;
+        })) {
+      return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
+    }
+    _syncStatus[storeId]->isRunning = true;
+    _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
+    isStoreDone = true;
+  }
+
+  LocalSessionGuard sg(_svr.get());
+  // NOTE(takenliu): ensure automic operation for all store
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sg.getSession(), storeId, mgl::LockMode::LOCK_X);
+
+  if (!expdb.ok()) {
+    return expdb.status();
+  }
+  if (!expdb.value().store->isOpen()) {
+    return {ErrorCodes::ERR_INTERNAL, "store not open"};
+  }
+
+  Status s = changeReplSourceInLock(storeId, "", 0, storeId, true, false);
+  if (!s.ok()) {
+    return s;
+  }
 
   return {ErrorCodes::ERR_OK, ""};
 }
+
 
 std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
   stringstream ss;
@@ -1182,15 +1311,38 @@ std::string ReplManager::getMasterHost() const {
   return "";
 }
 
+std::string ReplManager::getMasterHost(uint32_t storeid) const {
+  std::lock_guard<std::mutex> lk(_mutex);
+  if (_syncMeta[storeid]->syncFromHost != "") {
+    return _syncMeta[storeid]->syncFromHost;
+  }
+  return "";
+}
+
+std::vector<uint32_t> ReplManager::checkMasterHost(const std::string& hostname,
+                                                   uint32_t port) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  std::vector<uint32_t> errList;
+
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    if (_syncMeta[i]->syncFromHost != hostname ||
+        _syncMeta[i]->syncFromPort != port) {
+      errList.push_back(i);
+      LOG(ERROR) << "replication meta is not right on store :" << i;
+    }
+  }
+
+  return errList;
+}
+
 uint32_t ReplManager::getMasterPort() const {
   std::lock_guard<std::mutex> lk(_mutex);
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    if (_syncMeta[i]->syncFromHost != "") {
+    if (_syncMeta[i]->syncFromPort != 0) {
       INVARIANT_D(i == 0);
       return _syncMeta[i]->syncFromPort;
     }
   }
-
   return 0;
 }
 

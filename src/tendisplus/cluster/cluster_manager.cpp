@@ -610,7 +610,6 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
     return false;
   }
 
-  bool isMyMaster = false;
   std::lock_guard<myMutex> lock(_mutex);
   {
     /* IP / port is different, update it. */
@@ -619,8 +618,6 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
     node->setNodeCport(cport);
     node->freeClusterSession();
     node->_flags &= ~CLUSTER_NODE_NOADDR;
-    isMyMaster =
-      (_myself->nodeIsSlave() && _myself->getMaster() == node) ? true : false;
   }
 
   serverLog(LL_WARNING,
@@ -629,27 +626,6 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
             ip.c_str(),
             port);
 
-  /* Check if this is our master and we have to change the
-   * replication target as well. */
-  if (isMyMaster) {
-    auto masterIp = node->getNodeIp();
-    auto masterPort = node->getPort();
-    auto replMgr = _server->getReplManager();
-
-    if (replMgr->isSlaveOfSomeone() &&
-        (replMgr->getMasterHost() != masterIp ||
-         replMgr->getMasterPort() != masterPort)) {
-      auto s = _server->getReplManager()->replicationUnSetMaster();
-      if (!s.ok()) {
-        return false;
-      }
-    }
-    auto s =
-      _server->getReplManager()->replicationSetMaster(masterIp, masterPort);
-    if (!s.ok())
-      return false;
-    LOG(INFO) << "change the replication target to:" << masterIp << masterPort;
-  }
 
   return true;
 }
@@ -925,6 +901,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     Status s;
     if (masterNotFail) {
       s = _server->getReplManager()->replicationUnSetMaster();
+      /* if error, fix it in cron*/
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail" << s.toString();
       }
@@ -1455,6 +1432,24 @@ void ClusterState::setClientUnBlock() {
   _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
+bool ClusterState::isRightReplicate() {
+  if (!getMyMaster()) {
+    return false;
+  }
+  auto masterIp = getMyMaster()->getNodeIp();
+  auto masterPort = getMyMaster()->getPort();
+  auto replMgr = _server->getReplManager();
+
+  Status s;
+  std::vector<uint32_t> errList =
+    replMgr->checkMasterHost(masterIp, masterPort);
+
+  if (errList.size() > 0) {
+    return false;
+  }
+  return true;
+}
+
 Status ClusterState::forceFailover(bool force, bool takeover) {
   resetManualFailoverNoLock();
   setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
@@ -1477,12 +1472,20 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
     }
 
   } else if (force) {
+    if (!isRightReplicate()) {
+      serverLog(LL_WARNING, "slave replication is not right");
+      return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
+    }
     /* If this is a forced failover, we don't need to talk with our
      * master to agree about the offset. We just failover taking over
      * it without coordination. */
     serverLog(LL_WARNING, "Forced failover user request accepted.");
     setMfStart();
   } else {
+    if (!isRightReplicate()) {
+      serverLog(LL_WARNING, "slave replication is not right");
+      return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
+    }
     serverLog(LL_WARNING, "Manual failover user request accepted.");
     uint64_t offset = _server->getReplManager()->replicationGetOffset();
     clusterSendMFStart(_myself->getMaster(), offset);
@@ -1517,7 +1520,9 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
   return true;
 }
 
-Status ClusterState::clusterSetMaster(CNodePtr node) {
+/* NOTE(wayenchen) if set ignoreRepl as true, setMaster will not replicate
+ * data*/
+Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   Status s;
   {
     std::lock_guard<myMutex> lk(_mutex);
@@ -1536,16 +1541,21 @@ Status ClusterState::clusterSetMaster(CNodePtr node) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
+  if (!ignoreRepl) {
+    s = _server->getReplManager()->replicationSetMaster(
+      node->getNodeIp(), node->getPort(), false);
+    if (!s.ok()) {
+      LOG(ERROR) << "relication set master fail:" << s.toString();
+      return s;
+    }
 
-  s = _server->getReplManager()->replicationSetMaster(
-    node->getNodeIp(), node->getPort(), false);
-  if (!s.ok()) {
-    LOG(ERROR) << "relication set master fail:" << s.toString();
-    return s;
+    LOG(INFO) << "replication set node:" << node->getNodeName()
+              << "as my master"
+              << "ip" << node->getNodeIp() << "port" << node->getPort();
   }
 
   LOG(INFO) << "replication set node:" << node->getNodeName() << "as my master"
-            << "port:" << node->getPort();
+            << "ip" << node->getNodeIp() << "port" << node->getPort();
 
   resetManualFailover();
 
@@ -2096,6 +2106,7 @@ void ClusterState::resetManualFailoverNoLock() {
   _mfCanStart = 0;
   _mfSlave = nullptr;
   _mfMasterOffset = 0;
+  _isMfOffsetReceived.store(false, std::memory_order_relaxed);
 }
 
 void ClusterState::clusterHandleManualFailover() {
@@ -2259,7 +2270,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail in slave migration";
-        return;
       }
     }
 
@@ -2429,7 +2439,6 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   /* We can vote for this slave. */
   setLastVoteEpoch(curretEpoch);
   master->setVoteTime(msSinceEpoch());
-
   clusterSaveNodes();
 
   clusterSendFailoverAuth(node);
@@ -2581,9 +2590,10 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   Status s;
   s = _server->getReplManager()->replicationUnSetMaster();
   if (!s.ok()) {
-    LOG(ERROR) << "replication set master fail on node" << s.toString();
+    LOG(ERROR) << "replication unset master fail on node" << s.toString();
     return s;
   }
+  LOG(INFO) << "replication unsetMaster success";
   s = clusterFailoverReplaceYourMasterMeta();
   if (!s.ok()) {
     LOG(ERROR) << "replace master meta update fail" << s.toString();
@@ -2596,6 +2606,7 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
   /* If there was a manual failover in progress, clear the state. */
   resetManualFailover();
+
 
   /* 5) Update state and save config. */
   clusterUpdateState();
@@ -4212,20 +4223,6 @@ void ClusterState::cronCheckFailState() {
     }
   }
 
-  /* If we are a slave node but the replication is still turned off,
-   * enable it if we know the address of our master and it appears to
-   * be up. */
-  bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
-
-  if (isMyselfSlave() && !isSlaveOfNode &&
-      _server->getReplManager()->getMasterHost() == "" && getMyMaster() &&
-      getMyMaster()->nodeHasAddr()) {
-    LOG(WARNING) << "replicationSetMaster of node:"
-                 << _myself->getMaster()->getNodeName();
-    _server->getReplManager()->replicationSetMaster(
-      _myself->getMaster()->getNodeIp(), _myself->getMaster()->getPort());
-  }
-
   /* Abort a manual failover if the timeout is reached. */
   manualFailoverCheckTimeout();
 
@@ -4259,30 +4256,44 @@ void ClusterState::cronCheckFailState() {
 
 
 void ClusterState::cronCheckReplicate() {
-  if (isMyselfSlave() && getMyMaster()) {
-    auto masterIp = _myself->getMaster()->getNodeIp();
-    auto masterPort = _myself->getMaster()->getPort();
+  if (!getMyMaster()) {
+    return;
+  }
 
-    /* If we are a slave node but the replication info is error ,
-     fix it by change replication target*/
-    bool isSlaveOfNode = _server->getReplManager()->isSlaveOfSomeone();
+  if (!getMyMaster()->nodeHasAddr()) {
+    LOG(ERROR) << "my master has no addr:" << getMyMaster()->getNodeName();
+    return;
+  }
 
-    if (isSlaveOfNode &&
-        (_server->getReplManager()->getMasterHost() != masterIp ||
-         _server->getReplManager()->getMasterPort() != masterPort)) {
-      LOG(WARNING) << "change the replication target to:" << masterIp
+  auto masterIp = getMyMaster()->getNodeIp();
+  auto masterPort = getMyMaster()->getPort();
+  auto replMgr = _server->getReplManager();
+
+  Status s;
+  std::vector<uint32_t> errList =
+    replMgr->checkMasterHost(masterIp, masterPort);
+
+  if (errList.size() == 0)
+    return;
+  /* If we are a slave node but the replication meta is error on some
+   * storeid, fix the metadata */
+  for (auto& id : errList) {
+    LOG(WARNING) << "storeid:" << id << "replicate meta is not right";
+    if (replMgr->getMasterHost(id) != "") {
+      LOG(WARNING) << "change storeid:" << id
+                   << "replicate metedata target to:" << masterIp << ":"
                    << masterPort;
-      Status s = _server->getReplManager()->replicationUnSetMaster();
+      s = replMgr->replicationUnSetMaster(id);
       if (!s.ok()) {
         LOG(ERROR) << "unset old master fail" << s.toString();
-      } else {
-        s =
-          _server->getReplManager()->replicationSetMaster(masterIp, masterPort);
-        if (!s.ok()) {
-          LOG(ERROR) << "set new master fail:" << s.toString();
-        }
+        return;
       }
     }
+    s = replMgr->replicationSetMaster(masterIp, masterPort, id, false);
+    if (!s.ok()) {
+      LOG(ERROR) << "storeid :" << id << "set master fail:" << s.toString();
+    }
+    LOG(INFO) << "cron check replicate fix on store:" << id;
   }
 }
 
@@ -4956,7 +4967,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * However if we don't have an address at all, we update the address
      * even with a normal PING packet. If it's wrong it will be fixed
      * by MEET later. */
-    /* NOTE(wayenchen) domain named will not be changed so not need to
+    /* NOTE(wayenchen) domain named will not be changed so not  need to
      * update*/
     if ((type == ClusterMsg::Type::MEET || _myself->getNodeIp() == "") &&
         !useDomain) {
