@@ -622,6 +622,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   Expected<CNodePtr> clusterHandleRedirect(uint32_t slot, Session* sess) const;
   CNodePtr getNodeBySlot(uint32_t slot) const;
+  bool isSlotBelongToMe(uint32_t slot);
 
   void clusterUpdateSlotsConfigWith(CNodePtr sender,
                                     uint64_t senderConfigEpoch,
@@ -904,6 +905,7 @@ class ClusterManager {
   bool isRunning() const;
   Status clusterReset(uint16_t hard);
   bool hasDirtyKey(uint32_t storeid);
+
   uint64_t countKeysInSlot(uint32_t slot);
   std::vector<std::string> getKeyBySlot(uint32_t slot, uint32_t count);
   bool emptySlot(uint32_t slot);
