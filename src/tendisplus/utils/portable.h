@@ -9,17 +9,17 @@
 // NOTE(deyukong): __has_include is supported since gcc-5 series
 // no need to check the existence of macro __has_include
 // because we have required gcc5.5 in cmake
-#if __has_include(<optional>)
-#include <optional>
-namespace tendisplus {
-template <typename T>
-using optional = std::optional<T>;
-}  // namespace tendisplus
-#elif __has_include(<experimental/optional>)
+#if __has_include(<experimental/optional>)
 #include <experimental/optional>
 namespace tendisplus {
 template <typename T>
 using optional = std::experimental::optional<T>;
+}  // namespace tendisplus
+#elif __has_include(<optional>)
+#include <optional>
+namespace tendisplus {
+template <typename T>
+using optional = std::optional<T>;
 }  // namespace tendisplus
 #else
 #error "no available optional headfile"
