@@ -469,6 +469,7 @@ class ServerParams {
   int64_t luaTimeLimit = 5000;  // ms
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;
+  bool compactRangeAfterDeleteRange = false;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

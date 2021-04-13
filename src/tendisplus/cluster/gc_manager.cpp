@@ -379,22 +379,24 @@ Status DeleteRangeTask::deleteSlotRange() {
               s.toString().c_str());
     return s;
   }
-  // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in
-  // delete range,
-  //     so we call compactRange to real delete the keys.
-  s = kvstore->compactRange(
-    ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
 
-  if (!s.ok()) {
-    serverLog(LL_NOTICE,
+  if (_svr->getParams()->compactRangeAfterDeleteRange) {
+    // NOTE(takenliu) after deleteRange, cursor seek will scan all the keys in
+    // delete range,
+    //   so we call compactRange to real delete the keys.
+    s = kvstore->compactRange(
+      ColumnFamilyNumber::ColumnFamily_Default, &start, &end);
+
+    if (!s.ok()) {
+      serverLog(LL_NOTICE,
               "DeleteRangeTask::kvstore->compactRange failed,"
               "from [startSlot:%u] to [endSlot:%u] [bad response:%s]",
               _slotStart,
               _slotEnd,
               s.toString().c_str());
-    return s;
+      return s;
+    }
   }
-
   serverLog(LL_VERBOSE,
             "DeleteRangeTask::deleteRange finished,"
             "from [startSlot: %u] to [endSlot: %u]",
