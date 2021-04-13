@@ -10,6 +10,7 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include "glog/logging.h"
+#include "jemalloc/jemalloc.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
@@ -611,6 +612,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   // init slowlog
   _slowlogStat.initSlowlogFile(cfg->slowlogPath);
+
+  _lastJeprofDumpMemoryGB = 0;
+
+
   LOG(INFO) << "ServerEntry::startup sucess.";
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -1429,7 +1434,47 @@ void ServerEntry::serverCron() {
       _scriptMgr->cron();
     }
 
+    if (_cfg->jeprofAutoDump) {
+      run_with_period(1000) {
+        jeprofCron();
+      }
+    }
+
     cronLoop++;
+  }
+}
+
+void ServerEntry::jeprofCron() {
+  size_t rss_human_size = 0;
+#ifndef _WIN32
+  ifstream file;
+  file.open("/proc/self/status");
+  if (file.is_open()) {
+    string strline;
+    while (getline(file, strline)) {
+      auto v = stringSplit(strline, ":");
+      if (v.size() != 2) {
+        continue;
+      }
+      if (v[0] == "VmRSS") {  // physic memory
+        string used_memory_rss_human = trim(v[1]);
+        strDelete(used_memory_rss_human, ' ');
+        auto s = getIntSize(used_memory_rss_human);
+        if (s.ok()) {
+          rss_human_size = s.value();
+        } else {
+          LOG(ERROR) << "getIntSize failed:" << s.status().toString();
+        }
+      }
+    }
+  }
+#endif  // !_WIN32
+  uint32_t memoryGb = rss_human_size/1024/1024/1024;
+  if (memoryGb > _lastJeprofDumpMemoryGB) {
+    _lastJeprofDumpMemoryGB = memoryGb;
+    LOG(INFO) << "jeprof dump memoryGb:" << memoryGb;
+
+    mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
 }
 

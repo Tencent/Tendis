@@ -1961,29 +1961,6 @@ class InfoCommand : public Command {
     }
   }
 
-  static int64_t getIntSize(const string& str) {
-    if (str.size() <= 2) {
-      LOG(ERROR) << "getIntSize failed:" << str;
-      return -1;
-    }
-    string value = str.substr(0, str.size() - 2);
-    string unit = str.substr(str.size() - 2, 2);
-    Expected<int64_t> size = ::tendisplus::stoll(value);
-    if (!size.ok()) {
-      LOG(ERROR) << "getIntSize failed:" << str;
-      return -1;
-    }
-    if (unit == "kB") {
-      return size.value() * 1024;
-    } else if (unit == "mB") {
-      return size.value() * 1024 * 1024;
-    } else if (unit == "gB") {
-      return size.value() * 1024 * 1024 * 1024;
-    }
-    LOG(ERROR) << "getIntSize failed:" << str;
-    return -1;
-  }
-
   static void infoMemory(bool allsections,
                          bool defsections,
                          const std::string& section,
@@ -2013,14 +1990,24 @@ class InfoCommand : public Command {
           if (v[0] == "VmSize") {  // virtual memory
             used_memory_vir_human = trim(v[1]);
             strDelete(used_memory_vir_human, ' ');
-            vir_human_size = getIntSize(used_memory_vir_human);
+            auto s = getIntSize(used_memory_vir_human);
+            if (s.ok()) {
+                vir_human_size = s.value();
+            } else {
+                LOG(ERROR) << "getIntSize failed:" << s.status().toString();
+            }
           } else if (v[0] == "VmPeak") {  // peak of virtual memory
             used_memory_vir_peak_human = trim(v[1]);
             strDelete(used_memory_vir_peak_human, ' ');
           } else if (v[0] == "VmRSS") {  // physic memory
             used_memory_rss_human = trim(v[1]);
             strDelete(used_memory_rss_human, ' ');
-            rss_human_size = getIntSize(used_memory_rss_human);
+            auto s = getIntSize(used_memory_rss_human);
+            if (s.ok()) {
+                rss_human_size = s.value();
+            } else {
+                LOG(ERROR) << "getIntSize failed:" << s.status().toString();
+            }
           } else if (v[0] == "VmHWM") {  // peak of physic memory
             used_memory_rss_peak_human = trim(v[1]);
             strDelete(used_memory_rss_peak_human, ' ');
