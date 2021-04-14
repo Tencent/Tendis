@@ -318,38 +318,8 @@ class DbEmptyCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
-    int64_t b = containData(sess) ? 0 : 1;
+    int64_t b = sess->getServerEntry()->isDbEmpty() ? 1 : 0;
     return Command::fmtLongLong(b);
-  }
-
- private:
-  /* NOTE(wayenchen) fast check if dbsize is zero or not */
-  bool containData(Session* sess) {
-    auto server = sess->getServerEntry();
-    for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
-      auto expdb =
-        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_S);
-      if (!expdb.ok()) {
-        LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
-        return true;
-      }
-
-      PStore kvstore = expdb.value().store;
-      auto ptxn = sess->getCtx()->createTransaction(kvstore);
-      if (!ptxn.ok()) {
-        return true;
-      }
-      auto cursor = ptxn.value()->createDataCursor();
-      cursor->seek("");
-      auto exptRcd = cursor->next();
-
-      if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
-        continue;
-      } else {
-        return true;
-      }
-    }
-    return false;
   }
 } dbEmptyCmd;
 
