@@ -429,6 +429,7 @@ class ServerParams {
 
   // parameter for rocksdb
   uint32_t rocksBlockcacheMB = 4096;
+  int32_t rocksBlockcacheNumShardBits = 6;
   bool rocksStrictCapacityLimit = false;
   std::string rocksWALDir = "";
   string rocksCompressType = "snappy";
