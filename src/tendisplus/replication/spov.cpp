@@ -176,34 +176,6 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   newMeta->binlogId = Transaction::TXNID_UNINITED;
   changeReplState(*newMeta, false);
 
-  if (_svr->getParams()->psyncEnabled) {
-    /* Logical replications */
-    INVARIANT_D(_svr->getParams()->aofEnabled);
-
-    std::stringstream ss;
-    ss << "psync ? -1 " << store->dbId();
-    Status s = client->writeLine(ss.str());
-    if (!s.ok()) {
-      LOG(WARNING) << "sync master failed:" << s.toString();
-      INVARIANT_D(0);
-    }
-
-    // +fullsync
-    auto es = client->readLine(std::chrono::seconds(10));
-    if (!es.ok()) {
-      LOG(WARNING) << "sync master failed:" << s.toString();
-      INVARIANT_D(0);
-    }
-
-    // rdb
-    es = client->readLine(std::chrono::seconds(10));
-    if (!es.ok()) {
-      LOG(WARNING) << "sync master failed:" << s.toString();
-      INVARIANT_D(0);
-    }
-
-  }
-
   // 4) read backupinfo from master
   // get binlogPos and filelist, other messages get from "backup_meta" file
   auto ebkInfo = getBackupInfo(client.get(),

@@ -139,12 +139,11 @@ bool binlogDelRangeCheck(
   return true;
 }
 
-<<<<<<< HEAD
-bool truncateBinlogNumCheck(
-        const std::string& val, bool startup, string* errinfo) {
-=======
-bool aofEnabledCheck(const std::string& val, string* errinfo) {
+bool aofEnabledCheck(const std::string& val, bool startup, string* errinfo) {
   bool v = isOptionOn(val);
+  if (startup || !gParams) {
+    return true;
+  }
   if (!v && gParams->psyncEnabled) {
     if (errinfo != NULL) {
       *errinfo = "can't disable aofEnabled when psyncEnabled is yes";
@@ -155,8 +154,8 @@ bool aofEnabledCheck(const std::string& val, string* errinfo) {
   return true;
 }
 
-bool truncateBinlogNumCheck(const std::string& val, string* errinfo) {
->>>>>>> psync for tendis when psync-enabled is true
+bool truncateBinlogNumCheck(
+        const std::string& val, bool startup, string* errinfo) {
   auto num = std::strtoull(val.c_str(), nullptr, 10);
   if (startup || !gParams) {
     return true;
@@ -454,9 +453,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_FULL(
     "aof-enabled", aofEnabled, aofEnabledCheck, nullptr, 0, INT_MAX, true);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-psync-num", aofPsyncNum);
-#ifdef TENDIS_DEBUG
-  REGISTER_VARS_DIFF_NAME("psync-enabled", psyncEnabled);
-#endif
+
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-gc-enabled", enableGcInMigate);

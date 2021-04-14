@@ -117,7 +117,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   BinlogResult br;
   Expected<BinlogResult> ret = br;
 
-  if (_cfg->aofEnabled && (clientType == MPovClientType::respClient)) {
+  if (_cfg->aofEnabled &&
+      (clientType == MPovClientType::respClient || _cfg->psyncEnabled)) {
     ret = masterSendAof(
       client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
   } else {
@@ -595,18 +596,13 @@ void ReplManager::DelFakeFullPushStatus(
 bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
                                   const std::string& storeIdArg) {
   std::shared_ptr<BlockingTcpClient> client =
-<<<<<<< HEAD
     std::move(_svr->getNetwork()->
               createBlockingClient(std::move(sock),
                                    64 * 1024 * 1024,
                                    0,
                                    3600));  // set timeout 1 hour
-=======
-    std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
-                                                       64 * 1024 * 1024));
-  client->setFlags(CLIENT_SLAVE);
->>>>>>> psync for tendis when psync-enabled is true
 
+  client->setFlags(CLIENT_SLAVE);
   // NOTE(deyukong): this judge is not precise
   // even it's not full at this time, it can be full during schedule.
   if (isFullSupplierFull()) {

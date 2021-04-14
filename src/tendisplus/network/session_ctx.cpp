@@ -106,7 +106,6 @@ void SessionCtx::clearRequestCtx() {
     _ioContext = *rocksdb::get_iostats_context();
   }
   _perfLevelFlag = false;
-  _replOnly = false;
 }
 
 Expected<Transaction*> SessionCtx::createTransaction(const PStore& kvstore) {
