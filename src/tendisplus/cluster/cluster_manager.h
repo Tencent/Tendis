@@ -800,8 +800,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   ClusterHealth _state;
   uint16_t _size;
   std::unordered_map<std::string, uint64_t> _nodesBlackList;
-  std::array<CNodePtr, CLUSTER_SLOTS> _migratingSlots;
-  std::array<CNodePtr, CLUSTER_SLOTS> _importingSlots;
   std::array<CNodePtr, CLUSTER_SLOTS> _allSlots;
   std::array<uint64_t, CLUSTER_SLOTS> _slotsKeysCount;
   // Why a slave is currently not able to failover

@@ -693,8 +693,6 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _isVoteFailByDataAge(false),
     _state(ClusterHealth::CLUSTER_FAIL),
     _size(1),
-    _migratingSlots(),
-    _importingSlots(),
     _allSlots(),
     _cantFailoverReason(CLUSTER_CANT_FAILOVER_NONE),
     _lastLogTime(0),
@@ -851,7 +849,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(
       if (slots.test(j)) {
         if (_allSlots[j] == sender)
           continue;
-        // if (_importingSlots[j] != nullptr) continue;
 
         /* We rebind the slot to the new node claiming it if:
          * 1) The slot was unassigned or the new node claims it with a
@@ -996,9 +993,6 @@ void ClusterState::setLastVoteEpoch(uint64_t epoch) {
 
 Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
   std::lock_guard<myMutex> lk(_mutex);
-  if (_migratingSlots[slot] && _server->getClusterMgr()->emptySlot(slot)) {
-    _migratingSlots[slot] = nullptr;
-  }
   bool s = clusterDelSlot(slot);
   if (s) {
     bool result = clusterAddSlot(n, slot);
@@ -1009,12 +1003,11 @@ Status ClusterState::setSlot(CNodePtr n, const uint32_t slot) {
     return {ErrorCodes::ERR_CLUSTER, "setslot delete old slot fail!"};
   }
 
-  if (n == _myself && _importingSlots[slot]) {
+  if (n == _myself) {
     Status s = clusterBumpConfigEpochWithoutConsensus();
     if (!s.ok()) {
       return s;
     }
-    _importingSlots[slot] = nullptr;
   }
 
   return {ErrorCodes::ERR_OK, "finish setslot"};
@@ -2270,12 +2263,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
               target->getNodeName().c_str());
     Status s;
     if (!isMasterFail) {
-      for (uint32_t i = 0; i < _server->getKVStoreCount(); ++i) {
-        if (_server->getClusterMgr()->hasDirtyKey(i)) {
-          LOG(ERROR) << "dirty key when migration";
-          return;
-        }
-      }
       s = _server->getReplManager()->replicationUnSetMaster();
       if (!s.ok()) {
         LOG(ERROR) << "set myself master fail in slave migration";

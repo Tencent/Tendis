@@ -378,9 +378,8 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER, "can not replicate to an arbiter."};
       }
       if (myself->nodeIsMaster() &&
-          (myself->getSlotNum() != 0 || nodeNotEmpty(svr, myself))) {
-        DLOG(INFO) << "nodeNotEmpty(svr, myself):" << nodeNotEmpty(svr, myself)
-                   << "myself slots:" << bitsetStrEncode(myself->getSlots());
+          (myself->getSlotNum() != 0 || !svr->isDbEmpty())) {
+        DLOG(INFO) << "myself slots:" << bitsetStrEncode(myself->getSlots());
         return {ErrorCodes::ERR_CLUSTER,
                 "To set a master the node must be empty"};
       }
@@ -426,7 +425,7 @@ class ClusterCommand : public Command {
       }
     } else if (arg1 == "flushslots" && argSize == 2) {
       //  db not empty
-      bool notEmpty = nodeNotEmpty(svr, myself);
+      bool notEmpty = !svr->isDbEmpty();
       if (notEmpty) {
         return {ErrorCodes::ERR_CLUSTER,
                 "DB must be empty to perform CLUSTER FLUSHSLOTS"};
@@ -546,7 +545,7 @@ class ClusterCommand : public Command {
       }
       /* Slaves can be reset while containing data, but not master nodes
        * that must be empty. */
-      if (myself->nodeIsMaster() && nodeNotEmpty(svr, myself)) {
+      if (myself->nodeIsMaster() && !svr->isDbEmpty()) {
         return {ErrorCodes::ERR_CLUSTER,
                 "CLUSTER RESET can't be called with "
                 "master nodes containing keys"};
@@ -711,20 +710,6 @@ class ClusterCommand : public Command {
       Command::fmtBulk(keysInfo, vs);
     }
     return keysInfo.str();
-  }
-
-  bool nodeNotEmpty(ServerEntry* svr, CNodePtr node) {
-    bool notEmpty = false;
-    auto slots = node->getSlots();
-    size_t idx = 0;
-    while (idx < slots.size()) {
-      if (slots.test(idx) && !svr->getClusterMgr()->emptySlot(idx)) {
-        notEmpty = true;
-        break;
-      }
-      ++idx;
-    }
-    return notEmpty;
   }
 
   Expected<std::string> startImportingTasks(

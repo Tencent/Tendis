@@ -137,13 +137,13 @@ class SlowlogStat {
   mutable std::mutex _mutex;
 };
 
-#define THREAD_SLEEP(n_secs) \
-do {\
-  uint64_t loop = 0;\
-  while (loop++ < n_secs) {\
-    std::this_thread::sleep_for(std::chrono::seconds(1));\
-  }\
-} while (0)
+#define THREAD_SLEEP(n_secs)                                \
+  do {                                                      \
+    uint64_t loop = 0;                                      \
+    while (loop++ < n_secs) {                               \
+      std::this_thread::sleep_for(std::chrono::seconds(1)); \
+    }                                                       \
+  } while (0)
 
 class ServerEntry;
 
@@ -156,7 +156,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
   template <typename fn>
-  void schedule(fn&& task, uint32_t& ctxId) {     // NOLINT
+  void schedule(fn&& task, uint32_t& ctxId) {  // NOLINT
     if (ctxId == UINT32_MAX || ctxId >= _executorList.size()) {
       ctxId = _scheduleNum.fetch_add(1, std::memory_order_relaxed) %
         _executorList.size();
@@ -302,9 +302,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
                       std::string* value) const;
   uint64_t getStatCountByName(Session* sess, const std::string& ticker) const;
 
-  Status delKeysInSlot(uint32_t slot);
   /* Note(wayenchen) fast judge if dbsize is zero or not*/
-  bool containData();
+  bool isDbEmpty();
 
   bool isClusterEnabled() const {
     return _enableCluster;
@@ -313,7 +312,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _isRunning;
   }
 
-  CursorMap &getCursorMap(int dbId) {
+  CursorMap& getCursorMap(int dbId) {
     return _cursorMaps[dbId];
   }
 
@@ -375,7 +374,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint32_t _protoMaxBulkLen;
   uint32_t _dbNum;
   std::atomic<uint64_t> _tsFromExtendedProtocol;
-  std::deque<CursorMap> _cursorMaps;             // deque NOT vector ! ! !
+  std::deque<CursorMap> _cursorMaps;  // deque NOT vector ! ! !
 
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;

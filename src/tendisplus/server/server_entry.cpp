@@ -1213,6 +1213,34 @@ uint64_t ServerEntry::getStatCountByName(Session* sess,
   return value;
 }
 
+bool ServerEntry::isDbEmpty() {
+  for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
+    auto expdb = getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IS);
+    if (!expdb.ok()) {
+      LOG(ERROR) << "get db lock fail:" << expdb.status().toString();
+      return false;
+    }
+
+    auto kvstore = std::move(expdb.value().store);
+    auto eTxn = kvstore->createTransaction(nullptr);
+    if (!eTxn.ok()) {
+      LOG(ERROR) << "createTransaction failed:" << eTxn.status().toString();
+      return false;
+    }
+
+    auto cursor = eTxn.value()->createDataCursor();
+    cursor->seek("");
+    auto exptRcd = cursor->next();
+
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      continue;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool ServerEntry::getAllProperty(Session* sess,
                                  const std::string& property,
                                  std::string* value) const {
