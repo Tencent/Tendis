@@ -69,6 +69,15 @@ if(WITH_ASAN)
   message("ASAN would disabled JeMalloc")
 endif()
 
+
+option(WITH_COVER "build with COVER" OFF)
+if(WITH_COVER) 
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")	
+   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
+   add_definitions(-DWITH_COVER)
+   message("ASAN would disabled JeMalloc")
+endif()		 
+
 if(CMAKE_COMPILER_IS_GNUCC)
 	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	if(ENABLE_JEMALLOC)
