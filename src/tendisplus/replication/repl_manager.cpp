@@ -215,6 +215,8 @@ Status ReplManager::startup() {
       std::numeric_limits<uint64_t>::max(),
       tp,
       tp,
+      0,
+      0
     }));
 
     // NOTE(vinchen): if the mode == STORE_NONE, _pushStatus would do
@@ -1009,7 +1011,8 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
                                            uint32_t port,
                                            uint32_t sourceStoreId,
                                            bool checkEmpty,
-                                           bool needLock) {
+                                           bool needLock,
+                                           bool incrSync) {
   uint64_t oldTimeout = _connectMasterTimeoutMs;
   if (ip != "") {
     _connectMasterTimeoutMs = 1000;
@@ -1062,9 +1065,16 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
     newMeta->syncFromId = sourceStoreId;
     newMeta->replState = ReplState::REPL_CONNECT;
     newMeta->binlogId = Transaction::TXNID_UNINITED;
+    if (incrSync) {
+      newMeta->replState = ReplState::REPL_CONNECTED;
+      newMeta->binlogId = kvstore->getHighestBinlogId();
+    }
     LOG(INFO) << "change store:" << storeId << " syncSrc from no one to "
               << newMeta->syncFromHost << ":" << newMeta->syncFromPort << ":"
-              << newMeta->syncFromId;
+              << newMeta->syncFromId
+              << " incrSync:" << incrSync
+              << " replState:" << static_cast<int>(newMeta->replState)
+              << " binlogId:" << newMeta->binlogId;
     changeReplStateInLock(*newMeta, true);
 
     return {ErrorCodes::ERR_OK, ""};
@@ -1101,7 +1111,8 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
 
 Status ReplManager::replicationSetMaster(std::string ip,
                                          uint32_t port,
-                                         bool checkEmpty) {
+                                         bool checkEmpty,
+                                         bool incrSync) {
   std::vector<uint32_t> storeVec;
   auto guard = MakeGuard([this, &storeVec] {
     std::lock_guard<std::mutex> lk(_mutex);
@@ -1140,7 +1151,8 @@ Status ReplManager::replicationSetMaster(std::string ip,
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInLock(i, ip, port, i, checkEmpty, false);
+    Status s = changeReplSourceInLock(
+      i, ip, port, i, checkEmpty, false, incrSync);
     if (!s.ok()) {
       return s;
     }
@@ -1580,6 +1592,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",port=" << _syncMeta[i]->syncFromPort;
       ss << ",src_store_id=" << _syncMeta[i]->syncFromId;
       ss << ",state=" << state;
+      ss << ",fullsync_succ_times=" << _syncStatus[i]->fullsyncSuccTimes;
       ss << ",binlog_pos=" << _syncMeta[i]->binlogId;
       // lag in seconds
       ss << ",lag=" << (msSinceEpoch() - _syncStatus[i]->lastBinlogTs) / 1000;
@@ -1686,6 +1699,8 @@ void ReplManager::appendJSONStat(
     w.Uint64(_syncMeta[i]->binlogId);
     w.Key("repl_state");
     w.Uint64(static_cast<uint64_t>(_syncMeta[i]->replState));
+    w.Key("fullsync_succ_times");
+    w.Uint64(static_cast<uint64_t>(_syncStatus[i]->fullsyncSuccTimes));
     w.Key("last_sync_time");
     w.String(timePointRepr(_syncStatus[i]->lastSyncTime));
 

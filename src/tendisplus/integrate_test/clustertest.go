@@ -320,17 +320,6 @@ func checkSortedData2(m *[]util.RedisServer, num int, prefixkey string) {
     log.Infof("checkData end(Zadd). prefixkey:%s", prefixkey)
 }
 
-var (
-    CLUSTER_SLOTS = 16384
-)
-type NodeInfo struct {
-    index int
-    startSlot int
-    endSlot int
-    migrateStartSlot int
-    migrateEndSlot int
-}
-
 func checkSlots(servers *[]util.RedisServer, serverIdx int, nodeInfoArray *[]NodeInfo,
     clusterNodeNum int, dstNodeIndex int, checkself bool) {
     log.Infof("checkSlots begin idx:%d checkself:%v", serverIdx, checkself)

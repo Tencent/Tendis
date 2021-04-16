@@ -168,6 +168,11 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
                                    const std::string& binlogPosArg,
                                    const std::string& listenIpArg,
                                    const std::string& listenPortArg) {
+  LOG(INFO) << "registerIncrSync storeIdArg:" << storeIdArg
+    << " dstStoreIdArg:" << dstStoreIdArg
+    << " binlogPosArg:" << binlogPosArg
+    << " listenIpArg:" << listenIpArg
+    << " listenPortArg:" << listenPortArg;
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
@@ -526,6 +531,62 @@ void ReplManager::supplyFullSyncRoutine(
               << client->getRemoteRepr() << "port" << slave_listen_port
               << " reply:" << reply.value();
     hasError = false;
+  }
+}
+
+void ReplManager::AddFakeFullPushStatus(
+        uint64_t slaveOffset, const std::string& ip, uint64_t port) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  string slaveNode = ip + ":" + to_string(port);
+
+  for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
+    if (_fullPushStatus[storeId].find(slaveNode)
+      == _fullPushStatus[storeId].end()) {
+      auto expdb = _svr->getSegmentMgr()->getDb(
+              nullptr, storeId, mgl::LockMode::LOCK_NONE);
+      if (!expdb.ok()) {
+        LOG(ERROR) << "slave offset get db error:" << expdb.status().toString();
+        continue;
+      }
+
+      auto kvstore = std::move(expdb.value().store);
+      uint64_t maxBinlog = kvstore->getHighestBinlogId();
+      LOG(INFO) << "AddFakeFullPushStatus add fake task, storeId:" << storeId
+                << " slaveNode:" << slaveNode << " slaveOffset:" << slaveOffset
+                << " maxBinlog:" << maxBinlog;
+      _fullPushStatus[storeId][slaveNode] =
+        std::move(std::unique_ptr<MPovFullPushStatus>(
+          new MPovFullPushStatus{storeId,
+                                 FullPushState::SUCESS,
+                                 maxBinlog,
+                                 SCLOCK::now(),
+                                 SCLOCK::now(),
+                                 nullptr,
+                                 0,
+                                 ip,
+                                 static_cast<uint16_t>(port)}));
+    } else {
+      LOG(INFO) << "AddFakeFullPushStatus already has task, storeId:"
+                << storeId << " slaveNode:" << slaveNode;
+    }
+  }
+}
+
+void ReplManager::DelFakeFullPushStatus(
+        const std::string& ip, uint64_t port) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  string slaveNode = ip + ":" + to_string(port);
+
+  for (uint32_t storeId = 0; storeId < _svr->getKVStoreCount(); storeId++) {
+    if (_fullPushStatus[storeId].find(slaveNode)
+        != _fullPushStatus[storeId].end()) {
+      LOG(INFO) << "DelFakeFullPushStatus del fake task, storeId:" << storeId
+                << " slaveNode:" << slaveNode;
+      _fullPushStatus[storeId].erase(slaveNode);
+    } else {
+      LOG(INFO) << "DelFakeFullPushStatus dont has task, storeId:"
+                << storeId << " slaveNode:" << slaveNode;
+    }
   }
 }
 
