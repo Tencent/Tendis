@@ -251,6 +251,10 @@ ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
   });
 }
 
+ServerEntry::~ServerEntry() {
+  stop();
+}
+
 void ServerEntry::resetServerStat() {
   std::lock_guard<std::mutex> lk(_mutex);
 

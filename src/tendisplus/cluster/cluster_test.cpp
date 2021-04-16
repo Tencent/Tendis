@@ -2717,6 +2717,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
     svr->stop();
     LOG(INFO) << "stop " << svr->getParams()->port << " success";
   }
+  originMaster->stop();
 #endif
   servers.emplace_back(std::move(originMaster));
   servers.clear();
