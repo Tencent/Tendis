@@ -20,15 +20,16 @@ TEST(Lua, Common) {
   auto server = std::make_shared<ServerEntry>(cfg);
   auto s = server->startup(cfg);
   ASSERT_TRUE(s.ok());
+  int32_t testNum = 100000;
   std::thread th1(
-    [&server]() {
+    [&server, testNum]() {
     auto ctx = std::make_shared<asio::io_context>();
     auto session = makeSession(server, ctx);
     WorkLoad work(server, session);
     work.init();
 
     int i = 0;
-    while (i++ < 10000) {
+    while (i++ < testNum) {
       auto ret = work.getStringResult({"eval",
         "redis.call('set',KEYS[1],'value1');return redis.call('get',KEYS[1]);",
         "1", "key1"});
@@ -36,14 +37,14 @@ TEST(Lua, Common) {
     }
   });
   std::thread th2(
-    [&server]() {
+    [&server, testNum]() {
       auto ctx = std::make_shared<asio::io_context>();
       auto session = makeSession(server, ctx);
       WorkLoad work(server, session);
       work.init();
 
       int i = 0;
-      while (i++ < 10000) {
+      while (i++ < testNum) {
         auto ret = work.getStringResult({"eval",
           "redis.call('set',KEYS[1],'value2');"
           "return redis.call('get',KEYS[1]);",
@@ -52,7 +53,7 @@ TEST(Lua, Common) {
       }
     });
   std::thread th3(
-    [&server]() {
+    [&server, testNum]() {
       auto ctx = std::make_shared<asio::io_context>();
       auto session = makeSession(server, ctx);
       WorkLoad work(server, session);
@@ -62,7 +63,7 @@ TEST(Lua, Common) {
       int num_value1 = 0;
       int num_value2 = 0;
       int num_value3 = 0;
-      while (i++ < 10000) {
+      while (i++ < testNum) {
         auto ret = work.getStringResult({"set", "key1", "value3"});
         ret = work.getStringResult({"get", "key1"});
         ASSERT_TRUE(ret == "$6\r\nvalue1\r\n" ||

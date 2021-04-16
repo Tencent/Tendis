@@ -152,6 +152,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   explicit ServerEntry(const std::shared_ptr<ServerParams>& cfg);
   ServerEntry(const ServerEntry&) = delete;
   ServerEntry(ServerEntry&&) = delete;
+  ~ServerEntry();
   Catalog* getCatalog();
   Status startup(const std::shared_ptr<ServerParams>& cfg);
   uint64_t getStartupTimeNs() const;
