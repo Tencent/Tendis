@@ -334,6 +334,8 @@ class RocksKVStore : public KVStore {
 
   Expected<VersionMeta> getVersionMeta() override;
   Expected<VersionMeta> getVersionMeta(const std::string& name) override;
+  Expected<std::vector<VersionMeta>>
+    getAllVersionMeta(Transaction *txn) override;
   Status setVersionMeta(const std::string& name,
                         uint64_t ts,
                         uint64_t version) override;

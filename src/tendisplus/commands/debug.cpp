@@ -3221,20 +3221,52 @@ class SyncVersionCommand : public Command {
 
     const auto& name = args[1];
     const auto server = sess->getServerEntry();
+
+    // get all sync version from kvstores
+    // used as syncversion * ? ? v1
+    if (name == "*" && args[2] == "?" && args[3] == "?") {
+      std::stringstream ss;
+      Command::fmtMultiBulkLen(ss, server->getKVStoreCount());
+
+      for (uint32_t i = 0; i < server->getKVStoreCount(); ++i) {
+        auto expdb =
+          server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+        RET_IF_ERR(expdb.status());
+
+        auto store = expdb.value().store;
+        auto pTxn = sess->getCtx()->createTransaction(store);
+        RET_IF_ERR(pTxn.status());
+
+        auto expMeta = store->getAllVersionMeta(pTxn.value());
+        RET_IF_ERR(expMeta.status());
+        auto meta = expMeta.value();
+
+        if (meta.empty()) {
+          Command::fmtNull(ss);
+          continue;
+        }
+        Command::fmtMultiBulkLen(ss, meta.size());
+        for (const auto &v : meta) {
+          Command::fmtMultiBulkLen(ss, 3);
+          Command::fmtBulk(ss, v.getName());
+          Command::fmtLongLong(ss, static_cast<int64_t>(v.getTimeStamp()));
+          Command::fmtLongLong(ss, static_cast<int64_t>(v.getVersion()));
+        }
+      }
+
+      return ss.str();
+    }
+
     // get ts && version from kvstores
     if (args[2] == "?" && args[3] == "?") {
       VersionMeta minMeta(UINT64_MAX - 1, UINT64_MAX - 1, name);
       for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
         auto expdb =
           server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
-        if (!expdb.ok()) {
-          return expdb.status();
-        }
+        RET_IF_ERR(expdb.status());
         PStore store = expdb.value().store;
         auto meta = store->getVersionMeta(name);
-        if (!meta.ok()) {
-          return meta.status();
-        }
+        RET_IF_ERR(meta.status());
         auto metaV = meta.value();
         minMeta = std::min(metaV, minMeta);
       }
@@ -3246,19 +3278,13 @@ class SyncVersionCommand : public Command {
     }
 
     auto eTs = tendisplus::stoull(args[2]);
-    if (!eTs.ok()) {
-      return eTs.status();
-    }
+    RET_IF_ERR(eTs.status());
     auto eVersion = tendisplus::stoull(args[3]);
-    if (!eVersion.ok()) {
-      return eVersion.status();
-    }
+    RET_IF_ERR(eVersion.status());
     for (uint32_t i = 0; i < server->getKVStoreCount(); i++) {
       auto expdb =
         server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
-      if (!expdb.ok()) {
-        return expdb.status();
-      }
+      RET_IF_ERR(expdb.status());
       PStore store = expdb.value().store;
       auto s = store->setVersionMeta(name, eTs.value(), eVersion.value());
       if (!s.ok()) {
