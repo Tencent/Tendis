@@ -320,7 +320,8 @@ class RocksKVStore : public KVStore {
     return _cfg;
   }
 
-  bool getIntProperty(const std::string& property, uint64_t* value) const;
+  bool getIntProperty(const std::string& property, uint64_t* value,
+      ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
   bool getProperty(const std::string& property, std::string* value) const;
   std::string getAllProperty() const override;
   std::string getStatistics() const override;
@@ -347,6 +348,21 @@ class RocksKVStore : public KVStore {
       return _cfHandles[1];
     }
   }
+  rocksdb::ColumnFamilyHandle* getColumnFamilyHandle(
+      ColumnFamilyNumber cfNum) const {
+    if (cfNum == ColumnFamilyNumber::ColumnFamily_Default) {
+        return _cfHandles[0];
+    } else if (cfNum == ColumnFamilyNumber::ColumnFamily_Binlog) {
+      if (_cfg->binlogUsingDefaultCF == true) {
+        return _cfHandles[0];
+      } else {
+        return _cfHandles[1];
+      }
+    } else {
+      return _cfHandles[0];
+    }
+  }
+
   ColumnFamilyNumber getBinlogColumnFamilyNumber() {
     if (_cfg->binlogUsingDefaultCF == true) {
       return ColumnFamilyNumber::ColumnFamily_Default;

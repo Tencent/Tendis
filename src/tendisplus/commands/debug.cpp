@@ -2211,8 +2211,11 @@ class InfoCommand : public Command {
     if (allsections || defsections || section == "dataset") {
       auto server = sess->getServerEntry();
       std::stringstream ss;
-      uint64_t total = 0, live = 0, estimate = 0;
+      uint64_t total = 0, size_binlogcf = 0, live = 0, estimate = 0;
       server->getTotalIntProperty(sess, "rocksdb.total-sst-files-size", &total);
+      server->getTotalIntProperty(
+        sess, "rocksdb.total-sst-files-size", &size_binlogcf,
+        ColumnFamilyNumber::ColumnFamily_Binlog);
       server->getTotalIntProperty(sess, "rocksdb.live-sst-files-size", &live);
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-live-data-size", &estimate);
@@ -2241,6 +2244,7 @@ class InfoCommand : public Command {
       ss << "# Dataset\r\n";
       ss << "rocksdb.kvstore-count:" << server->getKVStoreCount() << "\r\n";
       ss << "rocksdb.total-sst-files-size:" << total << "\r\n";
+      ss << "rocksdb.binlogcf-sst-files-size:" << size_binlogcf << "\r\n";
       ss << "rocksdb.live-sst-files-size:" << live << "\r\n";
       ss << "rocksdb.estimate-live-data-size:" << estimate << "\r\n";
       ss << "rocksdb.estimate-num-keys:" << numkeys << "\r\n";

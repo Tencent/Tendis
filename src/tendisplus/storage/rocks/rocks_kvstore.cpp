@@ -2495,10 +2495,12 @@ void RocksKVStore::initRocksProperties() {
 }
 
 bool RocksKVStore::getIntProperty(const std::string& property,
-                                  uint64_t* value) const {
+    uint64_t* value,
+    ColumnFamilyNumber cf) const {
   bool ok = false;
   if (_isRunning) {
-    ok = getBaseDB()->GetIntProperty(property, value);
+    ok = getBaseDB()->GetIntProperty(
+          getColumnFamilyHandle(cf), property, value);
     if (!ok) {
       LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
                    << " failed";
