@@ -418,4 +418,24 @@ std::string getUUid(const int len) {
   return ss.str();
 }
 
+Expected<int64_t> getIntSize(const std::string& str) {
+  if (str.size() <= 2) {
+    return {ErrorCodes::ERR_DECODE, "getIntSize failed:" + str};
+  }
+  std::string value = str.substr(0, str.size() - 2);
+  std::string unit = str.substr(str.size() - 2, 2);
+  Expected<int64_t> size = ::tendisplus::stoll(value);
+  if (!size.ok()) {
+    return size;
+  }
+  if (unit == "kB") {
+    return size.value() * 1024;
+  } else if (unit == "mB") {
+    return size.value() * 1024 * 1024;
+  } else if (unit == "gB") {
+    return size.value() * 1024 * 1024 * 1024;
+  }
+  return {ErrorCodes::ERR_DECODE, "getIntSize failed:" + str};
+}
+
 }  // namespace tendisplus

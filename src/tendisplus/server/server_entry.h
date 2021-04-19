@@ -321,6 +321,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   ServerEntry();
   Status adaptSomeThreadNumByCpuNum(const std::shared_ptr<ServerParams>& cfg);
   void serverCron();
+  void jeprofCron();
   void replyMonitors(Session* sess);
   void DelMonitorNoLock(uint64_t connId);
   void resizeExecutorThreadNum(uint64_t newThreadNum);
@@ -388,6 +389,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   ServerStat _serverStat;
   CompactionStat _compactionStat;
   SlowlogStat _slowlogStat;
+  uint32_t _lastJeprofDumpMemoryGB;
 };
 }  // namespace tendisplus
 

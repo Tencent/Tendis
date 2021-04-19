@@ -247,6 +247,8 @@ Expected<std::bitset<size>> bitsetStrDecode(const std::string bitmapStr) {
   return bitmap;
 }
 
+Expected<int64_t> getIntSize(const std::string& str);
+
 }  // namespace tendisplus
 
 #ifdef _MSC_VER
