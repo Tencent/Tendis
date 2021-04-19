@@ -409,6 +409,10 @@ ServerParams::ServerParams() {
     scanDefaultMaxIterateTimes, nullptr, nullptr, 10, 10000, true);
 
   REGISTER_VARS_DIFF_NAME("rocks.blockcachemb", rocksBlockcacheMB);
+
+  REGISTER_VARS_FULL("rocks.blockcache_num_shard_bits",
+                    rocksBlockcacheNumShardBits,
+                    nullptr, nullptr, -1, 19, false);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisableWAL);
