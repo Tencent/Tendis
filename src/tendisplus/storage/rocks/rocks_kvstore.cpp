@@ -2677,6 +2677,35 @@ Expected<VersionMeta> RocksKVStore::getVersionMeta(const std::string& name) {
   return meta.value();
 }
 
+/**
+ * @brief get all version meta of this kv-store
+ * @param txn transaction on this kv-store
+ * @return vector contains all version meta of this kv-store
+ */
+Expected<std::vector<VersionMeta>>
+  RocksKVStore::getAllVersionMeta(Transaction *txn) {
+  auto cursor = txn->createVersionMetaCursor();
+  std::vector<VersionMeta> versionMeta;
+  RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID,
+               RecordType::RT_META, "", "");
+  cursor->seek(rk.encode());
+  while (true) {
+    auto expRecord = cursor->next();
+
+    // iterate all over this kvstore version meta data or no data
+    if ((expRecord.status().code() == ErrorCodes::ERR_EXHAUST)
+        || (expRecord.status().code() == ErrorCodes::ERR_NOTFOUND)) {
+      break;
+    }
+    RET_IF_ERR(expRecord.status());
+
+    auto record = expRecord.value();
+    versionMeta.emplace_back(record);
+  }
+
+  return versionMeta;
+}
+
 Status RocksKVStore::setVersionMeta(const std::string& name,
                                     uint64_t ts,
                                     uint64_t version) {

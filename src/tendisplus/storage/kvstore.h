@@ -404,6 +404,8 @@ class KVStore {
 
   virtual Expected<VersionMeta> getVersionMeta() = 0;
   virtual Expected<VersionMeta> getVersionMeta(const std::string& name) = 0;
+  virtual Expected<std::vector<VersionMeta>>
+          getAllVersionMeta(Transaction *txn) = 0;
   virtual Status setVersionMeta(const std::string& name,
                                 uint64_t ts,
                                 uint64_t version) = 0;

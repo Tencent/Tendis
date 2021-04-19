@@ -1676,6 +1676,44 @@ void testCommandArrayResult(
   }
 }
 
+TEST(Command, syncversion) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->kvStoreCount = 5;
+  auto server = makeServerEntry(cfg);
+
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"syncversion", "k", "?", "?", "v1"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), "*2\r\n:-1\r\n:-1\r\n");
+
+  sess.setArgs({"syncversion", "k", "25000", "1", "v1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  sess.setArgs({"syncversion", "k", "?", "?", "v1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(), "*2\r\n:25000\r\n:1\r\n");
+
+  sess.setArgs({"syncversion", "*", "?", "?", "v1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(),
+            "*5\r\n*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
+            "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
+            "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
+            "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
+            "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n");
+}
+
 TEST(Command, info) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
