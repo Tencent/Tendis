@@ -699,6 +699,7 @@ TEST(Repl, BinlogKeepNum_Test) {
         cfg2->binlogDelRange = 5000;
         cfg3->binlogDelRange = 5000;
         cfg4->binlogDelRange = 5000;
+        cfg1->compactRangeAfterDeleteRange = true;
       }
 
       auto master = std::make_shared<ServerEntry>(cfg1);

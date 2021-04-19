@@ -471,6 +471,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
   REGISTER_VARS(luaStateMaxIdleTime);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("jeprof-auto-dump", jeprofAutoDump);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("compactrange-after-deleterange",
+                                  compactRangeAfterDeleteRange);
 }
 
 ServerParams::~ServerParams() {
