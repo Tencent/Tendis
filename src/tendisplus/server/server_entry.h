@@ -295,9 +295,10 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _backupRunning.load(std::memory_order_relaxed);
   }
   void setBackupRunning();
-  bool getTotalIntProperty(Session* sess,
-                           const std::string& property,
-                           uint64_t* value) const;
+  bool getTotalIntProperty(
+    Session* sess, const std::string& property, uint64_t* value,
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
+
   bool getAllProperty(Session* sess,
                       const std::string& property,
                       std::string* value) const;

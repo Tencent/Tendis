@@ -1185,7 +1185,8 @@ void ServerEntry::appendJSONStat(
 
 bool ServerEntry::getTotalIntProperty(Session* sess,
                                       const std::string& property,
-                                      uint64_t* value) const {
+                                      uint64_t* value,
+                                      ColumnFamilyNumber cf) const {
   *value = 0;
   for (uint64_t i = 0; i < getKVStoreCount(); i++) {
     auto expdb =
@@ -1196,7 +1197,7 @@ bool ServerEntry::getTotalIntProperty(Session* sess,
 
     auto store = expdb.value().store;
     uint64_t tmp = 0;
-    bool ok = store->getIntProperty(property, &tmp);
+    bool ok = store->getIntProperty(property, &tmp, cf);
     if (!ok) {
       return false;
     }
