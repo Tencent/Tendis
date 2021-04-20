@@ -302,7 +302,7 @@ void compareData(const std::shared_ptr<ServerEntry>& master,
                  bool compare_binlog) {
   INVARIANT(master->getKVStoreCount() == slave->getKVStoreCount());
   bool aofMode =
-    master->getParams()->aofPsyncEnabled && slave->getParams()->aofPsyncEnabled;
+    master->getParams()->aofEnabled && slave->getParams()->aofEnabled;
 
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext);

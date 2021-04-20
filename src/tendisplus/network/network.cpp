@@ -224,6 +224,7 @@ Expected<uint64_t> NetworkAsio::client2Session(
   LOG(INFO) << "new net session, id:" << sess->id() << ",connId:" << connId
             << ",from:" << sess->getRemoteRepr() << " client2Session";
   sess->getCtx()->setAuthed();
+  sess->getCtx()->setFlags(c->getFlags());
   sess->getCtx()->setReplOnly(migrateOnly);
   _server->addSession(sess);
   ++_netMatrix->connCreated;

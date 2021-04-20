@@ -162,7 +162,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   });
 
   // 3) require a blocking-client
-  client = std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+  client = std::move(
+    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
   if (client == nullptr) {
     LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
                  << " with: " << metaSnapshot.syncFromHost << ":"
@@ -367,8 +368,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   });
 
 
-  std::shared_ptr<BlockingTcpClient> client =
-    std::move(createClient(metaSnapshot, _connectMasterTimeoutMs));
+  std::shared_ptr<BlockingTcpClient> client = std::move(
+    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
   if (client == nullptr) {
     errStr = errPrefix + "reconn master failed";
     return;
@@ -525,11 +526,8 @@ Status ReplManager::applyRepllogV2(Session* sess,
       binlogTs = msSinceEpoch();
     }
   } else {
-    auto binlog = applySingleTxnV2(sess,
-                                   storeId,
-                                   logKey,
-                                   logValue,
-                                   BinlogApplyMode::KEEP_BINLOG_ID);
+    auto binlog = applySingleTxnV2(
+      sess, storeId, logKey, logValue, BinlogApplyMode::KEEP_BINLOG_ID);
     if (!binlog.ok()) {
       return binlog.status();
     } else {

@@ -258,8 +258,17 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
       return br;
     }
     // keep the client alive
-    Command::fmtMultiBulkLen(ss, 1);
-    Command::fmtBulk(ss, "PING");
+    // TODO(wayenchen) if send PING or binglog_heart, need read data to avoid
+    // client error
+    if (svr->getParams()->psyncEnabled) {
+      Command::fmtMultiBulkLen(ss, 3);
+      Command::fmtBulk(ss, "binlog_heartbeat");
+      Command::fmtBulk(ss, std::to_string(dstStoreId));
+      Command::fmtBulk(ss, std::to_string(br.binlogTs));
+    } else {
+      Command::fmtMultiBulkLen(ss, 1);
+      Command::fmtBulk(ss, "PING");
+    }
   }
   Status s = client->writeData(ss.str());
   if (!s.ok()) {

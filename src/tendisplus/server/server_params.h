@@ -450,8 +450,9 @@ class ServerParams {
   bool clusterEnabled = false;
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
-  bool enableGcInMigate = false;
-  bool aofPsyncEnabled = false;
+  bool enableGcInMigate = true;
+  bool aofEnabled = false;
+  bool psyncEnabled = false;
 
   uint32_t aofPsyncNum = 500;
   uint32_t snapShotRetryCnt = 1000;

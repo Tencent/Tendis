@@ -573,7 +573,7 @@ TEST(Repl, slaveofBenchmarkingMaster) {
     LOG(INFO) << ">>>>>> test store count:" << i << " end;";
   }
 }
-
+// TODO(wayenchen) test again when psynenable finish
 TEST(Repl, slaveofBenchmarkingMasterAOF) {
   size_t i = 0;
   {
@@ -590,8 +590,10 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
 
     auto cfg1 = makeServerParam(master_port, i, master_dir, true);
     auto cfg2 = makeServerParam(slave_port, i, slave_dir, true);
-    cfg1->aofPsyncEnabled = true;
-    cfg2->aofPsyncEnabled = true;
+    cfg1->aofEnabled = true;
+    cfg2->aofEnabled = true;
+    cfg1->psyncEnabled = true;
+    cfg2->psyncEnabled = true;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -607,20 +609,43 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
     LOG(INFO) << ">>>>>> slaveof end.";
     LOG(INFO) << ">>>>>> master add data begin.";
 
-    auto thread = std::thread([this, master]() {
-      testKV(master);
-    });
+    auto thread = std::thread([this, master]() { testKV(master); });
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext);
+    NetSession sess(slave, std::move(socket), 1, false, nullptr, nullptr);
+    sess.setArgs({"set", "test", "1", "nx"});
+    auto expect = Command::runSessionCmd(&sess);
+    /* NOTE(wayenchen) only master client could write,others should fail*/
+    EXPECT_FALSE(expect.ok());
+    DLOG(INFO) << "write to slave should fail" << expect.status().toString();
+
     thread.join();
+
     std::this_thread::sleep_for(std::chrono::seconds(10));
     compareData(master, slave, false);
 
     auto thread2 = std::thread([this, master]() { testSet(master); });
 
+    sess.setArgs({"sadd", "settestkey", "one", "two", "three"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_FALSE(expect.ok());
+
+    DLOG(INFO) << "write to slave should fail" << expect.status().toString();
     thread2.join();
     std::this_thread::sleep_for(std::chrono::seconds(10));
     compareData(master, slave, false);
 
     auto thread3 = std::thread([this, master]() { testHash1(master); });
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    for (uint32_t i = 0; i < 100; i++) {
+      sess.setArgs({"hset", "testHash", std::to_string(i), std::to_string(i)});
+      auto expect = Command::runSessionCmd(&sess);
+
+      EXPECT_FALSE(expect.ok());
+      DLOG(INFO) << "write to slave should fail" << expect.status().toString();
+    }
 
     thread3.join();
     std::this_thread::sleep_for(std::chrono::seconds(20));
@@ -657,7 +682,7 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
       EXPECT_EQ(binlogpos - binlogstart + 1, num);
     } else {
       EXPECT_LT(binlogpos - binlogstart + 1,
-                  num + svr->getParams()->binlogDelRange);
+                num + svr->getParams()->binlogDelRange);
     }
   }
 }
@@ -854,16 +879,16 @@ Status scan(const std::string& logfile) {
       continue;
     }
 
-    if (id != logkey.value().getBinlogId()
-      && logValue.value().getCmd() == "flushalldisk") {
-      LOG(INFO) << "flushalldisk reset id, id:" << id << " logkey:"
-        << logkey.value().getBinlogId();
+    if (id != logkey.value().getBinlogId() &&
+        logValue.value().getCmd() == "flushalldisk") {
+      LOG(INFO) << "flushalldisk reset id, id:" << id
+                << " logkey:" << logkey.value().getBinlogId();
       id = logkey.value().getBinlogId();
     }
 
     if (id != logkey.value().getBinlogId()) {
       LOG(ERROR) << "id:" << id << " logkey:" << logkey.value().getBinlogId()
-        << " cmd:" << logValue.value().getCmd();
+                 << " cmd:" << logValue.value().getCmd();
       fclose(pf);
       return {ErrorCodes::ERR_INTERNAL, "binlogId error."};
     }
@@ -946,9 +971,9 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     checkBinlogKeepNum(single, masterBinlogNum);
 
 #ifndef _WIN32
-      single->stop();
+    single->stop();
 
-      ASSERT_EQ(single.use_count(), 1);
+    ASSERT_EQ(single.use_count(), 1);
 #endif
 
     sleep(2);
@@ -972,7 +997,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
         auto s = scan(path.string());
         if (!s.ok()) {
           LOG(ERROR) << "scan failed:" << s.toString()
-            << " file:" << path.string();
+                     << " file:" << path.string();
         }
         EXPECT_TRUE(s.ok());
       }

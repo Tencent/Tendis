@@ -1039,7 +1039,7 @@ bool ServerEntry::processRequest(Session* sess) {
       NetSession* ns = dynamic_cast<NetSession*>(sess);
       INVARIANT(ns != nullptr);
 
-      if (!_cfg->aofPsyncEnabled) {
+      if (!_cfg->aofEnabled) {
         ns->setResponse(Command::fmtErr("aof psync enable first"));
         return true;
       }

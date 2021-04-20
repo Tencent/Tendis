@@ -468,9 +468,10 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
 }
 
 std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
-  const StoreMeta& metaSnapshot, uint64_t timeoutMs) {
+  const StoreMeta& metaSnapshot, uint64_t timeoutMs, int64_t flags) {
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
+  client->setFlags(flags);
   Status s = client->connect(metaSnapshot.syncFromHost,
                              metaSnapshot.syncFromPort,
                              std::chrono::milliseconds(timeoutMs));

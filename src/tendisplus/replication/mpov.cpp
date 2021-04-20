@@ -27,6 +27,7 @@ bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
+  client->setFlags(CLIENT_SLAVE);
 
   // NOTE(deyukong): this judge is not precise
   // even it's not full at this time, it can be full during schedule.
@@ -116,7 +117,8 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   BinlogResult br;
   Expected<BinlogResult> ret = br;
 
-  if (_cfg->aofPsyncEnabled && (clientType == MPovClientType::respClient)) {
+  if (_cfg->aofEnabled &&
+      (clientType == MPovClientType::respClient || _cfg->psyncEnabled)) {
     ret = masterSendAof(
       client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
   } else {
@@ -176,6 +178,7 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
+  client->setFlags(CLIENT_SLAVE);
 
   uint32_t storeId;
   uint32_t dstStoreId;
@@ -599,6 +602,7 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
                                    0,
                                    3600));  // set timeout 1 hour
 
+  client->setFlags(CLIENT_SLAVE);
   // NOTE(deyukong): this judge is not precise
   // even it's not full at this time, it can be full during schedule.
   if (isFullSupplierFull()) {
@@ -676,6 +680,7 @@ void ReplManager::supplyFullPsyncRoutine(
     }
 
     store = expdb.value().store;
+    // Because LOCK_S here, BLWM is same as BHWM
     binlogPos = store->getHighestBinlogId();
 
     auto ptxn = store->createTransaction(sg.getSession());
@@ -690,6 +695,7 @@ void ReplManager::supplyFullPsyncRoutine(
     cursor = txn->createDataCursor();
   }
 
+  // Free LOCK_S, Lock IS again
   auto expdb = _svr->getSegmentMgr()->getDb(
     sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {

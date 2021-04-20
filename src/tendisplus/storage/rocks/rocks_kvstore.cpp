@@ -276,7 +276,7 @@ Expected<uint64_t> RocksTxn::commit() {
 
     std::string sessionStr = "";
     if (_session && _session->getArgs().size() > 0) {
-      sessionStr = _session->getServerEntry()->getParams()->aofPsyncEnabled
+      sessionStr = _session->getServerEntry()->getParams()->aofEnabled
         ? _session->getSessionCmd()
         : _session->getArgs()[0];
     }
@@ -483,8 +483,7 @@ Status RocksTxn::addDeleteRangeBinlog(const std::string& begin,
 }
 
 Status RocksTxn::flushall() {
-  bool aofEnable = _session->getServerEntry()->getParams()->aofPsyncEnabled;
-  if (_replOnly && !aofEnable) {
+  if (_replOnly) {
     return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
   }
   if (!_store->enableRepllog()) {
