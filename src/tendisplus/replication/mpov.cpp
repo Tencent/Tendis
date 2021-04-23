@@ -557,6 +557,18 @@ void ReplManager::AddFakeFullPushStatus(
       LOG(INFO) << "AddFakeFullPushStatus add fake task, storeId:" << storeId
                 << " slaveNode:" << slaveNode << " slaveOffset:" << slaveOffset
                 << " maxBinlog:" << maxBinlog;
+#if defined(_WIN32) && _MSC_VER > 1900
+      _fullPushStatus[storeId][slaveNode] =
+          new MPovFullPushStatus{storeId,
+                                 FullPushState::SUCESS,
+                                 maxBinlog,
+                                 SCLOCK::now(),
+                                 SCLOCK::now(),
+                                 nullptr,
+                                 0,
+                                 ip,
+                                 static_cast<uint16_t>(port)};
+#else
       _fullPushStatus[storeId][slaveNode] =
         std::move(std::unique_ptr<MPovFullPushStatus>(
           new MPovFullPushStatus{storeId,
@@ -568,6 +580,7 @@ void ReplManager::AddFakeFullPushStatus(
                                  0,
                                  ip,
                                  static_cast<uint16_t>(port)}));
+#endif
     } else {
       LOG(INFO) << "AddFakeFullPushStatus already has task, storeId:"
                 << storeId << " slaveNode:" << slaveNode;
