@@ -59,8 +59,7 @@ namespace tendisplus {
 #endif
 
 RocksKVCursor::RocksKVCursor(std::unique_ptr<rocksdb::Iterator> it)
-  : Cursor(), _it(std::move(it)), _seeked(false) {
-}
+  : Cursor(), _it(std::move(it)), _seeked(false) {}
 
 void RocksKVCursor::seek(const std::string& prefix) {
   _it->Seek(rocksdb::Slice(prefix.c_str(), prefix.size()));
@@ -1371,7 +1370,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   INVARIANT_COMPARE_D(start, <=, save);
   if (start > save) {
     LOG(WARNING) << "truncateBinlogV2 start:" << start << " > save:" << save
-      << ", set save=start";
+                 << ", set save=start";
     save = start;
   }
 
@@ -2563,12 +2562,12 @@ void RocksKVStore::initRocksProperties() {
 }
 
 bool RocksKVStore::getIntProperty(const std::string& property,
-    uint64_t* value,
-    ColumnFamilyNumber cf) const {
+                                  uint64_t* value,
+                                  ColumnFamilyNumber cf) const {
   bool ok = false;
   if (_isRunning) {
-    ok = getBaseDB()->GetIntProperty(
-          getColumnFamilyHandle(cf), property, value);
+    ok =
+      getBaseDB()->GetIntProperty(getColumnFamilyHandle(cf), property, value);
     if (!ok) {
       LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
                    << " failed";
@@ -2638,6 +2637,12 @@ uint64_t RocksKVStore::getStatCountByName(const std::string& name) const {
   };
   if (tickersNameMap.find(name) != tickersNameMap.end()) {
     return getStatCountById(tickersNameMap[name]);
+  }
+
+  if (name == "rocksdb.compaction-filter-count") {
+    return stat.compactFilterCount.load(memory_order_relaxed);
+  } else if (name == "rocksdb.compaction-kv-expired-count") {
+    return stat.compactKvExpiredCount.load(memory_order_relaxed);
   }
 
   INVARIANT_D(0);
@@ -2753,19 +2758,19 @@ Expected<VersionMeta> RocksKVStore::getVersionMeta(const std::string& name) {
  * @param txn transaction on this kv-store
  * @return vector contains all version meta of this kv-store
  */
-Expected<std::vector<VersionMeta>>
-  RocksKVStore::getAllVersionMeta(Transaction *txn) {
+Expected<std::vector<VersionMeta>> RocksKVStore::getAllVersionMeta(
+  Transaction* txn) {
   auto cursor = txn->createVersionMetaCursor();
   std::vector<VersionMeta> versionMeta;
-  RecordKey rk(VersionMeta::CHUNKID, VersionMeta::DBID,
-               RecordType::RT_META, "", "");
+  RecordKey rk(
+    VersionMeta::CHUNKID, VersionMeta::DBID, RecordType::RT_META, "", "");
   cursor->seek(rk.encode());
   while (true) {
     auto expRecord = cursor->next();
 
     // iterate all over this kvstore version meta data or no data
-    if ((expRecord.status().code() == ErrorCodes::ERR_EXHAUST)
-        || (expRecord.status().code() == ErrorCodes::ERR_NOTFOUND)) {
+    if ((expRecord.status().code() == ErrorCodes::ERR_EXHAUST) ||
+        (expRecord.status().code() == ErrorCodes::ERR_NOTFOUND)) {
       break;
     }
     RET_IF_ERR(expRecord.status());

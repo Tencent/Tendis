@@ -304,12 +304,18 @@ class BinlogObserver {
 };
 
 struct KVStoreStat {
-  std::atomic<uint64_t> compactFilterCount = 0;
-  std::atomic<uint64_t> compactKvExpiredCount = 0;
+  KVStoreStat()
+    : compactFilterCount(0),
+      compactKvExpiredCount(0),
+      pausedErrorCount(0),
+      destroyedErrorCount(0) {}
+
+  std::atomic<uint64_t> compactFilterCount;
+  std::atomic<uint64_t> compactKvExpiredCount;
   // number of request when store is paused
-  std::atomic<uint64_t> pausedErrorCount = 0;
+  std::atomic<uint64_t> pausedErrorCount;
   // number of request when store is destroyed
-  std::atomic<uint64_t> destroyedErrorCount = 0;
+  std::atomic<uint64_t> destroyedErrorCount;
 };
 
 #define BINLOG_HEADER_V2 "BINLOG_V2\r\n"
