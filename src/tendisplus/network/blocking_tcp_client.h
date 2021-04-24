@@ -38,6 +38,7 @@ class BlockingTcpClient
   Status tryWaitConnect();
   Expected<std::string> readLine(std::chrono::seconds timeout);
   Expected<std::string> read(size_t bufSize, std::chrono::seconds timeout);
+  Status writeLine(std::string&& line);
   Status writeLine(const std::string& line);
   Status writeOneBatch(const char* data,
                        uint32_t size,
