@@ -1214,7 +1214,7 @@ void ClusterState::setFailAuthSent(uint32_t t) {
 bool ClusterState::clusterNodeFailed(const std::string& nodeid) {
   std::lock_guard<myMutex> lk(_mutex);
   auto node = clusterLookupNodeNoLock(nodeid);
-  return node->nodeFailed();
+  return node == nullptr ? true : node->nodeFailed();
 }
 
 bool ClusterState::isDataAgeTooLarge() {

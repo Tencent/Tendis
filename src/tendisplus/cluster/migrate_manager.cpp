@@ -251,7 +251,7 @@ Status MigrateManager::stopTasks(const std::string& taskid) {
 }
 
 /* stop all tasks which is doing now */
-void MigrateManager::stopAllTasks(bool saveSlots) {
+Status MigrateManager::stopAllTasks(bool saveSlots) {
   std::map<std::string, std::string> pTaskMap;
   {
     std::lock_guard<myMutex> lk(_mutex);
@@ -288,10 +288,20 @@ void MigrateManager::stopAllTasks(bool saveSlots) {
   for (auto iter = pTaskMap.begin(); iter != pTaskMap.end(); iter++) {
     auto node = _cluster->clusterLookupNode(iter->second);
     // send stop command to srcNode
+    if (!node) {
+      LOG(ERROR) << "can not find srcNode:" << iter->second;
+      return {ErrorCodes::ERR_CLUSTER, "can not find srcNode"};
+    }
+
     auto s = stopSrcNode(iter->first, node->getNodeIp(), node->getPort());
+    if (!s.ok()) {
+      LOG(ERROR) << "stop srcNode task fail:" << s.toString();
+      return s;
+    }
   }
 
   LOG(INFO) << "stop all import slots:" << bitsetStrEncode(_stopImportSlots);
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 void MigrateManager::removeRestartSlots(const std::string& nodeid,
@@ -345,8 +355,21 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
       }
       ++it;
     } else if (taskPtr->_state == MigrateSendState::START) {
-      taskPtr->_isRunning = true;
-      _migrateSender->schedule([this, iter = taskPtr]() { iter->sendSlots(); });
+      /* NOTE(wayenchen) send slots task should not be in queue in case of
+       * timeout */
+      if (!_migrateSender->isFull()) {
+        taskPtr->_isRunning = true;
+        _migrateSender->schedule(
+          [this, iter = taskPtr]() { iter->sendSlots(); });
+      } else {
+        LOG(ERROR) << "sender task threadpool is full on slots:"
+                   << bitsetStrEncode(taskPtr->_slots)
+                   << "taskid:" << taskPtr->_taskid;
+        taskPtr->_sender->stop();
+        taskPtr->_nextSchedTime =
+          SCLOCK::now() + std::chrono::milliseconds(100);
+        taskPtr->_state = MigrateSendState::WAIT;
+      }
       ++it;
     } else if (taskPtr->_state == MigrateSendState::CLEAR) {
       taskPtr->_isRunning = true;
@@ -693,6 +716,10 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
                                  std::vector<uint32_t>* taskSlots) {
   CNodePtr dstNode = _cluster->clusterLookupNode(nodeid);
   CNodePtr myself = _cluster->getMyselfNode();
+  if (dstNode == nullptr) {
+    LOG(ERROR) << "can not find dstNode:" << nodeid;
+    return false;
+  }
   size_t idx = 0;
 
   while (idx < bitMap.size()) {
@@ -1017,6 +1044,14 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
     client->writeLine(ss.str());
     return;
   }
+  auto dstNode = _cluster->clusterLookupNode(nodeidArg);
+  if (!dstNode) {
+    LOG(ERROR) << "import node" << nodeidArg << "not find";
+    std::stringstream ss;
+    ss << "-ERR can not find dst node: invalid nodeid";
+    client->writeLine(ss.str());
+    return;
+  }
   std::lock_guard<myMutex> lk(_mutex);
   /* find the right task by taskid, if not found, return error */
   if (_migrateSendTaskMap.find(taskidArg) != _migrateSendTaskMap.end()) {
@@ -1290,7 +1325,6 @@ void MigrateReceiveTask::fullReceive() {
     /*NOTE(wayenchen) if srcNode not Fail
     and my receiver snapshot key num is zero,
     retry for three times*/
-
     bool srcNodeFail =
       _svr->getClusterMgr()->getClusterState()->clusterNodeFailed(
         _pTask->_nodeid);
@@ -1301,7 +1335,7 @@ void MigrateReceiveTask::fullReceive() {
       auto delayTime = 1000 + redis_port::random() % 5000;
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(delayTime);
       _state = MigrateReceiveState::RECEIVE_SNAPSHOT;
-      _retryTime++;
+      _retryTime.fetch_add(1, memory_order_relaxed);
       LOG(ERROR) << "receiveSnapshot need retry" << bitsetStrEncode(_slots)
                  << "taskid:" << _taskid << "error str:" << s.toString();
     } else {

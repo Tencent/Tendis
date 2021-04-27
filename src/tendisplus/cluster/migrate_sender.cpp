@@ -203,6 +203,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
   uint32_t curWriteNum = 0;
   uint32_t timeoutSec = 5;
   Status s;
+  uint64_t sendKeyNum = _cfg->migrateSnapshotKeyNum;
   while (true) {
     Expected<Record> expRcd = cursor->next();
     if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -247,7 +248,7 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
      */
     _svr->getMigrateManager()->requestRateLimit(sendBytes);
 
-    if (curWriteNum >= 10000 || curWriteLen > 10 * 1024 * 1024) {
+    if (curWriteNum >= sendKeyNum || curWriteLen > 10 * 1024 * 1024) {
       SyncWriteData("1");
       SyncReadData(exptData, _OKSTR.length(), timeoutSec);
       if (exptData.value() != _OKSTR) {

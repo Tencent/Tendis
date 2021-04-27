@@ -475,8 +475,8 @@ ServerParams::ServerParams() {
                                   migrateBinlogIter);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-slots-num-per-task",
                                   migrateTaskSlotsLimit);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-retry-num",
-                                  snapShotRetryCnt);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-key-num",
+                                  migrateSnapshotKeyNum);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-rate-limit",
                                   migrateRateLimitMB);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-retry-num",

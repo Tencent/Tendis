@@ -460,6 +460,7 @@ class ServerParams {
   uint32_t migrateDistance = 10000;
   uint32_t migrateBinlogIter = 10;
   uint32_t migrateRateLimitMB = 32;
+  uint32_t migrateSnapshotKeyNum = 100000;
   uint32_t clusterNodeTimeout = 15000;
   bool clusterRequireFullCoverage = true;
   bool clusterSlaveNoFailover = false;
