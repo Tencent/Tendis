@@ -1360,6 +1360,144 @@ TEST(Cluster, migrate) {
   servers.clear();
 }
 
+TEST(Cluster, migrateChangeThread) {
+  std::vector<std::string> dirs = {"node1", "node2"};
+  uint32_t startPort = 12300;
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  std::vector<std::shared_ptr<ServerEntry>> servers;
+
+  uint32_t index = 0;
+  for (auto dir : dirs) {
+    uint32_t nodePort = startPort + index++;
+    EXPECT_TRUE(setupEnv(dir));
+
+    auto cfg1 = makeServerParam(nodePort, storeCnt, dir, true);
+    cfg1->clusterEnabled = true;
+    cfg1->pauseTimeIndexMgr = 1;
+    cfg1->rocksBlockcacheMB = 24;
+    // this test will migrate back
+    cfg1->enableGcInMigate = true;
+    // make sender thread less than receive num
+    cfg1->migrateReceiveThreadnum = 10;
+    cfg1->migrateSenderThreadnum = 3;
+
+    auto master = std::make_shared<ServerEntry>(cfg1);
+    auto s = master->startup(cfg1);
+    if (!s.ok()) {
+      LOG(ERROR) << "server start fail:" << s.toString();
+    }
+    INVARIANT(s.ok());
+    servers.emplace_back(std::move(master));
+  }
+
+  auto& srcNode = servers[0];
+  auto& dstNode = servers[1];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(srcNode, ctx1);
+  WorkLoad work1(srcNode, sess1);
+  work1.init();
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(dstNode, ctx2);
+  WorkLoad work2(dstNode, sess2);
+  work2.init();
+
+  // addSlots
+  LOG(INFO) << "begin meet";
+  work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
+
+  // addSlots
+  LOG(INFO) << "begin addSlots.";
+  work1.addSlots(slots[0]);
+  work2.addSlots(slots[1]);
+  LOG(INFO) << "add slots sucess";
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  const uint32_t numData = 10000;
+  // for support MOVED
+  string srcAddr =
+    srcNode->getParams()->bindIp + ":" + to_string(srcNode->getParams()->port);
+  string dstAddr =
+    dstNode->getParams()->bindIp + ":" + to_string(dstNode->getParams()->port);
+  work1.addClusterSession(srcAddr, sess1);
+  work1.addClusterSession(dstAddr, sess2);
+  work2.addClusterSession(srcAddr, sess1);
+  work2.addClusterSession(dstAddr, sess2);
+
+  std::vector<uint32_t> slotsList;
+  uint32_t keysize1 = 0;
+  // migrate slots {8000..9300}
+  uint32_t startSlot = 8000;
+  uint32_t endSlot = 9300;
+  for (uint32_t i = startSlot; i <= endSlot; i++) {
+    slotsList.push_back(i);
+  }
+
+  auto bitmap = getBitSet(slotsList);
+
+  for (size_t j = 0; j < numData; ++j) {
+    string key = getUUid(10);
+    string value = getUUid(10);
+    auto ret = work1.getStringResult({"set", key, value});
+    EXPECT_EQ(ret, "+OK\r\n");
+
+    // begin to migate when  half data been writen
+    if (j == numData / 2) {
+      LOG(INFO) << "migrate begin";
+      auto s = migrate(srcNode, dstNode, bitmap);
+      EXPECT_TRUE(s.ok());
+    }
+    // compute migrate key num
+    uint32_t hash = uint32_t(redis_port::keyHashSlot(key.c_str(), key.size()));
+    auto writeSlots = hash % srcNode->getParams()->chunkSize;
+    if (bitmap.test(writeSlots)) {
+      keysize1++;
+    }
+  }
+
+  std::this_thread::sleep_for(35s);
+
+  // bitmap should belong to dstNode
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              srcNode,
+              srcNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            false);
+  ASSERT_EQ(checkSlotsBlong(
+              bitmap,
+              dstNode,
+              dstNode->getClusterMgr()->getClusterState()->getMyselfName()),
+            true);
+
+  uint32_t keysize2 = 0;
+  for (auto& vs : slotsList) {
+    keysize2 += dstNode->getClusterMgr()->countKeysInSlot(vs);
+  }
+
+  // migrate key num is right
+  ASSERT_EQ(keysize1, keysize2);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  LOG(INFO) << "stop servers here";
+  servers.clear();
+}
+
+
 TEST(Cluster, stopMigrate) {
   std::vector<std::string> dirs = {"node1", "node2"};
   uint32_t startPort = 15000;

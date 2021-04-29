@@ -175,7 +175,7 @@ class MigrateManager {
   void stop();
 
   Status stopTasks(const std::string& taskid);
-  void stopAllTasks(bool saveSlots = true);
+  Status stopAllTasks(bool saveSlots = true);
   // sender POV
   bool senderSchedule(const SCLOCK::time_point& now);
 

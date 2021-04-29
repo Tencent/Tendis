@@ -237,6 +237,9 @@ class ClusterCommand : public Command {
           std::string nodeId = (*it).first;
           auto taskMap = (*it).second;
           auto srcNode = clusterState->clusterLookupNode(nodeId);
+          if (srcNode == nullptr) {
+            return {ErrorCodes::ERR_CLUSTER, "import node not find"};
+          }
           auto exptTaskid = startAllSlotsTasks(
             taskMap, svr, nodeId, clusterState, srcNode, myself, true);
           if (!exptTaskid.ok()) {
