@@ -271,16 +271,11 @@ LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess) {
   if (sess && sess->getCtx()->authed()) {
     _sess->getCtx()->setAuthed();
   }
-  if (svr) {
-    svr->addSession(_sess);
-  }
+  // don't call svr->addSession(_sess)
 }
 
 LocalSessionGuard::~LocalSessionGuard() {
-  auto svr = _sess->getServerEntry();
-  if (svr) {
-    svr->endSession(_sess->id());
-  }
+  // don't call svr->endSession(_sess->id());
 }
 
 LocalSession* LocalSessionGuard::getSession() {
