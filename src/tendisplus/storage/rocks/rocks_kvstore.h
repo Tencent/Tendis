@@ -453,6 +453,7 @@ class RocksdbEnv {
     return _errCnt.load(memory_order_relaxed);
   }
   std::string getErrorString() const;
+  void clear();
   void resetError();
   void setError(rocksdb::BackgroundErrorReason reason, rocksdb::Status* error);
 
