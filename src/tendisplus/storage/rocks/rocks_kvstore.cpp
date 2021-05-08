@@ -1107,6 +1107,7 @@ rocksdb::Options RocksKVStore::options() {
       new KVTtlCompactionFilterFactory(this, _cfg));
   }
 
+  _env->clear();
   // background listener
   auto listener = std::make_shared<BackgroundErrorListener>(_env);
   options.listeners.push_back(listener);
@@ -2847,6 +2848,18 @@ void RocksdbEnv::setError(rocksdb::BackgroundErrorReason reason,
   _rocksbgError = error;
   _bgError = error->ToString();
   _errCnt++;
+}
+
+void RocksdbEnv::clear() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  _bgError = "";
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
+  // do nothing
+#else
+  // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
+  // We can only reset the bg_error_ in rocksdb.
+  _rocksbgError = nullptr;
+#endif
 }
 
 void RocksdbEnv::resetError() {
