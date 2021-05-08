@@ -163,7 +163,7 @@ void ChunkMigrateSender::setSenderStatus(MigrateSenderStatus s) {
 
 // check if bitmap all belong to dst node
 bool ChunkMigrateSender::checkSlotsBlongDst() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<myMutex> lk(_mutex);
   for (size_t id = 0; id < _slots.size(); id++) {
     if (_slots.test(id)) {
       if (_clusterState->getNodeBySlot(id) != _dstNode) {
@@ -175,7 +175,7 @@ bool ChunkMigrateSender::checkSlotsBlongDst() {
 }
 
 int64_t ChunkMigrateSender::getBinlogDelay() const {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<myMutex> lk(_mutex);
   if (_binlogTimeStamp != 0) {
     return msSinceEpoch() - _binlogTimeStamp;
   }
@@ -327,22 +327,7 @@ Status ChunkMigrateSender::sendSnapshot() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-uint64_t ChunkMigrateSender::getMaxBinLog(Transaction* ptxn) const {
-  uint64_t maxBinlogId = 0;
-  auto expBinlogidMax = RepllogCursorV2::getMaxBinlogId(ptxn);
-  if (!expBinlogidMax.ok()) {
-    if (expBinlogidMax.status().code() != ErrorCodes::ERR_EXHAUST) {
-      LOG(ERROR) << "slave offset getMaxBinlogId error:"
-                 << expBinlogidMax.status().toString();
-    }
-  } else {
-    maxBinlogId = expBinlogidMax.value();
-  }
-  return maxBinlogId;
-}
-
 Status ChunkMigrateSender::resetClient() {
-  std::lock_guard<std::mutex> lk(_mutex);
   setClient(nullptr);
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->createBlockingClient(64 * 1024 * 1024));
@@ -391,7 +376,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     /* NOTE(wayenchen) may have already sended half binlog but fail,
         so update the _curbinlog first*/
     {
-      std::lock_guard<std::mutex> lk(_mutex);
+      std::lock_guard<myMutex> lk(_mutex);
       _binlogNum.fetch_add(binlogNum, std::memory_order_relaxed);
       if (newBinlogId != 0) {
         _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
@@ -404,7 +389,7 @@ Status ChunkMigrateSender::catchupBinlog(uint64_t end) {
     }
 
     {
-      std::lock_guard<std::mutex> lk(_mutex);
+      std::lock_guard<myMutex> lk(_mutex);
       if (!s.ok() && needRetry) {
         if (newBinlogId > 0) {
           _curBinlogid.store(newBinlogId, std::memory_order_relaxed);
@@ -522,7 +507,8 @@ Status ChunkMigrateSender::sendLastBinlog() {
                << "on slots:" << bitsetStrEncode(_slots);
     return ptxn.status();
   }
-  auto maxBinlogId = getMaxBinLog(ptxn.value().get());
+  auto maxBinlogId = kvstore->getNextBinlogSeq();
+
   auto s = catchupBinlog(maxBinlogId);
   if (!s.ok()) {
     return s;
@@ -712,7 +698,7 @@ Status ChunkMigrateSender::lockChunks() {
 }
 
 void ChunkMigrateSender::unlockChunks() {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<myMutex> lk(_mutex);
   _slotsLockList.clear();
   _lockEndTime.store(msSinceEpoch(), std::memory_order_relaxed);
 }
@@ -741,7 +727,7 @@ bool ChunkMigrateSender::needToSendFail() const {
 
 
 void ChunkMigrateSender::setStartTime(const std::string& str) {
-  std::lock_guard<std::mutex> lk(_mutex);
+  std::lock_guard<myMutex> lk(_mutex);
   _startTime = str;
 }
 

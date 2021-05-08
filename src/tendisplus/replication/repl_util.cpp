@@ -475,8 +475,9 @@ Status SendSlotsBinlog(BlockingTcpClient* client,
     return ptxn.status();
   }
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  // cursor need ignore readbarrier
   std::unique_ptr<RepllogCursorV2> cursor =
-    txn->createRepllogCursorV2(binlogPos + 1);
+    txn->createRepllogCursorV2(binlogPos + 1, true);
 
   std::unique_ptr<BinlogWriter> writer =
     std::make_unique<BinlogWriter>(suggestBytes, suggestBatch);

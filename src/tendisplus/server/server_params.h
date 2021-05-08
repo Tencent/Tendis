@@ -450,7 +450,7 @@ class ServerParams {
   bool clusterEnabled = false;
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
-  bool enableGcInMigate = true;
+  bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;
 
