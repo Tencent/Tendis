@@ -78,6 +78,7 @@ class BasicDataCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class AllDataCursor {
@@ -93,6 +94,7 @@ class AllDataCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class BinlogCursor {
@@ -108,6 +110,7 @@ class BinlogCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class TTLIndexCursor {
