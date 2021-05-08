@@ -12,7 +12,7 @@ target_link_libraries(rocks_kvstore_for_test utils_common kvstore rocksdb record
 add_executable(rocks_kvstore_test rocks_kvstore_test.cpp)
 
 target_link_libraries(rocks_kvstore_test utils_common kvstore rocksdb
-	session_ctx session lock server
+	session_ctx session lock server -Wl,--whole-archive commands -Wl,--no-whole-archive
     rocks_kvstore server_params record gtest_main ${STDFS_LIB} ${SYS_LIBS} snappy lz4_static)
 
 

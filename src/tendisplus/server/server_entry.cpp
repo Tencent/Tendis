@@ -701,6 +701,8 @@ bool ServerEntry::addSession(std::shared_ptr<Session> sess) {
     return false;
   }
 
+  INVARIANT_D(sess->getType() != Session::Type::LOCAL);
+
   // NOTE(deyukong): first driving force
   sess->start();
   uint64_t id = sess->id();
@@ -762,6 +764,9 @@ void ServerEntry::endSession(uint64_t connId) {
     LOG(ERROR) << "destroy conn:" << connId << ",not exists";
     return;
   }
+
+  INVARIANT_D(it->second->getType() != Session::Type::LOCAL);
+
   SessionCtx* pCtx = it->second->getCtx();
   INVARIANT(pCtx != nullptr);
   if (pCtx->getIsMonitor()) {
