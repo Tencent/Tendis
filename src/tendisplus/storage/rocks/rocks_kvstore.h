@@ -322,7 +322,10 @@ class RocksKVStore : public KVStore {
 
   bool getIntProperty(const std::string& property, uint64_t* value,
       ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
-  bool getProperty(const std::string& property, std::string* value) const;
+  bool getProperty(
+    const std::string& property,
+    std::string* value,
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
   std::string getAllProperty() const override;
   std::string getStatistics() const override;
   uint64_t getStatCountById(uint32_t id) const override;

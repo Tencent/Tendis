@@ -2510,10 +2510,11 @@ bool RocksKVStore::getIntProperty(const std::string& property,
 }
 
 bool RocksKVStore::getProperty(const std::string& property,
-                               std::string* value) const {
+                               std::string* value,
+                               ColumnFamilyNumber cf) const {
   bool ok = false;
   if (_isRunning) {
-    ok = getBaseDB()->GetProperty(property, value);
+    ok = getBaseDB()->GetProperty(getColumnFamilyHandle(cf), property, value);
     if (!ok) {
       LOG(WARNING) << "db:" << dbId() << " getProperty:" << property
                    << " failed";
