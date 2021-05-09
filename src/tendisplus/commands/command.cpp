@@ -196,7 +196,10 @@ Command* Command::getCommand(Session* sess) {
 Expected<Command*> Command::precheck(Session* sess) {
   const auto& args = sess->getArgs();
   if (args.size() == 0) {
+    std::stringstream ss;
+    std::string fatal_message = "BUG: sess " << sess->id() << " len 0 args";
     LOG(FATAL) << "BUG: sess " << sess->id() << " len 0 args";
+    return {ErrorCodes::ERR_INTERNAL, fatal_message};
   }
   std::string commandName = toLower(args[0]);
   auto it = commandMap().find(commandName);
@@ -258,7 +261,12 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   std::string commandName = toLower(args[0]);
   auto it = commandMap().find(commandName);
   if (it == commandMap().end()) {
-    LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
+    std::stringstream ss;
+    ss << "BUG: command:" << args[0] << " not found!";
+    //LOG(FATAL) << "BUG: command:" << args[0] << " not found!";
+    std::string fatal_message = ss.str();
+    LOG(FATAL) << fatal_message;
+    return ServerEntry::logError(fatal_message, sess);
   }
 
   // TODO(vinchen): here there is a copy, it is a waste.
@@ -969,17 +977,14 @@ std::vector<int> Command::getKeysFromCommand(
 }
 
 bool Command::isAdminCmd(const std::string& cmd) {
-  static const auto sAdmin = []() {
-    std::unordered_set<std::string> tmp;
-    for (auto iter = commandMap().begin(); iter != commandMap().end(); iter++) {
-      if (iter->second->isAdmin()) {
-        tmp.emplace(iter->first);
-      }
-    }
-    return tmp;
-  }();
 
-  return sAdmin.count(cmd);
+  auto iter = commandMap().find(cmd);
+  if(iter != commandMap().end())
+  {
+    return iter->second->isAdmin();
+  }
+
+  return false;
 }
 
 }  // namespace tendisplus
