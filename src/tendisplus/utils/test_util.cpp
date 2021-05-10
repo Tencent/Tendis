@@ -3178,6 +3178,7 @@ std::string runCommand(std::shared_ptr<ServerEntry> svr,
 
 void runBgCommand(std::shared_ptr<ServerEntry> svr) {
   runCommand(svr, {"info", "all"});
+  runCommand(svr, {"info", "levelstats"});
   runCommand(svr, {"client", "list"});
   runCommand(svr, {"show", "processlist", "all"});
 }

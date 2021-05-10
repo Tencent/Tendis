@@ -811,6 +811,7 @@ void ClusterState::clusterSendFail(CNodePtr node, uint64_t offset) {
 }
 
 void ClusterState::clusterBroadcastMessage(ClusterMsg& msg) {
+  std::lock_guard<myMutex> lk(_mutex);
   for (const auto& nodep : _nodes) {
     const auto& node = nodep.second;
 
@@ -1453,7 +1454,7 @@ bool ClusterState::isRightReplicate() {
 }
 
 Status ClusterState::forceFailover(bool force, bool takeover) {
-  resetManualFailoverNoLock();
+  resetManualFailover();
   setMfEnd(msSinceEpoch() + CLUSTER_MF_TIMEOUT);
   Status s;
   if (takeover) {
@@ -1664,6 +1665,7 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
 std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
                                                      bool simple) {
   std::stringstream ss;
+  std::lock_guard<myMutex> lk(_mutex);
   for (const auto& v : _nodes) {
     CNodePtr node = v.second;
     if (node->getFlags() & filter) {

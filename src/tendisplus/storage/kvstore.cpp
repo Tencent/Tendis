@@ -162,8 +162,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
       _cur++;
       if (num++ % 1000 == 0) {
         LOG(WARNING) << "RepllogCursorV2::next ERR_NOTFOUND too much,"
-          << " num:" << num << " _cur:" << _cur
-          << " _end:" << _end;
+                     << " num:" << num << " _cur:" << _cur << " _end:" << _end;
       }
       continue;
     } else if (!eval.ok()) {
@@ -197,8 +196,7 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
 
       if (num++ % 1000 == 0) {
         LOG(WARNING) << "RepllogCursorV2::nextV2 ERR_NOTFOUND too much,"
-                     << " num:" << num << " _cur:" << _cur
-                     << " _end:" << _end;
+                     << " num:" << num << " _cur:" << _cur << " _end:" << _end;
       }
       continue;
     } else if (!eval.ok()) {
@@ -220,12 +218,11 @@ Expected<ReplLogV2> RepllogCursorV2::nextV2() {
 }
 
 BasicDataCursor::BasicDataCursor(std::unique_ptr<Cursor> cursor)
-  : _baseCursor(std::move(cursor)) {
-  _baseCursor->seek("");
-}
+  : _baseCursor(std::move(cursor)), _seeked(false) {}
 
 void BasicDataCursor::seek(const std::string& prefix) {
   _baseCursor->seek(prefix);
+  _seeked = true;
 }
 
 // can't be used currently
@@ -234,6 +231,11 @@ void BasicDataCursor::seek(const std::string& prefix) {
 }*/
 
 Expected<Record> BasicDataCursor::next() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
+
   auto expRcd = _baseCursor->next();
   if (expRcd.ok()) {
     Record dataRecord(expRcd.value());
@@ -248,10 +250,18 @@ Expected<Record> BasicDataCursor::next() {
 }
 
 Status BasicDataCursor::prev() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
   return _baseCursor->prev();
 }
 
 Expected<std::string> BasicDataCursor::key() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
   auto expKey = _baseCursor->key();
   if (expKey.ok()) {
     std::string dataKey = expKey.value();
@@ -266,20 +276,24 @@ Expected<std::string> BasicDataCursor::key() {
 }
 
 AllDataCursor::AllDataCursor(std::unique_ptr<Cursor> cursor)
-  : _baseCursor(std::move(cursor)) {
-  _baseCursor->seek("");
-}
+  : _baseCursor(std::move(cursor)), _seeked(false) {}
 
 void AllDataCursor::seek(const std::string& prefix) {
   _baseCursor->seek(prefix);
+  _seeked = true;
 }
 
 // can't be used if binlogUsingDefaultCF is true
 void AllDataCursor::seekToLast() {
   _baseCursor->seekToLast();
+  _seeked = true;
 }
 
 Expected<Record> AllDataCursor::next() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
   auto expRcd = _baseCursor->next();
   if (expRcd.ok()) {
     Record dataRecord(expRcd.value());
@@ -294,10 +308,19 @@ Expected<Record> AllDataCursor::next() {
 }
 
 Status AllDataCursor::prev() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
   return _baseCursor->prev();
 }
 
 Expected<std::string> AllDataCursor::key() {
+  if (!_seeked) {
+    _baseCursor->seek("");
+    _seeked = true;
+  }
+
   auto expKey = _baseCursor->key();
   if (expKey.ok()) {
     std::string dataKey = expKey.value();
@@ -312,19 +335,23 @@ Expected<std::string> AllDataCursor::key() {
 }
 
 BinlogCursor::BinlogCursor(std::unique_ptr<Cursor> cursor)
-  : _baseCursor(std::move(cursor)) {
-  _baseCursor->seek(RecordKey::prefixReplLogV2());
-}
+  : _baseCursor(std::move(cursor)), _seeked(false) {}
 
 void BinlogCursor::seek(const std::string& prefix) {
   _baseCursor->seek(prefix);
+  _seeked = true;
 }
 
 void BinlogCursor::seekToLast() {
   _baseCursor->seekToLast();
+  _seeked = true;
 }
 
 Expected<Record> BinlogCursor::next() {
+  if (!_seeked) {
+    _baseCursor->seek(RecordKey::prefixReplLogV2());
+    _seeked = true;
+  }
   auto expRcd = _baseCursor->next();
   if (expRcd.ok()) {
     Record binlogRecord(expRcd.value());
@@ -339,10 +366,18 @@ Expected<Record> BinlogCursor::next() {
 }
 
 Status BinlogCursor::prev() {
+  if (!_seeked) {
+    _baseCursor->seek(RecordKey::prefixReplLogV2());
+    _seeked = true;
+  }
   return _baseCursor->prev();
 }
 
 Expected<std::string> BinlogCursor::key() {
+  if (!_seeked) {
+    _baseCursor->seek(RecordKey::prefixReplLogV2());
+    _seeked = true;
+  }
   auto expKey = _baseCursor->key();
   if (expKey.ok()) {
     std::string binlogKey = expKey.value();

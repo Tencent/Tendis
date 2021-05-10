@@ -78,6 +78,7 @@ class BasicDataCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class AllDataCursor {
@@ -93,6 +94,7 @@ class AllDataCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class BinlogCursor {
@@ -108,6 +110,7 @@ class BinlogCursor {
 
  protected:
   std::unique_ptr<Cursor> _baseCursor;
+  bool _seeked;
 };
 
 class TTLIndexCursor {
@@ -392,8 +395,8 @@ class KVStore {
   virtual Status destroy() = 0;
   virtual bool getIntProperty(const std::string& property, uint64_t* value,
     ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const = 0;
-  virtual bool getProperty(const std::string& property,
-                           std::string* value) const = 0;
+  virtual bool getProperty(const std::string& property, std::string* value,
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const = 0;
   virtual std::string getAllProperty() const = 0;
   virtual std::string getStatistics() const = 0;
   virtual uint64_t getStatCountById(uint32_t id) const = 0;

@@ -99,7 +99,7 @@ class KeysCommand : public Command {
     if (enableCluster) {
       auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
       checkSlots = myself->nodeIsMaster() ? myself->getSlots()
-                            : myself->getMaster()->getSlots();
+                                          : myself->getMaster()->getSlots();
     }
 
     std::list<std::string> result;
@@ -227,7 +227,7 @@ class DbsizeCommand : public Command {
     if (enableCluster) {
       auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
       checkSlots = myself->nodeIsMaster() ? myself->getSlots()
-                            : myself->getMaster()->getSlots();
+                                          : myself->getMaster()->getSlots();
     }
 
     for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
@@ -474,7 +474,7 @@ class IterAllKeysCommand : public Command {
     if (enableCluster) {
       auto myself = server->getClusterMgr()->getClusterState()->getMyselfNode();
       checkSlots = myself->nodeIsMaster() ? myself->getSlots()
-                            : myself->getMaster()->getSlots();
+                                          : myself->getMaster()->getSlots();
     }
 
     std::unordered_map<std::string, uint64_t> lIdx;
@@ -1962,9 +1962,9 @@ class InfoCommand : public Command {
             strDelete(used_memory_vir_human, ' ');
             auto s = getIntSize(used_memory_vir_human);
             if (s.ok()) {
-                vir_human_size = s.value();
+              vir_human_size = s.value();
             } else {
-                LOG(ERROR) << "getIntSize failed:" << s.status().toString();
+              LOG(ERROR) << "getIntSize failed:" << s.status().toString();
             }
           } else if (v[0] == "VmPeak") {  // peak of virtual memory
             used_memory_vir_peak_human = trim(v[1]);
@@ -1974,9 +1974,9 @@ class InfoCommand : public Command {
             strDelete(used_memory_rss_human, ' ');
             auto s = getIntSize(used_memory_rss_human);
             if (s.ok()) {
-                rss_human_size = s.value();
+              rss_human_size = s.value();
             } else {
-                LOG(ERROR) << "getIntSize failed:" << s.status().toString();
+              LOG(ERROR) << "getIntSize failed:" << s.status().toString();
             }
           } else if (v[0] == "VmHWM") {  // peak of physic memory
             used_memory_rss_peak_human = trim(v[1]);
@@ -2213,9 +2213,10 @@ class InfoCommand : public Command {
       std::stringstream ss;
       uint64_t total = 0, size_binlogcf = 0, live = 0, estimate = 0;
       server->getTotalIntProperty(sess, "rocksdb.total-sst-files-size", &total);
-      server->getTotalIntProperty(
-        sess, "rocksdb.total-sst-files-size", &size_binlogcf,
-        ColumnFamilyNumber::ColumnFamily_Binlog);
+      server->getTotalIntProperty(sess,
+                                  "rocksdb.total-sst-files-size",
+                                  &size_binlogcf,
+                                  ColumnFamilyNumber::ColumnFamily_Binlog);
       server->getTotalIntProperty(sess, "rocksdb.live-sst-files-size", &live);
       server->getTotalIntProperty(
         sess, "rocksdb.estimate-live-data-size", &estimate);
@@ -2309,6 +2310,33 @@ class InfoCommand : public Command {
           continue;
         }
         std::string prefix = "rocksdb" + store->dbId() + ".";
+        replaceAll(tmp, "rocksdb.", prefix);
+
+        result << tmp;
+      }
+
+      result << "\r\n";
+    }
+
+    if (section == "levelstats") {
+      auto server = sess->getServerEntry();
+      for (uint64_t i = 0; i < server->getKVStoreCount(); ++i) {
+        auto expdb = server->getSegmentMgr()->getDb(
+          sess, i, mgl::LockMode::LOCK_IS, false, 0);
+        if (!expdb.ok()) {
+          continue;
+        }
+
+        auto store = expdb.value().store;
+        std::string tmp;
+        if (!store->getProperty("rocksdb.levelstatsex",
+                                &tmp,
+                                ColumnFamilyNumber::ColumnFamily_Binlog)) {
+          LOG(WARNING) << "store id " << i
+                       << " rocksdb.levelstatsex not supported";
+          continue;
+        }
+        std::string prefix = "rocksdb" + store->dbId() + ".binlog.";
         replaceAll(tmp, "rocksdb.", prefix);
 
         result << tmp;
@@ -3207,7 +3235,7 @@ class SyncVersionCommand : public Command {
           continue;
         }
         Command::fmtMultiBulkLen(ss, meta.size());
-        for (const auto &v : meta) {
+        for (const auto& v : meta) {
           Command::fmtMultiBulkLen(ss, 3);
           Command::fmtBulk(ss, v.getName());
           Command::fmtLongLong(ss, static_cast<int64_t>(v.getTimeStamp()));

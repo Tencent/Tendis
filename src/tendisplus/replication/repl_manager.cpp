@@ -1307,7 +1307,10 @@ std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
        << "min=" << _logRecycStatus[i]->firstBinlogId
        << ",save=" << _logRecycStatus[i]->saveBinlogId
        << ",BLWM=" << kvstore->getHighestBinlogId()
-       << ",BHWM=" << kvstore->getNextBinlogSeq() << "\r\n";
+       << ",BHWM=" << kvstore->getNextBinlogSeq()
+       << ",remain="
+       << kvstore->getHighestBinlogId() - _logRecycStatus[i]->firstBinlogId
+       << "\r\n";
   }
   return ss.str();
 }
