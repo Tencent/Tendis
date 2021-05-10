@@ -3578,6 +3578,96 @@ class reshapeCommand : public Command {
   }
 } reshapeCmd;
 
+// compactrange [data|default|binlog] start end <kvstoreid>
+class compactRangeCommand : public Command {
+ public:
+  compactRangeCommand() : Command("compactrange", "sM") {}
+
+  ssize_t arity() const {
+    return -4;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const auto server = sess->getServerEntry();
+    const auto& args = sess->getArgs();
+
+    ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default;
+    auto cfName = toLower(args[1]);
+    if (cfName == "data" || cfName == "default") {
+      cf = ColumnFamilyNumber::ColumnFamily_Default;
+    } else if (cfName == "binlog") {
+      cf = ColumnFamilyNumber::ColumnFamily_Binlog;
+    } else {
+      return {ErrorCodes::ERR_PARSEOPT,
+              "invalid column family" + cfName +
+                ",it must be data|default|binlog"};
+    }
+
+    auto estart = tendisplus::stoull(args[2]);
+    RET_IF_ERR_EXPECTED(estart);
+    uint64_t start = estart.value();
+
+    auto eend = tendisplus::stoull(args[3]);
+    RET_IF_ERR_EXPECTED(eend);
+    uint64_t end = eend.value();
+
+    if (end <= start) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              args[3] + " must be bigger than " + args[2]};
+    }
+
+    std::string str_start, str_end;
+    if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
+      RecordKey tmplRk(start, 0, RecordType::RT_DATA_META, "", "");
+      str_start = tmplRk.prefixChunkid();
+
+      RecordKey tmplRk2(end, 0, RecordType::RT_DATA_META, "", "");
+      str_end = tmplRk2.prefixChunkid();
+    } else {
+      ReplLogKeyV2 tmplRk(start);
+      str_start = tmplRk.encode();
+
+      ReplLogKeyV2 tmplRk2(end);
+      str_end = tmplRk2.encode();
+    }
+
+    uint64_t i = 0;
+    uint64_t store_end = server->getKVStoreCount();
+    if (args.size() > 4) {
+      auto eStoreId = tendisplus::stoull(args[4]);
+      RET_IF_ERR_EXPECTED(eStoreId);
+
+      i = eStoreId.value();
+      store_end = i + 1;
+    }
+
+    for (; i < store_end; i++) {
+      auto expdb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
+      RET_IF_ERR_EXPECTED(expdb);
+
+      PStore kvstore = expdb.value().store;
+      auto status = kvstore->compactRange(cf, &str_start, &str_end);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+    return Command::fmtOK();
+  }
+} compactRangeCmd;
+
 // for debug
 class deleteSlotsCommand : public Command {
  public:

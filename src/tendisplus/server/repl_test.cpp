@@ -211,6 +211,10 @@ TEST(Repl, Common) {
 #endif
     });
 
+    runCommand(master,
+               {"compactrange", "default", "3000", "9000", std::to_string(0)});
+    runCommand(master,
+               {"compactrange", "binlog", "0", "10000000", std::to_string(0)});
 
     std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
     auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port, master_port);
@@ -223,11 +227,13 @@ TEST(Repl, Common) {
 
     sleep(2);  // wait recycle binlog
 
+    runCommand(master, {"compactrange", "data", "0", "10000"});
     waitSlaveCatchup(master, slave);
     compareData(master, slave);
 
     waitSlaveCatchup(master, slave1);
     compareData(master, slave1);
+    runCommand(master, {"compactrange", "binlog", "0", "100000000"});
 
     waitSlaveCatchup(master, slave2);
     compareData(master, slave2);
