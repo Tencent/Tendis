@@ -157,6 +157,7 @@ std::shared_ptr<ServerParams> genParams() {
   auto cfg = std::make_shared<ServerParams>();
   auto s = cfg->parseFile("a.cfg");
   EXPECT_EQ(s.ok(), true) << s.toString();
+  gParams = cfg;
   return cfg;
 }
 

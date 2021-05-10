@@ -423,6 +423,17 @@ Status RocksTxn::setKV(const std::string& key,
   return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksTxn::setKVWithoutBinlog(const std::string& key,
+        const std::string& val) {
+  RESET_PERFCONTEXT();
+  // put data into default column family
+  auto s = _txn->Put(key, val);
+  if (!s.ok()) {
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
   if (_replOnly) {
     return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
@@ -1369,6 +1380,15 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t max_cnt = _cfg->truncateBinlogNum;
   uint64_t size = 0;
   uint64_t cur_ts = msSinceEpoch();
+
+  const auto guard = MakeGuard([this, &nextStart, &txn] {
+    if (_cfg->saveMinBinlogId) {
+      // NOTE(takenliu): as we keep at leat one binlog,
+      //   so nextStart must be in db.
+      // NOTE(takenliu): be care of not in the same transaction.
+      saveMinBinlogId(nextStart, txn);
+    }
+  });
 
   // TODO(takenliu) change binlogDelRange scope to (1000, 1000000)
   INVARIANT_D(_cfg->binlogDelRange >= 1);
@@ -2415,6 +2435,26 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
   return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksKVStore::saveMinBinlogId(uint64_t id, Transaction* txn) {
+  RecordKey key(REPLLOGKEYV2_META_CHUNKID, REPLLOGKEYV2_META_DBID,
+          RecordType::RT_META, "", "");
+
+  std::string val;
+  val.resize(sizeof(uint64_t));
+  // binlogId
+  int64Encode(&val[0], id);
+  RecordValue value(std::move(val), RecordType::RT_META, -1);
+
+  INVARIANT(txn != nullptr);
+  auto s = txn->setKVWithoutBinlog(key.encode(), value.encode());
+  if (!s.ok()) {
+    LOG(ERROR) << "setKV failed:" << s.toString();
+    return s;
+  }
+  return s;
+}
+
+// [begin, end)
 Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
   ReplLogKeyV2 beginKey(begin);
   ReplLogKeyV2 endKey(end);

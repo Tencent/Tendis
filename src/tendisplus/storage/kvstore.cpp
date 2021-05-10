@@ -72,6 +72,30 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
 }
 
 Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
+  if (gParams != nullptr && gParams->saveMinBinlogId) {
+    RecordKey key(REPLLOGKEYV2_META_CHUNKID, REPLLOGKEYV2_META_DBID,
+                  RecordType::RT_META, "", "");
+    auto eval = txn->getKV(key.encode());
+    if (eval.ok()) {
+      auto v = RecordValue::decode(eval.value());
+      if (!v.ok()) {
+        LOG(ERROR) << "binlog META decode error:" << v.status().toString();
+        return {ErrorCodes::ERR_INTERGER, "binlog META decode error"};
+      }
+      if (v.value().getRecordType() != RecordType::RT_META
+        || v.value().getValue().size() != sizeof(uint64_t)) {
+        LOG(ERROR) << "binlog META decode error:" << v.status().toString();
+        return {ErrorCodes::ERR_INTERGER, "binlog META decode error"};
+      }
+      uint64_t binlogId = int64Decode(v.value().getValue().c_str());
+      return binlogId;
+    } else if (!eval.ok() && eval.status().code() != ErrorCodes::ERR_NOTFOUND) {
+      LOG(WARNING) << "get binlog META error:" << eval.status().toString();
+      return eval.status();
+    }
+    DLOG(WARNING) << "binlog META is not exists, will use seek.";
+  }
+
   auto cursor = txn->createBinlogCursor();
   if (!cursor) {
     return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
@@ -283,7 +307,7 @@ Expected<Record> AllDataCursor::next() {
   auto expRcd = _baseCursor->next();
   if (expRcd.ok()) {
     Record dataRecord(expRcd.value());
-    if (dataRecord.getRecordKey().getRecordType() != RecordType::RT_BINLOG) {
+    if (dataRecord.getRecordKey().getChunkId() < REPLLOGKEYV2_META_CHUNKID) {
       return dataRecord;
     } else {
       return {ErrorCodes::ERR_EXHAUST, "no more AllData"};
@@ -301,7 +325,7 @@ Expected<std::string> AllDataCursor::key() {
   auto expKey = _baseCursor->key();
   if (expKey.ok()) {
     std::string dataKey = expKey.value();
-    if (RecordKey::decodeType(dataKey) != RecordType::RT_BINLOG) {
+    if (RecordKey::decodeChunkId(dataKey) < REPLLOGKEYV2_META_CHUNKID) {
       return dataKey;
     } else {
       return {ErrorCodes::ERR_EXHAUST, "no more AllData"};

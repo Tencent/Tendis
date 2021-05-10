@@ -471,6 +471,7 @@ class ServerParams {
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;
   bool compactRangeAfterDeleteRange = false;
+  bool saveMinBinlogId = true;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

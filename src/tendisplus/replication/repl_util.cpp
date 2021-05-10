@@ -353,7 +353,7 @@ Expected<BinlogResult> applySingleTxnV2(Session* sess,
       string err = "binlogId:" + to_string(binlogId) +
         " can't be smaller than highestBinlogId:" +
         to_string(store->getHighestBinlogId());
-      LOG(ERROR) << err;
+      LOG(ERROR) << err << " storeid:" << storeId;
       return {ErrorCodes::ERR_MANUAL, err};
     }
 
