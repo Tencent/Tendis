@@ -1712,6 +1712,11 @@ TEST(Command, syncversion) {
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n");
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, info) {
