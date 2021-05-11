@@ -139,6 +139,7 @@ class WorkLoad {
   void replicate(const std::string& nodeName);
   bool manualFailover();
   void lockDb(mstime_t locktime);
+  void sleep(mstime_t locktime);
   void stopMigrate(const std::string& taskid);
   void stopAllMigTasks();
   void restartAllMigTasks();
