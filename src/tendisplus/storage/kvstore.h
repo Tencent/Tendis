@@ -145,6 +145,7 @@ class VersionMetaCursor {
   std::unique_ptr<Cursor> _baseCursor;
 };
 
+// only RecordType::RT_DATA_META
 class SlotCursor {
  public:
   SlotCursor() = delete;

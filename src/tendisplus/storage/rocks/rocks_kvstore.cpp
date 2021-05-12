@@ -1541,7 +1541,6 @@ Status RocksKVStore::setLogObserver(std::shared_ptr<BinlogObserver> ob) {
 Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
                                   const std::string* begin,
                                   const std::string* end) {
-  // TODO(vinchen): need lock_guard?
   auto compactionOptions = rocksdb::CompactRangeOptions();
   auto db = getBaseDB();
 

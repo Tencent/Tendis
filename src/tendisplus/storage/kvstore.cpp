@@ -492,8 +492,8 @@ SlotsCursor::SlotsCursor(std::unique_ptr<Cursor> cursor,
                          uint32_t begin,
                          uint32_t end)
   : _startSlot(begin), _endSlot(end), _baseCursor(std::move(cursor)) {
-  RecordKey tmplRk(begin, 0, RecordType::RT_KV, "", "");
-  auto prefix = tmplRk.prefixSlotType();
+  RecordKey tmplRk(begin, 0, RecordType::RT_DATA_META, "", "");
+  auto prefix = tmplRk.prefixChunkid();
   _baseCursor->seek(prefix);
 }
 
