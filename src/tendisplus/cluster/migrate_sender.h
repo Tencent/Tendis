@@ -113,12 +113,12 @@ class ChunkMigrateSender {
   }
 
   MigrateSenderStatus getSenderState() {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<myMutex> lk(_mutex);
     return _sendstate;
   }
 
   std::string getStartTime() const {
-    std::lock_guard<std::mutex> lk(_mutex);
+    std::lock_guard<myMutex> lk(_mutex);
     return _startTime;
   }
 
@@ -162,7 +162,7 @@ class ChunkMigrateSender {
   Status sendOver();
 
  private:
-  mutable std::mutex _mutex;
+  mutable myMutex _mutex;
 
   std::bitset<CLUSTER_SLOTS> _slots;
   std::shared_ptr<ServerEntry> _svr;
@@ -193,7 +193,6 @@ class ChunkMigrateSender {
   uint16_t _dstPort;
   uint32_t _dstStoreid;
   std::shared_ptr<ClusterNode> _dstNode;
-  uint64_t getMaxBinLog(Transaction* ptxn) const;
   std::list<std::unique_ptr<ChunkLock>> _slotsLockList;
   std::string _OKSTR = "+OK";
 };
