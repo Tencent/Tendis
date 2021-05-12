@@ -60,10 +60,12 @@ class WorkerPool {
       ++_matrix->executing;
       try {
         mytask();
+      } catch (const IOCtxException& ex) {
+        LOG(INFO) << "catch IOCtxException,"
+          << _name << ":" << std::this_thread::get_id();
+        throw ex;
       } catch (const std::exception& ex) {
-        std::stringstream ss;
-        ss << "schedule task error:" << ex.what();
-        LOG(ERROR) << ss.str();
+        LOG(ERROR) << "schedule task error:" << ex.what();
         INVARIANT_D(0);
       }
       --_matrix->inQueue;
