@@ -174,7 +174,7 @@ Expected<T> makeExpected(Args&&... args) {
 #define RET_IF_ERR_EXPECTED(e)                                         \
   do {                                                                 \
     if (!e.ok()) {                                                     \
-      LOG(ERROR) << "Expected failed:" << e.status().toString() << ' ' \
+      LOG(ERROR) << "expected failed:" << e.status().toString() << ' ' \
                  << __FILE__ << ' ' << __LINE__;                       \
       return e.status();                                               \
     }                                                                  \
