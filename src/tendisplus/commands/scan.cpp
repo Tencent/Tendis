@@ -79,6 +79,10 @@ class ScanGenericCommand : public Command {
       }
     }
 
+    auto server = sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(sess, key, RdLock());
+    RET_IF_ERR_EXPECTED(expdb);
+
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, getRcdType());
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED ||
@@ -91,11 +95,6 @@ class ScanGenericCommand : public Command {
     } else if (!rv.ok()) {
       return rv.status();
     }
-
-    auto server = sess->getServerEntry();
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-      sess, key, mgl::LockMode::LOCK_S);
-    RET_IF_ERR_EXPECTED(expdb);
 
     SessionCtx* pCtx = sess->getCtx();
     RecordKey metaRk(
