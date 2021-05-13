@@ -29,6 +29,7 @@
 #include "rocksdb/iostats_context.h"
 #include "rocksdb/perf_context.h"
 #include "rocksdb/statistics.h"
+#include "rocksdb/convenience.h"
 
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
@@ -2417,6 +2418,7 @@ Status RocksKVStore::deleteRange(const std::string& begin,
   return ret;
 }
 
+// [begin, end]
 Status RocksKVStore::deleteRangeWithoutBinlog(
   rocksdb::ColumnFamilyHandle* column_family,
   const std::string& begin,
@@ -2430,6 +2432,23 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
     rocksdb::WriteOptions(), column_family, sBegin.ToString(), sEnd.ToString());
   if (!s.ok()) {
     LOG(ERROR) << "deleteRange failed:" << s.ToString();
+    return {ErrorCodes::ERR_INTERNAL, s.ToString()};
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+// [begin, end]
+Status RocksKVStore::deleteFilesInrange(
+        rocksdb::ColumnFamilyHandle* column_family,
+        const std::string& begin,
+        const std::string& end) {
+  rocksdb::Slice sBegin(begin);
+  rocksdb::Slice sEnd(end);
+  rocksdb::DB* db = getBaseDB();
+  auto s = rocksdb::DeleteFilesInRange(
+          db, column_family, &sBegin, &sEnd, true);
+  if (!s.ok()) {
+    LOG(ERROR) << "DeleteFilesInRange failed:" << s.ToString();
     return {ErrorCodes::ERR_INTERNAL, s.ToString()};
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -2456,20 +2475,30 @@ Status RocksKVStore::saveMinBinlogId(uint64_t id, Transaction* txn) {
 
 // [begin, end)
 Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
-  ReplLogKeyV2 beginKey(begin);
-  ReplLogKeyV2 endKey(end);
-  auto beginKeyStr = beginKey.encode();
-  auto endKeyStr = endKey.encode();
-  auto s = deleteRangeWithoutBinlog(
-    getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
-  RET_IF_ERR(s);
+  if (_cfg->deleteFilesInRangeforBinlog) {
+    ReplLogKeyV2 beginKey(0);  // begin always use 0
+    ReplLogKeyV2 endKey(end);
+    auto beginKeyStr = beginKey.encode();
+    auto endKeyStr = endKey.encode();
+    auto s = deleteFilesInrange(
+            getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
+    RET_IF_ERR(s);
+  } else {
+    ReplLogKeyV2 beginKey(0);  // begin always use 0
+    ReplLogKeyV2 endKey(end);
+    auto beginKeyStr = beginKey.encode();
+    auto endKeyStr = endKey.encode();
+    auto s = deleteRangeWithoutBinlog(
+            getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
+    RET_IF_ERR(s);
 
-  if (_cfg->compactRangeAfterDeleteRange) {
-    // NOTE(takenliu) if dont real delete,maybe cause performance problem
-    // for example: when server restart, in ReplManager::startup(),
-    //   getMinBinlog() will take a long time
-    return compactRange(getBinlogColumnFamilyNumber(),
-      &beginKeyStr, &endKeyStr);
+    if (_cfg->compactRangeAfterDeleteRange) {
+      // NOTE(takenliu) if dont real delete,maybe cause performance problem
+      // for example: when server restart, in ReplManager::startup(),
+      //   getMinBinlog() will take a long time
+      return compactRange(getBinlogColumnFamilyNumber(),
+                          &beginKeyStr, &endKeyStr);
+    }
   }
   return {ErrorCodes::ERR_OK, ""};
 }

@@ -170,6 +170,23 @@ bool truncateBinlogNumCheck(
   return true;
 }
 
+
+bool deleteFilesInRangeforBinlogCheck(
+        const std::string& val, bool startup, string* errinfo) {
+  if (startup || !gParams) {
+    return true;
+  }
+  bool value = isOptionOn(val);
+  if (!gParams->saveMinBinlogId && value) {
+    if (errinfo != NULL) {
+      *errinfo =
+        "set deleteFilesInRangeforBinlog=true need saveMinBinlogId==ture";
+    }
+    return false;
+  }
+  return true;
+}
+
 string removeQuotes(const string& v) {
   if (v.size() < 2) {
     return v;
@@ -492,6 +509,9 @@ ServerParams::ServerParams() {
                                   compactRangeAfterDeleteRange);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("save-min-binlogid",
                                   saveMinBinlogId);
+  REGISTER_VARS_FULL(
+          "deletefilesinrange-for-binlog", deleteFilesInRangeforBinlog,
+          deleteFilesInRangeforBinlogCheck, nullptr, -1, -1, true);
 }
 
 ServerParams::~ServerParams() {
@@ -632,6 +652,12 @@ Status ServerParams::checkParams() {
     logRecycleThreadnum = kvStoreCount;
   }
 
+  if (!saveMinBinlogId && deleteFilesInRangeforBinlog) {
+    auto err =
+      "set deleteFilesInRangeforBinlog=true need saveMinBinlogId==ture";
+    LOG(ERROR) << err;
+    return {ErrorCodes::ERR_INTERNAL, err};
+  }
   return {ErrorCodes::ERR_OK, ""};
 }
 

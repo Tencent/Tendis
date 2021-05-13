@@ -696,8 +696,8 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
 TEST(Repl, BinlogKeepNum_Test) {
   size_t i = 0;
   {
-    for (int j = 0; j < 2; j++) {
-      LOG(INFO) << ">>>>>> test store count:" << i;
+    for (int j = 0; j < 3; j++) {
+      LOG(INFO) << ">>>>>> test time:" << j;
       const auto guard = MakeGuard([] {
         destroyEnv(master_dir);
         destroyEnv(slave_dir);
@@ -731,7 +731,16 @@ TEST(Repl, BinlogKeepNum_Test) {
         cfg3->binlogDelRange = 5000;
         cfg4->binlogDelRange = 5000;
         cfg1->compactRangeAfterDeleteRange = true;
+      } else if (j == 2) {
+        cfg1->binlogDelRange = 5000;
+        cfg2->binlogDelRange = 5000;
+        cfg3->binlogDelRange = 5000;
+        cfg4->binlogDelRange = 5000;
+        cfg1->deleteFilesInRangeforBinlog = true;
       }
+
+      // NOTE(takenliu) be care of gParams set by cfg1.
+      gParams = cfg1;
 
       auto master = std::make_shared<ServerEntry>(cfg1);
       auto s = master->startup(cfg1);
@@ -800,7 +809,7 @@ TEST(Repl, BinlogKeepNum_Test) {
       ASSERT_EQ(single.use_count(), 1);
 #endif
 
-      LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+      LOG(INFO) << ">>>>>> test time:" << j << " end;";
     }
   }
 }
