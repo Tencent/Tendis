@@ -109,7 +109,7 @@ void WorkerPool::consumeTasks(size_t idx) {
         detachFlag = true;
         return;
       } else {
-        LOG(ERROR) << "This thread isn't in collection";
+        LOG(ERROR) << "This thread isn't in collection," << _name << ":" << id;
       }
     } catch (const std::exception& ex) {
       LOG(ERROR) << "Workerpool:" << pname << " occurs error:" << ex.what();
@@ -144,6 +144,7 @@ Status WorkerPool::startup(size_t poolsize) {
     });
     auto tid = thd.get_id();
     _threads.emplace(tid, std::move(thd));
+    LOG(INFO) << "_threads add, " << _name << ":" << tid;
   }
   _idGenerator.store(poolsize, std::memory_order_relaxed);
   return {ErrorCodes::ERR_OK, ""};
@@ -196,6 +197,7 @@ void WorkerPool::resizeIncrease(size_t size) {
     auto tid = thd.get_id();
     _threads.emplace(tid, std::move(thd));
     _idGenerator.fetch_add(1, std::memory_order::memory_order_relaxed);
+    LOG(INFO) << "_threads add, " << _name << ":" << tid;
   }
 }
 

@@ -11,7 +11,7 @@ function runOne() {
     cat $tmplog
     cat $tmplog >> $logfile
 
-    errcnt=`grep -E "Expected|FAILED" $logfile|wc -l`
+    errcnt=`grep -E "Expected|FAILED|Check failure stack trace|core dumped" $logfile|wc -l`
     if [ $errcnt -ne 0 ]; then
         grep -E "Expected|FAILED" $logfile
         exit $errcnt

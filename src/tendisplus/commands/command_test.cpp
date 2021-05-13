@@ -1712,6 +1712,11 @@ TEST(Command, syncversion) {
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n"
             "*1\r\n*3\r\n$1\r\nk\r\n:25000\r\n:1\r\n");
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 TEST(Command, info) {
@@ -2268,31 +2273,6 @@ TEST(Command, rocksdbOptionsCommand) {
 #endif
 }
 
-// NOTE(takenliu): renameCommand may change command's name or behavior, so put
-// it in the end
-extern string gRenameCmdList;
-extern string gMappingCmdList;
-TEST(Command, renameCommand) {
-  const auto guard = MakeGuard([] { destroyEnv(); });
-
-  EXPECT_TRUE(setupEnv());
-  auto cfg = makeServerParam();
-  auto server = makeServerEntry(cfg);
-  gRenameCmdList += ",set set_rename";
-  gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
-  Command::changeCommand(gRenameCmdList, "rename");
-  Command::changeCommand(gMappingCmdList, "mapping");
-
-  testRenameCommand(server);
-
-  gRenameCmdList = "";
-  gMappingCmdList = "";
-
-#ifndef _WIN32
-  server->stop();
-  EXPECT_EQ(server.use_count(), 1);
-#endif
-}
 
 void testSort(bool clusterEnabled) {
   const auto guard = MakeGuard([] { destroyEnv(); });
@@ -2352,10 +2332,10 @@ void testSort(bool clusterEnabled) {
   expect = Command::runSessionCmd(&sess);
   if (!clusterEnabled) {
     EXPECT_EQ(expect.value(),
-            "*3\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n1\r\n");
+              "*3\r\n$1\r\n2\r\n$1\r\n3\r\n$1\r\n1\r\n");
   } else {
     EXPECT_EQ(expect.status().toString(),
-            "-ERR BY option of SORT denied in Cluster mode.\r\n");
+              "-ERR BY option of SORT denied in Cluster mode.\r\n");
   }
 
   // sort get
@@ -2363,10 +2343,10 @@ void testSort(bool clusterEnabled) {
   expect = Command::runSessionCmd(&sess);
   if (!clusterEnabled) {
     EXPECT_EQ(expect.value(),
-            "*3\r\n$5\r\nadmin\r\n$4\r\njack\r\n$4\r\nmary\r\n");
+              "*3\r\n$5\r\nadmin\r\n$4\r\njack\r\n$4\r\nmary\r\n");
   } else {
     EXPECT_EQ(expect.status().toString(),
-            "-ERR GET option of SORT denied in Cluster mode.\r\n");
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
   }
 
 #ifndef _WIN32
@@ -2378,6 +2358,32 @@ void testSort(bool clusterEnabled) {
 TEST(Command, sort_cluster) {
   testSort(false);
   testSort(true);
+}
+
+// NOTE(takenliu): renameCommand may change command's name or behavior, so put
+// it in the end
+extern string gRenameCmdList;
+extern string gMappingCmdList;
+TEST(Command, renameCommand) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+  gRenameCmdList += ",set set_rename";
+  gMappingCmdList += ",dbsize emptyint,keys emptymultibulk";
+  Command::changeCommand(gRenameCmdList, "rename");
+  Command::changeCommand(gMappingCmdList, "mapping");
+
+  testRenameCommand(server);
+
+  gRenameCmdList = "";
+  gMappingCmdList = "";
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
 }
 
 }  // namespace tendisplus
