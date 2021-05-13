@@ -470,12 +470,12 @@ void ReplManager::slaveSyncRoutine(uint32_t storeId) {
 
   if (metaSnapshot->replState == ReplState::REPL_CONNECT) {
     slaveStartFullsync(*metaSnapshot);
-    nextSched = nextSched + std::chrono::seconds(3);
+    nextSched = SCLOCK::now() + std::chrono::seconds(3);
     return;
   } else if (metaSnapshot->replState == ReplState::REPL_CONNECTED ||
              metaSnapshot->replState == ReplState::REPL_ERR) {
     slaveChkSyncStatus(*metaSnapshot);
-    nextSched = nextSched + std::chrono::seconds(10);
+    nextSched = SCLOCK::now() + std::chrono::seconds(10);
     return;
   } else {
     INVARIANT(false);
