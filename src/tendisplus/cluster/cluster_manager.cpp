@@ -1163,7 +1163,7 @@ bool ClusterState::isMyselfSlave() const {
   return _myself->nodeIsSlave();
 }
 
-CNodePtr ClusterState::getMyMaster() {
+CNodePtr ClusterState::getMyMaster() const {
   std::lock_guard<myMutex> lk(_mutex);
   if (_myself->nodeIsMaster())
     return nullptr;
@@ -1428,6 +1428,15 @@ Status ClusterState::clusterSaveConfig() {
   std::lock_guard<myMutex> lk(_mutex);
   Status s = clusterSaveNodesNoLock();
   return s;
+}
+
+bool ClusterState::isMyMasterAlive() const {
+  std::lock_guard<myMutex> lk(_mutex);
+  auto master = getMyMaster();
+  if (master && !master->nodeFailed()) {
+    return true;
+  }
+  return false;
 }
 
 void ClusterState::setClientUnBlock() {
@@ -2111,8 +2120,7 @@ void ClusterState::manualFailoverCheckTimeout() {
     }
   }
   if (delFakeTask) {
-    _server->getReplManager()->DelFakeFullPushStatus(
-            masterIp, masterPort);
+    _server->getReplManager()->DelFakeFullPushStatus(masterIp, masterPort);
   }
 }
 
@@ -2177,7 +2185,7 @@ void ClusterState::clusterHandleManualFailover() {
     // NOTE(takenliu): add fake FullPushStatus,
     //   to protect binlog not be recycled.
     _server->getReplManager()->AddFakeFullPushStatus(
-            slaveOffset, masterIp, masterPort);
+      slaveOffset, masterIp, masterPort);
   }
 }
 
@@ -2592,9 +2600,12 @@ void ClusterState::clusterLogCantFailover(int reason) {
  * configuration epoch already. */
 Status ClusterState::clusterFailoverReplaceYourMasterMeta(void) {
   std::lock_guard<myMutex> lk(_mutex);
+  if (_myself->nodeIsMaster()) {
+    return {ErrorCodes::ERR_CLUSTER, "I am already a master"};
+  }
   CNodePtr oldmaster = _myself->getMaster();
-  if (_myself->nodeIsMaster() || oldmaster == nullptr) {
-    return {ErrorCodes::ERR_CLUSTER, "no condition to replace master"};
+  if (!oldmaster) {
+    return {ErrorCodes::ERR_CLUSTER, "the slave has no master"};
   }
   /* 1) Turn this node into a master. */
   bool s = clusterSetNodeAsMasterNoLock(_myself);
@@ -3679,8 +3690,8 @@ Status ClusterManager::clusterReset(uint16_t hard) {
     s = _svr->getReplManager()->replicationUnSetMaster();
     if (!s.ok()) {
       LOG(ERROR) << "set myself master fail when cluster reset";
+      return s;
     }
-    return s;
   }
   std::lock_guard<mutex> lk(_mutex);
   /* Close slots, reset manual failover state. */

@@ -555,7 +555,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool isMyselfMaster();
   bool isMyselfSlave() const;
   // getMyMaster
-  CNodePtr getMyMaster();
+  CNodePtr getMyMaster() const;
+
   // addNode
   void clusterAddNode(CNodePtr node, bool save = false);
   void clusterDelNode(CNodePtr node, bool save = false);
@@ -683,7 +684,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool isContainSlot(uint32_t slotId);
   Status forceFailover(bool force, bool takeover);
   Status clusterSaveConfig();
-  Status unsetMaster();
+  bool isMyMasterAlive() const;
 
   bool getBlockState() {
     return _blockState.load(std::memory_order_relaxed);

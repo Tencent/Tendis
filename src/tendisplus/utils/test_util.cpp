@@ -666,6 +666,12 @@ void WorkLoad::lockDb(mstime_t locktime) {
   EXPECT_TRUE(expect.ok());
 }
 
+void WorkLoad::sleep(mstime_t locktime) {
+  _session->setArgs({"tendisadmin", "sleep", std::to_string(locktime)});
+  auto expect = Command::runSessionCmd(_session.get());
+  EXPECT_TRUE(expect.ok());
+}
+
 bool WorkLoad::manualFailover() {
   _session->setArgs({"cluster", "failover"});
   auto expect = Command::runSessionCmd(_session.get());

@@ -350,6 +350,18 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   if (!reconn) {
     return;
   }
+
+  if (_svr->getParams()->clusterEnabled) {
+    auto clusterMgr = _svr->getClusterMgr();
+    if (clusterMgr && clusterMgr->getClusterState()
+            && !clusterMgr->getClusterState()->isMyMasterAlive()) {
+      LOG(ERROR) << "my master is marked as failed, no need reconn with: "
+                 << metaSnapshot.syncFromHost << ","
+                 << metaSnapshot.syncFromPort;
+      return;
+    }
+  }
+
   LOG(INFO) << "store:" << metaSnapshot.id
             << " reconn with:" << metaSnapshot.syncFromHost << ","
             << metaSnapshot.syncFromPort << "," << metaSnapshot.syncFromId;

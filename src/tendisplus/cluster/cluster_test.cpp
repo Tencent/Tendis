@@ -317,7 +317,7 @@ std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
 void waitNodeFail(std::shared_ptr<ClusterState>& state,
                   const std::string& nodeName) {
   auto start = msSinceEpoch();
-  LOG(INFO) << "waiting servers cluster state changed to ok ";
+  LOG(INFO) << "waiting node:" << nodeName << "to be marked fail";
 
   auto targetNode = state->clusterLookupNode(nodeName);
   while (!targetNode->nodeFailed()) {
@@ -325,6 +325,7 @@ void waitNodeFail(std::shared_ptr<ClusterState>& state,
     if (msSinceEpoch() - start > 40 * 1000) {
       // take too long time
       INVARIANT_D(0);
+      break;
     }
   }
   LOG(INFO) << "wait node fail state cost time"
@@ -1143,6 +1144,66 @@ TEST(Cluster, failover) {
 
   servers.clear();
 }
+
+TEST(Cluster, fakeFailover) {
+  uint32_t nodeNum = 5;
+  uint32_t startPort = 15300;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+  // 5 master & 5 slave
+  auto servers = makeCluster(startPort, nodeNum);
+  auto& node1 = servers[0];
+  auto& node2 = servers[1];
+
+  auto masterName = node1->getClusterMgr()->getClusterState()->getMyselfName();
+
+  auto ctx = std::make_shared<asio::io_context>();
+  auto sess = makeSession(node1, ctx);
+  WorkLoad work(node1, sess);
+  work.init();
+  work.sleep(40);  // sleep 40 seconds, it should marked as fail
+
+  if (node2->getClusterMgr()) {
+    // wait master mark fail
+    auto state = node2->getClusterMgr()->getClusterState();
+    waitNodeFail(state, masterName);
+  }
+
+  // cluster work ok after vote sucessful
+  auto t = msSinceEpoch();
+  bool isok = true;
+  while (true) {
+    isok = true;
+    for (auto node : servers) {
+      if (node == node1)
+        continue;
+      if (!node->getClusterMgr()->getClusterState()->clusterIsOK()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        isok = false;
+        break;
+      }
+    }
+    if (isok) {
+      break;
+    }
+    if (msSinceEpoch() - t > 50 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+    }
+  }
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  servers.clear();
+}
+
 
 bool checkSlotsBlong(const std::bitset<CLUSTER_SLOTS>& slots,
                      std::shared_ptr<ServerEntry> svr,
