@@ -216,45 +216,59 @@ TEST(ParamManager, common) {
 }
 
 TEST(CursorMap, addmapping) {
-  CursorMap map(5);
+  CursorMap map(5, 2);
   auto &map_ = map.getMap();
 
-  map.addMapping(1, {1, "1"});
-  map.addMapping(2, {2, "2"});
-  map.addMapping(3, {3, "3"});
-  map.addMapping(4, {4, "4"});
-  map.addMapping(5, {5, "5"});
+  // CASE: mapping is not full, but one of alive sessions its mapping is full,
+  //  evict session itself LRU mapping
+  map.addMapping(1, {1, "1", 0});
+  map.addMapping(2, {2, "2", 0});
+  map.addMapping(3, {3, "3", 1});
+  map.addMapping(4, {4, "4", 1});
+  map.addMapping(5, {5, "5", 1});
+  EXPECT_EQ(map_.size(), 4);
+  EXPECT_TRUE(map_.count(1));
+  EXPECT_TRUE(map_.count(2));
+  EXPECT_FALSE(map_.count(3));
+  EXPECT_TRUE(map_.count(4));
+  EXPECT_TRUE(map_.count(5));
+
+  // CASE: mapping is NOT full, session its own mapping is NOT full,
+  // can add mapping successfully
+  map.addMapping(6, {6, "6", 2});
   EXPECT_EQ(map_.size(), 5);
   EXPECT_TRUE(map_.count(1));
   EXPECT_TRUE(map_.count(2));
-  EXPECT_TRUE(map_.count(3));
-  EXPECT_TRUE(map_.count(4));
-  EXPECT_TRUE(map_.count(5));
-
-  map.addMapping(6, {6, "6"});
-  EXPECT_EQ(map_.size(), 5);
-  EXPECT_TRUE(map_.count(2));
-  EXPECT_TRUE(map_.count(3));
+  EXPECT_FALSE(map_.count(3));
   EXPECT_TRUE(map_.count(4));
   EXPECT_TRUE(map_.count(5));
   EXPECT_TRUE(map_.count(6));
+
+  // CASE: new session comes,
+  // but all mapping is full => evict LRU mapping which belong to other session
+  map.addMapping(7, {7, "7", 3});
+  EXPECT_EQ(map_.size(), 5);
+  EXPECT_FALSE(map_.count(1));
+  EXPECT_TRUE(map_.count(2));
+  EXPECT_FALSE(map_.count(3));
+  EXPECT_TRUE(map_.count(4));
+  EXPECT_TRUE(map_.count(5));
+  EXPECT_TRUE(map_.count(6));
+  EXPECT_TRUE(map_.count(7));
 }
 
 TEST(CursorMap, getMapping) {
-  CursorMap map(5);
+  CursorMap map(5, 5);
 
-  map.addMapping(1, {1, "1"});
-  map.addMapping(2, {2, "2"});
-  map.addMapping(3, {3, "3"});
-  map.addMapping(4, {4, "4"});
-  map.addMapping(5, {5, "5"});
+  map.addMapping(1, {1, "1", 0});
+  map.addMapping(2, {2, "2", 0});
+  map.addMapping(3, {3, "3", 0});
+  map.addMapping(4, {4, "4", 0});
+  map.addMapping(5, {5, "5", 0});
   EXPECT_EQ(map.getMapping(1).value().kvstoreId, 1);
   EXPECT_FALSE(map.getMapping(10).ok());
 
-  std::cout << std::endl << std::endl;
-
-  map.addMapping(10, {10, "10"});
-
+  map.addMapping(10, {10, "10", 0});
   EXPECT_EQ(map.getMapping(10).value().lastScanKey, "10");
   EXPECT_FALSE(map.getMapping(1).ok());
 }

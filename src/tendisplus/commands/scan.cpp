@@ -516,8 +516,10 @@ class ScanCommand : public Command {
     }
 
     if (cursor && !batch.empty()) {
-      cursorMap.addMapping(
-              cursor, {static_cast<int>(id), batch.back().encode()});
+      cursorMap.addMapping(cursor,
+                           {static_cast<int>(id),
+                            batch.back().encode(),
+                            sess->id()});
       batch.pop_back();
     }
 
