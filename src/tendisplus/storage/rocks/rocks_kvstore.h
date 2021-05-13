@@ -66,6 +66,8 @@ class RocksTxn : public Transaction {
                const std::string& val,
                const uint64_t ts = 0) final;
   Status delKV(const std::string& key, const uint64_t ts = 0) final;
+  Status setKVWithoutBinlog(const std::string& key,
+               const std::string& val) final;
   Status addDeleteRangeBinlog(const std::string& begin,
                               const std::string& end) final;
 #ifdef BINLOG_V1
@@ -235,6 +237,7 @@ class RocksKVStore : public KVStore {
                                   const std::string& begin,
                                   const std::string& end);
   Status deleteRangeBinlog(uint64_t begin, uint64_t end);
+  Status saveMinBinlogId(uint64_t id, Transaction* txn = nullptr);
 
 #ifdef BINLOG_V1
   Status applyBinlog(const std::list<ReplLog>& txnLog, Transaction* txn) final;

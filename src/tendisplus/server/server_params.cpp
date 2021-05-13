@@ -490,6 +490,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("jeprof-auto-dump", jeprofAutoDump);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("compactrange-after-deleterange",
                                   compactRangeAfterDeleteRange);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("save-min-binlogid",
+                                  saveMinBinlogId);
 }
 
 ServerParams::~ServerParams() {
