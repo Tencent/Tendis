@@ -473,6 +473,7 @@ class ServerParams {
   bool jeprofAutoDump = true;
   bool compactRangeAfterDeleteRange = false;
   bool saveMinBinlogId = true;
+  bool deleteFilesInRangeforBinlog = false;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
