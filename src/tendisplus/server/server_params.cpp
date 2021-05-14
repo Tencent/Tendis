@@ -502,6 +502,9 @@ ServerParams::ServerParams() {
                                   clusterMigrationBarrier);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor",
                                   clusterSlaveValidityFactor);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("force-recovery", forceRecovery);
+
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
   REGISTER_VARS(luaStateMaxIdleTime);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("jeprof-auto-dump", jeprofAutoDump);

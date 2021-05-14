@@ -453,6 +453,7 @@ class ServerParams {
   bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;
+  uint32_t forceRecovery = 0;
 
   uint32_t aofPsyncNum = 500;
   uint32_t snapShotRetryCnt = 1000;

@@ -242,6 +242,8 @@ class RocksKVStore : public KVStore {
                                   const std::string& end);
   Status saveMinBinlogId(uint64_t id, Transaction* txn = nullptr);
 
+  Status handleRocksdbError(rocksdb::Status s) const;
+
 #ifdef BINLOG_V1
   Status applyBinlog(const std::list<ReplLog>& txnLog, Transaction* txn) final;
   Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
@@ -286,6 +288,9 @@ class RocksKVStore : public KVStore {
   bool isPaused() const final;
   bool enableRepllog() const {
     return _enableRepllog;
+  }
+  bool recoveryMode() const {
+    return _cfg->forceRecovery != 0;
   }
   Status pause() final;
   Status resume() final;
