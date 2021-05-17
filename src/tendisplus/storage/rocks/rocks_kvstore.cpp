@@ -1903,6 +1903,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _isPaused(false),
     _hasBackup(false),
     _enableRepllog(enableRepllog),
+    _ignoreRocksError(false),
     _mode(mode),
     _txnMode(txnMode),
     _optdb(nullptr),
@@ -2398,7 +2399,7 @@ Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
     }
   }
 
-  INVARIANT_D(0);
+  INVARIANT_D(_ignoreRocksError);
   LOG(ERROR) << "Get unexpected error from rocksdb:" << s.ToString();
   return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }

@@ -282,6 +282,13 @@ class RocksKVStore : public KVStore {
     return _mode != KVStore::StoreMode::STORE_NONE;
   }
 
+#ifdef TENDIS_DEBUG
+  // for unit test
+  void setIgnoreRocksError() {
+    _ignoreRocksError = true;
+  }
+#endif
+
   // check whether there is any data in the store
   bool isEmpty(bool ignoreBinlog = false) const final;
   // check whether the store get do get/set operations
@@ -410,6 +417,7 @@ class RocksKVStore : public KVStore {
   bool _isPaused;
   bool _hasBackup;
   bool _enableRepllog;
+  bool _ignoreRocksError;
 
   KVStore::StoreMode _mode;
 

@@ -910,6 +910,9 @@ void commonRoutine(RocksKVStore* kvstore) {
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
   std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
 
+  // ignore INVARIANT for rocksdb error
+  kvstore->setIgnoreRocksError();
+
   std::set<uint64_t> uncommitted = kvstore->getUncommittedTxns();
   EXPECT_NE(uncommitted.find(dynamic_cast<RocksTxn*>(txn1.get())->getTxnId()),
             uncommitted.end());
