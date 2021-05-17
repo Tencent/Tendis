@@ -2628,6 +2628,8 @@ Status ClusterState::clusterFailoverReplaceYourMasterMeta(void) {
       }
     }
   }
+  LOG(INFO) << "set myself master now, finish replace old master:"
+            << oldmaster->getNodeName();
   return {ErrorCodes::ERR_OK, "replace metadata"};
 }
 
@@ -2639,6 +2641,7 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     return s;
   }
   LOG(INFO) << "replication unsetMaster success";
+
   s = clusterFailoverReplaceYourMasterMeta();
   if (!s.ok()) {
     LOG(ERROR) << "replace master meta update fail" << s.toString();
@@ -2649,9 +2652,9 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   /* Set the replication offset. */
   uint64_t offset = _server->getReplManager()->replicationGetOffset();
   clusterBroadcastPong(CLUSTER_BROADCAST_ALL, offset);
+
   /* If there was a manual failover in progress, clear the state. */
   resetManualFailover();
-
 
   /* 5) Update state and save config. */
   clusterUpdateState();
@@ -5360,17 +5363,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         (sender->getSlotNum() > 0 || sender->nodeIsArbiter()) &&
         senderCurrentEpoch >= getFailAuthEpoch()) {
       addFailVoteNum();
-      /* Maybe we reached a quorum here, set a flag to make sure
-       * we check ASAP. */
-      auto s = clusterHandleSlaveFailover();
-      if (s.ok()) {
-        /* Take responsability for the cluster slots. */
-        auto result = clusterFailoverReplaceYourMaster();
-        if (!s.ok()) {
-          LOG(ERROR) << "replace mater:" << getMyMaster()->getNodeName()
-                     << "fail";
-        }
-      }
+      LOG(INFO) << "receive vote from:" << sender->getNodeName();
     }
   } else if (type == ClusterMsg::Type::MFSTART) {
     /* This message is acceptable only if I'm a master and the sender
