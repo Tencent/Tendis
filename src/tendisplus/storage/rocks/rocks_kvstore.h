@@ -242,6 +242,8 @@ class RocksKVStore : public KVStore {
                                   const std::string& end);
   Status saveMinBinlogId(uint64_t id, Transaction* txn = nullptr);
 
+  Status handleRocksdbError(rocksdb::Status s) const;
+
 #ifdef BINLOG_V1
   Status applyBinlog(const std::list<ReplLog>& txnLog, Transaction* txn) final;
   Expected<std::pair<uint64_t, std::list<ReplLog>>> getTruncateLog(
@@ -280,12 +282,22 @@ class RocksKVStore : public KVStore {
     return _mode != KVStore::StoreMode::STORE_NONE;
   }
 
+#ifdef TENDIS_DEBUG
+  // for unit test
+  void setIgnoreRocksError() {
+    _ignoreRocksError = true;
+  }
+#endif
+
   // check whether there is any data in the store
   bool isEmpty(bool ignoreBinlog = false) const final;
   // check whether the store get do get/set operations
   bool isPaused() const final;
   bool enableRepllog() const {
     return _enableRepllog;
+  }
+  bool recoveryMode() const {
+    return _cfg->forceRecovery != 0;
   }
   Status pause() final;
   Status resume() final;
@@ -405,6 +417,7 @@ class RocksKVStore : public KVStore {
   bool _isPaused;
   bool _hasBackup;
   bool _enableRepllog;
+  bool _ignoreRocksError;
 
   KVStore::StoreMode _mode;
 
