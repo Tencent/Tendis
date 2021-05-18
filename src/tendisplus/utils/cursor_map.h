@@ -21,7 +21,7 @@ class CursorMap {
   static constexpr size_t MAX_MAPPING_COUNT = 10000;
   static constexpr size_t MAX_SESSION_LIMIT = 100;
   struct CursorMapping {
-    int kvstoreId;
+    size_t kvstoreId;
     std::string lastScanKey;
     uint64_t sessionId;
     uint64_t timeStamp;
@@ -35,15 +35,21 @@ class CursorMap {
   CursorMap(CursorMap &&) = delete;
   CursorMap &operator=(CursorMap &&) = delete;
 
-  void addMapping(uint64_t cursor, int kvstoreId,
+  void addMapping(uint64_t cursor, size_t kvstoreId,
                   const std::string &key, uint64_t sessionId);
   Expected<CursorMapping> getMapping(uint64_t cursor);
+
+#ifdef TENDIS_DEBUG
   auto getMap() const -> const std::unordered_map<uint64_t, CursorMapping> &;
+  auto getTs() const -> const std::map<uint64_t, uint64_t> &;
+  auto getSessionTs() const
+  -> const std::unordered_map<uint64_t, std::set<uint64_t>> &;
+#endif
 
  private:
   uint64_t getCurrentTime();
   size_t getSessionMappingCount(uint64_t sessionId);
-  void evictMapping(uint64_t ts);
+  void evictMapping(uint64_t cursor);
 
   size_t _maxCursorCount;
   size_t _maxSessionLimit;

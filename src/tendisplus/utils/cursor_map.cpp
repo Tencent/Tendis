@@ -6,6 +6,8 @@
 
 #include "tendisplus/utils/time.h"
 
+#include "tendisplus/utils/invariant.h"
+
 namespace tendisplus {
 
 /**
@@ -33,7 +35,7 @@ CursorMap::CursorMap(size_t maxCursorCount, size_t maxSessionLimit)
  *      thus, other client's fast scan commands may not overwrite others' slow
  *      scan commands
  */
-void CursorMap::addMapping(uint64_t cursor, int kvstoreId,
+void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
                            const std::string &key, uint64_t sessionId) {
   // make lock guard
   std::lock_guard<std::recursive_mutex> lk(_mutex);
@@ -47,14 +49,11 @@ void CursorMap::addMapping(uint64_t cursor, int kvstoreId,
   /**
    * firstly, check whether session-level cursorMap is full.
    * if so, evict mapping by LRU belong to this session.
-   * NOTE(pecochen): use std::set::find to adapt interface arguments,
-   *   std::set::find has the same algorithm complexity with std::set::operator[]
-   *   they're O(log(std::Container::size())
    */
   if (_sessionTs.count(sessionId)
       && (_sessionTs[sessionId].size() >= _maxSessionLimit)) {
     uint64_t ts = *_sessionTs[sessionId].cbegin();
-    evictMapping(ts);
+    evictMapping(_cursorTs[ts]);
   }
 
   /**
@@ -69,7 +68,7 @@ void CursorMap::addMapping(uint64_t cursor, int kvstoreId,
         break;
       }
     }
-    evictMapping(iter->first);  // cursorTs::iterator => {ts, cursor}
+    evictMapping(iter->second);  // cursorTs::iterator => {ts, cursor}
   }
 
   /**
@@ -78,7 +77,7 @@ void CursorMap::addMapping(uint64_t cursor, int kvstoreId,
    */
   if (_cursorMap.count(cursor)) {
     uint64_t ts = _cursorMap[cursor].timeStamp;
-    evictMapping(ts);
+    evictMapping(_cursorTs[ts]);
   }
 
   auto time = getCurrentTime();
@@ -104,14 +103,33 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
   }
 }
 
+#ifdef TENDIS_DEBUG
 /**
- * @ get cursorMap ref, only for debug
+ * @brief get _cursorMap ref, only for debug
  * @return _cursorMap
  */
 auto CursorMap::getMap() const
       -> const std::unordered_map<uint64_t, CursorMapping> & {
   return _cursorMap;
 }
+
+/**
+ * @brief get _cursorTs ref, only for debug
+ * @return _cursorTs
+ */
+auto CursorMap::getTs() const -> const std::map<uint64_t, uint64_t> & {
+  return _cursorTs;
+}
+
+/**
+ * @brief get _sessionTs ref, only for debug
+ * @return _sessionTs
+ */
+auto CursorMap::getSessionTs() const
+-> const std::unordered_map<uint64_t, std::set<uint64_t>> & {
+  return _sessionTs;
+}
+#endif
 
 /**
  * @brief get current time by ns, especially check whether the same record
@@ -149,18 +167,24 @@ inline size_t CursorMap::getSessionMappingCount(uint64_t sessionId) {
  *      2. when _sessionTs[id].size() >= MAX_SESSION_LIMIT
  *          => evict mapping by LRU belong to current session
  *      all above cases evict mapping by info => {ts, cursor}
- * @param ts ts -> cursor -> mapping => evict operation
+ * @param cursor cursor as unique key in _cursorMap
  * @note this function only can be called in lock guard scope,
  *      by std::recursive_mutex, can lock_guard recursively.
  */
-void CursorMap::evictMapping(uint64_t ts) {
+void CursorMap::evictMapping(uint64_t cursor) {
   std::lock_guard<std::recursive_mutex> lk(_mutex);
-  auto cursor = _cursorTs[ts];
+  INVARIANT_D(_cursorMap.count(cursor));
+
+  auto ts = _cursorMap[cursor].timeStamp;
   auto id = _cursorMap[cursor].sessionId;
 
-  _cursorMap.erase(cursor);
-  _cursorTs.erase(ts);
-  _sessionTs[id].erase(ts);
+  INVARIANT_D(_cursorMap.erase(cursor));
+  INVARIANT_D(_cursorTs.erase(ts));
+  INVARIANT_D(_sessionTs[id].erase(ts));
+
+  if (_sessionTs[id].empty()) {
+    _sessionTs.erase(id);
+  }
 }
 
 }  // namespace tendisplus

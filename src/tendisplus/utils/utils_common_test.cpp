@@ -291,4 +291,103 @@ TEST(CursorMap, getMapping) {
   EXPECT_FALSE(map.getMapping(1).ok());
 }
 
+/**
+ * @brief used for simulate scan operation
+ * @param totalScanSession max scan session
+ * @param totalScanTimes each session scan times
+ * @param map map pointer, use map reference isn't a good design.
+ */
+void testSimulateScanCmd(uint64_t totalScanSession,
+                         uint64_t totalScanTimes,
+                         CursorMap *map) {
+  auto simulateScanCmd = [&](size_t step, size_t id) {
+    static uint64_t cursor = 0;    // static data
+    cursor += step;                // simulate cursor by add step
+    map->addMapping(cursor, 1, "x", id);
+  };
+
+  // simulate scan operations, multi scan session at the same time.
+  for (size_t session = 1; session <= totalScanSession; ++session) {
+    std::thread([&](){
+      for (size_t times = 0; times < totalScanTimes; ++times) {
+        auto step = session;
+        simulateScanCmd(step, session);  // step equal to session, conveniently.
+      }
+    }).join();
+  }
+}
+
+TEST(CursorMap, simulateScanSessions) {
+  // CASE 1: sessions < max support session (default is 100)
+  //      scan times < maxSessionLimit
+  // Expected result: _cursorMap.size() <= 50 * 100 (5000)
+  //                 each set in _sessionTs, set.size() < 100
+  {
+    CursorMap map(10000, 100);
+    const auto &map_ = map.getMap();
+    const auto &sessionTs_ = map.getSessionTs();
+
+    testSimulateScanCmd(50, 50, &map);
+
+    EXPECT_LE(map_.size(), 5000);
+    for (const auto &v : sessionTs_) {
+      EXPECT_LT(v.second.size(), 100);
+    }
+  }
+
+  // CASE 2: session < max support session (default is 100)
+  //     scan times >> maxSessionLimit
+  // Expected result: _cursorMap.size() <= 50 * 100 (5000)
+  //                 each set in _sessionTs, set.size() == 100 (99.99%)
+  {
+    CursorMap map(10000, 100);
+    const auto &map_ = map.getMap();
+    const auto &sessionTs_ = map.getSessionTs();
+
+    testSimulateScanCmd(50, 10000, &map);
+
+    EXPECT_LE(map_.size(), 5000);
+    for (const auto &v : sessionTs_) {
+      EXPECT_EQ(v.second.size(), 100);
+    }
+  }
+
+  // CASE 3: session >> max support session (default is 100)
+  //        scan times < maxSessionLimit
+  // Expected result: _cursorMap.size() == 10000 (because of evict operation)
+  //              each set in _sessionTs, set.size() < 100,
+  //              it means, _cursorMap contains session > default 100 actually
+  {
+    CursorMap map(10000, 100);
+    const auto &map_ = map.getMap();
+    const auto &sessionTs_ = map.getSessionTs();
+
+    testSimulateScanCmd(1000, 50, &map);
+
+    EXPECT_EQ(map_.size(), 10000);
+    for (const auto &v : sessionTs_) {
+      EXPECT_LT(v.second.size(), 100);
+    }
+  }
+
+  // CASE 4: session >> max support session (default is 100)
+  //         scan times >> maxSessionLimit
+  // Expected result: _cursorMap.size() == 10000 (because of evict operation)
+  //                each set in _sessionTs, set.size() == 100
+  {
+    CursorMap map(10000, 100);
+    const auto &map_ = map.getMap();
+    const auto &sessionTs_ = map.getSessionTs();
+
+    testSimulateScanCmd(1000, 10000, &map);
+
+    EXPECT_EQ(map_.size(), 10000);
+    for (const auto &v : sessionTs_) {
+      // may cause 900 pair {id, set (=> .size() -> 0)},
+      // should clean up useless pair
+      EXPECT_EQ(v.second.size(), 100);
+    }
+  }
+}
+
 }  // namespace tendisplus
