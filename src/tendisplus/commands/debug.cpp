@@ -2237,6 +2237,10 @@ class InfoCommand : public Command {
 
       auto iter_skip =
         server->getStatCountByName(sess, "rocksdb.number.iter.skip");
+      auto filter_count =
+        server->getStatCountByName(sess, "rocksdb.compaction-filter-count");
+      auto expire_count =
+        server->getStatCountByName(sess, "rocksdb.compaction-kv-expired-count");
 
       uint64_t blockUsage = server->getBlockCache()->GetUsage();
       uint64_t blockPinnedUsage = server->getBlockCache()->GetPinnedUsage();
@@ -2261,6 +2265,8 @@ class InfoCommand : public Command {
          << "\r\n";
       ss << "rocksdb.compaction-pending:" << numCompaction << "\r\n";
       ss << "rocksdb.number.iter.skip:" << iter_skip << "\r\n";
+      ss << "rocksdb.compaction-filter-count:" << filter_count << "\r\n";
+      ss << "rocksdb.compaction-kv-expired-count:" << expire_count << "\r\n";
       ss << "\r\n";
       result << ss.str();
     }

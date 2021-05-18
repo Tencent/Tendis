@@ -2667,6 +2667,12 @@ uint64_t RocksKVStore::getStatCountByName(const std::string& name) const {
     return getStatCountById(tickersNameMap[name]);
   }
 
+  if (name == "rocksdb.compaction-filter-count") {
+    return stat.compactFilterCount.load(memory_order_relaxed);
+  } else if (name == "rocksdb.compaction-kv-expired-count") {
+    return stat.compactKvExpiredCount.load(memory_order_relaxed);
+  }
+
   INVARIANT_D(0);
 
   return 0;
