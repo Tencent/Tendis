@@ -264,7 +264,6 @@ void NetworkAsio::doAccept() {
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
       _server, std::move(socket), newConnId, true, _netMatrix, _reqMatrix);
-    sess->setIoCtxId(index);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
