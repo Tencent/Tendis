@@ -76,8 +76,7 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
    * search timeStamp by record in _cursorReverseTs;
    */
   if (_cursorMap.count(cursor)) {
-    uint64_t ts = _cursorMap[cursor].timeStamp;
-    evictMapping(_cursorTs[ts]);
+    evictMapping(cursor);
   }
 
   auto time = getCurrentTime();
@@ -99,7 +98,7 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
   if (_cursorMap.count(cursor)) {      // means mapping in _cursorMap
     return _cursorMap[cursor];
   } else {
-    return {ErrorCodes::ERR_NOTFOUND, ""};
+    return {ErrorCodes::ERR_NOTFOUND, "Mapping NOT FOUND"};
   }
 }
 
@@ -129,6 +128,9 @@ auto CursorMap::getSessionTs() const
 -> const std::unordered_map<uint64_t, std::set<uint64_t>> & {
   return _sessionTs;
 }
+
+size_t CursorMap::maxCursorCount() const { return _maxCursorCount; }
+size_t CursorMap::maxSessionLimit() const { return _maxSessionLimit; }
 #endif
 
 /**

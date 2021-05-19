@@ -44,6 +44,8 @@ class CursorMap {
   auto getTs() const -> const std::map<uint64_t, uint64_t> &;
   auto getSessionTs() const
   -> const std::unordered_map<uint64_t, std::set<uint64_t>> &;
+  size_t maxCursorCount() const;
+  size_t maxSessionLimit() const;
 #endif
 
  private:
