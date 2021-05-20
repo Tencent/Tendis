@@ -12,7 +12,7 @@ startTask() {
     stopTask
 
     task=$1
-    logInfo "startTask $task begin"
+    logInfo "$tendisVersion task begin: $task"
     for((i=0;i<$benchnum;i++))
     do
         if (($i%2 == 0 ))
@@ -46,6 +46,7 @@ waitFinish() {
         fi
         sleep 1
     done
+    logInfo "$tendisVersion task finished: $1"
 }
 
 if [[ $# != 1 ]]
@@ -54,12 +55,13 @@ then
     echo "      ./benchmark_ver_release.sh 2-3-0"
     exit 1
 fi
+
 #rm nohup.out
-rm $log
+#rm $log
 
 logInfo "========start========"
 tendisVersion=$1
-logInfo "tendisVersion: $tendisVersion"
+logInfo "start tendisVersion: $tendisVersion benchmark"
 
 user=mysql
 ipmatch=tendisx.cdtest
@@ -70,17 +72,19 @@ port2=50000
 pw=cdtestgo
 benmark_binary=./redis-benchmark
 
-keynum=20000000
+let keynum=1*10000*10000
 clientnum=100
 benchnum=10
 let per_keynum=$keynum/$benchnum
 
-
-
+#1 yi about 8 minutes
 startTask set
-waitFinish
+waitFinish set
+sleep 120
 
+#1 yi about 7 minutes
 startTask get
-waitFinish
+waitFinish get
 
+logInfo "end tendisVersion: $tendisVersion benchmark"
 logInfo "========end========"
