@@ -296,7 +296,9 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   }
   void setBackupRunning();
   bool getTotalIntProperty(
-    Session* sess, const std::string& property, uint64_t* value,
+    Session* sess,
+    const std::string& property,
+    uint64_t* value,
     ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
 
   bool getAllProperty(Session* sess,
@@ -314,8 +316,17 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _isRunning;
   }
 
-  CursorMap& getCursorMap(int dbId) {
-    return _cursorMaps[dbId];
+  Expected<CursorMap::CursorMapping> getCursorMapping(Session* sess,
+                                                      uint64_t cursor) {
+    return _cursorMaps[sess->getCtx()->getDbId()].getMapping(cursor);
+  }
+
+  void addCursorMapping(Session* sess,
+                        uint64_t cursor,
+                        size_t kvstoreId,
+                        const std::string& key) {
+    _cursorMaps[sess->getCtx()->getDbId()].addMapping(
+      cursor, kvstoreId, key, sess->id());
   }
 
  private:

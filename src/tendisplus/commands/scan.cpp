@@ -417,9 +417,7 @@ class ScanCommand : public Command {
     // Step 2: check if this scan command cursor has been stored in cursorMap_
     uint64_t kvstoreId{0};
     std::string lastScanKey;
-    auto &cursorMap = sess->getServerEntry()
-                      ->getCursorMap(sess->getCtx()->getDbId());
-    auto expMapping = cursorMap.getMapping(cursor);
+    auto expMapping = sess->getServerEntry()->getCursorMapping(sess, cursor);
     if (!expMapping.ok()) {
       if (expMapping.status().code() == ErrorCodes::ERR_NOTFOUND) {
         kvstoreId = 0;
@@ -474,7 +472,7 @@ class ScanCommand : public Command {
         auto expdb = server->getSegmentMgr()->getDb(
                 sess, id, mgl::LockMode::LOCK_IS);
         RET_IF_ERR_EXPECTED(expdb);
-        auto *pCtx = sess->getCtx();
+        auto* pCtx = sess->getCtx();
         auto kvstore = expdb.value().store;
         auto ptxn = sess->getCtx()->createTransaction(kvstore);
         RET_IF_ERR_EXPECTED(ptxn);
@@ -490,7 +488,7 @@ class ScanCommand : public Command {
           if (id == kvstoreId) {
             return lastScanRecordKey;
           } else {
-            return genRecordKey(0, pCtx->getDbId() , "");
+            return genRecordKey(0, pCtx->getDbId(), "");
           }
         }();
         auto expRecordKeys = scanKvstore(slots, recordKey, pCtx->getDbId(),
@@ -515,7 +513,7 @@ class ScanCommand : public Command {
     }
 
     if (cursor && !batch.empty()) {
-      cursorMap.addMapping(cursor, id, batch.back().encode(), sess->id());
+      server->addCursorMapping(sess, cursor, id, batch.back().encode());
       batch.pop_back();
     }
 
@@ -578,7 +576,7 @@ class ScanCommand : public Command {
      * @brief set filter _pattern
      * @param pattern MATCH "pattern"
      */
-    void setPattern(const std::string &pattern) {
+    void setPattern(const std::string& pattern) {
       if (pattern != "*") {
         _pattern.assign(pattern);
       } else {
@@ -590,7 +588,7 @@ class ScanCommand : public Command {
      * @brief set filter _type
      * @param type TYPE "type" (after toLower() operation)
      */
-    void setType(std::string &type) {
+    void setType(std::string& type) {
       if (recordTypeMap.count(type)) {
         _type = recordTypeMap[type];
       } else if (!type.empty()) {
@@ -628,7 +626,7 @@ class ScanCommand : public Command {
             {"zset", RecordType::RT_ZSET_META},
             // TODO(pecochen): unsupport type stream now (since redis 5.0)
     };
-  }_filter;
+  } _filter;
 
   /**
    * @brief get next slot which fit the slots condition
@@ -636,8 +634,8 @@ class ScanCommand : public Command {
    * @param slot current slot
    * @return slots or -1 (means none)
    */
-  static int32_t getNextSlot(const std::bitset<CLUSTER_SLOTS> &slots,
-                              int32_t slot) {
+  static int32_t getNextSlot(const std::bitset<CLUSTER_SLOTS>& slots,
+                             int32_t slot) {
     for (size_t i = slot + 1; i < CLUSTER_SLOTS; ++i) {
       if (slots.test(i)) {
         return i;
@@ -670,7 +668,7 @@ class ScanCommand : public Command {
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, std::to_string(cursor));
     Command::fmtMultiBulkLen(ss, recordKeys.size());
-    for (const auto &v : recordKeys) {
+    for (const auto& v : recordKeys) {
       Command::fmtBulk(ss, v.getPrimaryKey());
     }
     return ss.str();
@@ -682,7 +680,7 @@ class ScanCommand : public Command {
    * @return slots. belongs to this kvsotre && belongs to "slots"
    */
   static std::bitset<CLUSTER_SLOTS> getKvstoreSlots(
-          uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS> &slots) {
+    uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS>& slots) {
     std::bitset<CLUSTER_SLOTS> kvstoreSlots;
     for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
       if (slots[i] & checkKvstoreSlot(kvstoreId, i)) {
@@ -705,16 +703,15 @@ class ScanCommand : public Command {
    * @param txn transaction
    * @return {cursor, key-list}
    */
-  auto scanKvstore(const std::bitset<CLUSTER_SLOTS> &slots,
-                   const RecordKey &lastScanRecordKey,
+  auto scanKvstore(const std::bitset<CLUSTER_SLOTS>& slots,
+                   const RecordKey& lastScanRecordKey,
                    uint32_t dbId,
                    int kvstoreId,
                    uint64_t count,
-                   uint64_t *seq,
-                   uint64_t *scanTimes,
+                   uint64_t* seq,
+                   uint64_t* scanTimes,
                    uint64_t scanMaxTimes,
-                   Transaction *txn)
-            -> Expected<std::list<RecordKey>> {
+                   Transaction* txn) -> Expected<std::list<RecordKey>> {
     std::list<RecordKey> result;
     auto kvstoreSlots = getKvstoreSlots(kvstoreId, slots);
     auto cursor = txn->createDataCursor();
@@ -732,7 +729,7 @@ class ScanCommand : public Command {
       RET_IF_ERR_EXPECTED(expRecord);
       auto record = expRecord.value();
 
-      const auto &guard = MakeGuard([&]() {
+      const auto& guard = MakeGuard([&]() {
         // record the scan position when iterate each kv-store over
         // or we'll lost record position
         // BEHAVIOR: scan no keys suitable (NOT EMPTY)  => result.second.empty()
