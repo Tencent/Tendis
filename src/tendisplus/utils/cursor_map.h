@@ -39,14 +39,12 @@ class CursorMap {
                   const std::string &key, uint64_t sessionId);
   Expected<CursorMapping> getMapping(uint64_t cursor);
 
-#ifdef TENDIS_DEBUG
   auto getMap() const -> const std::unordered_map<uint64_t, CursorMapping> &;
   auto getTs() const -> const std::map<uint64_t, uint64_t> &;
   auto getSessionTs() const
   -> const std::unordered_map<uint64_t, std::set<uint64_t>> &;
   size_t maxCursorCount() const;
   size_t maxSessionLimit() const;
-#endif
 
  private:
   uint64_t getCurrentTime();

@@ -102,7 +102,6 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
   }
 }
 
-#ifdef TENDIS_DEBUG
 /**
  * @brief get _cursorMap ref, only for debug
  * @return _cursorMap
@@ -131,7 +130,6 @@ auto CursorMap::getSessionTs() const
 
 size_t CursorMap::maxCursorCount() const { return _maxCursorCount; }
 size_t CursorMap::maxSessionLimit() const { return _maxSessionLimit; }
-#endif
 
 /**
  * @brief get current time by ns, especially check whether the same record

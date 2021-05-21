@@ -23,7 +23,6 @@
 #include "gtest/gtest.h"
 #include "glog/logging.h"
 
-#ifdef TENDIS_DEBUG
 namespace tendisplus {
 
 int genRand() {
@@ -412,4 +411,3 @@ TEST(CursorMap, simulateScanSessions) {
 }
 
 }  // namespace tendisplus
-#endif
