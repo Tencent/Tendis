@@ -7,5 +7,5 @@ bin=../bin/tendisplus
 confFile=tendisplus.conf
 clusterEnable=true
 coreNum=48
-#passwdString="-a tendis+test"
+#passwdString="-a pw"
 benchDir=~
