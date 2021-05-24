@@ -221,42 +221,42 @@ TEST(CursorMap, addmapping) {
 
   // CASE: mapping is not full, but one of alive sessions its mapping is full,
   //  evict session itself LRU mapping
-  map.addMapping(1, 1, "1", 0);
-  map.addMapping(2, 2, "2", 0);
-  map.addMapping(3, 3, "3", 1);
-  map.addMapping(4, 4, "4", 1);
-  map.addMapping(5, 5, "5", 1);
+  map.addMapping("1", 1, "1", 0);
+  map.addMapping("2", 2, "2", 0);
+  map.addMapping("3", 3, "3", 1);
+  map.addMapping("4", 4, "4", 1);
+  map.addMapping("5", 5, "5", 1);
   EXPECT_EQ(map_.size(), 4);
-  EXPECT_TRUE(map_.count(1));
-  EXPECT_TRUE(map_.count(2));
-  EXPECT_FALSE(map_.count(3));
-  EXPECT_TRUE(map_.count(4));
-  EXPECT_TRUE(map_.count(5));
+  EXPECT_TRUE(map_.count("1"));
+  EXPECT_TRUE(map_.count("2"));
+  EXPECT_FALSE(map_.count("3"));
+  EXPECT_TRUE(map_.count("4"));
+  EXPECT_TRUE(map_.count("5"));
 
   // CASE: mapping is NOT full, session its own mapping is NOT full,
   // can add mapping successfully
-  map.addMapping(6, 6, "6", 2);
+  map.addMapping("6", 6, "6", 2);
   EXPECT_EQ(map_.size(), 5);
-  EXPECT_TRUE(map_.count(1));
-  EXPECT_TRUE(map_.count(2));
-  EXPECT_FALSE(map_.count(3));
-  EXPECT_TRUE(map_.count(4));
-  EXPECT_TRUE(map_.count(5));
-  EXPECT_TRUE(map_.count(6));
+  EXPECT_TRUE(map_.count("1"));
+  EXPECT_TRUE(map_.count("2"));
+  EXPECT_FALSE(map_.count("3"));
+  EXPECT_TRUE(map_.count("4"));
+  EXPECT_TRUE(map_.count("5"));
+  EXPECT_TRUE(map_.count("6"));
 
   // CASE: new session comes,
   // but all mapping is full => evict LRU mapping which belong to other session
-  map.addMapping(7, 7, "7", 3);
+  map.addMapping("7", 7, "7", 3);
   EXPECT_EQ(map_.size(), 5);
-  EXPECT_FALSE(map_.count(1));
-  EXPECT_TRUE(map_.count(2));
-  EXPECT_FALSE(map_.count(3));
-  EXPECT_TRUE(map_.count(4));
-  EXPECT_TRUE(map_.count(5));
-  EXPECT_TRUE(map_.count(6));
-  EXPECT_TRUE(map_.count(7));
+  EXPECT_FALSE(map_.count("1"));
+  EXPECT_TRUE(map_.count("2"));
+  EXPECT_FALSE(map_.count("3"));
+  EXPECT_TRUE(map_.count("4"));
+  EXPECT_TRUE(map_.count("5"));
+  EXPECT_TRUE(map_.count("6"));
+  EXPECT_TRUE(map_.count("7"));
 
-  auto expMapping = map.getMapping(7);
+  auto expMapping = map.getMapping("7");
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 7);
   EXPECT_EQ(expMapping.value().lastScanKey, "7");
@@ -264,11 +264,11 @@ TEST(CursorMap, addmapping) {
 
   // CASE: the same cursor has been added by different session
   // when different session comes, cursor-mapping will overwrite.
-  map.addMapping(7, 10, "x", 4);
+  map.addMapping("7", 10, "x", 4);
   EXPECT_EQ(map_.size(), 4);  // evict LRU mapping by global-level
-  EXPECT_TRUE(map_.count(7));
+  EXPECT_TRUE(map_.count("7"));
 
-  expMapping = map.getMapping(7);
+  expMapping = map.getMapping("7");
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 10);
   EXPECT_EQ(expMapping.value().lastScanKey, "x");
@@ -278,17 +278,17 @@ TEST(CursorMap, addmapping) {
 TEST(CursorMap, getMapping) {
   CursorMap map(5, 5);
 
-  map.addMapping(1, 1, "1", 0);
-  map.addMapping(2, 2, "2", 0);
-  map.addMapping(3, 3, "3", 0);
-  map.addMapping(4, 4, "4", 0);
-  map.addMapping(5, 5, "5", 0);
-  EXPECT_EQ(map.getMapping(1).value().kvstoreId, 1);
-  EXPECT_FALSE(map.getMapping(10).ok());
+  map.addMapping("1", 1, "1", 0);
+  map.addMapping("2", 2, "2", 0);
+  map.addMapping("3", 3, "3", 0);
+  map.addMapping("4" , 4, "4", 0);
+  map.addMapping("5", 5, "5", 0);
+  EXPECT_EQ(map.getMapping("1").value().kvstoreId, 1);
+  EXPECT_FALSE(map.getMapping("10").ok());
 
-  map.addMapping(10, 10, "10", 0);
-  EXPECT_EQ(map.getMapping(10).value().lastScanKey, "10");
-  EXPECT_FALSE(map.getMapping(1).ok());
+  map.addMapping("10", 10, "10", 0);
+  EXPECT_EQ(map.getMapping("10").value().lastScanKey, "10");
+  EXPECT_FALSE(map.getMapping("1").ok());
 }
 
 /**
@@ -305,13 +305,13 @@ void testSimulateScanCmd(uint64_t totalScanSession,
   auto simulateScanCmd = [&](size_t step, size_t id) {
     thread_local static uint64_t cursor = 0;    // static data
     if (cursor) {
-      auto expMapping = map->getMapping(cursor);
+      auto expMapping = map->getMapping(std::to_string(cursor));
     //TODO(pecochen): check expMapping.ok()    // NOLINT
     //  ASSERT_TRUE(expMapping.ok());
     //  ASSERT_EQ(expMapping.value().lastScanKey, std::to_string(cursor));
     }
     cursor += step;                // simulate cursor by add step
-    map->addMapping(cursor, 1, std::to_string(cursor), id);
+    map->addMapping(std::to_string(cursor), 1, std::to_string(cursor), id);
   };
 
   std::vector<std::thread> threads;

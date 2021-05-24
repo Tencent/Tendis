@@ -318,15 +318,18 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
   Expected<CursorMap::CursorMapping> getCursorMapping(Session* sess,
                                                       uint64_t cursor) {
-    return _cursorMaps[sess->getCtx()->getDbId()].getMapping(cursor);
+    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
+    return _cursorMaps[sess->getCtx()->getDbId()].getMapping(
+      std::to_string(cursor));
   }
 
   void addCursorMapping(Session* sess,
                         uint64_t cursor,
                         size_t kvstoreId,
                         const std::string& key) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
     _cursorMaps[sess->getCtx()->getDbId()].addMapping(
-      cursor, kvstoreId, key, sess->id());
+      std::to_string(cursor), kvstoreId, key, sess->id());
   }
 
  private:

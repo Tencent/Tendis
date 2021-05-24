@@ -35,12 +35,13 @@ class CursorMap {
   CursorMap(CursorMap &&) = delete;
   CursorMap &operator=(CursorMap &&) = delete;
 
-  void addMapping(uint64_t cursor, size_t kvstoreId,
-                  const std::string &key, uint64_t sessionId);
-  Expected<CursorMapping> getMapping(uint64_t cursor);
+  void addMapping(const std::string& cursor, size_t kvstoreId,
+                  const std::string& lastScanKey,
+                  uint64_t sessionId);
+  Expected<CursorMapping> getMapping(const std::string& cursor);
 
-  auto getMap() const -> const std::unordered_map<uint64_t, CursorMapping> &;
-  auto getTs() const -> const std::map<uint64_t, uint64_t> &;
+  auto getMap() const -> const std::unordered_map<std::string, CursorMapping> &;
+  auto getTs() const -> const std::map<uint64_t, std::string> &;
   auto getSessionTs() const
   -> const std::unordered_map<uint64_t, std::set<uint64_t>> &;
   size_t maxCursorCount() const;
@@ -49,13 +50,14 @@ class CursorMap {
  private:
   uint64_t getCurrentTime();
   size_t getSessionMappingCount(uint64_t sessionId);
-  void evictMapping(uint64_t cursor);
+  void evictMapping(const std::string& cursor);
 
   size_t _maxCursorCount;
   size_t _maxSessionLimit;
   std::recursive_mutex _mutex;
-  std::unordered_map<uint64_t, CursorMapping> _cursorMap;   // {cursor, mapping}
-  std::map<uint64_t, uint64_t> _cursorTs;                   // {ts, cursor}
+  // {cursor, mapping}
+  std::unordered_map<std::string, CursorMapping> _cursorMap;
+  std::map<uint64_t, std::string> _cursorTs;                   // {ts, cursor}
   std::unordered_map<uint64_t, std::set<uint64_t>> _sessionTs;  // {id, Ts(es)}
 };
 

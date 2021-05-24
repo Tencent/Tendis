@@ -18,8 +18,7 @@ namespace tendisplus {
  *       default is MAX_SESSION_LIMIT
  */
 CursorMap::CursorMap(size_t maxCursorCount, size_t maxSessionLimit)
-          : _maxCursorCount(maxCursorCount),
-            _maxSessionLimit(maxSessionLimit) {}
+  : _maxCursorCount(maxCursorCount), _maxSessionLimit(maxSessionLimit) {}
 
 /**
  * @brief add mapping into cursorMap
@@ -35,8 +34,10 @@ CursorMap::CursorMap(size_t maxCursorCount, size_t maxSessionLimit)
  *      thus, other client's fast scan commands may not overwrite others' slow
  *      scan commands
  */
-void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
-                           const std::string &key, uint64_t sessionId) {
+void CursorMap::addMapping(const std::string& cursor,
+                           size_t kvstoreId,
+                           const std::string& lastScanKey,
+                           uint64_t sessionId) {
   // make lock guard
   std::lock_guard<std::recursive_mutex> lk(_mutex);
 
@@ -50,8 +51,8 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
    * firstly, check whether session-level cursorMap is full.
    * if so, evict mapping by LRU belong to this session.
    */
-  if (_sessionTs.count(sessionId)
-      && (_sessionTs[sessionId].size() >= _maxSessionLimit)) {
+  if (_sessionTs.count(sessionId) &&
+      (_sessionTs[sessionId].size() >= _maxSessionLimit)) {
     uint64_t ts = *_sessionTs[sessionId].cbegin();
     evictMapping(_cursorTs[ts]);
   }
@@ -80,7 +81,7 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
   }
 
   auto time = getCurrentTime();
-  _cursorMap[cursor] = {kvstoreId, key, sessionId, time};
+  _cursorMap[cursor] = {kvstoreId, lastScanKey, sessionId, time};
   _cursorTs[time] = cursor;
   _sessionTs[sessionId].emplace(time);
 }
@@ -90,12 +91,12 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
  * @param cursor cursor in tendisplus, means k-v's sequence among all kv-stores
  * @return Expected represent mapping or status when error occurs
  */
-Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
-  // make lock guard
+Expected<CursorMap::CursorMapping> CursorMap::getMapping(
+  const std::string& cursor) {
   std::lock_guard<std::recursive_mutex> lk(_mutex);
 
   // check and get mapping
-  if (_cursorMap.count(cursor)) {      // means mapping in _cursorMap
+  if (_cursorMap.count(cursor)) {  // means mapping in _cursorMap
     return _cursorMap[cursor];
   } else {
     return {ErrorCodes::ERR_NOTFOUND, "Mapping NOT FOUND"};
@@ -107,7 +108,7 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
  * @return _cursorMap
  */
 auto CursorMap::getMap() const
-      -> const std::unordered_map<uint64_t, CursorMapping> & {
+  -> const std::unordered_map<std::string, CursorMapping>& {
   return _cursorMap;
 }
 
@@ -115,7 +116,7 @@ auto CursorMap::getMap() const
  * @brief get _cursorTs ref, only for debug
  * @return _cursorTs
  */
-auto CursorMap::getTs() const -> const std::map<uint64_t, uint64_t> & {
+auto CursorMap::getTs() const -> const std::map<uint64_t, std::string>& {
   return _cursorTs;
 }
 
@@ -124,12 +125,16 @@ auto CursorMap::getTs() const -> const std::map<uint64_t, uint64_t> & {
  * @return _sessionTs
  */
 auto CursorMap::getSessionTs() const
--> const std::unordered_map<uint64_t, std::set<uint64_t>> & {
+  -> const std::unordered_map<uint64_t, std::set<uint64_t>>& {
   return _sessionTs;
 }
 
-size_t CursorMap::maxCursorCount() const { return _maxCursorCount; }
-size_t CursorMap::maxSessionLimit() const { return _maxSessionLimit; }
+size_t CursorMap::maxCursorCount() const {
+  return _maxCursorCount;
+}
+size_t CursorMap::maxSessionLimit() const {
+  return _maxSessionLimit;
+}
 
 /**
  * @brief get current time by ns, especially check whether the same record
@@ -171,7 +176,7 @@ inline size_t CursorMap::getSessionMappingCount(uint64_t sessionId) {
  * @note this function only can be called in lock guard scope,
  *      by std::recursive_mutex, can lock_guard recursively.
  */
-void CursorMap::evictMapping(uint64_t cursor) {
+void CursorMap::evictMapping(const std::string& cursor) {
   std::lock_guard<std::recursive_mutex> lk(_mutex);
   INVARIANT_D(_cursorMap.count(cursor));
 
