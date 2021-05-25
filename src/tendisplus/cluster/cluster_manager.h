@@ -210,6 +210,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   static auto parseClusterNodesInfo(const std::string& info)
     -> Expected<std::bitset<CLUSTER_SLOTS>>;
 
+  std::string genDescription(const std::string& migrateInfo = "");
+
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
   bool clearSlotBit(uint32_t slot);
@@ -677,7 +679,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void cronCheckReplicate();
 
   std::string clusterGenNodesDescription(uint16_t filter, bool simple);
-  std::string clusterGenNodeDescription(CNodePtr n, bool simple = false);
   std::string clusterGenStateDescription();
 
   void clusterUpdateState();

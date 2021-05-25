@@ -496,10 +496,14 @@ class ClusterCommand : public Command {
       }
       std::stringstream ss;
       uint16_t slavesNum = n->getSlaveNum();
+      auto expSlaveList = n->getSlaves();
+      if (slavesNum == 0 || !expSlaveList.ok()) {
+          return {ErrorCodes::ERR_CLUSTER, "have no slaves"};
+      }
+      auto slaveList = expSlaveList.value();
       Command::fmtMultiBulkLen(ss, slavesNum);
       for (size_t i = 0; i < slavesNum; i++) {
-        std::string nodeDescription =
-          clusterState->clusterGenNodeDescription(n->_slaves[i]);
+        std::string nodeDescription = slaveList[i]->genDescription();
         Command::fmtBulk(ss, nodeDescription);
       }
       return ss.str();

@@ -300,6 +300,34 @@ uint32_t ClusterNode::delAllSlotsNoLock() {
   return 0;
 }
 
+// generate node information
+std::string ClusterNode::genDescription(const std::string& migrateInfo) {
+  std::lock_guard<myMutex> lk(_mutex);
+  std::stringstream stream;
+  std::string masterName =
+    _slaveOf ? " " + _slaveOf->getNodeName() + " " : " - ";
+
+  ConnectState connectState = getConnectState();
+  std::string stateStr =
+    (connectState == ConnectState::CONNECTED) ? "connected" : "disconnected";
+
+  stream << _nodeName << " " << _nodeIp << ":" << _nodePort << "@" << _nodeCport
+         << " " << representClusterNodeFlags(_flags) << masterName << _pingSent
+         << " " << _pongReceived << " " << _configEpoch << " " << stateStr;
+
+  if (nodeIsMaster()) {
+    std::string slotStr = bitsetStrEncode(_mySlots);
+    slotStr.erase(slotStr.end() - 1);
+    stream << slotStr;
+  }
+
+  if (migrateInfo.size() != 0) {
+    stream << " " << migrateInfo;
+  }
+
+  return stream.str();
+}
+
 // Delete all the slots associated with the specified node.
 // The number of deleted slots is returned.
 uint32_t ClusterNode::delAllSlots() {
@@ -1674,56 +1702,39 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
 std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
                                                      bool simple) {
   std::stringstream ss;
-  std::lock_guard<myMutex> lk(_mutex);
-  for (const auto& v : _nodes) {
-    CNodePtr node = v.second;
-    if (node->getFlags() & filter) {
-      continue;
+  std::vector<CNodePtr> nodeList;
+  {
+    std::lock_guard<myMutex> lk(_mutex);
+    for (const auto& v : _nodes) {
+      CNodePtr node = v.second;
+      if (!node)
+        continue;
+      if (node->getFlags() & filter) {
+        continue;
+      }
+      nodeList.push_back(node);
     }
-    std::string nodeDescription = clusterGenNodeDescription(node, simple);
-    ss << nodeDescription << "\n";
   }
-  return Command::fmtBulk(ss.str());
-}
 
-std::string ClusterState::clusterGenNodeDescription(CNodePtr n, bool simple) {
-  std::stringstream stream;
-  std::string masterName =
-    n->_slaveOf ? " " + n->_slaveOf->getNodeName() + " " : " - ";
-  std::string flags = representClusterNodeFlags(n->_flags);
-
-  ConnectState connectState = n->getConnectState();
-  std::string stateStr =
-    (connectState == ConnectState::CONNECTED) ? "connected" : "disconnected";
-
-  stream << n->getNodeName() << " " << n->getNodeIp() << ":" << n->getPort()
-         << "@" << n->getCport() << " " << flags << masterName << n->_pingSent
-         << " " << n->_pongReceived << " " << n->getConfigEpoch() << " "
-         << stateStr;
-
-  if (n->nodeIsMaster()) {
-    auto slots = n->getSlots();
-    std::string slotStr = bitsetStrEncode(slots);
-    slotStr.erase(slotStr.end() - 1);
-    stream << slotStr;
-
-    auto migrateMgr = _server->getMigrateManager();
-    if (n->nodeIsMyself()) {
-      std::string migrateStr;
+  for (const auto& n : nodeList) {
+    std::string migrateStr = "";
+    if (n->nodeIsMyself() && _server->getMigrateManager()) {
+      auto migrateMgr = _server->getMigrateManager();
       Expected<std::string> eMigrStr("");
       if (simple) {
-        eMigrStr = migrateMgr->getMigrateInfoStrSimple(slots);
+        eMigrStr = migrateMgr->getMigrateInfoStrSimple(n->getSlots());
       } else {
-        eMigrStr = migrateMgr->getMigrateInfoStr(slots);
+        eMigrStr = migrateMgr->getMigrateInfoStr(n->getSlots());
       }
       if (eMigrStr.ok()) {
         migrateStr = eMigrStr.value();
-        stream << " " << migrateStr;
       }
     }
+    std::string nodeDescription = n->genDescription(migrateStr);
+    ss << nodeDescription << "\n";
   }
 
-  return stream.str();
+  return Command::fmtBulk(ss.str());
 }
 
 std::string ClusterState::clusterGenStateDescription() {
