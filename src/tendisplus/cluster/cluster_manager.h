@@ -190,6 +190,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   bool nodeTimedOut() const;
   bool nodeFailed() const;
   bool nodeCantFailover() const;
+  bool isMasterOk() const;
 
   bool nodeIsMyself() const;
 
@@ -685,7 +686,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool isContainSlot(uint32_t slotId);
   Status forceFailover(bool force, bool takeover);
   Status clusterSaveConfig();
-  bool isMyMasterAlive() const;
 
   bool getBlockState() {
     return _blockState.load(std::memory_order_relaxed);
