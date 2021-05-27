@@ -3,7 +3,6 @@ package util
 import (
 	"errors"
 	"fmt"
-	"github.com/ngaut/log"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -12,15 +11,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ngaut/log"
 )
 
 type RedisServer struct {
-	Port int
-	Path string
-	Ip   string
+	Port    int
+	Path    string
+	Ip      string
+	Pwd     string
 	binPath string
 }
-
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
@@ -34,40 +35,40 @@ func RandStrAlpha(n int) string {
 
 // NOTE(takenliu):net.Dial failed not mean port is usable.
 func FindAvailablePort(start int) int {
-    time.Sleep(2 * time.Second) // wait last process listen port finish
-    log.Infof("findAvailablePort begin start:%+v", start)
-    for i := start; i < start+1024; i++ {
-        // NOTE(takenliu):cluster port +10000
-        //   use netstat to check TCP TIME_WAIT and so on
-        //   use lsof to check listening port
-        log.Infof("check port:%d", i)
-        cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
-        output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
-        log.Infof("output1:%s", string(output1))
-        log.Infof("err1:%v", err1)
+	time.Sleep(2 * time.Second) // wait last process listen port finish
+	log.Infof("findAvailablePort begin start:%+v", start)
+	for i := start; i < start+1024; i++ {
+		// NOTE(takenliu):cluster port +10000
+		//   use netstat to check TCP TIME_WAIT and so on
+		//   use lsof to check listening port
+		log.Infof("check port:%d", i)
+		cmd1 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i)
+		output1, err1 := exec.Command("sh", "-c", cmd1).CombinedOutput()
+		log.Infof("output1:%s", string(output1))
+		log.Infof("err1:%v", err1)
 
-        cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i + 10000)
-        output2, err2 := exec.Command("sh", "-c", cmd2).CombinedOutput()
-        log.Infof("output2:%s", string(output2))
-        log.Infof("err2:%v", err2)
+		cmd2 := fmt.Sprintf("netstat -anpl 2>&1|grep %d", i + 10000)
+		output2, err2 := exec.Command("sh", "-c", cmd2).CombinedOutput()
+		log.Infof("output2:%s", string(output2))
+		log.Infof("err2:%v", err2)
 
-        cmd3 := fmt.Sprintf("lsof -i:%d", i)
-        output3, err3 := exec.Command("sh", "-c", cmd3).CombinedOutput()
-        log.Infof("output3:%s", string(output3))
-        log.Infof("err3:%v", err3)
+		cmd3 := fmt.Sprintf("lsof -i:%d", i)
+		output3, err3 := exec.Command("sh", "-c", cmd3).CombinedOutput()
+		log.Infof("output3:%s", string(output3))
+		log.Infof("err3:%v", err3)
 
-        cmd4 := fmt.Sprintf("lsof -i:%d", i + 10000)
-        output4, err4 := exec.Command("sh", "-c", cmd4).CombinedOutput()
-        log.Infof("output4:%s", string(output4))
-        log.Infof("err4:%v", err4)
+		cmd4 := fmt.Sprintf("lsof -i:%d", i + 10000)
+		output4, err4 := exec.Command("sh", "-c", cmd4).CombinedOutput()
+		log.Infof("output4:%s", string(output4))
+		log.Infof("err4:%v", err4)
 
-        if len(output1) == 0 && len(output2) == 0 && len(output3) == 0 && len(output4) == 0 {
-            log.Infof("findAvailablePort success port:%+v", i)
-            return i
-        }
-    }
-    fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
-    return 0
+		if len(output1) == 0 && len(output2) == 0 && len(output3) == 0 && len(output4) == 0 {
+			log.Infof("findAvailablePort success port:%+v", i)
+			return i
+		}
+	}
+	fmt.Println("Can't find a non busy port in the $start-[expr {$start+1023}] range.")
+	return 0
 }
 
 func FileExist(path string) (bool, error) {
@@ -215,7 +216,9 @@ func eventually(fn func() error, timeout time.Duration) error {
 func (s *RedisServer) Init(ip string, port int, pwd string, path string) {
 	s.Ip = ip
 	s.Port = port
-	s.Path = pwd + "/" + path + RandStrAlpha(6)
+	name := path + RandStrAlpha(6)
+	s.Path = pwd + "/" + name
+	s.Pwd = pwd + "/running/" + name
 }
 
 func (s *RedisServer) Destroy() {
@@ -234,6 +237,7 @@ func CheckPortInUse(s *RedisServer) error {
 func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	log.Debugf("mkdir " + s.Path)
 	os.MkdirAll(s.Path, os.ModePerm)
+	os.MkdirAll(s.Pwd, os.ModePerm)
 	os.MkdirAll(s.Path+"/db", os.ModePerm)
 	os.MkdirAll(s.Path+"/log", os.ModePerm)
 	cfgFilePath := fmt.Sprintf("%s/test.cfg", s.Path)
@@ -272,12 +276,13 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		//inShell := false
 		//_, err := StartProcess(args, []string{}, fmt.Sprintf("%s/tendisplus.pid", s.Path), 10*time.Second, inShell, CheckPidFile)
 		logFilePath := fmt.Sprintf("%s/stdout.log", s.Path)
+		running := fmt.Sprintf("%s/stdout.log", s.Pwd)
 		var cmd string
 		binPath := "../../../build/bin/tendisplus"
 		if s.binPath != "" {
 			binPath = s.binPath
 		}
-		cmd = fmt.Sprintf("nohup %s %s > %s 2>&1 &", binPath, cfgFilePath, logFilePath)
+		cmd = fmt.Sprintf("nohup %s %s |& tee %s > %s &", binPath, cfgFilePath, running, logFilePath)
 		args := []string{}
 		args = append(args, cmd)
 		inShell := true
@@ -295,10 +300,10 @@ func (s *RedisServer) Setup(valgrind bool, cfgArgs *map[string]string) error {
 }
 
 func (s *RedisServer) Addr() string {
-	return  s.Ip +":" + strconv.Itoa(s.Port)
+	return s.Ip + ":" + strconv.Itoa(s.Port)
 }
 
-func (s *RedisServer) WithBinPath(p string)  {
+func (s *RedisServer) WithBinPath(p string) {
 	s.binPath = p
 }
 
@@ -341,6 +346,18 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg = cfg + "    Auth \"tendis+test\" {\n"
 	cfg = cfg + "        Mode write\n"
 	cfg = cfg + "    }\n"
+	cfg = cfg + "}\n"
+
+    cfg = cfg + "Authority {\n"
+	cfg = cfg + "	Auth tendis+test {\n"
+	cfg = cfg + "		Mode read\n"
+	cfg = cfg + "	}\n"
+	cfg = cfg + "	Auth tendis+test {\n"
+	cfg = cfg + "		Mode write\n"
+	cfg = cfg + "	}\n"
+	cfg = cfg + "	Auth tendis+test {\n"
+	cfg = cfg + "		Mode admin\n"
+	cfg = cfg + "	}\n"
 	cfg = cfg + "}\n"
 
 	cfg = cfg + "ClusterServerPool {\n"

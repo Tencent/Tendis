@@ -150,12 +150,13 @@ class SessionCtx {
   // not protected by mutex
   bool _authed;
   uint32_t _dbId;
+  // State below is protected by mutex
   uint32_t _waitlockStore;
   uint32_t _waitlockChunk;
   mgl::LockMode _waitlockMode;
   std::string _waitlockKey;
-  uint64_t _readPacketTs;
-  uint64_t _processPacketStart;
+  std::atomic<uint64_t> _readPacketTs;
+  std::atomic<uint64_t> _processPacketStart;
   uint64_t _timestamp;
   uint64_t _version;
   PerfLevel _perfLevel;

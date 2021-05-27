@@ -328,6 +328,7 @@ Status ReplManager::startup() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+// REQUIRES: ReplManager::_mutex locked
 void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
                                         bool persist) {
   if (persist) {
@@ -338,6 +339,11 @@ void ReplManager::changeReplStateInLock(const StoreMeta& storeMeta,
     }
   }
   _syncMeta[storeMeta.id] = std::move(storeMeta.copy());
+}
+
+void ReplManager::changeReplState(const StoreMeta& storeMeta, bool persist) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  changeReplStateInLock(storeMeta, persist);
 }
 
 Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
@@ -404,10 +410,6 @@ Expected<uint32_t> ReplManager::maxDumpFileSeq(uint32_t storeId) {
   return maxFno;
 }
 
-void ReplManager::changeReplState(const StoreMeta& storeMeta, bool persist) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  changeReplStateInLock(storeMeta, persist);
-}
 
 Status ReplManager::resetRecycleState(uint32_t storeId) {
   // set _logRecycStatus::firstBinlogId with MinBinlog get from rocksdb
@@ -497,6 +499,8 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
 
 void ReplManager::controlRoutine() {
   using namespace std::chrono_literals;  // (NOLINT)
+  // schedSlaveInLock, schedMasterInLock, schedRecycLogInLock requires
+  // ReplManager::_mutex locked
   auto schedSlaveInLock = [this](const SCLOCK::time_point& now) {
     // slave's POV
     bool doSth = false;
@@ -1049,7 +1053,7 @@ Status ReplManager::changeReplSource(Session* sess,
   if (ip != "" && !expdb.value().store->isEmpty(true)) {
     return {ErrorCodes::ERR_MANUAL, "store not empty"};
   }
-  Status s = changeReplSourceInLock(storeId, ip, port, sourceStoreId);
+  Status s = changeReplSourceInDBLock(storeId, ip, port, sourceStoreId);
   if (!s.ok()) {
     return s;
   }
@@ -1057,7 +1061,7 @@ Status ReplManager::changeReplSource(Session* sess,
 }
 
 // changeReplSource should be called with LOCK_X held
-Status ReplManager::changeReplSourceInLock(uint32_t storeId,
+Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
                                            std::string ip,
                                            uint32_t port,
                                            uint32_t sourceStoreId,
@@ -1125,7 +1129,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
               << newMeta->syncFromId << " incrSync:" << incrSync
               << " replState:" << static_cast<int>(newMeta->replState)
               << " binlogId:" << newMeta->binlogId;
-    changeReplStateInLock(*newMeta, true);
+    changeReplState(*newMeta, true);
 
     return {ErrorCodes::ERR_OK, ""};
   } else {  // ip == ""
@@ -1153,7 +1157,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
     newMeta->syncFromId = sourceStoreId;
     newMeta->replState = ReplState::REPL_NONE;
     newMeta->binlogId = Transaction::TXNID_UNINITED;
-    changeReplStateInLock(*newMeta, true);
+    changeReplState(*newMeta, true);
 
     return {ErrorCodes::ERR_OK, ""};
   }
@@ -1201,8 +1205,8 @@ Status ReplManager::replicationSetMaster(std::string ip,
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s =
-      changeReplSourceInLock(i, ip, port, i, checkEmpty, false, incrSync);
+    Status s = changeReplSourceInDBLock(
+      i, ip, port, i, checkEmpty, false, incrSync);
     if (!s.ok()) {
       return s;
     }
@@ -1249,7 +1253,7 @@ Status ReplManager::replicationSetMaster(std::string ip,
   }
 
   Status s =
-    changeReplSourceInLock(storeId, ip, port, storeId, checkEmpty, false);
+    changeReplSourceInDBLock(storeId, ip, port, storeId, checkEmpty, false);
   if (!s.ok()) {
     return s;
   }
@@ -1296,7 +1300,7 @@ Status ReplManager::replicationUnSetMaster() {
   }
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInLock(i, "", 0, i, true, false);
+    Status s = changeReplSourceInDBLock(i, "", 0, i, true, false);
     if (!s.ok()) {
       return s;
     }
@@ -1337,7 +1341,7 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
     return {ErrorCodes::ERR_INTERNAL, "store not open"};
   }
 
-  Status s = changeReplSourceInLock(storeId, "", 0, storeId, true, false);
+  Status s = changeReplSourceInDBLock(storeId, "", 0, storeId, true, false);
   if (!s.ok()) {
     return s;
   }
@@ -1348,6 +1352,7 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
 
 std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
   stringstream ss;
+  std::lock_guard<std::mutex> lk(_mutex);
 
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     auto expdb =

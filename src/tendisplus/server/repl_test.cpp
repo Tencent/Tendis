@@ -113,7 +113,7 @@ TEST(Repl, Common) {
 
     auto& master = hosts.first;
     auto& slave = hosts.second;
-    bool running = true;
+    std::atomic<bool> running{true};
 
     // make sure slaveof is ok
     std::this_thread::sleep_for(std::chrono::seconds(5));

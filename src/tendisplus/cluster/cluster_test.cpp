@@ -812,7 +812,7 @@ bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
 
     auto node2 = cs2->clusterLookupNode(node1->getNodeName());
     EXPECT_TRUE(node2 != nullptr);
-    EXPECT_EQ(*node1.get(), *node2.get());
+    EXPECT_EQ(node1->toString(), node2->toString());
   }
 
   return false;

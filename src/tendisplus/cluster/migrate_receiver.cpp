@@ -76,9 +76,9 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     return {ErrorCodes::ERR_READY_MIGRATE, "readymigrate req srcDb failed"};
   }
 
-  setSnapShotStartTime(msSinceEpoch());
-  setTaskStartTime(msSinceEpoch());
-  setStartTime(timePointRepr(SCLOCK::now()));
+  uint64_t startTime = msSinceEpoch();
+  setSnapShotStartTime(startTime);
+  setTaskStartTime(startTime);
   uint32_t timeoutSec = _cfg->migrateNetworkTimeout;
   while (true) {
     if (!isRunning()) {
@@ -306,9 +306,4 @@ void ChunkMigrateReceiver::setSnapShotEndTime(uint64_t t) {
   _snapshotEndTime.store(t, std::memory_order_relaxed);
 }
 
-
-void ChunkMigrateReceiver::setStartTime(const std::string& str) {
-  std::lock_guard<std::mutex> lk(_mutex);
-  _startTime = str;
-}
 }  // namespace tendisplus

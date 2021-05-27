@@ -50,7 +50,6 @@ class pTask {
   explicit pTask(const std::string& taskid, const std::string& nodeid)
     : _taskid(taskid), _nodeid(nodeid), _taskNum(0) {}
   std::string _taskid;
-  std::string _startTime;
   std::string getTaskid() {
     return _taskid;
   }
@@ -93,7 +92,7 @@ class MigrateSendTask {
   std::string _taskid;
   SlotsBitmap _slots;
   std::shared_ptr<ServerEntry> _svr;
-  bool _isRunning;
+  std::atomic<bool> _isRunning;
   SCLOCK::time_point _nextSchedTime;
   MigrateSendState _state;
   bool _isFake;
@@ -148,7 +147,7 @@ class MigrateReceiveTask {
   string _srcIp;
   uint16_t _srcPort;
   std::shared_ptr<ServerEntry> _svr;
-  bool _isRunning;
+  std::atomic<bool> _isRunning;
   SCLOCK::time_point _nextSchedTime;
   uint64_t _lastSyncTime;
   MigrateReceiveState _state;

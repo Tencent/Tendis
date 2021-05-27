@@ -110,7 +110,7 @@ func expireKey(m *util.RedisServer, num int, prefixkey string) {
 		}
 		args = append(args, key)
 
-		value := "50"
+		value := "120"
 		args = append(args, value)
 
 		cmd := exec.Command("../../../bin/redis-cli", args...)
@@ -302,7 +302,6 @@ func checkData(m *util.RedisServer, num int, prefixkey string, keyformat string)
 		data, err = cli.Cmd("get", key).Str()
 		if err != nil {
 			log.Infof("get failed, key:%v data:%s err:%v", key, data, err)
-			return
 		}
 
 		retValue := strings.Replace(string(data), "\n", "", -1)
@@ -412,7 +411,7 @@ func createClient(m *util.RedisServer) *redis.Client {
 	}
 	if *auth != "" {
 		if v, err := cli.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
-			log.Fatalf("auth failed. %s:%d auth:%s", m.Ip, m.Port, *auth)
+			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, m.Ip, m.Port, *auth)
 		}
 	}
 	return cli

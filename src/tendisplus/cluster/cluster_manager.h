@@ -220,6 +220,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void unsetFlag(uint16_t flag);
   void changeFlags(uint16_t setFlag, uint16_t unsetFlag);
   bool hasFlag(uint16_t flag) const;
+  std::string toString() const;
 
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -832,7 +833,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool hasTodoFlag(uint16_t flag) const;
 
  public:
-  ClusterHealth _state;
+  std::atomic<ClusterHealth> _state;
   uint16_t _size;
   std::unordered_map<std::string, uint64_t> _nodesBlackList;
   std::array<CNodePtr, CLUSTER_SLOTS> _allSlots;

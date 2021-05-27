@@ -653,6 +653,16 @@ bool ClusterNode::isMasterOk() const {
   return false;
 }
 
+std::string ClusterNode::toString() const {
+  std::lock_guard<myMutex> lk(_mutex);
+  std::ostringstream oss;
+  oss << "nodeName:" << _nodeName << ", configEpoch:" << _configEpoch
+      << ", Ip:" << _nodeIp << ", port:" << _nodePort
+      << ", cport:" << _nodeCport;
+
+  return oss.str();
+}
+
 ClusterNodeFailReport::ClusterNodeFailReport(const std::string& node,
                                              mstime_t time)
   : _nodeName(node), _time(time) {}

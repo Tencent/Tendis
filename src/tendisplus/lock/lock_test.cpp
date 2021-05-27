@@ -14,8 +14,8 @@
 namespace tendisplus {
 
 TEST(Lock, Common) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
 
@@ -49,8 +49,10 @@ TEST(Lock, Common) {
 }
 
 TEST(Lock, DefaultMgr) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+
+  mgl::MGLockMgr::getInstance();
 
   std::thread thd1([&runFlag1, &locked1]() {
     StoresLock v(mgl::LockMode::LOCK_IS, nullptr, nullptr);
@@ -82,8 +84,8 @@ TEST(Lock, DefaultMgr) {
 }
 
 TEST(Lock, DiffMgr) {
-  bool runFlag1 = true, runFlag2 = true, runFlag3 = true;
-  bool locked1 = false, locked2 = false, locked3 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true}, runFlag3{true};
+  std::atomic<bool> locked1{false}, locked2{false}, locked3{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto mgr1 = std::make_unique<mgl::MGLockMgr>();
@@ -132,12 +134,12 @@ TEST(Lock, DiffMgr) {
 }
 
 TEST(Lock, Complicated) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool runFlag3 = true, runFlag4 = true;
-  bool runFlag5 = true, runFlag6 = true;
-  bool locked1 = false, locked2 = false;
-  bool locked3 = false, locked4 = false;
-  bool locked5 = false, locked6 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> runFlag3{true}, runFlag4{true};
+  std::atomic<bool> runFlag5{true}, runFlag6{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> locked3{false}, locked4{false};
+  std::atomic<bool> locked5{false}, locked6{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   std::thread thd1([&runFlag1, &locked1, &mgr]() {
@@ -264,8 +266,8 @@ TEST(Lock, Complicated) {
 }
 
 TEST(Lock, KeyLock) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -301,8 +303,8 @@ TEST(Lock, KeyLock) {
 }
 
 TEST(Lock, Parent) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
 
@@ -338,9 +340,9 @@ TEST(Lock, Parent) {
 }
 
 TEST(Lock, StoreLockTimeout) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
 
@@ -387,9 +389,9 @@ TEST(Lock, StoreLockTimeout) {
 }
 
 TEST(Lock, KeyLockTimeout) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -433,9 +435,9 @@ TEST(Lock, KeyLockTimeout) {
 }
 
 TEST(Lock, ChunkLockTimeout) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -479,9 +481,9 @@ TEST(Lock, ChunkLockTimeout) {
 }
 
 TEST(Lock, KeyAndChunkLock) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -525,9 +527,9 @@ TEST(Lock, KeyAndChunkLock) {
 }
 
 TEST(Lock, ChunkAndKeyLock) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -572,9 +574,9 @@ TEST(Lock, ChunkAndKeyLock) {
 }
 
 TEST(Lock, StoreAndKeyLock) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -619,9 +621,9 @@ TEST(Lock, StoreAndKeyLock) {
 }
 
 TEST(Lock, StoreAndChunkLock) {
-  bool runFlag1 = true, runFlag2 = true;
-  bool locked1 = false, locked2 = false;
-  bool timeout = false;
+  std::atomic<bool> runFlag1{true}, runFlag2{true};
+  std::atomic<bool> locked1{false}, locked2{false};
+  std::atomic<bool> timeout{false};
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();
   auto sess = std::make_shared<LocalSession>(nullptr);
@@ -666,7 +668,7 @@ TEST(Lock, StoreAndChunkLock) {
 }
 
 TEST(Lock, duplicateStoreLock) {
-  bool runFlag1 = true;
+  std::atomic<bool> runFlag1{true};
   bool locked1 = false;
 
   auto mgr = std::make_unique<mgl::MGLockMgr>();

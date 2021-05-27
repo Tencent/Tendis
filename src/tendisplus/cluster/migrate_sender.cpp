@@ -47,9 +47,8 @@ ChunkMigrateSender::ChunkMigrateSender(const std::bitset<CLUSTER_SLOTS>& slots,
 Status ChunkMigrateSender::sendChunk() {
   LOG(INFO) << "sendChunk begin on store:" << _storeid
             << " slots:" << bitsetStrEncode(_slots);
-  uint64_t start = msSinceEpoch();
-  _taskStartTime.store(msSinceEpoch(), std::memory_order_relaxed);
-  setStartTime(epochToDatetime(sinceEpoch()));
+  uint64_t senderStartTime = msSinceEpoch();
+  setTaskStartTime(senderStartTime);
   /* send Snapshot of bitmap data */
   Status s = sendSnapshot();
   if (!s.ok()) {
@@ -138,8 +137,8 @@ Status ChunkMigrateSender::sendChunk() {
             " [snapshot count:%lu] [binlog count:%lu] [binlog:%lu %lu %lu]"
             " [%s]",
             _client->getRemoteRepr().c_str(),
-            end - start,
-            sendSnapTimeEnd - start,
+            end - senderStartTime,
+            sendSnapTimeEnd - senderStartTime,
             lockStart - sendSnapTimeEnd,
             end - lockStart,
             sendOverEnd - sendOverStart,
@@ -807,12 +806,6 @@ bool ChunkMigrateSender::needToWaitMetaChanged() const {
 bool ChunkMigrateSender::needToSendFail() const {
   return _sendstate == MigrateSenderStatus::SNAPSHOT_DONE ||
     _sendstate == MigrateSenderStatus::BINLOG_DONE;
-}
-
-
-void ChunkMigrateSender::setStartTime(const std::string& str) {
-  std::lock_guard<myMutex> lk(_mutex);
-  _startTime = str;
 }
 
 void ChunkMigrateSender::setTaskStartTime(uint64_t t) {

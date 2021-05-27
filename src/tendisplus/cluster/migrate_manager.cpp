@@ -522,7 +522,8 @@ std::string MigrateSendTask::toString() {
 
   uint64_t startTime = _sender->getTaskStartTime();
   int64_t taskTime = startTime > 0 ? msSinceEpoch() - startTime : -1;
-  auto beginTime = startTime > 0 ? _sender->getStartTime() : "-1";
+  auto beginTime =
+    startTime > 0 ? msEpochToDatetime(_sender->getTaskStartTime()) : "-1";
   if (startTime > 0) {
     beginTime.erase(beginTime.end() - 1);
   }
@@ -573,7 +574,8 @@ std::string MigrateReceiveTask::toString() {
 
   std::string runningState = ss1.str();
   std::string taskState = receTaskTypeString(_state);
-  auto beginTime = snapshotTime > 0 ? _receiver->getStartTime() : "-1";
+  auto beginTime =
+    snapshotTime > 0 ? msEpochToDatetime(_receiver->getTaskStartTime()) : "-1";
   if (startTime > 0) {
     beginTime.erase(beginTime.end() - 1);
   }
@@ -1251,9 +1253,6 @@ void MigrateManager::addImportPTask(std::shared_ptr<pTask> task) {
   std::lock_guard<myMutex> lk(_mutex);
   std::string taskid = task->_taskid;
   _importPtaskMap.insert(std::make_pair(taskid, task));
-  auto timeStr = timePointRepr(SCLOCK::now());
-  timeStr.erase(timeStr.end() - 1);
-  task->_startTime = timeStr;
   task->_migrateTime = sinceEpoch();
 }
 
@@ -1261,9 +1260,6 @@ void MigrateManager::addMigratePTask(std::shared_ptr<pTask> task) {
   std::lock_guard<myMutex> lk(_mutex);
   std::string taskid = task->_taskid;
   _migratePtaskMap.insert(std::make_pair(taskid, task));
-  auto timeStr = timePointRepr(SCLOCK::now());
-  timeStr.erase(timeStr.end() - 1);
-  task->_startTime = timeStr;
   task->_migrateTime = sinceEpoch();
 }
 
@@ -1609,8 +1605,8 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     std::string migrateTaskStr = "migrating taskid:";
     for (auto& iter : _migratePtaskMap) {
       auto lastTime = sinceEpoch() - iter.second->_migrateTime;
-      migrateTaskStr +=
-        (iter.second->getTaskid() + " [" + iter.second->_startTime) +
+      migrateTaskStr += (iter.second->getTaskid() + " [" +
+                         msEpochToDatetime(iter.second->_migrateTime)) +
         " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);
@@ -1642,8 +1638,8 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
     std::string migrateTaskStr = "importing taskid:";
     for (auto& iter : _importPtaskMap) {
       auto lastTime = sinceEpoch() - iter.second->_migrateTime;
-      migrateTaskStr +=
-        (iter.second->getTaskid() + " [" + iter.second->_startTime) +
+      migrateTaskStr += (iter.second->getTaskid() + " [" +
+                         msEpochToDatetime(iter.second->_migrateTime)) +
         " migrateTime:" + std::to_string(lastTime) + "s] ";
     }
     Command::fmtBulk(ss, migrateTaskStr);

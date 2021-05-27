@@ -76,6 +76,17 @@ if(WITH_ASAN)
   message("ASAN would disabled staticly compile, too")
 endif()
 
+option(WITH_TSAN "build with WITH_TSAN" OFF)
+if(WITH_TSAN)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -pie")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -fPIC")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=thread -fPIC")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=thread -fPIC")
+  list(APPEND SYS_LIBS "-fsanitize=thread")
+  add_definitions(-DWITH_ASAN)
+  set(ENABLE_JEMALLOC OFF)
+  message("WITH_TSAN would disabled JeMalloc")
+endif()
 
 option(WITH_COVER "build with COVER" OFF)
 if(WITH_COVER) 
@@ -94,6 +105,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
 
 		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
+        add_definitions(-DTENDIS_JEMALLOC)
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:

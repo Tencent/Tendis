@@ -103,7 +103,7 @@ func testFun1(src_master *util.RedisServer, src_slave *util.RedisServer,
 	log.Infof("cluster addslots begin")
 	cluster_addslots(src_restore, 0, 10000)
 	cluster_addslots(dst_restore, 10001, 16383)
-	time.Sleep(20 * time.Second)
+	time.Sleep(100 * time.Second)
 
 	// restore
 	log.Infof("restoreBackup begin")
@@ -174,7 +174,7 @@ func testFun2(src_master *util.RedisServer, src_slave *util.RedisServer,
 
 	//waitDumpBinlog(src_slave, kvstorecount)
 	//waitDumpBinlog(dst_slave, kvstorecount)
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	// TOD(takenliu) why dont flush when time pass some seconds ???
 	flushBinlog(dst_slave)
 

@@ -20,6 +20,21 @@ go build clustertestFailover.go common.go common_cluster.go
 go build deletefilesinrange.go common.go common_cluster.go
 go build -o dts/dts dts/dts.go
 
+function lm_traverse_dir(){
+    for file in `ls $1`
+    do
+        if [ -d $1"/"$file ]
+        then
+            lm_traverse_dir $1"/"$file
+        else  
+            file_name=$1"/"$file
+            echo "===== $file_name ====="
+            cat $file_name
+            rm -rf $file_name
+        fi
+    done
+}
+
 function runOne() {
     tmplog=./gotest_tmp.log
     rm $tmplog
@@ -31,6 +46,8 @@ function runOne() {
     $cmd >> $tmplog 2>&1
     cat $tmplog
     cat $tmplog >> $logfile
+
+    lm_traverse_dir running
 
     passcnt=`grep "go passed" $tmplog|wc -l`
     if [ $passcnt -lt 1 ]; then

@@ -153,7 +153,7 @@ class ReplManager {
                           std::string ip,
                           uint32_t port,
                           uint32_t sourceStoreId);
-  Status changeReplSourceInLock(uint32_t storeId,
+  Status changeReplSourceInDBLock(uint32_t storeId,
                                 std::string ip,
                                 uint32_t port,
                                 uint32_t sourceStoreId,
@@ -311,7 +311,7 @@ class ReplManager {
   std::shared_ptr<ServerEntry> _svr;
 
   // slave's pov, meta data.
-  std::vector<std::unique_ptr<StoreMeta>> _syncMeta;
+  std::vector<std::unique_ptr<StoreMeta>> _syncMeta;  // GUARDED_BY(_mutex)
 
   // slave's pov, sync status
   std::vector<std::unique_ptr<SPovStatus>> _syncStatus;
@@ -325,12 +325,14 @@ class ReplManager {
   std::vector<std::map<uint64_t, MPovStatus*>> _pushStatus;
   std::vector<std::map<string, MPovFullPushStatus*>> _fullPushStatus;
 #else
+  // GUARDED_BY(_mutex)
   std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
   std::vector<std::map<string, std::unique_ptr<MPovFullPushStatus>>>
     _fullPushStatus;
 #endif
 
-  // master and slave's pov, smallest binlogId, moves on when truncated
+  // master and slave's pov, smallest binlogId, moves on when truncated;
+  // GUARDED_BY(_mutex)
   std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
 
   // master's pov, workerpool of pushing full backup

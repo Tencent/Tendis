@@ -119,12 +119,6 @@ class ChunkMigrateSender {
     return _sendstate;
   }
 
-  std::string getStartTime() const {
-    std::lock_guard<myMutex> lk(_mutex);
-    return _startTime;
-  }
-
-  void setStartTime(const std::string& str);
   void setTaskStartTime(uint64_t t);
   void setBinlogEndTime(uint64_t t);
   void setSnapShotStartTime(uint64_t t);
@@ -189,9 +183,8 @@ class ChunkMigrateSender {
   std::atomic<uint64_t> _binlogNum;
   std::atomic<uint64_t> _lockStartTime;
   std::atomic<uint64_t> _lockEndTime;
-  std::atomic<uint64_t> _taskStartTime;
+  std::atomic<uint64_t> _taskStartTime;  // ms
   uint64_t _binlogTimeStamp;
-  std::string _startTime;
   bool _consistency;
   std::string _nodeid;
   std::atomic<uint64_t> _curBinlogid;

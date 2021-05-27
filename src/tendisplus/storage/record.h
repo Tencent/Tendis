@@ -16,6 +16,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 

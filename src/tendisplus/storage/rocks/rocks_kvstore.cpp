@@ -1462,7 +1462,8 @@ Status RocksKVStore::setMode(StoreMode mode) {
       INVARIANT_D(0);
   }
 
-  LOG(INFO) << "store:" << dbId() << ",mode:" << static_cast<uint32_t>(_mode)
+  LOG(INFO) << "store:" << dbId()
+            << ",mode:" << static_cast<uint32_t>(_mode.load())
             << ",changes to:" << static_cast<uint32_t>(mode)
             << ",_nextTxnSeq:" << oldSeq << ",changes to:" << _nextTxnSeq;
   _mode = mode;

@@ -11,6 +11,7 @@
 #include <vector>
 #include <list>
 #include <utility>
+#include <unordered_map>
 #include "tendisplus/utils/status.h"
 #include "tendisplus/server/session.h"
 #include "tendisplus/network/session_ctx.h"
@@ -22,7 +23,7 @@ namespace tendisplus {
 
 class Command {
  public:
-  using CmdMap = std::map<std::string, Command*>;
+  using CmdMap = std::unordered_map<std::string, Command*>;
   explicit Command(const std::string& name, const char* sflags);
   virtual ~Command() = default;
   virtual Expected<std::string> run(Session* sess) = 0;
@@ -164,7 +165,7 @@ class Command {
   std::atomic<uint64_t> _totalNanoSecs;
 };
 
-std::map<std::string, Command*>& commandMap();
+std::unordered_map<std::string, Command*>& commandMap();
 
 }  // namespace tendisplus
 

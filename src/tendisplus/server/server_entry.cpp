@@ -10,9 +10,11 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include "glog/logging.h"
+#ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
-#endif  // !TENDIS_JEMALLOC
+#endif
+#endif
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
@@ -575,6 +577,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   auto tmpMGLockMgr = std::make_unique<mgl::MGLockMgr>();
   installMGLockMgrInLock(std::move(tmpMGLockMgr));
+  // inited single instance
+  mgl::MGLockMgr::getInstance();
+
+  // FIXME: we may should move these function's static variable to global
+  RecordKey::prefixTTLIndex();
+  RecordKey::prefixReplLogV2();
+  RecordKey::prefixVersionMeta();
 
   for (uint32_t i = 0; i < _cfg->executorThreadNum;
        i += _cfg->executorWorkPoolSize) {
@@ -617,20 +626,11 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   LOG(INFO) << "_network->prepare ok. ip :" << cfg->bindIp
             << " port:" << cfg->port;
 
-  // replication
-  // replication relys on blocking-client
-  // must startup after network prepares ok
-  _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
-  s = _replMgr->startup();
-  if (!s.ok()) {
-    LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:"
-               << s.toString();
-    return s;
-  }
-
   // cluster init
-  /*(NOTE) wayenchen indexMgr need get task map size from migrateMgr, so init it
-   * first */
+  /* IndexMgr need get task map size from migrateMgr, so init it first.
+   * ReplManager->startup using MigrateManager, so we put cluster init
+   * before replication */
+  _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
   if (_enableCluster) {
     _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
 
@@ -653,6 +653,16 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up gc manager failed";
       return s;
     }
+  }
+
+  // replication
+  // replication relys on blocking-client
+  // must startup after network prepares ok
+  s = _replMgr->startup();
+  if (!s.ok()) {
+    LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:"
+               << s.toString();
+    return s;
   }
 
   _scriptMgr = std::make_unique<ScriptManager>(shared_from_this());
@@ -1593,6 +1603,7 @@ void ServerEntry::serverCron() {
 }
 
 void ServerEntry::jeprofCron() {
+#ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
   size_t rss_human_size = 0;
   ifstream file;
@@ -1623,7 +1634,8 @@ void ServerEntry::jeprofCron() {
 
     mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
-#endif  // !TENDIS_JEMALLOC
+#endif
+#endif  // !_WIN32
 }
 
 void ServerEntry::waitStopComplete() {
