@@ -323,6 +323,24 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
       std::to_string(cursor));
   }
 
+  void addKeyCursorMapping(Session* sess,
+                           const std::string& key,
+                           uint64_t cursor,
+                           size_t kvstoreId,
+                           const std::string& lastScanKey) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _keyCursorMaps.size());
+    _keyCursorMaps[sess->getCtx()->getDbId()].addMapping(
+      key, cursor, kvstoreId, lastScanKey, sess->id());
+  }
+
+  std::string getKeyMapLastScanKey(Session* sess,
+                                   const std::string& key,
+                                   uint64_t cursor) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _keyCursorMaps.size());
+    return _keyCursorMaps[sess->getCtx()->getDbId()].getLastScanKey(key,
+                                                                    cursor);
+  }
+
   void addCursorMapping(Session* sess,
                         uint64_t cursor,
                         size_t kvstoreId,
@@ -331,6 +349,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     _cursorMaps[sess->getCtx()->getDbId()].addMapping(
       std::to_string(cursor), kvstoreId, key, sess->id());
   }
+
 
  private:
   ServerEntry();
@@ -391,7 +410,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint32_t _protoMaxBulkLen;
   uint32_t _dbNum;
   std::atomic<uint64_t> _tsFromExtendedProtocol;
-  std::deque<CursorMap> _cursorMaps;  // deque NOT vector ! ! !
+  std::deque<CursorMap> _cursorMaps;        // deque NOT vector ! ! !
+  std::deque<KeyCursorMap> _keyCursorMaps;  // deque NOT vector ! ! !
 
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;

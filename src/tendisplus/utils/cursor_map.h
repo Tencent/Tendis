@@ -10,7 +10,9 @@
 #include <unordered_map>
 #include <atomic>
 #include <string>
-#include <mutex> // NOLINT
+#include <memory>
+#include <vector>
+#include <mutex>  // NOLINT
 
 #include "tendisplus/utils/status.h"
 
@@ -30,20 +32,21 @@ class CursorMap {
   explicit CursorMap(size_t maxCursorCount = MAX_MAPPING_COUNT,
                      size_t maxSessionLimit = MAX_SESSION_LIMIT);
   ~CursorMap() = default;
-  CursorMap(const CursorMap &) = delete;
-  CursorMap &operator=(const CursorMap &) = delete;
-  CursorMap(CursorMap &&) = delete;
-  CursorMap &operator=(CursorMap &&) = delete;
+  CursorMap(const CursorMap&) = delete;
+  CursorMap& operator=(const CursorMap&) = delete;
+  CursorMap(CursorMap&&) = delete;
+  CursorMap& operator=(CursorMap&&) = delete;
 
-  void addMapping(const std::string& cursor, size_t kvstoreId,
+  void addMapping(const std::string& cursor,
+                  size_t kvstoreId,
                   const std::string& lastScanKey,
                   uint64_t sessionId);
   Expected<CursorMapping> getMapping(const std::string& cursor);
 
-  auto getMap() const -> const std::unordered_map<std::string, CursorMapping> &;
-  auto getTs() const -> const std::map<uint64_t, std::string> &;
+  auto getMap() const -> const std::unordered_map<std::string, CursorMapping>&;
+  auto getTs() const -> const std::map<uint64_t, std::string>&;
   auto getSessionTs() const
-  -> const std::unordered_map<uint64_t, std::set<uint64_t>> &;
+    -> const std::unordered_map<uint64_t, std::set<uint64_t>>&;
   size_t maxCursorCount() const;
   size_t maxSessionLimit() const;
 
@@ -57,8 +60,40 @@ class CursorMap {
   std::recursive_mutex _mutex;
   // {cursor, mapping}
   std::unordered_map<std::string, CursorMapping> _cursorMap;
-  std::map<uint64_t, std::string> _cursorTs;                   // {ts, cursor}
+  std::map<uint64_t, std::string> _cursorTs;                    // {ts, cursor}
   std::unordered_map<uint64_t, std::set<uint64_t>> _sessionTs;  // {id, Ts(es)}
+};
+
+
+class KeyCursorMap {
+ public:
+  static constexpr size_t MAX_MAPPING_COUNT = 10000;
+  static constexpr size_t MAX_SESSION_LIMIT = 100;
+  static constexpr size_t CURSOR_MAP_SIZE = 32;
+
+  using CursorMapPtr = std::unique_ptr<CursorMap>;
+
+  explicit KeyCursorMap(size_t maxCursorCount = MAX_MAPPING_COUNT,
+                        size_t maxSessionLimit = MAX_SESSION_LIMIT,
+                        size_t cursorMapSize = CURSOR_MAP_SIZE);
+  ~KeyCursorMap() = default;
+  KeyCursorMap(const KeyCursorMap&) = delete;
+  KeyCursorMap& operator=(const KeyCursorMap&) = delete;
+  KeyCursorMap(KeyCursorMap&&) = delete;
+  KeyCursorMap& operator=(KeyCursorMap&&) = delete;
+
+  void addMapping(const std::string& key,
+                  uint64_t cursor,
+                  size_t kvstoreId,
+                  const std::string& lastScanKey,
+                  uint64_t sessionId);
+  Expected<CursorMap::CursorMapping> getMapping(const std::string& key,
+                                                uint64_t cursor);
+
+  std::string getLastScanKey(const std::string& key, uint64_t cursor);
+
+ private:
+  std::vector<CursorMapPtr> _cursorMap;
 };
 
 }  // namespace tendisplus

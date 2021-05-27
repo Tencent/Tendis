@@ -1,12 +1,10 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-
 #include "tendisplus/utils/cursor_map.h"
-
 #include "tendisplus/utils/time.h"
-
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -190,6 +188,52 @@ void CursorMap::evictMapping(const std::string& cursor) {
   if (_sessionTs[id].empty()) {
     _sessionTs.erase(id);
   }
+}
+
+
+KeyCursorMap::KeyCursorMap(size_t maxCursorCount,
+                           size_t maxSessionLimit,
+                           size_t cursorMapSize) {
+  for (size_t i = 0; i < cursorMapSize; i++) {
+    _cursorMap.emplace_back(
+      std::make_unique<CursorMap>(maxCursorCount, maxSessionLimit));
+  }
+}
+
+void KeyCursorMap::addMapping(const std::string& key,
+                              uint64_t cursor,
+                              size_t kvstoreId,
+                              const std::string& lastScanKey,
+                              uint64_t sessionId) {
+  auto slot = redis_port::keyHashSlot(key.c_str(), key.size());
+  auto real_cursor = key + "_" + std::to_string(cursor);
+
+  _cursorMap[slot % _cursorMap.size()]->addMapping(
+    real_cursor, kvstoreId, lastScanKey, sessionId);
+}
+
+Expected<CursorMap::CursorMapping> KeyCursorMap::getMapping(
+  const std::string& key, uint64_t cursor) {
+  INVARIANT_D(cursor);
+  auto slot = redis_port::keyHashSlot(key.c_str(), key.size());
+  auto real_cursor = key + "_" + std::to_string(cursor);
+
+  return _cursorMap[slot % _cursorMap.size()]->getMapping(real_cursor);
+}
+
+std::string KeyCursorMap::getLastScanKey(const std::string& key,
+                                         uint64_t cursor) {
+  if (cursor == 0)
+    return "0";
+
+  auto emapping = getMapping(key, cursor);
+  if (!emapping.ok()) {
+    LOG(ERROR) << "Can't find cursor " << std::to_string(cursor) << " of key "
+               << key;
+    return "0";
+  }
+
+  return emapping.value().lastScanKey;
 }
 
 }  // namespace tendisplus
