@@ -302,11 +302,11 @@ uint32_t ClusterNode::delAllSlotsNoLock() {
 
 // generate node information
 std::string ClusterNode::genDescription(const std::string& migrateInfo) {
+  auto master = getMaster();
+  std::string masterName = master ? " " + master->getNodeName() + " " : " - ";
+
   std::lock_guard<myMutex> lk(_mutex);
   std::stringstream stream;
-  std::string masterName =
-    _slaveOf ? " " + _slaveOf->getNodeName() + " " : " - ";
-
   ConnectState connectState = getConnectState();
   std::string stateStr =
     (connectState == ConnectState::CONNECTED) ? "connected" : "disconnected";
@@ -374,14 +374,19 @@ Expected<std::vector<std::shared_ptr<ClusterNode>>> ClusterNode::getSlaves()
   if (!nodeIsMaster()) {
     return {ErrorCodes::ERR_CLUSTER, "not a master"};
   }
+  if (_slaves.size() == 0) {
+    return {ErrorCodes::ERR_CLUSTER, "not a master"};
+  }
   return _slaves;
 }
 
 uint32_t ClusterNode::getNonFailingSlavesCount() const {
-  std::lock_guard<myMutex> lk(_mutex);
   uint32_t okslaves = 0;
+  auto expSlaveList = getSlaves();
+  if (!expSlaveList.ok())
+    return 0;
 
-  for (const auto& slave : _slaves) {
+  for (const auto& slave : expSlaveList.value()) {
     if (!slave->nodeFailed())
       okslaves++;
   }
@@ -584,6 +589,13 @@ bool ClusterNode::nodeCantFailover() const {
   return (_flags & CLUSTER_NODE_NOFAILOVER) ? true : false;
 }
 
+bool ClusterNode::isMasterOk() const {
+  auto master = getMaster();
+  if (master && !master->nodeFailed()) {
+    return true;
+  }
+  return false;
+}
 
 ClusterNodeFailReport::ClusterNodeFailReport(const std::string& node,
                                              mstime_t time)
@@ -1458,15 +1470,6 @@ Status ClusterState::clusterSaveConfig() {
   return s;
 }
 
-bool ClusterState::isMyMasterAlive() const {
-  std::lock_guard<myMutex> lk(_mutex);
-  auto master = getMyMaster();
-  if (master && !master->nodeFailed()) {
-    return true;
-  }
-  return false;
-}
-
 void ClusterState::setClientUnBlock() {
   _cv.notify_one();
   _isCliBlocked.store(false, std::memory_order_relaxed);
@@ -1717,8 +1720,10 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
   }
 
   for (const auto& n : nodeList) {
+    // if contain migrating task , get migrate info str
     std::string migrateStr = "";
-    if (n->nodeIsMyself() && _server->getMigrateManager()) {
+    if (n->nodeIsMyself() && _server->getMigrateManager() &&
+        _server->getMigrateManager()->existMigrateTask()) {
       auto migrateMgr = _server->getMigrateManager();
       Expected<std::string> eMigrStr("");
       if (simple) {
@@ -1730,6 +1735,7 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
         migrateStr = eMigrStr.value();
       }
     }
+
     std::string nodeDescription = n->genDescription(migrateStr);
     ss << nodeDescription << "\n";
   }
