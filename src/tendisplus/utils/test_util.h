@@ -135,6 +135,7 @@ class WorkLoad {
                    uint32_t port,
                    const uint32_t cport = 0);
   void clusterNodes();
+  void clusterSlots();
   void addSlots(const std::string& slotsBuff);
   void replicate(const std::string& nodeName);
   bool manualFailover();

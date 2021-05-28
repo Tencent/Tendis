@@ -153,7 +153,8 @@ makeCluster(uint32_t startPort,
 
     idx++;
   }
-
+  // before add slaves, cluster slots should ok
+  work0.clusterSlots();
   std::this_thread::sleep_for(std::chrono::seconds(10));
   // slaveof
   for (uint32_t i = nodeNum; i < totalNodeNum; ++i) {
@@ -176,7 +177,7 @@ makeCluster(uint32_t startPort,
 
     idx++;
   }
-
+  work0.clusterSlots();
   auto t = msSinceEpoch();
   bool isok = true;
   LOG(INFO) << "waiting servers cluster state changed to ok ";
