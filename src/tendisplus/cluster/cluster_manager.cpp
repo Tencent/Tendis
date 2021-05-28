@@ -374,9 +374,7 @@ Expected<std::vector<std::shared_ptr<ClusterNode>>> ClusterNode::getSlaves()
   if (!nodeIsMaster()) {
     return {ErrorCodes::ERR_CLUSTER, "not a master"};
   }
-  if (_slaves.size() == 0) {
-    return {ErrorCodes::ERR_CLUSTER, "not a master"};
-  }
+
   return _slaves;
 }
 

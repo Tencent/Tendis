@@ -1992,7 +1992,7 @@ Expected<BackupInfo> RocksKVStore::backup(const std::string& dir,
   if (mode == KVStore::BackupMode::BACKUP_CKPT ||
       mode == KVStore::BackupMode::BACKUP_CKPT_INTER) {
     rocksdb::Checkpoint* checkpoint = nullptr;
-    auto guard = MakeGuard([this, checkpoint]() {
+    auto guard = MakeGuard([this, &checkpoint]() {
       if (checkpoint) {
         delete checkpoint;
       }
