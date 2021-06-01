@@ -1,0 +1,28 @@
+#!/usr/bin/expect
+set tendisNode [lindex $argv 0]
+set timeout 600
+set username [lindex $argv 1]
+set password [lindex $argv 2]
+set hostname [lindex $argv 3]
+set port [lindex $argv 4]
+set greps [lindex $argv 5]
+set appname [lindex $argv 6]
+
+spawn ssh -l${username} -p${port} ${hostname}
+expect {
+  "yes/no"
+    {send "yes\r"; exp_continue;}
+  "password:"
+    {send "$password\r";}
+  "Password:"
+    {send "$password\r";}
+}
+puts "\nLOGIN ${hostname} SUCCESS  START TO EXCE COMMAND"
+puts "\ntendisNode: $tendisNode"
+expect "${username}@*"  {send "kubectl get pods --all-namespaces|grep ${greps}\r"}
+expect "${username}@*"  {send "kubectl cp ./flushall_tendis_data.sh ${appname}/$tendisNode:/data/flushall_tendis_data.sh\r"}
+expect "${username}@*"  {send "kubectl exec $tendisNode -n ${appname} -- bash  -c 'sh /data/flushall_tendis_data.sh'\r"}
+send "exit\n"
+expect eof
+puts "\nexec end"
+exit
