@@ -2043,7 +2043,9 @@ class MoveCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
-    return {ErrorCodes::ERR_INTERNAL, "not support"};
+    return {
+      ErrorCodes::ERR_MOVE_UNSUPPORT, "MOVE is not allowed in cluster mode"
+    };
   }
 } moveCmd;
 
