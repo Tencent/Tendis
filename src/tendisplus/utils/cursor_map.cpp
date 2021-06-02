@@ -214,7 +214,7 @@ void KeyCursorMap::addMapping(const std::string& key,
 
 Expected<CursorMap::CursorMapping> KeyCursorMap::getMapping(
   const std::string& key, uint64_t cursor) {
-  INVARIANT_D(cursor);
+  INVARIANT_D(cursor != 0);
   auto slot = redis_port::keyHashSlot(key.c_str(), key.size());
   auto real_cursor = key + "_" + std::to_string(cursor);
 

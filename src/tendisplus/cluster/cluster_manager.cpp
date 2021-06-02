@@ -2529,7 +2529,9 @@ uint32_t ClusterState::clusterGetSlaveRank(void) {
     return 0; /* Never called by slaves without master. */
 
   auto exptSlaveList = master->getSlaves();
-  INVARIANT_D(exptSlaveList.ok());
+  if (!exptSlaveList.ok()) {
+    return 0;
+  }
   auto slaveList = exptSlaveList.value();
   for (uint32_t j = 0; j < slaveList.size(); j++)
     if (slaveList[j] != _myself && !slaveList[j]->nodeCantFailover() &&
@@ -3205,7 +3207,7 @@ ClusterMsgHeader::ClusterMsgHeader(const std::shared_ptr<ClusterState> cstate,
   if (myself->getMaster()) {
     _slaveOf = myself->_slaveOf->getNodeName();
   }
-  INVARIANT_D(_slaveOf.size() == 40);
+  INVARIANT_D(_slaveOf.size() == CLUSTER_NAME_LENGTH);
 
   _flags = myself->getFlags();
   _configEpoch = master->getConfigEpoch();
@@ -4629,11 +4631,15 @@ uint64_t ClusterManager::countKeysInSlot(uint32_t slot) {
   auto expdb = _svr->getSegmentMgr()->getDb(
     g.getSession(), storeId, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {
+    LOG_STATUS(expdb.status());
     return 0;
   }
   auto kvstore = std::move(expdb.value().store);
   auto ptxn = kvstore->createTransaction(nullptr);
-  INVARIANT_D(ptxn.ok());
+  if (!ptxn.ok()) {
+    LOG_STATUS(ptxn.status());
+    return 0;
+  }
   auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
 
   uint64_t keyNum = 0;
@@ -4660,6 +4666,7 @@ std::vector<std::string> ClusterManager::getKeyBySlot(uint32_t slot,
   std::vector<std::string> keysList;
 
   if (!expdb.ok()) {
+    LOG_STATUS(expdb.status());
     return keysList;
   }
   auto kvstore = std::move(expdb.value().store);
@@ -4696,11 +4703,15 @@ bool ClusterManager::emptySlot(uint32_t slot) {
   auto expdb = _svr->getSegmentMgr()->getDb(
     g.getSession(), storeId, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {
+    LOG_STATUS(expdb.status());
     return false;
   }
   auto kvstore = std::move(expdb.value().store);
   auto ptxn = kvstore->createTransaction(nullptr);
-  INVARIANT_D(ptxn.ok());
+  if (!ptxn.ok()) {
+    LOG_STATUS(ptxn.status());
+    return false;
+  }
   auto slotCursor = std::move(ptxn.value()->createSlotCursor(slot));
   auto v = slotCursor->next();
 

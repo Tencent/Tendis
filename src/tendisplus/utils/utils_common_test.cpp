@@ -410,4 +410,71 @@ TEST(CursorMap, simulateScanSessions) {
   }
 }
 
+TEST(KeyCursorMap, addmapping) {
+  KeyCursorMap map(5, 2);
+
+  // CASE: mapping is not full, but one of alive sessions its mapping is full,
+  //  evict session itself LRU mapping
+  map.addMapping("key", 1, 1, "1", 0);
+  map.addMapping("key", 2, 2, "2", 0);
+  map.addMapping("key", 3, 3, "3", 1);
+  map.addMapping("key", 4, 4, "4", 1);
+  map.addMapping("key", 5, 5, "5", 1);
+  EXPECT_TRUE(map.getMapping("key", 1).ok());
+  EXPECT_TRUE(map.getMapping("key", 2).ok());
+  EXPECT_FALSE(map.getMapping("key", 3).ok());
+  EXPECT_TRUE(map.getMapping("key", 4).ok());
+  EXPECT_TRUE(map.getMapping("key", 5).ok());
+
+  // CASE: mapping is NOT full, session its own mapping is NOT full,
+  // can add mapping successfully
+  map.addMapping("key", 6, 6, "6", 2);
+  EXPECT_TRUE(map.getMapping("key", 1).ok());
+  EXPECT_TRUE(map.getMapping("key", 2).ok());
+  EXPECT_FALSE(map.getMapping("key", 3).ok());
+  EXPECT_TRUE(map.getMapping("key", 4).ok());
+  EXPECT_TRUE(map.getMapping("key", 5).ok());
+  EXPECT_TRUE(map.getMapping("key", 6).ok());
+
+  // CASE: new session comes,
+  // but all mapping is full => evict LRU mapping which belong to other session
+  map.addMapping("key", 7, 7, "7", 3);
+  EXPECT_FALSE(map.getMapping("key", 1).ok());
+  EXPECT_TRUE(map.getMapping("key", 2).ok());
+  EXPECT_FALSE(map.getMapping("key", 3).ok());
+  EXPECT_TRUE(map.getMapping("key", 4).ok());
+  EXPECT_TRUE(map.getMapping("key", 5).ok());
+  EXPECT_TRUE(map.getMapping("key", 6).ok());
+  EXPECT_TRUE(map.getMapping("key", 7).ok());
+
+  auto expMapping = map.getMapping("key", 7);
+  EXPECT_TRUE(expMapping.ok());
+  EXPECT_EQ(expMapping.value().kvstoreId, 7);
+  EXPECT_EQ(expMapping.value().lastScanKey, "7");
+  EXPECT_EQ(expMapping.value().sessionId, 3);
+
+  // CASE: add different key cursor, even if the cursormap of
+  // "key" is full, but "key1" use different cursormap
+  map.addMapping("key1", 7, 7, "7", 3);
+  EXPECT_FALSE(map.getMapping("key", 1).ok());
+  EXPECT_TRUE(map.getMapping("key", 2).ok());
+  EXPECT_FALSE(map.getMapping("key", 3).ok());
+  EXPECT_TRUE(map.getMapping("key", 4).ok());
+  EXPECT_TRUE(map.getMapping("key", 5).ok());
+  EXPECT_TRUE(map.getMapping("key", 6).ok());
+  EXPECT_TRUE(map.getMapping("key", 7).ok());
+  EXPECT_TRUE(map.getMapping("key1", 7).ok());
+
+  // CASE: the same cursor has been added by different session
+  // when different session comes, cursor-mapping will overwrite.
+  map.addMapping("key", 7, 10, "x", 4);
+  EXPECT_TRUE(map.getMapping("key", 7).ok());
+
+  expMapping = map.getMapping("key", 7);
+  EXPECT_TRUE(expMapping.ok());
+  EXPECT_EQ(expMapping.value().kvstoreId, 10);
+  EXPECT_EQ(expMapping.value().lastScanKey, "x");
+  EXPECT_EQ(expMapping.value().sessionId, 4);
+}
+
 }  // namespace tendisplus

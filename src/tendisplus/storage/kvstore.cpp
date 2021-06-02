@@ -195,7 +195,7 @@ Expected<ReplLogRawV2> RepllogCursorV2::next() {
       return eval.status();
     }
 
-    INVARIANT_D(ReplLogValueV2::decode(eval.value()).ok());
+    // INVARIANT_D(ReplLogValueV2::decode(eval.value()).ok());
     _cur++;
     return ReplLogRawV2(keyStr, eval.value());
   }

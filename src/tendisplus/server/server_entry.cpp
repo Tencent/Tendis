@@ -1034,7 +1034,6 @@ bool ServerEntry::processRequest(Session* sess) {
         ns->borrowConn(), args[1], args[2], args[3], storeNum);
       return false;
     } else if (expCmdName == "quit") {
-      LOG(INFO) << "quit command";
       NetSession* ns = dynamic_cast<NetSession*>(sess);
       INVARIANT(ns != nullptr);
       ns->setCloseAfterRsp();

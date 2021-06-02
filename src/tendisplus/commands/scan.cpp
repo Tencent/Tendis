@@ -142,6 +142,9 @@ class ScanGenericCommand : public Command {
     // get last scan key from cursor
     auto realCursor =
       sess->getServerEntry()->getKeyMapLastScanKey(sess, key, cursor);
+    if (realCursor == "0") {
+      cursor = 0;
+    }
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
     auto batch =
@@ -162,9 +165,13 @@ class ScanGenericCommand : public Command {
         ++it;
       }
     }
-    cursor += count + 1;
+    if (cursor == 0) {
+      // the first element start with 1;
+      cursor++;
+    }
+    cursor += count;
     std::string new_cursor = batch.value().first;
-    if (batch.value().first != "0") {
+    if (new_cursor != "0") {
       auto kvstoreId = expdb.value().chunkId % server->getKVStoreCount();
       sess->getServerEntry()->addKeyCursorMapping(
         sess, key, cursor, kvstoreId, batch.value().first);
@@ -200,7 +207,6 @@ class ZScanCommand : public ScanGenericCommand {
     for (const auto& v : rcds) {
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
-      INVARIANT_D(d.ok());
       RET_IF_ERR_EXPECTED(d);
       Command::fmtBulk(ss, tendisplus::dtos(d.value()));
     }
