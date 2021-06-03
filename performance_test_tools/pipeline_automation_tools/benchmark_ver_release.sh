@@ -85,6 +85,7 @@ clientnum=50
 threadnum=20
 benchnum=3
 interTime=120
+defaultTestTime=600
 
 decreaseLimit_set=10
 decreaseLimit_get=10
@@ -121,7 +122,7 @@ runTest() {
     initTimeStamp=$(date +%s)
     for itest in $(echo $1 | tr ',' '\n')
     do
-        testTime=600
+        testTime=${defaultTestTime}
         curTestTime=$2
         if [[ "$curTestTime" == "0" ]]
         then
@@ -140,7 +141,7 @@ runTest() {
             startTask ${itest} ${startTimestamp}
             waitFinish ${itest}
         done
-        testTime=${2}
+        testTime=${defaultTestTime}
         endTimestamp=$(date +%s)
         resultpath="result/tmp-$startTimestamp"
         AVG=0.0
