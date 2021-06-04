@@ -323,6 +323,15 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
       std::to_string(cursor));
   }
 
+  void addCursorMapping(Session* sess,
+                        uint64_t cursor,
+                        size_t kvstoreId,
+                        const std::string& key) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
+    _cursorMaps[sess->getCtx()->getDbId()].addMapping(
+      std::to_string(cursor), kvstoreId, key, sess->id());
+  }
+
   void addKeyCursorMapping(Session* sess,
                            const std::string& key,
                            uint64_t cursor,
@@ -333,23 +342,13 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
       key, cursor, kvstoreId, lastScanKey, sess->id());
   }
 
-  std::string getKeyMapLastScanKey(Session* sess,
+  std::string getKeyMapLastScanPos(Session* sess,
                                    const std::string& key,
                                    uint64_t cursor) {
     INVARIANT_D(sess->getCtx()->getDbId() < _keyCursorMaps.size());
-    return _keyCursorMaps[sess->getCtx()->getDbId()].getLastScanKey(key,
+    return _keyCursorMaps[sess->getCtx()->getDbId()].getLastScanPos(key,
                                                                     cursor);
   }
-
-  void addCursorMapping(Session* sess,
-                        uint64_t cursor,
-                        size_t kvstoreId,
-                        const std::string& key) {
-    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
-    _cursorMaps[sess->getCtx()->getDbId()].addMapping(
-      std::to_string(cursor), kvstoreId, key, sess->id());
-  }
-
 
  private:
   ServerEntry();

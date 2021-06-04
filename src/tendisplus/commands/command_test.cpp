@@ -604,7 +604,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(std::to_string(count + 1), cursor);
   Command::fmtBulk(ss, cursor);
   Command::fmtMultiBulkLen(ss, 2*count);
-  for (int i = 0; i < 2*count; ++i) {
+  for (size_t i = 0; i < 2*count; ++i) {
     std::string tmp;
     tmp.push_back('a' + i);
     Command::fmtBulk(ss, tmp);
@@ -630,7 +630,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   cursor = "0";
   Command::fmtBulk(ss, cursor);
   Command::fmtMultiBulkLen(ss, (field_count - count) * 2);
-  for (int i = 0; i < (field_count - count) * 2; ++i) {
+  for (size_t i = 0; i < (field_count - count) * 2; ++i) {
     std::string tmp;
     tmp.push_back('a' + 2*count + i);
     Command::fmtBulk(ss, tmp);

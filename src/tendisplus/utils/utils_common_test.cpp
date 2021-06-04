@@ -259,7 +259,7 @@ TEST(CursorMap, addmapping) {
   auto expMapping = map.getMapping("7");
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 7);
-  EXPECT_EQ(expMapping.value().lastScanKey, "7");
+  EXPECT_EQ(expMapping.value().lastScanPos, "7");
   EXPECT_EQ(expMapping.value().sessionId, 3);
 
   // CASE: the same cursor has been added by different session
@@ -271,7 +271,7 @@ TEST(CursorMap, addmapping) {
   expMapping = map.getMapping("7");
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 10);
-  EXPECT_EQ(expMapping.value().lastScanKey, "x");
+  EXPECT_EQ(expMapping.value().lastScanPos, "x");
   EXPECT_EQ(expMapping.value().sessionId, 4);
 }
 
@@ -287,8 +287,43 @@ TEST(CursorMap, getMapping) {
   EXPECT_FALSE(map.getMapping("10").ok());
 
   map.addMapping("10", 10, "10", 0);
-  EXPECT_EQ(map.getMapping("10").value().lastScanKey, "10");
+  EXPECT_EQ(map.getMapping("10").value().lastScanPos, "10");
   EXPECT_FALSE(map.getMapping("1").ok());
+}
+
+TEST(CursorMap, evictMapping) {
+  CursorMap map(5, 5, 1);  // expired in one second
+
+  map.addMapping("1", 1, "1", 0);
+  map.addMapping("2", 2, "2", 0);
+  map.addMapping("3", 3, "3", 0);
+  map.addMapping("4", 4, "4", 0);
+  map.addMapping("5", 5, "5", 0);
+  EXPECT_EQ(map.getMapping("1").value().kvstoreId, 1);
+  EXPECT_FALSE(map.getMapping("10").ok());
+
+  std::this_thread::sleep_for(1s);
+  auto m1 = map.getMapping("1");    // expired
+  EXPECT_FALSE(m1.ok());
+  EXPECT_TRUE(m1.status().toString().find("Mapping expired"));
+  EXPECT_EQ(map.getMap().size(), 0);  // all mapping should be expired
+
+  map.addMapping("1", 1, "1", 0);
+  map.addMapping("2", 2, "2", 0);
+  map.addMapping("3", 3, "3", 0);
+
+  std::this_thread::sleep_for(1s);
+
+  map.addMapping("4", 4, "4", 0);
+  map.addMapping("5", 5, "5", 0);
+
+  EXPECT_TRUE(map.getMapping("4").ok());    // not expired
+  EXPECT_EQ(map.getMap().size(), 5);  // no mapping should be expired
+
+  auto mm1 = map.getMapping("1");  // expired
+  EXPECT_FALSE(mm1.ok());
+  EXPECT_TRUE(mm1.status().toString().find("Mapping expired"));
+  EXPECT_EQ(map.getMap().size(), 2);  // some mapping should be expired
 }
 
 /**
@@ -450,7 +485,7 @@ TEST(KeyCursorMap, addmapping) {
   auto expMapping = map.getMapping("key", 7);
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 7);
-  EXPECT_EQ(expMapping.value().lastScanKey, "7");
+  EXPECT_EQ(expMapping.value().lastScanPos, "7");
   EXPECT_EQ(expMapping.value().sessionId, 3);
 
   // CASE: add different key cursor, even if the cursormap of
@@ -473,7 +508,7 @@ TEST(KeyCursorMap, addmapping) {
   expMapping = map.getMapping("key", 7);
   EXPECT_TRUE(expMapping.ok());
   EXPECT_EQ(expMapping.value().kvstoreId, 10);
-  EXPECT_EQ(expMapping.value().lastScanKey, "x");
+  EXPECT_EQ(expMapping.value().lastScanPos, "x");
   EXPECT_EQ(expMapping.value().sessionId, 4);
 }
 

@@ -54,7 +54,7 @@ class ScanGenericCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
-    const std::string& cursor_arg = args[2];
+    const std::string& cursorArg = args[2];
     size_t i = 3;
     int j;
     std::string pat;
@@ -111,7 +111,7 @@ class ScanGenericCommand : public Command {
       ZSlMetaValue meta = eMetaContent.value();
       SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
       Zrangespec range;
-      if (zslParseRange(cursor_arg.c_str(), maxscore.c_str(), &range) != 0) {
+      if (zslParseRange(cursorArg.c_str(), maxscore.c_str(), &range) != 0) {
         return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
       }
       auto arr = sl.scanByScore(range, 0, count + 1, false, ptxn.value());
@@ -133,16 +133,17 @@ class ScanGenericCommand : public Command {
     }
 
     // cursor should be an integer
-    auto ecursor = tendisplus::stoull(cursor_arg);
+    auto ecursor = tendisplus::stoull(cursorArg);
     if (!ecursor.ok()) {
       return {ErrorCodes::ERR_PARSEOPT, "-ERR invalid cursor\r\n"};
     }
     uint64_t cursor = ecursor.value();
 
-    // get last scan key from cursor
+    // get last scan position from cursormap
     auto realCursor =
-      sess->getServerEntry()->getKeyMapLastScanKey(sess, key, cursor);
-    if (realCursor == "0") {
+      sess->getServerEntry()->getKeyMapLastScanPos(sess, key, cursor);
+    if (realCursor == "0" && cursor != 0) {
+      // cursor is invalid in cursormap, start with "0"
       cursor = 0;
     }
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
@@ -167,17 +168,17 @@ class ScanGenericCommand : public Command {
     }
     if (cursor == 0) {
       // the first element start with 1;
-      cursor++;
+      cursor = 1;
     }
     cursor += count;
-    std::string new_cursor = batch.value().first;
-    if (new_cursor != "0") {
+    std::string newCursor = batch.value().first;
+    if (newCursor != "0") {
       auto kvstoreId = expdb.value().chunkId % server->getKVStoreCount();
       sess->getServerEntry()->addKeyCursorMapping(
         sess, key, cursor, kvstoreId, batch.value().first);
-      new_cursor = std::to_string(cursor);
+      newCursor = std::to_string(cursor);
     }
-    return genResult(new_cursor, batch.value().second);
+    return genResult(newCursor, batch.value().second);
   }
 
  private:
@@ -443,7 +444,7 @@ class ScanCommand : public Command {
 
     // Step 2: check if this scan command cursor has been stored in cursorMap_
     uint64_t kvstoreId{0};
-    std::string lastScanKey;
+    std::string lastScanPos;
     auto expMapping = sess->getServerEntry()->getCursorMapping(sess, cursor);
     if (!expMapping.ok()) {
       if (expMapping.status().code() == ErrorCodes::ERR_NOTFOUND) {
@@ -455,17 +456,17 @@ class ScanCommand : public Command {
       }
     } else {
       kvstoreId = expMapping.value().kvstoreId;
-      lastScanKey = expMapping.value().lastScanKey;
+      lastScanPos = expMapping.value().lastScanPos;
     }
 
     // use lambda return value to decode
     // because RecordKey's assign operator= function has been deleted
     // RecordKey::decode will fault when string is empty
     auto expRecordKey = [&]() -> Expected<RecordKey> {
-      if (lastScanKey.empty()) {
+      if (lastScanPos.empty()) {
         return genRecordKey(0, sess->getCtx()->getDbId(), "");
       } else {
-        auto expLastScanRecordKey = RecordKey::decode(lastScanKey);
+        auto expLastScanRecordKey = RecordKey::decode(lastScanPos);
         RET_IF_ERR_EXPECTED(expLastScanRecordKey);
         return expLastScanRecordKey.value();
       }
