@@ -2018,37 +2018,6 @@ class MSetNXCommand : public MSetGenericCommand {
   MSetNXCommand() : MSetGenericCommand("msetnx", "wm", REDIS_SET_NX) {}
 } msetNxCmd;
 
-class MoveCommand : public Command {
- public:
-  MoveCommand() : Command("move", "wF") {}
-
-  ssize_t arity() const {
-    return 3;
-  }
-
-  int32_t firstkey() const {
-    return 1;
-  }
-
-  int32_t lastkey() const {
-    return 1;
-  }
-
-  int32_t keystep() const {
-    return 1;
-  }
-
-  bool sameWithRedis() const {
-    return false;
-  }
-
-  Expected<std::string> run(Session* sess) final {
-    return {
-      ErrorCodes::ERR_MOVE_UNSUPPORT, "MOVE is not allowed in cluster mode"
-    };
-  }
-} moveCmd;
-
 class RenameGenericCommand : public Command {
  public:
   RenameGenericCommand(const std::string& name, const char* sflags, bool nx)
