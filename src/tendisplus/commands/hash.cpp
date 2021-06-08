@@ -241,9 +241,9 @@ class HExistsCommand : public Command {
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_HASH_META);
     if (rv.status().code() == ErrorCodes::ERR_EXPIRED) {
-      return Command::fmtNull();
+      return Command::fmtZero();
     } else if (rv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-      return Command::fmtNull();
+      return Command::fmtZero();
     } else if (!rv.status().ok()) {
       return rv.status();
     }
