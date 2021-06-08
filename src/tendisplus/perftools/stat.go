@@ -117,7 +117,7 @@ func normInt(val uint64, withB bool) string {
 func main() {
 	flag.Parse()
 	host := fmt.Sprintf("%s:%d", *ip, *port)
-	client, err := redis.DialTimeout("tcp", host, 1*time.Second)
+	client, err := redis.DialTimeout("tcp", host, 5*time.Second)
 	if err != nil {
 		log.Fatalf("dial host %s failed:%v", host, err)
 	}
@@ -143,9 +143,13 @@ func main() {
 	for {
 		v, err := client.Cmd("tendisstat").Str()
 		if err != nil {
+    		s := fmt.Sprintf("send debug cmd failed:%v", err)
+	    	fmt.Fprintln(w, s)
 			log.Fatalf("send debug cmd failed:%v", err)
 		}
 		if err := json.Unmarshal([]byte(v), &info); err != nil {
+    		s := fmt.Sprintf("unmarshal debug info failed:%v", err)
+	    	fmt.Fprintln(w, s)
 			log.Fatalf("unmarshal debug info failed:%v", err)
 		}
 		if oldInfo == nil {
@@ -188,7 +192,7 @@ func main() {
 			0,   // padding
 			' ', // padchar
 			tabwriter.AlignRight|tabwriter.Debug)
-		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\t%d\t%d\t",
+		s := fmt.Sprintf("%d\t%d\t%d\t%d\t%d\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t",
 			activeTxns,
 			nImms,
 			flushPending,
@@ -199,7 +203,8 @@ func main() {
 			numSnapshots,
 			normInt(qtps, false),
 			inqueue,
-			maxLag)
+			maxLag,
+            info.Request.Processed)
 		fmt.Fprintln(w, s)
 		w.Flush()
 
