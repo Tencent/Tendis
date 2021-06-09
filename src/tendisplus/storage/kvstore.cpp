@@ -50,7 +50,58 @@ Status RepllogCursorV2::seekToLast() {
   return key.status();
 }
 
-Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
+Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogMeta(Transaction* txn,
+        bool checkTs = true) {
+  MinbinlogInfo binlogInfo;
+
+  RecordKey key(REPLLOGKEYV2_META_CHUNKID, REPLLOGKEYV2_META_DBID,
+                RecordType::RT_META, "", "");
+  auto eval = txn->getKV(key.encode());
+  if (eval.ok()) {
+    auto v = RecordValue::decode(eval.value());
+    if (!v.ok()) {
+      LOG(ERROR) << "binlog META decode error:" << v.status().toString();
+      return {ErrorCodes::ERR_INTERGER, "binlog META decode error"};
+    }
+    // old version only has binlogid, don't has timestamp,
+    //   we need use cursor.
+    if (v.value().getRecordType() != RecordType::RT_META) {
+      LOG(ERROR) << "get binlog META error, RecordType:"
+                 << static_cast<int>(v.value().getRecordType());
+      return {ErrorCodes::ERR_INTERGER, "get binlog META error"};
+    }
+
+    if (v.value().getValue().size() == sizeof(uint64_t)) {
+      if (checkTs) {
+        LOG(ERROR) << "get binlog META error, size:"
+          << v.value().getValue().size();
+        return {ErrorCodes::ERR_INTERGER, "get binlog META error"};
+      } else {
+        binlogInfo.id = int64Decode(v.value().getValue().c_str());
+        binlogInfo.ts = 0;
+        return binlogInfo;
+      }
+    } else if (v.value().getValue().size() == 2 * sizeof(uint64_t)) {
+      binlogInfo.id = int64Decode(v.value().getValue().c_str());
+      binlogInfo.ts = int64Decode(v.value().getValue().c_str()
+                                  + sizeof(uint64_t));
+      return binlogInfo;
+    } else {
+      LOG(ERROR) << "get binlog META error, size:"
+        << v.value().getValue().size();
+      return {ErrorCodes::ERR_INTERGER, "get binlog META error"};
+    }
+  } else if (!eval.ok() && eval.status().code() != ErrorCodes::ERR_NOTFOUND) {
+    LOG(WARNING) << "get binlog META error:" << eval.status().toString();
+    return eval.status();
+  }
+
+  return {ErrorCodes::ERR_NOTFOUND, "has no binlog META"};
+}
+
+Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlogByCursor(
+        Transaction *txn) {
+  MinbinlogInfo binlogInfo;
   auto cursor = txn->createBinlogCursor();
   if (!cursor) {
     return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
@@ -67,56 +118,44 @@ Expected<ReplLogRawV2> RepllogCursorV2::getMinBinlog(Transaction* txn) {
       return {ErrorCodes::ERR_EXHAUST, ""};
   }*/
 
-  // TODO(vinchen): too more copy
-  return ReplLogRawV2(expRcd.value());
-}
-
-Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
-  if (gParams != nullptr && gParams->saveMinBinlogId) {
-    RecordKey key(REPLLOGKEYV2_META_CHUNKID, REPLLOGKEYV2_META_DBID,
-                  RecordType::RT_META, "", "");
-    auto eval = txn->getKV(key.encode());
-    if (eval.ok()) {
-      auto v = RecordValue::decode(eval.value());
-      if (!v.ok()) {
-        LOG(ERROR) << "binlog META decode error:" << v.status().toString();
-        return {ErrorCodes::ERR_INTERGER, "binlog META decode error"};
-      }
-      if (v.value().getRecordType() != RecordType::RT_META
-        || v.value().getValue().size() != sizeof(uint64_t)) {
-        LOG(ERROR) << "binlog META decode error:" << v.status().toString();
-        return {ErrorCodes::ERR_INTERGER, "binlog META decode error"};
-      }
-      uint64_t binlogId = int64Decode(v.value().getValue().c_str());
-      return binlogId;
-    } else if (!eval.ok() && eval.status().code() != ErrorCodes::ERR_NOTFOUND) {
-      LOG(WARNING) << "get binlog META error:" << eval.status().toString();
-      return eval.status();
-    }
-    DLOG(WARNING) << "binlog META is not exists, will use seek.";
-  }
-
-  auto cursor = txn->createBinlogCursor();
-  if (!cursor) {
-    return {ErrorCodes::ERR_INTERNAL, "txn->createBinlogCursor() error"};
-  }
-  cursor->seek(RecordKey::prefixReplLogV2());
-  Expected<Record> expRcd = cursor->next();
-  if (!expRcd.ok()) {
-    return expRcd.status();
-  }
-
-  /*if (expRcd.value().getRecordKey().getRecordType()
-      != RecordType::RT_BINLOG) {
-      return {ErrorCodes::ERR_EXHAUST, ""};
-  }*/
-
   const RecordKey& rk = expRcd.value().getRecordKey();
   auto explk = ReplLogKeyV2::decode(rk);
   if (!explk.ok()) {
     return explk.status();
   }
-  return explk.value().getBinlogId();
+  binlogInfo.id = explk.value().getBinlogId();
+  const RecordValue& rv = expRcd.value().getRecordValue();
+  auto explv = ReplLogValueV2::decode(rv.encode());
+  if (!explv.ok()) {
+    return explv.status();
+  }
+  binlogInfo.ts = explv.value().getTimestamp();
+  return binlogInfo;
+}
+
+Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlog(Transaction* txn) {
+  if (gParams != nullptr && gParams->saveMinBinlogId) {
+    auto binlogInfo = getMinBinlogMeta(txn);
+    if (binlogInfo.ok()) {
+      return binlogInfo;
+    }
+    DLOG(WARNING) << "binlog META is not exists, will use seek.";
+  }
+
+  auto binlogInfo = getMinBinlogByCursor(txn);
+  if (!binlogInfo.ok()) {
+    LOG(WARNING) << "getMinBinlogByCursor failed:"
+      << binlogInfo.status().toString();
+  }
+  return binlogInfo;
+}
+
+Expected<uint64_t> RepllogCursorV2::getMinBinlogId(Transaction* txn) {
+  auto ret = getMinBinlog(txn);
+  if (!ret.ok()) {
+    return ret.status();
+  }
+  return ret.value().id;
 }
 
 Expected<ReplLogRawV2> RepllogCursorV2::getMaxBinlog(Transaction* txn) {

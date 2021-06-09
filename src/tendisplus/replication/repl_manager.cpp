@@ -278,8 +278,8 @@ Status ReplManager::startup() {
       auto txn = std::move(ptxn.value());
       auto explog = RepllogCursorV2::getMinBinlog(txn.get());
       if (explog.ok()) {
-        recBinlogStat->firstBinlogId = explog.value().getBinlogId();
-        recBinlogStat->timestamp = explog.value().getTimestamp();
+        recBinlogStat->firstBinlogId = explog.value().id;
+        recBinlogStat->timestamp = explog.value().ts;
         recBinlogStat->lastFlushBinlogId = Transaction::TXNID_UNINITED;
         recBinlogStat->saveBinlogId = recBinlogStat->firstBinlogId;
         if (_cfg->binlogDelRange > 1) {
@@ -318,8 +318,9 @@ Status ReplManager::startup() {
     }
     _logRecycStatus.emplace_back(std::move(recBinlogStat));
     LOG(INFO) << "store:" << i
-              << ",_firstBinlogId:" << _logRecycStatus.back()->firstBinlogId
-              << ",_timestamp:" << _logRecycStatus.back()->timestamp;
+              << ",firstBinlogId:" << _logRecycStatus.back()->firstBinlogId
+              << ",timestamp:" << _logRecycStatus.back()->timestamp
+              << ",saveBinlogId:" << _logRecycStatus.back()->saveBinlogId;
   }
 
   INVARIANT(_logRecycStatus.size() == _svr->getKVStoreCount());
@@ -432,10 +433,10 @@ Status ReplManager::resetRecycleState(uint32_t storeId) {
   auto explog = RepllogCursorV2::getMinBinlog(txn);
   if (explog.ok()) {
     std::lock_guard<std::mutex> lk(_mutex);
-    _logRecycStatus[storeId]->firstBinlogId = explog.value().getBinlogId();
+    _logRecycStatus[storeId]->firstBinlogId = explog.value().id;
     /* NOTE(wayenchen) saveBinlog should be reset */
-    _logRecycStatus[storeId]->saveBinlogId = explog.value().getBinlogId();
-    _logRecycStatus[storeId]->timestamp = explog.value().getTimestamp();
+    _logRecycStatus[storeId]->saveBinlogId = explog.value().id;
+    _logRecycStatus[storeId]->timestamp = explog.value().ts;
     _logRecycStatus[storeId]->lastFlushBinlogId = Transaction::TXNID_UNINITED;
     LOG(INFO) << "resetRecycleState"
               << " firstBinlogId:" << _logRecycStatus[storeId]->firstBinlogId
@@ -790,7 +791,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
                  << "failed:" << s.status().toString();
       return;
     }
-    bool changeNewFile = s.value().ret < 0;
+    bool changeNewFile = s.value().err < 0;
     updateCurBinlogFs(
       storeId, s.value().written, s.value().timestamp, changeNewFile);
     // TODO(vinchen): stat for binlog deleted
@@ -812,6 +813,10 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   start = newStart;
 }
 
+// TODO(takenliu):
+//  1. if the last file is empty, it will return error
+//  2. shouldn't use the fileSeq get from maxDumpFileSeq()
+//  3. maxDumpFileSeq() getSaveBinlogId() has too many same codes
 Expected<uint64_t> ReplManager::getSaveBinlogId(uint32_t storeId,
                                                 uint32_t fileSeq) {
   if (fileSeq == 0) {

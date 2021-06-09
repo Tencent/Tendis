@@ -1374,7 +1374,7 @@ class BinlogStartCommand : public Command {
   BinlogStartCommand() : Command("binlogstart", "as") {}
 
   ssize_t arity() const {
-    return 2;
+    return -2;
   }
 
   int32_t firstkey() const {
@@ -1411,17 +1411,85 @@ class BinlogStartCommand : public Command {
     if (!ptxn.ok()) {
       return ptxn.status();
     }
-    auto expBinlogid = RepllogCursorV2::getMinBinlogId(ptxn.value());
-    if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
-      return Command::fmtZero();
+    // only get from cursor, beside the min binlog meta
+    if (args.size() >=3 && toLower(args[2]) == "fromcursor") {
+      auto expBinlogid = RepllogCursorV2::getMinBinlogByCursor(ptxn.value());
+      if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
+        return Command::fmtZero();
+      }
+      if (!expBinlogid.ok()) {
+        return expBinlogid.status();
+      }
+      return Command::fmtLongLong(expBinlogid.value().id);
+    } else {
+      auto expBinlogid = RepllogCursorV2::getMinBinlogId(ptxn.value());
+      if (expBinlogid.status().code() == ErrorCodes::ERR_EXHAUST) {
+        return Command::fmtZero();
+      }
+      if (!expBinlogid.ok()) {
+        return expBinlogid.status();
+      }
+      return Command::fmtLongLong(expBinlogid.value());
+    }
+  }
+} binlogStartCommand;
+
+class BinlogMetaCommand : public Command {
+ public:
+  BinlogMetaCommand() : Command("binlogmeta", "as") {}
+
+  ssize_t arity() const {
+    return 2;
+  }
+
+  int32_t firstkey() const {
+    return 1;
+  }
+
+  int32_t lastkey() const {
+    return 1;
+  }
+
+  int32_t keystep() const {
+    return 1;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    const std::vector<std::string>& args = sess->getArgs();
+    Expected<uint64_t> storeId = ::tendisplus::stoul(args[1]);
+    if (!storeId.ok()) {
+      return storeId.status();
+    }
+
+    auto server = sess->getServerEntry();
+    if (storeId.value() >= server->getKVStoreCount()) {
+      return {ErrorCodes::ERR_PARSEOPT, "invalid instance num"};
+    }
+
+    auto expdb = server->getSegmentMgr()->getDb(
+            sess, storeId.value(), mgl::LockMode::LOCK_IS, false, 0);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+    // only get the min binlog meta
+    auto expBinlogid = RepllogCursorV2::getMinBinlogMeta(ptxn.value(), false);
+    if (expBinlogid.status().code() == ErrorCodes::ERR_NOTFOUND) {
+      return Command::fmtBulk("dont has min binlog meta");
     }
     if (!expBinlogid.ok()) {
       return expBinlogid.status();
     }
-
-    return Command::fmtLongLong(expBinlogid.value());
+    std::stringstream ss;
+    ss << "minbinlogid:" << expBinlogid.value().id
+      << " ts:" << expBinlogid.value().ts;
+    return Command::fmtBulk(ss.str());
   }
-} binlogStartCommand;
+} binlogmetaCommand;
 
 class BinlogFlushCommand : public Command {
  public:

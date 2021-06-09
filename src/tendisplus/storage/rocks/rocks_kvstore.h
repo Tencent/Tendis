@@ -240,7 +240,7 @@ class RocksKVStore : public KVStore {
   Status deleteFilesInrange(rocksdb::ColumnFamilyHandle* column_family,
                                   const std::string& begin,
                                   const std::string& end);
-  Status saveMinBinlogId(uint64_t id, Transaction* txn = nullptr);
+  Status saveMinBinlogId(uint64_t id, uint64_t ts, Transaction* txn = nullptr);
 
   Status handleRocksdbError(rocksdb::Status s) const;
 

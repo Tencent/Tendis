@@ -346,8 +346,7 @@ TEST(RocksKVStore, BinlogRightMost) {
 
     auto expMinB = RepllogCursorV2::getMinBinlog(txn2.get());
     EXPECT_TRUE(expMinB.ok());
-    EXPECT_EQ(expMinB.value().getBinlogId(), 1);
-    EXPECT_EQ(expMinB.value().getVersionEp(), versionep);
+    EXPECT_EQ(expMinB.value().id, 1);
   }
   auto bcursor = txn2->createRepllogCursorV2(Transaction::MIN_VALID_TXNID);
   auto ss = bcursor->seekToLast();
