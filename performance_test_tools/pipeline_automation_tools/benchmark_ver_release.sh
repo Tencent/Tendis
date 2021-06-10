@@ -60,6 +60,16 @@ logInfo "========start========"
 tendisVersion=$1
 shift
 logInfo "start tendisVersion: $tendisVersion benchmark"
+shouldSave=${SAVETORESULTDB}
+if [[ -z $shouldSave ]]
+then
+    echo "set shouldSave to 0 for not save result"
+    shouldSave=0
+else
+    echo "have set ENV shouldSave, result will be save"
+    shouldSave=1
+fi
+logInfo "shoule we save the test result? $shouldSave"
 
 if [ ! -f ./k8s.sh ]
 then
@@ -153,6 +163,11 @@ runTest() {
             let duration=${endTimestamp}-${startTimestamp}
             qps=$(curl -g "http://${prometheusURL}/api/v1/query?query=sum(increase(redis_command_call_duration_seconds_count{gcs_app=\"${appname}\",gcs_cluster=\"${clusterprefix}-${tendisVersion}\",gcs_dbrole=\"master\",cmd=\"${itest}\"}[${duration}s]))by(cmd)&time=${endTimestamp}" 2>/dev/null | tr "\"" " " | awk '{print $(NF-1)}')
             qps=$(echo $qps / $duration | bc -l)
+            # fix when tendis k8s cluster dump, the qps result is 0 which will product wrong email.
+            if [[ $qps == '0' || $qps == '0.0' ]]
+            then
+                qps=0.01
+            fi
             decreaseLimit=''
             if [[ "$itest" == "set" ]]; then
                 decreaseLimit=${decreaseLimit_set}
@@ -177,7 +192,7 @@ runTest() {
                 outputReport "测试命令(${benchnum}个): $benmark_binary -t ${threadnum} -c ${clientnum} --distinct-client-seed --test-time=${testTime} --command='hset __key__ __data__ __data__' --key-prefix='hash_' --key-minimum=1 --key-maximum=1000000 --random-data --data-size=${ivalue}"
             fi
             outputReport "${itest}测试曲线：<a href=\"${grafanaURL}-${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}-${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
-            python writeTag.py ${itest} ${tendisVersion} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimit_p50} ${decreaseLimit_p99} ${decreaseLimit_p100} ${decreaseLimit_pavg}
+            python writeTag.py ${itest} ${tendisVersion} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimit_p50} ${decreaseLimit_p99} ${decreaseLimit_p100} ${decreaseLimit_pavg} ${shouldSave}
 
             if [[ "$itest" != "set" ]]
             then
