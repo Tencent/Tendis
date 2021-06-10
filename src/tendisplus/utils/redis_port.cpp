@@ -1085,7 +1085,6 @@ int getCommandFlags(const char* sflags) {
 #define randomkeyCommand NULL
 #define selectCommand NULL
 #define swapdbCommand NULL
-#define moveCommand NULL
 #define renameCommand NULL
 #define renamenxCommand NULL
 #define expireCommand NULL
@@ -1313,7 +1312,6 @@ struct redisCommand redisCommandTable[] = {
   {"randomkey", randomkeyCommand, 1, "rR", 0, NULL, 0, 0, 0, 0, 0},
   {"select", selectCommand, 2, "lF", 0, NULL, 0, 0, 0, 0, 0},
   {"swapdb", swapdbCommand, 3, "wF", 0, NULL, 0, 0, 0, 0, 0},
-  {"move", moveCommand, 3, "wF", 0, NULL, 1, 1, 1, 0, 0},
   {"rename", renameCommand, 3, "w", 0, NULL, 1, 2, 1, 0, 0},
   {"renamenx", renamenxCommand, 3, "wF", 0, NULL, 1, 2, 1, 0, 0},
   {"expire", expireCommand, 3, "wF", 0, NULL, 1, 1, 1, 0, 0},
