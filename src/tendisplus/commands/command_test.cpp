@@ -2360,6 +2360,58 @@ TEST(Command, sort_cluster) {
   testSort(true);
 }
 
+// call dbsize and flushall at the same time
+TEST(Command, testDbsizeAndFlushall) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+  testCommand(server);
+
+  std::thread thd1([&server]() {
+    for (int i = 0; i < 100; i++) {
+      asio::io_context ioContext;
+      asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+      NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+      sess.setArgs({"dbsize"});
+      auto expect = Command::runSessionCmd(&sess);
+      EXPECT_TRUE(expect.ok());
+      EXPECT_EQ(
+        ":0\r\n",
+        expect.value());
+    }
+  });
+
+  std::thread thd2([&server]() {
+    for (int i = 0; i < 10; i++) {
+      asio::io_context ioContext;
+      asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+      NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+      sess.setArgs({"flushall"});
+      auto expect = Command::runSessionCmd(&sess);
+      EXPECT_TRUE(expect.ok());
+      EXPECT_EQ(
+        "+OK\r\n",
+        expect.value());
+    }
+  });
+
+  thd1.join();
+  thd2.join();
+
+  remove(cfg->getConfFile().c_str());
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
 extern string gRenameCmdList;
@@ -2385,5 +2437,7 @@ TEST(Command, renameCommand) {
   EXPECT_EQ(server.use_count(), 1);
 #endif
 }
+
+// NOTE(takenliu): don't add test here, and it before Command.renameCommand
 
 }  // namespace tendisplus
