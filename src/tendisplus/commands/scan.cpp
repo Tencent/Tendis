@@ -359,6 +359,8 @@ class ScanCommand : public Command {
         for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
           if ((*slots)[i] & expSlots.value()[i]) {
             slots->set(i, true);
+          } else {
+            slots->set(i, false);
           }
         }
         index += 2;
