@@ -116,8 +116,6 @@ class ClusterNodeFailReport;
 using myMutex = std::recursive_mutex;
 
 class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
-  friend class ClusterState;
-
  public:
   ClusterNode(const std::string& name,
               const uint16_t flags,
@@ -155,14 +153,22 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void setNodeIp(const std::string& name);
 
   uint64_t getConfigEpoch() const;
+  uint64_t getMasterEpoch() const;
   void setConfigEpoch(uint64_t epoch);
 
-  uint16_t getFlags();
-  uint32_t getSlotNum();
-  uint64_t getSentTime();
-  uint64_t getReceivedTime();
+  uint16_t getFlags() const;
+  uint32_t getSlotNum() const;
+  uint64_t getSentTime() const;
+  uint64_t getReceivedTime() const;
+  uint64_t getReplOffset() const;
+  uint64_t getReplOffsetTime() const;
+  uint64_t getOrphanedTime() const;
   void setSentTime(uint64_t t);
   void setReceivedTime(uint64_t t);
+  void setFailTime(uint64_t t);
+  void setReplOffset(uint64_t t);
+  void setReplOffsetTime(uint64_t t);
+  void setOrphanedTime(uint64_t t);
 
   uint16_t getSlaveNum() const;
 
@@ -207,15 +213,19 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   bool getSlotBit(uint32_t slot) const;
   ConnectState getConnectState();
   uint64_t getCtime() const;
+  uint64_t getFailTime() const;
 
   static auto parseClusterNodesInfo(const std::string& info)
     -> Expected<std::bitset<CLUSTER_SLOTS>>;
 
   std::string genDescription(const std::string& migrateInfo = "");
+  void setFlag(uint16_t flag);
+  void unsetFlag(uint16_t flag);
+  void changeFlags(uint16_t setFlag, uint16_t unsetFlag);
+  bool hasFlag(uint16_t flag) const;
 
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
-  bool clearSlotBit(uint32_t slot);
   uint32_t delAllSlots();
   uint32_t delAllSlotsNoLock();
 
@@ -223,6 +233,8 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   bool addSlave(std::shared_ptr<ClusterNode> slave);
   bool removeSlave(std::shared_ptr<ClusterNode> slave);
   Expected<std::vector<std::shared_ptr<ClusterNode>>> getSlaves() const;
+  Status addSlot(uint32_t slot, uint32_t masterSlavesCount);
+  bool clearSlotBit(uint32_t slot);
 
  private:
   mutable myMutex _mutex;
@@ -239,22 +251,19 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   std::bitset<CLUSTER_SLOTS> _mySlots;
   uint16_t _numSlaves;
   uint32_t _numSlots;
-  Status addSlot(uint32_t slot, uint32_t masterSlavesCount);
   // TODO(wayenchen): make it private
- public:
-  mstime_t _ctime;
   uint16_t _flags;
-
+  mstime_t _ctime;
   std::vector<std::shared_ptr<ClusterNode>> _slaves;
   std::shared_ptr<ClusterNode> _slaveOf;
-  uint64_t _pingSent;
-  uint64_t _pongReceived;
+
+  std::atomic<uint64_t> _pingSent;
+  std::atomic<uint64_t> _pongReceived;
   mstime_t _failTime;
   mstime_t _votedTime;
-  mstime_t _replOffsetTime;
-  mstime_t _orphanedTime;
-  // FIXME: there is no offset in tendis
-  uint64_t _replOffset;  // Last known repl offset for this node.
+  std::atomic<uint64_t> _replOffsetTime;
+  std::atomic<uint64_t> _orphanedTime;
+  std::atomic<uint64_t> _replOffset;  // Last known repl offset for this node.
   std::list<std::shared_ptr<ClusterNodeFailReport>> _failReport;
 };
 
@@ -535,8 +544,6 @@ class ClusterSession : public NetSession {
 };
 
 class ClusterState : public std::enable_shared_from_this<ClusterState> {
-  friend class ClusterNode;
-
  public:
   explicit ClusterState(std::shared_ptr<ServerEntry> server);
   ClusterState(const ClusterState&) = delete;
@@ -544,7 +551,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   // get epoch
   uint64_t getCurrentEpoch() const;
   uint64_t getLastVoteEpoch() const;
-  uint64_t getFailAuthEpoch() const;
   // set epoch
   void setCurrentEpoch(uint64_t epoch);
   void incrCurrentEpoch();
@@ -555,7 +561,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::string getMyselfName() const;
   // set myself
   void setMyselfNode(CNodePtr node);
-  bool isMyselfMaster();
+  bool isMyselfMaster() const;
   bool isMyselfSlave() const;
   // getMyMaster
   CNodePtr getMyMaster() const;
@@ -626,7 +632,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   Expected<CNodePtr> clusterHandleRedirect(uint32_t slot, Session* sess) const;
   CNodePtr getNodeBySlot(uint32_t slot) const;
-  bool isSlotBelongToMe(uint32_t slot);
+  bool isSlotBelongToMe(uint32_t slot) const;
 
   void clusterUpdateSlotsConfigWith(CNodePtr sender,
                                     uint64_t senderConfigEpoch,
@@ -683,7 +689,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::string clusterGenStateDescription();
 
   void clusterUpdateState();
-  bool isContainSlot(uint32_t slotId);
+  bool isContainSlot(uint32_t slotId) const;
   Status forceFailover(bool force, bool takeover);
   Status clusterSaveConfig();
 
@@ -705,7 +711,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setGossipUnBlock();
 
   bool clusterIsOK() const;
-  bool isRightReplicate();
+  bool isRightReplicate() const;
 
   Expected<std::string> getNodeInfo(CNodePtr n);
   Expected<std::string> getBackupInfo();
@@ -729,24 +735,25 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setFailAuthSent(uint32_t t);
   void setFailAuthRank(uint32_t t);
   bool clusterNodeFailed(const std::string& nodeid);
-  bool isDataAgeTooLarge();
-  uint16_t getFailAuthCount() {
+  bool isDataAgeTooLarge() const;
+
+  uint16_t getFailAuthCount() const {
     return _failoverAuthCount.load(std::memory_order_relaxed);
   }
 
-  uint16_t getFailAuthSent() {
+  uint16_t getFailAuthSent() const {
     return _failoverAuthSent.load(std::memory_order_relaxed);
   }
 
-  uint32_t getFailAuthRank() {
+  uint32_t getFailAuthRank() const {
     return _failoverAuthRank.load(std::memory_order_relaxed);
   }
 
-  uint64_t getFailAuthEpoch() {
+  uint64_t getFailAuthEpoch() const {
     return _failoverAuthEpoch.load(std::memory_order_relaxed);
   }
 
-  bool hasReciveOffset() {
+  bool hasReciveOffset() const {
     return _isMfOffsetReceived.load(std::memory_order_relaxed);
   }
 

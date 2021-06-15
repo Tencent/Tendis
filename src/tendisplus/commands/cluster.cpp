@@ -293,7 +293,7 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_CLUSTER,
                 "To set an arbiter, the node must be empty."};
       }
-      myself->_flags |= CLUSTER_NODE_ARBITER;
+      myself->setFlag(CLUSTER_NODE_ARBITER);
       LOG(INFO) << "set myself as arbiter";
       return Command::fmtOK();
     } else if (arg1 == "nodes" && argSize <= 3) {
@@ -449,7 +449,7 @@ class ClusterCommand : public Command {
       } else if (n == myself) {
         return {ErrorCodes::ERR_CLUSTER,
                 "I tried hard but I can't forget myself..."};
-      } else if (myself->nodeIsSlave() && myself->_slaveOf == n) {
+      } else if (myself->nodeIsSlave() && myself->getMaster() == n) {
         return {ErrorCodes::ERR_CLUSTER, "Can't forget my master!"};
       }
       clusterState->clusterBlacklistAddNode(n);
