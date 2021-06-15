@@ -70,7 +70,7 @@ def prettyFormat(floatNum):
         return "%.1f" % (float(floatNum))
 
 if __name__ == '__main__':
-    if len(sys.argv) != 15:
+    if len(sys.argv) != 16:
         os._exit(0)
 
     testName=sys.argv[1]
@@ -87,9 +87,13 @@ if __name__ == '__main__':
     decreaseLimit_p99=sys.argv[12]
     decreaseLimit_p100=sys.argv[13]
     decreaseLimit_pavg=sys.argv[14]
+    # 1 present 'save result to db'
+    # other for 'not save'
+    shouldSave=sys.argv[15]
 
     r=getLastRecordWithTestName(testName)
-    saveTestResult(testName, version, date, qps, p50, p99, p100, pavg)
+    if shouldSave == "1":
+        saveTestResult(testName, version, date, qps, p50, p99, p100, pavg)
     f=open(outputFile,'a')
     if not r:
         f.write("暂无过往结果\n")
