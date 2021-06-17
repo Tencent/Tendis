@@ -10,6 +10,7 @@ source tests/support/server.tcl
 source tests/support/tmpfile.tcl
 source tests/support/test.tcl
 source tests/support/util.tcl
+source tests/support/cluster.tcl
 
 set ::all_tests {
     unit/printver

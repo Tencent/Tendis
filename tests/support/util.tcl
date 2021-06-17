@@ -283,13 +283,13 @@ proc createComplexDataset {r ops {opt []}} {
     }
 }
 
-proc debugPopulateKeys {r count {type "string"} {prefix "key"}} {
+proc debugPopulateKeys {r count {type "string"} {prefix "key"} {hashtag "0"}} {
   set type [string tolower $type]
+  if {[string equal $hashtag "1"] == 1} {
+        set prefix "{${prefix}}"
+  }
   for {set idx 0} {$idx < $count} {incr idx} {
-    set key "key:${idx}"
-    if {[string compare prefix ""] != 0} {
-      set key "${prefix}:${idx}"                          
-    }
+    set key "${prefix}:${idx}"
     set value "value:${idx}"
     switch $type {
         "string" {

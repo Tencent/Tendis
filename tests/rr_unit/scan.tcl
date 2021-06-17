@@ -51,6 +51,62 @@ start_server {tags {"scan"}} {
         assert_equal 100 [llength $keys]
     }
 
+    test "SCAN SLOTS" {
+        r flushdb
+        debugPopulateKeys r 1000 string key 1
+        debugPopulateKeys r 500 string val 1
+
+        set key_hash [::redis_cluster::hash key]
+        set val_hash [::redis_cluster::hash val]
+
+        # scan slots for {key} => slotA
+        set cur 0
+        set keys {}
+        while 1 {
+            set res [r scan $cur slots $key_hash]
+            set cur [lindex $res 0]
+            set k [lindex $res 1]
+            lappend keys {*}$k
+            if {$cur == 0} break
+        }
+
+        set keys [lsort -unique $keys]
+        assert_equal 1000 [llength $keys]
+
+        # scan slots for {val} => slotB
+        set cur 0
+        set keys {}
+        while 1 {
+            set res [r scan $cur slots $val_hash]
+            set cur [lindex $res 0]
+            set k [lindex $res 1]
+            lappend keys {*}$k
+            if {$cur == 0} break
+        }
+
+        set keys [lsort -unique $keys]
+        assert_equal 500 [llength $keys]
+
+        #scan slots for {key/val}-{val/key} => slotA-slotB
+        if {$key_hash < $val_hash} {
+            set slots_range "$key_hash-$val_hash"
+        } else {
+            set slots_range "$val_hash-$key_hash"
+        }
+        set cur 0
+        set keys {}
+        while 1 {
+            set res [r scan $cur slots $slots_range]
+            set cur [lindex $res 0]
+            set k [lindex $res 1]
+            lappend keys {*}$k
+            if {$cur == 0} break
+        }
+
+        set keys [lsort -unique $keys]
+        assert_equal 1500 [llength $keys]
+    }
+
     test "SCAN EMPTY" {
         r flushdb
 
