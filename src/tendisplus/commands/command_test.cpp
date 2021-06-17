@@ -1799,9 +1799,13 @@ void testCommandArrayResult(
   for (auto& p : arr) {
     sess.setArgs(p.first);
     auto expect = Command::runSessionCmd(&sess);
-    INVARIANT_D(expect.ok());
-    auto ret = expect.value();
-    EXPECT_EQ(p.second, ret);
+    if (expect.ok()) {
+      auto ret = expect.value();
+      EXPECT_EQ(p.second, ret);
+    } else {
+      auto ret = expect.status().toString();
+      EXPECT_EQ(p.second, ret);
+    }
   }
 }
 
@@ -2380,6 +2384,46 @@ TEST(Command, adminSet_Get_DelCommand) {
 
   testCommandArray(server, wrongArr, true);
   testCommandArrayResult(server, resultArr);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, LogError) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->kvStoreCount = 3;
+  auto server = makeServerEntry(cfg);
+
+  EXPECT_EQ(server->getInternalErrorCnt(), 0);
+  std::string key = "logerrortest";
+  std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
+    {{"set", key, "a"}, Command::fmtOK()},
+    {{"hset", key, "f1", "0"},
+     "-WRONGTYPE Operation against the key(" + key +
+                  ") holding the wrong kind of value\r\n"},
+  };
+
+  testCommandArrayResult(server, resultArr);
+  // log-error is off
+  EXPECT_EQ(server->getInternalErrorCnt(), 0);
+
+  std::vector<std::pair<std::vector<std::string>, std::string>> resultArr2 = {
+    {{"config", "set", "log-error", "1"}, Command::fmtOK()},
+    {{"hset", key, "f1", "0"},
+     "-WRONGTYPE Operation against the key(" + key +
+       ") holding the wrong kind of value\r\n"},
+    {{"sadd", key, "f1"},
+     "-WRONGTYPE Operation against the key(" + key +
+       ") holding the wrong kind of value\r\n"},
+  };
+
+  testCommandArrayResult(server, resultArr2);
+  // log-error is on
+  EXPECT_EQ(server->getInternalErrorCnt(), 2);
 
 #ifndef _WIN32
   server->stop();

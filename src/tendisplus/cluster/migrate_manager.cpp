@@ -1319,7 +1319,8 @@ void MigrateReceiveTask::fullReceive() {
 
     if (_receiver->getSnapshotNum() == 0 && !srcNodeFail &&
         getRetryCount() <= retryCnt && _receiver->isRunning() &&
-        s.code() != ErrorCodes::ERR_MIGRATE) {
+        s.code() != ErrorCodes::ERR_READY_MIGRATE) {
+      // If the error code isn't ErrorCodes::ERR_READY_MIGRATE, it should retry
       auto delayTime = 1000 + redis_port::random() % 5000;
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(delayTime);
       _state = MigrateReceiveState::RECEIVE_SNAPSHOT;
@@ -1476,7 +1477,7 @@ Expected<std::string> MigrateManager::getMigrateInfoStr(
             << " ";
   }
   if (stream1.str().size() == 0 && stream2.str().size() == 0) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "no migrate or import slots"};
+    return {ErrorCodes::ERR_CLUSTER, "no migrate or import slots"};
   }
 
   std::string importInfo = stream1.str();
@@ -1515,7 +1516,7 @@ Expected<std::string> MigrateManager::getMigrateInfoStrSimple(
   }
 
   if (importSlots.empty() && migrateSlots.empty()) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "no migrate or import slots"};
+    return {ErrorCodes::ERR_CLUSTER, "no migrate or import slots"};
   }
   if (importSlots.size()) {
     for (const auto& x : importSlots) {
@@ -1640,7 +1641,7 @@ Expected<std::string> MigrateManager::getMigrateInfo() {
   }
 
   if (ss.str().size() == 0) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "no task info"};
+    return {ErrorCodes::ERR_CLUSTER, "no task info"};
   }
   return ss.str();
 }
@@ -1654,7 +1655,7 @@ Expected<std::string> MigrateManager::getTaskInfo(bool noWait, bool noRunning) {
                            _importPtaskMap.size() + _migratePtaskMap.size());
   size_t taskNum = 0;
   if (!noWait && !noRunning) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "Task should be at last one type"};
+    return {ErrorCodes::ERR_CLUSTER, "Task should be at last one type"};
   }
   for (auto& task : _migratePtaskMap) {
     std::string pTaskid = task.second->_taskid;
@@ -1702,7 +1703,7 @@ Expected<std::string> MigrateManager::getTaskInfo(bool noWait, bool noRunning) {
     }
   }
   if (taskNum == 0) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "no task info"};
+    return {ErrorCodes::ERR_CLUSTER, "no task info"};
   }
 
   return ss.str();
@@ -1771,7 +1772,7 @@ Expected<std::string> MigrateManager::getTaskInfo(const std::string& pTaskid,
   std::stringstream ss;
   std::lock_guard<myMutex> lk(_mutex);
   if (!noWait && !noRunning) {
-    return {ErrorCodes::ERR_WRONG_TYPE, "Task should be at last one type"};
+    return {ErrorCodes::ERR_CLUSTER, "Task should be at last one type"};
   }
   if (existPtask(pTaskid)) {
     Command::fmtMultiBulkLen(ss, getTaskNum(pTaskid, noWait, noRunning));

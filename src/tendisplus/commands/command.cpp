@@ -38,7 +38,7 @@ Command::Command(const std::string& name, const char* sflags)
   commandMap()[_name] = this;
   if (_flags & CMD_ADMIN && !(_flags & CMD_NOSCRIPT)) {
     std::cerr << name << " command with a flags and dont contain s flags"
-      << std::endl;
+              << std::endl;
     INVARIANT_D(0);
   }
 }
@@ -285,15 +285,16 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
     if (sess->getCtx()->isReplOnly() && sess->getCtx()->isMaster()) {
       // NOTE(vinchen): If it's a slave, the connection should be closed
       // when there is an error. And the error should be log
-      ServerEntry::logError(v.status().toString(), sess);
+      sess->getServerEntry()->logError(v.status().toString(), sess);
       auto vv = dynamic_cast<NetSession*>(sess);
       if (vv) {
         vv->setCloseAfterRsp();
       }
     } else if (v.status().code() == ErrorCodes::ERR_INTERNAL ||
                v.status().code() == ErrorCodes::ERR_DECODE ||
-               v.status().code() == ErrorCodes::ERR_LOCK_TIMEOUT) {
-      ServerEntry::logError(v.status().toString(), sess);
+               v.status().code() == ErrorCodes::ERR_LOCK_TIMEOUT ||
+               sess->getServerEntry()->getParams()->logError) {
+      sess->getServerEntry()->logError(v.status().toString(), sess);
     }
   }
   return v;
@@ -336,8 +337,8 @@ Status Command::delKeyPessimisticInLock(Session* sess,
   }
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
 
-  Expected<string> ret = delSubkeysRange(
-          sess, storeId, mk, valueType, txn.get());
+  Expected<string> ret =
+    delSubkeysRange(sess, storeId, mk, valueType, txn.get());
   if (!ret.ok()) {
     return ret.status();
   }
@@ -435,15 +436,15 @@ Expected<string> Command::delSubkeysRange(Session* sess,
 
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
-  auto expdb = server->getSegmentMgr()->getDb(nullptr, storeId,
-                  mgl::LockMode::LOCK_NONE);
+  auto expdb =
+    server->getSegmentMgr()->getDb(nullptr, storeId, mgl::LockMode::LOCK_NONE);
   RET_IF_ERR_EXPECTED(expdb);
 
   PStore kvstore = expdb.value().store;
   INVARIANT_D(mk.getRecordType() == RecordType::RT_DATA_META);
   if (valueType == RecordType::RT_KV) {
     INVARIANT_D(0);
-    return {ErrorCodes::ERR_WRONG_TYPE, ""};
+    return {ErrorCodes::ERR_INTERNAL, "it can't be a KV string"};
   }
   std::vector<RecordKey> prefixes;
   if (valueType == RecordType::RT_HASH_META) {
@@ -525,9 +526,9 @@ Expected<string> Command::delSubkeysRange(Session* sess,
   }
 
   // NOTE(takenliu): deleteRange and delete meta is not in the same txn.
-  for (uint32_t i = 0; i < prefixes.size(); i+=2) {
+  for (uint32_t i = 0; i < prefixes.size(); i += 2) {
     string start = prefixes[i].prefixPk();
-    string end = prefixes[i+1].prefixPk();
+    string end = prefixes[i + 1].prefixPk();
     auto s = kvstore->deleteRange(start, end);
     if (!s.ok()) {
       LOG(ERROR) << "delSubkeysRange::deleteRange commit failed, start:"
@@ -700,8 +701,10 @@ Status Command::delKeyAndTTL(Session* sess,
 }
 
 // not comitted, caller need commit itself.
-Status Command::delKey(Session* sess, const std::string& key, RecordType tp,
-        Transaction* txn) {
+Status Command::delKey(Session* sess,
+                       const std::string& key,
+                       RecordType tp,
+                       Transaction* txn) {
   auto server = sess->getServerEntry();
   INVARIANT(server != nullptr);
   SessionCtx* pCtx = sess->getCtx();
@@ -799,7 +802,12 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     if (server->getParams()->noexpire || targetTtl == 0 ||
         currentTs < targetTtl) {
       if (valueType != tp && tp != RecordType::RT_DATA_META) {
-        return {ErrorCodes::ERR_WRONG_TYPE, ""};
+        /** NOTE(vinchen): This error message contains the key name, it is useful for
+         * users. The error message is a little different with redis. Maybe it is ok.
+         */
+        return {ErrorCodes::ERR_WRONG_TYPE,
+                "-WRONGTYPE Operation against the key(" + key +
+                  ") holding the wrong kind of value\r\n"};
       }
       if (hasVersion) {
         auto pCtx = sess->getCtx();

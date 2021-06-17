@@ -377,7 +377,7 @@ class PfAddCommand : public Command {
                                    rv.value().getValue().size())) {
         return {ErrorCodes::ERR_WRONG_TYPE,
                 "-WRONGTYPE Key is not a valid HyperLogLog string "
-                "value.\r\n"};  // NOLINT
+                "value.\r\n"};
       }
       ttl = rv.value().getTtl();
     }
@@ -481,7 +481,9 @@ class PfCountCommand : public Command {
         if (rv.ok()) {
           if (!redis_port::isHLLObject(rv.value().getValue().c_str(),
                                        rv.value().getValue().size())) {
-            return {ErrorCodes::ERR_WRONG_TYPE, ""};
+            return {ErrorCodes::ERR_WRONG_TYPE,
+                    "-WRONGTYPE Key is not a valid HyperLogLog string "
+                    "value.\r\n"};
           }
         } else {
           /* Assume empty HLL for non existing var.*/
@@ -514,7 +516,9 @@ class PfCountCommand : public Command {
     if (rv.ok()) {
       if (!redis_port::isHLLObject(rv.value().getValue().c_str(),
                                    rv.value().getValue().size())) {
-        return {ErrorCodes::ERR_WRONG_TYPE, ""};
+        return {ErrorCodes::ERR_WRONG_TYPE,
+                "-WRONGTYPE Key is not a valid HyperLogLog string "
+                "value.\r\n"};
       }
     } else {
       /* No key? Cardinality is zero since no element was added, otherwise
@@ -583,7 +587,9 @@ class PfMergeCommand : public Command {
       if (rv.ok()) {
         if (!redis_port::isHLLObject(rv.value().getValue().c_str(),
                                      rv.value().getValue().size())) {
-          return {ErrorCodes::ERR_WRONG_TYPE, ""};
+          return {ErrorCodes::ERR_WRONG_TYPE,
+                  "-WRONGTYPE Key is not a valid HyperLogLog string "
+                  "value.\r\n"};
         }
         if (j == 1) {
           ttl = rv.value().getTtl();
@@ -832,7 +838,9 @@ class PfDebugCommand : public Command {
 
     if (!redis_port::isHLLObject(rv.value().getValue().c_str(),
                                  rv.value().getValue().size())) {
-      return {ErrorCodes::ERR_WRONG_TYPE, ""};
+      return {ErrorCodes::ERR_WRONG_TYPE,
+              "-WRONGTYPE Key is not a valid HyperLogLog string "
+              "value.\r\n"};
     }
     ttl = rv.value().getTtl();
 

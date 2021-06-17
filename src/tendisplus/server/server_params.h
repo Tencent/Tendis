@@ -475,6 +475,7 @@ class ServerParams {
   bool compactRangeAfterDeleteRange = false;
   bool saveMinBinlogId = true;
   bool deleteFilesInRangeforBinlog = false;
+  bool logError = false;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

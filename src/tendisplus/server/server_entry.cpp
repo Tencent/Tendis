@@ -243,6 +243,7 @@ ServerEntry::ServerEntry()
     _lastBackupFailedTime(0),
     _backupFailedTimes(0),
     _backupRunning(0),
+    _internalErrorCnt(0),
     _lastBackupFailedErr("") {}
 
 ServerEntry::ServerEntry(const std::shared_ptr<ServerParams>& cfg)
@@ -300,6 +301,48 @@ Catalog* ServerEntry::getCatalog() {
   return _catalog.get();
 }
 
+string catRepr(const string& val) {
+  size_t len = val.length();
+  size_t i = 0;
+  std::stringstream s;
+  s << "\"";
+  char buf[5];
+  while (i < len) {
+    switch (val[i]) {
+      case '\\':
+      case '"':
+        s << "\\" << val[i];
+        break;
+      case '\n':
+        s << "\\n";
+        break;
+      case '\r':
+        s << "\\r";
+        break;
+      case '\t':
+        s << "\\t";
+        break;
+      case '\a':
+        s << "\\a";
+        break;
+      case '\b':
+        s << "\\b";
+        break;
+      default:
+        if (isprint(val[i])) {
+          s << val[i];
+        } else {
+          snprintf(buf, sizeof(buf), "\\x%02x", val[i]);
+          s << buf;
+        }
+        break;
+    }
+    i++;
+  }
+  s << "\"";
+  return s.str();
+}
+
 void ServerEntry::logGeneral(Session* sess) {
   if (!_cfg->generalLog) {
     return;
@@ -310,10 +353,10 @@ void ServerEntry::logGeneral(Session* sess) {
 void ServerEntry::logWarning(const std::string& str, Session* sess) {
   std::stringstream ss;
   if (sess) {
-    ss << sess->id() << "cmd:" << sess->getCmdStr();
+    ss << "sessid:" << sess->id() << "cmd:" << sess->getCmdStr();
   }
 
-  ss << ", warning:" << str;
+  ss << ", warning:" << tendisplus::catRepr(str);
 
   LOG(WARNING) << ss.str();
 }
@@ -324,9 +367,11 @@ void ServerEntry::logError(const std::string& str, Session* sess) {
     ss << "sessid:" << sess->id() << " cmd:" << sess->getCmdStr();
   }
 
-  ss << ", error:" << str;
+  ss << ", error:" << tendisplus::catRepr(str);
 
   LOG(ERROR) << ss.str();
+
+  _internalErrorCnt.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint32_t ServerEntry::getKVStoreCount() const {
@@ -444,9 +489,9 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
 
   // kvstore init
-  _blockCache = rocksdb::NewLRUCache(
-    cfg->rocksBlockcacheMB * 1024 * 1024LL, cfg->rocksBlockcacheNumShardBits,
-    cfg->rocksStrictCapacityLimit);
+  _blockCache = rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL,
+                                     cfg->rocksBlockcacheNumShardBits,
+                                     cfg->rocksStrictCapacityLimit);
   std::vector<PStore> tmpStores;
   tmpStores.reserve(kvStoreCount);
   for (size_t i = 0; i < kvStoreCount; ++i) {
@@ -894,38 +939,6 @@ void ServerEntry::resizeIncrExecutorThreadNum(uint64_t newThreadNum) {
   }
 }
 
-string catRepr(const string& val) {
-  size_t len = val.length();
-  size_t i = 0;
-  std::stringstream s;
-  s << "\"";
-  char buf[5];
-  while (i < len) {
-    switch (val[i]) {
-      case '\\':
-      case '"':
-        s << "\\" << val[i];
-        break;
-      case '\n': s << "\\n"; break;
-      case '\r': s << "\\r"; break;
-      case '\t': s << "\\t"; break;
-      case '\a': s << "\\a"; break;
-      case '\b': s << "\\b"; break;
-      default:
-        if (isprint(val[i])) {
-          s << val[i];
-        } else {
-          snprintf(buf, sizeof(buf), "\\x%02x", val[i]);
-          s << buf;
-        }
-        break;
-    }
-    i++;
-  }
-  s << "\"";
-  return s.str();
-}
-
 // TODO(takenliu) add gtest
 void ServerEntry::replyMonitors(Session* sess) {
   if (_monitors.size() <= 0) {
@@ -943,8 +956,8 @@ void ServerEntry::replyMonitors(Session* sess) {
   INVARIANT(pCtx != nullptr);
   uint32_t dbId = pCtx->getDbId();
 
-  info << std::to_string(timestamp / 1000000) << "." <<
-    std::to_string(timestamp % 1000000);
+  info << std::to_string(timestamp / 1000000) << "."
+       << std::to_string(timestamp % 1000000);
   info << " [" << std::to_string(dbId) << " " << sess->getRemote() << "] ";
   const auto& args = sess->getArgs();
   for (uint32_t i = 0; i < args.size(); ++i) {
@@ -1150,6 +1163,8 @@ void ServerEntry::getStatInfo(std::stringstream& ss) const {
   ss << "keyspace_wrong_versionep:" << _serverStat.keyspaceIncorrectEp.get()
      << "\r\n";
   ss << "scheduleNum:" << _scheduleNum << "\r\n";
+  ss << "internalErrors:" << _internalErrorCnt.load(std::memory_order_relaxed)
+     << "\r\n";
 }
 
 void ServerEntry::appendJSONStat(
@@ -1219,7 +1234,7 @@ bool ServerEntry::getTotalIntProperty(Session* sess,
 }
 
 uint64_t ServerEntry::getStatCountByName(Session* sess,
-  const std::string& ticker) const {
+                                         const std::string& ticker) const {
   uint64_t value = 0;
   for (uint64_t i = 0; i < getKVStoreCount(); i++) {
     auto expdb =
