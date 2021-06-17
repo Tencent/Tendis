@@ -2403,8 +2403,9 @@ TEST(Command, LogError) {
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
     {{"set", key, "a"}, Command::fmtOK()},
     {{"hset", key, "f1", "0"},
-     "-WRONGTYPE Operation against the key(" + key +
-                  ") holding the wrong kind of value\r\n"},
+     "-WRONGTYPE Operation against a key holding the wrong kind of "
+     "value(" +
+       key + ")\r\n"},
   };
 
   testCommandArrayResult(server, resultArr);
@@ -2414,11 +2415,13 @@ TEST(Command, LogError) {
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr2 = {
     {{"config", "set", "log-error", "1"}, Command::fmtOK()},
     {{"hset", key, "f1", "0"},
-     "-WRONGTYPE Operation against the key(" + key +
-       ") holding the wrong kind of value\r\n"},
+     "-WRONGTYPE Operation against a key holding the wrong kind of "
+     "value(" +
+       key + ")\r\n"} ,
     {{"sadd", key, "f1"},
-     "-WRONGTYPE Operation against the key(" + key +
-       ") holding the wrong kind of value\r\n"},
+     "-WRONGTYPE Operation against a key holding the wrong kind of "
+     "value(" +
+       key + ")\r\n"},
   };
 
   testCommandArrayResult(server, resultArr2);

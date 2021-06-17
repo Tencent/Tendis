@@ -802,12 +802,14 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
     if (server->getParams()->noexpire || targetTtl == 0 ||
         currentTs < targetTtl) {
       if (valueType != tp && tp != RecordType::RT_DATA_META) {
-        /** NOTE(vinchen): This error message contains the key name, it is useful for
-         * users. The error message is a little different with redis. Maybe it is ok.
+        /** NOTE(vinchen): This error message contains the key name, it is
+         * useful for users. The error message is a little different with redis.
+         * Maybe it is ok.
          */
         return {ErrorCodes::ERR_WRONG_TYPE,
-                "-WRONGTYPE Operation against the key(" + key +
-                  ") holding the wrong kind of value\r\n"};
+                "-WRONGTYPE Operation against a key holding the wrong kind of "
+                "value(" +
+                  key + ")\r\n"};
       }
       if (hasVersion) {
         auto pCtx = sess->getCtx();
