@@ -1,5 +1,5 @@
 start_server {
-    tags ["cmdcmp"]
+    tags ["badkey"]
 } {
     r flushall
 
