@@ -241,7 +241,11 @@ class DbsizeCommand : public Command {
       }
 
       PStore kvstore = expdb.value().store;
-      auto ptxn = sess->getCtx()->createTransaction(kvstore);
+      // NOTE(takenliu): dbsizeCmmand and flushallCommand has confliction,
+      //   so we use kvstore->createTransaction() instead of
+      //   getCtx()->createTransaction(),
+      //   see detail in: git issue #58
+      auto ptxn = kvstore->createTransaction(sess);
       if (!ptxn.ok()) {
         return ptxn.status();
       }
