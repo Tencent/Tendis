@@ -175,6 +175,11 @@ class SlotsCursor {
   std::unique_ptr<Cursor> _baseCursor;
 };
 
+struct MinbinlogInfo {
+  uint64_t id;
+  uint64_t ts;
+};
+
 class RepllogCursorV2 {
  public:
   RepllogCursorV2() = delete;
@@ -186,7 +191,10 @@ class RepllogCursorV2 {
   Status seekToLast();
   static Expected<uint64_t> getMinBinlogId(Transaction* txn);
   static Expected<uint64_t> getMaxBinlogId(Transaction* txn);
-  static Expected<ReplLogRawV2> getMinBinlog(Transaction* txn);
+  static Expected<struct MinbinlogInfo> getMinBinlogMeta(Transaction* txn,
+          bool checkTs);
+  static Expected<struct MinbinlogInfo> getMinBinlogByCursor(Transaction* txn);
+  static Expected<struct MinbinlogInfo> getMinBinlog(Transaction* txn);
   static Expected<ReplLogRawV2> getMaxBinlog(Transaction* txn);
 
  protected:
@@ -323,14 +331,14 @@ struct KVStoreStat {
 
 struct TruncateBinlogResult {
   TruncateBinlogResult()
-    : newStart(0), newSave(0), timestamp(0), written(0), deleten(0), ret(0) {}
+    : newStart(0), newSave(0), timestamp(0), written(0), deleten(0), err(0) {}
 
   uint64_t newStart;
   uint64_t newSave;
   uint64_t timestamp;
   uint64_t written;
   uint64_t deleten;
-  int32_t ret;
+  int32_t err;
 };
 
 class KVStore {

@@ -1360,7 +1360,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   //    << " getHighestBinlogId:" << getHighestBinlogId()
   //    << " start:"<<start <<" end:"<< end;
   TruncateBinlogResult result;
-  int ret = 0;
+  int err = 0;
   uint64_t ts = 0;
   uint64_t written = 0;
   uint64_t deleten = 0;
@@ -1385,12 +1385,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t size = 0;
   uint64_t cur_ts = msSinceEpoch();
 
-  const auto guard = MakeGuard([this, &nextStart, &txn] {
-    if (_cfg->saveMinBinlogId) {
-      // NOTE(takenliu): as we keep at leat one binlog,
+  const auto guard = MakeGuard([this, &nextStart, &start, &ts, &txn] {
+    if (_cfg->saveMinBinlogId && nextStart != start) {
+      INVARIANT_D(ts != 0);
+      // NOTE(takenliu): as we keep at least one binlog,
       //   so nextStart must be in db.
       // NOTE(takenliu): be care of not in the same transaction.
-      saveMinBinlogId(nextStart, txn);
+      saveMinBinlogId(nextStart, ts, txn);
     }
   });
 
@@ -1413,12 +1414,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
       if (explog.value().getBinlogId() > end) {
         break;
       }
-      ts = explog.value().getTimestamp();
       uint64_t minKeepLogMs =
         static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
-      if (minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
+      if (minKeepLogMs != 0 &&
+        explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
         break;
       }
+      ts = explog.value().getTimestamp();
       DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
                  << " delete:" << nextStart << " to "
                  << explog.value().getBinlogId()
@@ -1439,7 +1441,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     result.newStart = nextStart;
     nextSave = nextStart;
     result.newSave = nextSave;
-    result.ret = ret;
+    result.err = err;
 
     return result;
   }
@@ -1458,10 +1460,10 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
     if (explog.value().getBinlogId() > end || size >= max_cnt) {
       break;
     }
-    ts = explog.value().getTimestamp();
     uint64_t minKeepLogMs =
       static_cast<uint64_t>(_cfg->minBinlogKeepSec) * 1000;
-    if (!tailSlave && minKeepLogMs != 0 && ts >= cur_ts - minKeepLogMs) {
+    if (!tailSlave && minKeepLogMs != 0 &&
+      explog.value().getTimestamp() >= cur_ts - minKeepLogMs) {
       break;
     }
 
@@ -1476,12 +1478,13 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
         LOG(ERROR) << "saveBinlogV2 failed, break.";
         // NOTE(takenliu): maybe write part of explog, so the binlog file's last
         // binlog will be error. then we change a new binlog file.
-        ret = -1;
+        err = -1;
         break;
       }
       written += len;
     }
     nextSave = explog.value().getBinlogId() + 1;
+    ts = explog.value().getTimestamp();
     if (_cfg->binlogDelRange == 1) {
       DLOG(INFO) << "truncateBinlogV2 dbid:" << dbId()
                  << " delete:" << explog.value().getBinlogId()
@@ -1515,7 +1518,7 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   result.timestamp = ts;
   result.newStart = nextStart;
   result.newSave = nextSave;
-  result.ret = ret;
+  result.err = err;
 
   return result;
 }
@@ -2478,7 +2481,8 @@ Status RocksKVStore::deleteFilesInrange(
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::saveMinBinlogId(uint64_t id, Transaction* txn) {
+Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
+        Transaction* txn) {
   RecordKey key(REPLLOGKEYV2_META_CHUNKID,
                 REPLLOGKEYV2_META_DBID,
                 RecordType::RT_META,
@@ -2486,9 +2490,12 @@ Status RocksKVStore::saveMinBinlogId(uint64_t id, Transaction* txn) {
                 "");
 
   std::string val;
-  val.resize(sizeof(uint64_t));
+  val.resize(sizeof(uint64_t) + sizeof(uint64_t));
   // binlogId
   int64Encode(&val[0], id);
+  // ts
+  int64Encode(&val[0] + sizeof(uint64_t), ts);
+
   RecordValue value(std::move(val), RecordType::RT_META, -1);
 
   INVARIANT(txn != nullptr);

@@ -679,9 +679,18 @@ void checkBinlogKeepNum(std::shared_ptr<ServerEntry> svr, uint32_t num) {
     expect = Command::runSessionCmd(session.get());
     uint64_t binlogstart =
       Command::getInt64FromFmtLongLong(expect.value()).value();
+
+    session->setArgs({"binlogmeta", to_string(i)});
+    expect = Command::runSessionCmd(session.get());
+    string binlogmeta = expect.value();
+    string reg = "minbinlogid:" + std::to_string(binlogstart) + " ";
+    EXPECT_TRUE(binlogmeta.find(reg) != binlogmeta.npos);
+
     LOG(INFO) << "checkBinlogKeepNum, port:" << svr->getParams()->port
               << " store:" << i << " binlogpos:" << binlogpos
-              << " binlogstart:" << binlogstart << " num:" << num;
+              << " binlogstart:" << binlogstart << " num:" << num
+              << " binlogmeta:" << binlogmeta;
+
     // if data not full, binlogpos-binlogstart may be smaller than num.
     if (svr->getParams()->binlogDelRange == 1 ||
         svr->getParams()->binlogDelRange == 0) {
