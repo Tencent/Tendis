@@ -54,7 +54,7 @@ class ScanGenericCommand : public Command {
   Expected<std::string> run(Session* sess) final {
     const std::vector<std::string>& args = sess->getArgs();
     const std::string& key = args[1];
-    const std::string& cursor = args[2];
+    const std::string& cursorArg = args[2];
     size_t i = 3;
     int j;
     std::string pat;
@@ -111,7 +111,7 @@ class ScanGenericCommand : public Command {
       ZSlMetaValue meta = eMetaContent.value();
       SkipList sl(expdb.value().chunkId, pCtx->getDbId(), key, meta, kvstore);
       Zrangespec range;
-      if (zslParseRange(cursor.c_str(), maxscore.c_str(), &range) != 0) {
+      if (zslParseRange(cursorArg.c_str(), maxscore.c_str(), &range) != 0) {
         return {ErrorCodes::ERR_ZSLPARSERANGE, ""};
       }
       auto arr = sl.scanByScore(range, 0, count + 1, false, ptxn.value());
@@ -132,9 +132,24 @@ class ScanGenericCommand : public Command {
       return ss.str();
     }
 
+    // cursor should be an integer
+    auto ecursor = tendisplus::stoull(cursorArg);
+    if (!ecursor.ok()) {
+      return {ErrorCodes::ERR_PARSEOPT, "-ERR invalid cursor\r\n"};
+    }
+    uint64_t cursor = ecursor.value();
+
+    // get last scan position from cursormap
+    auto realCursor =
+      sess->getServerEntry()->getKeyMapLastScanPos(sess, key, cursor);
+    if (realCursor == "0" && cursor != 0) {
+      // cursor is invalid in cursormap, start with "0"
+      cursor = 0;
+    }
     RecordKey fake = genFakeRcd(expdb.value().chunkId, pCtx->getDbId(), key);
 
-    auto batch = Command::scan(fake.prefixPk(), cursor, count, ptxn.value());
+    auto batch =
+      Command::scan(fake.prefixPk(), realCursor, count, ptxn.value());
     RET_IF_ERR_EXPECTED(batch);
     const bool NOCASE = false;
     for (std::list<Record>::iterator it = batch.value().second.begin();
@@ -151,7 +166,19 @@ class ScanGenericCommand : public Command {
         ++it;
       }
     }
-    return genResult(batch.value().first, batch.value().second);
+    if (cursor == 0) {
+      // the first element start with 1;
+      cursor = 1;
+    }
+    cursor += count;
+    std::string newCursor = batch.value().first;
+    if (newCursor != "0") {
+      auto kvstoreId = expdb.value().chunkId % server->getKVStoreCount();
+      sess->getServerEntry()->addKeyCursorMapping(
+        sess, key, cursor, kvstoreId, batch.value().first);
+      newCursor = std::to_string(cursor);
+    }
+    return genResult(newCursor, batch.value().second);
   }
 
  private:
@@ -181,7 +208,6 @@ class ZScanCommand : public ScanGenericCommand {
     for (const auto& v : rcds) {
       Command::fmtBulk(ss, v.getRecordKey().getSecondaryKey());
       auto d = tendisplus::doubleDecode(v.getRecordValue().getValue());
-      INVARIANT_D(d.ok());
       RET_IF_ERR_EXPECTED(d);
       Command::fmtBulk(ss, tendisplus::dtos(d.value()));
     }
@@ -319,17 +345,19 @@ class ScanCommand : public Command {
     return false;
   }
 
-  static Status parseSessionArgs(const std::vector<std::string> &args,
-                                 std::bitset<CLUSTER_SLOTS> *slots,
-                                 std::string *pattern,
-                                 std::string *type,
-                                 uint64_t *count,
-                                 uint64_t *cursor,
-                                 int64_t *seq,
-                                 bool *enableSlots) {
-    size_t index = 2;                             // used for parse args
+  static Status parseSessionArgs(const std::vector<std::string>& args,
+                                 std::bitset<CLUSTER_SLOTS>* slots,
+                                 std::string* pattern,
+                                 std::string* type,
+                                 uint64_t* count,
+                                 uint64_t* cursor,
+                                 int64_t* seq,
+                                 bool* enableSlots) {
+    size_t index = 2;  // used for parse args
     auto cursorCnt = tendisplus::stoul(args[1]);
-    RET_IF_ERR_EXPECTED(cursorCnt);
+    if (!cursorCnt.ok()) {
+      return {ErrorCodes::ERR_PARSEOPT, "-ERR invalid cursor\r\n"};
+    }
     *cursor = cursorCnt.value();
 
     while (index < args.size()) {
@@ -418,10 +446,8 @@ class ScanCommand : public Command {
 
     // Step 2: check if this scan command cursor has been stored in cursorMap_
     uint64_t kvstoreId{0};
-    std::string lastScanKey;
-    auto &cursorMap = sess->getServerEntry()
-                      ->getCursorMap(sess->getCtx()->getDbId());
-    auto expMapping = cursorMap.getMapping(cursor);
+    std::string lastScanPos;
+    auto expMapping = sess->getServerEntry()->getCursorMapping(sess, cursor);
     if (!expMapping.ok()) {
       if (expMapping.status().code() == ErrorCodes::ERR_NOTFOUND) {
         kvstoreId = 0;
@@ -432,17 +458,17 @@ class ScanCommand : public Command {
       }
     } else {
       kvstoreId = expMapping.value().kvstoreId;
-      lastScanKey = expMapping.value().lastScanKey;
+      lastScanPos = expMapping.value().lastScanPos;
     }
 
     // use lambda return value to decode
     // because RecordKey's assign operator= function has been deleted
     // RecordKey::decode will fault when string is empty
     auto expRecordKey = [&]() -> Expected<RecordKey> {
-      if (lastScanKey.empty()) {
+      if (lastScanPos.empty()) {
         return genRecordKey(0, sess->getCtx()->getDbId(), "");
       } else {
-        auto expLastScanRecordKey = RecordKey::decode(lastScanKey);
+        auto expLastScanRecordKey = RecordKey::decode(lastScanPos);
         RET_IF_ERR_EXPECTED(expLastScanRecordKey);
         return expLastScanRecordKey.value();
       }
@@ -462,7 +488,7 @@ class ScanCommand : public Command {
     uint64_t scanTimes{0};
     uint64_t scanMaxTimes = params->scanDefaultMaxIterateTimes;
 
-    count += 1;          // in order to add mapping, scan one more key.
+    count += 1;  // in order to add mapping, scan one more key.
 
     // Step 3: scan data across all kv-stores one by one
     size_t id = kvstoreId;
@@ -476,7 +502,7 @@ class ScanCommand : public Command {
         auto expdb = server->getSegmentMgr()->getDb(
                 sess, id, mgl::LockMode::LOCK_IS);
         RET_IF_ERR_EXPECTED(expdb);
-        auto *pCtx = sess->getCtx();
+        auto* pCtx = sess->getCtx();
         auto kvstore = expdb.value().store;
         auto ptxn = sess->getCtx()->createTransaction(kvstore);
         RET_IF_ERR_EXPECTED(ptxn);
@@ -492,7 +518,7 @@ class ScanCommand : public Command {
           if (id == kvstoreId) {
             return lastScanRecordKey;
           } else {
-            return genRecordKey(0, pCtx->getDbId() , "");
+            return genRecordKey(0, pCtx->getDbId(), "");
           }
         }();
         auto expRecordKeys = scanKvstore(slots, recordKey, pCtx->getDbId(),
@@ -501,7 +527,7 @@ class ScanCommand : public Command {
                                          ptxn.value());
         RET_IF_ERR_EXPECTED(expRecordKeys);
         auto recordKeys = expRecordKeys.value();
-        for (const auto &key : recordKeys) {
+        for (const auto& key : recordKeys) {
           batch.emplace_back(key);
         }
       }
@@ -517,7 +543,7 @@ class ScanCommand : public Command {
     }
 
     if (cursor && !batch.empty()) {
-      cursorMap.addMapping(cursor, id, batch.back().encode(), sess->id());
+      server->addCursorMapping(sess, cursor, id, batch.back().encode());
       batch.pop_back();
     }
 
@@ -538,25 +564,25 @@ class ScanCommand : public Command {
     Filter() : _type(RecordType::RT_DATA_META) {}
     ~Filter() = default;
 
-    Filter(const Filter &) = delete;
-    Filter &operator=(const Filter &) = delete;
-    Filter(Filter &&) = delete;
-    Filter &&operator=(Filter &&) = delete;
+    Filter(const Filter&) = delete;
+    Filter& operator=(const Filter&) = delete;
+    Filter(Filter&&) = delete;
+    Filter&& operator=(Filter&&) = delete;
 
     /**
      * @brief filter recordkey by pattern and type etc.
      * @param record record to filter
      * @return boolean shows whether it's needed
      */
-    bool filter(const Record &record) {
+    bool filter(const Record& record) {
       if (enablePattern() &&
           !redis_port::stringmatchlen(
-                  _pattern.c_str(),
-                  _pattern.size(),
-                  record.getRecordKey().getPrimaryKey().c_str(),
-                  record.getRecordKey().getPrimaryKey().size(),
-                  false)) {
-          return false;
+            _pattern.c_str(),
+            _pattern.size(),
+            record.getRecordKey().getPrimaryKey().c_str(),
+            record.getRecordKey().getPrimaryKey().size(),
+            false)) {
+        return false;
       }
       if (enableType() &&
           record.getRecordValue().getRecordType() != _type) {
@@ -580,7 +606,7 @@ class ScanCommand : public Command {
      * @brief set filter _pattern
      * @param pattern MATCH "pattern"
      */
-    void setPattern(const std::string &pattern) {
+    void setPattern(const std::string& pattern) {
       if (pattern != "*") {
         _pattern.assign(pattern);
       } else {
@@ -592,7 +618,7 @@ class ScanCommand : public Command {
      * @brief set filter _type
      * @param type TYPE "type" (after toLower() operation)
      */
-    void setType(std::string &type) {
+    void setType(std::string& type) {   // NOLINT
       if (recordTypeMap.count(type)) {
         _type = recordTypeMap[type];
       } else if (!type.empty()) {
@@ -623,14 +649,14 @@ class ScanCommand : public Command {
     RecordType _type;
 
     std::map<std::string, RecordType> recordTypeMap = {
-            {"string", RecordType::RT_KV},
-            {"list", RecordType::RT_LIST_META},
-            {"hash", RecordType::RT_HASH_META},
-            {"set", RecordType::RT_SET_META},
-            {"zset", RecordType::RT_ZSET_META},
-            // TODO(pecochen): unsupport type stream now (since redis 5.0)
+      {"string", RecordType::RT_KV},
+      {"list", RecordType::RT_LIST_META},
+      {"hash", RecordType::RT_HASH_META},
+      {"set", RecordType::RT_SET_META},
+      {"zset", RecordType::RT_ZSET_META},
+      // TODO(pecochen): unsupport type stream now (since redis 5.0)
     };
-  }_filter;
+  } _filter;
 
   /**
    * @brief get next slot which fit the slots condition
@@ -638,8 +664,8 @@ class ScanCommand : public Command {
    * @param slot current slot
    * @return slots or -1 (means none)
    */
-  static int32_t getNextSlot(const std::bitset<CLUSTER_SLOTS> &slots,
-                              int32_t slot) {
+  static int32_t getNextSlot(const std::bitset<CLUSTER_SLOTS>& slots,
+                             int32_t slot) {
     for (size_t i = slot + 1; i < CLUSTER_SLOTS; ++i) {
       if (slots.test(i)) {
         return i;
@@ -672,7 +698,7 @@ class ScanCommand : public Command {
     Command::fmtMultiBulkLen(ss, 2);
     Command::fmtBulk(ss, std::to_string(cursor));
     Command::fmtMultiBulkLen(ss, recordKeys.size());
-    for (const auto &v : recordKeys) {
+    for (const auto& v : recordKeys) {
       Command::fmtBulk(ss, v.getPrimaryKey());
     }
     return ss.str();
@@ -684,7 +710,7 @@ class ScanCommand : public Command {
    * @return slots. belongs to this kvsotre && belongs to "slots"
    */
   static std::bitset<CLUSTER_SLOTS> getKvstoreSlots(
-          uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS> &slots) {
+    uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS>& slots) {
     std::bitset<CLUSTER_SLOTS> kvstoreSlots;
     for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
       if (slots[i] & checkKvstoreSlot(kvstoreId, i)) {
@@ -707,16 +733,15 @@ class ScanCommand : public Command {
    * @param txn transaction
    * @return {cursor, key-list}
    */
-  auto scanKvstore(const std::bitset<CLUSTER_SLOTS> &slots,
-                   const RecordKey &lastScanRecordKey,
+  auto scanKvstore(const std::bitset<CLUSTER_SLOTS>& slots,
+                   const RecordKey& lastScanRecordKey,
                    uint32_t dbId,
                    int kvstoreId,
                    uint64_t count,
-                   uint64_t *seq,
-                   uint64_t *scanTimes,
+                   uint64_t* seq,
+                   uint64_t* scanTimes,
                    uint64_t scanMaxTimes,
-                   Transaction *txn)
-            -> Expected<std::list<RecordKey>> {
+                   Transaction* txn) -> Expected<std::list<RecordKey>> {
     std::list<RecordKey> result;
     auto kvstoreSlots = getKvstoreSlots(kvstoreId, slots);
     auto cursor = txn->createDataCursor();
@@ -734,7 +759,7 @@ class ScanCommand : public Command {
       RET_IF_ERR_EXPECTED(expRecord);
       auto record = expRecord.value();
 
-      const auto &guard = MakeGuard([&]() {
+      const auto& guard = MakeGuard([&]() {
         // record the scan position when iterate each kv-store over
         // or we'll lost record position
         // BEHAVIOR: scan no keys suitable (NOT EMPTY)  => result.second.empty()

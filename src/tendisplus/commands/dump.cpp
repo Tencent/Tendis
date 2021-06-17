@@ -308,6 +308,16 @@ class DumpXCommand : public Command {
         continue;
       }
       auto dbid = static_cast<uint32_t>(expDbid.value());
+      // check dbid before
+      if (dbid >= sess->getServerEntry()->dbNum()) {
+        return {ErrorCodes::ERR_PARSEOPT, "DB index is out of range"};
+      }
+
+      if (sess->getServerEntry()->isClusterEnabled() && dbid != 0) {
+        return {ErrorCodes::ERR_PARSEOPT,
+                "SELECT is not allowed in cluster mode"};
+      }
+
       if (sess->getCtx()->getDbId() != dbid) {
         sess->getCtx()->setDbId(dbid);
       }

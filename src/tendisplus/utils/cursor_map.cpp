@@ -1,12 +1,10 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-
 #include "tendisplus/utils/cursor_map.h"
-
 #include "tendisplus/utils/time.h"
-
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/utils/redis_port.h"
 
 namespace tendisplus {
 
@@ -17,9 +15,12 @@ namespace tendisplus {
  * @param maxSessionLimit used as max session-level mapping count
  *       default is MAX_SESSION_LIMIT
  */
-CursorMap::CursorMap(size_t maxCursorCount, size_t maxSessionLimit)
-          : _maxCursorCount(maxCursorCount),
-            _maxSessionLimit(maxSessionLimit) {}
+CursorMap::CursorMap(size_t maxCursorCount,
+                     size_t maxSessionLimit,
+                     size_t maxExpireTimeSec)
+  : _maxCursorCount(maxCursorCount),
+    _maxSessionLimit(maxSessionLimit),
+    _maxExpireTimeNs((uint64_t)maxExpireTimeSec * 1000000000) {}
 
 /**
  * @brief add mapping into cursorMap
@@ -35,8 +36,10 @@ CursorMap::CursorMap(size_t maxCursorCount, size_t maxSessionLimit)
  *      thus, other client's fast scan commands may not overwrite others' slow
  *      scan commands
  */
-void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
-                           const std::string &key, uint64_t sessionId) {
+void CursorMap::addMapping(const std::string& cursor,
+                           size_t kvstoreId,
+                           const std::string& lastScanPos,
+                           uint64_t sessionId) {
   // make lock guard
   std::lock_guard<std::recursive_mutex> lk(_mutex);
 
@@ -50,8 +53,8 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
    * firstly, check whether session-level cursorMap is full.
    * if so, evict mapping by LRU belong to this session.
    */
-  if (_sessionTs.count(sessionId)
-      && (_sessionTs[sessionId].size() >= _maxSessionLimit)) {
+  if (_sessionTs.count(sessionId) &&
+      (_sessionTs[sessionId].size() >= _maxSessionLimit)) {
     uint64_t ts = *_sessionTs[sessionId].cbegin();
     evictMapping(_cursorTs[ts]);
   }
@@ -80,7 +83,7 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
   }
 
   auto time = getCurrentTime();
-  _cursorMap[cursor] = {kvstoreId, key, sessionId, time};
+  _cursorMap[cursor] = {kvstoreId, lastScanPos, sessionId, time};
   _cursorTs[time] = cursor;
   _sessionTs[sessionId].emplace(time);
 }
@@ -90,13 +93,19 @@ void CursorMap::addMapping(uint64_t cursor, size_t kvstoreId,
  * @param cursor cursor in tendisplus, means k-v's sequence among all kv-stores
  * @return Expected represent mapping or status when error occurs
  */
-Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
-  // make lock guard
+Expected<CursorMap::CursorMapping> CursorMap::getMapping(
+  const std::string& cursor) {
   std::lock_guard<std::recursive_mutex> lk(_mutex);
 
   // check and get mapping
-  if (_cursorMap.count(cursor)) {      // means mapping in _cursorMap
-    return _cursorMap[cursor];
+  if (_cursorMap.count(cursor)) {  // means mapping in _cursorMap
+    auto map = _cursorMap[cursor];
+    // if CursorMapping is expired(default 1 day), ignore it!
+    if (nsSinceEpoch() - map.timeStamp > _maxExpireTimeNs) {
+      evictTooOldCursor(nsSinceEpoch() - _maxExpireTimeNs);
+      return {ErrorCodes::ERR_NOTFOUND, "Mapping expired"};
+    }
+    return map;
   } else {
     return {ErrorCodes::ERR_NOTFOUND, "Mapping NOT FOUND"};
   }
@@ -107,7 +116,7 @@ Expected<CursorMap::CursorMapping> CursorMap::getMapping(uint64_t cursor) {
  * @return _cursorMap
  */
 auto CursorMap::getMap() const
-      -> const std::unordered_map<uint64_t, CursorMapping> & {
+  -> const std::unordered_map<std::string, CursorMapping>& {
   return _cursorMap;
 }
 
@@ -115,7 +124,7 @@ auto CursorMap::getMap() const
  * @brief get _cursorTs ref, only for debug
  * @return _cursorTs
  */
-auto CursorMap::getTs() const -> const std::map<uint64_t, uint64_t> & {
+auto CursorMap::getTs() const -> const std::map<uint64_t, std::string>& {
   return _cursorTs;
 }
 
@@ -124,12 +133,16 @@ auto CursorMap::getTs() const -> const std::map<uint64_t, uint64_t> & {
  * @return _sessionTs
  */
 auto CursorMap::getSessionTs() const
--> const std::unordered_map<uint64_t, std::set<uint64_t>> & {
+  -> const std::unordered_map<uint64_t, std::set<uint64_t>>& {
   return _sessionTs;
 }
 
-size_t CursorMap::maxCursorCount() const { return _maxCursorCount; }
-size_t CursorMap::maxSessionLimit() const { return _maxSessionLimit; }
+size_t CursorMap::maxCursorCount() const {
+  return _maxCursorCount;
+}
+size_t CursorMap::maxSessionLimit() const {
+  return _maxSessionLimit;
+}
 
 /**
  * @brief get current time by ns, especially check whether the same record
@@ -171,7 +184,7 @@ inline size_t CursorMap::getSessionMappingCount(uint64_t sessionId) {
  * @note this function only can be called in lock guard scope,
  *      by std::recursive_mutex, can lock_guard recursively.
  */
-void CursorMap::evictMapping(uint64_t cursor) {
+void CursorMap::evictMapping(const std::string& cursor) {
   std::lock_guard<std::recursive_mutex> lk(_mutex);
   INVARIANT_D(_cursorMap.count(cursor));
 
@@ -185,6 +198,70 @@ void CursorMap::evictMapping(uint64_t cursor) {
   if (_sessionTs[id].empty()) {
     _sessionTs.erase(id);
   }
+}
+
+/**
+ * @brief evict mapping which created before specified timestamp
+ * @param ts ts as the timestamp in nanoseconds
+ * @note this function only can be called in lock guard scope,
+ *      by std::recursive_mutex, can lock_guard recursively.
+ */
+void CursorMap::evictTooOldCursor(uint64_t ts) {
+  std::lock_guard<std::recursive_mutex> lk(_mutex);
+  /**
+   *  _cursorTs is sorted by timestamp, it evicts all the elements
+   *  when the timestamp is small than the input `ts`
+   */
+  while (!_cursorTs.empty() && _cursorTs.cbegin()->first < ts) {
+    // evict the element which is too old
+    evictMapping(_cursorTs.cbegin()->second);
+  }
+}
+
+KeyCursorMap::KeyCursorMap(size_t maxCursorCount,
+                           size_t maxSessionLimit,
+                           size_t cursorMapSize) {
+  for (size_t i = 0; i < cursorMapSize; i++) {
+    _cursorMap.emplace_back(
+      std::make_unique<CursorMap>(maxCursorCount, maxSessionLimit));
+  }
+}
+
+void KeyCursorMap::addMapping(const std::string& key,
+                              uint64_t cursor,
+                              size_t kvstoreId,
+                              const std::string& lastScanKey,
+                              uint64_t sessionId) {
+  auto slot = redis_port::keyHashSlot(key.c_str(), key.size());
+  auto realCursor = key + "_" + std::to_string(cursor);
+
+  _cursorMap[slot % _cursorMap.size()]->addMapping(
+    realCursor, kvstoreId, lastScanKey, sessionId);
+}
+
+Expected<CursorMap::CursorMapping> KeyCursorMap::getMapping(
+  const std::string& key, uint64_t cursor) {
+  INVARIANT_D(cursor != 0);
+  auto slot = redis_port::keyHashSlot(key.c_str(), key.size());
+  auto real_cursor = key + "_" + std::to_string(cursor);
+
+  return _cursorMap[slot % _cursorMap.size()]->getMapping(real_cursor);
+}
+
+std::string KeyCursorMap::getLastScanPos(const std::string& key,
+                                         uint64_t cursor) {
+  if (cursor == 0) {
+    return "0";
+  }
+
+  auto emapping = getMapping(key, cursor);
+  if (!emapping.ok()) {
+    LOG(ERROR) << "Can't find cursor " << std::to_string(cursor) << " of key "
+               << key;
+    return "0";
+  }
+
+  return emapping.value().lastScanPos;
 }
 
 }  // namespace tendisplus

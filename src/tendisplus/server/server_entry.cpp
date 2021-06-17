@@ -392,6 +392,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   uint32_t kvStoreCount = cfg->kvStoreCount;
   uint32_t chunkSize = cfg->chunkSize;
   _cursorMaps.resize(cfg->dbNum);
+  _keyCursorMaps.resize(cfg->dbNum);
 
   // set command config
   Command::changeCommand(gRenameCmdList, "rename");
@@ -1033,7 +1034,6 @@ bool ServerEntry::processRequest(Session* sess) {
         ns->borrowConn(), args[1], args[2], args[3], storeNum);
       return false;
     } else if (expCmdName == "quit") {
-      LOG(INFO) << "quit command";
       NetSession* ns = dynamic_cast<NetSession*>(sess);
       INVARIANT(ns != nullptr);
       ns->setCloseAfterRsp();

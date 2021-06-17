@@ -296,7 +296,9 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   }
   void setBackupRunning();
   bool getTotalIntProperty(
-    Session* sess, const std::string& property, uint64_t* value,
+    Session* sess,
+    const std::string& property,
+    uint64_t* value,
     ColumnFamilyNumber cf = ColumnFamilyNumber::ColumnFamily_Default) const;
 
   bool getAllProperty(Session* sess,
@@ -314,8 +316,38 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _isRunning;
   }
 
-  CursorMap& getCursorMap(int dbId) {
-    return _cursorMaps[dbId];
+  Expected<CursorMap::CursorMapping> getCursorMapping(Session* sess,
+                                                      uint64_t cursor) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
+    return _cursorMaps[sess->getCtx()->getDbId()].getMapping(
+      std::to_string(cursor));
+  }
+
+  void addCursorMapping(Session* sess,
+                        uint64_t cursor,
+                        size_t kvstoreId,
+                        const std::string& key) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _cursorMaps.size());
+    _cursorMaps[sess->getCtx()->getDbId()].addMapping(
+      std::to_string(cursor), kvstoreId, key, sess->id());
+  }
+
+  void addKeyCursorMapping(Session* sess,
+                           const std::string& key,
+                           uint64_t cursor,
+                           size_t kvstoreId,
+                           const std::string& lastScanKey) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _keyCursorMaps.size());
+    _keyCursorMaps[sess->getCtx()->getDbId()].addMapping(
+      key, cursor, kvstoreId, lastScanKey, sess->id());
+  }
+
+  std::string getKeyMapLastScanPos(Session* sess,
+                                   const std::string& key,
+                                   uint64_t cursor) {
+    INVARIANT_D(sess->getCtx()->getDbId() < _keyCursorMaps.size());
+    return _keyCursorMaps[sess->getCtx()->getDbId()].getLastScanPos(key,
+                                                                    cursor);
   }
 
  private:
@@ -377,7 +409,8 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint32_t _protoMaxBulkLen;
   uint32_t _dbNum;
   std::atomic<uint64_t> _tsFromExtendedProtocol;
-  std::deque<CursorMap> _cursorMaps;  // deque NOT vector ! ! !
+  std::deque<CursorMap> _cursorMaps;        // deque NOT vector ! ! !
+  std::deque<KeyCursorMap> _keyCursorMaps;  // deque NOT vector ! ! !
 
   std::atomic<uint64_t> _scheduleNum;
   std::shared_ptr<ServerParams> _cfg;

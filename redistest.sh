@@ -19,7 +19,7 @@ function runOne() {
 
 runOne "tclsh tests/test_helper.tcl --single rr_unit/type/string"
 runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/hash"
-#tclsh tests/test_helper.tcl  --single  rr_unit/type/hscan
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/hscan"
 runOne "tclsh tests/test_helper.tcl  --single  rr_unit/scan"
 runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-2"
 runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-3"

@@ -545,6 +545,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   std::stringstream ss;
   Command::fmtMultiBulkLen(ss, 2);
   std::string cursor = getBulkValue(expect.value(), 0);
+  EXPECT_TRUE(tendisplus::stoull(cursor).ok());   // cursor must be an integer
   Command::fmtBulk(ss, cursor);
   Command::fmtMultiBulkLen(ss, 10);
   for (int i = 0; i < 10; ++i) {
@@ -568,6 +569,78 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
     Command::fmtBulk(ss, tmp);
   }
   EXPECT_EQ(ss.str(), expect.value());
+
+
+  // case 2: hscan
+  sess.setArgs({"hmset",
+                "scanhash",
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f",
+                "g",
+                "h",
+                "i",
+                "j",
+                "k",
+                "l",
+                "m",
+                "n"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  ss.str("");
+
+  // case 2.1: hscan from cursor 0
+  uint32_t count = 5;
+  uint32_t field_count = 7;
+  sess.setArgs({"hscan", "scanhash", "0", "count", std::to_string(count)});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  Command::fmtMultiBulkLen(ss, 2);
+  cursor = getBulkValue(expect.value(), 0);
+  EXPECT_TRUE(tendisplus::stoull(cursor).ok());
+  EXPECT_EQ(std::to_string(count + 1), cursor);
+  Command::fmtBulk(ss, cursor);
+  Command::fmtMultiBulkLen(ss, 2*count);
+  for (size_t i = 0; i < 2*count; ++i) {
+    std::string tmp;
+    tmp.push_back('a' + i);
+    Command::fmtBulk(ss, tmp);
+  }
+  EXPECT_EQ(ss.str(), expect.value());
+
+  // case 2.2: hscan from a invalid cursor
+  {
+    // "1" is invalid cursor, scan from "0"
+    sess.setArgs({"hscan", "scanhash", "1", "count", std::to_string(count)});
+    auto expect1 = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect1.ok());
+    // The result is same with scan with "0"
+    EXPECT_EQ(expect.value(), expect1.value());
+  }
+
+  // case 2.3: hscan from last valid cursor
+  sess.setArgs({"hscan", "scanhash", cursor, "count", std::to_string(count)});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok()) << expect.status().toString();
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 2);
+  cursor = "0";
+  Command::fmtBulk(ss, cursor);
+  Command::fmtMultiBulkLen(ss, (field_count - count) * 2);
+  for (size_t i = 0; i < (field_count - count) * 2; ++i) {
+    std::string tmp;
+    tmp.push_back('a' + 2*count + i);
+    Command::fmtBulk(ss, tmp);
+  }
+  EXPECT_EQ(ss.str(), expect.value());
+
+  // case 2.4: hscan a string cursor
+  sess.setArgs({"hscan", "scanhash", "abcde", "count", "5"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_FALSE(expect.ok());
 }
 
 void testMulti(std::shared_ptr<ServerEntry> svr) {
