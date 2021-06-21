@@ -17,38 +17,38 @@ function runOne() {
     fi
 }
 
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/type/string"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/hash"
-# #tclsh tests/test_helper.tcl  --single  rr_unit/type/hscan
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/scan"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-2"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-3"
-# #tclsh tests/test_helper.tcl  --single  rr_unit/type/list-common
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/set"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/zset"
-# runOne "tclsh tests/test_helper.tcl  --single  rr_unit/hyperloglog"
-# runOne "tclsh tests/test_helper.tcl  --single rr_unit/expire"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/bitops"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/auth"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/basic"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/protocol"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/other"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/type/string"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/hash"
+#tclsh tests/test_helper.tcl  --single  rr_unit/type/hscan
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/scan"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-2"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list-3"
+#tclsh tests/test_helper.tcl  --single  rr_unit/type/list-common
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/list"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/set"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/type/zset"
+runOne "tclsh tests/test_helper.tcl  --single  rr_unit/hyperloglog"
+runOne "tclsh tests/test_helper.tcl  --single rr_unit/expire"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/bitops"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/auth"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/basic"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/protocol"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/other"
 
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/quit"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/sort"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/bugs"
-# runOne "tclsh tests/test_helper.tcl --single rr_unit/scripting"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/quit"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/sort"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/bugs"
+runOne "tclsh tests/test_helper.tcl --single rr_unit/scripting"
 
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/zscanbyscore"
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/hmcas"
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/cas"
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/setnxex"
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/bitfield"
-# runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/increx"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/zscanbyscore"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/hmcas"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/cas"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/setnxex"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/bitfield"
+runOne "tclsh tests/test_helper.tcl --single tendis_ssd_test/increx"
 
-# runOne "tclsh tests/cluster/run.tcl --single 08"
-# runOne "tclsh tests/cluster/run.tcl --single 10"
+runOne "tclsh tests/cluster/run.tcl --single 08"
+runOne "tclsh tests/cluster/run.tcl --single 10"
 
 valgrind=0
 #tests=(aofrw bitfield dump geo introspection-2 keyspace lazyfree maxmemory multi other protocol quit scripting sort wait auth bitops expire hyperloglog introspection latency-monitor limits memefficiency obuf-limits printver pubsub scan slowlog)
