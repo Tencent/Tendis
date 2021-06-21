@@ -159,6 +159,13 @@ class ClusterCommand : public Command {
         } else {
           return {ErrorCodes::ERR_CLUSTER, "Invalid migrate info"};
         }
+      } else if (arg2 == "clean" && argSize == 3) {
+        if (migrateMgr->existMigrateTask()) {
+          return {ErrorCodes::ERR_CLUSTER, "can not clean when migrating"};
+        }
+        migrateMgr->cleanMigrateInfo();
+        migrateMgr->cleanImportInfo();
+        return Command::fmtOK();
       } else if (arg2 == "taskinfo" && (argSize >= 3 && argSize <= 5)) {
         Expected<std::string> taskInfo("");
         std::string arg3;
@@ -214,6 +221,18 @@ class ClusterCommand : public Command {
           }
         }
         return Command::fmtOK();
+#ifdef TENDIS_DEBUG
+        /* NOTE(wayenchen) stop the migrating
+         * or importing tasks one this node, just for test*/
+      } else if (arg2 == "stopme" && argSize == 4) {
+        // just stop one node
+        auto s = migrateMgr->stopTasks(args[3], true);
+        if (!s.ok()) {
+          LOG(ERROR) << "error stop my tasks" << s.toString();
+          return s;
+        }
+        return Command::fmtOK();
+#endif
       } else if (arg2 == "stopall" && argSize == 3) {
         /* NOTE(wayenchen) stop all migrate tasks (save message of stop tasks),
          * work on both srcNode and dstNode */
@@ -498,7 +517,7 @@ class ClusterCommand : public Command {
       uint16_t slavesNum = n->getSlaveNum();
       auto expSlaveList = n->getSlaves();
       if (slavesNum == 0 || !expSlaveList.ok()) {
-          return {ErrorCodes::ERR_CLUSTER, "have no slaves"};
+        return {ErrorCodes::ERR_CLUSTER, "have no slaves"};
       }
       auto slaveList = expSlaveList.value();
       Command::fmtMultiBulkLen(ss, slavesNum);
@@ -557,11 +576,19 @@ class ClusterCommand : public Command {
                 "CLUSTER RESET can't be called with "
                 "master nodes containing keys"};
       }
+      if (myself->nodeIsMaster() &&
+          svr->getMigrateManager()->existMigrateTask()) {
+        return {ErrorCodes::ERR_CLUSTER,
+                "CLUSTER RESET can't be called when migrating"};
+      }
       auto clusterMgr = svr->getClusterMgr();
       auto s = clusterMgr->clusterReset(hard);
       if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER, "cluster reset fail!"};
       }
+      /* clean migrate history info*/
+      migrateMgr->cleanMigrateInfo();
+      migrateMgr->cleanImportInfo();
       return Command::fmtOK();
     } else if (arg1 == "saveconfig" && argSize == 2) {
       auto s = clusterState->clusterSaveConfig();
