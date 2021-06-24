@@ -2584,7 +2584,7 @@ class BitFieldCommand : public Command {
     if (eRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         eRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
       if (readonly)
-        return Command::fmtZero();
+        return Command::fmtZeroBulkLen();
     } else if (!eRv.ok()) {
       return eRv.status();
     } else {

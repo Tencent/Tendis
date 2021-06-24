@@ -52,7 +52,7 @@ runOne "tclsh tests/cluster/run.tcl --single 10"
 
 valgrind=0
 #tests=(aofrw bitfield dump geo introspection-2 keyspace lazyfree maxmemory multi other protocol quit scripting sort wait auth bitops expire hyperloglog introspection latency-monitor limits memefficiency obuf-limits printver pubsub scan slowlog)
-tests=(bitfield dump keyspace other protocol quit sort auth bitops expire hyperloglog limits scan slowlog)
+tests=(bitfield dump keyspace other protocol quit sort auth bitops expire hyperloglog limits scan slowlog badkey)
 length=${#tests[@]}
 length=`expr $length - 1`
 for i in `seq 0 $length`
