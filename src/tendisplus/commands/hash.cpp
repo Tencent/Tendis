@@ -647,6 +647,9 @@ class HIncrByCommand : public Command {
     const std::string& key = args[1];
     const std::string& subkey = args[2];
     const std::string& val = args[3];
+    if (val.find('.') != std::string::npos) {
+      return {ErrorCodes::ERR_INTERGER, ""};
+    }
     Expected<int64_t> inc = ::tendisplus::stoll(val);
     if (!inc.ok()) {
       return inc.status();

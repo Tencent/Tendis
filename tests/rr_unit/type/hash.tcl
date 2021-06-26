@@ -336,6 +336,14 @@ start_server {tags {"hash"}} {
    		r hlen hash
     } {0}
 
+    test {HINCRBY against increment as float/double} {
+        r del hash
+        r hset hash a 0
+        r hset hash b 0
+        r hincrby hash a 1
+        assert_error {*not an integer or out of range*} {r hincrby hash a 1.5}
+        r hget hash a
+    } {1}
     test {HINCRBYFLOAT against non existing database key} {
         r del htest
         list [r hincrbyfloat htest foo 2.5]

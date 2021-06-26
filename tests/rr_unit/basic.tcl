@@ -161,6 +161,14 @@ start_server {tags {"basic"}} {
         r incrby novar 17179869184
     } {34359738368}
 
+    test {INCRBY against increment as float/double} {
+        r del k
+        r incr k
+        r incrby k 2
+        assert_error {*not an integer or out of range*} {r incrby k 2.5}
+        r get k
+    } {3}
+
     test {INCR fails against key with spaces (left)} {
         r set novar "    11"
         catch {r incr novar} err
@@ -190,6 +198,14 @@ start_server {tags {"basic"}} {
         r set novar 17179869184
         r decrby novar 17179869185
     } {-1}
+
+    test {DECRBY against decrement as float/double} {
+        r del k
+        r decr k
+        r decrby k 1
+        assert_error {*not an integer or out of range*} {r decrby k 2.5}
+        r get k
+    } {-2}
 
 	test {INCR over an expired integer} {
 		r set novar 123456

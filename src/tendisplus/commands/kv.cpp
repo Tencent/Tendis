@@ -1460,6 +1460,11 @@ class IncrbyCommand : public IncrDecrGeneral {
   Expected<RecordValue> newValueFromOld(
     Session* sess, const Expected<RecordValue>& oldValue) const {
     const std::string& val = sess->getArgs()[2];
+
+    // INCRBY only support integer, or use INCRBYFLOAT
+    if (val.find('.') != std::string::npos) {
+      return {ErrorCodes::ERR_INTERGER, ""};
+    }
     Expected<int64_t> eInc = ::tendisplus::stoll(val);
     if (!eInc.ok()) {
       return eInc.status();
@@ -1597,6 +1602,11 @@ class DecrbyCommand : public IncrDecrGeneral {
   Expected<RecordValue> newValueFromOld(
     Session* sess, const Expected<RecordValue>& oldValue) const {
     const std::string& val = sess->getArgs()[2];
+
+    // DECRBY only support integer, or use DECRBY
+    if (val.find('.') != std::string::npos) {
+      return {ErrorCodes::ERR_INTERGER, ""};
+    }
     Expected<int64_t> eInc = ::tendisplus::stoll(val);
     if (!eInc.ok()) {
       return eInc.status();
