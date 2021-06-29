@@ -42,6 +42,8 @@ enum class ErrorCodes {
   ERR_CONNECT_TRY,
   // special error code for `ChunkMigrateReceiver::receiveSnapshot()`
   ERR_READY_MIGRATE,
+  ERR_MIGRATE,
+  ERR_BINLOG_DISABLED,
 
   // error from redis
   ERR_AUTH = 100,

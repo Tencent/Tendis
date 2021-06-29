@@ -867,7 +867,17 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
 
-  INVARIANT_D(client != nullptr);
+  if (client == nullptr) {
+    LOG(ERROR) << "sender connect with:" << nodeid
+               << " failed, no valid client";
+    return;
+  }
+
+  if (!_svr->getParams()->binlogEnabled) {
+    LOG(WARNING) << "binlog is disabled";
+    client->writeLine("-ERR binlog is disabled");
+    return;
+  }
 
   SlotsBitmap taskMap;
   // send json message to receiver
@@ -1018,6 +1028,13 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
                << " failed, no valid client";
     return;
   }
+
+  if (!_svr->getParams()->binlogEnabled) {
+    LOG(WARNING) << "binlog is disabled";
+    client->writeLine("-ERR binlog is disabled");
+    return;
+  }
+
   SlotsBitmap receiveMap;
   uint32_t dstStoreid;
   try {

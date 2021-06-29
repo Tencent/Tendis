@@ -29,6 +29,12 @@ bool ReplManager::supplyFullSync(asio::ip::tcp::socket sock,
                                                        64 * 1024 * 1024));
   client->setFlags(CLIENT_SLAVE);
 
+  if (!_svr->getParams()->binlogEnabled) {
+    LOG(WARNING) << "binlog is disabled";
+    client->writeLine("-ERR binlog is disabled");
+    return false;
+  }
+
   // NOTE(deyukong): this judge is not precise
   // even it's not full at this time, it can be full during schedule.
   if (isFullSupplierFull()) {
@@ -185,6 +191,12 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     std::move(_svr->getNetwork()->createBlockingClient(std::move(sock),
                                                        64 * 1024 * 1024));
   client->setFlags(CLIENT_SLAVE);
+
+  if (!_svr->getParams()->binlogEnabled) {
+    LOG(WARNING) << "binlog is disabled";
+    client->writeLine("-ERR binlog is disabled");
+    return false;
+  }
 
   uint32_t storeId;
   uint32_t dstStoreId;

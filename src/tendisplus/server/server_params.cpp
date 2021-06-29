@@ -443,6 +443,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockWaitTimeOut);
   REGISTER_VARS_ALLOW_DYNAMIC_SET(lockDbXWaitTimeout);
   REGISTER_VARS_DIFF_NAME("binlog-using-defaultCF", binlogUsingDefaultCF);
+  REGISTER_VARS_DIFF_NAME("binlog-enabled", binlogEnabled);
+  REGISTER_VARS_DIFF_NAME("binlog-save-logs", binlogSaveLogs);
 
   REGISTER_VARS_ALLOW_DYNAMIC_SET(scanDefaultLimit);
   REGISTER_VARS_SAME_NAME(

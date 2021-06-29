@@ -1709,7 +1709,8 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
     }
     LOG(INFO) << "RocksKVStore::restart id:" << dbId() << " restore:" << restore
               << " nextBinlogSeq:" << nextBinlogSeq
-              << " highestVisible:" << highestVisible;
+              << " highestVisible:" << highestVisible
+              << " binlogEnabled:" << _enableRepllog;
     INVARIANT_D(nextBinlogSeq != Transaction::TXNID_UNINITED);
 
     // NOTE(vinchen): if stateMode is STORE_NONE, the store no need

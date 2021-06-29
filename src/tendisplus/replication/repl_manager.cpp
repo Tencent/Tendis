@@ -813,6 +813,9 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
   {
     std::ofstream* fs = nullptr;
     int64_t maxWriteLen = 0;
+    if (!_svr->getParams()->binlogSaveLogs) {
+      saveLogs = false;
+    }
     if (saveLogs) {
       fs = getCurBinlogFs(storeId);
       if (!fs) {

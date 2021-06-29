@@ -531,7 +531,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                                                 cfg,
                                                 _blockCache,
                                                 _rateLimiter,
-                                                true,
+                                                _cfg->binlogEnabled,
                                                 mode,
                                                 RocksKVStore::TxnMode::TXN_PES,
                                                 flag)));

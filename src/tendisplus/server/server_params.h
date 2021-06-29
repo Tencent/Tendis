@@ -438,6 +438,8 @@ class ServerParams {
   uint64_t slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_LOG_MAX_LEN;
   bool slowlogFileEnabled = true;
   bool binlogUsingDefaultCF = false;
+  bool binlogEnabled = true;
+  bool binlogSaveLogs = true;
   uint32_t netIoThreadNum = 0;
   uint32_t executorThreadNum = 0;
   uint32_t executorWorkPoolSize = 0;
