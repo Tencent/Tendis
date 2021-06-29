@@ -857,10 +857,8 @@ Status ClusterState::clusterBumpConfigEpochWithoutConsensus() {
     setCurrentEpoch(_currentEpoch + 1);
     _myself->setConfigEpoch(_currentEpoch);
   }
-  Status s = clusterSaveNodesNoLock();
-  if (!s.ok()) {
-    return s;
-  }
+  setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
+
   return {ErrorCodes::ERR_OK, "bump config epoch ok"};
 }
 
@@ -1173,7 +1171,7 @@ void ClusterState::setSlotBelongMyself(const uint32_t slot) {
   Status s = setSlotMyself(slot);
 
   if (!s.ok()) {
-    LOG(FATAL) << "set slot error:" << s.toString();
+    LOG(ERROR) << "set slot error:" << s.toString();
   } else {
     LOG(INFO) << "set slot: " << slot << "belong to" << _myself->getNodeName()
               << "finish!";
@@ -1321,6 +1319,21 @@ bool ClusterState::isDataAgeTooLarge() const {
   return _isVoteFailByDataAge.load(std::memory_order_relaxed);
 }
 
+void ClusterState::setTodoFlag(uint16_t flag) {
+  std::lock_guard<myMutex> lk(_mutex);
+  _todoFlag |= flag;
+}
+
+void ClusterState::unsetTodoFlag(uint16_t flag) {
+  std::lock_guard<myMutex> lk(_mutex);
+  _todoFlag &= ~flag;
+}
+
+bool ClusterState::hasTodoFlag(uint16_t t) const {
+  std::lock_guard<myMutex> lk(_mutex);
+  return _todoFlag & t ? true : false;
+}
+
 Status ClusterState::forgetNodes() {
   std::lock_guard<myMutex> lk(_mutex);
   std::vector<CNodePtr> nodesList;
@@ -1339,48 +1352,27 @@ Status ClusterState::forgetNodes() {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterState::clusterSaveNodesNoLock() {
+Status ClusterState::clusterSaveMeta(
+  const std::vector<std::unique_ptr<ClusterMeta>>& metaList,
+  uint32_t currentEpoch,
+  uint32_t lastVoteEpoch) {
   Catalog* cataLog = _server->getCatalog();
-  EpochMeta epoch(_currentEpoch, _lastVoteEpoch);
+  EpochMeta epoch(currentEpoch, lastVoteEpoch);
   Status s = cataLog->setEpochMeta(epoch);
   if (!s.ok()) {
-    LOG(FATAL) << "save epoch meta error:" << s.toString();
+    LOG(ERROR) << "save epoch meta error:" << s.toString();
     return s;
   }
 
-  std::unordered_map<std::string, CNodePtr>::iterator iter;
-  for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
-    CNodePtr node = iter->second;
-
-    uint16_t nodeFlags = node->getFlags();
-    if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
-      continue;
-
-    std::string masterName =
-      (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
-
-    std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
-
-    auto slotBuff = std::move(bitsetEncodeVec(slots));
-
-    ClusterMeta meta(node->getNodeName(),
-                     node->getNodeIp(),
-                     node->getPort(),
-                     node->getCport(),
-                     nodeFlags,
-                     masterName,
-                     node->getSentTime(),
-                     node->getReceivedTime(),
-                     node->getConfigEpoch(),
-                     slotBuff);
-
-    Status sMeta = cataLog->setClusterMeta(std::move(meta));
+  for (auto& meta : metaList) {
+    Status sMeta = cataLog->setClusterMeta(*meta);
 
     if (!sMeta.ok()) {
-      LOG(FATAL) << "save Node error:" << s.toString();
+      LOG(ERROR) << "save Node error:" << sMeta.toString();
       return s;
     }
   }
+
   return {ErrorCodes::ERR_OK, "save node config finish"};
 }
 
@@ -1507,20 +1499,51 @@ Expected<std::string> ClusterState::clusterReplyMultiBulkSlots() {
   return ss.str();
 }
 
-void ClusterState::clusterSaveNodes() {
-  std::lock_guard<myMutex> lk(_mutex);
-  Status s = clusterSaveNodesNoLock();
+Status ClusterState::clusterSaveNodes() {
+  std::vector<std::unique_ptr<ClusterMeta>> metaList;
+  {
+    std::lock_guard<myMutex> lk(_mutex);
+    std::unordered_map<std::string, CNodePtr>::iterator iter;
+    for (iter = _nodes.begin(); iter != _nodes.end(); iter++) {
+      CNodePtr node = iter->second;
+
+      uint16_t nodeFlags = node->getFlags();
+      if (nodeFlags & CLUSTER_NODE_HANDSHAKE)
+        continue;
+
+      std::string masterName =
+        (node->getMaster()) ? node->getMaster()->getNodeName() : "-";
+
+      std::bitset<CLUSTER_SLOTS> slots = node->getSlots();
+
+      auto slotBuff = std::move(bitsetEncodeVec(slots));
+
+      auto meta = std::make_unique<ClusterMeta>(node->getNodeName(),
+                                                node->getNodeIp(),
+                                                node->getPort(),
+                                                node->getCport(),
+                                                nodeFlags,
+                                                masterName,
+                                                node->getSentTime(),
+                                                node->getReceivedTime(),
+                                                node->getConfigEpoch(),
+                                                slotBuff);
+
+      metaList.push_back(std::move(meta));
+    }
+  }
+  Status s = clusterSaveMeta(metaList, getCurrentEpoch(), getLastVoteEpoch());
 
   if (!s.ok()) {
-    LOG(FATAL) << "save Node confg error:" << s.toString();
+    LOG(ERROR) << "save Node confg error:" << s.toString();
+    return s;
   }
+
+  LOG(INFO) << "save nodes information in catalog, node size:"
+            << metaList.size();
+  return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterState::clusterSaveConfig() {
-  std::lock_guard<myMutex> lk(_mutex);
-  Status s = clusterSaveNodesNoLock();
-  return s;
-}
 
 void ClusterState::setClientUnBlock() {
   _cv.notify_one();
@@ -1858,7 +1881,7 @@ void ClusterState::clusterAddNode(CNodePtr node, bool save) {
 
   clusterAddNodeNoLock(node);
   if (save) {
-    clusterSaveNodesNoLock();
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   }
 }
 
@@ -1936,7 +1959,7 @@ void ClusterState::clusterDelNode(CNodePtr node, bool save) {
   clusterDelNodeNoLock(node);
 
   if (save) {
-    clusterSaveNodesNoLock();
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   }
 }
 
@@ -1955,7 +1978,7 @@ void ClusterState::clusterRenameNode(CNodePtr node,
   clusterAddNodeNoLock(node);
 
   if (save) {
-    clusterSaveNodesNoLock();
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   }
 }
 
@@ -2168,7 +2191,7 @@ bool ClusterState::markAsFailingIfNeeded(CNodePtr node) {
   clusterSendFail(node, _server->getReplManager()->replicationGetOffset());
 
   clusterUpdateState();
-  clusterSaveNodes();
+  setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   return true;
 }
 
@@ -2559,7 +2582,8 @@ void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
   /* We can vote for this slave. */
   setLastVoteEpoch(curretEpoch);
   master->setVoteTime(msSinceEpoch());
-  clusterSaveNodes();
+  setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
+
 
   clusterSendFailoverAuth(node);
   serverLog(LL_WARNING,
@@ -2738,7 +2762,8 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
 
   /* 5) Update state and save config. */
   clusterUpdateState();
-  clusterSaveNodes();
+  setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
+
   return {ErrorCodes::ERR_OK, "finish replace master"};
 }
 /* This function is called if we are a slave node and our master serving
@@ -2906,7 +2931,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
     clusterRequestFailoverAuth();
     setFailAuthSent(1);
-    clusterSaveNodes();
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     clusterUpdateState();
 
     return {ErrorCodes::ERR_CLUSTER, "wait for replies"};
@@ -3812,7 +3837,8 @@ Status ClusterManager::clusterReset(uint16_t hard) {
     _clusterState->clusterRenameNode(myself, newName);
     serverLog(LL_NOTICE, "Node hard reset, now I'm %.40s", newName.c_str());
   }
-  _clusterState->clusterSaveNodes();
+  _clusterState->setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
+
   _clusterState->clusterUpdateState();
   return {ErrorCodes::ERR_OK, "finish reset"};
 }
@@ -3927,7 +3953,7 @@ Status ClusterManager::initMetaData() {
     }
 
     if (!_clusterState->getMyselfNode()) {
-      LOG(FATAL) << "Myself node for cluster is missing, please check it!";
+      LOG(ERROR) << "Myself node for cluster is missing, please check it!";
       return {ErrorCodes::ERR_INTERNAL, ""};
     }
 
@@ -3980,7 +4006,7 @@ Status ClusterManager::initMetaData() {
     EpochMeta epoch(_clusterState->getCurrentEpoch(), 0);
     Status sEpoch = catalog->setEpochMeta(epoch);
     if (!s.ok() || !sEpoch.ok()) {
-      LOG(FATAL) << "catalog setClusterMeta error:" << s.toString();
+      LOG(ERROR) << "catalog setClusterMeta error:" << s.toString();
       return s;
     } else {
       LOG(INFO) << "cluster metadata set finish "
@@ -3994,12 +4020,11 @@ Status ClusterManager::initMetaData() {
   if (!s_epoch.ok()) {
     LOG(ERROR) << "catalog epoch meta get error";
     return s_epoch.status();
-  } else {
-    uint64_t currentEpoch = s_epoch.value()->currentEpoch;
-    uint64_t voteEpoch = s_epoch.value()->lastVoteEpoch;
-    _clusterState->setCurrentEpoch(currentEpoch);
-    _clusterState->setLastVoteEpoch(voteEpoch);
   }
+
+  _clusterState->setCurrentEpoch(s_epoch.value()->currentEpoch);
+  _clusterState->setLastVoteEpoch(s_epoch.value()->lastVoteEpoch);
+
 
   _clusterState->setMfEnd(0);
   _clusterState->resetManualFailover();
@@ -4066,8 +4091,20 @@ void ClusterState::clusterUpdateMyselfFlags() {
   if (_myself->getFlags() != oldflags) {
     LOG(INFO) << "change flag to nofailover on:" << _myself->getNodeName()
               << "flag name is:" << _myself->getFlagStr();
-    clusterSaveNodes();
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     clusterUpdateState();
+  }
+}
+
+/* check clusterFalg to avoid doing some db job in mutex */
+void ClusterState::clusterCheckToDoFlags() {
+  if (hasTodoFlag(CLUSTER_TODO_FLAG_SAVE)) {
+    auto s = clusterSaveNodes();
+    if (!s.ok()) {
+      LOG(ERROR) << "cron save node fail" + s.toString();
+      return;
+    }
+    unsetTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   }
 }
 
@@ -4636,6 +4673,8 @@ void ClusterManager::controlRoutine() {
   while (_isRunning.load(std::memory_order_relaxed)) {
     /* Update myself flags. */
     _clusterState->clusterUpdateMyselfFlags();
+
+    _clusterState->clusterCheckToDoFlags();
     /* Check if we have disconnected nodes and re-establish the connection.
      * Also update a few stats while we are here, that can be used to make
      * better decisions in other part of the code. */
@@ -4959,7 +4998,7 @@ bool ClusterState::clusterProcessGossipSection(
           }
           if (markAsFailingIfNeeded(node)) {
             LOG(INFO) << "mark node " << node->getNodeName() << ":fail";
-            save = true;
+            setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
           }
         } else {
           if (clusterNodeDelFailureReport(node, sender)) {
@@ -5031,9 +5070,7 @@ bool ClusterState::clusterProcessGossipSection(
 
 Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                                           const ClusterMsg& msg) {
-  bool save = false;
   bool update = false;
-
   if (getBlockState()) {
     // sleep or return OK?
     DLOG(INFO) << "packet begin block at:" << msSinceEpoch();
@@ -5042,9 +5079,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   }
 
   const auto guard = MakeGuard([&] {
-    if (save) {
-      clusterSaveNodes();
-    }
     if (update) {
       clusterUpdateState();
     }
@@ -5071,7 +5105,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     /* Update the sender configEpoch if it is publishing a newer one. */
     if (senderConfigEpoch > sender->getConfigEpoch()) {
       sender->setConfigEpoch(senderConfigEpoch);
-      save = true;
+      setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
     /* Update the replication offset info for this node. */
     sender->setReplOffset(hdr->_offset);
@@ -5121,7 +5155,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   "IP address for this node updated to %s",
                   eip.value().c_str());
         _myself->setNodeIp(eip.value());
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       }
     }
 
@@ -5139,7 +5173,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                                                 hdr->_cport);
 
       clusterAddNode(node);
-      save = true;
+      setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* If this is a MEET packet from an unknown node, we still process
@@ -5147,7 +5181,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * of the message type. */
     if (!sender && type == ClusterMsg::Type::MEET) {
       if (clusterProcessGossipSection(sess, msg))
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* Anyway reply with a PONG */
@@ -5186,12 +5220,12 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                     sender->getNodeName().c_str());
           if (updateAddressIfNeeded(sender, sess, msg)) {
             update = true;
-            save = true;
+            setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
           }
           /* Free this node as we already have it. This will
            * cause the link to be freed as well. */
           clusterDelNode(sessNode);
-          save = true;  // needed?
+          setTodoFlag(CLUSTER_TODO_FLAG_SAVE);  // needed?
 
           return {ErrorCodes::ERR_CLUSTER,
                   "Handshake: we already know node" + sender->getNodeName()};
@@ -5206,7 +5240,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
           (CLUSTER_NODE_MASTER | CLUSTER_NODE_SLAVE | CLUSTER_NODE_ARBITER);
         sessNode->changeFlags(tmpflag, CLUSTER_NODE_HANDSHAKE);
         clusterRenameNode(sessNode, hdr->_sender);
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else if (sessNode->getNodeName() != hdr->_sender) {
         /* TODO(vinchen): How to repeat?
            The _sender change the ID dynamically?
@@ -5226,7 +5260,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         sessNode->setNodePort(0);
         sessNode->setNodeCport(0);
         sessNode->freeClusterSession();
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
         //  std::string nodeName = hdr->_sender;
         return {ErrorCodes::ERR_CLUSTER,
                 "PONG contains mismatching sender " + hdr->_sender};
@@ -5253,9 +5287,10 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   "%s arbiter flags change %d",
                   sender->getNodeName().c_str(),
                   (flags & CLUSTER_NODE_ARBITER));
+
+        sender->changeFlags(flags & CLUSTER_NODE_ARBITER, CLUSTER_NODE_ARBITER);
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       }
-      sender->changeFlags(flags & CLUSTER_NODE_ARBITER, CLUSTER_NODE_ARBITER);
-      save = true;
     }
 
     /* Update the node address if it changed. */
@@ -5263,7 +5298,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         !sender->nodeInHandshake() &&
         updateAddressIfNeeded(sender, sess, msg)) {
       clusterUpdateState();
-      save = true;
+      setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* TODO(vinchen): why only sessNode is not null,
@@ -5282,10 +5317,10 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
        * conditions detected by clearNodeFailureIfNeeded(). */
       if (sessNode->nodeTimedOut()) {
         sessNode->unsetFlag(CLUSTER_NODE_PFAIL);
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else if (sessNode->nodeFailed()) {
         if (sessNode->clearNodeFailureIfNeeded(timeout)) {
-          save = true;
+          setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
           clusterUpdateState();
         }
       }
@@ -5296,7 +5331,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
       if (msg.isMaster()) {
         /* Node is a master. */
         if (clusterSetNodeAsMaster(sender))
-          save = true;
+          setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
       } else {
         /* Node is a slave. */
         auto master = clusterLookupNode(hdr->_slaveOf);
@@ -5306,7 +5341,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
           clusterDelNodeSlots(sender);
           sender->changeFlags(CLUSTER_NODE_SLAVE,
                               CLUSTER_NODE_MASTER | CLUSTER_NODE_MIGRATE_TO);
-          save = true;
+          setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
         }
 
         /* Master node changed for this slave? */
@@ -5318,7 +5353,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
           clusterNodeAddSlave(master, sender);
           /* Update config. */
           clusterUpdateState();
-          save = true;
+          setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
         }
       }
     }
@@ -5350,7 +5385,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      *    need to update our configuration. */
     if (sender && sender->nodeIsMaster() && dirty_slots) {
       clusterUpdateSlotsConfigWith(sender, senderConfigEpoch, hdr->_slots);
-      save = true;
+      setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* 2) We also check for the reverse condition, that is, the sender
@@ -5406,13 +5441,13 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     if (sender && _myself->nodeIsMaster() && sender->nodeIsMaster() &&
         senderConfigEpoch == _myself->getConfigEpoch()) {
       clusterHandleConfigEpochCollision(sender);
-      save = true;
+      setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* Get info from the gossip section */
     if (sender) {
       if (clusterProcessGossipSection(sess, msg))
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
   } else if (type == ClusterMsg::Type::FAIL) {
     std::shared_ptr<ClusterMsgDataFail> failMsg =
@@ -5430,7 +5465,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                   "FAIL message received from %.40s about %.40s",
                   hdr->_sender.c_str(),
                   failName.c_str());
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
         clusterUpdateState();
       }
     } else {
@@ -5502,7 +5537,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     /* If in our current config the node is a slave, set it as a master. */
     if (n->nodeIsSlave()) {
       if (clusterSetNodeAsMaster(n))
-        save = true;
+        setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
     }
 
     /* Update the node's configEpoch. */
@@ -5512,7 +5547,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
      * config accordingly. */
     clusterUpdateSlotsConfigWith(n, reportedConfigEpoch, updateMsg->getSlots());
 
-    save = true;
+    setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   } else {
     // TODO(wayenchen): other message
     INVARIANT_D(0);

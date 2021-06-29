@@ -1454,7 +1454,7 @@ Status MigrateManager::supplyMigrateEnd(const std::string& taskid,
     return {ErrorCodes::ERR_CLUSTER, "set slot myself fail"};
   }
 
-  clusterState->clusterSaveNodes();
+  clusterState->setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   clusterState->clusterUpdateState();
   return {ErrorCodes::ERR_OK, ""};
 }

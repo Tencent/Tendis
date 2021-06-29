@@ -154,7 +154,8 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
 
   auto scanBatch = _cfg->scanCntIndexMgr;
   bool clusterEnabled = _svr->getParams()->clusterEnabled;
-  if (clusterEnabled && _svr->getMigrateManager()->existMigrateTask()) {
+  if (clusterEnabled && _svr->getMigrateManager() &&
+            _svr->getMigrateManager()->existMigrateTask()) {
     return {ErrorCodes::ERR_OK, ""};
   }
 

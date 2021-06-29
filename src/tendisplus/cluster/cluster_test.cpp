@@ -333,6 +333,24 @@ void waitNodeFail(std::shared_ptr<ClusterState>& state,
             << (msSinceEpoch() - start) / 1000 << "s";
 }
 
+std::vector<std::string> getClusterInfo(
+  std::vector<std::shared_ptr<ServerEntry>> nodeList) {
+  std::vector<std::string> clusterInfo;
+  for (const auto& server : nodeList) {
+    auto clusterState = server->getClusterMgr()->getClusterState();
+    if (clusterState) {
+      std::string nodeInfo;
+      nodeInfo += clusterState->getMyselfName();
+      auto myself = clusterState->getMyselfNode();
+      if (clusterState->isMyselfMaster() && myself->getSlots().count() > 0) {
+        nodeInfo += bitsetStrEncode(myself->getSlots());
+      }
+      clusterInfo.push_back(nodeInfo);
+    }
+  }
+  return clusterInfo;
+}
+
 void destroyCluster(uint32_t nodeNum) {
   for (uint32_t i = 0; i < nodeNum; ++i) {
     destroyEnv("node" + to_string(i));
@@ -3013,6 +3031,99 @@ TEST(Cluster, failoveCheckBinlogTs) {
   }
 #endif
   servers.clear();
+}
+
+
+TEST(Cluster, saveNode) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15600;
+  bool withSlave = true;
+
+  const auto guard = MakeGuard([&nodeNum, &withSlave] {
+    if (withSlave) {
+      destroyCluster(nodeNum * 2);
+    } else {
+      destroyCluster(nodeNum);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, withSlave);
+  auto size = servers.size();
+  // save nodeid && slots info
+  std::vector<std::string> startInfo = getClusterInfo(servers);
+
+  // stop nodes
+  for (const auto& node : servers) {
+    node->stop();
+  }
+  LOG(INFO) << "server size:" << servers.size();
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+  // restart nodes
+  std::vector<std::shared_ptr<ServerEntry>> restartServers;
+
+  for (uint16_t i = 0; i < size; i++) {
+    // restart origin master
+    auto cfg = makeServerParam(startPort + i, 10, "node" + to_string(i), true);
+    cfg->clusterEnabled = true;
+    cfg->pauseTimeIndexMgr = 1;
+    cfg->rocksBlockcacheMB = 24;
+    cfg->clusterSingleNode = false;
+    std::shared_ptr<ServerEntry> svr = std::make_shared<ServerEntry>(cfg);
+
+    auto s = svr->startup(cfg);
+    INVARIANT(s.ok());
+    LOG(INFO) << "start succ";
+    restartServers.emplace_back(std::move(svr));
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  bool clusterOk = false;
+  auto t = msSinceEpoch();
+  while (true) {
+    clusterOk = true;
+    for (const auto& node : restartServers) {
+      LOG(INFO)
+        << "NODE:"
+        << node->getClusterMgr()->getClusterState()->getMyselfNode()->getPort();
+      if (!node->getClusterMgr()->getClusterState()->clusterIsOK()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        clusterOk = false;
+        break;
+      }
+    }
+    if (clusterOk) {
+      break;
+    }
+    if (msSinceEpoch() - t > 50 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+    }
+  }
+  LOG(INFO) << "CLUSTER OK";
+
+  std::vector<std::string> restartInfo = getClusterInfo(restartServers);
+  EXPECT_EQ(startInfo.size(), restartInfo.size());
+  // compare date
+  for (uint16_t i = 0; i < startInfo.size(); i++) {
+    LOG(INFO) << "startInfo: " << startInfo[i]
+              << " restartInfo: " << restartInfo[i];
+    EXPECT_EQ(startInfo[i].compare(restartInfo[i]), 0);
+  }
+
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+  for (auto svr : restartServers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  servers.clear();
+  restartServers.clear();
 }
 
 }  // namespace tendisplus

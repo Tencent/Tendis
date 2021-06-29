@@ -124,7 +124,7 @@ Status ChunkMigrateSender::sendChunk() {
       LOG(ERROR) << "set myself meta data fail on slots:" << s.toString();
       return s;
     }
-    _clusterState->clusterSaveNodes();
+    _clusterState->setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
   }
   /* unlock after receive package */
   unlockChunks();
