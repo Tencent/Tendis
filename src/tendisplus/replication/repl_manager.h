@@ -230,6 +230,7 @@ class ReplManager {
 
   uint32_t getMasterPort() const;
   uint64_t getLastSyncTime() const;
+  uint64_t getLastBinlogTs() const;
   uint64_t replicationGetOffset() const;
   uint64_t replicationGetMaxBinlogIdFromRocks() const;
   uint64_t replicationGetMaxBinlogId() const;

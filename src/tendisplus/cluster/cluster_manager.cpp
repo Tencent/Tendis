@@ -2733,9 +2733,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Set data_age to the number of seconds we are disconnected from
    * the master. */
-  auto replMgr = _server->getReplManager();
-  uint64_t syncTime = replMgr->getLastSyncTime();
-  data_age = msSinceEpoch() - syncTime;
+  data_age = msSinceEpoch() - _server->getReplManager()->getLastBinlogTs();
   INVARIANT_D(data_age > 0);
 
   /* Remove the node timeout from the data age as it is fine that we are
