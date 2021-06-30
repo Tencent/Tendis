@@ -647,12 +647,9 @@ class HIncrByCommand : public Command {
     const std::string& key = args[1];
     const std::string& subkey = args[2];
     const std::string& val = args[3];
-    if (val.find('.') != std::string::npos) {
+    long long inc{0};                                   // NOLINT
+    if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
-    }
-    Expected<int64_t> inc = ::tendisplus::stoll(val);
-    if (!inc.ok()) {
-      return inc.status();
     }
 
     auto server = sess->getServerEntry();
@@ -694,12 +691,12 @@ class HIncrByCommand : public Command {
 
     // here maybe one more time io than the original tendis
     for (int32_t i = 0; i < RETRY_CNT - 1; ++i) {
-      auto result = hincrGeneric(sess, metaRk, rv, subRk, inc.value(), kvstore);
+      auto result = hincrGeneric(sess, metaRk, rv, subRk, inc, kvstore);
       if (result.status().code() != ErrorCodes::ERR_COMMIT_RETRY) {
         return result;
       }
     }
-    return hincrGeneric(sess, metaRk, rv, subRk, inc.value(), kvstore);
+    return hincrGeneric(sess, metaRk, rv, subRk, inc, kvstore);
   }
 } hincrbyCommand;
 

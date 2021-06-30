@@ -1462,14 +1462,11 @@ class IncrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // INCRBY only support integer, or use INCRBYFLOAT
-    if (val.find('.') != std::string::npos) {
+    long long inc{0};                                   // NOLINT
+    if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
-    Expected<int64_t> eInc = ::tendisplus::stoll(val);
-    if (!eInc.ok()) {
-      return eInc.status();
-    }
-    Expected<int64_t> newSum = sumIncr(oldValue, eInc.value());
+    Expected<int64_t> newSum = sumIncr(oldValue, inc);
     if (!newSum.ok()) {
       return newSum.status();
     }
@@ -1604,14 +1601,11 @@ class DecrbyCommand : public IncrDecrGeneral {
     const std::string& val = sess->getArgs()[2];
 
     // DECRBY only support integer, or use DECRBY
-    if (val.find('.') != std::string::npos) {
+    long long inc{0};                                    // NOLINT
+    if (!redis_port::string2ll(val.c_str(), val.size(), &inc)) {
       return {ErrorCodes::ERR_INTERGER, ""};
     }
-    Expected<int64_t> eInc = ::tendisplus::stoll(val);
-    if (!eInc.ok()) {
-      return eInc.status();
-    }
-    Expected<int64_t> newSum = sumIncr(oldValue, -eInc.value());
+    Expected<int64_t> newSum = sumIncr(oldValue, -inc);
     if (!newSum.ok()) {
       return newSum.status();
     }
