@@ -50,7 +50,6 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_SLAVE_MIGRATION_DELAY 5000  // Delay for slave migration.
 
 
-// TODO(wayenchen)
 #define CLUSTERMSG_MIN_LEN 100
 
 // Cluster node flags and macros.
@@ -86,11 +85,9 @@ enum class ClusterHealth : std::uint8_t {
 #define CLUSTER_CANT_FAILOVER_WAITING_VOTES 4
 #define CLUSTER_CANT_FAILOVER_RELOG_PERIOD (60 * 5)  // seconds.
 
-// clusterState todo_before_sleep flags.
-#define CLUSTER_TODO_HANDLE_FAILOVER (1 << 0)
+// cluster state nodes info need be saved in catalog
+#define CLUSTER_TODO_FLAG_SAVE (1 << 0)
 #define CLUSTER_TODO_UPDATE_STATE (1 << 1)
-#define CLUSTER_TODO_SAVE_CONFIG (1 << 2)
-#define CLUSTER_TODO_FSYNC_CONFIG (1 << 3)
 
 #define CLUSTER_MAX_REJOIN_DELAY 5000
 #define CLUSTER_MIN_REJOIN_DELAY 500
@@ -251,7 +248,6 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   std::bitset<CLUSTER_SLOTS> _mySlots;
   uint16_t _numSlaves;
   uint32_t _numSlots;
-  // TODO(wayenchen): make it private
   uint16_t _flags;
   mstime_t _ctime;
   std::vector<std::shared_ptr<ClusterNode>> _slaves;
@@ -543,6 +539,7 @@ class ClusterSession : public NetSession {
   CNodePtr _node;
 };
 
+class ClusterMeta;
 class ClusterState : public std::enable_shared_from_this<ClusterState> {
  public:
   explicit ClusterState(std::shared_ptr<ServerEntry> server);
@@ -572,7 +569,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterRenameNode(CNodePtr node,
                          const std::string& newname,
                          bool save = false);
-  void clusterSaveNodes();
+
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);
   Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false);
@@ -680,6 +677,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   //  Status clusterReset(uint16_t hard);
   void clusterUpdateMyselfFlags();
+  void clusterCheckToDoFlags();
   void cronRestoreSessionIfNeeded();
   void cronPingSomeNodes();
   void cronCheckFailState();
@@ -688,10 +686,10 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::string clusterGenNodesDescription(uint16_t filter, bool simple);
   std::string clusterGenStateDescription();
 
+  Status clusterSaveNodes();
   void clusterUpdateState();
   bool isContainSlot(uint32_t slotId) const;
   Status forceFailover(bool force, bool takeover);
-  Status clusterSaveConfig();
 
   bool getBlockState() {
     return _blockState.load(std::memory_order_relaxed);
@@ -757,6 +755,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
     return _isMfOffsetReceived.load(std::memory_order_relaxed);
   }
 
+  void setTodoFlag(uint16_t flag);
+
  private:
   mutable myMutex _mutex;
   mutable std::mutex _failMutex;
@@ -795,7 +795,14 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   // Epoch of the current election.
   std::atomic<uint64_t> _failoverAuthEpoch;
   std::atomic<bool> _isVoteFailByDataAge;
-  Status clusterSaveNodesNoLock();
+  // TODO(wayenchen) cluster Flag
+  uint16_t _todoFlag;
+
+  Status clusterSaveMeta(
+    const std::vector<std::unique_ptr<ClusterMeta>>& metaList,
+    uint32_t configEpoch,
+    uint32_t lastVoteEpoch);
+
   void clusterAddNodeNoLock(CNodePtr node);
   void clusterDelNodeNoLock(CNodePtr node);
   bool clusterDelSlotNoLock(const uint32_t slot);
@@ -804,6 +811,9 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   uint32_t clusterMastersHaveSlavesNoLock();
   Status clusterBlockMyself(uint64_t time);
+
+  void unsetTodoFlag(uint16_t flag);
+  bool hasTodoFlag(uint16_t flag) const;
 
  public:
   ClusterHealth _state;

@@ -564,7 +564,7 @@ class ClusterCommand : public Command {
       }
       return Command::fmtOK();
     } else if (arg1 == "saveconfig" && argSize == 2) {
-      auto s = clusterState->clusterSaveConfig();
+      auto s = clusterState->clusterSaveNodes();
       if (!s.ok()) {
         return {ErrorCodes::ERR_CLUSTER,
                 "error saving the cluster node config" + s.toString()};
