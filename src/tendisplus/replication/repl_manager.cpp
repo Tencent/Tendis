@@ -1384,6 +1384,22 @@ uint64_t ReplManager::getLastSyncTime() const {
   return min;
 }
 
+uint64_t ReplManager::getLastBinlogTs() const {
+  std::lock_guard<std::mutex> lk(_mutex);
+  uint64_t min = 0;
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    if (_syncMeta[i]->syncFromHost != "") {
+      // it is a slave
+      uint64_t last_sync_time = _syncStatus[i]->lastBinlogTs;
+      if (last_sync_time < min || min == 0) {
+        min = last_sync_time;
+      }
+    }
+  }
+
+  return min;
+}
+
 uint64_t ReplManager::replicationGetOffset() const {
   uint64_t totalBinlog = 0;
   LocalSessionGuard sg(_svr.get());
