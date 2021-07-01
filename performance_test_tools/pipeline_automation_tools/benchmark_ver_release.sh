@@ -168,7 +168,7 @@ runTest() {
                 fi
             done
             let duration=${endTimestamp}-${startTimestamp}
-            qps=$(curl -g "http://${prometheusURL}/api/v1/query?query=sum(increase(redis_command_call_duration_seconds_count{gcs_app=\"${appname}\",gcs_cluster=\"${clusterprefix}-${tendisVersion}\",gcs_dbrole=\"master\",cmd=\"${cmd}\"}[${duration}s]))by(cmd)&time=${endTimestamp}" 2>/dev/null | tr "\"" " " | awk '{print $(NF-1)}')
+            qps=$(curl -g "http://${prometheusURL}/api/v1/query?query=sum(increase(redis_command_call_duration_seconds_count{gcs_app=\"${appname}\",gcs_cluster=\"${tendisVersion}\",gcs_dbrole=\"master\",cmd=\"${cmd}\"}[${duration}s]))by(cmd)&time=${endTimestamp}" 2>/dev/null | tr "\"" " " | awk '{print $(NF-1)}')
             qps=$(echo $qps / $duration | bc -l)
             # fix when tendis k8s cluster dump, the qps result is 0 which will product wrong email.
             if [[ $qps == '0' || $qps == '0.0' ]]
@@ -198,7 +198,7 @@ runTest() {
                 decreaseLimit=${decreaseLimit_hset}
                 outputReport "测试命令(${benchnum}个): $benmark_binary -t ${threadnum} -c ${clientnum} --distinct-client-seed --test-time=${testTime} --command='hset __key__ __data__ __data__' --key-prefix='hash_' --key-minimum=1 --key-maximum=1000000 --random-data --data-size=${valueSize}"
             fi
-            outputReport "${cmd}测试曲线：<a href=\"${grafanaURL}-${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}-${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
+            outputReport "${cmd}测试曲线：<a href=\"${grafanaURL}${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000\">${grafanaURL}${tendisVersion}&from=${startTimestamp}000&to=${endTimestamp}000</a>"
             python writeTag.py ${cmd} ${tendisVersion} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimit_p50} ${decreaseLimit_p99} ${decreaseLimit_p100} ${decreaseLimit_pavg} ${shouldSave}
 
             if [[ "$cmd" != "set" ]]
@@ -213,7 +213,7 @@ runTest() {
         grafanaEndTimestamp=${finalTimeStamp}000
         logInfo "${tendisVersion} grafanaStartTimestamp:$grafanaStartTimestamp grafanaEndTimestamp:$grafanaEndTimestamp"
         mv ${mailfile} ${mailfile}.bak
-        outputReport "全过程监控<a href=\"${grafanaURL}-${tendisVersion}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}\">${grafanaURL}-${tendisVersion}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}</a>"
+        outputReport "全过程监控<a href=\"${grafanaURL}${tendisVersion}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}\">${grafanaURL}${tendisVersion}&from=${grafanaStartTimestamp}&to=${grafanaEndTimestamp}</a>"
         cat ${mailfile}.bak >> ${mailfile}
         rm ${mailfile}.bak
         /data/Anaconda2/bin/python sendmail.py ${tendisVersion} ${passid} ${token} ${mailURL} ${mailSender} ${sendmailgroup}
