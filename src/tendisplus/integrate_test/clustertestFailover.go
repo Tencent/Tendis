@@ -6,6 +6,7 @@ package main
 
 import (
     "flag"
+    "fmt"
     "github.com/ngaut/log"
     "tendisplus/integrate_test/util"
     "os/exec"
@@ -124,6 +125,23 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // wait redis-benchmark add data end
     <-channel
     log.Infof("cluster adddata end")
+
+    // when do cluster failover, old master change to slave, it shouldn't close the clients connection
+    // so redis-benchmark shouldn't print log: "Error from server: ERR server connection close"
+    logFilePath := fmt.Sprintf("benchmark_%d.log", predixy.RedisServer.Port)
+    log.Infof("check redis-benchmark log file: %s", logFilePath)
+    logcontent := "Error from server: ERR server connection close"
+    cmd := fmt.Sprintf("grep \"%s\" %s|wc -l", logcontent, logFilePath)
+    out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+    if err != nil {
+        log.Fatalf("grep %s failed %v", logFilePath, err)
+        return
+    }
+    log.Infof("logcontent: %s", string(out))
+    if string(out) != "0\n" {
+        log.Fatalf("%s logcontent: %s", logFilePath, string(out))
+        return
+    }
 
     // wait predixy add data end
     time.Sleep(30 * time.Second)

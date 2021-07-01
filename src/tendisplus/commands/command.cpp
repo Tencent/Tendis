@@ -278,7 +278,7 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
       sess->getServerEntry()->setTsEp(sess->getCtx()->getTsEP());
     }
   } else {
-    if (sess->getCtx()->isReplOnly()) {
+    if (sess->getCtx()->isReplOnly() && sess->getCtx()->isMaster()) {
       // NOTE(vinchen): If it's a slave, the connection should be closed
       // when there is an error. And the error should be log
       ServerEntry::logError(v.status().toString(), sess);
