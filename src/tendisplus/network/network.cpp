@@ -774,6 +774,7 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       _reqType = RedisReqMode::REDIS_REQ_INLINE;
     }
   }
+  _ctx->setReadPacketTs(nsSinceEpoch());
   if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
     processMultibulkBuffer();
   } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {

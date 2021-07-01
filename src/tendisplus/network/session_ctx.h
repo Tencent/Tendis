@@ -53,8 +53,13 @@ class SessionCtx {
   uint32_t getDbId() const;
   void setDbId(uint32_t);
 
+  /* The timestamp in nanoseconds when the command start in workerpool */
   void setProcessPacketStart(uint64_t);
   uint64_t getProcessPacketStart() const;
+
+  /* The timestamp in nanoseconds when the command read from network */
+  void setReadPacketTs(uint64_t);
+  uint64_t getReadPacketTs() const;
 
   void setWaitLock(uint32_t storeId,
                    uint32_t chunkId,
@@ -149,6 +154,7 @@ class SessionCtx {
   uint32_t _waitlockChunk;
   mgl::LockMode _waitlockMode;
   std::string _waitlockKey;
+  uint64_t _readPacketTs;
   uint64_t _processPacketStart;
   uint64_t _timestamp;
   uint64_t _version;

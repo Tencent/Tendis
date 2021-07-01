@@ -22,6 +22,7 @@ SessionCtx::SessionCtx(Session* sess)
     _waitlockChunk(0),
     _waitlockMode(mgl::LockMode::LOCK_NONE),
     _waitlockKey(""),
+    _readPacketTs(0),
     _processPacketStart(0),
     _timestamp(TSEP_UNINITED),
     _version(VERSIONEP_UNINITED),
@@ -43,6 +44,14 @@ void SessionCtx::setProcessPacketStart(uint64_t start) {
 
 uint64_t SessionCtx::getProcessPacketStart() const {
   return _processPacketStart;
+}
+
+void SessionCtx::setReadPacketTs(uint64_t ts) {
+  _readPacketTs = ts;
+}
+
+uint64_t SessionCtx::getReadPacketTs() const {
+  return _readPacketTs;
 }
 
 bool SessionCtx::authed() const {

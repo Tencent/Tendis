@@ -123,9 +123,11 @@ class SlowlogStat {
   uint64_t getSlowlogNum();
   uint64_t getSlowlogLen();
   void resetSlowlogData();
-  void slowlogDataPushEntryIfNeeded(uint64_t time,
-                                    uint64_t duration,
-                                    Session* sess);
+  void slowlogDataPushEntryIfNeeded(
+    uint64_t time,
+    uint64_t duration, /* including the queue time */
+    uint64_t execTime,
+    Session* sess);
   std::list<SlowlogEntry> getSlowlogData(uint64_t count);
   Status initSlowlogFile(std::string logPath);
   void closeSlowlogFile();
@@ -259,9 +261,11 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void AddMonitor(uint64_t sessId);
   static void logWarning(const std::string& str, Session* sess = nullptr);
   static void logError(const std::string& str, Session* sess = nullptr);
-  void slowlogPushEntryIfNeeded(uint64_t time,
-                                uint64_t duration,
-                                Session* sess);
+  void slowlogPushEntryIfNeeded(
+    uint64_t time,
+    uint64_t duration, /* including the queue time */
+    uint64_t execTime,
+    Session* sess);
   void onBackupEnd() {
     _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
     _backupRunning.fetch_sub(1, std::memory_order_relaxed);
