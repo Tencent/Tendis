@@ -1237,8 +1237,8 @@ bool ClusterState::clusterIsOK() const {
 
 void ClusterState::setMyselfNode(CNodePtr node) {
   std::lock_guard<myMutex> lk(_mutex);
-  INVARIANT(node != nullptr);
-  if (!_myself) {
+  INVARIANT_D(node != nullptr);
+  if (!_myself && node) {
     _myself = node;
   }
 }
@@ -1661,12 +1661,14 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   }
   if (!ignoreRepl) {
     bool incrSync = false;
+
     {
       std::lock_guard<myMutex> lk(_mutex);
       if (_mfEnd != 0 && _mfSlave == node) {
         incrSync = true;
       }
     }
+
     LOG(INFO) << "clusterSetMaster incrSync:" << incrSync;
 
     s = _server->getReplManager()->replicationSetMaster(
@@ -1687,9 +1689,21 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
 }
 
 Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
-  INVARIANT(node != _myself);
-  INVARIANT(_myself->getSlotNum() == 0);
-  INVARIANT(!_myself->nodeIsArbiter());
+  INVARIANT_D(node != _myself);
+  INVARIANT_D(_myself->getSlotNum() == 0);
+  INVARIANT_D(!_myself->nodeIsArbiter());
+
+  if (node == _myself) {
+    return {ErrorCodes::ERR_CLUSTER, "set master node is myself"};
+  }
+
+  if (_myself->getSlotNum() > 0) {
+    return {ErrorCodes::ERR_CLUSTER, "my slots is not zero before set Master"};
+  }
+
+  if (_myself->nodeIsArbiter()) {
+    return {ErrorCodes::ERR_CLUSTER, "arbiter node can not set master"};
+  }
 
   if (_myself->nodeIsMaster()) {
     _myself->changeFlags(CLUSTER_NODE_SLAVE,
@@ -1720,11 +1734,15 @@ bool ClusterState::clusterNodeRemoveSlaveNolock(CNodePtr master,
 
 bool ClusterState::clusterNodeAddSlave(CNodePtr master, CNodePtr slave) {
   std::lock_guard<myMutex> lk(_mutex);
-  slave->setMaster(master);
-  return master->addSlave(slave);
+  bool s = clusterNodeAddSlaveNolock(master, slave);
+  return s;
 }
 
 bool ClusterState::clusterNodeAddSlaveNolock(CNodePtr master, CNodePtr slave) {
+  if (master == nullptr || slave == nullptr) {
+    LOG(ERROR) << "master or slave is nullptr before add slave";
+    return false;
+  }
   slave->setMaster(master);
   return master->addSlave(slave);
 }
@@ -2077,7 +2095,7 @@ bool ClusterState::clusterDelSlotNoLock(const uint32_t slot) {
   }
 
   bool old = n->clearSlotBit(slot);
-  INVARIANT(old);
+  INVARIANT_D(old);
   _allSlots[slot] = nullptr;
   return true;
 }
@@ -2155,7 +2173,9 @@ bool ClusterState::clusterNodeDelFailureReport(CNodePtr node, CNodePtr sender) {
 
 uint32_t ClusterState::clusterNodeFailureReportsCount(CNodePtr node) {
   std::lock_guard<myMutex> lk(_mutex);
-  INVARIANT(node != nullptr);
+  INVARIANT_D(node != nullptr);
+  if (!node)
+    return 0;
   clusterNodeCleanupFailureReports(node);
   return node->getFailReport().size();
 }
@@ -3037,7 +3057,7 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
       }
       break;
     default:
-      INVARIANT(0);
+      INVARIANT_D(0);
       break;
   }
 }
@@ -3540,6 +3560,7 @@ bool ClusterMsgDataGossip::clusterNodeIsInGossipSection(
   }
   return false;
 }
+
 void ClusterMsgDataGossip::addGossipEntry(const CNodePtr& node) {
   ClusterGossip gossip(node->getNodeName(),
                        node->getSentTime() / 1000,
@@ -3591,7 +3612,7 @@ Expected<ClusterMsgDataGossip> ClusterMsgDataGossip::dataDecode(
 
 Status ClusterMsgDataGossip::addGossipMsg(const ClusterGossip& msg) {
   _gossipMsg.push_back(std::move(msg));
-  INVARIANT(_gossipMsg.size() > 0);
+  INVARIANT_D(_gossipMsg.size() > 0);
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -3745,9 +3766,11 @@ bool ClusterManager::isRunning() const {
 Status ClusterManager::clusterDelNodeMeta(const std::string& nodeName) {
   Catalog* catalog = _svr->getCatalog();
   INVARIANT(catalog != nullptr);
+
   Status s = catalog->delClusterMeta(nodeName);
   if (!s.ok()) {
     LOG(ERROR) << "delete node:" << nodeName << "meta data fail";
+    return s;
   }
   return s;
 }
@@ -3762,7 +3785,7 @@ Status ClusterManager::clusterDelNodesMeta() {
     return vs.status();
   } else if (vs.value().size() > 0) {
     int vssize = vs.value().size();
-    INVARIANT(vssize > 0);
+    INVARIANT_D(vssize > 0);
     for (auto& nodeMeta : vs.value()) {
       auto flag = nodeMeta->nodeFlag;
       if (flag & CLUSTER_NODE_MYSELF) {
@@ -3901,7 +3924,7 @@ Status ClusterManager::initMetaData() {
     return vs.status();
   } else if (vs.value().size() > 0) {
     int vssize = vs.value().size();
-    INVARIANT(vssize > 0);
+    INVARIANT_D(vssize > 0);
     // create node
     uint16_t myselfNum = 0;
     for (auto& nodeMeta : vs.value()) {
@@ -3962,7 +3985,6 @@ Status ClusterManager::initMetaData() {
       if (nodeMeta->masterName != "-") {
         auto master = _clusterState->clusterLookupNode(nodeMeta->masterName);
         auto node = _clusterState->clusterLookupNode(nodeMeta->nodeName);
-        INVARIANT(master != nullptr && node != nullptr);
 
         _clusterState->clusterNodeAddSlave(master, node);
       }
@@ -4224,6 +4246,7 @@ void ClusterState::cronRestoreSessionIfNeeded() {
     return;
   }
   uint64_t offset = _server->getReplManager()->replicationGetOffset();
+
   for (auto iter = pingNodeList.begin(); iter != pingNodeList.end(); iter++) {
     CNodePtr node = *iter;
     auto old_ping_sent = node->getSentTime();
@@ -4959,7 +4982,7 @@ bool ClusterState::clusterProcessGossipSection(
   auto count = hdr->_count;
   auto data = msg.getData();
   auto mstime = msSinceEpoch();
-  INVARIANT(data->getType() == ClusterMsgData::Type::Gossip);
+  INVARIANT_D(data->getType() == ClusterMsgData::Type::Gossip);
 
   bool save = false;
   std::shared_ptr<ClusterMsgDataGossip> gossip =
@@ -4967,7 +4990,7 @@ bool ClusterState::clusterProcessGossipSection(
   auto sender =
     sess->getNode() ? sess->getNode() : clusterLookupNodeNoLock(hdr->_sender);
 
-  INVARIANT(count == gossip->getGossipList().size());
+  INVARIANT_D(count == gossip->getGossipList().size());
 
   for (const auto& g : gossip->getGossipList()) {
     auto flags = g._gossipFlags;
@@ -5041,7 +5064,7 @@ bool ClusterState::clusterProcessGossipSection(
            node->getPort() != g._gossipPort ||
            node->getCport() != g._gossipCport)) {
         // is it possiable that node is _myself?
-        INVARIANT(node != _myself);
+        INVARIANT_D(node != _myself);
         LOG(WARNING) << "clusterProcessGossipSection node info update,ip:"
                      << g._gossipIp << " port:" << g._gossipPort
                      << " Cport:" << g._gossipCport;
@@ -5698,6 +5721,7 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
   uint32_t maxiterations = wanted * 3;
   while (freshnodes > 0 && gossipcount < wanted && maxiterations--) {
     auto node = getRandomNode();
+    INVARIANT_D(node != nullptr);
 
     /* Don't include this node: the whole packet header is about us
      * already, so we just gossip about other nodes. */
