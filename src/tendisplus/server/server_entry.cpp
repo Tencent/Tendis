@@ -198,6 +198,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(
   new_entry.peerID = sess->getRemote();
   new_entry.id = _slowlogId.load(std::memory_order_relaxed);
   new_entry.duration = duration;
+  new_entry.execTime = execTime;
   new_entry.cname = sess->getName();
   new_entry.unix_time = time / 1000000;
   _slowlogData.push_front(new_entry);

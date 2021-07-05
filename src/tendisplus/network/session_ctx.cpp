@@ -22,7 +22,7 @@ SessionCtx::SessionCtx(Session* sess)
     _waitlockChunk(0),
     _waitlockMode(mgl::LockMode::LOCK_NONE),
     _waitlockKey(""),
-    _readPacketTs(0),
+    _readPacketTs(nsSinceEpoch()),
     _processPacketStart(0),
     _timestamp(TSEP_UNINITED),
     _version(VERSIONEP_UNINITED),
@@ -51,6 +51,7 @@ void SessionCtx::setReadPacketTs(uint64_t ts) {
 }
 
 uint64_t SessionCtx::getReadPacketTs() const {
+  INVARIANT_D(_readPacketTs != 0);
   return _readPacketTs;
 }
 

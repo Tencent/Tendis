@@ -268,7 +268,9 @@ Expected<std::string> Command::runSessionCmd(Session* sess) {
   auto guard = MakeGuard([it, now, sess, commandName] {
     sess->getCtx()->clearRequestCtx();
     auto end = nsSinceEpoch();
-    auto duration = end - sess->getCtx()->getReadPacketTs();
+    auto startTs = sess->getCtx()->getReadPacketTs();
+    INVARIANT_D(startTs > 0);
+    auto duration = end - startTs;
     auto executeTime = end - now;
     it->second->incrNanos(executeTime);
     sess->getServerEntry()->slowlogPushEntryIfNeeded(

@@ -111,7 +111,9 @@ struct SlowlogEntry {
   std::vector<string> argv;
   int argc;
   uint64_t id;        /* Unique entry identifier. */
-  uint64_t duration;  /* Time spent by the query, in microseconds. */
+  uint64_t duration;  // Time spent by the query, in microseconds.(including
+                      //   queue time)
+  uint64_t execTime;  /* Time executed by the query, in microseconds. */
   uint64_t unix_time; /* Unix time at which the query was executed. */
   std::string cname;
   std::string peerID;

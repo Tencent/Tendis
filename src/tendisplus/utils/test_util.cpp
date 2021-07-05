@@ -195,6 +195,30 @@ std::string getBulkValue(const std::string& reply, uint32_t index) {
   return buf;
 }
 
+std::string runCommandFromNetwork(std::shared_ptr<ServerEntry> svr,
+                                  const std::string& cmd) {
+  auto ioCtx = std::make_shared<asio::io_context>();
+
+  std::thread thd([&ioCtx] {
+    asio::io_context::work work(*ioCtx);
+    ioCtx->run();
+  });
+
+  auto cli = std::make_shared<BlockingTcpClient>(ioCtx, 128, 1024 * 1024, 10);
+  Status s = cli->connect(
+    svr->getParams()->bindIp, svr->getParams()->port, std::chrono::seconds(1));
+  EXPECT_TRUE(s.ok());
+  s = cli->writeLine(cmd);
+  EXPECT_TRUE(s.ok());
+  Expected<std::string> exps = cli->readLine(std::chrono::seconds(30));
+  INVARIANT(exps.ok());
+
+  ioCtx->stop();
+  thd.join();
+
+  return exps.value();
+}
+
 std::shared_ptr<ServerEntry> makeServerEntry(
   const std::shared_ptr<ServerParams>& cfg) {
   auto master = std::make_shared<ServerEntry>(cfg);

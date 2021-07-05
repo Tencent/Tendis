@@ -522,6 +522,7 @@ Status NetSession::cancel() {
 // only for test!
 void NetSession::setArgs(const std::vector<std::string>& args) {
   _args = args;
+  _ctx->setReadPacketTs(nsSinceEpoch());
   _ctx->setArgsBrief(args);
 }
 
@@ -774,7 +775,6 @@ void NetSession::drainReqCallback(const std::error_code& ec, size_t actualLen) {
       _reqType = RedisReqMode::REDIS_REQ_INLINE;
     }
   }
-  _ctx->setReadPacketTs(nsSinceEpoch());
   if (_reqType == RedisReqMode::REDIS_REQ_MULTIBULK) {
     processMultibulkBuffer();
   } else if (_reqType == RedisReqMode::REDIS_REQ_INLINE) {
@@ -849,10 +849,10 @@ void NetSession::drainReqNet() {
   // readable-event is set on the fd or this callback will be a deadloop
   // it needs futher tests
   auto self(shared_from_this());
-  uint64_t curr = nsSinceEpoch();
   _sock.async_read_some(
     asio::buffer(_queryBuf.data() + _queryBufPos, wantLen),
-    [this, self, curr](const std::error_code& ec, size_t actualLen) {
+    [this, self](const std::error_code& ec, size_t actualLen) {
+      _ctx->setReadPacketTs(nsSinceEpoch());
       drainReqCallback(ec, actualLen);
     });
 }

@@ -545,7 +545,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   std::stringstream ss;
   Command::fmtMultiBulkLen(ss, 2);
   std::string cursor = getBulkValue(expect.value(), 0);
-  EXPECT_TRUE(tendisplus::stoull(cursor).ok());   // cursor must be an integer
+  EXPECT_TRUE(tendisplus::stoull(cursor).ok());  // cursor must be an integer
   Command::fmtBulk(ss, cursor);
   Command::fmtMultiBulkLen(ss, 10);
   for (int i = 0; i < 10; ++i) {
@@ -603,8 +603,8 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(tendisplus::stoull(cursor).ok());
   EXPECT_EQ(std::to_string(count + 1), cursor);
   Command::fmtBulk(ss, cursor);
-  Command::fmtMultiBulkLen(ss, 2*count);
-  for (size_t i = 0; i < 2*count; ++i) {
+  Command::fmtMultiBulkLen(ss, 2 * count);
+  for (size_t i = 0; i < 2 * count; ++i) {
     std::string tmp;
     tmp.push_back('a' + i);
     Command::fmtBulk(ss, tmp);
@@ -632,7 +632,7 @@ void testScan(std::shared_ptr<ServerEntry> svr) {
   Command::fmtMultiBulkLen(ss, (field_count - count) * 2);
   for (size_t i = 0; i < (field_count - count) * 2; ++i) {
     std::string tmp;
-    tmp.push_back('a' + 2*count + i);
+    tmp.push_back('a' + 2 * count + i);
     Command::fmtBulk(ss, tmp);
   }
   EXPECT_EQ(ss.str(), expect.value());
@@ -1140,7 +1140,7 @@ TEST(Command, slowlog) {
     return;
   }
 
-  char *ptr;
+  char* ptr;
   ptr = fgets(line, sizeof(line) - 1, fp);
   EXPECT_STRCASEEQ(line, "[] config set slowlog-log-slower-than 0 \n");
   ptr = fgets(line, sizeof(line) - 1, fp);
@@ -1287,6 +1287,7 @@ void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
               << "ms when running tendisadmin sleep ";
   });
 
+  // it must be a slowlog
   sess.setArgs({"set", "a", "b"});
   uint32_t now = msSinceEpoch();
   auto expect = Command::runSessionCmd(&sess);
@@ -1294,8 +1295,21 @@ void testTendisadminSleep(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
   uint32_t end = msSinceEpoch();
   EXPECT_TRUE(end - now > (unsigned)(i - 2) * 1000);
+
   thd1.join();
   thd2.join();
+
+  // check the slowlog
+  auto slowlist = svr->getSlowlogStat().getSlowlogData(1);
+  EXPECT_EQ(slowlist.size(), 1);
+  auto s = slowlist.begin();
+  EXPECT_TRUE(s->duration > (unsigned)(i - 2) * 1000 * 1000);
+  EXPECT_TRUE(s->duration < (unsigned)100 * 1000 * 1000);
+  EXPECT_EQ(s->argv[0], "set");
+  EXPECT_EQ(s->argv[1], "a");
+  EXPECT_EQ(s->argv[2], "b");
+  // waiting for key lock
+  EXPECT_TRUE(s->execTime > (unsigned)(i - 2) * 1000 * 1000);
 }
 
 void testDbEmptyCommand(std::shared_ptr<ServerEntry> svr) {
@@ -1369,6 +1383,49 @@ TEST(Command, TendisadminCommand) {
 #endif
 }
 
+TEST(Command, TestSlowLogQueueTime) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  cfg->executorWorkPoolSize = 1;
+  cfg->executorThreadNum = 1;
+  // only one worker thread, make another session waiting in the queue
+  auto server = makeServerEntry(cfg);
+
+  uint64_t time = 10;
+  std::thread thd1([&server, &time]() {
+    std::string t = std::to_string(time);
+    std::string cmd =
+      "*3\r\n$11\r\ntendisadmin\r\n$5\r\nsleep\r\n$2\r\n" + t + "\r\n";
+    uint32_t now = msSinceEpoch();
+    runCommandFromNetwork(server, cmd);
+    uint32_t end = msSinceEpoch();
+    EXPECT_TRUE(end - now > (unsigned)(time - 1) * 1000);
+  });
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::string cmd = "*3\r\n$3\r\nset\r\n$1\r\na\r\n$1\r\nb\r\n";
+  runCommandFromNetwork(server, cmd);
+  thd1.join();
+
+  // check the slowlog
+  auto slowlist = server->getSlowlogStat().getSlowlogData(1);
+  EXPECT_EQ(slowlist.size(), 1);
+  auto s = slowlist.begin();
+  EXPECT_TRUE(s->duration > (unsigned)(time - 3) * 1000 * 1000);
+  EXPECT_TRUE(s->duration < (unsigned)100 * 1000 * 1000);
+  EXPECT_EQ(s->argv[0], "set");
+  EXPECT_EQ(s->argv[1], "a");
+  EXPECT_EQ(s->argv[2], "b");
+  // waiting in queue
+  EXPECT_TRUE(s->execTime < 1000 * 1000);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
 
 void testDelTTLIndex(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext, ioContext2;
@@ -1691,7 +1748,6 @@ TEST(Command, keys) {
     EXPECT_EQ(expect.value(), ss.str());
 }
 */
-
 
 void testCommandArray(std::shared_ptr<ServerEntry> svr,
                       const std::vector<std::vector<std::string>>& arr,
