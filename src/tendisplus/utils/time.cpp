@@ -98,4 +98,14 @@ SCLOCK::time_point getGmtUtcTime() {
   return tp - sys_now + sdy_now;
 }
 
+/* How many milliseconds to the current time */
+uint64_t msToNow(uint64_t ms) {
+  auto now = msSinceEpoch();
+  if (now <= ms) {
+    return 0;
+  }
+
+  return now - ms;
+}
+
 }  // namespace tendisplus
