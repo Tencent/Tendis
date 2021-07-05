@@ -3002,6 +3002,7 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
     _header(std::make_shared<ClusterMsgHeader>(cstate, svr, offset)),
     _msgData(nullptr) {
   if (cstate->getMyselfNode()->nodeIsMaster() && cstate->getMfEnd()) {
+    LOG(INFO) << "Cluster Message with offset " << offset << " when mfend.";
     _mflags |= CLUSTERMSG_FLAG0_PAUSED;
   }
 
@@ -4659,8 +4660,9 @@ ClusterState::clusterLockMySlots() {
     }
   }
   _isCliBlocked.store(true, std::memory_order_relaxed);
-  LOG(INFO) << "finish lock on:" << bitsetStrEncode(slotsDone)
-            << "Lock num:" << lockNum << "time:" << msSinceEpoch();
+  LOG(INFO) << "finish myself lock on:" << bitsetStrEncode(slotsDone)
+            << ", Lock num:" << lockNum
+            << ", take time:" << msSinceEpoch() - locktime << "ms";
   if (lockNum == 0) {
     return {ErrorCodes::ERR_INTERNAL, "no lock finish"};
   }
