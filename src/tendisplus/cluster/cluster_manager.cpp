@@ -1552,18 +1552,18 @@ void ClusterState::setClientUnBlock() {
 }
 
 bool ClusterState::isReplicateDone() const {
-    if (!getMyMaster()) {
-        return false;
-    }
-    return _replicateFinish.load(std::memory_order_relaxed);
+  if (!getMyMaster()) {
+    return false;
+  }
+  return _replicateFinish.load(std::memory_order_relaxed);
 }
 
 void ClusterState::setReplicateState() {
-   _replicateFinish.store(true, std::memory_order_relaxed);
+  _replicateFinish.store(true, std::memory_order_relaxed);
 }
 
 void ClusterState::unsetReplicateState() {
-    _replicateFinish.store(false, std::memory_order_relaxed);
+  _replicateFinish.store(false, std::memory_order_relaxed);
 }
 
 bool ClusterState::isRightReplicate() const {
@@ -1616,11 +1616,23 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
     serverLog(LL_WARNING, "Forced failover user request accepted.");
     setMfStart();
   } else {
+    serverLog(LL_NOTICE, "Manual failover user request accepted.");
     if (!isRightReplicate()) {
       serverLog(LL_WARNING, "slave replication is not right");
       return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
     }
-    serverLog(LL_WARNING, "Manual failover user request accepted.");
+
+    auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
+    auto data_age =
+      msSinceEpoch() - _server->getReplManager()->getLastBinlogTs();
+
+    auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
+
+    if (slavefactor && data_age > nodeTimeout * slavefactor) {
+      LOG(ERROR) << "slave lag too much: " << data_age;
+      return {ErrorCodes::ERR_CLUSTER, "slave lag too much, retry later"};
+    }
+
     uint64_t offset = _server->getReplManager()->replicationGetOffset();
     clusterSendMFStart(_myself->getMaster(), offset);
   }
@@ -1657,18 +1669,27 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
 /* NOTE(wayenchen) if set ignoreRepl as true, setMaster will not replicate
  * data*/
 Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
+  const auto guard = MakeGuard([&] {
+    // set replicate state as false, let cron fix if exist replication error
+    unsetReplicateState();
+  });
+
   Status s;
   {
     std::lock_guard<myMutex> lk(_mutex);
-    if (_myself->getMaster() != node) {
-      auto s = clusterSetMasterNoLock(node, ignoreRepl);
-      if (!s.ok()) {
-        LOG(ERROR) << "set master " << node->getNodeName()
-                   << "as my master failed";
-        return s;
-      }
-      LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
+    if (_myself->getMaster() == node) {
+      return {ErrorCodes::ERR_CLUSTER, "alreay my master"};
     }
+    /* set replicate state on before set salve-maser metadata*/
+    setReplicateState();
+
+    auto s = clusterSetMasterNoLock(node);
+    if (!s.ok()) {
+      LOG(ERROR) << "set master " << node->getNodeName()
+                 << "as my master failed";
+      return s;
+    }
+    LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
     if (isClientBlock()) {
       setClientUnBlock();
       INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
@@ -1690,12 +1711,10 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
       node->getNodeIp(), node->getPort(), false, incrSync);
     if (!s.ok()) {
       LOG(ERROR) << "relication set master fail:" << s.toString();
-      unsetReplicateState();
       return s;
     }
   }
-  // set replicate state as false, let cron fix if exist replication error
-  unsetReplicateState();
+
   LOG(INFO) << "replication set node:" << node->getNodeName()
             << " as my master,"
             << "ip:" << node->getNodeIp() << " port:" << node->getPort()
@@ -1706,8 +1725,9 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-/* NOTE(wayenchen) if ignoreRepl , we will not set replicate after call this funcation*/
-Status ClusterState::clusterSetMasterNoLock(CNodePtr node, bool ignoreRepl) {
+/* NOTE(wayenchen) if ignoreRepl , we will not set replicate after call this
+ * funcation*/
+Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
   INVARIANT(node != _myself);
   INVARIANT(_myself->getSlotNum() == 0);
   INVARIANT(!_myself->nodeIsArbiter());
@@ -1721,13 +1741,9 @@ Status ClusterState::clusterSetMasterNoLock(CNodePtr node, bool ignoreRepl) {
       clusterNodeRemoveSlaveNolock(_myself->getMaster(), _myself);
     }
   }
-  /* set replicate state on before set salve - cluster meta finished */
-  if (!ignoreRepl) {
-      setReplicateState();
-  }
+
   bool s = clusterNodeAddSlaveNolock(node, _myself);
   if (!s) {
-    unsetReplicateState();
     return {ErrorCodes::ERR_CLUSTER, "add slave fail"};
   }
 
@@ -4457,7 +4473,7 @@ void ClusterState::cronCheckFailState() {
 void ClusterState::cronCheckReplicate() {
   bool needFix = _server->getParams()->replicateFixEnable;
   if (!needFix)
-      return;
+    return;
 
   if (!isReplicateDone()) {
     return;
@@ -4719,6 +4735,7 @@ void ClusterManager::controlRoutine() {
       _clusterState->cronCheckReplicate();
     }
 
+    _clusterState->cronCheckFailState();
     std::this_thread::sleep_for(100ms);
   }
 }
@@ -5148,7 +5165,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         setMfMasterOffsetIfNecessary(sender)) {
       _mfMasterOffset = sender->getReplOffset();
       _isMfOffsetReceived.store(true, std::memory_order_relaxed);
-      serverLog(LL_WARNING,
+      serverLog(LL_NOTICE,
                 "Received replication offset for paused "
                 "master manual failover: %lu %lu",
                 sender->getReplOffset(),

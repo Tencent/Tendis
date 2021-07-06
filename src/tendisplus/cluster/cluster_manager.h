@@ -574,7 +574,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool clusterSetNodeAsMaster(CNodePtr node);
   bool clusterSetNodeAsMasterNoLock(CNodePtr node);
   Status clusterSetMaster(CNodePtr node, bool ignoreRepl = false);
-  Status clusterSetMasterNoLock(CNodePtr node, bool ignoreRepl = false);
+  Status clusterSetMasterNoLock(CNodePtr node);
 
   Status clusterSetForMaster(CNodePtr node, CNodePtr node2);
   bool clusterNodeRemoveSlave(CNodePtr master, CNodePtr slave);
