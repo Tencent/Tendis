@@ -648,6 +648,51 @@ bool ReplManager::isSlaveFullSyncDone() {
   return true;
 }
 
+void ReplManager::clearPushStatus() {
+  std::lock_guard<std::mutex> lk(_mutex);
+#if defined(_WIN32) && _MSC_VER > 1900
+  for (size_t i = 0; i < _pushStatus.size(); i++) {
+    for (auto& mpov : _pushStatus[i]) {
+      delete mpov.second;
+    }
+    _pushStatus[i].clear();
+  }
+  for (size_t i = 0; i < _fullPushStatus.size(); i++) {
+    for (auto& mpov : _fullPushStatus[i]) {
+      delete mpov.second;
+    }
+    _fullPushStatus[i].clear();
+  }
+#else
+  for (size_t i = 0; i < _pushStatus.size(); i++) {
+    for (auto& mpov : _pushStatus[i]) {
+      mpov.second.reset();
+    }
+    _pushStatus[i].clear();
+  }
+  for (size_t i = 0; i < _fullPushStatus.size(); i++) {
+    for (auto& mpov : _fullPushStatus[i]) {
+      mpov.second.reset();
+    }
+    _fullPushStatus[i].clear();
+  }
+#endif
+}
+
+// check if fullsync has done
+uint64_t ReplManager::getfullsyncSuccTime() {
+  uint64_t maxSucc = 0;
+  std::lock_guard<std::mutex> lk(_mutex);
+  for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
+    if (_syncMeta[i]->syncFromHost != "") {
+       if (_syncStatus[i]->fullsyncSuccTimes > maxSucc) {
+         maxSucc = _syncStatus[i]->fullsyncSuccTimes;
+       }
+    }
+  }
+  return maxSucc;
+}
+
 void ReplManager::recycleBinlog(uint32_t storeId) {
   SCLOCK::time_point nextSched = SCLOCK::now();
   float randRatio = redis_port::random() % 40 / 100.0 + 0.80;  // 0.80 to 1.20
@@ -1155,6 +1200,10 @@ Status ReplManager::replicationSetMaster(std::string ip,
     if (!s.ok()) {
       return s;
     }
+  }
+  if (incrSync) {
+      // only called when failover incySync, avoid slave send binlog
+      clearPushStatus();
   }
 
   return {ErrorCodes::ERR_OK, ""};
@@ -1751,6 +1800,19 @@ void ReplManager::stop() {
   for (size_t i = 0; i < _fullPushStatus.size(); i++) {
     for (auto& mpov : _fullPushStatus[i]) {
       delete mpov.second;
+    }
+    _fullPushStatus[i].clear();
+  }
+#else
+  for (size_t i = 0; i < _pushStatus.size(); i++) {
+    for (auto& mpov : _pushStatus[i]) {
+      mpov.second.reset();
+    }
+    _pushStatus[i].clear();
+  }
+  for (size_t i = 0; i < _fullPushStatus.size(); i++) {
+    for (auto& mpov : _fullPushStatus[i]) {
+      mpov.second.reset();
     }
     _fullPushStatus[i].clear();
   }

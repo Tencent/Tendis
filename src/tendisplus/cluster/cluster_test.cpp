@@ -3109,6 +3109,105 @@ TEST(Cluster, failoverNeedFullSyncDone) {
   servers.clear();
 }
 
+TEST(Cluster, failoverConfilct) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15200;
+
+  const auto guard = MakeGuard([&nodeNum] {
+    destroyCluster(nodeNum);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, true);
+  // 3 master and 3 slave *, make one master fail
+  auto node1 = servers[0];
+  auto node2 = servers[3];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(node1, ctx1);
+  WorkLoad work1(node1, sess1);
+  work1.init();
+  std::this_thread::sleep_for(3s);
+
+  // EXPECT_EQ(node7->getReplManager()->isSlaveFullSyncDone(), true);
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(node2, ctx2);
+  WorkLoad work2(node2, sess2);
+  work2.init();
+
+  // for support MOVED
+  string srcAddr =
+      node1->getParams()->bindIp + ":" + to_string(node1->getParams()->port);
+  string dstAddr =
+       node2->getParams()->bindIp + ":" + to_string(node2->getParams()->port);
+  work1.addClusterSession(srcAddr, sess1);
+  work1.addClusterSession(dstAddr, sess2);
+  work2.addClusterSession(srcAddr, sess1);
+  work2.addClusterSession(dstAddr, sess2);
+
+  // write data to masterNode
+  uint32_t numData = 30000;
+  for (size_t j = 0; j < numData; ++j) {
+    string key = getUUid(8) + "{11}";
+    string value = getUUid(10);
+    auto ret = work1.getStringResult({"set", key, value});
+    if (j == numData/2) {
+        work2.manualFailover();
+    }
+    EXPECT_EQ(ret, "+OK\r\n");
+  }
+
+  // do croncheckReplicate on slave
+  auto _checkThread = std::make_unique<std::thread>(
+    [](std::shared_ptr<ServerEntry>&& server) {
+      auto state = server->getClusterMgr()->getClusterState();
+      uint32_t retry_time = 5;
+      while (retry_time--) {
+        state->cronCheckReplicate();
+        std::this_thread::sleep_for(1s);
+      }
+    },
+    node1);
+
+  _checkThread->detach();
+  _checkThread.reset();
+  std::this_thread::sleep_for(10s);
+  // expect node2 to be new master
+  auto state = node1->getClusterMgr()->getClusterState();
+  auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
+
+  CNodePtr node2Ptr = state->clusterLookupNode(nodeName2);
+
+  // slave node2 become new master
+  EXPECT_EQ(node2Ptr->nodeIsMaster(), true);
+  ASSERT_TRUE(nodeIsMySlave(node2, node1));
+
+  // the replication should be right
+  std::this_thread::sleep_for(10s);
+  auto masterHost =
+    node2->getClusterMgr()->getClusterState()->getMyselfNode()->getNodeIp();
+  auto masterPort =
+    node2->getClusterMgr()->getClusterState()->getMyselfNode()->getPort();
+  // check all storeid is right
+  auto vecCheck =
+    node1->getReplManager()->checkMasterHost(masterHost, masterPort);
+  EXPECT_EQ(vecCheck.size(), 0);
+
+  // origin master have no fullsync when become slave
+  auto fullSyncTime = node1->getReplManager()->getfullsyncSuccTime();
+  EXPECT_EQ(fullSyncTime, 0);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  servers.clear();
+}
+
+
 TEST(Cluster, failoveCheckBinlogTs) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 15500;

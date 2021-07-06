@@ -771,7 +771,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   uint64_t _lastVoteEpoch;  // Epoch of the last vote granted.
   std::shared_ptr<ServerEntry> _server;
   std::atomic<bool> _blockState;
-  std::atomic<bool> _replicateFinish;
+  // set true if slave is on replicating when slave SetMaster
+  std::atomic<bool> _replicateState;
   std::atomic<uint64_t> _blockTime;
   // Manual failover state in common.
   // Manual failover time limit (ms unixtime).  It is zero if there is no MF in

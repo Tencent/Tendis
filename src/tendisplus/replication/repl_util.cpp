@@ -299,6 +299,9 @@ Expected<BinlogResult> applySingleTxnV2(Session* sess,
       INVARIANT_D(0);
       return {ErrorCodes::ERR_INTERNAL, "It is not a slave"};
     }
+  } else {
+      // migrating chunk.
+      sess->getCtx()->setReplOnly(true);
   }
 
   auto store = std::move(expdb.value().store);

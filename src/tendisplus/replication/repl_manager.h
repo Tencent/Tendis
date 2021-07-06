@@ -237,6 +237,7 @@ class ReplManager {
   StoreMeta& getSyncMeta() const {
     return *_syncMeta[0];
   }
+  uint64_t getfullsyncSuccTime();
 
  protected:
   void controlRoutine();
@@ -276,6 +277,7 @@ class ReplManager {
 
   // truncate binlog in [start, end]
   void recycleBinlog(uint32_t storeId);
+  void clearPushStatus();
 
  private:
   void changeReplState(const StoreMeta& storeMeta, bool persist);

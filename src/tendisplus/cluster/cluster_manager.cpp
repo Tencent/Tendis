@@ -773,7 +773,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _lastVoteEpoch(0),
     _server(server),
     _blockState(false),
-    _replicateFinish(false),
+    _replicateState(false),
     _blockTime(0),
     _mfEnd(0),
     _mfSlave(nullptr),
@@ -1202,6 +1202,7 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
 
   auto node = getNodeBySlot(slot);
   if (!node) {
+      LOG(ERROR) << "slot belong node：" << node->getNodeName() << " not exist";
     return {ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND, ""};
   }
 
@@ -1222,7 +1223,6 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
        << "\r\n";
     return {ErrorCodes::ERR_MOVED, ss.str()};
   }
-
   return node;
 }
 
@@ -1555,15 +1555,15 @@ bool ClusterState::isReplicateDone() const {
   if (!getMyMaster()) {
     return false;
   }
-  return _replicateFinish.load(std::memory_order_relaxed);
+  return !_replicateState.load(std::memory_order_relaxed);
 }
 
 void ClusterState::setReplicateState() {
-  _replicateFinish.store(true, std::memory_order_relaxed);
+  _replicateState.store(true, std::memory_order_relaxed);
 }
 
 void ClusterState::unsetReplicateState() {
-  _replicateFinish.store(false, std::memory_order_relaxed);
+  _replicateState.store(false, std::memory_order_relaxed);
 }
 
 bool ClusterState::isRightReplicate() const {
@@ -1624,7 +1624,7 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
 
     auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
     auto data_age =
-      msSinceEpoch() - _server->getReplManager()->getLastBinlogTs();
+            msToNow(_server->getReplManager()->getLastBinlogTs());
 
     auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
 
@@ -1678,11 +1678,10 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   {
     std::lock_guard<myMutex> lk(_mutex);
     if (_myself->getMaster() == node) {
-      return {ErrorCodes::ERR_CLUSTER, "alreay my master"};
+      return {ErrorCodes::ERR_CLUSTER, "already my master"};
     }
     /* set replicate state on before set salve-maser metadata*/
     setReplicateState();
-
     auto s = clusterSetMasterNoLock(node);
     if (!s.ok()) {
       LOG(ERROR) << "set master " << node->getNodeName()
@@ -2246,13 +2245,13 @@ void ClusterState::manualFailoverCheckTimeout() {
     std::lock_guard<myMutex> lk(_mutex);
     if (_mfEnd && _mfEnd < msSinceEpoch()) {
       serverLog(LL_WARNING, "Manual failover timed out.");
-      resetManualFailoverNoLock();
 
       if (_mfCanStart && _myself->getMaster()) {
         delFakeTask = true;
         masterIp = _myself->getMaster()->getNodeIp();
         masterPort = _myself->getMaster()->getPort();
       }
+      resetManualFailoverNoLock();
     }
   }
   if (delFakeTask) {
@@ -2794,6 +2793,8 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     LOG(ERROR) << "replace master meta update fail" << s.toString();
     return s;
   }
+
+  LOG(INFO) << "cluster set myself master success";
   /* Pong all the other nodes so that they can update the state
    *    accordingly and detect that we switched to master role. */
   /* Set the replication offset. */
@@ -2866,7 +2867,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Set data_age to the number of seconds we are disconnected from
    * the master. */
-  data_age = msSinceEpoch() - _server->getReplManager()->getLastBinlogTs();
+  data_age =  msToNow(_server->getReplManager()->getLastBinlogTs());
   INVARIANT_D(data_age > 0);
 
   /* Remove the node timeout from the data age as it is fine that we are
@@ -2958,6 +2959,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Return ASAP if the election is too old to be valid. */
   if (auth_age > auth_timeout) {
+    LOG(ERROR) << "election is too old to be valid, auth_age:" << auth_age;
     clusterLogCantFailover(CLUSTER_CANT_FAILOVER_EXPIRED);
     return {ErrorCodes::ERR_CLUSTER, ""};
   }
@@ -2998,7 +3000,6 @@ Status ClusterState::clusterHandleSlaveFailover() {
     return {ErrorCodes::ERR_CLUSTER, ""};
   }
 }
-
 
 /* Clear the migrating / importing state for all the slots.
  * This is useful at initialization and when turning a master into slave. */
