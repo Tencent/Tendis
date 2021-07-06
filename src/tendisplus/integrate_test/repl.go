@@ -28,6 +28,7 @@ var (
 	listcount = flag.Int("listcount", 100, "list count")
 	hashcount = flag.Int("hashcount", 100, "hash count")
 	kvcount   = flag.Int("kvcount", 100000, "kv count")
+	scriptcount  = flag.Int("scriptcount", 100000, "script count")
 	threadnum = flag.Int("threadnum", 4, "thd count")
 	loadsecs  = flag.Int("loadsecs", 20, "seconds for loading data")
 )
@@ -40,6 +41,7 @@ const (
 	ZSET
 	LIST
 	HASH
+	SCRIPT
 )
 
 type Record struct {
@@ -49,7 +51,7 @@ type Record struct {
 }
 
 func getRandomType() TendisType {
-	typelist := []TendisType{KV, SET, ZSET}
+	typelist := []TendisType{KV, SET, ZSET, SCRIPT}
 	return typelist[rand.Int()%len(typelist)]
 }
 
@@ -99,6 +101,17 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 					if err != nil {
 						log.Fatalf("do zadd %s %s failed:%v,%d", pk, sk, err)
 					}
+					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
+				} else if tp == SCRIPT {
+					suffix := rand.Int() % (*scriptcount)
+					pk := fmt.Sprintf("\"return KEYS[%d]\"", suffix)
+					sk, err := cli.Cmd("script", "load", pk).Str()
+					if err != nil {
+						log.Fatalf("load script error:%v", err)
+					} else if len(sk) != 40 {
+						log.Fatalf("script sha code has wrong size")
+					}
+					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
 				}
 			}
 		}(i)
@@ -188,6 +201,26 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 			}
 			if r != r1 {
 				log.Fatalf("zscore:%s,%s not match", o.Pk, o.Sk)
+			}
+		} else if o.Type == SCRIPT {
+			r, err := cli2.Cmd("script", "exists", o.Sk).Array()
+			if err != nil {
+				log.Fatalf("do script exists on slave failed:%v", err)
+			}
+			r0, err := r[0].Int()
+			if err != nil {
+				log.Fatalf("do script exists on slave failed:%v", err)
+			}
+			r1, err := cli1.Cmd("script", "exists", o.Sk).Array()
+			if err != nil {
+				log.Fatalf("do script exists on master failed:%v", err)
+			}
+			r10, err := r1[0].Int()
+			if err != nil {
+				log.Fatalf("do script exists on master failed:%v", err)
+			}
+			if r0 != r10 {
+				log.Fatalf("script:%s,%s not match", o.Pk, o.Sk)
 			}
 		}
 	}

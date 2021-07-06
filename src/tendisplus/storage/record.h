@@ -19,6 +19,7 @@
 
 namespace tendisplus {
 
+const uint32_t LUASCRIPT_CHUNKID = 0XFFFD0000U;
 const uint32_t VERSIONMETA_CHUNKID = 0XFFFE0000U;
 const uint32_t ADMINCMD_CHUNKID = 0XFFFE0001U;
 const uint32_t TTLINDEX_CHUNKID = 0XFFFF0000U;
@@ -27,6 +28,7 @@ const uint32_t REPLLOGKEYV2_META_CHUNKID = 0XFFFFFE01U;
 const uint32_t REPLLOGKEY_CHUNKID = 0XFFFFFF00U;
 const uint32_t REPLLOGKEYV2_CHUNKID = 0XFFFFFF01U;
 
+const uint32_t LUASCRIPT_DBID = 0XFFFD0000U;
 const uint32_t VERSIONMETA_DBID = 0XFFFE0000U;
 const uint32_t ADMINCMD_DBID = 0XFFFE0001U;
 const uint32_t TTLINDEX_DBID = 0XFFFF0000U;
@@ -830,6 +832,47 @@ class VersionMeta {
   std::string _name;
   static constexpr uint32_t DBID = VERSIONMETA_DBID;
   static constexpr uint32_t CHUNKID = VERSIONMETA_CHUNKID;
+};
+
+class LuaScript {
+ public:
+  LuaScript() = default;
+  LuaScript(const LuaScript&) = default;
+  LuaScript(LuaScript&&) = default;
+  LuaScript(const std::string& sha, const std::string& script)
+    : _sha(sha), _script(script) {}
+
+  void setSha(const std::string& sha) {
+    _sha = sha;
+  }
+
+  void setScript(const std::string& script) {
+    _script = script;
+  }
+
+  std::string getSha() const {
+    return _sha;
+  }
+
+  std::string getScript() const {
+    return _script;
+  }
+
+  LuaScript& operator=(const LuaScript& other) {
+    if (this != &other) {
+      _sha = other.getSha();
+      _script = other.getScript();
+    }
+    return *this;
+  }
+
+ public:
+  static constexpr uint32_t CHUNKID = LUASCRIPT_CHUNKID;
+  static constexpr uint32_t DBID = LUASCRIPT_DBID;
+
+ private:
+  std::string _sha;
+  std::string _script;
 };
 
 namespace rcd_util {

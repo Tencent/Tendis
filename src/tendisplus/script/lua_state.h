@@ -33,6 +33,7 @@ class LuaState {
     return _id;
   }
   Expected<std::string> evalCommand(Session* sess);
+  Expected<std::string> evalShaCommand(Session* sess);
   Expected<std::string> evalGenericCommand(Session *sess, int evalsha);
   void LuaClose();
   bool luaWriteDirty() {
@@ -50,6 +51,7 @@ class LuaState {
   bool isRunning() {
     return running;
   }
+  static std::string getShaEncode(const std::string& script);
 
  private:
   void updateFakeClient();

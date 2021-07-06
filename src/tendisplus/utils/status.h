@@ -63,6 +63,7 @@ enum class ErrorCodes {
   ERR_CLUSTER_REDIR_DOWN_STATE,
   ERR_CLUSTER_REDIR_DOWN_UNBOUND,
   ERR_LUA,
+  ERR_LUA_NOSCRIPT,
 };
 
 class Status {
