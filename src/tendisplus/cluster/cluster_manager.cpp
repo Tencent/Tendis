@@ -773,6 +773,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _lastVoteEpoch(0),
     _server(server),
     _blockState(false),
+    _replicateFinish(false),
     _blockTime(0),
     _mfEnd(0),
     _mfSlave(nullptr),
@@ -1550,6 +1551,21 @@ void ClusterState::setClientUnBlock() {
   _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
+bool ClusterState::isReplicateDone() const {
+    if (!getMyMaster()) {
+        return false;
+    }
+    return _replicateFinish.load(std::memory_order_relaxed);
+}
+
+void ClusterState::setReplicateState() {
+   _replicateFinish.store(true, std::memory_order_relaxed);
+}
+
+void ClusterState::unsetReplicateState() {
+    _replicateFinish.store(false, std::memory_order_relaxed);
+}
+
 bool ClusterState::isRightReplicate() const {
   if (!getMyMaster()) {
     return false;
@@ -1645,7 +1661,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   {
     std::lock_guard<myMutex> lk(_mutex);
     if (_myself->getMaster() != node) {
-      auto s = clusterSetMasterNoLock(node);
+      auto s = clusterSetMasterNoLock(node, ignoreRepl);
       if (!s.ok()) {
         LOG(ERROR) << "set master " << node->getNodeName()
                    << "as my master failed";
@@ -1659,6 +1675,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
+
   if (!ignoreRepl) {
     bool incrSync = false;
     {
@@ -1673,9 +1690,12 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
       node->getNodeIp(), node->getPort(), false, incrSync);
     if (!s.ok()) {
       LOG(ERROR) << "relication set master fail:" << s.toString();
+      unsetReplicateState();
       return s;
     }
   }
+  // set replicate state as false, let cron fix if exist replication error
+  unsetReplicateState();
   LOG(INFO) << "replication set node:" << node->getNodeName()
             << " as my master,"
             << "ip:" << node->getNodeIp() << " port:" << node->getPort()
@@ -1686,7 +1706,8 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
+/* NOTE(wayenchen) if ignoreRepl , we will not set replicate after call this funcation*/
+Status ClusterState::clusterSetMasterNoLock(CNodePtr node, bool ignoreRepl) {
   INVARIANT(node != _myself);
   INVARIANT(_myself->getSlotNum() == 0);
   INVARIANT(!_myself->nodeIsArbiter());
@@ -1700,10 +1721,16 @@ Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
       clusterNodeRemoveSlaveNolock(_myself->getMaster(), _myself);
     }
   }
+  /* set replicate state on before set salve - cluster meta finished */
+  if (!ignoreRepl) {
+      setReplicateState();
+  }
   bool s = clusterNodeAddSlaveNolock(node, _myself);
   if (!s) {
+    unsetReplicateState();
     return {ErrorCodes::ERR_CLUSTER, "add slave fail"};
   }
+
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -4428,7 +4455,11 @@ void ClusterState::cronCheckFailState() {
 
 
 void ClusterState::cronCheckReplicate() {
-  if (!getMyMaster()) {
+  bool needFix = _server->getParams()->replicateFixEnable;
+  if (!needFix)
+      return;
+
+  if (!isReplicateDone()) {
     return;
   }
 
@@ -4687,8 +4718,6 @@ void ClusterManager::controlRoutine() {
       _clusterState->cronPingSomeNodes();
       _clusterState->cronCheckReplicate();
     }
-
-    _clusterState->cronCheckFailState();
 
     std::this_thread::sleep_for(100ms);
   }

@@ -453,6 +453,7 @@ class ServerParams {
   bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;
+  bool replicateFixEnable = true;
   uint32_t forceRecovery = 0;
 
   uint32_t aofPsyncNum = 500;
