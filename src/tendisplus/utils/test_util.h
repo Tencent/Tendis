@@ -141,9 +141,11 @@ class WorkLoad {
   bool manualFailover();
   void lockDb(mstime_t locktime);
   void sleep(mstime_t locktime);
-  void stopMigrate(const std::string& taskid);
+  void stopMigrate(const std::string& taskid, bool stopMyself = false);
   void stopAllMigTasks();
   void restartAllMigTasks();
+  std::string getWaitingJobs();
+
   void setMaxKeyLen(uint32_t max_key_len);
   Expected<uint64_t> getIntResult(const std::vector<std::string>& args);
   std::string getStringResult(const std::vector<std::string>& args);

@@ -307,7 +307,8 @@ Status ChunkMigrateSender::sendSnapshot() {
       _snapshotKeyNum.fetch_add(sendNum, std::memory_order_relaxed);
       if (!ret.ok()) {
         LOG(ERROR) << "sendRange failed, slot:" << i
-                   << "send keys num:" << getSnapshotNum();
+                   << "send keys num:" << getSnapshotNum()
+                   << ret.status().toString();
         return ret.status();
       }
     }

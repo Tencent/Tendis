@@ -173,7 +173,6 @@ Status MigrateManager::stopStoreTask(uint32_t storeid) {
 Status MigrateManager::stopSrcNode(const std::string& taskid,
                                    const std::string& srcIp,
                                    uint64_t port) {
-  // auto node =_cluster->clusterLookupNode(nodeid);
   LOG(INFO) << "send stop command to srcNode:" << srcIp << ":" << port
             << "on taskid:" << taskid;
   std::string srcHost = srcIp;
@@ -188,6 +187,7 @@ Status MigrateManager::stopSrcNode(const std::string& taskid,
   }
   std::stringstream ss;
   std::vector<std::string> vec = {"cluster", "setslot", "stop", taskid};
+
   Command::fmtMultiBulkLen(ss, vec.size());
   for (auto& arg : vec) {
     Command::fmtBulk(ss, arg);
@@ -215,8 +215,10 @@ Status MigrateManager::stopSrcNode(const std::string& taskid,
 
   return {ErrorCodes::ERR_OK, ""};
 }
-/* stop the tasks which have the father taskid */
-Status MigrateManager::stopTasks(const std::string& taskid) {
+
+/* NOTE(wayenchen) stop the tasks which have the father taskid,
+ * if noStopSrc, receiver will not send stop command to src Node*/
+Status MigrateManager::stopTasks(const std::string& taskid, bool noStopSrc) {
   bool find = false;
   // std::string srcNodeid;
   std::string srcHost;
@@ -238,13 +240,14 @@ Status MigrateManager::stopTasks(const std::string& taskid) {
     }
   }
 
-  if (find) {
+  if (find && !noStopSrc) {
     // send stop command to srcNode
     auto s = stopSrcNode(taskid, srcHost, port);
     if (!s.ok()) {
       LOG(ERROR) << "stop srcNode taskid:" << taskid << "fail" << s.toString();
       return s;
     }
+    LOG(INFO) << "stop srcNode taskid:" << taskid << "succ";
   }
 
   return {ErrorCodes::ERR_OK, ""};
@@ -418,7 +421,6 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
           }
         }
       }
-
 
       continue;
     } else if (taskPtr->_state == MigrateSendState::HALF) {
@@ -686,7 +688,8 @@ Status MigrateManager::migrating(const SlotsBitmap& slots,
 // judge if largeMap contain all slots in smallMap
 bool MigrateManager::containSlot(const SlotsBitmap& smallMap,
                                  const SlotsBitmap& largeMap) {
-  if (smallMap.size() != largeMap.size()) {
+  if (smallMap.size() != largeMap.size() ||
+      smallMap.count() > largeMap.count()) {
     return false;
   }
   size_t idx = 0;
@@ -742,8 +745,10 @@ bool MigrateManager::checkSlotOK(const SlotsBitmap& bitMap,
     }
     idx++;
   }
+
   return true;
 }
+
 
 /* son taskid  */
 std::string MigrateManager::genTaskid() {
@@ -769,25 +774,23 @@ uint64_t MigrateManager::getTaskNum(const std::string& pTaskid,
   std::lock_guard<myMutex> lk(_mutex);
   uint64_t taskNum = 0;
   /* can not both forbidden wait and running */
-  if (!noWait && !noRunning) {
+  if (noWait && noRunning) {
+    LOG(ERROR) << "can not both forbidden wait and running task";
     return 0;
   }
   for (auto it = _migrateReceiveTaskMap.begin();
        it != _migrateReceiveTaskMap.end();
        it++) {
     if (it->first.find(pTaskid) != string::npos) {
+      // get receiver waiting task num
       if (it->second->_receiver->getTaskStartTime() == 0) {
-        // get waiting task num
-        if (!noWait && noRunning) {
+        if (!noWait) {
           taskNum++;
-          continue;
-        } else if (noWait && !noRunning) {
-          continue;
         }
-      }
-      // get running task num
-      if (!noRunning) {
-        taskNum++;
+      } else {
+        if (!noRunning) {
+          taskNum++;
+        }
       }
     }
   }
@@ -795,50 +798,18 @@ uint64_t MigrateManager::getTaskNum(const std::string& pTaskid,
   for (auto it = _migrateSendTaskMap.begin(); it != _migrateSendTaskMap.end();
        it++) {
     if (it->first.find(pTaskid) != string::npos) {
+      // get sender waiting task num
       if (it->second->_state == MigrateSendState::WAIT) {
-        if (!noWait && noRunning) {
+        if (!noWait) {
           taskNum++;
-          continue;
-        } else if (noWait && !noRunning) {
-          continue;
+        }
+      } else {
+        if (!noRunning) {
+          taskNum++;
         }
       }
-      if (!noRunning) {
-        taskNum++;
-      }
     }
   }
-  return taskNum;
-}
-
-uint64_t MigrateManager::getWaitTaskNum(const std::string& pTaskid) {
-  std::lock_guard<myMutex> lk(_mutex);
-  uint64_t taskNum = 0;
-  for (auto it = _migrateReceiveTaskMap.begin();
-       it != _migrateReceiveTaskMap.end();) {
-    if (it->first.find(pTaskid) != string::npos) {
-      if (it->second->_receiver->getTaskStartTime() == 0) {
-        taskNum++;
-        LOG(INFO) << "receiver wait tasknum is:" << taskNum;
-        it++;
-        continue;
-      }
-    }
-    it++;
-  }
-  for (auto it = _migrateSendTaskMap.begin();
-       it != _migrateSendTaskMap.end();) {
-    if (it->first.find(pTaskid) != string::npos) {
-      if (it->second->_state == MigrateSendState::WAIT) {
-        taskNum++;
-        LOG(INFO) << "sender wait tasknum is:" << taskNum;
-        it++;
-        continue;
-      }
-    }
-    it++;
-  }
-  LOG(INFO) << "wait task num is " << taskNum;
   return taskNum;
 }
 
@@ -955,6 +926,7 @@ void MigrateManager::dstPrepareMigrate(asio::ip::tcp::socket sock,
 
   bool startMigate = true;
   uint32_t taskSize = _svr->getParams()->migrateTaskSlotsLimit;
+  LOG(INFO) << "sender task size is :" << taskSize;
   writer.Key("taskinfo");
   writer.StartArray();
 
@@ -1287,15 +1259,30 @@ void MigrateReceiveTask::fullReceive() {
   // 2) require a blocking-clients
   LOG(INFO) << "full receive remote_addr(" << _srcIp << ":" << _srcPort
             << ") on slots:" << bitsetStrEncode(_slots);
+
+  bool srcNodeFail = false;
+  auto retryCnt = _svr->getParams()->snapShotRetryCnt;
   std::shared_ptr<BlockingTcpClient> client =
     std::move(createClient(_srcIp, _srcPort, _svr));
 
+  /* NOTE(wayenchen) if src node is not fail but connect fail,
+   * retry again to create client */
   if (client == nullptr) {
-    LOG(ERROR) << "fullReceive with: " << _srcIp << ":" << _srcPort
-               << " failed, no valid client";
-    _nextSchedTime = SCLOCK::now();
+    srcNodeFail = _svr->getClusterMgr()->getClusterState()->clusterNodeFailed(
+      _pTask->_nodeid);
+    if (!srcNodeFail && getRetryCount() <= retryCnt && _receiver->isRunning()) {
+      _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(1000);
+      _retryTime.fetch_add(1, memory_order_relaxed);
+      LOG(ERROR) << "receiver connect fail, need retry, slots:"
+                 << bitsetStrEncode(_slots) << " taskid:" << _taskid;
+    } else {
+      LOG(ERROR) << "fullReceive with: " << _srcIp << ":" << _srcPort
+                 << "taskid:" << _taskid << " failed, no valid client";
+      _nextSchedTime = SCLOCK::now();
+      _state = MigrateReceiveState::ERR;
+    }
     _isRunning = false;
-    _state = MigrateReceiveState::ERR;
+    _receiver->stop();
     return;
   }
   _receiver->setClient(client);
@@ -1309,13 +1296,15 @@ void MigrateReceiveTask::fullReceive() {
   auto expdb =
     _svr->getSegmentMgr()->getDb(nullptr, storeid, mgl::LockMode::LOCK_IX);
   if (!expdb.ok()) {
-    LOG(ERROR) << "get store:" << storeid
-               << " failed: " << expdb.status().toString();
+    LOG(ERROR) << "get db failed: " << expdb.status().toString()
+               << " taskid:" << _taskid << "slots:" << bitsetStrEncode(_slots);
     _nextSchedTime = SCLOCK::now();
     _isRunning = false;
     _state = MigrateReceiveState::ERR;
+    _receiver->stop();
     return;
   }
+
   _receiver->setDbWithLock(
     std::make_unique<DbWithLock>(std::move(expdb.value())));
 
@@ -1325,10 +1314,9 @@ void MigrateReceiveTask::fullReceive() {
     /*NOTE(wayenchen) if srcNode not Fail
     and my receiver snapshot key num is zero,
     retry for three times*/
-    bool srcNodeFail =
-      _svr->getClusterMgr()->getClusterState()->clusterNodeFailed(
-        _pTask->_nodeid);
-    auto retryCnt = _svr->getParams()->snapShotRetryCnt;
+    srcNodeFail = _svr->getClusterMgr()->getClusterState()->clusterNodeFailed(
+      _pTask->_nodeid);
+
     if (_receiver->getSnapshotNum() == 0 && !srcNodeFail &&
         getRetryCount() <= retryCnt && _receiver->isRunning() &&
         s.code() != ErrorCodes::ERR_MIGRATE) {
@@ -1558,8 +1546,19 @@ SlotsBitmap MigrateManager::getSteadySlots(const SlotsBitmap& slots) {
   return tempSlots;
 }
 
-Expected<std::string> MigrateManager::getMigrateInfo() {
+void MigrateManager::cleanMigrateInfo() {
   std::lock_guard<myMutex> lk(_mutex);
+  _succMigrateSlots.reset();
+  _failMigrateSlots.reset();
+}
+
+void MigrateManager::cleanImportInfo() {
+  std::lock_guard<myMutex> lk(_mutex);
+  _succImportSlots.reset();
+  _failImportSlots.reset();
+}
+
+Expected<std::string> MigrateManager::getMigrateInfo() {
   std::stringstream ss;
   auto commandLen = 0;
   uint16_t isMigrating = (_migrateSlots.count() || _succMigrateSlots.count() ||

@@ -156,6 +156,7 @@ class MigrateReceiveTask {
   std::shared_ptr<pTask> _pTask;
   mutable std::mutex _mutex;
   std::atomic<uint32_t> _retryTime;
+  std::atomic<uint32_t> _reConnectTime;
   void stopTask();
   void checkMigrateStatus();
   void fullReceive();
@@ -174,8 +175,9 @@ class MigrateManager {
   Status stopStoreTask(uint32_t storid);
   void stop();
 
-  Status stopTasks(const std::string& taskid);
+  Status stopTasks(const std::string& taskid, bool noStopSrc = false);
   Status stopAllTasks(bool saveSlots = true);
+
   // sender POV
   bool senderSchedule(const SCLOCK::time_point& now);
 
@@ -237,7 +239,6 @@ class MigrateManager {
   Expected<std::string> getMigrateInfo();
   Expected<std::string> getTaskInfo(bool noWait = true, bool noRunning = false);
   Expected<std::string> getSuccFailInfo(bool succ = false);
-  uint64_t getWaitTaskNum(const std::string& pTaskid);
   Expected<std::string> getTaskInfo(const std::string& taskid,
                                     bool noWait = true,
                                     bool noRunning = false);
@@ -269,13 +270,18 @@ class MigrateManager {
   std::string genPTaskid();
   uint64_t getAllTaskNum();
   uint64_t getTaskNum(const std::string& taskid,
-                      bool noWait = false,
+                      bool noWait = true,
                       bool noRunning = false);
 
   void removeRestartSlots(const std::string& nodeid, const SlotsBitmap& slots);
   std::map<std::string, SlotsBitmap> getStopMap();
   bool existMigrateTask();
   bool existPtask(const std::string& taskid);
+  Status stopSrcNode(const std::string& taskid,
+                     const std::string& srcIp,
+                     uint64_t port);
+  void cleanMigrateInfo();
+  void cleanImportInfo();
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
@@ -285,10 +291,6 @@ class MigrateManager {
                    const std::string& nodeid,
                    std::vector<uint32_t>* taskSlots);
   std::string genTaskid();
-  // Status stopSrcNode(const std::string& nodeid, const std::string& taskid);
-  Status stopSrcNode(const std::string& taskid,
-                     const std::string& srcIp,
-                     uint64_t port);
 
  private:
   const std::shared_ptr<ServerParams> _cfg;

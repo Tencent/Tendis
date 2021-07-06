@@ -688,8 +688,12 @@ bool WorkLoad::manualFailover() {
   return false;
 }
 
-void WorkLoad::stopMigrate(const std::string& taskid) {
-  _session->setArgs({"cluster", "setslot", "stop", taskid});
+void WorkLoad::stopMigrate(const std::string& taskid, bool stopMyself) {
+  if (!stopMyself) {
+      _session->setArgs({"cluster", "setslot", "stop", taskid});
+  } else {
+      _session->setArgs({"cluster", "setslot", "stopme", taskid});
+  }
   auto expect = Command::runSessionCmd(_session.get());
   EXPECT_TRUE(expect.ok());
 }
@@ -704,6 +708,13 @@ void WorkLoad::restartAllMigTasks() {
   _session->setArgs({"cluster", "setslot", "restartall"});
   auto expect = Command::runSessionCmd(_session.get());
   EXPECT_TRUE(expect.ok());
+}
+
+std::string WorkLoad::getWaitingJobs() {
+    _session->setArgs({"cluster", "setslot", "taskinfo", "waiting"});
+    auto expect = Command::runSessionCmd(_session.get());
+    EXPECT_TRUE(expect.ok());
+    return  expect.value();
 }
 
 int genRand() {
