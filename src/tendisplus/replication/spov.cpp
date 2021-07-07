@@ -350,6 +350,17 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   }();
 
   if (!reconn) {
+    /* No need to reconnect, if replState isn't REPL_CONNECTED(such as REPL_ERR),
+     * change replState to be REPL_CONNECTED.
+     */
+    if (metaSnapshot.replState != ReplState::REPL_CONNECTED) {
+      auto newMeta = metaSnapshot.copy();
+      newMeta->replState = ReplState::REPL_CONNECTED;
+      newMeta->replErr = "";
+      changeReplState(*newMeta, false);
+      LOG(INFO) << "store:" << metaSnapshot.id
+                << " change replState to REPL_CONNECTED";
+    }
     return;
   }
 

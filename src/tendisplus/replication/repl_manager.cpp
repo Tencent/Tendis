@@ -211,13 +211,7 @@ Status ReplManager::startup() {
     }
 
     _syncStatus.emplace_back(std::unique_ptr<SPovStatus>(new SPovStatus{
-      false,
-      std::numeric_limits<uint64_t>::max(),
-      tp,
-      tp,
-      0,
-      0
-    }));
+      false, std::numeric_limits<uint64_t>::max(), tp, tp, 0, 0}));
 
     // NOTE(vinchen): if the mode == STORE_NONE, _pushStatus would do
     // nothing, more detailed in ReplManager::registerIncrSync()
@@ -1077,8 +1071,7 @@ Status ReplManager::changeReplSourceInLock(uint32_t storeId,
     }
     LOG(INFO) << "change store:" << storeId << " syncSrc from no one to "
               << newMeta->syncFromHost << ":" << newMeta->syncFromPort << ":"
-              << newMeta->syncFromId
-              << " incrSync:" << incrSync
+              << newMeta->syncFromId << " incrSync:" << incrSync
               << " replState:" << static_cast<int>(newMeta->replState)
               << " binlogId:" << newMeta->binlogId;
     changeReplStateInLock(*newMeta, true);
@@ -1157,8 +1150,8 @@ Status ReplManager::replicationSetMaster(std::string ip,
   INVARIANT_D(expdbList.size() == _svr->getKVStoreCount());
 
   for (uint32_t i = 0; i < _svr->getKVStoreCount(); ++i) {
-    Status s = changeReplSourceInLock(
-      i, ip, port, i, checkEmpty, false, incrSync);
+    Status s =
+      changeReplSourceInLock(i, ip, port, i, checkEmpty, false, incrSync);
     if (!s.ok()) {
       return s;
     }
@@ -1312,8 +1305,7 @@ std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
        << "min=" << _logRecycStatus[i]->firstBinlogId
        << ",save=" << _logRecycStatus[i]->saveBinlogId
        << ",BLWM=" << kvstore->getHighestBinlogId()
-       << ",BHWM=" << kvstore->getNextBinlogSeq()
-       << ",remain="
+       << ",BHWM=" << kvstore->getNextBinlogSeq() << ",remain="
        << kvstore->getHighestBinlogId() - _logRecycStatus[i]->firstBinlogId
        << "\r\n";
   }
@@ -1352,7 +1344,6 @@ std::vector<uint32_t> ReplManager::checkMasterHost(const std::string& hostname,
       LOG(ERROR) << "replication meta is not right on store :" << i;
     }
   }
-
   return errList;
 }
 
@@ -1521,12 +1512,15 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
     }
   }
   master_last_io_seconds_ago = sinceEpoch() - sinceEpoch(minlastSyncTime);
+  auto minBinlogTs = getLastBinlogTs();
   ss << "role:" << role << "\r\n";
   if (role == "slave") {
     ss << "master_host:" << master_host << "\r\n";
     ss << "master_port:" << master_port << "\r\n";
     ss << "master_link_status:" << master_link_status << "\r\n";
     ss << "master_last_io_seconds_ago:" << master_last_io_seconds_ago << "\r\n";
+    ss << "master_last_binlog_seconds_ago:" << msToNow(minBinlogTs) / 1000
+       << "\r\n";
     ss << "master_sync_in_progress:" << master_sync_in_progress << "\r\n";
     ss << "slave_repl_offset:" << slave_repl_offset << "\r\n";
     if (master_sync_in_progress == 1) {
@@ -1620,7 +1614,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
       ss << ",fullsync_succ_times=" << _syncStatus[i]->fullsyncSuccTimes;
       ss << ",binlog_pos=" << _syncMeta[i]->binlogId;
       // lag in seconds
-      ss << ",lag=" << (msSinceEpoch() - _syncStatus[i]->lastBinlogTs) / 1000;
+      ss << ",lag=" << msToNow(_syncStatus[i]->lastBinlogTs) / 1000;
       if (_syncMeta[i]->replState == ReplState::REPL_ERR) {
         ss << ",error=" << _syncMeta[i]->replErr;
       }
@@ -1646,7 +1640,7 @@ void ReplManager::getReplInfoDetail(std::stringstream& ss) const {
          << "online";  // TODO(vinchen)
       ss << ",binlog_pos=" << iter->second->binlogPos;
       // lag in seconds
-      ss << ",lag=" << (msSinceEpoch() - iter->second->binlogTs) / 1000;
+      ss << ",lag=" << msToNow(iter->second->binlogTs) / 1000;
       ss << ",binlog_lag=" << highestBinlogid - iter->second->binlogPos;
       ss << "\r\n";
     }
