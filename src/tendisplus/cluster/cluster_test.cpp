@@ -60,7 +60,7 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->rocksBlockcacheMB = 24;
   cfg1->clusterSingleNode = singleNode;
   cfg1->enableGcInMigate = true;
-
+  cfg1->binlogDelRange = 1;
 #ifdef _WIN32
   cfg1->executorThreadNum = 1;
   cfg1->netIoThreadNum = 1;

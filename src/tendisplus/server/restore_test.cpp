@@ -417,6 +417,8 @@ makeRestoreEnv(uint32_t storeCnt) {
   cfg2->maxBinlogKeepNum = 1;
   cfg1->minBinlogKeepSec = 0;
   cfg2->minBinlogKeepSec = 0;
+  cfg1->binlogDelRange = 1;
+  cfg2->binlogDelRange = 1;
 
   auto master1 = std::make_shared<ServerEntry>(cfg1);
   auto s = master1->startup(cfg1);
@@ -534,10 +536,13 @@ std::vector<std::shared_ptr<ServerEntry>> makeRestoreEnv2(uint32_t storeCnt) {
   auto cfg2 = makeServerParam(master2_port, storeCnt, master2_dir, false);
   auto cfg3 = makeServerParam(slave1_port, storeCnt, slave1_dir, false);
   cfg1->minBinlogKeepSec = 60;
+  cfg1->binlogDelRange = 1;
   cfg2->maxBinlogKeepNum = 1;
   cfg2->minBinlogKeepSec = 0;
+  cfg2->binlogDelRange = 1;
   cfg3->maxBinlogKeepNum = 1;
   cfg3->minBinlogKeepSec = 0;
+  cfg3->binlogDelRange = 1;
   cfg3->slaveBinlogKeepNum = 1;
 
   auto master1 = std::make_shared<ServerEntry>(cfg1);
