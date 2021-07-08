@@ -2678,11 +2678,11 @@ class BitFieldCommand : public Command {
 
         if (op.sign) {
           int64_t val = getSignedBitfield(
-            std::string(buf.begin(), buf.end()), op.offset, op.bits);
+            std::string(buf.begin(), buf.end()), op.offset-(byte*8), op.bits);
           Command::fmtLongLong(ss, val);
         } else {
           uint64_t val = getUnsignedBitfield(
-            std::string(buf.begin(), buf.end()), op.offset, op.bits);
+            std::string(buf.begin(), buf.end()), op.offset-(byte*8), op.bits);
           Command::fmtLongLong(ss, val);
         }
       }
