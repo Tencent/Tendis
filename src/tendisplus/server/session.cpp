@@ -268,8 +268,12 @@ Status LocalSession::setResponse(const std::string& s) {
 
 LocalSessionGuard::LocalSessionGuard(ServerEntry* svr, Session* sess) {
   _sess = std::make_shared<LocalSession>(svr);
-  if (sess && sess->getCtx()->authed()) {
-    _sess->getCtx()->setAuthed();
+  if (sess) {
+    if (sess->getCtx()->authed()) {
+      _sess->getCtx()->setAuthed();
+    }
+
+    _sess->getCtx()->setReadPacketTs(sess->getCtx()->getReadPacketTs());
   }
   // don't call svr->addSession(_sess)
 }

@@ -111,7 +111,9 @@ struct SlowlogEntry {
   std::vector<string> argv;
   int argc;
   uint64_t id;        /* Unique entry identifier. */
-  uint64_t duration;  /* Time spent by the query, in microseconds. */
+  uint64_t duration;  // Time spent by the query, in microseconds.(including
+                      //   queue time)
+  uint64_t execTime;  /* Time executed by the query, in microseconds. */
   uint64_t unix_time; /* Unix time at which the query was executed. */
   std::string cname;
   std::string peerID;
@@ -123,9 +125,11 @@ class SlowlogStat {
   uint64_t getSlowlogNum();
   uint64_t getSlowlogLen();
   void resetSlowlogData();
-  void slowlogDataPushEntryIfNeeded(uint64_t time,
-                                    uint64_t duration,
-                                    Session* sess);
+  void slowlogDataPushEntryIfNeeded(
+    uint64_t time,
+    uint64_t duration, /* including the queue time */
+    uint64_t execTime,
+    Session* sess);
   std::list<SlowlogEntry> getSlowlogData(uint64_t count);
   Status initSlowlogFile(std::string logPath);
   void closeSlowlogFile();
@@ -259,9 +263,11 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void AddMonitor(uint64_t sessId);
   static void logWarning(const std::string& str, Session* sess = nullptr);
   static void logError(const std::string& str, Session* sess = nullptr);
-  void slowlogPushEntryIfNeeded(uint64_t time,
-                                uint64_t duration,
-                                Session* sess);
+  void slowlogPushEntryIfNeeded(
+    uint64_t time,
+    uint64_t duration, /* including the queue time */
+    uint64_t execTime,
+    Session* sess);
   void onBackupEnd() {
     _lastBackupTime.store(sinceEpoch(), std::memory_order_relaxed);
     _backupRunning.fetch_sub(1, std::memory_order_relaxed);

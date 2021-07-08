@@ -127,9 +127,11 @@ void SlowlogStat::closeSlowlogFile() {
   _slowLog.close();
 }
 
-void SlowlogStat::slowlogDataPushEntryIfNeeded(uint64_t time,
-                                               uint64_t duration,
-                                               Session* sess) {
+void SlowlogStat::slowlogDataPushEntryIfNeeded(
+  uint64_t time,
+  uint64_t duration, /* including the queue time */
+  uint64_t execTime,
+  Session* sess) {
   std::lock_guard<std::mutex> lk(_mutex);
   auto server = sess->getServerEntry();
   auto& args = sess->getArgs();
@@ -144,6 +146,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(uint64_t time,
     _slowLog << "# Host: " << sess->getRemote() << "\n";
     _slowLog << "# Db: " << sess->getCtx()->getDbId() << "\n";
     _slowLog << "# Query_time: " << duration << "\n";
+    _slowLog << "# Execute_time: " << execTime << "\n";
 
     uint64_t args_total_length = 0;
     uint64_t args_output_length = 0;
@@ -195,6 +198,7 @@ void SlowlogStat::slowlogDataPushEntryIfNeeded(uint64_t time,
   new_entry.peerID = sess->getRemote();
   new_entry.id = _slowlogId.load(std::memory_order_relaxed);
   new_entry.duration = duration;
+  new_entry.execTime = execTime;
   new_entry.cname = sess->getName();
   new_entry.unix_time = time / 1000000;
   _slowlogData.push_front(new_entry);
@@ -1509,7 +1513,7 @@ void ServerEntry::jeprofCron() {
       }
     }
   }
-  uint32_t memoryGb = rss_human_size/1024/1024/1024;
+  uint32_t memoryGb = rss_human_size / 1024 / 1024 / 1024;
   if (memoryGb > _lastJeprofDumpMemoryGB) {
     _lastJeprofDumpMemoryGB = memoryGb;
     LOG(INFO) << "jeprof dump memoryGb:" << memoryGb;
@@ -1650,11 +1654,13 @@ void ServerEntry::setTsEp(uint64_t timestamp) {
 tendisadmin sleep 2
 */
 // in ms
-void ServerEntry::slowlogPushEntryIfNeeded(uint64_t time,
-                                           uint64_t duration,
-                                           Session* sess) {
+void ServerEntry::slowlogPushEntryIfNeeded(
+  uint64_t time,
+  uint64_t duration, /* including the queue time */
+  uint64_t execTime,
+  Session* sess) {
   if (sess && duration >= _cfg->slowlogLogSlowerThan) {
-    _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, sess);
+    _slowlogStat.slowlogDataPushEntryIfNeeded(time, duration, execTime, sess);
   }
 }
 
