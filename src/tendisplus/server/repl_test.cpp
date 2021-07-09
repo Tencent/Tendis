@@ -219,6 +219,9 @@ TEST(Repl, Common) {
     std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
     auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port, master_port);
 
+    // check direct IO
+    slave2->getParams()->directIo = true;
+
     LOG(INFO) << "waiting thd1 to exited";
     running = false;
     thd0.join();

@@ -262,6 +262,10 @@ class ReplManager {
                                                   uint64_t timeoutMs = 1000,
                                                   int64_t flags = 0);
   void slaveStartFullsync(const StoreMeta&);
+  Status receiveFile(const std::string& fullFileName,
+          std::shared_ptr<BlockingTcpClient> client, size_t remain);
+  Status receiveFileDirectio(const std::string& fullFileName,
+          std::shared_ptr<BlockingTcpClient> client, size_t remain);
   void slaveChkSyncStatus(const StoreMeta&);
   std::ofstream* getCurBinlogFs(uint32_t storeid);
 

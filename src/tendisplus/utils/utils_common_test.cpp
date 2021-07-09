@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <bitset>
 #include <random>
+#include "tendisplus/utils/file.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/time.h"
 #include "tendisplus/utils/param_manager.h"
@@ -512,4 +513,37 @@ TEST(KeyCursorMap, addmapping) {
   EXPECT_EQ(expMapping.value().sessionId, 4);
 }
 
+TEST(file, PosixWritableFile) {
+  std::string fileName("./rocksdb_directio.txt");
+  remove(fileName.c_str());
+  auto diFile = openWritableFile(fileName, true, false);
+  EXPECT_TRUE(diFile != nullptr);
+
+  auto alignedBuf = newAlignedBuff(fileName, 10);
+  EXPECT_NE(alignedBuf, nullptr);
+
+  memset(alignedBuf->buf, 'a', alignedBuf->bufSize);
+  rocksdb::Slice slice1(alignedBuf->buf,
+          alignedBuf->logicalBlockSize);
+  rocksdb::Status rs = diFile->Append(slice1);
+  EXPECT_TRUE(rs.ok());
+  rocksdb::Slice slice2(alignedBuf->buf,
+          alignedBuf->logicalBlockSize + 1);
+  rs = diFile->Append(slice2);
+  EXPECT_TRUE(!rs.ok());
+  EXPECT_EQ(diFile->GetFileSize(), alignedBuf->logicalBlockSize);
+  diFile->Close();
+
+  diFile = openWritableFile(fileName, false, true);
+  rocksdb::Slice slice3(alignedBuf->buf,
+          alignedBuf->logicalBlockSize - 1);
+  rs = diFile->Append(slice3);
+  EXPECT_TRUE(rs.ok());
+  rs = diFile->Close();
+  EXPECT_TRUE(rs.ok());
+
+  uint64_t fileSize = 0;
+  rocksdb::Env::Default()->GetFileSize(fileName, &fileSize);
+  EXPECT_EQ(fileSize, (2*alignedBuf->logicalBlockSize - 1));
+}
 }  // namespace tendisplus

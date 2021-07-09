@@ -22,8 +22,8 @@ else()
 	add_library(rt STATIC dummy.cpp)
 endif()
 
-add_library(utils_common STATIC status.cpp lzf_d.cpp redis_port.cpp hyperloglog.cpp time.cpp string.cpp base64.cpp param_manager.cpp cursor_map.cpp ${STD})
-target_link_libraries(utils_common glog varint)
+add_library(utils_common STATIC status.cpp lzf_d.cpp redis_port.cpp hyperloglog.cpp time.cpp string.cpp base64.cpp param_manager.cpp cursor_map.cpp file.cpp ${STD})
+target_link_libraries(utils_common glog varint rocksdb)
 
 add_library(test_util STATIC test_util.cpp)
 target_link_libraries(test_util utils_common server_params)
