@@ -249,6 +249,13 @@ class ReplManager {
   void supplyFullPsyncRoutine(std::shared_ptr<BlockingTcpClient> client,
                               uint32_t storeId);
 
+  bool registerIncrSyncStatus(uint32_t storeId,
+                              uint32_t dstStoreId,
+                              uint64_t binlogPos,
+                              const std::string& listenIpArg,
+                              uint16_t listen_port,
+                              std::shared_ptr<BlockingTcpClient> client);
+
   bool isFullSupplierFull() const;
 
   std::shared_ptr<BlockingTcpClient> createClient(const StoreMeta&,
@@ -294,6 +301,7 @@ class ReplManager {
  private:
   const std::shared_ptr<ServerParams> _cfg;
   mutable std::mutex _mutex;
+  std::condition_variable _recyclCv;
   std::condition_variable _cv;
   std::atomic<bool> _isRunning;
   std::shared_ptr<ServerEntry> _svr;

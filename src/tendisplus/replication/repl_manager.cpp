@@ -484,11 +484,11 @@ std::shared_ptr<BlockingTcpClient> ReplManager::createClient(
     client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
-      LOG(WARNING) << "fullSync auth error:" << s.status().toString();
+      LOG(WARNING) << "repl connection auth error:" << s.status().toString();
       return nullptr;
     }
     if (s.value().size() == 0 || s.value()[0] == '-') {
-      LOG(INFO) << "fullSync auth failed:" << s.value();
+      LOG(INFO) << "repl connection auth failed:" << s.value();
       return nullptr;
     }
   }
@@ -723,8 +723,7 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     // DLOG(INFO) << "_logRecycStatus[" << storeId << "].firstBinlogId
     // reset:" << start;
 
-    // currently nothing waits for recycleBinlog's complete
-    // _cv.notify_all();
+    _recyclCv.notify_all();
   });
   LocalSessionGuard sg(_svr.get());
 

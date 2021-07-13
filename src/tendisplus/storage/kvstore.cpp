@@ -143,7 +143,8 @@ Expected<MinbinlogInfo> RepllogCursorV2::getMinBinlog(Transaction* txn) {
   }
 
   auto binlogInfo = getMinBinlogByCursor(txn);
-  if (!binlogInfo.ok()) {
+  if (!binlogInfo.ok()
+    && binlogInfo.status().code() != ErrorCodes::ERR_EXHAUST) {
     LOG(WARNING) << "getMinBinlogByCursor failed:"
       << binlogInfo.status().toString();
   }

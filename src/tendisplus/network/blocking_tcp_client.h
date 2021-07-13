@@ -93,9 +93,9 @@ class BlockingTcpClient
   int64_t getFlags() const {
     return _flags;
   }
+  void closeSocket();
 
  private:
-  void closeSocket();
   Expected<std::string> realRead(size_t bufSize, std::chrono::seconds timeout);
   std::mutex _mutex;
   std::condition_variable _cv;

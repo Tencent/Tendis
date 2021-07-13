@@ -209,9 +209,35 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     return false;
   }
 
+  uint64_t firstPos = 0;
+  uint64_t lastFlushBinlogId = 0;
+
+  {
+    // NOTE(takenliu): registerIncrSync() need be mutual exclusive
+    //   with truncateBinlogV2()
+    std::unique_lock<std::mutex> lk(_mutex);
+    if (!_recyclCv.wait_for(
+            lk, std::chrono::milliseconds(5000), [this, storeId] {
+              return !_logRecycStatus[storeId]->isRunning;
+            })) {
+      LOG(ERROR) << "registerIncrSync store " << storeId
+        << " wait for yeild failed";
+      client->writeLine("-ERR wait isRunning be false timeout");
+      return false;
+    }
+    _logRecycStatus[storeId]->isRunning = true;
+    firstPos = _logRecycStatus[storeId]->firstBinlogId;
+    lastFlushBinlogId = _logRecycStatus[storeId]->lastFlushBinlogId;
+  }
+
+  auto guard = MakeGuard([this, storeId] {
+    std::lock_guard<std::mutex> lk(_mutex);
+    _logRecycStatus[storeId]->isRunning = false;
+  });
+
   LocalSessionGuard sg(_svr.get());
   auto expdb = _svr->getSegmentMgr()->getDb(
-    sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
+          sg.getSession(), storeId, mgl::LockMode::LOCK_IS);
   if (!expdb.ok()) {
     std::stringstream ss;
     ss << "-ERR store " << storeId << " error: " << expdb.status().toString();
@@ -219,23 +245,14 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     return false;
   }
 
-  uint64_t firstPos = 0;
-  uint64_t lastFlushBinlogId = 0;
-  {
-    std::lock_guard<std::mutex> lk(_mutex);
-    firstPos = _logRecycStatus[storeId]->firstBinlogId;
-    lastFlushBinlogId = _logRecycStatus[storeId]->lastFlushBinlogId;
-  }
-
   // NOTE(deyukong): this check is not precise
   // (not in the same critical area with the modification to _pushStatus),
   // but it does not harm correctness.
   // A strict check may be too complicated to read.
-  // NOTE(takenliu): 1.recycleBinlog use firstPos, and incrSync use
-  // binlogPos+1
-  //     2. slave do command slaveof master, master do flushall and
-  //     truncateBinlogV2,
-  //        slave send binlogpos will smaller than master.
+  // NOTE(takenliu):
+  // 1.recycleBinlog use firstPos, and incrSync use binlogPos+1
+  // 2.slave do command slaveof master, master do flushall
+  //   and truncateBinlogV2, slave send binlogpos will smaller than master.
   if (firstPos > (binlogPos + 1) && firstPos != lastFlushBinlogId) {
     std::stringstream ss;
     ss << "-ERR invalid binlogPos,storeId:" << storeId
@@ -255,69 +272,86 @@ bool ReplManager::registerIncrSync(asio::ip::tcp::socket sock,
     LOG(WARNING) << "slave incrsync handshake not +PONG:" << exptPong.value();
     return false;
   }
-
-  std::string remoteHost = client->getRemoteRepr();
-  bool registPosOk = [this,
-                      storeId,
-                      dstStoreId,
-                      binlogPos,
-                      client = std::move(client),
-                      listenIpArg,
-                      listen_port]() mutable {
-    std::lock_guard<std::mutex> lk(_mutex);
-    // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
-    if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos + 1) &&
-        _logRecycStatus[storeId]->firstBinlogId !=
-          _logRecycStatus[storeId]->lastFlushBinlogId) {
-      std::stringstream ss;
-      ss << "-ERR invalid binlogPos,storeId:" << storeId
-         << ",master firstPos:" << _logRecycStatus[storeId]->firstBinlogId
-         << ",slave binlogPos:" << binlogPos << ",lastFlushBinlogId:"
-         << _logRecycStatus[storeId]->lastFlushBinlogId;
-      LOG(ERROR) << ss.str();
-      return false;
-    }
-
-    string slaveNode = listenIpArg + ":" + to_string(listen_port);
-    auto iter = _fullPushStatus[storeId].find(slaveNode);
-    if (iter != _fullPushStatus[storeId].end()) {
-      LOG(INFO) << "registerIncrSync erase _fullPushStatus, "
-                << iter->second->toString();
-      _fullPushStatus[storeId].erase(iter);
-    }
-
-    uint64_t clientId = _clientIdGen.fetch_add(1);
-#if defined(_WIN32) && _MSC_VER > 1900
-    _pushStatus[storeId][clientId] =
-      new MPovStatus{false,
-                     static_cast<uint32_t>(dstStoreId),
-                     binlogPos,
-                     0,
-                     SCLOCK::now(),
-                     SCLOCK::time_point::min(),
-                     std::move(client),
-                     clientId,
-                     listenIpArg,
-                     listen_port};
-#else
-    _pushStatus[storeId][clientId] = std::move(std::unique_ptr<MPovStatus>(
-      new MPovStatus{false,
-                     static_cast<uint32_t>(dstStoreId),
-                     binlogPos,
-                     0,
-                     SCLOCK::now(),
-                     SCLOCK::time_point::min(),
-                     std::move(client),
-                     clientId,
-                     listenIpArg,
-                     listen_port}));
-#endif
-    return true;
-  }();
-  LOG(INFO) << "slave:" << remoteHost << " registerIncrSync "
+  bool registPosOk = registerIncrSyncStatus(storeId, dstStoreId,
+          binlogPos, listenIpArg, listen_port, client);
+  LOG(INFO) << "slave:" << client->getRemoteRepr() << " registerIncrSync "
             << (registPosOk ? "ok" : "failed");
 
   return registPosOk;
+}
+
+bool ReplManager::registerIncrSyncStatus(uint32_t storeId,
+    uint32_t dstStoreId,
+    uint64_t binlogPos,
+    const std::string& listenIpArg,
+    uint16_t listen_port,
+    std::shared_ptr<BlockingTcpClient> client) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  // takenliu: recycleBinlog use firstPos, and incrSync use binlogPos+1
+  if (_logRecycStatus[storeId]->firstBinlogId > (binlogPos + 1) &&
+      _logRecycStatus[storeId]->firstBinlogId !=
+        _logRecycStatus[storeId]->lastFlushBinlogId) {
+    std::stringstream ss;
+    ss << "-ERR invalid binlogPos,storeId:" << storeId
+       << ",master firstPos:" << _logRecycStatus[storeId]->firstBinlogId
+       << ",slave binlogPos:" << binlogPos << ",lastFlushBinlogId:"
+       << _logRecycStatus[storeId]->lastFlushBinlogId;
+    LOG(ERROR) << ss.str();
+    client->writeLine(ss.str());
+    return false;
+  }
+
+  string slaveNode = listenIpArg + ":" + to_string(listen_port);
+  auto iter = _fullPushStatus[storeId].find(slaveNode);
+  if (iter != _fullPushStatus[storeId].end()) {
+    LOG(INFO) << "registerIncrSync erase _fullPushStatus, "
+              << iter->second->toString();
+    _fullPushStatus[storeId].erase(iter);
+  }
+
+  uint64_t clientId = _clientIdGen.fetch_add(1);
+  for (auto iter = _pushStatus[storeId].begin();
+    iter != _pushStatus[storeId].end(); ) {
+    // NOTE(takenliu): if isRunning==true we can't erase.
+    if (iter->second->slave_listen_ip == listenIpArg &&
+      iter->second->slave_listen_port == listen_port &&
+      !iter->second->isRunning) {
+      LOG(INFO) << "_pushStatus erase exist slave, storeId:" << storeId
+        << " slave_listen_ip:" << listenIpArg
+        << " slave_listen_port:" << listen_port
+        << " clientId:" << iter->first;
+      iter->second->client->closeSocket();
+      iter = _pushStatus[storeId].erase(iter);
+    } else {
+      iter++;
+    }
+  }
+#if defined(_WIN32) && _MSC_VER > 1900
+  _pushStatus[storeId][clientId] =
+    new MPovStatus{false,
+                   static_cast<uint32_t>(dstStoreId),
+                   binlogPos,
+                   0,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   std::move(client),
+                   clientId,
+                   listenIpArg,
+                   listen_port};
+#else
+  _pushStatus[storeId][clientId] = std::move(std::unique_ptr<MPovStatus>(
+    new MPovStatus{false,
+                   static_cast<uint32_t>(dstStoreId),
+                   binlogPos,
+                   0,
+                   SCLOCK::now(),
+                   SCLOCK::time_point::min(),
+                   std::move(client),
+                   clientId,
+                   listenIpArg,
+                   listen_port}));
+#endif
+  return true;
 }
 
 // mpov's network communicate procedure
