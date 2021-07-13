@@ -316,12 +316,13 @@ class ClusterCommand : public Command {
       LOG(INFO) << "set myself as arbiter";
       return Command::fmtOK();
     } else if (arg1 == "nodes" && argSize <= 3) {
-      bool simple = false;
-      if (argSize == 3 && args[2] == "simple") {
-        simple = true;
+      bool showall = false;
+      if (argSize == 3 && args[2] == "showall") {
+        showall = true;
       }
+
       std::string eNodeInfo = clusterState->clusterGenNodesDescription(
-        CLUSTER_NODE_HANDSHAKE, simple);
+        CLUSTER_NODE_HANDSHAKE, showall);
 
       if (eNodeInfo.size() > 0) {
         return eNodeInfo;
