@@ -726,7 +726,8 @@ Expected<std::unique_ptr<Serializer>> getSerializer(Session* sess,
         new ZsetSerializer(sess, key, std::move(rv.value()))));
       break;
     default:
-      return {ErrorCodes::ERR_WRONG_TYPE, "type can not be dumped"};
+      INVARIANT_D(0);
+      return {ErrorCodes::ERR_INTERNAL, "type can not be dumped"};
   }
 
   return std::move(ptr);

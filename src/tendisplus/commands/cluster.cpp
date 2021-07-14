@@ -812,7 +812,7 @@ class ClusterCommand : public Command {
 
     std::string errMsg = doc["errMsg"].GetString();
     if (errMsg != "+OK") {
-      return {ErrorCodes::ERR_WRONG_TYPE, "json contain err:" + errMsg};
+      return {ErrorCodes::ERR_DECODE, "json contain err:" + errMsg};
     }
 
     if (!doc.HasMember("taskinfo"))
@@ -821,14 +821,14 @@ class ClusterCommand : public Command {
     rapidjson::Value& Array = doc["taskinfo"];
 
     if (!Array.IsArray())
-      return {ErrorCodes::ERR_WRONG_TYPE, "information is not array!"};
+      return {ErrorCodes::ERR_DECODE, "information is not array!"};
 
     if (!doc.HasMember("finishMsg"))
       return {ErrorCodes::ERR_DECODE, "json contain no finishMsg!"};
 
     std::string finishMsg = doc["finishMsg"].GetString();
     if (finishMsg != "+OK") {
-      return {ErrorCodes::ERR_WRONG_TYPE, "sender task not finish!"};
+      return {ErrorCodes::ERR_DECODE, "sender task not finish!"};
     }
     auto pTaskPtr = std::make_shared<pTask>(pTaskId, srcNode->getNodeName());
     for (rapidjson::SizeType i = 0; i < Array.Size(); i++) {
@@ -839,14 +839,14 @@ class ClusterCommand : public Command {
         return {ErrorCodes::ERR_DECODE, "json contain no slots info"};
       }
       if (!object["storeid"].IsUint64()) {
-        return {ErrorCodes::ERR_WRONG_TYPE, "json storeid error type"};
+        return {ErrorCodes::ERR_DECODE, "json storeid error type"};
       }
       uint32_t storeid = static_cast<uint64_t>(object["storeid"].GetUint64());
 
       std::vector<uint32_t> slotsVec;
       const rapidjson::Value& slotArray = object["migrateSlots"];
       if (!slotArray.IsArray())
-        return {ErrorCodes::ERR_WRONG_TYPE, "json slotArray error type"};
+        return {ErrorCodes::ERR_DECODE, "json slotArray error type"};
 
       for (rapidjson::SizeType i = 0; i < slotArray.Size(); i++) {
         const rapidjson::Value& object = slotArray[i];
@@ -860,7 +860,7 @@ class ClusterCommand : public Command {
       }
 
       if (!object["taskid"].IsString()) {
-        return {ErrorCodes::ERR_WRONG_TYPE, "json taskid error type"};
+        return {ErrorCodes::ERR_DECODE, "json taskid error type"};
       }
 
       auto myid = pTaskId + "-" + object["taskid"].GetString();

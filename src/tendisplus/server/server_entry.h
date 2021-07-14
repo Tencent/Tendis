@@ -262,7 +262,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   uint64_t getTsEp() const;
   void AddMonitor(uint64_t sessId);
   static void logWarning(const std::string& str, Session* sess = nullptr);
-  static void logError(const std::string& str, Session* sess = nullptr);
+  void logError(const std::string& str, Session* sess = nullptr);
   void slowlogPushEntryIfNeeded(
     uint64_t time,
     uint64_t duration, /* including the queue time */
@@ -281,25 +281,30 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     _lastBackupFailedErr =
       "storeid " + std::to_string(storeid) + ",err:" + errinfo;
   }
-  uint64_t getLastBackupTime() {
+  uint64_t getLastBackupTime() const {
     return _lastBackupTime.load(std::memory_order_relaxed);
   }
-  uint64_t getBackupTimes() {
+  uint64_t getBackupTimes() const {
     return _backupTimes.load(std::memory_order_relaxed);
   }
-  uint64_t getLastBackupFailedTime() {
+  uint64_t getLastBackupFailedTime() const {
     return _lastBackupFailedTime.load(std::memory_order_relaxed);
   }
-  uint64_t getBackupFailedTimes() {
+  uint64_t getBackupFailedTimes() const {
     return _backupFailedTimes.load(std::memory_order_relaxed);
   }
-  string getLastBackupFailedErr() {
+  string getLastBackupFailedErr() const {
     std::lock_guard<std::mutex> lk(_mutex);
     return _lastBackupFailedErr;
   }
-  uint64_t getBackupRunning() {
+  uint64_t getBackupRunning() const {
     return _backupRunning.load(std::memory_order_relaxed);
   }
+
+  uint64_t getInternalErrorCnt() const {
+    return _internalErrorCnt.load(std::memory_order_relaxed);
+  }
+
   void setBackupRunning();
   bool getTotalIntProperty(
     Session* sess,
@@ -425,6 +430,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   std::atomic<uint64_t> _lastBackupFailedTime;
   std::atomic<uint64_t> _backupFailedTimes;
   std::atomic<uint64_t> _backupRunning;
+  std::atomic<uint64_t> _internalErrorCnt;
   string _lastBackupFailedErr;
   ServerStat _serverStat;
   CompactionStat _compactionStat;

@@ -515,6 +515,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_FULL(
           "deletefilesinrange-for-binlog", deleteFilesInRangeforBinlog,
           deleteFilesInRangeforBinlogCheck, nullptr, -1, -1, true);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("log-error", logError);
 }
 
 ServerParams::~ServerParams() {

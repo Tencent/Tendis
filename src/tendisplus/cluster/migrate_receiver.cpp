@@ -50,8 +50,9 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
   }
   std::string value = expRsp.value();
   if (expRsp.value() != "+OK") {
-    LOG(WARNING) << "readymigrate req srcDb failed:" << expRsp.value();
-    return {ErrorCodes::ERR_MIGRATE, "readymigrate req srcDb failed"};
+    LOG(WARNING) << "readymigrate req srcDb failed:" << expRsp.value()
+                 << "the task should not retry";
+    return {ErrorCodes::ERR_READY_MIGRATE, "readymigrate req srcDb failed"};
   }
 
   setSnapShotStartTime(msSinceEpoch());

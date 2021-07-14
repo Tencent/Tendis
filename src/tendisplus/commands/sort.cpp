@@ -508,7 +508,7 @@ class SortCommand : public Command {
           } else {
             auto eScore = tendisplus::stod(nval);
             if (!eScore.ok()) {
-              return {ErrorCodes::ERR_WRONG_TYPE,
+              return {ErrorCodes::ERR_PARSEOPT,
                       "One or more scores can't be converted "
                       "into double"};
             }
