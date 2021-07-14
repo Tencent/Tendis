@@ -773,6 +773,7 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
     _lastVoteEpoch(0),
     _server(server),
     _blockState(false),
+    _replicateState(false),
     _blockTime(0),
     _mfEnd(0),
     _mfSlave(nullptr),
@@ -1201,6 +1202,7 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
 
   auto node = getNodeBySlot(slot);
   if (!node) {
+      LOG(ERROR) << "slot belong node：" << node->getNodeName() << " not exist";
     return {ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND, ""};
   }
 
@@ -1221,7 +1223,6 @@ Expected<CNodePtr> ClusterState::clusterHandleRedirect(uint32_t slot,
        << "\r\n";
     return {ErrorCodes::ERR_MOVED, ss.str()};
   }
-
   return node;
 }
 
@@ -1550,6 +1551,21 @@ void ClusterState::setClientUnBlock() {
   _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
+bool ClusterState::isReplicateDone() const {
+  if (!getMyMaster()) {
+    return false;
+  }
+  return !_replicateState.load(std::memory_order_relaxed);
+}
+
+void ClusterState::setReplicateState() {
+  _replicateState.store(true, std::memory_order_relaxed);
+}
+
+void ClusterState::unsetReplicateState() {
+  _replicateState.store(false, std::memory_order_relaxed);
+}
+
 bool ClusterState::isRightReplicate() const {
   if (!getMyMaster()) {
     return false;
@@ -1600,11 +1616,23 @@ Status ClusterState::forceFailover(bool force, bool takeover) {
     serverLog(LL_WARNING, "Forced failover user request accepted.");
     setMfStart();
   } else {
+    serverLog(LL_NOTICE, "Manual failover user request accepted.");
     if (!isRightReplicate()) {
       serverLog(LL_WARNING, "slave replication is not right");
       return {ErrorCodes::ERR_CLUSTER, "slave replication not right"};
     }
-    serverLog(LL_WARNING, "Manual failover user request accepted.");
+
+    auto nodeTimeout = _server->getParams()->clusterNodeTimeout;
+    auto data_age =
+            msToNow(_server->getReplManager()->getLastBinlogTs());
+
+    auto slavefactor = _server->getParams()->clusterSlaveValidityFactor;
+
+    if (slavefactor && data_age > nodeTimeout * slavefactor) {
+      LOG(ERROR) << "slave lag too much: " << data_age;
+      return {ErrorCodes::ERR_CLUSTER, "slave lag too much, retry later"};
+    }
+
     uint64_t offset = _server->getReplManager()->replicationGetOffset();
     clusterSendMFStart(_myself->getMaster(), offset);
   }
@@ -1641,24 +1669,33 @@ bool ClusterState::clusterSetNodeAsMasterNoLock(CNodePtr node) {
 /* NOTE(wayenchen) if set ignoreRepl as true, setMaster will not replicate
  * data*/
 Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
+  const auto guard = MakeGuard([&] {
+    // set replicate state as false, let cron fix if exist replication error
+    unsetReplicateState();
+  });
+
   Status s;
   {
     std::lock_guard<myMutex> lk(_mutex);
-    if (_myself->getMaster() != node) {
-      auto s = clusterSetMasterNoLock(node);
-      if (!s.ok()) {
-        LOG(ERROR) << "set master " << node->getNodeName()
-                   << "as my master failed";
-        return s;
-      }
-      LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
+    if (_myself->getMaster() == node) {
+      return {ErrorCodes::ERR_CLUSTER, "already my master"};
     }
+    /* set replicate state on before set salve-maser metadata*/
+    setReplicateState();
+    auto s = clusterSetMasterNoLock(node);
+    if (!s.ok()) {
+      LOG(ERROR) << "set master " << node->getNodeName()
+                 << "as my master failed";
+      return s;
+    }
+    LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
     if (isClientBlock()) {
       setClientUnBlock();
       INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
       LOG(INFO) << "unlock finish when set new master:" << node->getNodeName();
     }
   }
+
   if (!ignoreRepl) {
     bool incrSync = false;
     {
@@ -1676,6 +1713,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
       return s;
     }
   }
+
   LOG(INFO) << "replication set node:" << node->getNodeName()
             << " as my master,"
             << "ip:" << node->getNodeIp() << " port:" << node->getPort()
@@ -1686,6 +1724,8 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+/* NOTE(wayenchen) if ignoreRepl , we will not set replicate after call this
+ * funcation*/
 Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
   INVARIANT(node != _myself);
   INVARIANT(_myself->getSlotNum() == 0);
@@ -1700,10 +1740,12 @@ Status ClusterState::clusterSetMasterNoLock(CNodePtr node) {
       clusterNodeRemoveSlaveNolock(_myself->getMaster(), _myself);
     }
   }
+
   bool s = clusterNodeAddSlaveNolock(node, _myself);
   if (!s) {
     return {ErrorCodes::ERR_CLUSTER, "add slave fail"};
   }
+
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -2203,13 +2245,13 @@ void ClusterState::manualFailoverCheckTimeout() {
     std::lock_guard<myMutex> lk(_mutex);
     if (_mfEnd && _mfEnd < msSinceEpoch()) {
       serverLog(LL_WARNING, "Manual failover timed out.");
-      resetManualFailoverNoLock();
 
       if (_mfCanStart && _myself->getMaster()) {
         delFakeTask = true;
         masterIp = _myself->getMaster()->getNodeIp();
         masterPort = _myself->getMaster()->getPort();
       }
+      resetManualFailoverNoLock();
     }
   }
   if (delFakeTask) {
@@ -2751,6 +2793,8 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
     LOG(ERROR) << "replace master meta update fail" << s.toString();
     return s;
   }
+
+  LOG(INFO) << "cluster set myself master success";
   /* Pong all the other nodes so that they can update the state
    *    accordingly and detect that we switched to master role. */
   /* Set the replication offset. */
@@ -2823,7 +2867,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Set data_age to the number of seconds we are disconnected from
    * the master. */
-  data_age = msSinceEpoch() - _server->getReplManager()->getLastBinlogTs();
+  data_age =  msToNow(_server->getReplManager()->getLastBinlogTs());
   INVARIANT_D(data_age > 0);
 
   /* Remove the node timeout from the data age as it is fine that we are
@@ -2915,6 +2959,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
 
   /* Return ASAP if the election is too old to be valid. */
   if (auth_age > auth_timeout) {
+    LOG(ERROR) << "election is too old to be valid, auth_age:" << auth_age;
     clusterLogCantFailover(CLUSTER_CANT_FAILOVER_EXPIRED);
     return {ErrorCodes::ERR_CLUSTER, ""};
   }
@@ -2955,7 +3000,6 @@ Status ClusterState::clusterHandleSlaveFailover() {
     return {ErrorCodes::ERR_CLUSTER, ""};
   }
 }
-
 
 /* Clear the migrating / importing state for all the slots.
  * This is useful at initialization and when turning a master into slave. */
@@ -3002,6 +3046,7 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
     _header(std::make_shared<ClusterMsgHeader>(cstate, svr, offset)),
     _msgData(nullptr) {
   if (cstate->getMyselfNode()->nodeIsMaster() && cstate->getMfEnd()) {
+    LOG(INFO) << "Cluster Message with offset " << offset << " when mfend.";
     _mflags |= CLUSTERMSG_FLAG0_PAUSED;
   }
 
@@ -4427,7 +4472,11 @@ void ClusterState::cronCheckFailState() {
 
 
 void ClusterState::cronCheckReplicate() {
-  if (!getMyMaster()) {
+  bool needFix = _server->getParams()->replicateFixEnable;
+  if (!needFix)
+    return;
+
+  if (!isReplicateDone()) {
     return;
   }
 
@@ -4659,8 +4708,9 @@ ClusterState::clusterLockMySlots() {
     }
   }
   _isCliBlocked.store(true, std::memory_order_relaxed);
-  LOG(INFO) << "finish lock on:" << bitsetStrEncode(slotsDone)
-            << "Lock num:" << lockNum << "time:" << msSinceEpoch();
+  LOG(INFO) << "finish myself lock on:" << bitsetStrEncode(slotsDone)
+            << ", Lock num:" << lockNum
+            << ", take time:" << msSinceEpoch() - locktime << "ms";
   if (lockNum == 0) {
     return {ErrorCodes::ERR_INTERNAL, "no lock finish"};
   }
@@ -4687,7 +4737,6 @@ void ClusterManager::controlRoutine() {
     }
 
     _clusterState->cronCheckFailState();
-
     std::this_thread::sleep_for(100ms);
   }
 }
@@ -5117,7 +5166,7 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
         setMfMasterOffsetIfNecessary(sender)) {
       _mfMasterOffset = sender->getReplOffset();
       _isMfOffsetReceived.store(true, std::memory_order_relaxed);
-      serverLog(LL_WARNING,
+      serverLog(LL_NOTICE,
                 "Received replication offset for paused "
                 "master manual failover: %lu %lu",
                 sender->getReplOffset(),

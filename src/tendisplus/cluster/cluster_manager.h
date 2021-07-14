@@ -560,6 +560,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void setMyselfNode(CNodePtr node);
   bool isMyselfMaster() const;
   bool isMyselfSlave() const;
+
   // getMyMaster
   CNodePtr getMyMaster() const;
 
@@ -691,14 +692,18 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   bool isContainSlot(uint32_t slotId) const;
   Status forceFailover(bool force, bool takeover);
 
-  bool getBlockState() {
+  bool getBlockState() const {
     return _blockState.load(std::memory_order_relaxed);
   }
-  bool isClientBlock() {
+  bool isClientBlock() const {
     return _isCliBlocked.load(std::memory_order_relaxed);
   }
   Expected<std::list<std::unique_ptr<ChunkLock>>> clusterLockMySlots();
+
   void setClientUnBlock();
+  bool isReplicateDone() const;
+  void setReplicateState();
+  void unsetReplicateState();
 
   uint64_t getBlockTime() const {
     return _blockTime.load(std::memory_order_relaxed);
@@ -766,6 +771,8 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   uint64_t _lastVoteEpoch;  // Epoch of the last vote granted.
   std::shared_ptr<ServerEntry> _server;
   std::atomic<bool> _blockState;
+  // set true if slave is on replicating when slave SetMaster
+  std::atomic<bool> _replicateState;
   std::atomic<uint64_t> _blockTime;
   // Manual failover state in common.
   // Manual failover time limit (ms unixtime).  It is zero if there is no MF in

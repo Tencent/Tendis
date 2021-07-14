@@ -478,6 +478,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
                                   slaveMigarateEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-gc-enabled", enableGcInMigate);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled",
+                                   replicateFixEnable);
   REGISTER_VARS_DIFF_NAME("cluster-single-node", clusterSingleNode);
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-require-full-coverage",

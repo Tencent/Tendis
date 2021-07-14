@@ -492,7 +492,7 @@ class ApplyBinlogsGeneric : public Command {
       }
       if (!s.ok()) {
         LOG(ERROR) << "applyRepllog failed,mode:" << (uint32_t)mode
-                   << " err:" << eLog.status().toString();
+                   << " err:" << s.toString();
         return s;
       }
       cnt++;
