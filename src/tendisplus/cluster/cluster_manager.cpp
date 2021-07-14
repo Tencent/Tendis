@@ -1820,7 +1820,7 @@ void ClusterState::clusterAddNodeNoLock(CNodePtr node) {
 }
 
 std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
-                                                     bool simple) {
+                                                     bool showall) {
   std::stringstream ss;
   std::vector<CNodePtr> nodeList;
   {
@@ -1837,17 +1837,13 @@ std::string ClusterState::clusterGenNodesDescription(uint16_t filter,
   }
 
   for (const auto& n : nodeList) {
-    // if contain migrating task , get migrate info str
     std::string migrateStr = "";
-    if (n->nodeIsMyself() && _server->getMigrateManager() &&
+    // if showall is true &&contain migrating task, get migrate info str
+    if (showall && n->nodeIsMyself() && _server->getMigrateManager() &&
         _server->getMigrateManager()->existMigrateTask()) {
       auto migrateMgr = _server->getMigrateManager();
-      Expected<std::string> eMigrStr("");
-      if (simple) {
-        eMigrStr = migrateMgr->getMigrateInfoStrSimple(n->getSlots());
-      } else {
-        eMigrStr = migrateMgr->getMigrateInfoStr(n->getSlots());
-      }
+      Expected<std::string> eMigrStr =
+        migrateMgr->getMigrateInfoStr(n->getSlots());
       if (eMigrStr.ok()) {
         migrateStr = eMigrStr.value();
       }
