@@ -2235,6 +2235,15 @@ void ClusterState::resetManualFailoverNoLock() {
   _isMfOffsetReceived.store(false, std::memory_order_relaxed);
 }
 
+/* This function is called if we nedd to initialize and reset fields which
+   is seted by last round of failure election */
+void ClusterState::resetFailoverState() {
+    setFailAuthTime(0);
+    setFailAuthCount(0);
+    setFailAuthRank(0);
+    setFailAuthEpoch(0);
+}
+
 void ClusterState::clusterHandleManualFailover() {
   bool addFakeTask = false;
   uint64_t slaveOffset = 0;
@@ -2764,6 +2773,8 @@ Status ClusterState::clusterFailoverReplaceYourMaster(void) {
   clusterUpdateState();
   setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
 
+  /* 6) Reset the failover state */
+  resetFailoverState();
   return {ErrorCodes::ERR_OK, "finish replace master"};
 }
 /* This function is called if we are a slave node and our master serving
@@ -2916,6 +2927,7 @@ Status ClusterState::clusterHandleSlaveFailover() {
   /* Return ASAP if the election is too old to be valid. */
   if (auth_age > auth_timeout) {
     clusterLogCantFailover(CLUSTER_CANT_FAILOVER_EXPIRED);
+    resetFailoverState();
     return {ErrorCodes::ERR_CLUSTER, ""};
   }
 
