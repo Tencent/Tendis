@@ -2,9 +2,10 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
-#include <math.h>
+#include <cmath>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include "tendisplus/script/lua_state.h"
 #include "tendisplus/utils/redis_port.h"
@@ -347,10 +348,10 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
       obj_s = dbuf;
     } else {
       obj_s = const_cast<char*>(lua_tolstring(lua, j+1, &obj_len));
-      if (obj_s == NULL) break; /* Not a string. */
+      if (obj_s == nullptr) break; /* Not a string. */
     }
 
-    args.push_back(string(obj_s, obj_len));
+    args.emplace_back(obj_s, obj_len);
   }
 
   /* Check if one of the arguments passed by the Lua script
@@ -456,7 +457,7 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
    * The first thing we need is to create a single string from the client
    * output buffers. */
 
-  if (raise_error && expect.value().size() > 0 && expect.value()[0] != '-') {
+  if (raise_error && !expect.value().empty() && expect.value()[0] != '-') {
     raise_error = 0;
   }
   redisProtocolToLuaType(lua, expect.value().c_str());
@@ -669,10 +670,9 @@ void scriptingEnableGlobalsProtection(lua_State *lua) {
 }
 
 
-LuaState::LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id) {
-  _id = id;
+LuaState::LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id)
+  : _id(id), _svr(std::move(svr)) {
   _lua = initLua(1);
-  _svr = svr;
   _scriptMgr = _svr->getScriptMgr();
 }
 
@@ -827,7 +827,7 @@ lua_State* LuaState::initLua(int setup) {
 }
 
 void LuaState::pushThisToLua(lua_State *lua) {
-  uint64_t p = reinterpret_cast<uint64_t>(this);
+  auto p = reinterpret_cast<uint64_t>(this);
   lua_pushstring(lua, tendisplus::ultos(p).c_str());
   lua_setglobal(lua, "lua_state");
   // LOG(INFO) << "pushThisToLua:" << p;
@@ -841,7 +841,7 @@ LuaState* LuaState::getLuaStateFromLua(lua_State *lua) {
     LOG(ERROR) << "getLuaStateFromLua failed.";
     return nullptr;
   }
-  LuaState* ls = reinterpret_cast<LuaState*>(addr.value());
+  auto ls = reinterpret_cast<LuaState*>(addr.value());
   lua_pop(lua, 1);
   // LOG(INFO) << "getLuaStateFromLua:" << addr.value();
   return ls;
@@ -909,7 +909,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
 
         lua_pop(lua, 1); /* Discard the 'ok' field value we popped */
         string rsp;
-        while (1) {
+        while (true) {
           lua_pushnumber(lua, j++);
           lua_gettable(lua, -2);
           t = lua_type(lua, -1);
@@ -955,7 +955,7 @@ void LuaState::sha1hex(char *digest, char *script, size_t len) {
 }
 
 /* Anti-warning macro... */
-#define UNUSED(V) ((void) V)  // takenliu:for what?
+#define UNUSED(V) ((void) (V))  // takenliu:for what?
 
 /* This is the Lua script "count" hook that we use to detect scripts timeout. */
 void LuaState::luaMaskCountHook(lua_State *lua, lua_Debug *ar) {
@@ -998,6 +998,15 @@ Expected<std::string> LuaState::evalCommand(Session *sess) {
   return evalGenericCommand(sess, 0);
 }
 
+Expected<std::string> LuaState::evalShaCommand(Session *sess) {
+  // directly return error if sha has wrong length.
+  const std::vector<std::string>& args = sess->getArgs();
+  if (args[1].size() != 40) {
+    return {ErrorCodes::ERR_LUA_NOSCRIPT, ""};
+  }
+  return evalGenericCommand(sess, 1);
+}
+
 Expected<std::string> LuaState::evalGenericCommand(Session *sess,
       int evalsha) {
   _sess = sess;
@@ -1034,6 +1043,12 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
     /* Hash the code if this is an EVAL call */
     sha1hex(funcname + 2, const_cast<char*>(args[1].c_str()),
       args[1].length());
+  } else {
+    /* Convert to lowercase. */
+    for (int j = 0; j < 40; j++)
+      funcname[j+2] = (args[1][j] >= 'A' && args[1][j] <= 'Z') ?
+        args[1][j]+('a'-'A') : args[1][j];
+    funcname[42] = '\0';
   }
   /* Push the pcall error handler function on the stack. */
   lua_getglobal(_lua, "__redis__err__handler");
@@ -1043,19 +1058,38 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   if (lua_isnil(_lua, -1)) {
     lua_pop(_lua, 1); /* remove the nil from the stack */
     /* Function not defined... let's define it if we have the
-     * body of the function. If this is an EVALSHA call we can just
-     * return an error. */
+     * body of the function.
+     * (New in Tendis) If this is an EVALSHA call, we will get script content
+     * from kvstore as Tendis stores all lua scripts received persistently. */
+    std::string shaString(funcname+2, 40);
     if (evalsha) {
-      lua_pop(_lua, 1); /* remove the error handler from the stack. */
-      return {ErrorCodes::ERR_LUA,
-        "-NOSCRIPT No matching script. Please use EVAL.\r\n"};
-    }
-    auto ret = luaCreateFunction(_lua, args[1]);
-    if (!ret.ok()) {
-      lua_pop(_lua, 1); /* remove the error handler from the stack. */
-      /* The error is sent to the client by luaCreateFunction()
-       * itself when it returns NULL. */
-      return {ErrorCodes::ERR_LUA, "luaCreateFunction failed"};;
+      /* try to get script content from kvstore */
+      auto expScript = _scriptMgr->getScriptContent(sess, shaString);
+      if (!expScript.ok()) { /* not found in kvstore */
+        lua_pop(_lua, 1); /* remove the error handler from the stack. */
+        return {ErrorCodes::ERR_LUA_NOSCRIPT, ""};
+      }
+      // if found script, try to load it to lua vm.
+      auto ret = luaCreateFunction(_lua, expScript.value());
+      if (!ret.ok()) {
+        lua_pop(_lua, 1); /* remove the nil from the stack */
+        /* If here goes error, it implies that the server has error
+         * as 'script load' will ensure luaCreateFunction
+         * could get correct result. */
+        LOG(ERROR) << "found corrupted script: " << expScript.value()
+                   << " sha code: " << shaString
+                   << " luaCreateFunction error info: "
+                   << ret.status().toString();
+        return {ErrorCodes::ERR_LUA_NOSCRIPT, ""};
+      }
+    } else {
+      auto ret = luaCreateFunction(_lua, args[1]);
+      if (!ret.ok()) {
+        lua_pop(_lua, 1);
+        /* The error is sent to the client by luaCreateFunction()
+        * itself when it returns NULL. */
+        return ret;
+      }
     }
     /* Now the following is guaranteed to return non nil */
     lua_getglobal(_lua, funcname);
@@ -1134,6 +1168,13 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
     lua_pop(_lua, 1); /* Remove the error handler. */
     return ret;
   }
+}
+
+std::string LuaState::getShaEncode(const std::string& script) {
+  // sha1hex needs 41 bytes buffer for c-style string.
+  char sha[41];
+  sha1hex(sha, const_cast<char*>(script.data()), script.size());
+  return std::string(sha, 40);
 }
 
 void LuaState::updateFakeClient() {

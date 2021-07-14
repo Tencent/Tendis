@@ -44,23 +44,27 @@ start_server {tags {"scripting"}} {
         r eval {return redis.call('get',KEYS[1])} 1 mykey
     } {myval}
 
-    #test {EVALSHA - Can we call a SHA1 if already defined?} {
-    #    r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey
-    #} {myval}
+    test {SCRIPT LOAD - Tendis won't save script came from eval cmd} {
+        r script load {return redis.call('get',KEYS[1])}
+    } {fd758d1589d044dd850a6f05d52f2eefd27f033f}
 
-    #test {EVALSHA - Can we call a SHA1 in uppercase?} {
-    #    r evalsha FD758D1589D044DD850A6F05D52F2EEFD27F033F 1 mykey
-    #} {myval}
+    test {EVALSHA - Can we call a SHA1 if already defined?} {
+        r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey
+    } {myval}
 
-    #test {EVALSHA - Do we get an error on invalid SHA1?} {
-    #    catch {r evalsha NotValidShaSUM 0} e
-    #    set _ $e
-    #} {NOSCRIPT*}
+    test {EVALSHA - Can we call a SHA1 in uppercase?} {
+        r evalsha FD758D1589D044DD850A6F05D52F2EEFD27F033F 1 mykey
+    } {myval}
 
-    #test {EVALSHA - Do we get an error on non defined SHA1?} {
-    #    catch {r evalsha ffd632c7d33e571e9f24556ebed26c3479a87130 0} e
-    #    set _ $e
-    #} {NOSCRIPT*}
+    test {EVALSHA - Do we get an error on invalid SHA1?} {
+        catch {r evalsha NotValidShaSUM 0} e
+        set _ $e
+    } {NOSCRIPT*}
+
+    test {EVALSHA - Do we get an error on non defined SHA1?} {
+        catch {r evalsha ffd632c7d33e571e9f24556ebed26c3479a87130 0} e
+        set _ $e
+    } {NOSCRIPT*}
 
     test {EVAL - Redis integer -> Lua type conversion} {
         r eval {
@@ -201,44 +205,45 @@ start_server {tags {"scripting"}} {
         set e
     } {*against a key*}
 
-    #test {SCRIPTING FLUSH - is able to clear the scripts cache?} {
-    #    r set mykey myval
-    #    set v [r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey]
-    #    assert_equal $v myval
-    #    set e ""
-    #    r script flush
-    #    catch {r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey} e
-    #    set e
-    #} {NOSCRIPT*}
+    test {SCRIPTING FLUSH - is able to clear the scripts cache?} {
+        r set mykey myval
+        set v [r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey]
+        assert_equal $v myval
+        set e ""
+        r script flush
+        catch {r evalsha fd758d1589d044dd850a6f05d52f2eefd27f033f 1 mykey} e
+        set e
+    } {NOSCRIPT*}
 
-    #test {SCRIPT EXISTS - can detect already defined scripts?} {
-    #    r eval "return 1+1" 0
-    #    r script exists a27e7e8a43702b7046d4f6a7ccf5b60cef6b9bd9 a27e7e8a43702b7046d4f6a7ccf5b60cef6b9bda
-    #} {1 0}
+    test {SCRIPT EXISTS - can detect already defined scripts?} {
+        r eval "return 1+1" 0
+        r script load "return 1+1"
+        r script exists a27e7e8a43702b7046d4f6a7ccf5b60cef6b9bd9 a27e7e8a43702b7046d4f6a7ccf5b60cef6b9bda
+    } {1 0}
 
-    #test {SCRIPT LOAD - is able to register scripts in the scripting cache} {
-    #    list \
-    #        [r script load "return 'loaded'"] \
-    #        [r evalsha b534286061d4b9e4026607613b95c06c06015ae8 0]
-    #} {b534286061d4b9e4026607613b95c06c06015ae8 loaded}
+    test {SCRIPT LOAD - is able to register scripts in the scripting cache} {
+        list \
+            [r script load "return 'loaded'"] \
+            [r evalsha b534286061d4b9e4026607613b95c06c06015ae8 0]
+    } {b534286061d4b9e4026607613b95c06c06015ae8 loaded}
 
-    #test "In the context of Lua the output of random commands gets ordered" {
-    #    r del myset
-    #    r sadd myset a b c d e f g h i l m n o p q r s t u v z aa aaa azz
-    #    r eval {return redis.call('smembers',KEYS[1])} 1 myset
-    #} {a aa aaa azz b c d e f g h i l m n o p q r s t u v z}
+    test "In the context of Lua the output of random commands gets ordered" {
+        r del myset
+        r sadd myset a b c d e f g h i l m n o p q r s t u v z aa aaa azz
+        r eval {return redis.call('smembers',KEYS[1])} 1 myset
+    } {a aa aaa azz b c d e f g h i l m n o p q r s t u v z}
 
-    #test "SORT is normally not alpha re-ordered for the scripting engine" {
-    #    r del myset
-    #    r sadd myset 1 2 3 4 10
-    #    r eval {return redis.call('sort',KEYS[1],'desc')} 1 myset
-    #} {10 4 3 2 1}
+    test "SORT is normally not alpha re-ordered for the scripting engine" {
+        r del myset
+        r sadd myset 1 2 3 4 10
+        r eval {return redis.call('sort',KEYS[1],'desc')} 1 myset
+    } {10 4 3 2 1}
 
-    #test "SORT BY <constant> output gets ordered for scripting" {
-    #    r del myset
-    #    r sadd myset a b c d e f g h i l m n o p q r s t u v z aa aaa azz
-    #    r eval {return redis.call('sort',KEYS[1],'by','_')} 1 myset
-    #} {a aa aaa azz b c d e f g h i l m n o p q r s t u v z}
+    test "SORT BY <constant> output gets ordered for scripting" {
+        r del myset
+        r sadd myset a b c d e f g h i l m n o p q r s t u v z aa aaa azz
+        r eval {return redis.call('sort',KEYS[1],'by','_')} 1 myset
+    } {a aa aaa azz b c d e f g h i l m n o p q r s t u v z}
 
     #test "SORT BY <constant> with GET gets ordered for scripting" {
     #    r del myset
@@ -337,16 +342,16 @@ start_server {tags {"scripting"}} {
     #    set res
     #} {102}
 
-    #test {We can call scripts rewriting client->argv from Lua} {
-    #    r del myset
-    #    r sadd myset a b c
-    #    r mset a 1 b 2 c 3 d 4
-    #    assert {[r spop myset] ne {}}
-    #    assert {[r spop myset] ne {}}
-    #    assert {[r spop myset] ne {}}
-    #    assert {[r mget a b c d] eq {1 2 3 4}}
-    #    assert {[r spop myset] eq {}}
-    #}
+    test {We can call scripts rewriting client->argv from Lua} {
+        r del myset
+        r sadd myset a b c
+        r mset a 1 b 2 c 3 d 4
+        assert {[r spop myset] ne {}}
+        assert {[r spop myset] ne {}}
+        assert {[r spop myset] ne {}}
+        assert {[r mget a b c d] eq {1 2 3 4}}
+        assert {[r spop myset] eq {}}
+    }
 
     test {Call Redis command with many args from Lua (issue #1764)} {
         r eval {
@@ -465,10 +470,12 @@ start_server {tags {"scripting repl"}} {
             # One with an error, but still executing a command.
             # SHA is: 67164fc43fa971f76fd1aaeeaf60c1c178d25876
             catch {
+                r script load {redis.call('incr',KEYS[1]); redis.call('nonexisting')}
                 r eval {redis.call('incr',KEYS[1]); redis.call('nonexisting')} 1 x
             }
             # One command is correct:
             # SHA is: 6f5ade10a69975e903c6d07b10ea44c6382381a5
+            r script load {return redis.call('incr',KEYS[1])}
             r eval {return redis.call('incr',KEYS[1])} 1 x
         } {2}
 
@@ -482,22 +489,22 @@ start_server {tags {"scripting repl"}} {
             }
         }
 
-        #test {Now use EVALSHA against the master, with both SHAs} {
+        test {Now use EVALSHA against the master, with both SHAs} {
             # The server should replicate successful and unsuccessful
             # commands as EVAL instead of EVALSHA.
-        #    catch {
-        #        r evalsha 67164fc43fa971f76fd1aaeeaf60c1c178d25876 1 x
-        #    }
-        #    r evalsha 6f5ade10a69975e903c6d07b10ea44c6382381a5 1 x
-        #} {4}
+            catch {
+                r evalsha 67164fc43fa971f76fd1aaeeaf60c1c178d25876 1 x
+            }
+            r evalsha 6f5ade10a69975e903c6d07b10ea44c6382381a5 1 x
+        } {4}
 
-        #test {If EVALSHA was replicated as EVAL, 'x' should be '4'} {
-        #    wait_for_condition 50 100 {
-        #        [r -1 get x] eq {4}
-        #    } else {
-        #        fail "Expected 4 in x, but value is '[r -1 get x]'"
-        #    }
-        #}
+        test {If EVALSHA was replicated as EVAL, 'x' should be '4'} {
+            wait_for_condition 50 100 {
+                [r -1 get x] eq {4}
+            } else {
+                fail "Expected 4 in x, but value is '[r -1 get x]'"
+            }
+        }
 
         # brpop not supported!
         #test {Replication of script multiple pushes to list with BLPOP} {

@@ -24,9 +24,14 @@ class ScriptManager {
   Status stopStore(uint32_t storeId);
   void cron();
   void stop();
-  Expected<std::string> run(Session* sess);
+  Expected<std::string> run(Session* sess, int evalsha);
   Expected<std::string> setLuaKill();
-  Expected<std::string> flush();
+  Expected<std::string> flush(Session* sess);
+  Expected<std::string> getScriptContent(Session* sess, const std::string& sha);
+  Expected<std::string> saveLuaScript(Session* sess,
+                                      const std::string& sha,
+                                      const std::string& script);
+  Expected<std::string> checkIfScriptExists(Session* sess);
   bool luaKill();
   bool stopped();
 
@@ -38,6 +43,8 @@ class ScriptManager {
 
   std::atomic<bool> _luaKill;
   std::atomic<bool> _stopped;
+
+  static const uint32_t LUASCRIPT_DEFAULT_DBID = 0;
 };
 
 }  // namespace tendisplus

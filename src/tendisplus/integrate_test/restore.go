@@ -67,6 +67,10 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
         log.Fatalf("setup master2 failed:%v", err)
     }
     time.Sleep(15 * time.Second)
+	clim1 := createClient(&m1)
+	clis1 := createClient(&s1)
+	clim2 := createClient(&m2)
+	clis2 := createClient(&s2)
 
     slaveof(&m1, &s1)
     waitFullsync(&s1, kvstorecount)
@@ -75,6 +79,12 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     waitFullsync(&s2, kvstorecount)
 
     addData(&m1, *num1, "aa")
+	sha, err := clim1.Cmd("script", "load", "\"return KEYS[1]\"").Str()
+	if err != nil {
+		log.Fatalf("script load on master1 err:%v", err)
+	} else if len(sha) != 40 {
+		log.Fatalf("wrong sha code length:%d on master1", len(sha))
+	}
 
     waitCatchup(&m1, &s1, kvstorecount)
     waitCatchup(&s1, &s2, kvstorecount)
@@ -90,7 +100,49 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     <- channel
     <- channel
 
+	s1r, err := clis1.Cmd("script", "exists", sha).Array()
+	if err != nil {
+		log.Fatalf("script exists on slave1 err:%v", err)
+	}
+	s1r0, err := s1r[0].Int()
+	if err != nil {
+		log.Fatalf("script exists on slave1 err:%v, wrong type", err)
+	}
+	if s1r0 != 1 {
+		log.Fatalf("script exists on slave1 err:%v, script not exists", err)
+	}
+
+	m2r, err := clim2.Cmd("script", "exists", sha).Array()
+	if err != nil {
+		log.Fatalf("script exists on master2 err:%v", err)
+	}
+	m2r0, err := m2r[0].Int()
+	if err != nil {
+		log.Fatalf("script exists on master2 err:%v, wrong type", err)
+	}
+	if m2r0 != 1 {
+		log.Fatalf("script exists on master2 err:%v, script not exists", err)
+	}
+
+	s2r, err := clis2.Cmd("script", "exists", sha).Array()
+	if err != nil {
+		log.Fatalf("script exists on slave2 err:%v", err)
+	}
+	s2r0, err := s2r[0].Int()
+	if err != nil {
+		log.Fatalf("script exists on slave2 err:%v, wrong type", err)
+	}
+	if s2r0 != 1 {
+		log.Fatalf("script exists on slave2 err:%v, script not exists", err)
+	}
+
     addData(&m1, *num2, "bb")
+	sha1, err := clim1.Cmd("script", "load", "\"return KEYS[2]\"").Str()
+	if err != nil {
+		log.Fatalf("script load on master1 err:%v", err)
+	} else if len(sha1) != 40 {
+		log.Fatalf("wrong sha code length:%v on master1", len(sha1))
+	}
     addOnekeyEveryStore(&m1, kvstorecount)
 
     waitCatchup(&m1, &s1, kvstorecount)
@@ -100,6 +152,12 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     flushBinlog(&s2)
     restoreBinlog(&s2, &m2, kvstorecount, math.MaxUint64)
     addOnekeyEveryStore(&m2, kvstorecount)
+	sha2, err := clim2.Cmd("script", "load", "\"return KEYS[2]\"").Str()
+	if err != nil {
+		log.Fatalf("script load on master2 err:%v", err)
+	} else if sha1 != sha2 {
+		log.Fatalf("wrong sha code on m1:%s & m2:%s", sha1, sha2)
+	}
     compare(&m1, &m2)
 
     shutdownServer(&m1, *shutdown, *clear);

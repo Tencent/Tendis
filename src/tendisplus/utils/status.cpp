@@ -112,6 +112,8 @@ std::string Status::getErrStr(ErrorCodes code) {
       return "-CLUSTERDOWN The cluster is down\r\n";
     case ErrorCodes::ERR_CLUSTER_REDIR_DOWN_UNBOUND:
       return "-CLUSTERDOWN Hash slot not served\r\n";
+    case ErrorCodes::ERR_LUA_NOSCRIPT:
+      return "-NOSCRIPT No matching script. Please use EVAL.\r\n";
 
     default:
       break;

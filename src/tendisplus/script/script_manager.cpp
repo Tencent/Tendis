@@ -6,25 +6,25 @@
 #include <memory>
 #include <string>
 #include <shared_mutex>
+#include <utility>
+#include <vector>
 #include "tendisplus/script/script_manager.h"
 
 namespace tendisplus {
 
 ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
-  :_svr(svr),
-   _luaKill(false),
-   _stopped(false) {
-}
+  : _svr(std::move(svr)),
+    _luaKill(false),
+    _stopped(false) {}
 
-Expected<std::string> ScriptManager::run(Session* sess) {
+Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
   // NOTE(takenliu):
   //   use shared_lock in every command with high frequency,
   //   otherwise use unique_lock with low frequency.
   if (_luaKill) {
     std::unique_lock<std::shared_timed_mutex> lock(_mutex);
-    for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
-         ++iter) {
-      if (iter->second->isRunning()) {
+    for (auto& iter : _mapLuaState) {
+      if (iter.second->isRunning()) {
         LOG(WARNING) << "script kill or flush not finished:"
           << _mapLuaState.size();
         return {ErrorCodes::ERR_LUA, "script kill not finished."};
@@ -51,7 +51,9 @@ Expected<std::string> ScriptManager::run(Session* sess) {
     LOG(INFO) << "new LuaState, threadid:" << threadid
       << " _mapLuaState size:" << _mapLuaState.size();
   }
-  auto ret = luaState->evalCommand(sess);
+  auto ret = evalsha == 0 ?
+             luaState->evalCommand(sess) :
+             luaState->evalShaCommand(sess);
   {
     std::shared_lock<std::shared_timed_mutex> lock(_mutex);
     luaState->setLastEndTime(msSinceEpoch());
@@ -63,10 +65,10 @@ Expected<std::string> ScriptManager::run(Session* sess) {
 Expected<std::string> ScriptManager::setLuaKill() {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
   bool someRunning = false;
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
-       ++iter) {
-    if (iter->second->isRunning()) {
+  for (auto& iter : _mapLuaState) {
+    if (iter.second->isRunning()) {
       someRunning = true;
+      break;
     }
   }
   if (!someRunning) {
@@ -86,24 +88,108 @@ bool ScriptManager::luaKill() {
   return _luaKill;
 }
 
-Expected<std::string> ScriptManager::flush() {
+Expected<std::string> ScriptManager::flush(Session* sess) {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
-    iter++) {
-    if (iter->second->isRunning()) {
+
+  // check if there are scripts still running.
+  for (auto& iter : _mapLuaState) {
+    if (iter.second->isRunning()) {
       return {ErrorCodes::ERR_LUA,
-          "-BUSY Redis is busy running a script."
-          " You can only call SCRIPT KILL or SHUTDOWN NOSAVE.\r\n"};
+              "-BUSY Redis is busy running a script."
+              " You can only call SCRIPT KILL or SHUTDOWN NOSAVE.\r\n"};
     }
   }
 
-  for (auto iter = _mapLuaState.begin(); iter != _mapLuaState.end();
-    iter++) {
-    iter->second->LuaClose();
-    iter->second->setRunning(false);
-    iter->second->initLua(0);
-  }
+  // delete all lua scripts in kvstore and add deleterange binlog.
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IX);
+  RET_IF_ERR_EXPECTED(expdb);
+  auto kvstore = expdb.value().store;
+  /*
+   * every valid sha record key must have sha code (40 bytes),
+   * so a recordkey with empty sha code is a suitable lowerbound of
+   * deleterange, and a recordkey with LuaScript::CHUNKID+1 as CHUNKID should
+   * bigger than any sha record key, which is a suitable upperbound.
+   */
+  RecordKey min_sha_rk(
+    LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, "", "");
+  RecordKey max_sha_rk(
+    LuaScript::CHUNKID + 1, LuaScript::DBID, RecordType::RT_META, "", "");
+  auto s = kvstore->deleteRange(min_sha_rk.prefixChunkid(),
+                                max_sha_rk.prefixChunkid());
+  RET_IF_ERR(s);
+
+  // stop and reset all LuaState to clear script cache in lua vm.
+  _mapLuaState.clear();
   return Command::fmtOK();
+}
+
+Expected<std::string> ScriptManager::getScriptContent(Session* sess,
+                                                      const std::string& sha) {
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IS);
+  RET_IF_ERR_EXPECTED(expdb);
+  auto kvstore = expdb.value().store;
+  auto ptxn = kvstore->createTransaction(sess);
+  RET_IF_ERR_EXPECTED(ptxn);
+
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  RecordKey rk(
+    LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, sha, "");
+  auto expRvStr = txn->getKV(rk.encode());
+  RET_IF_ERR_EXPECTED(expRvStr);
+  auto expRv = RecordValue::decode(expRvStr.value());
+  RET_IF_ERR_EXPECTED(expRv);
+  return expRv.value().getValue();
+}
+
+Expected<std::string> ScriptManager::saveLuaScript(Session* sess,
+                                                   const std::string& sha,
+                                                   const std::string& script) {
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IX);
+  RET_IF_ERR_EXPECTED(expdb);
+  auto kvstore = expdb.value().store;
+  auto ptxn = kvstore->createTransaction(sess);
+  RET_IF_ERR_EXPECTED(ptxn);
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  // if sha is empty, calculate sha code for script first.
+  std::string tmpSha;
+  if (sha.empty()) {
+    tmpSha = LuaState::getShaEncode(script);
+  } else {
+    tmpSha = toLower(sha);
+  }
+  RecordKey rk(
+    LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, tmpSha, "");
+  RecordValue rv(script, RecordType::RT_META, -1);
+  auto s = txn->setKV(rk.encode(), rv.encode());
+  RET_IF_ERR(s);
+  auto commitStatus = txn->commit();
+  RET_IF_ERR_EXPECTED(commitStatus);
+
+  return Command::fmtBulk(tmpSha);
+}
+
+Expected<std::string> ScriptManager::checkIfScriptExists(Session* sess) {
+  const std::vector<std::string>& args = sess->getArgs();
+  auto expdb = _svr->getSegmentMgr()->getDb(
+    sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IS);
+  RET_IF_ERR_EXPECTED(expdb);
+  auto kvstore = expdb.value().store;
+  auto ptxn = kvstore->createTransaction(sess);
+  RET_IF_ERR_EXPECTED(ptxn);
+  std::unique_ptr<Transaction> txn = std::move(ptxn.value());
+  std::stringstream ss;
+  Command::fmtMultiBulkLen(ss, args.size() - 2);
+  for (uint32_t i = 2; i < args.size(); ++i) {
+    auto tmpSha = toLower(args[i]);
+    RecordKey rk(
+      LuaScript::CHUNKID, LuaScript::DBID, RecordType::RT_META, tmpSha, "");
+    auto expStr = txn->getKV(rk.encode());
+    Command::fmtLongLong(ss, expStr.ok() ? 1 : 0);
+  }
+  return ss.str();
 }
 
 Status ScriptManager::startup(uint32_t luaStateNum) {
