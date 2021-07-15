@@ -2793,9 +2793,8 @@ class ConfigCommand : public Command {
       return {ErrorCodes::ERR_PARSEOPT,
               "The server is running without a config file!"};
     }
-    Status s;
-    s = sess->getServerEntry()->getParams()->rewriteConfig();
-    RET_IF_ERR(s);
+    Status s = sess->getServerEntry()->getParams()->rewriteConfig();
+    return s;
   }
 
   Expected<std::string> run(Session* sess) final {
