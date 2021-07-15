@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include "tendisplus/commands/command.h"
+#include "tendisplus/commands/release.h"
+#include "tendisplus/commands/version.h"
 #include "tendisplus/utils/param_manager.h"
 #include "tendisplus/utils/base64.h"
 #include "tendisplus/storage/kvstore.h"
@@ -75,11 +77,13 @@ class BinlogScanner {
         std::cout << "  op:"
                   << "FLUSH"
                   << " cmd:" << logValue.value().getCmd() << std::endl;
+        return "";
       } else if (logValue.value().getChunkId() ==
                  Transaction::CHUNKID_MIGRATE) {
         std::cout << "  op:"
                   << "MIGRATE"
                   << " cmd:" << logValue.value().getCmd() << std::endl;
+        return "";
       }
 
       size_t offset = logValue.value().getHdrSize();
@@ -258,6 +262,13 @@ void usage() {
 int main(int argc, char** argv) {
   if (argc < 2) {
     usage();
+    return 0;
+  }
+  if (strcmp(argv[1], "-v") == 0) {
+    std::cout << "Tendisplus v=" << TENDISPLUS_VERSION
+              << " sha=" << TENDISPLUS_GIT_SHA1
+              << " dirty=" << TENDISPLUS_GIT_DIRTY
+              << " build=" << TENDISPLUS_BUILD_ID << std::endl;
     return 0;
   }
   tendisplus::ParamManager pm;
