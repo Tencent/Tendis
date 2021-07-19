@@ -734,6 +734,10 @@ TEST(Repl, BinlogKeepNum_Test) {
       cfg3->minBinlogKeepSec = 0;
       cfg4->maxBinlogKeepNum = masterBinlogNum;
       cfg4->minBinlogKeepSec = 0;
+      cfg1->binlogDelRange = 1;
+      cfg2->binlogDelRange = 1;
+      cfg3->binlogDelRange = 1;
+      cfg4->binlogDelRange = 1;
       if (j == 1) {
         cfg1->binlogDelRange = 5000;
         cfg2->binlogDelRange = 5000;

@@ -414,10 +414,10 @@ class ServerParams {
   uint32_t fullReceiveThreadnum = 4;
   uint32_t logRecycleThreadnum = 4;
   uint32_t truncateBinlogIntervalMs = 1000;
-  uint32_t truncateBinlogNum = 50000;
+  uint32_t truncateBinlogNum = 100000;
   uint32_t binlogFileSizeMB = 64;
   uint32_t binlogFileSecs = 20 * 60;
-  uint32_t binlogDelRange = 1;
+  uint32_t binlogDelRange = 100000;
 
   uint32_t keysDefaultLimit = 100;
   uint32_t lockWaitTimeOut = 3600;
@@ -475,7 +475,7 @@ class ServerParams {
   bool jeprofAutoDump = true;
   bool compactRangeAfterDeleteRange = false;
   bool saveMinBinlogId = true;
-  bool deleteFilesInRangeforBinlog = false;
+  bool deleteFilesInRangeforBinlog = true;
   bool logError = false;
 };
 

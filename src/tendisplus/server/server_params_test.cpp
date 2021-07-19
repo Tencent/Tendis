@@ -247,7 +247,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->fullReceiveThreadnum, 4);
   EXPECT_EQ(cfg->logRecycleThreadnum, 4);
   EXPECT_EQ(cfg->truncateBinlogIntervalMs, 1000);
-  EXPECT_EQ(cfg->truncateBinlogNum, 50000);
+  EXPECT_EQ(cfg->truncateBinlogNum, 100000);
   EXPECT_EQ(cfg->binlogFileSizeMB, 64);
   EXPECT_EQ(cfg->binlogFileSecs, 20 * 60);
   EXPECT_EQ(cfg->lockWaitTimeOut, 3600);
