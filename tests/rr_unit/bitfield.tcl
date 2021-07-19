@@ -198,4 +198,38 @@ start_server {tags {"bitops"}} {
         }
         r del mystring
     }
+
+    # random test
+    proc RandomRange { min max } {  
+        set rd [expr rand()]  
+        set result [expr $rd * ($max - $min) + $min]  
+        return $result  
+    } 
+    proc RandomRangeInt { min max } {  
+        return [expr int([RandomRange $min $max])]  
+    }
+
+    test {BITFIELD random} {
+        r del key
+        for {set i 0} {$i < 1000} {incr i} {
+            set offset [RandomRangeInt 0 1000000]
+            set value  [RandomRangeInt 0 1000000]
+            r bitfield key set i64 $offset $value
+            assert_equal $value [r bitfield key get i64 $offset]
+        }
+
+        r del key
+        for {set i 0} {$i < 1000} {incr i} {
+            set offset [RandomRangeInt 0 1000000]
+            set incr   [RandomRangeInt 0 1000000]
+            set value  [r bitfield key get u32 $offset]
+            r bitfield key overflow sat incrby u32 $offset $incr
+
+            if {[expr $value+$incr] > 4294967295} {
+                assert_equal 4294967295 [r bitfield key get u32 $offset]
+            } else {
+                assert_equal [expr $value+$incr] [r bitfield key get u32 $offset]
+            }
+        }
+    }
 }
