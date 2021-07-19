@@ -2684,130 +2684,147 @@ class ConfigCommand : public Command {
     return false;
   }
 
-  Expected<std::string> run(Session* sess) final {
+  Status configSetCommand(Session* sess) {
     auto& args = sess->getArgs();
+    auto configName = toLower(args[2]);
 
-    auto operation = toLower(args[1]);
-
-    if (operation == "set") {
-      if (args.size() < 3 || args.size() > 5) {
+    if (configName == "session") {
+      if (args.size() != 5) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
       }
 
-      auto configName = toLower(args[2]);
-      if (configName == "session") {
-        if (args.size() != 5) {
-          return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
-        }
-
-        if (toLower(args[3]) == "tendis_protocol_extend") {
-          sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
-        } else if (toLower(args[3]) == "perf_level") {
-          if (!sess->getCtx()->setPerfLevel(toLower(args[4]))) {
-            return {ErrorCodes::ERR_PARSEOPT,
-                    "invalid argument :\"" + args[4] +
-                      "\" for 'config set session perf_level'"};
-          }
-        } else {
+      if (toLower(args[3]) == "tendis_protocol_extend") {
+        sess->getCtx()->setExtendProtocol(isOptionOn(args[4]));
+      } else if (toLower(args[3]) == "perf_level") {
+        if (!sess->getCtx()->setPerfLevel(toLower(args[4]))) {
           return {ErrorCodes::ERR_PARSEOPT,
-                  "invalid argument :\"" + args[3] +
-                    "\" for 'config set session'"};
+                  "invalid argument :\"" + args[4] +
+                    "\" for 'config set session perf_level'"};
         }
-      } else if (configName == "requirepass") {
-        sess->getServerEntry()->setRequirepass(args[3]);
-      } else if (configName == "masterauth") {
-        sess->getServerEntry()->setMasterauth(args[3]);
-      } else if (configName == "appendonly") {
-        // NOTE(takenliu): donothing, for tests/*.tcl
       } else {
-        auto s = sess->getServerEntry()->getParams()->setVar(
-          configName, args[3], false);
-        RET_IF_ERR(s);
+        return {ErrorCodes::ERR_PARSEOPT,
+                "invalid argument :\"" + args[3] +
+                  "\" for 'config set session'"};
       }
+    } else if (configName == "requirepass") {
+      sess->getServerEntry()->setRequirepass(args[3]);
+    } else if (configName == "masterauth") {
+      sess->getServerEntry()->setMasterauth(args[3]);
+    } else if (configName == "appendonly") {
+      // NOTE(takenliu): donothing, for tests/*.tcl
+    } else {
+      auto s =
+        sess->getServerEntry()->getParams()->setVar(configName, args[3], false);
+      RET_IF_ERR(s);
+    }
+    return {ErrorCodes::ERR_OK, ""};
+  }
+
+  Expected<std::string> configGetCommand(Session* sess) {
+    auto& args = sess->getArgs();
+    auto configName = toLower(args[2]);
+    vector<string> info;
+    if (configName == "requirepass") {
+      info.push_back("requirepass");
+      info.push_back(sess->getServerEntry()->requirepass());
+    } else if (configName == "masterauth") {
+      info.push_back("masterauth");
+      info.push_back(sess->getServerEntry()->masterauth());
+    } else if (!sess->getServerEntry()->getParams()->showVar(configName,
+                                                             &info)) {
+      return Command::fmtZeroBulkLen();
+    }
+    int size = info.size();
+    std::stringstream ss;
+    Command::fmtMultiBulkLen(ss, size);
+    for (int i = 0; i < size; i++) {
+      Command::fmtBulk(ss, info[i]);
+    }
+    return ss.str();
+  }
+
+  void configResetstatCommand(Session* sess) {
+    auto& args = sess->getArgs();
+    bool reset_all = false;
+    auto configName = toLower(args[2]);
+    if (configName == "all") {
+      reset_all = true;
+    }
+
+    if (reset_all || configName == "unseencommands") {
+      LOG(INFO) << "reset unseencommands";
+      std::lock_guard<std::mutex> lk(Command::_mutex);
+      for (const auto& kv : _unSeenCmds) {
+        LOG(INFO) << "unseencommand:" << kv.first
+                  << " call-times:" << kv.second;
+      }
+      _unSeenCmds.clear();
+    }
+    if (reset_all || configName == "commandstats") {
+      LOG(INFO) << "reset commandstats";
+      std::stringstream ss;
+      InfoCommand::infoCommandStats(true, true, "commandstats", sess, ss);
+      LOG(INFO) << ss.str();
+      for (const auto& kv : commandMap()) {
+        kv.second->resetStatInfo();
+      }
+    }
+    if (reset_all || configName == "stats") {
+      LOG(INFO) << "reset stats";
+      std::stringstream ss;
+      InfoCommand::infoStats(true, true, "stats", sess, ss);
+      LOG(INFO) << ss.str();
+
+      auto svr = sess->getServerEntry();
+      svr->resetServerStat();
+    }
+    if (reset_all || configName == "rocksdbstats") {
+      LOG(INFO) << "reset rocksdbstats";
+      std::stringstream ss;
+      InfoCommand::infoRocksdbStats(true, true, "rocksdbstats", sess, ss);
+      LOG(INFO) << ss.str();
+      auto svr = sess->getServerEntry();
+      svr->resetRocksdbStats(sess);
+    }
+  }
+
+  Status configRewriteCommand(Session* sess) {
+    if (sess->getServerEntry()->getParams()->getConfFile().empty()) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              "The server is running without a config file!"};
+    }
+    Status s = sess->getServerEntry()->getParams()->rewriteConfig();
+    return s;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    auto& args = sess->getArgs();
+    auto operation = toLower(args[1]);
+
+    if (operation == "set") {
+      if (args.size() <= 3 || args.size() > 5) {
+        return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
+      }
+      auto s = configSetCommand(sess);
+      RET_IF_ERR(s);
     } else if (operation == "get") {
       if (args.size() != 3) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
       }
-      auto configName = toLower(args[2]);
-      vector<string> info;
-      if (configName == "requirepass") {
-        info.push_back("requirepass");
-        info.push_back(sess->getServerEntry()->requirepass());
-      } else if (configName == "masterauth") {
-        info.push_back("masterauth");
-        info.push_back(sess->getServerEntry()->masterauth());
-      } else if (!sess->getServerEntry()->getParams()->showVar(configName,
-                                                               &info)) {
-        return Command::fmtZeroBulkLen();
-      }
-      int size = info.size();
-      std::stringstream ss;
-      Command::fmtMultiBulkLen(ss, size);
-      for (int i = 0; i < size; i++) {
-        Command::fmtBulk(ss, info[i]);
-      }
-      return ss.str();
+      auto eRes = configGetCommand(sess);
+      return eRes.value();
     } else if (operation == "resetstat") {
-      bool reset_all = false;
-
       if (args.size() != 3) {
         return {ErrorCodes::ERR_PARSEOPT,
                 "args size incorrect, should be three"};
       }
-
-      auto configName = toLower(args[2]);
-      if (configName == "all") {
-        reset_all = true;
-      }
-
-      if (reset_all || configName == "unseencommands") {
-        LOG(INFO) << "reset unseencommands";
-        std::lock_guard<std::mutex> lk(Command::_mutex);
-        for (const auto& kv : _unSeenCmds) {
-          LOG(INFO) << "unseencommand:" << kv.first
-                    << " call-times:" << kv.second;
-        }
-        _unSeenCmds.clear();
-      }
-      if (reset_all || configName == "commandstats") {
-        LOG(INFO) << "reset commandstats";
-        std::stringstream ss;
-        InfoCommand::infoCommandStats(true, true, "commandstats", sess, ss);
-        LOG(INFO) << ss.str();
-        for (const auto& kv : commandMap()) {
-          kv.second->resetStatInfo();
-        }
-      }
-      if (reset_all || configName == "stats") {
-        LOG(INFO) << "reset stats";
-        std::stringstream ss;
-        InfoCommand::infoStats(true, true, "stats", sess, ss);
-        LOG(INFO) << ss.str();
-
-        auto svr = sess->getServerEntry();
-        svr->resetServerStat();
-      }
-      if (reset_all || configName == "rocksdbstats") {
-        LOG(INFO) << "reset rocksdbstats";
-        std::stringstream ss;
-        InfoCommand::infoRocksdbStats(true, true, "rocksdbstats", sess, ss);
-        LOG(INFO) << ss.str();
-        auto svr = sess->getServerEntry();
-        svr->resetRocksdbStats(sess);
-      }
+      configResetstatCommand(sess);
     } else if (operation == "rewrite") {
       if (args.size() > 2) {
         return {ErrorCodes::ERR_PARSEOPT, "args size incorrect!"};
       }
-      if (sess->getServerEntry()->getParams()->getConfFile().empty()) {
-        return {ErrorCodes::ERR_PARSEOPT,
-                "The server is running without a config file!"};
-      }
-      Status s;
-      s = sess->getServerEntry()->getParams()->rewriteConfig();
-      if (!s.ok()) {
-        return s;
-      }
+      auto s = configRewriteCommand(sess);
+      RET_IF_ERR(s);
     } else {
       LOG(INFO) << "unknown sub command:" << operation;
       return {ErrorCodes::ERR_PARSEOPT, "unknown sub command:" + operation};
