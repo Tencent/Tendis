@@ -337,6 +337,11 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 	cfg = cfg + "LogNoticeSample 1\n"
 	cfg = cfg + "LogWarnSample 1\n"
 	cfg = cfg + "LogErrorSample 1\n"
+	cfg = cfg + "Authority {\n"
+	cfg = cfg + "    Auth \"tendis+test\" {\n"
+	cfg = cfg + "        Mode write\n"
+	cfg = cfg + "    }\n"
+	cfg = cfg + "}\n"
 
 	cfg = cfg + "ClusterServerPool {\n"
 	cfg = cfg + "    Password tendis+test\n"
