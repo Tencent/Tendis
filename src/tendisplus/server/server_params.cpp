@@ -58,6 +58,14 @@ string gMappingCmdList = "";  // NOLINT
                              checkfun,                                        \
                              prefun,                                          \
                              allowDynamicSet)));                              \
+  else if (typeid(var) == typeid(double))                                     \
+    _mapServerParams.insert(                                                  \
+      make_pair(toLower(str),                                                 \
+                new DoubleVar(str,                                             \
+                             reinterpret_cast<void*>(&var),                   \
+                             checkfun,                                        \
+                             prefun,                                          \
+                             allowDynamicSet)));                              \
   else if (typeid(var) == typeid(string))                                     \
     _mapServerParams.insert(                                                  \
       make_pair(toLower(str),                                                 \
@@ -447,17 +455,20 @@ ServerParams::ServerParams() {
                     nullptr, nullptr, -1, 19, false);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
-  
-  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_rate_bytes_per_sec", rocksRateLimiterRateBytesPerSec);
-  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_refill_period_us", rocksRateLimiterRefillPeriodUs);
-  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_fairness", rocksRateLimiterFairness);
-  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_auto_tuned", rocksRateLimiterAutoTuned);
+
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_rate_bytes_per_sec",
+                          rocksRateLimiterRateBytesPerSec);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_refill_period_us",
+                          rocksRateLimiterRefillPeriodUs);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_fairness",
+                          rocksRateLimiterFairness);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_auto_tuned",
+                          rocksRateLimiterAutoTuned);
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisableWAL);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit",
                                   rocksFlushLogAtTrxCommit);
   REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
-  
 
   REGISTER_VARS_FULL("rocks.compress_type",
                      rocksCompressType,
@@ -468,6 +479,17 @@ ServerParams::ServerParams() {
                      false);
   REGISTER_VARS_DIFF_NAME("rocks.level0_compress_enabled", level0Compress);
   REGISTER_VARS_DIFF_NAME("rocks.level1_compress_enabled", level1Compress);
+
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.max_open_files",
+                                  rocksMaxOpenFiles);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.max_background_jobs",
+                                  rocksMaxBackgroundJobs);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_window",
+                                  rocksCompactOnDeletionWindow);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_trigger",
+                                  rocksCompactOnDeletionTrigger);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_ratio",
+                                  rocksCompactOnDeletionRatio);
 
   REGISTER_VARS_SAME_NAME(
     migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
@@ -685,20 +707,32 @@ Status ServerParams::setVar(const string& name,
   string errinfo;
   auto argname = toLower(name);
   auto iter = _mapServerParams.find(toLower(name));
-  if (iter == _mapServerParams.end()) {
-    if (argname.substr(0, 6) == "rocks.") {
-      auto ed = tendisplus::stoll(value);
-      if (!ed.ok()) {
-        errinfo = "invalid rocksdb options:" + argname + " value:" + value +
-          " " + ed.status().toString();
-        return {ErrorCodes::ERR_PARSEOPT, errinfo};
-      }
 
-      if (startup) {
-        _rocksdbOptions.insert(
-          make_pair(toLower(argname.substr(6, argname.length())), ed.value()));
+  if (startup) {
+    // load serverparam and rocksoptions when startup
+    if (iter == _mapServerParams.end()) {
+      if (argname.substr(0, 6) == "rocks.") {
+        auto ed = tendisplus::stoll(value);
+        if (!ed.ok()) {
+          errinfo = "invalid rocksdb options:" + argname + " value:" + value +
+            " " + ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
+        }
+        // pass configured RocksdbOptions when server starup
+        _rocksdbOptions[toLower(argname.substr(6, argname.length()))] =
+          ed.value();
         return {ErrorCodes::ERR_OK, ""};
-      } else {
+      }
+      errinfo = "not found arg:" + argname;
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
+    } else {
+      return iter->second->setVar(value, startup);
+    }
+  } else {
+    // change serverparam and rocksoptions when running
+    if (iter != _mapServerParams.end()) {
+      if (argname.substr(0, 6) == "rocks.") {
+        // make sure changed RocksdbOptions take effect when KVstore is running
         auto server = getGlobalServer();
         LocalSessionGuard sg(server.get());
         for (uint64_t i = 0; i < server->getKVStoreCount(); i++) {
@@ -706,22 +740,36 @@ Status ServerParams::setVar(const string& name,
             sg.getSession(), i, mgl::LockMode::LOCK_IS);
           RET_IF_ERR_EXPECTED(expStore);
 
+          Status s;
           // change rocksdb options dynamically
-          auto s = expStore.value().store->setOption(argname, ed.value());
+          if (argname.substr(0, 25) == "rocks.compaction_deletes_") {
+            // change rockdb options.CompactOnDeletionTableFactory
+            s = expStore.value().store->setCompactOnDeletionCollectorFactory(
+              argname, value);
+          } else {
+            // change rocksdb mutableOptions by calling
+            // rocksdb::DBImpl::SetDBOptions()
+            auto ed = tendisplus::stoll(value);
+            if (!ed.ok()) {
+              errinfo = "invalid rocksdb options:" + argname +
+                " value:" + value + " " + ed.status().toString();
+              return {ErrorCodes::ERR_PARSEOPT, errinfo};
+            }
+
+            s = expStore.value().store->setOption(argname, ed.value());
+          }
           RET_IF_ERR(s);
         }
-
-        return {ErrorCodes::ERR_OK, ""};
       }
-    }
 
-    errinfo = "not found arg:" + argname;
-    return {ErrorCodes::ERR_PARSEOPT, errinfo};
+      LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
+
+      return iter->second->setVar(value, startup);
+    }
   }
-  if (!startup) {
-    LOG(INFO) << "ServerParams setVar dynamic," << argname << " : " << value;
-  }
-  return iter->second->setVar(value, startup);
+
+  errinfo = "not found arg:" + argname;
+  return {ErrorCodes::ERR_PARSEOPT, errinfo};
 }
 
 bool ServerParams::registerOnupdate(const string& name, funptr ptr) {

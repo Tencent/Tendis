@@ -171,6 +171,7 @@ TEST(ServerParams, RocksOption) {
   myfile << "rocks.blockcache_strict_capacity_limit 1\n";
   myfile << "rocks.max_write_buffer_number 1\n";
   myfile << "rocks.cache_index_and_filter_blocks 1\n";
+  myfile << "rocks.wal_dir \"/Abc/tlg\"\n";
   myfile.close();
   const auto guard = MakeGuard([] { remove("a.cfg"); });
   auto cfg = std::make_unique<ServerParams>();
@@ -184,7 +185,7 @@ TEST(ServerParams, RocksOption) {
   EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, 1);
   EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
   EXPECT_EQ(cfg->rocksCompressType, "lz4");
-  EXPECT_EQ(cfg->rocksWALDir, "/Abc/dfg");
+  EXPECT_EQ(cfg->rocksWALDir, "/Abc/tlg");
   EXPECT_TRUE(cfg->getRocksdbOptions().find("max_write_buffer_number") !=
               cfg->getRocksdbOptions().end());
   EXPECT_TRUE(cfg->getRocksdbOptions().find("cache_index_and_filter_blocks") !=

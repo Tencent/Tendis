@@ -262,6 +262,43 @@ class FloatVar : public BaseVar {
   float _defaultValue;
 };
 
+class DoubleVar : public BaseVar {
+ public:
+  DoubleVar(const string& name,
+           void* v,
+           checkfunptr ptr,
+           preProcess preFun,
+           bool allowDynamicSet)
+    : BaseVar(name, v, ptr, preFun, allowDynamicSet),
+      _defaultValue(*reinterpret_cast<double*>(value)) {}
+  virtual string show() const {
+    return std::to_string(*reinterpret_cast<double*>(value));
+  }
+  virtual string default_show() const {
+    return std::to_string(_defaultValue);
+  }
+
+ private:
+  Status set(const string& val, bool startup) {
+    auto v = preProcessFun ? preProcessFun(val) : val;
+    std::string errinfo;
+    if (!check(v, startup, &errinfo)) {
+      return {ErrorCodes::ERR_PARSEOPT, errinfo};
+    }
+
+    auto eDouble = tendisplus::stold(v);
+    if (!eDouble.ok()) {
+      return eDouble.status();
+    }
+    *reinterpret_cast<double*>(value) = static_cast<double>(eDouble.value());
+
+    if (Onupdate != NULL)
+      Onupdate();
+    return {ErrorCodes::ERR_OK, ""};
+  }
+  double _defaultValue;
+};
+
 class BoolVar : public BaseVar {
  public:
   BoolVar(const string& name,
@@ -437,6 +474,12 @@ class ServerParams {
   bool rocksStrictCapacityLimit = false;
   std::string rocksWALDir = "";
   string rocksCompressType = "snappy";
+  int32_t rocksMaxOpenFiles = -1;
+  int32_t rocksMaxBackgroundJobs = 2;
+  uint32_t rocksCompactOnDeletionWindow = 0;
+  uint32_t rocksCompactOnDeletionTrigger = 0;
+  double rocksCompactOnDeletionRatio = 0;
+
   // WriteOptions
   bool rocksDisableWAL = false;
   bool rocksFlushLogAtTrxCommit = false;

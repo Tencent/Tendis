@@ -2189,16 +2189,44 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
   asio::ip::tcp::socket socket(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  sess.setArgs({"CONFIG", "SET", "rocks.max_background_compactions", "3"});
+  std::stringstream ss;
+
+  sess.setArgs({"CONFIG", "GET", "rocks.max_background_jobs"});
   auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  Command::fmtMultiBulkLen(ss, 2);
+  Command::fmtBulk(ss, "rocks.max_background_jobs");
+  Command::fmtBulk(ss, "2");
+  EXPECT_EQ(ss.str(), expect.value());
+
+  sess.setArgs({"CONFIG", "SET", "rocks.max_background_jobs", "3"});
+  expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
     auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
     EXPECT_TRUE(exptDb.ok());
 
     auto store = exptDb.value().store;
-    EXPECT_EQ(store->getOption("rocks.max_background_compactions"), 3);
+    EXPECT_EQ(store->getOption("rocks.max_background_jobs"), 3);
   }
+
+  sess.setArgs({"CONFIG", "GET", "rocks.max_background_jobs"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 2);
+  Command::fmtBulk(ss, "rocks.max_background_jobs");
+  Command::fmtBulk(ss, "3");
+  EXPECT_EQ(ss.str(), expect.value());
+
+  sess.setArgs({"CONFIG", "GET", "rocks.max_open_files"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 2);
+  Command::fmtBulk(ss, "rocks.max_open_files");
+  Command::fmtBulk(ss, "-1");
+  EXPECT_EQ(ss.str(), expect.value());
 
   sess.setArgs({"CONFIG", "SET", "rocks.max_open_files", "3000"});
   expect = Command::runSessionCmd(&sess);
@@ -2211,16 +2239,54 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
     EXPECT_EQ(store->getOption("rocks.max_open_files"), 3000);
   }
 
-  sess.setArgs({"CONFIG", "SET", "rocks.max_open_files", "-1"});
+  sess.setArgs({"CONFIG", "GET", "rocks.max_open_files"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
-  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
-    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
-    EXPECT_TRUE(exptDb.ok());
+  ss.str("");
+  Command::fmtMultiBulkLen(ss, 2);
+  Command::fmtBulk(ss, "rocks.max_open_files");
+  Command::fmtBulk(ss, "3000");
+  EXPECT_EQ(ss.str(), expect.value());
 
-    auto store = exptDb.value().store;
-    EXPECT_EQ(store->getOption("rocks.max_open_files"), -1);
-  }
+  // we will adjust these tests when we use rocksdb(version > 6.11)
+  std::string err;
+  sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_window", "100"});
+  expect = Command::runSessionCmd(&sess);
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+  EXPECT_TRUE(expect.ok());
+#else
+  EXPECT_FALSE(expect.ok());
+  err = Command::fmtErr(
+    "-ERR:3,msg:rocks.compaction_deletes_window can't be changed dynmaically "
+    "in rocksdb(version < 6.11)\r\n");
+  EXPECT_EQ(err, expect.status().toString());
+#endif
+
+  sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_trigger", "50"});
+  expect = Command::runSessionCmd(&sess);
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+  EXPECT_TRUE(expect.ok());
+#else
+  EXPECT_FALSE(expect.ok());
+  err.clear();
+  err = Command::fmtErr(
+    "-ERR:3,msg:rocks.compaction_deletes_trigger can't be changed dynmaically "
+    "in rocksdb(version < 6.11)\r\n");
+  EXPECT_EQ(err, expect.status().toString());
+#endif
+
+  sess.setArgs({"CONFIG", "SET", "rocks.compaction_deletes_ratio", "0.5"});
+  expect = Command::runSessionCmd(&sess);
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+  EXPECT_TRUE(expect.ok());
+#else
+  EXPECT_FALSE(expect.ok());
+  err.clear();
+  err = Command::fmtErr(
+    "-ERR:3,msg:rocks.compaction_deletes_ratio can't be changed dynmaically "
+    "in rocksdb(version < 6.11)\r\n");
+  EXPECT_EQ(err, expect.status().toString());
+#endif
 
   sess.setArgs({"CONFIG", "SET", "rocks.abc", "-1"});
   expect = Command::runSessionCmd(&sess);

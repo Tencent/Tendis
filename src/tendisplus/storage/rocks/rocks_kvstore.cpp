@@ -30,6 +30,8 @@
 #include "rocksdb/perf_context.h"
 #include "rocksdb/statistics.h"
 #include "rocksdb/convenience.h"
+#include "rocksdb/table_properties.h"
+#include "rocksdb/utilities/table_properties_collectors.h"
 
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
@@ -1735,15 +1737,33 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
 
-    rocksdb::Options columOpts = options();
+    rocksdb::Options defaultColumnFamilyOpts = options();
+    // enable CompactOnDeletionCollectorFactory:
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+    defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
+      rocksdb::NewCompactOnDeletionCollectorFactory(
+        _cfg->rocksCompactOnDeletionWindow,
+        _cfg->rocksCompactOnDeletionTrigger,
+        _cfg->rocksCompactOnDeletionRatio));
+#else
+    if (_cfg->rocksCompactOnDeletionWindow == 0) {
+      // disable CompactOnDeletionCollectorFactory
+    } else {
+      defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
+        rocksdb::NewCompactOnDeletionCollectorFactory(
+          _cfg->rocksCompactOnDeletionWindow,
+          _cfg->rocksCompactOnDeletionTrigger));
+    }
+#endif
     std::unique_ptr<rocksdb::Iterator> iter = nullptr;
     std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
     std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
     column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-      rocksdb::kDefaultColumnFamilyName, columOpts));
+      rocksdb::kDefaultColumnFamilyName, defaultColumnFamilyOpts));
     if (!_cfg->binlogUsingDefaultCF) {
+      rocksdb::Options binlogColumnFamilyOpts = options();
       column_families.push_back(
-        rocksdb::ColumnFamilyDescriptor("binlog_cf", columOpts));
+        rocksdb::ColumnFamilyDescriptor("binlog_cf", binlogColumnFamilyOpts));
     }
     if (_txnMode == TxnMode::TXN_OPT) {
       rocksdb::OptimisticTransactionDB* tmpDb = nullptr;
@@ -2752,11 +2772,11 @@ Status RocksKVStore::recoveryFromBgError() {
 Status RocksKVStore::setOption(const std::string& option, int64_t value) {
   std::unordered_map<std::string, std::string> map;
   if (option.substr(0, 6) != "rocks.") {
-    return {ErrorCodes::ERR_INTERNAL, option + "is not rocksdb option"};
+    return {ErrorCodes::ERR_INTERNAL, option + " is not rocksdb option"};
   }
 
   static std::set<std::string> rocksdb_dynamic_options = {
-    "rocks.max_background_compactions", "rocks.max_open_files"};
+    "rocks.max_background_jobs", "rocks.max_open_files"};
 
   if (rocksdb_dynamic_options.count(option) <= 0) {
     return {ErrorCodes::ERR_INTERNAL, option + " can't change dynamically"};
@@ -2773,9 +2793,69 @@ Status RocksKVStore::setOption(const std::string& option, int64_t value) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+Status RocksKVStore::setCompactOnDeletionCollectorFactory(
+  const std::string& option, const std::string& value) {
+  if (option.substr(0, 25) != "rocks.compaction_deletes_") {
+    return {ErrorCodes::ERR_INTERNAL, option + " is not rocksdb option"};
+  }
+
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+  auto table_properties_collector_factories =
+    getBaseDB()->GetOptions().table_properties_collector_factories;
+  std::string errinfo;
+  for (auto factory : table_properties_collector_factories) {
+    if (factory->Name() == "CompactOnDeletionCollector") {
+      auto table_factory_option = option.substr(25, option.size() - 25);
+      if (table_factory_option == "window") {
+        auto ed = tendisplus::stoul(value);
+        if (!ed.ok()) {
+          errinfo = "invalid CompactOnDeletionCollector window value:" + value +
+            " " + ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
+        }
+
+        factory->SetWindowSize(value);
+        return {ErrorCodes::ERR_OK, ""};
+      } else if (table_factory_option == "trigger") {
+        auto ed = tendisplus::stoul(value);
+        if (!ed.ok()) {
+          errinfo =
+            "invalid CompactOnDeletionCollector trigger value:" + value + " " +
+            ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
+        }
+
+        factory->SetDeletionTrigger(value);
+        return {ErrorCodes::ERR_OK, ""};
+      } else if (table_factory_option == "ratio") {
+        auto ed = tendisplus::stod(value);
+        if (!ed.ok()) {
+          errinfo = "invalid CompactOnDeletionCollector ratio value:" + value +
+            " " + ed.status().toString();
+          return {ErrorCodes::ERR_PARSEOPT, errinfo};
+        }
+
+        factory->SetDeletionRatio(value);
+        return {ErrorCodes::ERR_OK, ""};
+      } else {
+        return {ErrorCodes::ERR_INTERNAL,
+                option +
+                  " is not rocksdb-CompactOnDeletionTableFactory option"};
+      }
+    }
+  }
+
+  return {ErrorCodes::ERR_INTERNAL,
+          "Options don't contain CompactOnDeletionTableFactory"};
+#else
+  return {ErrorCodes::ERR_INTERNAL,
+          option + " can't be changed dynmaically in rocksdb(version < 6.11)"};
+#endif
+}
+
 int64_t RocksKVStore::getOption(const std::string& option) {
-  if (option == "rocks.max_background_compactions") {
-    return getBaseDB()->GetDBOptions().max_background_compactions;
+  if (option == "rocks.max_background_jobs") {
+    return getBaseDB()->GetDBOptions().max_background_jobs;
   } else if (option == "rocks.max_open_files") {
     return getBaseDB()->GetDBOptions().max_open_files;
   } else {
