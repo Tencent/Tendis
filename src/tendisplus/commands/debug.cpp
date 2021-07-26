@@ -4376,9 +4376,12 @@ class TendisadminCommand : public Command {
       const auto server = sess->getServerEntry();
       for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
         auto expdb =
-          server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+          server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_X);
         RET_IF_ERR_EXPECTED(expdb);
 
+        // We call recoveryFromBgError() to recover rocksdb from backgroundError
+        // if we use rocskdb( version>5.15 ), we will call Resume()
+        // else we will restart KVstore
         auto s = expdb.value().store->recoveryFromBgError();
         RET_IF_ERR(s);
       }

@@ -2715,7 +2715,20 @@ Status RocksKVStore::recoveryFromBgError() {
   _env->resetError();
 #else
   // NOTE(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-  // We can only reset the bg_error_ in rocksdb.
+  // We restart KVstore to recover rocksdb
+  auto s = stop();
+  if (!s.ok()) {
+    return s;
+  }
+
+  auto nextBinlogid = getNextBinlogSeq();
+
+  auto ret = restart(false, nextBinlogid, UINT64_MAX);
+  if (!ret.ok()) {
+    return ret.status();
+  }
+
+  INVARIANT_D(ret.value() == nextBinlogid - 1);
   _env->resetError();
 #endif
 
@@ -2958,14 +2971,13 @@ void RocksKVStore::appendJSONStat(
 RocksdbEnv::RocksdbEnv()
   : _errCnt(0),
     _reason(rocksdb::BackgroundErrorReason::kFlush),
-    _bgError(""),
-    _rocksbgError(nullptr) {}
+    _bgError("") {}
 
 void RocksdbEnv::setError(rocksdb::BackgroundErrorReason reason,
                           rocksdb::Status* error) {
   std::lock_guard<std::mutex> lk(_mutex);
   _reason = reason;
-  _rocksbgError = error;
+  _rocksbgError = *error;
   _bgError = error->ToString();
   _errCnt++;
 }
@@ -2978,7 +2990,7 @@ void RocksdbEnv::clear() {
 #else
   // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
   // We can only reset the bg_error_ in rocksdb.
-  _rocksbgError = nullptr;
+  _rocksbgError = rocksdb::Status::OK();
 #endif
 }
 
@@ -2989,8 +3001,8 @@ void RocksdbEnv::resetError() {
   // do nothing
 #else
   // TODO(vinchen): in rocksdb-5.13.4 there is no DB::Resume().
-  // We can only reset the bg_error_ in rocksdb.
-  *_rocksbgError = rocksdb::Status::OK();
+  // We reset the backgroundError in tendisplus.
+  _rocksbgError = rocksdb::Status::OK();
 #endif
 }
 

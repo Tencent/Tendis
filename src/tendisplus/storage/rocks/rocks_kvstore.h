@@ -487,7 +487,7 @@ class RocksdbEnv {
   std::atomic<uint64_t> _errCnt;
   rocksdb::BackgroundErrorReason _reason;
   std::string _bgError;
-  rocksdb::Status* _rocksbgError;
+  rocksdb::Status _rocksbgError;
 };
 
 class BackgroundErrorListener : public rocksdb::EventListener {
