@@ -71,14 +71,29 @@ class BlockingTcpClient
     }
   }
 
-  std::string getLocalRepr() const {
-    if (_socket.is_open()) {
-      std::stringstream ss;
-      ss << _socket.local_endpoint().address().to_string() << ":"
-         << _socket.local_endpoint().port();
-      return ss.str();
+  std::string getLocalIp() const {
+    try {
+      if (_socket.is_open()) {
+        return _socket.local_endpoint().address().to_string();
+      }
+      return "closed conn";
+    }  catch (const std::exception& e) {
+      return e.what();
     }
-    return "closed conn";
+  }
+
+  std::string getLocalRepr() const {
+    try {
+      if (_socket.is_open()) {
+        std::stringstream ss;
+        ss << _socket.local_endpoint().address().to_string() << ":"
+          << _socket.local_endpoint().port();
+        return ss.str();
+      }
+      return "closed conn";
+    } catch (const std::exception& e) {
+      return e.what();
+    }
   }
 
   size_t getReadBufSize() const {

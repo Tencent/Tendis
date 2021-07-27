@@ -180,9 +180,11 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
   // 4) read backupinfo from master
   // get binlogPos and filelist, other messages get from "backup_meta" file
+  std::string myip = _svr->getParams()->domainEnabled ? _cfg->bindIp
+                    : client->getLocalIp();
   auto ebkInfo = getBackupInfo(client.get(),
                                metaSnapshot,
-                               _svr->getParams()->bindIp,
+                               myip,
                                _svr->getParams()->port);
   if (!ebkInfo.ok()) {
     LOG(WARNING) << "storeId:" << metaSnapshot.id
@@ -403,8 +405,11 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
   }
 
   std::stringstream ss;
+  std::string myip = _svr->getParams()->domainEnabled ? _cfg->bindIp
+                    : client->getLocalIp();
   ss << "INCRSYNC " << metaSnapshot.syncFromId << ' ' << metaSnapshot.id << ' '
-     << metaSnapshot.binlogId << ' ' << _cfg->bindIp << ' ' << _cfg->port;
+     << metaSnapshot.binlogId << ' '
+     << myip << ' ' << _cfg->port;
   auto status = client->writeLine(ss.str());
   if (!status.ok()) {
     errStr =

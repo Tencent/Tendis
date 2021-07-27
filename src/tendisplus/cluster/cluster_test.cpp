@@ -2846,6 +2846,7 @@ TEST(Cluster, ManualfailoverCheck) {
   servers.clear();
 }
 
+
 TEST(Cluster, lockConfict) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 15300;
@@ -3077,6 +3078,107 @@ TEST(Cluster, failoverNeedFullSyncDone) {
   servers.clear();
 }
 
+
+TEST(Cluster, bindZeroAddr) {
+  uint32_t nodeNum = 3;
+  uint32_t startPort = 15500;
+  bool withSlave = true;
+
+  const auto guard = MakeGuard([&nodeNum, &withSlave] {
+    if (withSlave) {
+      destroyCluster(nodeNum * 2);
+    } else {
+      destroyCluster(nodeNum);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto servers = makeCluster(startPort, nodeNum, 10, withSlave);
+  // server[0] is master of server[3]
+  auto master = servers[0];
+  auto slave = servers[3];
+
+  auto node = servers[1];
+  auto masterName = master->getClusterMgr()->getClusterState()->getMyselfName();
+
+  auto state = node->getClusterMgr()->getClusterState();
+
+  auto slaveName = slave->getClusterMgr()->getClusterState()->getMyselfName();
+
+  // kill master & slave , and restart it ust bind 0.0.0.0
+  master->stop();
+  slave->stop();
+
+  // restart  master
+  auto cfg1 = makeServerParam(startPort, 10, "node" + to_string(0), true);
+  cfg1->clusterEnabled = true;
+  cfg1->pauseTimeIndexMgr = 1;
+  cfg1->rocksBlockcacheMB = 24;
+  cfg1->clusterSingleNode = false;
+  cfg1->bindIp = "0.0.0.0";
+  master = std::make_shared<ServerEntry>(cfg1);
+  auto s1 = master->startup(cfg1);
+  INVARIANT(s1.ok());
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  // restart slave
+  auto cfg2 = makeServerParam(startPort + 3, 10, "node" + to_string(3), true);
+  cfg2->clusterEnabled = true;
+  cfg2->pauseTimeIndexMgr = 1;
+  cfg2->rocksBlockcacheMB = 24;
+  cfg2->clusterSingleNode = false;
+  cfg2->bindIp = "0.0.0.0";
+  slave = std::make_shared<ServerEntry>(cfg2);
+  auto s2 = slave->startup(cfg2);
+  INVARIANT(s2.ok());
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+  EXPECT_TRUE(nodeIsMySlave(master, slave));
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(master, ctx1);
+  WorkLoad work1(master, sess1);
+  work1.init();
+
+  auto ctx2 = std::make_shared<asio::io_context>();
+  auto sess2 = makeSession(slave, ctx2);
+  WorkLoad work2(slave, sess2);
+  work2.init();
+
+  std::string ret1 = work1.getStringResult({"info", "replication"});
+  // info should not contain 0.0.0.0
+  EXPECT_TRUE(ret1.find("0.0.0.0") == string::npos);
+  EXPECT_TRUE(ret1.find("role:master") != string::npos);
+
+  auto ret2 = work2.getStringResult({"info", "replication"});
+  EXPECT_TRUE(ret2.find("0.0.0.0") == string::npos);
+  EXPECT_TRUE(ret2.find("role:slave") != string::npos);
+
+  work2.manualFailover();
+  std::this_thread::sleep_for(10s);
+
+  ret1 = work1.getStringResult({"info", "replication"});
+  EXPECT_TRUE(ret1.find("0.0.0.0") == string::npos);
+  // master become slave
+  EXPECT_TRUE(ret1.find("role:slave") != string::npos);
+
+  ret2 = work2.getStringResult({"info", "replication"});
+  EXPECT_TRUE(ret2.find("0.0.0.0") == string::npos);
+  // slave become master
+  EXPECT_TRUE(ret2.find("role:master") != string::npos);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+  master->stop();
+  slave->stop();
+#endif
+  servers.emplace_back(std::move(master));
+  servers.emplace_back(std::move(slave));
+  servers.clear();
+}
+
+
 TEST(Cluster, failoverConfilct) {
   uint32_t nodeNum = 3;
   uint32_t startPort = 15200;
@@ -3106,9 +3208,9 @@ TEST(Cluster, failoverConfilct) {
 
   // for support MOVED
   string srcAddr =
-      node1->getParams()->bindIp + ":" + to_string(node1->getParams()->port);
+    node1->getParams()->bindIp + ":" + to_string(node1->getParams()->port);
   string dstAddr =
-       node2->getParams()->bindIp + ":" + to_string(node2->getParams()->port);
+    node2->getParams()->bindIp + ":" + to_string(node2->getParams()->port);
   work1.addClusterSession(srcAddr, sess1);
   work1.addClusterSession(dstAddr, sess2);
   work2.addClusterSession(srcAddr, sess1);
@@ -3120,8 +3222,8 @@ TEST(Cluster, failoverConfilct) {
     string key = getUUid(8) + "{11}";
     string value = getUUid(10);
     auto ret = work1.getStringResult({"set", key, value});
-    if (j == numData/2) {
-        work2.manualFailover();
+    if (j == numData / 2) {
+      work2.manualFailover();
     }
     EXPECT_EQ(ret, "+OK\r\n");
   }
