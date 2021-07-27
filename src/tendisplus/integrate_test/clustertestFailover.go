@@ -130,8 +130,9 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // so redis-benchmark shouldn't print log: "Error from server: ERR server connection close"
     logFilePath := fmt.Sprintf("benchmark_%d.log", predixy.RedisServer.Port)
     log.Infof("check redis-benchmark log file: %s", logFilePath)
-    logcontent := "Error from server: ERR server connection close"
-    cmd := fmt.Sprintf("grep \"%s\" %s|wc -l", logcontent, logFilePath)
+    //logcontent := "Error from server: ERR server connection close"
+    logcontent := "Err|ERR"
+    cmd := fmt.Sprintf("grep -E \"%s\" %s|wc -l", logcontent, logFilePath)
     out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
     if err != nil {
         log.Fatalf("grep %s failed %v", logFilePath, err)
@@ -144,7 +145,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
 
     // wait predixy add data end
-    time.Sleep(30 * time.Second)
+    time.Sleep(50 * time.Second)
 
     checkFullsyncSuccTimes(&(*servers)[0], 0)
 
