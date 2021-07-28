@@ -96,6 +96,7 @@ class BlockingTcpClient
 
  private:
   void closeSocket();
+  Expected<std::string> realRead(size_t bufSize, std::chrono::seconds timeout);
   std::mutex _mutex;
   std::condition_variable _cv;
   bool _inited;

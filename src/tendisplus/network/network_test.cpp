@@ -256,6 +256,21 @@ TEST(BlockingTcpClient, Common) {
   auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4, 1024 * 1024, 10);
   s = cli2->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
+
+  // read() support more than max buf size
+  s = cli2->writeData("hello world");
+  EXPECT_TRUE(s.ok());
+  exps = cli2->read(11, std::chrono::seconds(5));
+  EXPECT_TRUE(exps.ok()) << exps.status().toString();
+  EXPECT_EQ(exps.value(), "hello world");
+
+  s = cli2->writeData("how are you!");
+  EXPECT_TRUE(s.ok());
+  exps = cli2->read(12, std::chrono::seconds(5));
+  EXPECT_TRUE(exps.ok()) << exps.status().toString();
+  EXPECT_EQ(exps.value(), "how are you!");
+
+  // readLine() dont support more than max buf size
   s = cli2->writeLine("hello world");
   exps = cli2->readLine(std::chrono::seconds(3));
   EXPECT_FALSE(exps.ok());

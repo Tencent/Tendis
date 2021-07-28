@@ -15,6 +15,7 @@
 #include "glog/logging.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/time.h"
+#include "tendisplus/utils/status.h"
 
 namespace tendisplus {
 
@@ -194,16 +195,8 @@ Expected<std::string> BlockingTcpClient::readLine(
   }
 }
 
-// TODO(deyukong): unittest read after read_until works as expected
-// TODO(deyukong): reduce copy times
-Expected<std::string> BlockingTcpClient::read(size_t bufSize,
-                                              std::chrono::seconds timeout) {
-  if (bufSize > _inputBuf.max_size()) {
-    return {ErrorCodes::ERR_NETWORK, "read size can't exceed bufsize"};
-  }
-
-  size_t remain = bufSize > _inputBuf.size() ? bufSize - _inputBuf.size() : 0;
-
+Expected<std::string> BlockingTcpClient::realRead(
+  size_t remain, std::chrono::seconds timeout) {
   if (remain > 0) {
     _notified = false;
     auto self(shared_from_this());
@@ -221,7 +214,7 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
     std::unique_lock<std::mutex> lk(_mutex);
     if (!_cv.wait_for(lk, timeout, [this] { return _notified; })) {
       closeSocket();
-      return {ErrorCodes::ERR_TIMEOUT, "read timeout"};
+      return {ErrorCodes::ERR_TIMEOUT, "read timeout" + std::to_string(remain)};
     } else if (_ec) {
       closeSocket();
       return {ErrorCodes::ERR_NETWORK, _ec.message()};
@@ -229,17 +222,35 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
       // everything is ok, stepout this scope and process buffer
     }
   }
+  return {ErrorCodes::ERR_OK, ""};
+}
 
-  size_t inputBufSize = _inputBuf.size();
-  INVARIANT_D(inputBufSize >= bufSize);
-
+// TODO(deyukong): unittest read after read_until works as expected
+// TODO(deyukong): reduce copy times
+Expected<std::string> BlockingTcpClient::read(size_t bufSize,
+                                              std::chrono::seconds timeout) {
+  size_t batchSize = _inputBuf.max_size();
+  size_t totalSize = 0;
   std::string result;
   result.resize(bufSize);
-  std::istream is(&_inputBuf);
-  is.read(&result[0], bufSize);
+  while (totalSize < bufSize) {
+    size_t curSize = batchSize;
+    if (bufSize - totalSize < batchSize) {
+      curSize = bufSize - totalSize;
+    }
+    size_t remain = curSize > _inputBuf.size() ? curSize - _inputBuf.size() : 0;
+    auto s = realRead(remain, timeout);
+    RET_IF_ERR(s.status());
 
-  INVARIANT_D(inputBufSize == _inputBuf.size() + bufSize);
+    size_t inputBufSize = _inputBuf.size();
+    INVARIANT_D(inputBufSize >= curSize);
 
+    std::istream is(&_inputBuf);
+    is.read(&result[0] + totalSize, curSize);
+
+    INVARIANT_D(inputBufSize == _inputBuf.size() + curSize);
+    totalSize += curSize;
+  }
   return result;
 }
 
