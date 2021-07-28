@@ -192,6 +192,8 @@ Expected<std::unique_ptr<Transaction>> ChunkMigrateSender::initTxn() {
   return ptxn;
 }
 
+// DEPRECATED
+// The old migrate approach, sent to destinationNode one by one
 Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
                                                  uint32_t begin,
                                                  uint32_t end,
@@ -201,9 +203,11 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
   uint32_t totalWriteNum = 0;
   uint32_t curWriteLen = 0;
   uint32_t curWriteNum = 0;
-  uint32_t timeoutSec = 5;
+  uint32_t timeoutSec = _cfg->migrateNetworkTimeout;
   Status s;
   uint64_t sendKeyNum = _cfg->migrateSnapshotKeyNum;
+  LOG(INFO) << "Migrate SendRange begin, migrate slot: " << begin << " - "
+            << end;
   while (true) {
     Expected<Record> expRcd = cursor->next();
     if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
@@ -262,6 +266,8 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
       curWriteLen = 0;
     }
   }
+  LOG(INFO) << "Migrate sendRange end, migrate slot: " << begin << " - " << end
+            << ", total num: " << *totalNum;
   // send over of one slot
   SyncWriteData("2");
   SyncReadData(exptData, _OKSTR.length(), timeoutSec);
@@ -272,6 +278,70 @@ Expected<uint64_t> ChunkMigrateSender::sendRange(Transaction* txn,
   }
 
   return totalWriteNum;
+}
+
+Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
+                                            uint32_t begin,
+                                            uint32_t end,
+                                            uint32_t* totalNum) {
+  // need add IS lock for chunks ???
+  auto cursor = std::move(txn->createSlotsCursor(begin, end));
+  uint32_t timeoutSec = _cfg->migrateNetworkTimeout;
+  Status s;
+  MigrateBatch migratebatch(
+    _cfg->migrateSnapshotBatchSizeKB * 1024, _client, _svr);
+  LOG(INFO) << "Migrate SendRange Batch begin, migrate slot: " << begin << " - "
+            << end;
+
+  {
+    auto guardStat = MakeGuard([this, &migratebatch, &totalNum] {
+      *totalNum += migratebatch.sendKVEntries();
+    });
+    Status migrateStatus;
+
+    while (true) {
+      Expected<Record> expRcd = cursor->next();
+      if (expRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+        break;
+      }
+      // Interuppt send snapshot if stop task
+      if (!isRunning()) {
+        LOG(ERROR) << "stop sender send snapshot on taskid:" << _taskid;
+        return {ErrorCodes::ERR_INTERNAL, "stop running"};
+      }
+      if (!expRcd.ok()) {
+        LOG(ERROR) << "snapshot sendRange failed storeid:" << _storeid
+                   << " err:" << expRcd.status().toString();
+        return expRcd.status();
+      }
+      Record& rcd = expRcd.value();
+      std::string key = rcd.getRecordKey().encode();
+      std::string value = rcd.getRecordValue().encode();
+      migrateStatus = migratebatch.add(key, value);
+      RET_IF_ERR(migrateStatus);
+
+      if (migratebatch.isFull()) {
+        migrateStatus = migratebatch.send();
+        RET_IF_ERR(migrateStatus);
+      }
+    }
+
+    // Send the last batch if need
+    migrateStatus = migratebatch.send();
+    RET_IF_ERR(migrateStatus);
+  }
+
+  LOG(INFO) << "Migrate sendRange Batch end, migrate slot: " << begin << " - "
+            << end << ", total num: " << *totalNum;
+  // Send over of one slot
+  SyncWriteData("2");
+  SyncReadData(exptData, _OKSTR.length(), timeoutSec);
+
+  if (exptData.value() != _OKSTR) {
+    LOG(ERROR) << "read receiver data is not +OK on slot:" << begin;
+    return {ErrorCodes::ERR_INTERNAL, "read +OK failed"};
+  }
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 // deal with slots that is not continuous
@@ -303,13 +373,26 @@ Status ChunkMigrateSender::sendSnapshot() {
     if (_slots.test(i)) {
       sendSlotNum++;
       uint32_t sendNum = 0;
-      auto ret = sendRange(eTxn.value().get(), i, i + 1, &sendNum);
-      _snapshotKeyNum.fetch_add(sendNum, std::memory_order_relaxed);
-      if (!ret.ok()) {
-        LOG(ERROR) << "sendRange failed, slot:" << i
-                   << "send keys num:" << getSnapshotNum()
-                   << ret.status().toString();
-        return ret.status();
+      if (_cfg->migrateSnapshotBatchSizeKB > 0) {
+        auto status = sendRangeByBatch(eTxn.value().get(), i, i + 1, &sendNum);
+        _snapshotKeyNum.fetch_add(sendNum, std::memory_order_relaxed);
+        TEST_SYNC_POINT_CALLBACK("ChunkMigrateSender::sendSnapshot::sendKeyNum",
+                                 &sendNum);
+        if (!status.ok()) {
+          LOG(ERROR) << "sendRange failed, slot:" << i
+                     << "send keys num:" << getSnapshotNum()
+                     << status.toString();
+          return status;
+        }
+      } else {
+        auto ret = sendRange(eTxn.value().get(), i, i + 1, &sendNum);
+        _snapshotKeyNum.fetch_add(sendNum, std::memory_order_relaxed);
+        if (!ret.ok()) {
+          LOG(ERROR) << "sendRange failed, slot:" << i
+                     << "send keys num:" << getSnapshotNum()
+                     << ret.status().toString();
+          return ret.status();
+        }
       }
     }
   }

@@ -283,6 +283,9 @@ class MigrateManager {
   void cleanMigrateInfo();
   void cleanImportInfo();
 
+  uint32_t getMigratingCount() const;
+  uint32_t getImportingCount() const;
+
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;
   void controlRoutine();

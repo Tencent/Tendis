@@ -18,8 +18,6 @@
 #include "tendisplus/storage/record.h"
 namespace tendisplus {
 
-using byte = unsigned char;
-
 static const uint16_t RDB_VERSION = 8;
 // static const uint16_t RDB_VERSION = 9;    // for test only
 

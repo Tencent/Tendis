@@ -15,6 +15,8 @@
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/utils/status.h"
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -27,6 +29,7 @@ class ChunkMigrateReceiver {
                                 std::shared_ptr<ServerParams> cfg);
 
   Status receiveSnapshot();
+  Status receiveSingleBatch();
 
   void setDbWithLock(std::unique_ptr<DbWithLock> db) {
     _dbWithLock = std::move(db);
@@ -90,6 +93,7 @@ class ChunkMigrateReceiver {
 
  private:
   Status supplySetKV(const string& key, const string& value);
+  Status PutSingleBatch(const string& writeBatch, uint32_t* totalNum);
   mutable std::mutex _mutex;
   std::shared_ptr<ServerEntry> _svr;
   const std::shared_ptr<ServerParams> _cfg;

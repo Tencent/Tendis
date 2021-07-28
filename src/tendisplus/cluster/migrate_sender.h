@@ -11,12 +11,14 @@
 #include <string>
 #include "tendisplus/cluster/cluster_manager.h"
 #include "tendisplus/cluster/migrate_manager.h"
+#include "tendisplus/cluster/migrate_batch.h"
 #include "tendisplus/network/blocking_tcp_client.h"
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/rate_limiter.h"
 #include "tendisplus/utils/status.h"
-
+#include "tendisplus/utils/string.h"
+#include "tendisplus/utils/sync_point.h"
 
 namespace tendisplus {
 
@@ -154,6 +156,10 @@ class ChunkMigrateSender {
                                uint32_t begin,
                                uint32_t end,
                                uint32_t* totalNum);
+  Status sendRangeByBatch(Transaction* txn,
+                          uint32_t begin,
+                          uint32_t end,
+                          uint32_t* totalNum);
   Status sendSnapshot();
   Status sendLastBinlog();
   Status catchupBinlog(uint64_t end);

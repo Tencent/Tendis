@@ -17,30 +17,6 @@
 #include "tendisplus/storage/record.h"
 
 namespace tendisplus {
-template <typename T>
-size_t easyCopy(std::vector<byte>* buf, size_t* pos, T element) {
-  if (*pos + sizeof(T) > buf->size()) {
-    buf->resize(*pos + sizeof(T));
-  }
-  auto* ptr = reinterpret_cast<byte*>(&element);
-  std::copy(ptr, (ptr + sizeof(T)), buf->begin() + *pos);
-  *pos += sizeof(T);
-  return sizeof(T);
-}
-
-template <typename T>
-size_t easyCopy(std::vector<byte>* buf,
-                size_t* pos,
-                const T* array,
-                size_t len) {
-  if (*pos + len > buf->size()) {
-    buf->resize(*pos + len * sizeof(T));
-  }
-  auto* ptr = const_cast<byte*>(reinterpret_cast<const byte*>(array));
-  std::copy(ptr, (ptr + len * sizeof(T)), buf->begin() + *pos);
-  *pos += len * sizeof(T);
-  return len * sizeof(T);
-}
 
 uint8_t decodeType(RecordType type) {
   uint8_t typeMask(0);
@@ -67,18 +43,6 @@ uint8_t decodeType(RecordType type) {
   }
 
   return typeMask;
-}
-
-template <typename T>
-size_t easyCopy(T* dest, const std::string& buf, size_t* pos) {
-  if (buf.size() < *pos) {
-    return 0;
-  }
-  byte* ptr = reinterpret_cast<byte*>(dest);
-  size_t end = *pos + sizeof(T);
-  std::copy(&buf[*pos], &buf[end], ptr);
-  *pos += sizeof(T);
-  return sizeof(T);
 }
 
 // dump

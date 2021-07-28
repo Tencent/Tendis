@@ -316,7 +316,7 @@ std::vector<std::shared_ptr<ServerEntry>> makeSingleCluster(
   return std::move(servers);
 }
 
-void waitNodeFail(std::shared_ptr<ClusterState>& state,
+void waitNodeFail(const std::shared_ptr<ClusterState>& state,
                   const std::string& nodeName) {
   auto start = msSinceEpoch();
   LOG(INFO) << "waiting node:" << nodeName << "to be marked fail";
@@ -330,7 +330,31 @@ void waitNodeFail(std::shared_ptr<ClusterState>& state,
       break;
     }
   }
-  LOG(INFO) << "wait node fail state cost time"
+  LOG(INFO) << "wait node fail state cost time "
+            << (msSinceEpoch() - start) / 1000 << "s";
+}
+
+// Wait node's MigratingCount & ImportingCount is 0
+void waitMigrateEnd(std::shared_ptr<ServerEntry> node, uint32_t timeoutSec) {
+  auto start = msSinceEpoch();
+  auto migrateMgr = node->getMigrateManager();
+  auto nodeName = node->getClusterMgr()->getClusterState()->getMyselfName();
+  LOG(INFO) << "waiting node:" << nodeName << "to be marked fail";
+
+  uint32_t isMigrate = 1;
+  while (isMigrate != 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    if (msSinceEpoch() - start > timeoutSec * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+      break;
+    }
+    isMigrate =
+      migrateMgr->getMigratingCount() + migrateMgr->getImportingCount();
+    LOG(INFO) << "migrate: " << migrateMgr->getMigratingCount()
+              << "importing: " << migrateMgr->getImportingCount();
+  }
+  LOG(INFO) << "wait migrate end cost time "
             << (msSinceEpoch() - start) / 1000 << "s";
 }
 
@@ -1453,7 +1477,20 @@ TEST(Cluster, migrateChangeThread) {
   });
 
   std::vector<std::shared_ptr<ServerEntry>> servers;
-
+  std::atomic<uint64_t> totalSendNum{0};
+  std::atomic<uint64_t> totalReceiveNum{0};
+  SyncPoint::GetInstance()->EnableProcessing();
+  SyncPoint::GetInstance()->SetCallBack(
+    "ChunkMigrateSender::sendSnapshot::sendKeyNum", [&](void* arg) mutable {
+      uint32_t* tmp = reinterpret_cast<uint32_t*>(arg);
+      totalSendNum.fetch_add((*tmp), std::memory_order_relaxed);
+    });
+  SyncPoint::GetInstance()->SetCallBack(
+    "ChunkMigrateReceiver::receiveSingleBatch::receiveKeyNum",
+    [&](void* arg) mutable {
+      uint32_t* tmp = reinterpret_cast<uint32_t*>(arg);
+      totalReceiveNum.fetch_add((*tmp), std::memory_order_relaxed);
+    });
   uint32_t index = 0;
   for (auto dir : dirs) {
     uint32_t nodePort = startPort + index++;
@@ -1468,6 +1505,7 @@ TEST(Cluster, migrateChangeThread) {
     // make sender thread less than receive num
     cfg1->migrateReceiveThreadnum = 10;
     cfg1->migrateSenderThreadnum = 3;
+    cfg1->migrateNetworkTimeout = 10;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -1546,7 +1584,8 @@ TEST(Cluster, migrateChangeThread) {
     }
   }
 
-  std::this_thread::sleep_for(35s);
+  waitMigrateEnd(srcNode, 100);
+  waitMigrateEnd(dstNode, 100);
 
   // bitmap should belong to dstNode
   ASSERT_EQ(checkSlotsBlong(
@@ -1567,6 +1606,8 @@ TEST(Cluster, migrateChangeThread) {
 
   // migrate key num is right
   ASSERT_EQ(keysize1, keysize2);
+  ASSERT_EQ(totalReceiveNum, totalSendNum);
+  SyncPoint::GetInstance()->DisableProcessing();
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -1574,7 +1615,9 @@ TEST(Cluster, migrateChangeThread) {
     LOG(INFO) << "stop " << svr->getParams()->port << " success";
   }
 #endif
-  LOG(INFO) << "stop servers here";
+  LOG(INFO) << "stop servers here :"
+            << totalReceiveNum.load(std::memory_order_relaxed)
+            << "send:" << totalSendNum.load(std::memory_order_relaxed);
   servers.clear();
 }
 
@@ -1909,7 +1952,7 @@ TEST(Cluster, restartMigrate) {
     EXPECT_EQ(ret, "+OK\r\n");
 
     // begin to migate when  half data been writen
-    if (j == numData / 2) {
+    if (j == numData - 500) {
       auto exptTaskid = migrate(srcNode, dstNode, bitmap);
       EXPECT_TRUE(exptTaskid.ok());
       taskid = exptTaskid.value().substr(5, 42);
@@ -1942,6 +1985,7 @@ TEST(Cluster, restartMigrate) {
      beacause we just stop receiver */
   std::string waitingTask = work1.getWaitingJobs();
   EXPECT_GT(waitingTask.size(), 0);
+
   // migrate should be fail , waiting task in sender not release*/
   auto s = migrate(srcNode, dstNode, bitmap, true);
   EXPECT_TRUE(!s.ok());

@@ -498,6 +498,10 @@ ServerParams::ServerParams() {
                                   migrateSnapshotKeyNum);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-rate-limit",
                                   migrateRateLimitMB);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-batch-size",
+                                  migrateSnapshotBatchSizeKB);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-timeout",
+                                  migrateNetworkTimeout);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-snapshot-retry-num",
                                   snapShotRetryCnt);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-migration-barrier",

@@ -230,11 +230,17 @@ Status MigrateManager::stopTasks(const std::string& taskid, bool noStopSrc) {
         iter.second->stopTask();
         srcHost = iter.second->_srcIp;
         port = iter.second->_srcPort;
+        auto taskSlots = iter.second->_slots;
+        LOG(INFO) << "Stop task from receiver taskid:" << taskid
+                  << ", task: " << bitsetStrEncode(taskSlots);
         find = true;
       }
     }
     for (auto& iter : _migrateSendTaskMap) {
       if (iter.first.find(taskid) != std::string::npos) {
+        auto taskSlots = iter.second->_slots;
+        LOG(INFO) << "Stop task from sender taskid:" << taskid
+                  << ", task: " << bitsetStrEncode(taskSlots);
         iter.second->stopTask();
       }
     }
@@ -833,6 +839,14 @@ bool MigrateManager::existPtask(const std::string& taskid) {
     return true;
   }
   return false;
+}
+
+uint32_t MigrateManager::getMigratingCount() const {
+  return _migrateSlots.count();
+}
+
+uint32_t MigrateManager::getImportingCount() const {
+  return _importSlots.count();
 }
 
 SlotsBitmap convertMap(const std::vector<uint32_t>& vec) {

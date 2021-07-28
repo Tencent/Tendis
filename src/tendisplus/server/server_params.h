@@ -458,11 +458,23 @@ class ServerParams {
 
   uint32_t aofPsyncNum = 500;
   uint32_t snapShotRetryCnt = 1000;
+
   uint32_t migrateTaskSlotsLimit = 10;
   uint32_t migrateDistance = 10000;
   uint32_t migrateBinlogIter = 10;
   uint32_t migrateRateLimitMB = 32;
   uint32_t migrateSnapshotKeyNum = 100000;
+
+  // The Batch Size when sending snapshot during migration.
+  // Dynamically changeable through 'config set cluster-migration-batch-size'
+  uint32_t migrateSnapshotBatchSizeKB = 10240;
+
+  // The network timeout during migration, it used in following scenarios:
+  // 1) The source node send data timeout
+  // 2) The destination node side reply data timeout
+  // Dynamically changeable through 'config set cluster-migration-timeout'
+  uint32_t migrateNetworkTimeout = 5;  // second
+
   uint32_t clusterNodeTimeout = 15000;
   bool clusterRequireFullCoverage = true;
   bool clusterSlaveNoFailover = false;
