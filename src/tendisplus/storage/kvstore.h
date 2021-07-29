@@ -397,6 +397,9 @@ class KVStore {
   virtual Status compactRange(ColumnFamilyNumber cf,
                               const std::string* begin,
                               const std::string* end) = 0;
+  virtual Status deleteFilesInRange(ColumnFamilyNumber cf,
+                                    const std::string& begin,
+                                    const std::string& end) = 0;
   virtual Status fullCompact() = 0;
 
   // remove all data in db

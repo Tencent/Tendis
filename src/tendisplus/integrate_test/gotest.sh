@@ -16,6 +16,7 @@ go build restoretest.go common.go
 go build clustertest.go common.go common_cluster.go
 go build clustertestRestore.go common.go common_cluster.go
 go build clustertestFailover.go common.go common_cluster.go
+go build deletefilesinrange.go common.go common_cluster.go
 go build -o dts/dts dts/dts.go
 
 function runOne() {
@@ -51,6 +52,7 @@ runOne './clustertest -benchtype=set -clusterNodeNum=5 -num1=10000'
 runOne './clustertestRestore -benchtype=set'
 runOne './clustertestFailover -benchtype=set'
 runOne './dts/dts'
+runOne './deletefilesinrange -benchtype=set'
 
 grep "go passed" $logfile
 grep -E "\[error\]|\[fatal\]" $logfile

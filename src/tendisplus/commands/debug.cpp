@@ -38,6 +38,7 @@
 #include "tendisplus/commands/version.h"
 #include "tendisplus/storage/varint.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/cluster/cluster_manager.h"
 
 namespace tendisplus {
 
@@ -3739,16 +3740,16 @@ class compactRangeCommand : public Command {
     }
 
     uint64_t i = 0;
-    uint64_t store_end = server->getKVStoreCount();
+    uint64_t storeEndIndex = server->getKVStoreCount();
     if (args.size() > 4) {
       auto eStoreId = tendisplus::stoull(args[4]);
       RET_IF_ERR_EXPECTED(eStoreId);
 
       i = eStoreId.value();
-      store_end = i + 1;
+      storeEndIndex = i + 1;
     }
 
-    for (; i < store_end; i++) {
+    for (; i < storeEndIndex; i++) {
       auto expdb =
         server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IS);
       RET_IF_ERR_EXPECTED(expdb);
@@ -3762,6 +3763,222 @@ class compactRangeCommand : public Command {
     return Command::fmtOK();
   }
 } compactRangeCmd;
+
+// deleteFilesInRange [data|default|binlog] start end <kvstoreid>
+class deleteFilesInRangeGenericCommand : public Command {
+ public:
+  deleteFilesInRangeGenericCommand(const std::string& name, const char* sflags)
+    : Command(name, sflags) {
+    if (name == "deletefilesinrangeforce") {
+      _force = true;
+    } else {
+      _force = false;
+    }
+  }
+
+  ssize_t arity() const {
+    return -4;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  // deleteFilesInRange slot in [start, end]
+  Expected<std::string> deleteOnDataCF(Session* sess) {
+    const auto server = sess->getServerEntry();
+    if (!server->isClusterEnabled()) {
+      return {ErrorCodes::ERR_CLUSTER,
+              "This instance has cluster support disabled"};
+    }
+    const auto& args = sess->getArgs();
+
+    auto expStart = ::tendisplus::stoull(args[2]);
+    RET_IF_ERR_EXPECTED(expStart);
+    uint64_t start = expStart.value();
+
+    auto expEnd = ::tendisplus::stoull(args[3]);
+    RET_IF_ERR_EXPECTED(expEnd);
+    uint64_t end = expEnd.value();
+
+    if (start > end) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              std::to_string(end) + " must be greater than or equal to " +
+              std::to_string(start)};
+    }
+
+    // uint64_t start and end must in [0, CLUSTER_SLOTS)
+    if (start >= CLUSTER_SLOTS || end >= CLUSTER_SLOTS) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              "'start' and 'end' must in [0, "
+              + std::to_string(CLUSTER_SLOTS) + ")"};
+    }
+
+    bool checkSpecifiedStore = false;
+    uint32_t storeID = 0;
+    if (args.size() > 4) {
+      // user specify storeid
+      auto expStoreID = ::tendisplus::stoull(args[4]);
+      RET_IF_ERR_EXPECTED(expStoreID);
+      storeID = expStoreID.value();
+      checkSpecifiedStore = true;
+    }
+
+    // lock all chunks(slots)
+    std::list<std::unique_ptr<ChunkLock>> lockList;
+    for (uint32_t i = start; i <= end; i++) {
+      auto tmpStoreID = server->getSegmentMgr()->getStoreid(i);
+      if (!checkSpecifiedStore ||
+          (checkSpecifiedStore && tmpStoreID == storeID)) {
+        auto lock = ChunkLock::AquireChunkLock(
+          tmpStoreID, i, mgl::LockMode::LOCK_X, sess, server->getMGLockMgr());
+        RET_IF_ERR_EXPECTED(lock);
+        lockList.push_back(std::move(lock.value()));
+      }
+    }
+
+    // if not specify force, check slot if able to delete.
+    if (!_force) {
+      auto myNode = server->getClusterMgr()->getClusterState()->getMyselfNode();
+      for (uint32_t i = start; i <= end; i++) {
+        if (myNode->getSlotBit(i)) {
+          if (!checkSpecifiedStore ||
+              (checkSpecifiedStore &&
+              server->getSegmentMgr()->getStoreid(i) == storeID)) {
+            return {ErrorCodes::ERR_PARSEOPT,
+                    "couldn't do deleteFilesInRange on normal slot."};
+          }
+        }
+      }
+    }
+
+    // slot in [start, end] will be deleted, so rkEnd should be end+1
+    auto rkStart =
+      RecordKey(start, 0, RecordType::RT_DATA_META, "", "").prefixChunkid();
+    auto rkEnd =
+      RecordKey(end + 1, 0, RecordType::RT_DATA_META, "", "").prefixChunkid();
+
+    uint64_t i = 0;
+    uint64_t storeEndIndex = server->getKVStoreCount();
+    if (checkSpecifiedStore) {
+      i = storeID;
+      storeEndIndex = i + 1;
+    }
+
+    while (i != storeEndIndex) {
+      auto expDb =
+        server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
+      RET_IF_ERR_EXPECTED(expDb);
+      auto s = expDb.value().store->deleteFilesInRange(
+        ColumnFamilyNumber::ColumnFamily_Default, rkStart, rkEnd);
+      RET_IF_ERR(s);
+      i++;
+    }
+    return Command::fmtOK();
+  }
+
+  // deleteFilesInRange binlog in [start, end]
+  Expected<std::string> deleteOnBinLogCF(Session* sess) {
+    const auto server = sess->getServerEntry();
+    if (!server->getParams()->saveMinBinlogId) {
+      std::string err(
+        "saveMinBinlogId should be set true"
+        "when do deleteFilesInRange on binlog");
+      LOG(ERROR) << err;
+      return {ErrorCodes::ERR_INTERNAL, err};
+    }
+
+    const auto& args = sess->getArgs();
+    if (args.size() < 5) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              "must specify kvstoreid when do deleteFilesInRange on binlog."};
+    }
+
+    auto expStart = ::tendisplus::stoull(args[2]);
+    RET_IF_ERR_EXPECTED(expStart);
+    uint64_t start = expStart.value();
+
+    auto expEnd = ::tendisplus::stoull(args[3]);
+    RET_IF_ERR_EXPECTED(expEnd);
+    uint64_t end = expEnd.value();
+
+    if (start > end) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              std::to_string(end) + " must be greater than or equal to " +
+              std::to_string(start)};
+    }
+
+    auto expStoreID = ::tendisplus::stoull(args[4]);
+    RET_IF_ERR_EXPECTED(expStoreID);
+    uint64_t storeID = expStoreID.value();
+
+    auto expDb = server->getSegmentMgr()->getDb(
+      sess, storeID, mgl::LockMode::LOCK_IX);
+    RET_IF_ERR_EXPECTED(expDb);
+    auto kvStore = expDb.value().store;
+    auto txn = kvStore->createTransaction(sess);
+    RET_IF_ERR_EXPECTED(txn);
+    auto expMinBinlogID = RepllogCursorV2::getMinBinlogId(txn.value().get());
+    RET_IF_ERR_EXPECTED(expMinBinlogID);
+    if (end >= expMinBinlogID.value()) {
+      return {ErrorCodes::ERR_PARSEOPT,
+              "endpos: " + std::to_string(end) +
+              " shouldn't greater than or equal to min binlogid"};
+    }
+
+    // binlog in [start, end]
+    auto rlkStart = ReplLogKeyV2(start).encode();
+    auto rlkEnd = ReplLogKeyV2(end).encode();
+    auto ret = kvStore->deleteFilesInRange(
+      ColumnFamilyNumber::ColumnFamily_Binlog, rlkStart, rlkEnd);
+    RET_IF_ERR(ret);
+    return Command::fmtOK();
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    LOG(INFO) << "run deletefilesinrange: " << sess->getCmdStr();
+    const auto cfName = toLower(sess->getArgs()[1]);
+    if (cfName == "data" || cfName == "default") {
+      return deleteOnDataCF(sess);
+    } else if (cfName == "binlog") {
+      return deleteOnBinLogCF(sess);
+    } else {
+      LOG(ERROR) << "deletefilesinrange cmd with wrong cf: " << cfName;
+      return {ErrorCodes::ERR_PARSEOPT,
+              "invalid column family " + cfName +
+              ", it must be data/default/binlog"};
+    }
+  }
+
+ private:
+  bool _force;
+};
+
+class deleteFilesInRangeCommand
+  : public deleteFilesInRangeGenericCommand {
+ public:
+  deleteFilesInRangeCommand()
+    : deleteFilesInRangeGenericCommand("deletefilesinrange", "sM") {}
+} deleteFilesInRangeCmd;
+
+// for test case under debug mode
+// force do deleteFilesInRange without check slot state.
+#ifdef TENDIS_DEBUG
+class deleteFilesInRangeForceCommand
+  : public deleteFilesInRangeGenericCommand {
+ public:
+  deleteFilesInRangeForceCommand()
+    : deleteFilesInRangeGenericCommand("deletefilesinrangeforce", "sM") {}
+} deleteFilesInRangeForceCmd;
+#endif
 
 // for debug
 class deleteSlotsCommand : public Command {

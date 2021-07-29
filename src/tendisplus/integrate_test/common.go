@@ -125,7 +125,7 @@ func expireKey(m *util.RedisServer, num int, prefixkey string) {
 
 func addData(m *util.RedisServer, num int, prefixkey string) {
 	log.Infof("addData begin. %s:%d", m.Ip, m.Port)
-
+	maxWaitTimeout := 1000 * time.Second
 	/*cmd := exec.Command("../../../bin/redis-benchmark", "-h", m.Ip, "-p", strconv.Itoa(m.Port),
 	      "-c", "20", "-n", strconv.Itoa(num), "-r", "8", "-i", "-f", prefixkey,
 	      "-t", *benchtype, "-a", *auth)
@@ -142,7 +142,7 @@ func addData(m *util.RedisServer, num int, prefixkey string) {
 	args := []string{}
 	args = append(args, cmd)
 	inShell := true
-	_, err := util.StartProcess(args, []string{}, "", 10*time.Second, inShell, nil)
+	_, err := util.StartProcess(args, []string{}, "", maxWaitTimeout, inShell, nil)
 	if err != nil {
 		log.Fatalf("addData failed:%v", err)
 		return

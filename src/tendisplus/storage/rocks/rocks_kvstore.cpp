@@ -2465,7 +2465,7 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
 }
 
 // [begin, end]
-Status RocksKVStore::deleteFilesInrange(
+Status RocksKVStore::deleteFilesInRange(
         rocksdb::ColumnFamilyHandle* column_family,
         const std::string& begin,
         const std::string& end) {
@@ -2479,6 +2479,17 @@ Status RocksKVStore::deleteFilesInrange(
     return handleRocksdbError(s);
   }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksKVStore::deleteFilesInRange(ColumnFamilyNumber cf,
+                                        const std::string& begin,
+                                        const std::string& end) {
+  if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
+    return deleteFilesInRange(getDataColumnFamilyHandle(), begin, end);
+  } else if (cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
+    return deleteFilesInRange(getBinlogColumnFamilyHandle(), begin, end);
+  }
+  return {ErrorCodes::ERR_INTERNAL, "Unknown columnFamily"};
 }
 
 Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
@@ -2514,7 +2525,7 @@ Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
     ReplLogKeyV2 endKey(end);
     auto beginKeyStr = beginKey.encode();
     auto endKeyStr = endKey.encode();
-    auto s = deleteFilesInrange(
+    auto s = deleteFilesInRange(
             getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
     RET_IF_ERR(s);
   } else {
