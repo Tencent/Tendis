@@ -1,10 +1,10 @@
 user=
 ipmatch=
 port=
-pw=
+password=
 mailSender=
 sendmailgroup=
-targethost=
+targetHost=
 prometheusURL=
 appname=
 grafanaURL=

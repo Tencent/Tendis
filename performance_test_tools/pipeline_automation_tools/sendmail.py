@@ -8,7 +8,7 @@ PAASID = sys.argv[2]
 TOKEN = sys.argv[3]
 URL = sys.argv[4]
 msg = Tof4Mail(PAASID, TOKEN, URL)
-msg.Title = "Tendis-"+sys.argv[1]+"压力测试结果报告"
+msg.Title = sys.argv[1] + "性能测试报告"
 with open("Report.txt",'r') as f:
     s=''
     for l in f.readlines():

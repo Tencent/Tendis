@@ -26,20 +26,6 @@ if not os.path.exists(RecordDBPath):
     conn.commit()
     conn.close()
 
-def getLastRecordWithTestName(testName):
-    conn = sqlite3.connect(RecordDBPath)
-    c=conn.cursor()
-    p=c.execute('''
-    select count(*) from result where testname = ?''', (str(testName),))
-    if not (p.fetchone())[0]:
-        return None
-    p=c.execute('''
-    select * from result where testname = ? and tid = (select max(tid) from result where testname = ?)''', (str(testName), str(testName)))
-    res=p.fetchone()
-    conn.commit()
-    conn.close()
-    return res
-
 def getMaxTid():
     conn = sqlite3.connect(RecordDBPath)
     c=conn.cursor()
@@ -62,6 +48,20 @@ def saveTestResult(testName, version, date, qps, p50, p99, p100, pavg):
     conn.commit()
     conn.close()
 
+def getHistoryRecord(testName, version):
+    conn = sqlite3.connect(RecordDBPath)
+    c=conn.cursor()
+    p=c.execute('''
+    select count(*) from result where testname = ? and version = ?''', (str(testName),str(version)))
+    if not (p.fetchone())[0]:
+        return None
+    p=c.execute('''
+    select * from result where testname = ? and version = ?''', (str(testName), str(version)))
+    res=p.fetchone()
+    conn.commit()
+    conn.close()
+    return res
+
 def prettyFormat(floatNum):
     # show 1.1w when floatNum is 11000 for human readable.
     if float(floatNum) > 10000.0:
@@ -70,7 +70,7 @@ def prettyFormat(floatNum):
         return "%.1f" % (float(floatNum))
 
 if __name__ == '__main__':
-    if len(sys.argv) != 16:
+    if len(sys.argv) != 17:
         os._exit(0)
 
     testName=sys.argv[1]
@@ -83,32 +83,33 @@ if __name__ == '__main__':
     pavg=sys.argv[8]
     outputFile=sys.argv[9]
     decreaseLimit=sys.argv[10]
-    decreaseLimit_p50=sys.argv[11]
-    decreaseLimit_p99=sys.argv[12]
-    decreaseLimit_p100=sys.argv[13]
-    decreaseLimit_pavg=sys.argv[14]
+    decreaseLimitP50=sys.argv[11]
+    decreaseLimitP99=sys.argv[12]
+    decreaseLimitP100=sys.argv[13]
+    decreaseLimitPavg=sys.argv[14]
     # 1 present 'save result to db'
     # other for 'not save'
-    shouldSave=sys.argv[15]
+    shouldSave=sys.argv[15] == "1"
+    # 1 present 'compare to history record'
+    # other for 'not compare'
+    compareToHistory=sys.argv[16] == "1"
 
-    r=getLastRecordWithTestName(testName)
-    if shouldSave == "1":
+    if shouldSave:
         saveTestResult(testName, version, date, qps, p50, p99, p100, pavg)
+    r=getHistoryRecord(testName, "cd236r5134test")
     f=open(outputFile,'a')
-    if not r:
-        f.write("暂无过往结果\n")
     f.write("<table style=\"border:1px solid black; collapse:collapse\">")
     f.write("<tr>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\"></th>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">本次测试结果</th>")
-    if r:
-        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">上次测试结果</th>")
-        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">较上次测试</th>")
+    if compareToHistory:
+        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">Tendis-2.3.6测试结果</th>")
+        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">较特定版本提升</th>")
     f.write("</tr>")
     f.write("<tr>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">qps</td>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0}</td>".format(prettyFormat(qps)))
-    if r:
+    if compareToHistory:
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0}</td>".format(prettyFormat(r[4])))
         increase=float(qps)/float(r[4]) - 1.0
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse")
@@ -119,44 +120,44 @@ if __name__ == '__main__':
     f.write("<tr>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">p50</td>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(p50)))
-    if r:
+    if compareToHistory:
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(r[5])))
         increase=float(p50)/float(r[5]) - 1.0
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse")
-        if increase > float(decreaseLimit_p50)/100.0:
+        if increase > float(decreaseLimitP50)/100.0:
             f.write("; color:red")
         f.write("\">{0}%</td>".format(prettyFormat(increase*100)))
     f.write("</tr>")
     f.write("<tr>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">p99</td>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(p99)))
-    if r:
+    if compareToHistory:
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(r[6])))
         increase=float(p99)/float(r[6]) - 1.0
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse")
-        if increase > float(decreaseLimit_p99)/100.0:
+        if increase > float(decreaseLimitP99)/100.0:
             f.write("; color:red")
         f.write("\">{0}%</td>".format(prettyFormat(increase*100)))
     f.write("</tr>")
     f.write("<tr>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">p100</td>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(p100)))
-    if r:
+    if compareToHistory:
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(r[7])))
         increase=float(p100)/float(r[7]) - 1.0
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse")
-        if increase > float(decreaseLimit_p100)/100.0:
+        if increase > float(decreaseLimitP100)/100.0:
             f.write("; color:red")
         f.write("\">{0}%</td>".format(prettyFormat(increase*100)))
     f.write("</tr>")
     f.write("<tr>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">pavg</td>")
     f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(pavg)))
-    if r:
+    if compareToHistory:
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse\">{0} ms</td>".format(prettyFormat(r[8])))
         increase=float(pavg)/float(r[8]) - 1.0
         f.write("<td style=\"border:1px solid black; text-align:center collapse:collapse")
-        if increase > float(decreaseLimit_pavg)/100.0:
+        if increase > float(decreaseLimitPavg)/100.0:
             f.write("; color:red")
         f.write("\">{0}%</td>".format(prettyFormat(increase*100)))
     f.write("</tr>")
