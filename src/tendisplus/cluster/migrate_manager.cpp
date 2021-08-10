@@ -1365,7 +1365,7 @@ void MigrateReceiveTask::fullReceive() {
   }
   // add client to commands schedule
   NetworkAsio* network = _svr->getNetwork();
-  INVARIANT(network != nullptr);
+  INVARIANT_D(network != nullptr);
   bool migrateOnly = true;
   Expected<uint64_t> expSessionId =
     network->client2Session(std::move(client), migrateOnly);
