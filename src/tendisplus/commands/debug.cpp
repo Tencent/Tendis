@@ -1549,6 +1549,8 @@ class BinlogFlushCommand : public Command {
   }
 } binlogFlushCommand;
 
+// Debug command is used in some redis's tcl test, such as 'debug reload'.
+// So we implement an empty debug command for such scenario.
 class DebugCommand : public Command {
  public:
   DebugCommand() : Command("debug", "as") {}
@@ -3429,31 +3431,6 @@ class EvictCommand : public Command {
     return Command::fmtOK();
   }
 } evictCmd;
-
-class PublishCommand : public Command {
- public:
-  PublishCommand() : Command("publish", "pltF") {}
-
-  ssize_t arity() const {
-    return 3;
-  }
-
-  int32_t firstkey() const {
-    return 0;
-  }
-
-  int32_t lastkey() const {
-    return 0;
-  }
-
-  int32_t keystep() const {
-    return 0;
-  }
-
-  Expected<std::string> run(Session* sess) final {
-    return Command::fmtOK();
-  }
-} publishCmd;
 
 class multiCommand : public Command {
  public:
