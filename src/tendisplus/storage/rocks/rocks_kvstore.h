@@ -211,6 +211,7 @@ class RocksKVStore : public KVStore {
   RocksKVStore(const std::string& id,
                const std::shared_ptr<ServerParams>& cfg,
                std::shared_ptr<rocksdb::Cache> blockCache,
+               std::shared_ptr<rocksdb::RateLimiter> rateLimiter = nullptr,
                bool enableRepllog = true,
                KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
                TxnMode txnMode = TxnMode::TXN_PES,
@@ -431,6 +432,7 @@ class RocksKVStore : public KVStore {
 
   std::shared_ptr<rocksdb::Statistics> _stats;
   std::shared_ptr<rocksdb::Cache> _blockCache;
+  std::shared_ptr<rocksdb::RateLimiter> _rateLimiter;
 
   uint64_t _nextTxnSeq;
 #ifdef BINLOG_V1

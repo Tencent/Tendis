@@ -229,7 +229,8 @@ TEST(RocksKVStore, RocksOptions) {
   }
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
-#if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
+ 
+ #if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()
@@ -561,6 +562,7 @@ TEST(RocksKVStore, OptCursorVisible) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_OPT);
@@ -580,6 +582,7 @@ TEST(RocksKVStore, PesCursorVisible) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_PES);
@@ -975,6 +978,7 @@ TEST(RocksKVStore, OptCommon) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_OPT);
@@ -995,6 +999,7 @@ TEST(RocksKVStore, PesCommon) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_PES);
@@ -1033,6 +1038,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_PES);
@@ -1248,6 +1254,7 @@ TEST(RocksKVStore, Compaction) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_PES);
@@ -1326,6 +1333,7 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
   auto kvstore = std::make_unique<RocksKVStore>("0",
                                                 cfg,
                                                 blockCache,
+                                                nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
                                                 RocksKVStore::TxnMode::TXN_PES);

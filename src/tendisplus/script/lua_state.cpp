@@ -439,6 +439,8 @@ int LuaState::luaRedisGenericCommand(lua_State *lua, int raise_error) {
     //    is here need check???
   }
 
+  ls->_fakeSess->getSession()->getCtx()->setReadPacketTs(nsSinceEpoch());
+
   // TODO(takenliu) : for cur node,can push multi before commands,
   //  and push exec after commands. for slave, need be atomic too.
 

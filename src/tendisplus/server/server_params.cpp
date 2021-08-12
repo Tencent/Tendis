@@ -447,10 +447,17 @@ ServerParams::ServerParams() {
                     nullptr, nullptr, -1, 19, false);
   REGISTER_VARS_DIFF_NAME("rocks.blockcache_strict_capacity_limit",
                           rocksStrictCapacityLimit);
+  
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_rate_bytes_per_sec", rocksRateLimiterRateBytesPerSec);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_refill_period_us", rocksRateLimiterRefillPeriodUs);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_fairness", rocksRateLimiterFairness);
+  REGISTER_VARS_DIFF_NAME("rocks.rate_limiter_auto_tuned", rocksRateLimiterAutoTuned);
+
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.disable_wal", rocksDisableWAL);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.flush_log_at_trx_commit",
                                   rocksFlushLogAtTrxCommit);
   REGISTER_VARS_DIFF_NAME("rocks.wal_dir", rocksWALDir);
+  
 
   REGISTER_VARS_FULL("rocks.compress_type",
                      rocksCompressType,

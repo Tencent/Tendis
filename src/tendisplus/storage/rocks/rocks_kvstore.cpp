@@ -1097,6 +1097,10 @@ rocksdb::Options RocksKVStore::options() {
     options.wal_dir = _cfg->rocksWALDir + "/" + dbId() + "/";
   }
 
+  if (_rateLimiter != nullptr) {
+    options.rate_limiter = _rateLimiter;
+  }
+
   for (const auto& iter : _cfg->getRocksdbOptions()) {
     auto status = rocksdbOptionsSet(options, iter.first, iter.second);
     if (!status.ok()) {
@@ -1896,6 +1900,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 RocksKVStore::RocksKVStore(const std::string& id,
                            const std::shared_ptr<ServerParams>& cfg,
                            std::shared_ptr<rocksdb::Cache> blockCache,
+                           std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
                            bool enableRepllog,
                            KVStore::StoreMode mode,
                            TxnMode txnMode,
@@ -1913,6 +1918,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _pesdb(nullptr),
     _stats(rocksdb::CreateDBStatistics()),
     _blockCache(blockCache),
+    _rateLimiter(rateLimiter),
     _nextTxnSeq(0),
     _highestVisible(Transaction::TXNID_UNINITED),
     _logOb(nullptr),

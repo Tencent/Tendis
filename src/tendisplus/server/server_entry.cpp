@@ -453,6 +453,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       new RocksKVStore(CATALOG_NAME,
                        cfg,
                        nullptr,
+                       nullptr,
                        false,
                        KVStore::StoreMode::READ_WRITE,
                        RocksKVStore::TxnMode::TXN_PES))),
@@ -492,6 +493,17 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   _blockCache = rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL,
                                      cfg->rocksBlockcacheNumShardBits,
                                      cfg->rocksStrictCapacityLimit);
+
+  if (cfg->rocksRateLimiterRateBytesPerSec > 0) {
+    _rateLimiter = std::shared_ptr<rocksdb::RateLimiter>(
+      rocksdb::NewGenericRateLimiter(
+        cfg->rocksRateLimiterRateBytesPerSec,
+        cfg->rocksRateLimiterRefillPeriodUs,
+        cfg->rocksRateLimiterFairness,
+        rocksdb::RateLimiter::Mode::kWritesOnly,
+        cfg->rocksRateLimiterAutoTuned));
+  }
+
   std::vector<PStore> tmpStores;
   tmpStores.reserve(kvStoreCount);
   for (size_t i = 0; i < kvStoreCount; ++i) {
@@ -518,6 +530,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       std::unique_ptr<KVStore>(new RocksKVStore(std::to_string(i),
                                                 cfg,
                                                 _blockCache,
+                                                _rateLimiter,
                                                 true,
                                                 mode,
                                                 RocksKVStore::TxnMode::TXN_PES,

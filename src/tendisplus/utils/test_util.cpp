@@ -268,7 +268,7 @@ std::shared_ptr<ServerEntry> makeServerEntryOld(
     }
 
     tmpStores.emplace_back(std::unique_ptr<KVStore>(
-      new RocksKVStore(std::to_string(dbId), cfg, block_cache, true, mode)));
+      new RocksKVStore(std::to_string(dbId), cfg, block_cache, nullptr, true, mode)));
   }
   server->installStoresInLock(tmpStores);
   auto seg_mgr =

@@ -254,6 +254,10 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->lockDbXWaitTimeout, 1);
 
   EXPECT_EQ(cfg->rocksBlockcacheMB, 4096);
+  EXPECT_EQ(cfg->rocksRateLimiterRateBytesPerSec, 0);
+  EXPECT_EQ(cfg->rocksRateLimiterRefillPeriodUs, 100 * 1000);
+  EXPECT_EQ(cfg->rocksRateLimiterFairness, 10);
+  EXPECT_EQ(cfg->rocksRateLimiterAutoTuned, true);
   EXPECT_EQ(cfg->rocksDisableWAL, false);
   EXPECT_EQ(cfg->rocksFlushLogAtTrxCommit, false);
   EXPECT_EQ(cfg->rocksWALDir, "");
