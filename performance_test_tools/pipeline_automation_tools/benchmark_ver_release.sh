@@ -2,11 +2,13 @@
 
 set -x
 
-log=benchmark.log
+log=benchmark-$(date +"%Y%m%d%H%M%S").log
 logInfo() {
     time=`date +"%Y/%m/%d %H:%M:%S"`
     echo "${time} $1" >> ${log}
 }
+
+benchmarkPidList=()
 
 startTask() {
     task="$1"
@@ -36,18 +38,17 @@ startTask() {
         elif [[ "${task}" == "hset" ]]; then
             ${cmdPrefix} --command='hset __key__ __data__ __data__' --key-prefix='hash_' &
         fi
+        benchmarkPidList+=($!)
     done
 }
 
 waitFinish() {
-    while ((1)); do
-        num=`ps axu | grep ${benchmarkBinary} | grep -v grep | grep ${user} | wc -l`
-        if ((${num} == 0)); then
-            break
-        fi
-        sleep 1
+    for pid in ${benchmarkPidList[@]}; do
+        wait $pid
+        echo "$pid done"
     done
     logInfo "${tendisVersionLongFormat} task finished: $1"
+    benchmarkPidList=()
 }
 
 outputReport() {
@@ -64,28 +65,34 @@ runTest() {
     valueSizeList=$3
     testTime=$4
 
-    mailfile=Report.txt
+    mailfile=Report-$(date +"%Y%m%d%H%M%S").txt
     initTimeStamp=$(date +%s)
     if [[ $testType == ${LONGTIMETEST} ]]; then
         clientNum=50
         threadNum=20
         pipelineNum=1
+        # enough for 100 days & 500k qps
+        keyMax=5000000000000
     elif [[ $testType == ${MULTICMDTEST} ]]; then
         clientNum=50
         threadNum=20
         pipelineNum=1
+        keyMax=5000000000
     elif [[ $testType == ${PIPELINETEST} ]]; then
         clientNum=2
         threadNum=2
         pipelineNum=50
+        keyMax=5000000000
     elif [[ $testType == ${VALUESIZETEST} ]]; then
         clientNum=50
         threadNum=20
         pipelineNum=1
+        keyMax=5000000000
     elif [[ $testType == ${LOWLOADTEST} ]]; then
         clientNum=15
         threadNum=10
         pipelineNum=1
+        keyMax=5000000000
     fi
     for valueSize in $(echo $valueSizeList | tr ',' '\n'); do
         for cmd in $(echo $cmdList | tr ',' '\n'); do
@@ -173,7 +180,7 @@ runTest() {
                 compareToHistory=0
                 shouldSave=0
             fi
-            python writeTag.py ${cmd} ${tendisVersionShortFormat} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimitP50} ${decreaseLimitP99} ${decreaseLimitP100} ${decreaseLimitPavg} ${shouldSave} ${compareToHistory}
+            python writeTag.py ${cmd} ${tendisVersionShortFormat} $(date +%Y%m%d) ${qps} ${P50} ${P99} ${P100} ${AVG} ${mailfile} ${decreaseLimit} ${decreaseLimitP50} ${decreaseLimitP99} ${decreaseLimitP100} ${decreaseLimitPavg} ${shouldSave} ${compareToHistory} ${baselineVersion}
             sleep $interTime
         done
     done
@@ -211,9 +218,9 @@ runTest() {
     elif [[ $testType == ${LOWLOADTEST} ]]; then
         emailTitleSubfix="-低负载延迟"
     fi
-    /data/Anaconda2/bin/python sendmail.py ${tendisVersionLongFormat}${emailTitleSubfix} ${passid} ${token} ${mailURL} ${mailSender} ${sendmailgroup}
+    /data/Anaconda2/bin/python sendmail.py ${tendisVersionLongFormat}${emailTitleSubfix} ${mailfile} ${passid} ${token} ${mailURL} ${mailSender} ${sendmailgroup}
     mkdir -p mail
-    mv ${mailfile} mail/${mailfile}-$(date +"%Y%m%d%H%M%S")
+    mv ${mailfile} mail/
 }
 
 outputUsage() {
@@ -258,6 +265,12 @@ main() {
         exit 2
     fi
     source ./conf.sh
+    baselineVersion=$1
+    shift
+    sendGroup="sendmailgroup"$1
+    eval "sendmailgroup=\$$sendGroup"
+    logInfo "send mail group:"$sendmailgroup
+    shift
 
     # kill long time benchmark started last time.
     ps aux | grep ./memtier_benchmark | grep -v grep | grep ${user} | grep test-time=8640000 | awk '{print $2}' | xargs kill -9
@@ -268,7 +281,6 @@ main() {
     while [[ "1" == "1" ]]
     do
         tIP=$(getent hosts ${targetHost} | awk '{print $1}')
-        
         ipArray+=(${tIP})
         ipArray=($(awk -v RS=' ' '!a[$1]++' <<< ${ipArray[@]}))
         if [[ "${#ipArray[@]}" == "3" ]]; then
@@ -281,8 +293,6 @@ main() {
     benchmarkBinary=./memtier_benchmark
     predixyNum=3
     interTime=300
-    # enough for 100 days & 500k qps
-    keyMax=5000000000000
 
     decreaseLimitSet=10
     decreaseLimitGet=10
@@ -319,7 +329,7 @@ main() {
               $testType != ${PIPELINETEST} ]]; then
             echo "unknown test type: "${testType}
             exit 1;
-        fi 
+        fi
         shift
         shift
         shift

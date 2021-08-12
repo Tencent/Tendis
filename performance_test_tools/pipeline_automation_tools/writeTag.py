@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 import os
+import re
 import sqlite3
 import sys
 
@@ -70,7 +71,7 @@ def prettyFormat(floatNum):
         return "%.1f" % (float(floatNum))
 
 if __name__ == '__main__':
-    if len(sys.argv) != 17:
+    if len(sys.argv) != 18:
         os._exit(0)
 
     testName=sys.argv[1]
@@ -93,17 +94,19 @@ if __name__ == '__main__':
     # 1 present 'compare to history record'
     # other for 'not compare'
     compareToHistory=sys.argv[16] == "1"
+    baselineVersion=sys.argv[17]
+    versionInfo=re.search(r'\d+', baselineVersion).group()
 
     if shouldSave:
         saveTestResult(testName, version, date, qps, p50, p99, p100, pavg)
-    r=getHistoryRecord(testName, "cd236r5134test")
+    r=getHistoryRecord(testName, baselineVersion)
     f=open(outputFile,'a')
     f.write("<table style=\"border:1px solid black; collapse:collapse\">")
     f.write("<tr>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\"></th>")
     f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">本次测试结果</th>")
     if compareToHistory:
-        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">Tendis-2.3.6测试结果</th>")
+        f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">Tendis-"+versionInfo+"测试结果</th>")
         f.write("<th style=\"border:1px solid black; text-align:center collapse:collapse\">较特定版本提升</th>")
     f.write("</tr>")
     f.write("<tr>")
