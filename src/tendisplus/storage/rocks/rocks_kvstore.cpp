@@ -379,6 +379,14 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
   if (_store->recoveryMode()) {
     readOpts.verify_checksums = false;
   }
+  // If read_options.snapshot is not set, the current version of the key will
+  // be read.  Calling SetSnapshot() does not affect the version of the data
+  // returned. See Transaction::Get() for more details.
+  // If we use Snapshot Isolation isolation level, SetSnapshot() should be
+  // called before Put/Get. Snapshot Isolation was used in these conditions:
+  //  1) ChunkMigrateSender::initTxn()
+  //  2) ReplManager::supplyFullPsyncRoutine()
+  read_options.snapshot = _txn->GetSnapshot();
 
   RESET_PERFCONTEXT();
   rocksdb::Status s;
