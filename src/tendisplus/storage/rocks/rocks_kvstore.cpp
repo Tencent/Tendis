@@ -386,7 +386,7 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
   // called before Put/Get. Snapshot Isolation was used in these conditions:
   //  1) ChunkMigrateSender::initTxn()
   //  2) ReplManager::supplyFullPsyncRoutine()
-  read_options.snapshot = _txn->GetSnapshot();
+  readOpts.snapshot = _txn->GetSnapshot();
 
   RESET_PERFCONTEXT();
   rocksdb::Status s;

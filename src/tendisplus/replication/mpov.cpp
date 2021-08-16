@@ -891,9 +891,11 @@ void ReplManager::supplyFullPsyncRoutine(
           LOG(WARNING) << "Get target ttl for key " << curPrimarykey
                        << " of type: " << rt2Str(keyType) << " in db:" << dbid
                        << " from chunk: " << chunkId
-                       << " failed, error: " << eValue.status().toString();
-          client->writeLine("-ERR get ttl error");
-          return;
+                       << " failed, error: " << eValue.status().toString()
+                       << " set targetTTL=10000";
+          // If there has SubKey but don't have Primarykey, set ttl to 10000,
+          // then the key will be expired.
+          targetTTL = 10000;
         }
       }
     } else {
