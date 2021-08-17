@@ -92,20 +92,23 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   });
 
   uint64_t binlogPos = 0;
-  BlockingTcpClient* client = nullptr;
+  // use shared_ptr to avoid _pushStatus[][]->client be reset by other thread.
+  std::shared_ptr<BlockingTcpClient> client = nullptr;
   uint32_t dstStoreId = 0;
   bool needHeartbeat = false;
   MPovClientType clientType = MPovClientType::repllogClient;
   {
     std::lock_guard<std::mutex> lk(_mutex);
-    if (_incrPaused ||
-        _pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+    if (_pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+      return;
+    }
+    if (_incrPaused) {
       nextSched = nextSched + std::chrono::seconds(1);
       lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
       return;
     }
     binlogPos = _pushStatus[storeId][clientId]->binlogPos;
-    client = _pushStatus[storeId][clientId]->client.get();
+    client = _pushStatus[storeId][clientId]->client;
     dstStoreId = _pushStatus[storeId][clientId]->dstStoreId;
     lastSend = _pushStatus[storeId][clientId]->lastSendBinlogTime;
     clientType = _pushStatus[storeId][clientId]->clientType;
@@ -120,10 +123,10 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
   if (_cfg->aofEnabled &&
       (clientType == MPovClientType::respClient || _cfg->psyncEnabled)) {
     ret = masterSendAof(
-      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+      client.get(), storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
   } else {
     ret = masterSendBinlogV2(
-      client, storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
+      client.get(), storeId, dstStoreId, binlogPos, needHeartbeat, _svr, _cfg);
   }
   if (!ret.ok()) {
     LOG(WARNING) << "masterSendBinlog to client:" << client->getRemoteRepr()
@@ -148,6 +151,9 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
       }
     }
     std::lock_guard<std::mutex> lk(_mutex);
+    if (_pushStatus[storeId].find(clientId) == _pushStatus[storeId].end()) {
+      return;
+    }
     _pushStatus[storeId][clientId]->binlogPos = ret.value().binlogId;
     _pushStatus[storeId][clientId]->binlogTs = ret.value().binlogTs;
   }
