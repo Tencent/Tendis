@@ -23,6 +23,8 @@ namespace tendisplus {
 
 class ScriptManager;
 
+#define LUA_GC_CYCLE_PERIOD 50
+
 class LuaState {
  public:
   explicit LuaState(std::shared_ptr<ServerEntry> svr, uint32_t id);
@@ -92,6 +94,7 @@ class LuaState {
   // bool has_command_error;  // if one redis command has error,
                            // dont commit all transactions.
   RedisRandom _rand;
+  int _gc_count;
 };
 
 }  // namespace tendisplus
