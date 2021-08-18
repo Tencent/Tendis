@@ -2034,52 +2034,6 @@ TEST(Command, revision) {
 #endif
 }
 
-
-AllKeys initData(std::shared_ptr<ServerEntry> server,
-                 uint32_t count,
-                 const char* key_suffix) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-  auto maxEleCnt = 2500;
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
-  all_keys.emplace_back(kv_keys);
-
-  auto list_keys = work.writeWork(
-    RecordType::RT_LIST_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(list_keys);
-
-  auto hash_keys = work.writeWork(
-    RecordType::RT_HASH_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(hash_keys);
-
-  auto set_keys =
-    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(set_keys);
-
-  auto zset_keys = work.writeWork(
-    RecordType::RT_ZSET_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(zset_keys);
-
-  for (const auto& keyset : all_keys) {
-    for (const auto& key : keyset) {
-      if (std::rand() % 3 == 0) {
-        auto ttl = std::rand() % 1000 + 1000;
-        sess1->setArgs({"expire", key, std::to_string(ttl)});
-        auto expect = Command::runSessionCmd(sess1.get());
-        EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtOne());
-      }
-    }
-  }
-
-  return all_keys;
-}
-
 TEST(Command, restorevalue) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -2093,7 +2047,8 @@ TEST(Command, restorevalue) {
   auto cfg2 = makeServerParam(port2, 0, "restore2");
   auto server2 = makeServerEntry(cfg2);
 
-  auto allkeys = initData(server1, 1000, "restorevalue_");
+  auto allkeys =
+    writeComplexDataWithTTLToServer(server1, 1000, 2500, "restorevalue_");
 
   for (const auto& keyset : allkeys) {
     for (const auto& key : keyset) {

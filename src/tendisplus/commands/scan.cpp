@@ -423,6 +423,7 @@ class ScanCommand : public Command {
     uint64_t cursor{0};                       // used for arg "cursor"
     bool enableSlots{false};                  // check whether has "SLOTS"
     std::list<RecordKey> batch;
+    uint32_t kvstoreCount = sess->getServerEntry()->getParams()->kvStoreCount;
 
     if (sess->getServerEntry()->getParams()->clusterEnabled) {
       auto myself = sess->getServerEntry()
@@ -522,7 +523,7 @@ class ScanCommand : public Command {
           }
         }();
         auto expRecordKeys = scanKvstore(slots, recordKey, pCtx->getDbId(),
-                                         id, count - batch.size(),
+                                         id, kvstoreCount, count - batch.size(),
                                          &seq, &scanTimes, scanMaxTimes,
                                          ptxn.value());
         RET_IF_ERR_EXPECTED(expRecordKeys);
@@ -710,10 +711,10 @@ class ScanCommand : public Command {
    * @return slots. belongs to this kvsotre && belongs to "slots"
    */
   static std::bitset<CLUSTER_SLOTS> getKvstoreSlots(
-    uint32_t kvstoreId, const std::bitset<CLUSTER_SLOTS>& slots) {
+    uint32_t kvstoreId, uint32_t kvstoreCount, const std::bitset<CLUSTER_SLOTS>& slots) {
     std::bitset<CLUSTER_SLOTS> kvstoreSlots;
     for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
-      if (slots[i] & checkKvstoreSlot(kvstoreId, i)) {
+      if (slots[i] & ((i % kvstoreCount) == kvstoreId)) {
         kvstoreSlots.set(i, true);
       } else {
         kvstoreSlots.set(i, false);
@@ -737,13 +738,14 @@ class ScanCommand : public Command {
                    const RecordKey& lastScanRecordKey,
                    uint32_t dbId,
                    int kvstoreId,
+                   uint32_t kvstoreCount,
                    uint64_t count,
                    uint64_t* seq,
                    uint64_t* scanTimes,
                    uint64_t scanMaxTimes,
                    Transaction* txn) -> Expected<std::list<RecordKey>> {
     std::list<RecordKey> result;
-    auto kvstoreSlots = getKvstoreSlots(kvstoreId, slots);
+    auto kvstoreSlots = getKvstoreSlots(kvstoreId, kvstoreCount, slots);
     auto cursor = txn->createDataCursor();
     cursor->seek(lastScanRecordKey.encode());
 

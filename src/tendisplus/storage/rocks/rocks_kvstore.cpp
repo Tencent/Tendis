@@ -1380,7 +1380,9 @@ Expected<TruncateBinlogResult> RocksKVStore::truncateBinlogV2(
   uint64_t deleten = 0;
 #ifdef TENDIS_DEBUG
   Expected<uint64_t> minBinlogid = RepllogCursorV2::getMinBinlogId(txn);
-  if (minBinlogid.status().code() != ErrorCodes::ERR_EXHAUST) {
+  // When binlogSaveLogs is enabled
+  if (minBinlogid.status().code() != ErrorCodes::ERR_EXHAUST &&
+      (fs != nullptr)) {
     INVARIANT_COMPARE_D(minBinlogid.value(), >=, start);
   }
 #endif
@@ -1673,6 +1675,11 @@ Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
     return ret.status();
   }
   INVARIANT_D(ret.value() == nextBinlogid - 1);
+
+  // When disabled binlog, do not write 'flush' binlog.
+  if (!enableRepllog()) {
+    return {ErrorCodes::ERR_OK, ""};
+  }
 
   // NOTE(vinchen): make sure the first binlog is flush db,
   // and write the flush binlog using nextBinlogid.

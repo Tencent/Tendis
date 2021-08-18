@@ -34,53 +34,6 @@ uint32_t master2_port = 12002;
 uint32_t slave1_port = 12003;
 
 
-AllKeys initData(std::shared_ptr<ServerEntry> server,
-                 uint32_t count,
-                 const char* key_suffix) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
-  all_keys.emplace_back(kv_keys);
-
-  auto list_keys =
-    work.writeWork(RecordType::RT_LIST_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(list_keys);
-
-  auto hash_keys =
-    work.writeWork(RecordType::RT_HASH_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(hash_keys);
-
-  auto set_keys =
-    work.writeWork(RecordType::RT_SET_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(set_keys);
-
-  auto zset_keys =
-    work.writeWork(RecordType::RT_ZSET_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(zset_keys);
-
-  return all_keys;
-}
-
-AllKeys initKvData(const std::shared_ptr<ServerEntry>& server,
-                   uint32_t count,
-                   const char* key_suffix) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
-  all_keys.emplace_back(kv_keys);
-
-  return std::move(all_keys);
-}
 
 void addOneKeyEveryKvstore(const std::shared_ptr<ServerEntry>& server,
                            const char* key) {
@@ -458,8 +411,9 @@ TEST(Restore, Common) {
     runCommand(master1, {"config", "set", "maxBinlogKeepNum", "1000000000"});
     runCommand(master2, {"config", "set", "maxBinlogKeepNum", "1000000000"});
 
-    auto allKeys1 = initData(master1, recordSize, "suffix1");
-    LOG(INFO) << ">>>>>> master1 initData 1st end;";
+    auto allKeys1 = writeComplexDataToServer(
+      master1, recordSize, 2 /* maxEleCnt */, "suffix1");
+    LOG(INFO) << ">>>>>> master1 writeComplexData 1st end;";
     backup(master1, "copy");
     restoreBackup(master2);
     LOG(INFO) << ">>>>>> master2 restoreBackup end;";
@@ -480,18 +434,18 @@ TEST(Restore, Common) {
     part1_num = part1_num == 0 ? 1 : part1_num;
     uint32_t part2_num = recordSize - part1_num;
     // add kv only
-    auto partKeys2 = initKvData(master1, part1_num, "suffix21");
+    auto partKeys2 = writeKVDataToServer(master1, part1_num, "suffix21");
     waitBinlogDump(master1);
     std::vector<uint32_t> m1_keynum1 = getKeyNum(master1);
-    LOG(INFO) << ">>>>>> master1 initKvData 1st end;";
+    LOG(INFO) << ">>>>>> master1 writeKVDataToServer 1st end;";
     uint64_t ts = msSinceEpoch();
     LOG(INFO) << "ms:" << ts;
     sleep(1);  // wait ts changed
     // add kv only
-    auto partKeys3 = initKvData(master1, part2_num, "suffix22");
+    auto partKeys3 = writeKVDataToServer(master1, part2_num, "suffix22");
     waitBinlogDump(master1);
     std::vector<uint32_t> m1_keynum2 = getKeyNum(master1);
-    LOG(INFO) << ">>>>>> master1 initKvData 2st end;";
+    LOG(INFO) << ">>>>>> master1 writeKVDataToServer 2st end;";
     // waitBinlogDump(master1);
     flushBinlog(master1);
     restoreBinlog(master1_dir, master2, ts);

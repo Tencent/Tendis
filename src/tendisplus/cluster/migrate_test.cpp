@@ -33,37 +33,6 @@ uint32_t chunkid1 = 3300;
 uint32_t chunkid2 = 15495;
 
 
-AllKeys initData(const std::shared_ptr<ServerEntry>& server,
-                 uint32_t count,
-                 const char* key_suffix) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
-  all_keys.emplace_back(kv_keys);
-
-  auto list_keys =
-    work.writeWork(RecordType::RT_LIST_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(list_keys);
-
-  auto hash_keys =
-    work.writeWork(RecordType::RT_HASH_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(hash_keys);
-
-  auto set_keys =
-    work.writeWork(RecordType::RT_SET_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(set_keys);
-
-  auto zset_keys =
-    work.writeWork(RecordType::RT_ZSET_META, count, 2, true, key_suffix);
-  all_keys.emplace_back(zset_keys);
-
-  return all_keys;
-}
 
 void migrate(const std::shared_ptr<ServerEntry>& server1,
              const std::shared_ptr<ServerEntry>& server2,
@@ -237,11 +206,11 @@ TEST(Migrate, Common) {
     auto& master1 = hosts.first;
     auto& master2 = hosts.second;
 
-    auto allKeys1 = initData(master1, recordSize, "suffix1");
+    auto allKeys1 = writeComplexDataToServer(master1, recordSize, 2, "suffix1");
     LOG(INFO) << ">>>>>> master1 initData 1st end;";
     migrate(master1, master2, chunkid1);
     migrate(master1, master2, chunkid2);
-    // auto allKeys2 = initData(master1, recordSize, "suffix2");
+    // auto allKeys2 = writeComplexDataToServer(master1, recordSize, 2, "suffix2");
     waitMigrateEnd(master1, master2, chunkid1);
     waitMigrateEnd(master1, master2, chunkid2);
     LOG(INFO) << ">>>>>> waitMigrateEnd success;";
