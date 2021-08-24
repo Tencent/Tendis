@@ -581,13 +581,16 @@ void ReplManager::controlRoutine() {
 void ReplManager::recycleFullPushStatus() {
   auto now = SCLOCK::now();
   for (size_t i = 0; i < _fullPushStatus.size(); i++) {
-    for (auto& mpov : _fullPushStatus[i]) {
+    for (auto mpov = _fullPushStatus[i].begin();
+      mpov != _fullPushStatus[i].end();) {
       // if timeout, delte it.
-      if (mpov.second->state == FullPushState::SUCESS &&
-          now > mpov.second->endTime + std::chrono::seconds(600)) {
+      if (mpov->second->state == FullPushState::SUCESS &&
+          now > mpov->second->endTime + std::chrono::seconds(600)) {
         LOG(ERROR) << "timeout, _fullPushStatus erase,"
-                   << mpov.second->toString();
-        _fullPushStatus[i].erase(mpov.first);
+                   << mpov->second->toString();
+        mpov = _fullPushStatus[i].erase(mpov);
+      } else {
+        mpov++;
       }
     }
   }
@@ -1788,6 +1791,7 @@ void ReplManager::stop() {
   _incrChecker->stop();
   _logRecycler->stop();
 
+  std::unique_lock<std::mutex> lk(_mutex);
 #if defined(_WIN32) && _MSC_VER > 1900
   for (size_t i = 0; i < _pushStatus.size(); i++) {
     for (auto& mpov : _pushStatus[i]) {
@@ -1818,7 +1822,6 @@ void ReplManager::stop() {
 #endif
   // after _logRecycler->stop(), recycleBinlog() has quit,
   // so here can call fs->close().
-  std::unique_lock<std::mutex> lk(_mutex);
   for (size_t i = 0; i < _logRecycStatus.size(); i++) {
     if (_logRecycStatus[i]->fs) {
       _logRecycStatus[i]->fs->close();
