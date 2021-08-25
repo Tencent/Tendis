@@ -991,12 +991,23 @@ void testObject(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
 }
 
-TEST(Command, common) {
+class CommandCommonTest : public ::testing::Test,
+                                 public ::testing::WithParamInterface<bool> {
+ public:
+  CommandCommonTest() : binlogEnabled_(true) {}
+  void SetUp() override {
+    binlogEnabled_ = GetParam();
+  }
+  bool binlogEnabled_;
+};
+
+TEST_P(CommandCommonTest, BinlogEnabled) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
   EXPECT_TRUE(setupEnv());
   auto cfg = makeServerParam();
   auto server = makeServerEntry(cfg);
+  cfg->binlogEnabled = binlogEnabled_;
 
   testPf(server);
   testList(server);
@@ -1022,6 +1033,8 @@ TEST(Command, common) {
   EXPECT_EQ(server.use_count(), 1);
 #endif
 }
+
+INSTANTIATE_TEST_CASE_P(BinlogEnabled, CommandCommonTest, testing::Bool());
 
 TEST(Command, common_scan) {
   const auto guard = MakeGuard([] { destroyEnv(); });
@@ -2800,6 +2813,7 @@ TEST(Command, testFlushallWithRocksDBPath) {
 
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
+// INSTANTIATE_TEST_CASE_P may run later TEST(Command, renameCommand)
 extern string gRenameCmdList;
 extern string gMappingCmdList;
 TEST(Command, renameCommand) {
@@ -2815,6 +2829,26 @@ TEST(Command, renameCommand) {
 
   testRenameCommand(server);
 
+  gRenameCmdList = ",set_rename set";
+  gMappingCmdList = ",emptyint dbsize,emptymultibulk keys";
+  Command::changeCommand(gRenameCmdList, "rename");
+  Command::changeCommand(gMappingCmdList, "mapping");
+
+  // reset commandMap() back
+  {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"set_rename"});
+    auto eprecheck = Command::precheck(&sess);
+    EXPECT_EQ(Command::fmtErr("unknown command 'set_rename'"),
+              eprecheck.status().toString());
+
+    sess.setArgs({"set", "a", "1"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtOK(), expect.value());
+  }
   gRenameCmdList = "";
   gMappingCmdList = "";
 

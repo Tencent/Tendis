@@ -27,7 +27,7 @@ SegmentMgrFnvHash64::SegmentMgrFnvHash64(
     _movedNum(0) {}
 
 uint32_t SegmentMgrFnvHash64::getStoreid(uint32_t chunkid) {
-  return chunkid % _instances.size();
+  return getKvStoreID(chunkid, _instances.size());
 }
 
 Expected<DbWithLock> SegmentMgrFnvHash64::getDbWithKeyLock(

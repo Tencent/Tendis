@@ -1703,8 +1703,14 @@ std::shared_ptr<ServerEntry>& getGlobalServer() {
  * @param slot slot which need to check
  * @return boolean, show whether slot belong to this kvstore
  */
-bool checkKvstoreSlot(uint32_t kvstoreId, uint64_t slot) {
-  return (slot % getGlobalServer()->getParams()->kvStoreCount) == kvstoreId;
+bool checkKvStoreSlot(uint32_t kvstoreId,
+                      uint32_t kvstoreCount,
+                      uint64_t slot) {
+  return getKvStoreID(slot, kvstoreCount) == kvstoreId;
+}
+
+uint32_t getKvStoreID(uint32_t chunkid, uint32_t kvstoreCount) {
+  return chunkid % kvstoreCount;
 }
 
 }  // namespace tendisplus

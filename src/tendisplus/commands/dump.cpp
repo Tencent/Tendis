@@ -1415,8 +1415,7 @@ class RestoreMetaCommand : public Command {
 
     auto slotId = static_cast<uint32_t>(eSlotId.value());
     auto server = sess->getServerEntry();
-    // TODO(VINCHEN): should use interface
-    auto dbId = slotId % (server->getKVStoreCount());
+    auto dbId = getKvStoreID(slotId, server->getKVStoreCount());
     bool getBigKey = false;
     uint64_t valueSize = -1;
     uint64_t eleCnt = -1;

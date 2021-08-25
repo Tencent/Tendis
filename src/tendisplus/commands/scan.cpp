@@ -173,7 +173,8 @@ class ScanGenericCommand : public Command {
     cursor += count;
     std::string newCursor = batch.value().first;
     if (newCursor != "0") {
-      auto kvstoreId = expdb.value().chunkId % server->getKVStoreCount();
+      auto kvstoreId =
+        getKvStoreID(expdb.value().chunkId, server->getKVStoreCount());
       sess->getServerEntry()->addKeyCursorMapping(
         sess, key, cursor, kvstoreId, batch.value().first);
       newCursor = std::to_string(cursor);
@@ -711,10 +712,12 @@ class ScanCommand : public Command {
    * @return slots. belongs to this kvsotre && belongs to "slots"
    */
   static std::bitset<CLUSTER_SLOTS> getKvstoreSlots(
-    uint32_t kvstoreId, uint32_t kvstoreCount, const std::bitset<CLUSTER_SLOTS>& slots) {
+    uint32_t kvstoreId,
+    uint32_t kvstoreCount,
+    const std::bitset<CLUSTER_SLOTS>& slots) {
     std::bitset<CLUSTER_SLOTS> kvstoreSlots;
     for (size_t i = 0; i < CLUSTER_SLOTS; ++i) {
-      if (slots[i] & ((i % kvstoreCount) == kvstoreId)) {
+      if (slots[i] && checkKvStoreSlot(kvstoreId, kvstoreCount, i)) {
         kvstoreSlots.set(i, true);
       } else {
         kvstoreSlots.set(i, false);

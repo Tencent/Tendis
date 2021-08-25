@@ -2860,6 +2860,7 @@ class FlushGeneric : public Command {
     auto server = sess->getServerEntry();
     auto replMgr = server->getReplManager();
     INVARIANT(replMgr != nullptr);
+    auto binlogEnabled = server->getParams()->binlogEnabled;
 
     for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
       auto expdb =
@@ -2884,10 +2885,12 @@ class FlushGeneric : public Command {
         return eflush.status();
       }
 
-      // it is the first txn and binlog, because of LOCK_X
-      INVARIANT_COMPARE_D(eflush.value(), ==, nextBinlogid);
+      if (binlogEnabled) {
+        // it is the first txn and binlog, because of LOCK_X
+        INVARIANT_COMPARE_D(eflush.value(), ==, nextBinlogid);
 
-      replMgr->onFlush(i, eflush.value());
+        replMgr->onFlush(i, eflush.value());
+      }
     }
     return {ErrorCodes::ERR_OK, ""};
   }
