@@ -25,6 +25,7 @@ class SortCommand : public Command {
     mystring_view pattern;
     std::vector<std::string> priKey;
     std::string field;
+    bool keySelf;
   };
 
   struct Element {
@@ -173,6 +174,8 @@ class SortCommand : public Command {
     int32_t offset(-1), count(-1);
     size_t storeKeyIndex;
 
+    // NOTE: clusterSingleNode dont support "by" or "get"
+    //       because we lock keys twice, it may cause dead lock.
     /* 1.precheck */
     std::vector<SortOp> ops(1);
     std::vector<int> iKey(1, 1);
@@ -442,6 +445,11 @@ class SortCommand : public Command {
     size_t lockidx(0);
     for (size_t i = 0; i < ops.size(); i++) {
       ops[i].priKey.resize(records.size());
+      ops[i].keySelf = false;
+      if (ops[i].cmd == "get"
+        && ops[i].pattern[0] == '#' && ops[i].pattern.size() == 1) {
+        ops[i].keySelf = true;
+      }
       for (size_t j = 0; j < records.size(); j++) {
         records[j].uniqueId = j;
         auto keyPair = parsePattern(records[j].key, ops[i].pattern);
@@ -465,6 +473,7 @@ class SortCommand : public Command {
     INVARIANT_D(!server->isClusterEnabled() || opkeys.size() == 0);
     // handle GET
     std::vector<std::string> result;
+    std::stringstream ssObjs;
     {
       /* When cluster_enabled is yes, opkeys is always empty. It is only
        * compatible with when cluster_enable is no */
@@ -556,25 +565,30 @@ class SortCommand : public Command {
           size_t uniqueId = records[i].uniqueId;
           if (op.cmd == "") {
             result.emplace_back(records[i].key);
+            Command::fmtBulk(ssObjs, records[i].key);
             continue;
           }
           const auto& priKeylist = op.priKey;
-          if (priKeylist[uniqueId].size() == 0) {
+          if (op.keySelf) {
+            result.emplace_back(records[i].key);
+            Command::fmtBulk(ssObjs, records[i].key);
+          } else if (priKeylist[uniqueId].size() == 0) {
             // nullBulk.
             result.emplace_back("");
-          } else if (priKeylist[uniqueId] == records[i].key) {
-            result.emplace_back(records[i].key);
+            Command::fmtNull(ssObjs);
           } else {
             const auto& field = op.field;
             auto expVal = getPatternResult(sess, priKeylist[uniqueId], field);
-            if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
+            if (expVal.ok()) {
+              result.emplace_back(expVal.value());
+              Command::fmtBulk(ssObjs, expVal.value());
+            } else if (expVal.status().code() == ErrorCodes::ERR_NOTFOUND ||
                 expVal.status().code() == ErrorCodes::ERR_EXPIRED) {
               result.emplace_back("");
-            }
-            if (!expVal.ok()) {
+              Command::fmtNull(ssObjs);
+            } else {
               return expVal.status();
             }
-            result.emplace_back(expVal.value());
           }
         }
       }
@@ -645,11 +659,8 @@ class SortCommand : public Command {
 
     std::stringstream ss;
     Command::fmtMultiBulkLen(ss, result.size());
-    for (size_t i = 0; i < result.size(); i++) {
-      Command::fmtBulk(ss, result[i]);
-    }
 
-    return ss.str();
+    return ss.str() + ssObjs.str();
   }
 } sortCmd;
 

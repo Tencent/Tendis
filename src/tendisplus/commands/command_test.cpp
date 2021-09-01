@@ -2525,6 +2525,109 @@ void testSort(bool clusterEnabled) {
               "-ERR GET option of SORT denied in Cluster mode.\r\n");
   }
 
+  // sort get nil
+  sess.setArgs({"sort", "uid", "get", "user_name_*", "get", "_:*"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_EQ(expect.value(),
+              "*6\r\n$5\r\nadmin\r\n$-1\r\n$4\r\njack\r\n"
+              "$-1\r\n$4\r\nmary\r\n$-1\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+
+  sess.setArgs({"LPUSH", "{a}list1", "2", "3", ""});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  // sort get *
+  sess.setArgs({"sort", "{a}list1", "alpha", "get", "*"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    // nil, nil, nil
+    EXPECT_EQ(expect.value(),
+              "*3\r\n$-1\r\n$-1\r\n$-1\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+
+  // sort get #
+  sess.setArgs({"sort", "{a}list1", "alpha", "get", "#"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    // "", 2, 3
+    EXPECT_EQ(expect.value(),
+              "*3\r\n$0\r\n\r\n$1\r\n2\r\n$1\r\n3\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+
+  // sort store, cross slot
+  sess.setArgs({"sort", "{a}list1", "alpha", "store", "list1"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(),
+              ":3\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+  }
+
+  // sort store, contain ""
+  sess.setArgs({"sort", "{a}list1", "alpha", "store", "{a}list2"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect.value(),
+            ":3\r\n");
+
+  sess.setArgs({"lrange", "{a}list2", "0", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  // "", 2, 3
+  EXPECT_EQ(expect.value(),
+          "*3\r\n$0\r\n\r\n$1\r\n2\r\n$1\r\n3\r\n");
+
+  // sort store, contain nil
+  sess.setArgs({"sort", "{a}list1", "alpha", "get", "*", "store", "{a}list3"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(),
+              ":3\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+  sess.setArgs({"lrange", "{a}list3", "0", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    // sort store: nil will be changed to ""
+    // "", "", ""
+    EXPECT_EQ(expect.value(),
+              "*3\r\n$0\r\n\r\n$0\r\n\r\n$0\r\n\r\n");
+  } else {
+    EXPECT_EQ(expect.value(),
+              "*0\r\n");
+  }
+
+  sess.setArgs({"set", "2", "b"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  // sort get *, need return value:b of key:2
+  sess.setArgs({"sort", "{a}list1", "alpha", "get", "*"});
+  expect = Command::runSessionCmd(&sess);
+  if (!clusterEnabled) {
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(),
+              "*3\r\n$-1\r\n$1\r\nb\r\n$-1\r\n");
+  } else {
+    EXPECT_EQ(expect.status().toString(),
+              "-ERR GET option of SORT denied in Cluster mode.\r\n");
+  }
+
 #ifndef _WIN32
   server->stop();
   EXPECT_EQ(server.use_count(), 1);
