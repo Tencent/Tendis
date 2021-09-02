@@ -20,6 +20,18 @@ TEST(Lua, Common) {
   auto server = std::make_shared<ServerEntry>(cfg);
   auto s = server->startup(cfg);
   ASSERT_TRUE(s.ok());
+
+  {
+    auto ctx = std::make_shared<asio::io_context>();
+    auto session = makeSession(server, ctx);
+    WorkLoad work(server, session);
+    work.init();
+    auto ret = work.getStringResult({"eval",
+                                     "return redis.call('set','a','1')",
+                                     "0"});
+    ASSERT_EQ(ret, "+OK\r\n");
+  }
+
   int32_t testNum = 100000;
   std::thread th1(
     [&server, testNum]() {

@@ -904,8 +904,7 @@ Expected<std::string> LuaState::luaReplyToRedisReply(lua_State *lua) {
         string ok = lua_tostring(lua, -1);
         redis_port::strmapchars(ok, "\r\n", "  ", 2);
         lua_pop(lua, 2);
-        // return Command::fmtBulk("+" + ok + "\r\n");
-        return Command::fmtBulk(ok);
+        return "+" + ok + "\r\n";
       } else {
         // void *replylen = addDeferredMultiBulkLength(c);
         int j = 1, mbulklen = 0;
