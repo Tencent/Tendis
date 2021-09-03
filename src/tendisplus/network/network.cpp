@@ -494,7 +494,8 @@ Status NetSession::setResponse(const std::string& s) {
   }
 
   auto v = std::make_shared<SendBuffer>();
-  std::copy(s.begin(), s.end(), std::back_inserter(v->buffer));
+  v->buffer.resize(str.size());
+  std::copy(str.begin(), str.end() ,v->buffer.begin());
   v->closeAfterThis = _closeAfterRsp;
   if (_isSendRunning) {
     _sendBuffer.push_back(v);

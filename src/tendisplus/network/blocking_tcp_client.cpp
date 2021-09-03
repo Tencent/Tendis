@@ -304,6 +304,12 @@ Status BlockingTcpClient::writeOneBatch(const char* data,
   }
 }
 
+Status BlockingTcpClient::writeLine(std::string&& line)
+{
+    line.append("\r\n");
+    return writeData(line);
+}
+
 Status BlockingTcpClient::writeLine(const std::string& line) {
   std::string line1 = line;
   line1.append("\r\n");
