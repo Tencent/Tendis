@@ -606,6 +606,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void manualFailoverCheckTimeout();
   void resetManualFailover();
   void resetManualFailoverNoLock();
+  void resetFailoverState();
   void clusterHandleManualFailover();
   void clusterHandleSlaveMigration(uint32_t max_slaves);
 
