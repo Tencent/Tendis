@@ -1631,6 +1631,21 @@ Status RocksKVStore::clear() {
   if (_isRunning) {
     return {ErrorCodes::ERR_INTERNAL, "should stop before clear"};
   }
+  // We use rocksdb::DestroyDB to destroy the contents of the specified
+  // database, because 'User' may config these path:DBOptions::db_paths,
+  // DBOptions::db_log_dir, DBOptions::wal_dir, ColumnFamilyOptions::cf_paths.
+  // Using rocksdb::DestroyDB is simple. But when 'data path' has other
+  // files(not rocksdb generate), rocksdb::DestroyDB couldn't delete 'data path'
+  // , so we remove 'data path' again
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 15)
+  auto s = rocksdb::DestroyDB(dbName(), options(), _cfDescs);
+#else
+  auto s = rocksdb::DestroyDB(dbName(), options());
+#endif
+  if (!s.ok()) {
+    return handleRocksdbError(s);
+  }
+
   try {
     const std::string path = dbPath() + "/" + dbId();
     if (!filesystem::exists(path)) {
@@ -1642,19 +1657,16 @@ Status RocksKVStore::clear() {
     LOG(WARNING) << "dbId:" << dbId() << " clear failed:" << ex.what();
     return {ErrorCodes::ERR_INTERNAL, ex.what()};
   }
+
   return {ErrorCodes::ERR_OK, ""};
 }
 
 Expected<uint64_t> RocksKVStore::flush(Session* sess, uint64_t nextBinlogid) {
   auto s = stop();
-  if (!s.ok()) {
-    return s;
-  }
+  RET_IF_ERR(s);
 
   s = clear();
-  if (!s.ok()) {
-    return s;
-  }
+  RET_IF_ERR(s);
 
   auto ret = restart(false, nextBinlogid);
   if (!ret.ok()) {
@@ -1757,12 +1769,16 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
 #endif
     std::unique_ptr<rocksdb::Iterator> iter = nullptr;
     std::unique_ptr<rocksdb::Iterator> binlog_iter = nullptr;
-    std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
-    column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+    // In clear() we use _cfDescs, so we don't put _cfDescs.clear() in
+    // RocksKVStore::stop(). stop() is used in these conditions:
+    // 1) flush/destroy: stop -> clear -> restart
+    // 2) recoveryFromBgError: stop -> restart
+    _cfDescs.clear();
+    _cfDescs.push_back(rocksdb::ColumnFamilyDescriptor(
       rocksdb::kDefaultColumnFamilyName, defaultColumnFamilyOpts));
     if (!_cfg->binlogUsingDefaultCF) {
       rocksdb::Options binlogColumnFamilyOpts = options();
-      column_families.push_back(
+      _cfDescs.push_back(
         rocksdb::ColumnFamilyDescriptor("binlog_cf", binlogColumnFamilyOpts));
     }
     if (_txnMode == TxnMode::TXN_OPT) {
@@ -1772,7 +1788,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       auto status = rocksdb::OptimisticTransactionDB::Open(
         dbOpts,
         dbname,
-        column_families,
+        _cfDescs,
         &_cfHandles,
         &tmpDb);  // open two column_family in OptimisticTranDB
       if (!status.ok()) {
@@ -1803,7 +1819,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       LOG(INFO) << "rocksdb Open,id:" << dbId() << " dbname:" << dbname;
       // open two colum_family in pessimisticTranDB
       auto status = rocksdb::TransactionDB::Open(
-        dbOpts, txnDbOptions, dbname, column_families, &_cfHandles, &tmpDb);
+        dbOpts, txnDbOptions, dbname, _cfDescs, &_cfHandles, &tmpDb);
       if (!status.ok()) {
         LOG(INFO) << "rocksdb Open error,id:" << dbId() << " dbname:" << dbname;
         if (tmpDb) {

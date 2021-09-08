@@ -2805,6 +2805,44 @@ TEST(Command, testDbsizeAndFlushall) {
 #endif
 }
 
+// flushall with WalDir different with DBPath
+TEST(Command, testFlushallWithRocksDBPath) {
+  std::string walPath = "./wal";
+  std::error_code ec;
+
+  const auto guard = MakeGuard([&walPath, &ec] {
+    destroyEnv();
+    filesystem::remove_all(walPath, ec);
+  });
+
+  EXPECT_TRUE(setupEnv());
+  EXPECT_TRUE(filesystem::create_directory(walPath));
+
+  auto cfg = makeServerParam();
+  cfg->rocksWALDir = walPath;
+  auto server = makeServerEntry(cfg);
+
+  testCommand(server);
+
+  {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"flushall"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ("+OK\r\n", expect.value());
+  }
+
+  remove(cfg->getConfFile().c_str());
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
 extern string gRenameCmdList;

@@ -356,6 +356,9 @@ class KVStore {
   const std::string& dbId() const {
     return _id;
   }
+  const std::string dbName() const {
+    return _dbPath + "/" + _id;
+  }
   const std::string dftBackupDir() const {
     return _backupDir;
   }

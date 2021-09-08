@@ -273,6 +273,7 @@ class RocksKVStore : public KVStore {
                       const std::string* begin,
                       const std::string* end) final;
   Status fullCompact() final;
+  // RocksDB::DestroyDB
   Status clear() final;
   bool isRunning() const final;
   Status stop() final;
@@ -473,6 +474,7 @@ class RocksKVStore : public KVStore {
   std::map<std::string, std::string> _rocksIntProperties;
   std::map<std::string, std::string> _rocksStringProperties;
   std::vector<rocksdb::ColumnFamilyHandle*> _cfHandles;
+  std::vector<rocksdb::ColumnFamilyDescriptor> _cfDescs;
 };
 
 class RocksdbEnv {
