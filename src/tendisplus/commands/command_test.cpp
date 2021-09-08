@@ -22,6 +22,7 @@
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
+#include "rocksdb/utilities/table_properties_collectors.h"
 
 namespace tendisplus {
 
@@ -2286,6 +2287,33 @@ void testRocksOptionCommand(std::shared_ptr<ServerEntry> svr) {
     "-ERR:3,msg:rocks.compaction_deletes_ratio can't be changed dynmaically "
     "in rocksdb(version < 6.11)\r\n");
   EXPECT_EQ(err, expect.status().toString());
+#endif
+
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
+  std::ostringstream tableProperties;
+  tableProperties << "CompactOnDeletionCollector"
+                  << " (Sliding window size = " << 100
+                  << " Deletion trigger = " << 50 << " Deletion ratio = " << 0.5
+                  << ')';
+  for (uint32_t i = 0; i < svr->getKVStoreCount(); i++) {
+    auto exptDb = svr->getSegmentMgr()->getDb(&sess, 0, mgl::LockMode::LOCK_IS);
+    EXPECT_TRUE(exptDb.ok());
+
+    auto store = exptDb.value().store;
+    auto rocksStore = static_cast<tendisplus::RocksKVStore*>(store.get());
+    auto tableFactory = rocksStore->getUnderlayerPesDB()
+                          ->GetOptions()
+                          .table_properties_collector_factories;
+    for (auto factory : tableFactory) {
+      if (std::string(factory->Name()) == "CompactOnDeletionCollector") {
+        auto compactOnDel =
+          static_cast<rocksdb::CompactOnDeletionCollectorFactory*>(
+            factory.get());
+        EXPECT_EQ(tableProperties.str(), compactOnDel->ToString());
+        break;
+      }
+    }
+  }
 #endif
 
   sess.setArgs({"CONFIG", "SET", "rocks.abc", "-1"});
