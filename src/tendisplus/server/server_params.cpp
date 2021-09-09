@@ -480,8 +480,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME("rocks.level0_compress_enabled", level0Compress);
   REGISTER_VARS_DIFF_NAME("rocks.level1_compress_enabled", level1Compress);
 
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.max_open_files",
-                                  rocksMaxOpenFiles);
+  REGISTER_VARS_FULL(
+    "rocks.max_open_files", rocksMaxOpenFiles, NULL, NULL, -1, INT_MAX, true);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.max_background_jobs",
                                   rocksMaxBackgroundJobs);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_window",
