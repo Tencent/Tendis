@@ -2804,8 +2804,10 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
     getBaseDB()->GetOptions().table_properties_collector_factories;
   std::string errinfo;
   for (auto factory : table_properties_collector_factories) {
-    if (factory->Name() == "CompactOnDeletionCollector") {
+    if (std::string(factory->Name()) == "CompactOnDeletionCollector") {
       auto table_factory_option = option.substr(25, option.size() - 25);
+      auto compactOnDel =
+        static_cast<rocksdb::CompactOnDeletionCollectorFactory*>(factory.get());
       if (table_factory_option == "window") {
         auto ed = tendisplus::stoul(value);
         if (!ed.ok()) {
@@ -2814,7 +2816,7 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
           return {ErrorCodes::ERR_PARSEOPT, errinfo};
         }
 
-        factory->SetWindowSize(value);
+        compactOnDel->SetWindowSize(ed.value());
         return {ErrorCodes::ERR_OK, ""};
       } else if (table_factory_option == "trigger") {
         auto ed = tendisplus::stoul(value);
@@ -2825,7 +2827,7 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
           return {ErrorCodes::ERR_PARSEOPT, errinfo};
         }
 
-        factory->SetDeletionTrigger(value);
+        compactOnDel->SetDeletionTrigger(ed.value());
         return {ErrorCodes::ERR_OK, ""};
       } else if (table_factory_option == "ratio") {
         auto ed = tendisplus::stod(value);
@@ -2835,7 +2837,7 @@ Status RocksKVStore::setCompactOnDeletionCollectorFactory(
           return {ErrorCodes::ERR_PARSEOPT, errinfo};
         }
 
-        factory->SetDeletionRatio(value);
+        compactOnDel->SetDeletionRatio(ed.value());
         return {ErrorCodes::ERR_OK, ""};
       } else {
         return {ErrorCodes::ERR_INTERNAL,
