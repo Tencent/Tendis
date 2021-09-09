@@ -229,10 +229,19 @@ Expected<std::string> BlockingTcpClient::realRead(
 // TODO(deyukong): reduce copy times
 Expected<std::string> BlockingTcpClient::read(size_t bufSize,
                                               std::chrono::seconds timeout) {
-  size_t batchSize = _inputBuf.max_size();
-  size_t totalSize = 0;
   std::string result;
   result.resize(bufSize);
+  auto ret = read(&result[0], bufSize, timeout);
+  RET_IF_ERR(ret);
+
+  return result;
+}
+
+Status BlockingTcpClient::read(char* buff, size_t bufSize,
+        std::chrono::seconds timeout) {
+  size_t batchSize = _inputBuf.max_size();
+  size_t totalSize = 0;
+
   while (totalSize < bufSize) {
     size_t curSize = batchSize;
     if (bufSize - totalSize < batchSize) {
@@ -246,12 +255,13 @@ Expected<std::string> BlockingTcpClient::read(size_t bufSize,
     INVARIANT_D(inputBufSize >= curSize);
 
     std::istream is(&_inputBuf);
-    is.read(&result[0] + totalSize, curSize);
+    is.read(buff + totalSize, curSize);
 
     INVARIANT_D(inputBufSize == _inputBuf.size() + curSize);
     totalSize += curSize;
   }
-  return result;
+  INVARIANT_D(totalSize == bufSize);
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 Status BlockingTcpClient::writeData(const std::string& data) {

@@ -24,6 +24,7 @@
 #include "tendisplus/replication/repl_manager.h"
 #include "tendisplus/storage/record.h"
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
+#include "tendisplus/utils/file.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/utils/scopeguard.h"
@@ -86,6 +87,107 @@ Expected<BackupInfo> getBackupInfo(BlockingTcpClient* client,
   }
   bkInfo.setFileList(result);
   return bkInfo;
+}
+
+Status ReplManager::receiveFile(const std::string& fullFileName,
+        std::shared_ptr<BlockingTcpClient> client,
+        size_t remain) {
+  auto myfile = std::fstream(fullFileName, std::ios::out | std::ios::binary);
+  if (!myfile.is_open()) {
+    LOG(ERROR) << "open file:" << fullFileName << " for write failed";
+    return {ErrorCodes::ERR_INTERNAL, "open file failed"};;
+  }
+  size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
+  while (remain) {
+    size_t batchSize = std::min(remain, fileBatch);
+    remain -= batchSize;
+    Expected<std::string> exptData =
+            client->read(batchSize, std::chrono::seconds(100));
+    if (!exptData.ok()) {
+      LOG(ERROR) << "fullsync read bulk data failed:"
+                 << exptData.status().toString();
+      return {ErrorCodes::ERR_INTERNAL, "read client failed"};
+    }
+    myfile.write(exptData.value().c_str(), exptData.value().size());
+    if (myfile.bad()) {
+      LOG(ERROR) << "write file:" << fullFileName
+                 << " failed:" << strerror(errno);
+      return {ErrorCodes::ERR_INTERNAL, "write file failed"};;
+    }
+    Status s = client->writeLine("+OK");
+    if (!s.ok()) {
+      LOG(ERROR) << "write file:" << fullFileName
+                 << " reply failed:" << s.toString();
+      return {ErrorCodes::ERR_INTERNAL, "write client failed"};;
+    }
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+Status ReplManager::receiveFileDirectio(const std::string& fullFileName,
+        std::shared_ptr<BlockingTcpClient> client,
+        size_t remain) {
+  filesystem::path dirName = filesystem::path(fullFileName).parent_path();
+  auto alignedBuf = newAlignedBuff(dirName, 16);
+  if (alignedBuf == nullptr) {
+    return {ErrorCodes::ERR_INTERNAL, "newAlignedBuff failed"};
+  }
+
+  std::unique_ptr<rocksdb::WritableFile> writable_file =
+    openWritableFile(fullFileName, true, false);  // PosixWritableFile
+  if (writable_file == nullptr) {
+    LOG(ERROR) << "openWritableFile failed:" << fullFileName;
+    return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};;
+  }
+  while (remain) {
+    size_t curSize = std::min(remain, alignedBuf->bufSize);
+    remain -= curSize;
+    auto s = client->read(alignedBuf->buf,
+            curSize, std::chrono::seconds(100));
+    if (!s.ok()) {
+      LOG(ERROR) << "fullsync read bulk data failed:"
+                 << s.toString();
+      return {ErrorCodes::ERR_INTERNAL, "read client failed"};
+    }
+    rocksdb::Slice slice(alignedBuf->buf, curSize);
+    if (curSize == alignedBuf->bufSize) {
+      auto rS = writable_file->Append(slice);
+      if (!rS.ok()) {
+        LOG(ERROR) << "write file:" << fullFileName
+                   << " failed:" << strerror(errno);
+        return {ErrorCodes::ERR_INTERNAL, "write file failed"};
+      }
+    } else {
+      INVARIANT_D(remain == 0);
+      writable_file->Close();
+
+      writable_file =
+        openWritableFile(fullFileName, false, true);  // PosixWritableFile
+      if (writable_file == nullptr) {
+        LOG(ERROR) << "openWritableFile failed:" << fullFileName;
+        return {ErrorCodes::ERR_INTERNAL, "openWritableFile failed."};;
+      }
+
+      auto rS = writable_file->Append(slice);
+      if (!rS.ok()) {
+        LOG(ERROR) << "write file:" << fullFileName
+                   << " failed:" << strerror(errno);
+        return {ErrorCodes::ERR_INTERNAL, "write file failed"};
+      }
+    }
+    if (remain == 0) {
+      writable_file->Close();
+    }
+
+    s = client->writeLine("+OK");
+    if (!s.ok()) {
+      LOG(ERROR) << "write file:" << fullFileName
+                 << " reply failed:" << s.toString();
+      return {ErrorCodes::ERR_INTERNAL, "write client failed"};
+    }
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 // spov's network communicate procedure
@@ -231,40 +333,20 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
     std::string fullFileName = store->dftBackupDir() + "/" + s.value();
     LOG(INFO) << "fullsync file:" << fullFileName << " transfer begin";
 
-    filesystem::path fileDir = filesystem::path(fullFileName).remove_filename();
+    filesystem::path fileDir = filesystem::path(fullFileName).parent_path();
     if (!filesystem::exists(fileDir)) {
       LOG(INFO) << "slaveStartFullsync create_directories:" << fileDir;
       filesystem::create_directories(fileDir);
     }
-    auto myfile = std::fstream(fullFileName, std::ios::out | std::ios::binary);
-    if (!myfile.is_open()) {
-      LOG(ERROR) << "open file:" << fullFileName << " for write failed";
-      return;
+    size_t fLength = flist.at(s.value());
+    Status ret;
+    if (_cfg->directIo) {
+      ret = receiveFileDirectio(fullFileName, client, fLength);
+    } else {
+      ret = receiveFile(fullFileName, client, fLength);
     }
-    size_t remain = flist.at(s.value());
-    size_t fileBatch = (_cfg->binlogRateLimitMB * 1024 * 1024) / 10;
-    while (remain) {
-      size_t batchSize = std::min(remain, fileBatch);
-      remain -= batchSize;
-      Expected<std::string> exptData =
-        client->read(batchSize, std::chrono::seconds(100));
-      if (!exptData.ok()) {
-        LOG(ERROR) << "fullsync read bulk data failed:"
-                   << exptData.status().toString();
-        return;
-      }
-      myfile.write(exptData.value().c_str(), exptData.value().size());
-      if (myfile.bad()) {
-        LOG(ERROR) << "write file:" << fullFileName
-                   << " failed:" << strerror(errno);
-        return;
-      }
-      Status s = client->writeLine("+OK");
-      if (!s.ok()) {
-        LOG(ERROR) << "write file:" << fullFileName
-                   << " reply failed:" << s.toString();
-        return;
-      }
+    if (!ret.ok()) {
+      return;
     }
     LOG(INFO) << "fullsync file:" << fullFileName << " transfer done";
     finishedFiles.insert(s.value());
