@@ -34,7 +34,7 @@
 #include "rocksdb/write_buffer_manager.h"
 #include "table/scoped_arena_iterator.h"
 #include "table/sst_file_dumper.h"
-#include "tools/ldb_cmd_impl.h"
+#include "./ldb_cmd_impl.h"
 #include "util/cast_util.h"
 #include "util/coding.h"
 #include "util/file_checksum_helper.h"
@@ -186,6 +186,8 @@ LDBCommand* LDBCommand::SelectCommand(const ParsedParams& parsed_params) {
   } else if (parsed_params.cmd == ScanCommand::Name()) {
     return new ScanCommand(parsed_params.cmd_params, parsed_params.option_map,
                            parsed_params.flags);
+  } else if (parsed_params.cmd == TScanCommand::Name()) {
+    return new TScanCommand(parsed_params.cmd_params, parsed_params.option_map, parsed_params.flags);
   } else if (parsed_params.cmd == DeleteCommand::Name()) {
     return new DeleteCommand(parsed_params.cmd_params, parsed_params.option_map,
                              parsed_params.flags);

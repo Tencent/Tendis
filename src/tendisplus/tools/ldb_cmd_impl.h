@@ -427,6 +427,34 @@ class ScanCommand : public LDBCommand {
   bool no_value_;
 };
 
+class TScanCommand : public LDBCommand {
+ public:
+  static std::string Name() {
+    return "tscan";
+  }
+
+  TScanCommand(const std::vector<std::string>& params,
+               const std::map<std::string, std::string>& options,
+               const std::vector<std::string>& flags);
+
+  virtual void DoCommand() override;
+
+  static void Help(std::string& ret);
+
+ private:
+  void printLog(const std::string& value);
+
+ private:
+  std::string start_key_;
+  std::string end_key_;
+  bool start_key_specified_;
+  bool end_key_specified_;
+  int max_keys_scanned_;
+  bool no_value_;
+  bool print_log_;
+};
+
+
 class DeleteCommand : public LDBCommand {
  public:
   static std::string Name() { return "delete"; }
