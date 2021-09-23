@@ -6,15 +6,14 @@
 #ifndef ROCKSDB_LITE
 #include "rocksdb/ldb_tool.h"
 #include "rocksdb/utilities/ldb_cmd.h"
-#include "./ldb_cmd_impl.h"
+#include "tools/ldb_cmd_impl.h"
 
 namespace ROCKSDB_NAMESPACE {
 
 LDBOptions::LDBOptions() {}
 
 void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
-                                 const char* /*exec_name*/,
-                                 bool to_stderr) {
+                                 const char* /*exec_name*/, bool to_stderr) {
   std::string ret;
 
   ret.append(ldb_options.print_help_header);
@@ -23,10 +22,11 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
              "=<full_path_to_db_directory> when necessary\n");
   ret.append("\n");
   ret.append("commands can optionally specify --" + LDBCommand::ARG_ENV_URI +
-             "=<uri_of_environment> if necessary\n\n");
+             "=<uri_of_environment> or --" + LDBCommand::ARG_FS_URI +
+             "=<uri_of_filesystem> if necessary\n\n");
   ret.append(
-    "The following optional parameters control if keys/values are "
-    "input/output as hex or as plain strings:\n");
+      "The following optional parameters control if keys/values are "
+      "input/output as hex or as plain strings:\n");
   ret.append("  --" + LDBCommand::ARG_KEY_HEX +
              " : Keys are input/output as hex\n");
   ret.append("  --" + LDBCommand::ARG_VALUE_HEX +
@@ -36,12 +36,12 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
   ret.append("\n");
 
   ret.append(
-    "The following optional parameters control the database "
-    "internals:\n");
+      "The following optional parameters control the database "
+      "internals:\n");
   ret.append(
-    "  --" + LDBCommand::ARG_CF_NAME +
-    "=<string> : name of the column family to operate on. default: default "
-    "column family\n");
+      "  --" + LDBCommand::ARG_CF_NAME +
+      "=<string> : name of the column family to operate on. default: default "
+      "column family\n");
   ret.append("  --" + LDBCommand::ARG_TTL +
              " with 'put','get','scan','dump','query','batchput'"
              " : DB supports ttl and value is internally timestamp-suffixed\n");
@@ -71,7 +71,6 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
   GetCommand::Help(ret);
   BatchPutCommand::Help(ret);
   ScanCommand::Help(ret);
-  TScanCommand::Help(ret);
   DeleteCommand::Help(ret);
   DeleteRangeCommand::Help(ret);
   DBQuerierCommand::Help(ret);
@@ -89,11 +88,13 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
   DBLoaderCommand::Help(ret);
   ManifestDumpCommand::Help(ret);
   FileChecksumDumpCommand::Help(ret);
+  GetPropertyCommand::Help(ret);
   ListColumnFamiliesCommand::Help(ret);
   CreateColumnFamilyCommand::Help(ret);
   DropColumnFamilyCommand::Help(ret);
   DBFileDumperCommand::Help(ret);
   InternalDumpCommand::Help(ret);
+  DBLiveFilesMetadataDumperCommand::Help(ret);
   RepairCommand::Help(ret);
   BackupCommand::Help(ret);
   RestoreCommand::Help(ret);
@@ -106,19 +107,15 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
 }
 
 int LDBCommandRunner::RunCommand(
-  int argc,
-  char const* const* argv,
-  Options options,
-  const LDBOptions& ldb_options,
-  const std::vector<ColumnFamilyDescriptor>* column_families) {
+    int argc, char const* const* argv, Options options,
+    const LDBOptions& ldb_options,
+    const std::vector<ColumnFamilyDescriptor>* column_families) {
   if (argc <= 2) {
     if (argc <= 1) {
       PrintHelp(ldb_options, argv[0], /*to_stderr*/ true);
       return 1;
     } else if (std::string(argv[1]) == "--version") {
-      printf("ldb from RocksDB %d.%d.%d\n",
-             ROCKSDB_MAJOR,
-             ROCKSDB_MINOR,
+      printf("ldb from RocksDB %d.%d.%d\n", ROCKSDB_MAJOR, ROCKSDB_MINOR,
              ROCKSDB_PATCH);
       return 0;
     } else if (std::string(argv[1]) == "--help") {
@@ -131,7 +128,7 @@ int LDBCommandRunner::RunCommand(
   }
 
   LDBCommand* cmdObj = LDBCommand::InitFromCmdLineArgs(
-    argc, argv, options, ldb_options, column_families);
+      argc, argv, options, ldb_options, column_families);
   if (cmdObj == nullptr) {
     fprintf(stderr, "Unknown command\n");
     PrintHelp(ldb_options, argv[0], /*to_stderr*/ true);
@@ -152,13 +149,11 @@ int LDBCommandRunner::RunCommand(
   return ret.IsFailed() ? 1 : 0;
 }
 
-void LDBTool::Run(int argc,
-                  char** argv,
-                  Options options,
+void LDBTool::Run(int argc, char** argv, Options options,
                   const LDBOptions& ldb_options,
                   const std::vector<ColumnFamilyDescriptor>* column_families) {
-  int error_code = LDBCommandRunner::RunCommand(
-    argc, argv, options, ldb_options, column_families);
+  int error_code = LDBCommandRunner::RunCommand(argc, argv, options,
+                                                ldb_options, column_families);
   exit(error_code);
 }
 }  // namespace ROCKSDB_NAMESPACE
