@@ -720,7 +720,13 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   Expected<std::string> getNodeInfo(CNodePtr n);
   Expected<std::string> getBackupInfo();
 
+  Status genNodeReplyForClusterSlot(CNodePtr node,
+                                    int startSlot,
+                                    int endSlot,
+                                    std::stringstream& ss);
   Expected<std::string> clusterReplyMultiBulkSlots();
+  Expected<std::string> clusterReplyMultiBulkSlotsV2();
+
   mstime_t getMfEnd() const;
   CNodePtr getMfSlave() const;
   void setMfEnd(uint64_t x);
