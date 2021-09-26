@@ -268,7 +268,8 @@ std::shared_ptr<ServerEntry> makeServerEntryOld(
     }
 
     tmpStores.emplace_back(std::unique_ptr<KVStore>(
-      new RocksKVStore(std::to_string(dbId), cfg, block_cache, nullptr, true, mode)));
+      new RocksKVStore(std::to_string(dbId), cfg, block_cache,
+              nullptr, true, mode)));
   }
   server->installStoresInLock(tmpStores);
   auto seg_mgr =
@@ -2693,78 +2694,84 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(expect.value(), Command::fmtBulk("`bc`ab"));
 }
 
-void testExpire(std::shared_ptr<ServerEntry> svr) {
+void testExpireForImmediately(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
+    string key = "testExpireForImmediately";
     for (uint32_t i = 0; i < v; i++) {
-      sess.setArgs({"lpush", "testExpire", std::to_string(2 * i)});
+      sess.setArgs({"lpush", key, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
       EXPECT_TRUE(expect.ok());
       EXPECT_EQ(expect.value(), Command::fmtLongLong(i + 1));
     }
 
-    sess.setArgs({"expire", "testExpire", std::to_string(1)});
+    sess.setArgs({"expire", key, std::to_string(1)});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
-    sess.setArgs({"llen", "testExpire"});
+    sess.setArgs({"llen", key});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
 
     std::this_thread::sleep_for(std::chrono::seconds(2));
-    sess.setArgs({"llen", "testExpire"});
+    sess.setArgs({"llen", key});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
   }
 }
 
-void testExpire1(std::shared_ptr<ServerEntry> svr) {
+// test for already expired
+void testExpireForAlreadyExpired1(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
+    string key = "testExpireForAlreadyExpired1";
     for (uint32_t i = 0; i < v; i++) {
-      sess.setArgs({"lpush", "testExpire1", std::to_string(2 * i)});
+      sess.setArgs({"lpush", key, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
       EXPECT_TRUE(expect.ok());
       EXPECT_EQ(expect.value(), Command::fmtLongLong(i + 1));
     }
 
-    sess.setArgs({"expire", "testExpire1", std::to_string(-1)});
+    sess.setArgs({"expire", key, std::to_string(-1)});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
-    sess.setArgs({"llen", "testExpire1"});
+    sess.setArgs({"llen", key});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
 
-    sess.setArgs({"expire", "testExpire1", std::to_string(-1)});
+    sess.setArgs({"expire", key, std::to_string(-1)});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
   }
 }
 
-void testExpire2(std::shared_ptr<ServerEntry> svr) {
+// test for already expired
+void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
   // bounder for optimistic del/pessimistic del
   for (auto v : {1000u, 10000u}) {
+    string key_list = "testExpireForAlreadyExpired2_list";
+    string key_hash = "testExpireForAlreadyExpired2_hash";
     for (uint32_t i = 0; i < v; i++) {
-      sess.setArgs({"lpush", "testExpire2la", std::to_string(2 * i)});
+      sess.setArgs({"lpush", key_list, std::to_string(2 * i)});
       auto expect = Command::runSessionCmd(&sess);
       EXPECT_TRUE(expect.ok());
       EXPECT_EQ(expect.value(), Command::fmtLongLong(i + 1));
@@ -2772,42 +2779,67 @@ void testExpire2(std::shared_ptr<ServerEntry> svr) {
 
     for (uint32_t i = 0; i < v; i++) {
       sess.setArgs(
-        {"hset", "testExpire2ha", std::to_string(i), std::to_string(i)});
+        {"hset", key_hash, std::to_string(i), std::to_string(i)});
       auto expect = Command::runSessionCmd(&sess);
       EXPECT_TRUE(expect.ok());
       EXPECT_EQ(expect.value(), Command::fmtOne());
     }
 
-    sess.setArgs({"llen", "testExpire2la"});
+    sess.setArgs({"llen", key_list});
     auto expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
 
-    sess.setArgs({"hlen", "testExpire2ha"});
+    sess.setArgs({"hlen", key_hash});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtLongLong(v));
 
-    sess.setArgs({"expire", "testExpire2la", std::to_string(-1)});
+    sess.setArgs({"expire", key_list, std::to_string(-1)});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
-    sess.setArgs({"expire", "testExpire2ha", std::to_string(-1)});
+    sess.setArgs({"expire", key_hash, std::to_string(-1)});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtOne());
 
 
-    sess.setArgs({"llen", "testExpire2la"});
+    sess.setArgs({"llen", key_list});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
 
-    sess.setArgs({"hlen", "testExpire2ha"});
+    sess.setArgs({"hlen", key_hash});
     expect = Command::runSessionCmd(&sess);
     EXPECT_TRUE(expect.ok());
     EXPECT_EQ(expect.value(), Command::fmtZero());
+  }
+}
+
+// test for not expired
+void testExpireForNotExpired(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (uint32_t v = 0; v < 1000; ++v) {
+    string key = "testExpireForNotExpired_"+to_string(v);
+    sess.setArgs({"set", key, "value"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    uint32_t timeNotExpired = 36000;  // 10 hours
+    sess.setArgs({"expire", key, std::to_string(timeNotExpired)});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtOne());
+
+    sess.setArgs({"get", key});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+    EXPECT_EQ(expect.value(), Command::fmtBulk("value"));
   }
 }
 
@@ -3150,9 +3182,10 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
 }
 
 void testAll(std::shared_ptr<ServerEntry> svr) {
-  testExpire1(svr);
-  testExpire2(svr);
-  testExpire(svr);
+  testExpireForImmediately(svr);
+  testExpireForAlreadyExpired1(svr);
+  testExpireForAlreadyExpired2(svr);
+  testExpireForNotExpired(svr);
   testKV(svr);
   // need cfg->checkKeyTypeForSet = true;
   // testMset(svr);

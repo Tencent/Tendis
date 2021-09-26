@@ -164,9 +164,9 @@ TEST(Command, expire) {
   auto cfg = makeServerParam();
   auto server = makeServerEntry(cfg);
 
-  testExpire(server);
-  testExpire1(server);
-  testExpire2(server);
+  testExpireForImmediately(server);
+  testExpireForAlreadyExpired1(server);
+  testExpireForAlreadyExpired2(server);
   testExpireCommandWhenNoexpireTrue(server);
   testExpireKeyWhenGet(server);
   testExpireKeyWhenCompaction(server);

@@ -103,7 +103,6 @@ KVTtlCompactionFilterFactory::CreateCompactionFilter(
 
   if (currentTs == 0) {
     LOG(WARNING) << "The currentTs is 0, the kvttlcompaction would do nothing";
-    currentTs = std::numeric_limits<uint64_t>::max();
   }
 
   return std::unique_ptr<CompactionFilter>(
