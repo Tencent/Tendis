@@ -246,7 +246,7 @@ proc cleanup {} {
         puts "killing stale instance $pid"
         stop_instance $pid
     }
-    log_crashes
+    # log_crashes
     if {$::dont_clean} {
         return
     }

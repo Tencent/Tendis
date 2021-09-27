@@ -18,10 +18,8 @@ test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
 }
 
-
-
 test "Instance #5 synced with the master" {
-    wait_for_condition 100 500 {
+    wait_for_condition 1000 50 {
         [RI 5 master_link_status] eq {up}
 
     } else {
