@@ -975,6 +975,9 @@ int getCommandFlags(const char* sflags) {
       case 'F':
         flags |= CMD_FAST;
         break;
+      case 'c':
+        flags |= CMD_ALLOW_CROSS_SLOT;
+        break;
       default:
         INVARIANT_D(0);
         break;

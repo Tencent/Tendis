@@ -552,6 +552,7 @@ ServerParams::ServerParams() {
           deleteFilesInRangeforBinlogCheck, nullptr, -1, -1, true);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("log-error", logError);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("direct-io", directIo);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("allow-cross-slot", allowCrossSlot);
 }
 
 ServerParams::~ServerParams() {

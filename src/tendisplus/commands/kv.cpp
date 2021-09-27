@@ -1670,7 +1670,7 @@ class DecrCommand : public IncrDecrGeneral {
 
 class MGetCommand : public Command {
  public:
-  MGetCommand() : Command("mget", "rF") {}
+  MGetCommand() : Command("mget", "rFc") {}
 
   ssize_t arity() const {
     return -2;
@@ -1697,7 +1697,7 @@ class MGetCommand : public Command {
 
     auto index = getKeysFromCommand(args);
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, Command::RdLock());
+      sess, args, index, Command::RdLock(), getFlags());
     if (!locklist.ok()) {
       return locklist.status();
     }
@@ -1912,8 +1912,8 @@ class MSetGenericCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
-    auto& args = sess->getArgs();
-    SessionCtx* pCtx = sess->getCtx();
+    const auto& args = sess->getArgs();
+    auto pCtx = sess->getCtx();
     INVARIANT(pCtx != nullptr);
 
     if (args.size() % 2 == 0) {
@@ -1921,10 +1921,10 @@ class MSetGenericCommand : public Command {
     }
 
     auto server = sess->getServerEntry();
-    auto index = getKeysFromCommand(args);
+    const auto& index = getKeysFromCommand(args);
 
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, mgl::LockMode::LOCK_X);
+      sess, args, index, mgl::LockMode::LOCK_X, getFlags());
     if (!locklist.ok()) {
       return locklist.status();
     }
@@ -2014,7 +2014,7 @@ class MSetGenericCommand : public Command {
 
 class MSetCommand : public MSetGenericCommand {
  public:
-  MSetCommand() : MSetGenericCommand("mset", "wm", REDIS_SET_NO_FLAGS) {}
+  MSetCommand() : MSetGenericCommand("mset", "wmc", REDIS_SET_NO_FLAGS) {}
 } msetCmd;
 
 class MSetNXCommand : public MSetGenericCommand {

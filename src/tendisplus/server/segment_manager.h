@@ -45,7 +45,8 @@ class SegmentMgr {
     Session* sess,
     const std::vector<std::string>& args,
     const std::vector<int>& index,
-    mgl::LockMode mode) = 0;
+    mgl::LockMode mode,
+    int cmdFlag = 0) = 0;
   virtual size_t getChunkSize() const = 0;
   virtual uint32_t getStoreid(uint32_t chunkid) = 0;
   virtual uint64_t getMovedNum() = 0;
@@ -74,7 +75,8 @@ class SegmentMgrFnvHash64 : public SegmentMgr {
     Session* sess,
     const std::vector<std::string>& args,
     const std::vector<int>& index,
-    mgl::LockMode mode) final;
+    mgl::LockMode mode,
+    int cmdFlag = 0) final;
   size_t getChunkSize() const final {
     return _chunkSize;
   }

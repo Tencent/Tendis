@@ -300,7 +300,7 @@ class PTtlCommand : public GenericTtlCommand {
 
 class ExistsCommand : public Command {
  public:
-  ExistsCommand() : Command("exists", "rF") {}
+  ExistsCommand() : Command("exists", "rFc") {}
 
   ssize_t arity() const {
     return -2;
@@ -326,7 +326,7 @@ class ExistsCommand : public Command {
 
     auto index = getKeysFromCommand(args);
     auto locklist = server->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, Command::RdLock());
+      sess, args, index, Command::RdLock(), getFlags());
     if (!locklist.ok()) {
       return locklist.status();
     }

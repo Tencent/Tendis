@@ -36,7 +36,7 @@ Expected<bool> delGeneric(Session* sess, const std::string& key,
 
 class DelCommand : public Command {
  public:
-  DelCommand() : Command("del", "w") {}
+  DelCommand() : Command("del", "wc") {}
 
   ssize_t arity() const {
     return -2;
@@ -59,7 +59,7 @@ class DelCommand : public Command {
 
     auto index = getKeysFromCommand(args);
     auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, mgl::LockMode::LOCK_X);
+      sess, args, index, mgl::LockMode::LOCK_X, getFlags());
     if (!locklist.ok()) {
       return locklist.status();
     }
@@ -94,7 +94,7 @@ class DelCommand : public Command {
 
 class UnlinkCommand : public Command {
  public:
-  UnlinkCommand() : Command("unlink", "wF") {}
+  UnlinkCommand() : Command("unlink", "wFc") {}
 
   ssize_t arity() const {
     return -2;
@@ -117,7 +117,7 @@ class UnlinkCommand : public Command {
 
     auto index = getKeysFromCommand(args);
     auto locklist = sess->getServerEntry()->getSegmentMgr()->getAllKeysLocked(
-      sess, args, index, mgl::LockMode::LOCK_X);
+      sess, args, index, mgl::LockMode::LOCK_X, getFlags());
     if (!locklist.ok()) {
       return locklist.status();
     }
