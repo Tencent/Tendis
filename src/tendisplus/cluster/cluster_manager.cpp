@@ -1438,6 +1438,46 @@ Expected<std::string> ClusterState::getBackupInfo() {
   return eptInfo.value();
 }
 
+Status ClusterState::genNodeReplyForClusterSlot(CNodePtr node,
+                                  int startSlot,
+                                  int endSlot,
+                                  std::stringstream& res) {
+  int nestedElements = 3; /* slots (2) + master addr (1) */
+  std::stringstream replyDeferred;
+  Command::fmtLongLong(replyDeferred, startSlot);
+  Command::fmtLongLong(replyDeferred, endSlot);
+
+  Command::fmtMultiBulkLen(replyDeferred, 3);
+  Command::fmtBulk(replyDeferred, node->getNodeIp());
+  Command::fmtLongLong(replyDeferred, node->getPort());
+  Command::fmtBulk(replyDeferred, node->getNodeName());
+
+  /* Remaining nodes in reply are replicas for slot range */
+  auto exptSlaveList = node->getSlaves();
+  RET_IF_ERR_EXPECTED(exptSlaveList);
+  auto slaveList = exptSlaveList.value();
+  uint16_t slaveNum = slaveList.size();
+
+  for (uint16_t i = 0; i < slaveNum; i++) {
+    /* This loop is copy/pasted from clusterGenNodeDescription()
+     * with modifications for per-slot node aggregation. */
+    if (node->nodeFailed()) {
+      continue;
+    }
+    Command::fmtMultiBulkLen(replyDeferred, 3);
+    CNodePtr slave = slaveList[i];
+    Command::fmtBulk(replyDeferred, slave->getNodeIp());
+    Command::fmtLongLong(replyDeferred, slave->getPort());
+    Command::fmtBulk(replyDeferred, slave->getNodeName());
+    nestedElements++;
+  }
+
+  Command::fmtMultiBulkLen(res, nestedElements);
+  res << replyDeferred.str();
+
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 Expected<std::string> ClusterState::clusterReplyMultiBulkSlots() {
   std::stringstream ss;
   uint32_t nodeNum = 0;
@@ -1497,6 +1537,53 @@ Expected<std::string> ClusterState::clusterReplyMultiBulkSlots() {
   }
   Command::fmtMultiBulkLen(ss, nodeNum);
   ss << ssTemp.str();
+  return ss.str();
+}
+
+Expected<std::string> ClusterState::clusterReplyMultiBulkSlotsV2() {
+  /* Format: 1) 1) start slot
+   *            2) end slot
+   *            3) 1) master IP
+   *               2) master port
+   *               3) node ID
+   *            4) 1) replica IP
+   *               2) replica port
+   *               3) node ID
+   *           ... continued until done
+   */
+  std::stringstream ss;
+  int numMasters = 0, start = -1;
+  std::stringstream replyDeferred;
+  CNodePtr node = nullptr;
+  std::lock_guard<myMutex> lk(_mutex);
+
+  for (int32_t i = 0; i <= CLUSTER_SLOTS; i++) {
+    /* Find start node and slot id. */
+    if (node == nullptr) {
+      if (i == CLUSTER_SLOTS) {
+        break;
+      }
+      node = _allSlots[i];
+      start = i;
+      continue;
+    }
+
+    /* Add cluster slots info when occur different node with start
+     * or end of slot. */
+    if (i == CLUSTER_SLOTS || node.get() != _allSlots[i].get()) {
+      auto s = genNodeReplyForClusterSlot(node, start, i - 1, replyDeferred);
+      RET_IF_ERR(s);
+      numMasters++;
+      if (i == CLUSTER_SLOTS) {
+        break;
+      }
+      node = _allSlots[i];
+      start = i;
+    }
+  }
+
+  Command::fmtMultiBulkLen(ss, numMasters);
+  ss << replyDeferred.str();
   return ss.str();
 }
 

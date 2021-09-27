@@ -609,7 +609,8 @@ class ClusterCommand : public Command {
       std::string nodeName = myself->getNodeName();
       return Command::fmtBulk(nodeName);
     } else if (arg1 == "slots" && argSize == 2) {
-      auto exptSlotInfo = clusterState->clusterReplyMultiBulkSlots();
+      /* CLUSTER SLOTS */
+      auto exptSlotInfo = clusterState->clusterReplyMultiBulkSlotsV2();
       if (!exptSlotInfo.ok()) {
         return exptSlotInfo.status();
       }

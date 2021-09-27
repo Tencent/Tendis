@@ -740,6 +740,47 @@ TEST(ClusterMsg, CommonUpdate) {
   }
 }
 
+TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
+  uint32_t startPort = 16000;
+  auto server = makeClusterNode("node", startPort, 10);
+  auto clusterState = server->getClusterMgr()->getClusterState();
+  server->getClusterMgr()->stop();
+  int num = 128, bucket = 16384/num;
+
+  for (int i = 0; i < num; ++i) {
+    auto name = getUUid(20);
+    auto node = std::make_shared<ClusterNode>(
+      name,
+      CLUSTER_NODE_MASTER | CLUSTER_NODE_MEET | CLUSTER_NODE_HANDSHAKE,
+      clusterState,
+      "127.0.0.1",
+      i + startPort,
+      i + startPort);
+
+    for (int j = 0; j < bucket; ++j) {
+      int slot = i * bucket + j;
+      ASSERT_EQ(clusterState->clusterAddSlot(node, slot), true);
+    }
+    clusterState->clusterAddNode(node, false);
+  }
+
+  auto s1 = clusterState->clusterReplyMultiBulkSlots().value();
+  auto s2 = clusterState->clusterReplyMultiBulkSlotsV2().value();
+
+  auto start = msSinceEpoch();
+  for (int i = 0; i < 100; ++i) {
+    clusterState->clusterReplyMultiBulkSlots();
+  }
+  auto t1 = msSinceEpoch();
+  for (int i = 0; i < 100; ++i) {
+    clusterState->clusterReplyMultiBulkSlotsV2();
+  }
+  auto t2 = msSinceEpoch();
+  LOG(INFO) << "clusterReplyMultiBulkSlots time cost: " << (t1 - start)
+            << " clusterReplyMultiBulkSlotsV2 time cost: " << (t2 - t1)
+            << std::endl;
+}
+
 // check meet
 bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
                         std::shared_ptr<ServerEntry> svr2) {
