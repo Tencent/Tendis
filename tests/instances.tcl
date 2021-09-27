@@ -108,7 +108,6 @@ proc spawn_instance {type base_port count {conf {}} {base_conf_file ""}} {
         }
 
         set pidfile $dirname/tendisplus.pid
-        puts $cfg "port $port"
         puts $cfg "dir ./$dirname"
         # puts $cfg "logfile log.txt"
         puts $cfg "dir $dirname/db"
@@ -149,6 +148,15 @@ proc spawn_instance {type base_port count {conf {}} {base_conf_file ""}} {
                 close $cfg
             } else {
                 puts "Starting $type #$j at port $port"
+                # find out the pid
+                after 100
+                wait_for_condition 100 500 {
+                    [file exists $pidfile] == 1
+                } else {
+                    fail "Unable to create a master-slaves cluster."
+                }
+
+                set pid [exec cat $pidfile]
                 lappend ::pids $pid
                 break
             }
@@ -234,7 +242,6 @@ proc stop_instance pid {
 
 proc cleanup {} {
     puts "Cleaning up..."
-    return
     foreach pid $::pids {
         puts "killing stale instance $pid"
         stop_instance $pid
