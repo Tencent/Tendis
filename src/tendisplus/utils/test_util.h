@@ -94,12 +94,13 @@ std::string randomIp();
 std::string randomStr(size_t s, bool maybeEmpty);
 std::bitset<CLUSTER_SLOTS> genBitMap();
 
-void testExpire1(std::shared_ptr<ServerEntry> svr);
-void testExpire2(std::shared_ptr<ServerEntry> svr);
+void testExpireForAlreadyExpired1(std::shared_ptr<ServerEntry> svr);
+void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr);
+void testExpireForNotExpired(std::shared_ptr<ServerEntry> svr);
 void testExpireCommandWhenNoexpireTrue(std::shared_ptr<ServerEntry> svr);
 void testExpireKeyWhenGet(std::shared_ptr<ServerEntry> svr);
 void testExpireKeyWhenCompaction(std::shared_ptr<ServerEntry> svr);
-void testExpire(std::shared_ptr<ServerEntry> svr);
+void testExpireForImmediately(std::shared_ptr<ServerEntry> svr);
 void testKV(std::shared_ptr<ServerEntry> svr);
 void testMset(std::shared_ptr<ServerEntry> svr);
 void testType(std::shared_ptr<ServerEntry> svr);
