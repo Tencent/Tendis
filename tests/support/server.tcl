@@ -206,9 +206,9 @@ proc start_server {options {code undefined}} {
     set slave_dir [tmpdir slave]
 
     # start every server on a different port
-    set ::port [find_available_port [expr {$::port+1}]]
+    set ::port [find_available_port [expr {$::port+1}] $::redis_port_count]
 
-    set slave_port [find_available_port [expr {$::port+1}]]
+    set slave_port [find_available_port [expr {$::port+1}] $::redis_port_count]
 
     # apply overrides from global space and arguments
     foreach {directive arguments} [concat $::global_overrides $overrides] {

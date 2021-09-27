@@ -13,6 +13,7 @@ set ::tendis_conf ../../assets/tendisplus.conf ;
 proc main {} {
     parse_options
     spawn_instance redis $::redis_base_port $::instances_count {
+        "cluster-enabled yes"
     }
     run_tests
     cleanup
