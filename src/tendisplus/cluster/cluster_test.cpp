@@ -32,7 +32,7 @@ void testCommandArrayResult(
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
   NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
 
-  for (auto& p : arr) {
+  for (const auto& p : arr) {
     sess.setArgs(p.first);
     auto expect = Command::runSessionCmd(&sess);
     if (expect.ok()) {
@@ -2938,27 +2938,201 @@ TEST(Cluster, CrossSlot) {
   auto server = servers[0];
   std::this_thread::sleep_for(std::chrono::seconds(10));
 
+  // key : slot : node
+  // {1}   9842   s2
+  // {2}   5649   s1
+  // {3}   1584   s1
+  // {4}   14039  s2
+
+  std::string slotMovedReply("-MOVED 9842 127.0.0.1:15001\r\n");
+  std::string slotMovedReply1("-MOVED 14039 127.0.0.1:15001\r\n");
+  std::string crossSlotReply(
+    "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+  // not allow cross slot cases
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr = {
-    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
-    {{"mset", "a{1}", "b", "c{2}", "d"},
-     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
-    {{"mset", "a{2}", "b", "c{2}", "d"}, Command::fmtOK()},
-    {{"mset", "a{1}", "b", "c{1}", "d"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
-    {{"mget", "a{1}", "c{2}"},
-     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
-    {{"exists", "a{1}", "c{2}"},
-     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
-    {{"exists", "a{2}", "c{2}"}, ":2\r\n"},
-    {{"rename", "a{1}", "d{2}"},
-     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
-    {{"rename", "a{2}", "d{2}"}, Command::fmtOK()},
+    // set is/isn't on my node
+    {{"set", "a{1}", "b"}, slotMovedReply},
+    {{"set", "a{2}", "b1"}, Command::fmtOK()},
+
+    // mset
+    // keys in 1 slot on my node
+    {{"mset", "a{2}", "b", "c{2}", "d", "e{2}", "f"}, Command::fmtOK()},
+    // keys in 1 slot but not on my node
+    {{"mset", "a{1}", "b", "c{1}", "d", "e{1}", "f"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"mset", "a{2}", "b", "c{3}", "d", "e{3}", "f"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"mset", "a{2}", "b", "c{1}", "d", "e{1}", "f"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"mset", "a{1}", "b", "c{4}", "d", "e{4}", "f"}, crossSlotReply},
+
+    // del
+    // keys in 1 slot on my node
+    {{"del", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"del", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"del", "a{2}", "c{3}", "e{3}"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"del", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"del", "a{1}", "c{4}", "e{4}"}, crossSlotReply},
+
+    // msetnx, set all key if and only if all keys not exist.
+    // keys in 1 slot on my node
+    {{"msetnx", "a{2}", "b", "c{2}", "d", "e{2}", "f"}, ":1\r\n"},
+    // keys in 1 slot but not on my node
+    {{"msetnx", "a{1}", "b", "c{1}", "d", "e{1}", "f"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"msetnx", "a{2}", "b", "c{3}", "d", "e{3}", "f"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"msetnx", "a{2}", "b", "c{1}", "d", "e{1}", "f"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"msetnx", "a{1}", "b", "c{4}", "d", "e{4}", "f"}, crossSlotReply},
+
+    // mget
+    // keys in 1 slot on my node
+    {{"mget", "a{2}", "c{2}", "e{2}"},
+      "*3\r\n$1\r\nb\r\n$1\r\nd\r\n$1\r\nf\r\n"},
+    // keys in 1 slot but not on my node
+    {{"mget", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"mget", "a{2}", "c{3}", "e{3}"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"mget", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"mget", "a{1}", "c{4}", "e{4}"}, crossSlotReply},
+
+    // exists
+    // keys in 1 slot on my node
+    {{"exists", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"exists", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"exists", "a{2}", "c{3}", "e{3}"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"exists", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"exists", "a{1}", "c{4}", "e{4}"}, crossSlotReply},
+
+    // unlink
+    // keys in 1 slot on my node
+    {{"unlink", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"unlink", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"unlink", "a{2}", "c{3}", "e{3}"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"unlink", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"unlink", "a{1}", "c{4}", "e{4}"}, crossSlotReply},
+
+    {{"rename", "a{1}", "d{2}"}, crossSlotReply},
+    {{"set", "a1{2}", "c"}, Command::fmtOK()},
+    {{"rename", "a1{2}", "d{2}"}, Command::fmtOK()},
     {{"sadd", "s1{2}", "1", "2", "3"}, ":3\r\n"},
-    {{"smove", "s1{2}", "s2{1}", "1"},
-     "-CROSSSLOT Keys in request don't hash to the same slot\r\n"},
+    {{"smove", "s1{2}", "s2{1}", "1"}, crossSlotReply},
     {{"smove", "s1{2}", "s2{2}", "1"}, ":1\r\n"},
   };
 
   testCommandArrayResult(server, resultArr);
+
+  // allow cross slot cases
+  // only case: 'keys in >1 slots all on my node' should be different with
+  // cases above.
+  std::vector<std::pair<std::vector<std::string>, std::string>> resultArr1 = {
+    {{"config", "set", "allow-cross-slot", "true"}, Command::fmtOK()},
+
+    // set is/isn't on my node
+    {{"set", "a{1}", "b"}, slotMovedReply},
+    {{"set", "a{2}", "b1"}, Command::fmtOK()},
+
+    // mset
+    // keys in 1 slot on my node
+    {{"mset", "a{2}", "b", "c{2}", "d", "e{2}", "f"}, Command::fmtOK()},
+    // keys in 1 slot but not on my node
+    {{"mset", "a{1}", "b", "c{1}", "d", "e{1}", "f"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"mset", "a{2}", "b", "c{3}", "d", "e{3}", "f"}, Command::fmtOK()},
+    // keys in >1 slots not all on my node
+    {{"mset", "a{2}", "b", "c{1}", "d", "e{1}", "f"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"mset", "a{1}", "b", "c{4}", "d", "e{4}", "f"}, slotMovedReply1},
+
+    // del
+    // keys in 1 slot on my node
+    {{"del", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"del", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"set", "a{2}", "c"}, Command::fmtOK()},
+    {{"del", "a{2}", "c{3}", "e{3}"}, ":3\r\n"},
+    // keys in >1 slots not all on my node
+    {{"del", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"del", "a{1}", "c{4}", "e{4}"}, slotMovedReply1},
+
+    // msetnx, set all key if and only if all keys not exist.
+    // keys in 1 slot on my node
+    {{"msetnx", "a{2}", "b", "c{2}", "d", "e{2}", "f"}, ":1\r\n"},
+    // keys in 1 slot but not on my node
+    {{"msetnx", "a{1}", "b", "c{1}", "d", "e{1}", "f"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"msetnx", "a{2}", "b", "c{3}", "d", "e{3}", "f"}, crossSlotReply},
+    // keys in >1 slots not all on my node
+    {{"msetnx", "a{2}", "b", "c{1}", "d", "e{1}", "f"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"msetnx", "a{1}", "b", "c{4}", "d", "e{4}", "f"}, crossSlotReply},
+
+    // mget
+    // keys in 1 slot on my node
+    {{"mget", "a{2}", "c{2}", "e{2}"},
+      "*3\r\n$1\r\nb\r\n$1\r\nd\r\n$1\r\nf\r\n"},
+    // keys in 1 slot but not on my node
+    {{"mget", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"mset", "c{3}", "d", "e{3}", "f"}, Command::fmtOK()},
+    {{"mget", "a{2}", "c{3}", "e{3}"},
+      "*3\r\n$1\r\nb\r\n$1\r\nd\r\n$1\r\nf\r\n"},
+    // keys in >1 slots not all on my node
+    {{"mget", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"mget", "a{1}", "c{4}", "e{4}"}, slotMovedReply1},
+
+    // exists
+    // keys in 1 slot on my node
+    {{"exists", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"exists", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"exists", "a{2}", "c{3}", "e{3}"}, ":3\r\n"},
+    // keys in >1 slots not all on my node
+    {{"exists", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"exists", "a{1}", "c{4}", "e{4}"}, slotMovedReply1},
+
+    // unlink
+    // keys in 1 slot on my node
+    {{"unlink", "a{2}", "c{2}", "e{2}"}, ":3\r\n"},
+    // keys in 1 slot but not on my node
+    {{"unlink", "a{1}", "c{1}", "e{1}"}, slotMovedReply},
+    // keys in >1 slots all on my node
+    {{"set", "a{2}", "c"}, Command::fmtOK()},
+    {{"unlink", "a{2}", "c{3}", "e{3}"}, ":3\r\n"},
+    // keys in >1 slots not all on my node
+    {{"unlink", "a{2}", "c{1}", "e{1}"}, crossSlotReply},
+    // keys in >1 slots all not on my node
+    {{"unlink", "a{1}", "c{4}", "e{4}"}, slotMovedReply1},
+
+    {{"rename", "a{1}", "d{2}"}, crossSlotReply},
+    {{"set", "a3{2}", "c"}, Command::fmtOK()},
+    {{"rename", "a3{2}", "d{2}"}, Command::fmtOK()},
+    {{"sadd", "s3{2}", "1", "2", "3"}, ":3\r\n"},
+    {{"smove", "s3{2}", "s4{1}", "1"}, crossSlotReply},
+    {{"smove", "s3{2}", "s4{2}", "1"}, ":1\r\n"},
+  };
+  testCommandArrayResult(server, resultArr1);
 
   // readonly, readwrite
   auto serverMaster = servers[1];

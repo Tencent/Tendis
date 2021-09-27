@@ -68,8 +68,9 @@ int random();
 #define CMD_FAST (1 << 13) /* "F" flag */
 #define CMD_MODULE_GETKEYS (1 << 14) /* Use the modules getkeys interface. */
 #define CMD_MODULE_NO_CLUSTER (1 << 15) /* Deny on Redis Cluster. */
+#define CMD_ALLOW_CROSS_SLOT (1 << 16)  /* 'c' flag, allow cmd key cross slot */
 
-#define CMD_MASK 0xFFFF
+#define CMD_MASK 0x7FFFFFFF  // enough for 31 CMD_* marco.
 
 
 #define CONFIG_DEFAULT_DBNUM 16

@@ -537,6 +537,7 @@ class ServerParams {
   bool deleteFilesInRangeforBinlog = true;
   bool logError = false;
   bool directIo = false;
+  bool allowCrossSlot = false;
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

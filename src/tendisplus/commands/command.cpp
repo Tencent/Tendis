@@ -159,7 +159,8 @@ size_t Command::getFlagsCount() const {
                                      CMD_ASKING,
                                      CMD_FAST,
                                      CMD_MODULE_GETKEYS,
-                                     CMD_MODULE_NO_CLUSTER};
+                                     CMD_MODULE_NO_CLUSTER,
+                                     CMD_ALLOW_CROSS_SLOT};
 
   size_t size = 0;
   for (auto flag : flagarr) {
