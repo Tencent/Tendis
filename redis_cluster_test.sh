@@ -11,7 +11,18 @@ tclsh tests/cluster/run.tcl --single 08-update-msg.tcl
 tclsh tests/cluster/run.tcl --single 09-pubsub.tcl
 tclsh tests/cluster/run.tcl --single 10-manual-failover.tcl
 tclsh tests/cluster/run.tcl --single 11-manual-takeover.tcl
+tclsh tests/cluster/run.tcl --single 12.1-replica-migration-3.tcl
 tclsh tests/cluster/run.tcl --single 12-replica-migration-2.tcl
 tclsh tests/cluster/run.tcl --single 13-no-failover-option.tcl
-tclsh tests/cluster/run.tcl --single 14-manual-failover-force.tcl
-tclsh tests/cluster/run.tcl --single 15-arbiter-selection.tcl
+tclsh tests/cluster/run.tcl --single 14-consistency-check.tcl
+tclsh tests/cluster/run.tcl --single 15-cluster-slots.tcl
+tclsh tests/cluster/run.tcl --single 16-transactions-on-replica.tcl
+tclsh tests/cluster/run.tcl --single 17-diskless-load-swapdb.tcl
+tclsh tests/cluster/run.tcl --single 18-info.tcl
+tclsh tests/cluster/run.tcl --single 19-cluster-nodes-slots.tcl
+tclsh tests/cluster/run.tcl --single 20-half-migrated-slot.tcl
+tclsh tests/cluster/run.tcl --single 21-many-slot-migration.tcl
+
+# Add by Tendis
+tclsh tests/cluster/run.tcl --single 60-manual-failover-force.tcl
+tclsh tests/cluster/run.tcl --single 61-arbiter-selection.tcl
