@@ -989,7 +989,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
-    LOG(LL_WARNING) << "slaveFullSyncDone: " << slaveFullSyncDone
+    LOG(INFO) << "slaveFullSyncDone: " << slaveFullSyncDone
                     << "masterNotFail:" << masterNotFail << std::endl;
     Status s;
     if (masterNotFail) {
