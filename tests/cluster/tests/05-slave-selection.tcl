@@ -61,14 +61,15 @@ test "Slaves are both able to receive and acknowledge writes" {
 test "Write data while slave #10 is paused and can't receive it" {
     # Stop the slave with a multi/exec transaction so that the master will
     # be killed as soon as it can accept writes again.
-   # R 10 multi
-   # R 10 debug sleep 10
-   # R 10 client kill 127.0.0.1:$port0
-   # R 10 deferred 1
-   # R 10 exec
+    # R 10 multi
+    # R 10 debug sleep 10
+    # R 10 client kill 127.0.0.1:$port0
+    # R 10 deferred 1
+    # R 10 exec
     
     R 10 deferred 1
-    R 10 tendisadmin sleep 10
+    R 10 tendisadmin sleep 20
+    # R 10 client kill 127.0.0.1:$port0
 
     for {set j 0} {$j < 100} {incr j} {
         $cluster set $j $j

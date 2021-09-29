@@ -932,7 +932,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
 
   bool needReconfigure;
   bool masterNotFail;
-  bool slaveIsNotFullSync;
+  bool slaveFullSyncDone;
   {
     std::lock_guard<myMutex> lk(_mutex);
     CNodePtr myself = getMyselfNode();
@@ -971,10 +971,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     masterNotFail =
       (!curmaster->nodeFailed()) && myself->nodeIsSlave() ? true : false;
     /* NOTE(wayenchen) judge if the slave is on fullsync */
-    slaveIsNotFullSync = (myself->nodeIsSlave() && masterNotFail &&
-                          _server->getReplManager()->isSlaveFullSyncDone())
-      ? true
-      : false;
+    slaveFullSyncDone = (myself->nodeIsSlave() && masterNotFail &&
+                         _server->getReplManager()->isSlaveFullSyncDone());
   }
   // NOTE(takenliu) save and update once at the last.
   clusterUpdateState();
@@ -991,6 +989,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
+    LOG(LL_WARNING) << "slaveFullSyncDone: " << slaveFullSyncDone
+                    << "masterNotFail:" << masterNotFail << std::endl;
     Status s;
     if (masterNotFail) {
       s = _server->getReplManager()->replicationUnSetMaster();
@@ -1001,7 +1001,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     }
     /* NOTE(wayenchen) slave should not full sync when set new master*/
     if (!inMigrateTask &&
-        ((slaveIsNotFullSync || !masterNotFail) || isMyselfMaster())) {
+        ((!slaveFullSyncDone || !masterNotFail) || isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()

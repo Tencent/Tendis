@@ -66,7 +66,7 @@ test "only empty node can be arbiter" {
 test {cluster setslot importing <target_id> <slot>} {
     set source [dict get [get_myself 0] id]
     catch {R 4 cluster setslot importing $source 1} err
-    assert_equal $err {ERR:18,msg:Can't importing slots to arbiter node.}
+    assert_equal $err {ERR:18,msg:Can't importing slots to slave or arbiter node}
 }
 
 #send importing command from #4 to #0

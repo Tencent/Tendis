@@ -91,7 +91,7 @@ class ClusterCommand : public Command {
       if ((arg2 == "importing" || arg2 == "restart") && argSize >= 5) {
         if (myself->nodeIsArbiter() || myself->nodeIsSlave()) {
           return {ErrorCodes::ERR_CLUSTER,
-                  "Can't importing slots to slave or arbiter node "};
+                  "Can't importing slots to slave or arbiter node"};
         }
 
         if (!clusterState->clusterIsOK()) {
