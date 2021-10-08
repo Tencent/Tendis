@@ -2455,16 +2455,18 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
 
     uint32_t okslaves = 0;
     auto mymaster = _myself->getMaster();
+    LOG(INFO) << "Migrating to orphaned master 111: " << readyMigrate
+              << std::endl;
     std::vector<std::shared_ptr<ClusterNode>> slaveList;
     /* Step 1: Don't migrate if the cluster state is not ok. */
     if (_state != ClusterHealth::CLUSTER_OK)
       return;
-
     /* Step 2: Don't migrate if my master will not be left with at least
      *         'migration-barrier' slaves after my migration. */
     if (mymaster == nullptr)
       return;
-
+    LOG(INFO) << "Migrating to orphaned master 222: " << readyMigrate
+              << std::endl;
     auto expSlaveList = mymaster->getSlaves();
     if (expSlaveList.ok()) {
       slaveList = expSlaveList.value();
@@ -2474,7 +2476,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
         }
       }
     }
-
     if (okslaves <= _server->getParams()->clusterMigrationBarrier)
       return;
 
@@ -2536,6 +2537,13 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
         }
       }
     }
+    if (target) {
+      LOG(INFO) << "Migrating to orphaned master 444 target: "
+                << target->getNodeName()
+                << "candidate: " << candidate->getNodeName()
+                << "_myself:" << _myself->getNodeName() << "current time"
+                << msSinceEpoch() - target->getOrphanedTime() << std::endl;
+    }
     if (target && candidate == _myself &&
         (msSinceEpoch() - target->getOrphanedTime()) >
           CLUSTER_SLAVE_MIGRATION_DELAY) {
@@ -2543,6 +2551,8 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
     }
     isMasterFail = _myself->getMaster()->nodeFailed() ? true : false;
   }
+  LOG(INFO) << "Migrating to orphaned master 555: " << readyMigrate
+            << std::endl;
   /* Step 4: perform the migration if there is a target, and if I'm the
    * candidate, but only if the master is continuously orphaned for a
    * couple of seconds, so that during failovers, we give some time to
@@ -4567,6 +4577,7 @@ void ClusterState::cronCheckFailState() {
      * a migration if there is no master with at least *two* working
      * slaves. */
     bool needSlaveChange = _server->getParams()->slaveMigarateEnabled;
+    LOG(INFO) << "Migrating to orphaned master begin 111" << std::endl;
     if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves &&
         needSlaveChange)
       clusterHandleSlaveMigration(max_slaves);

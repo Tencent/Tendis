@@ -1,7 +1,7 @@
 # Failover stress test.
 # In this test a different node is killed in a loop for N
 # iterations. The test checks that certain properties
-# are preseved across iterations.
+# are preserved across iterations.
 
 source "../tests/includes/init-tests.tcl"
 
@@ -13,25 +13,25 @@ test "Cluster is up" {
     assert_cluster_state ok
 }
 
-test "Enable AOF in all the instances" {
-    foreach_redis_id id {
-        R $id config set appendonly yes
-        # We use "appendfsync no" because it's fast but also guarantees that
-        # write(2) is performed before replying to client.
-        R $id config set appendfsync no
-    }
+# test "Enable AOF in all the instances" {
+#     foreach_redis_id id {
+#         R $id config set appendonly yes
+#         # We use "appendfsync no" because it's fast but also guarantees that
+#         # write(2) is performed before replying to client.
+#         R $id config set appendfsync no
+#     }
+# 
+#     foreach_redis_id id {
+#         wait_for_condition 1000 500 {
+#             [RI $id aof_rewrite_in_progress] == 0 &&
+#             [RI $id aof_enabled] == 1
+#         } else {
+#             fail "Failed to enable AOF on instance #$id"
+#         }
+#     }
+# }
 
-    foreach_redis_id id {
-        wait_for_condition 1000 500 {
-            [RI $id aof_rewrite_in_progress] == 0 &&
-            [RI $id aof_enabled] == 1
-        } else {
-            fail "Failed to enable AOF on instance #$id"
-        }
-    }
-}
-
-# Return nno-zero if the specified PID is about a process still in execution,
+# Return non-zero if the specified PID is about a process still in execution,
 # otherwise 0 is returned.
 proc process_is_running {pid} {
     # PS should return with an error if PID is non existing,
@@ -44,7 +44,7 @@ proc process_is_running {pid} {
 #
 # - N commands are sent to the cluster in the course of the test.
 # - Every command selects a random key from key:0 to key:MAX-1.
-# - The operation RPUSH key <randomvalue> is perforemd.
+# - The operation RPUSH key <randomvalue> is performed.
 # - Tcl remembers into an array all the values pushed to each list.
 # - After N/2 commands, the resharding process is started in background.
 # - The test continues while the resharding is in progress.
@@ -169,4 +169,11 @@ test "Verify slaves consistency" {
         }
     }
     assert {$verified_masters >= 5}
+}
+
+test "Dump sanitization was skipped for migrations" {
+    set verified_masters 0
+    foreach_redis_id id {
+        assert {[RI $id dump_payload_sanitizations] == 0}
+    }
 }

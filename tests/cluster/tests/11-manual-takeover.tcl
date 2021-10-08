@@ -51,8 +51,6 @@ test "Restarting the previously killed master nodes" {
     restart_instance redis 2
 }
 
-
-
 test "Instance #0, #1, #2 gets converted into a slaves" {
     wait_for_condition 1000 50 {
         [RI 0 role] eq {slave} && [RI 1 role] eq {slave} && [RI 2 role] eq {slave}

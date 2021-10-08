@@ -22,8 +22,8 @@ proc errorstat {instance cmd} {
 }
 
 test "errorstats: rejected call due to MOVED Redirection" {
-    $primary1 config resetstat
-    $primary2 config resetstat
+    $primary1 config resetstat all
+    $primary2 config resetstat all
     assert_match {} [errorstat $primary1 MOVED]
     assert_match {} [errorstat $primary2 MOVED]
     # we know that one will have a MOVED reply and one will succeed

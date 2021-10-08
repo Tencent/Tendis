@@ -117,6 +117,7 @@ proc spawn_instance {type base_port count {conf {}} {base_conf_file ""}} {
         puts $cfg "cluster-enabled on"
         puts $cfg "generalLog true"
         puts $cfg "loglevel debug"
+        puts $cfg "cluster-allow-replica-migration 1"
 
         # Add additional config files
         foreach directive $conf {
@@ -242,6 +243,7 @@ proc stop_instance pid {
 
 proc cleanup {} {
     puts "Cleaning up..."
+    return
     foreach pid $::pids {
         puts "killing stale instance $pid"
         stop_instance $pid
