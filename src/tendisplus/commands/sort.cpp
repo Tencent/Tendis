@@ -169,9 +169,12 @@ class SortCommand : public Command {
     const auto& args = sess->getArgs();
     const auto& key = args[1];
     bool desc(false), alpha(false), store(false), nosort(false), sortby(false),
-      exist(true);
+      exist(true), clusterSingle(false);
     int32_t offset(-1), count(-1);
     size_t storeKeyIndex;
+
+    const auto& cfg = sess->getServerEntry()->getParams();
+    clusterSingle = cfg->clusterSingleNode;
 
     /* 1.precheck */
     std::vector<SortOp> ops(1);
@@ -209,13 +212,13 @@ class SortCommand : public Command {
         } else {
           /* If BY is specified with a real patter, we can't accept
            * it in cluster mode. */
-          if (sess->getServerEntry()->isClusterEnabled()) {
+          if (sess->getServerEntry()->isClusterEnabled() && !clusterSingle) {
             return {ErrorCodes::ERR_PARSEOPT,
                     "BY option of SORT denied in Cluster mode."};
           }
         }
       } else if (!::strcasecmp(args[i].c_str(), "get") && leftargs >= 1) {
-        if (sess->getServerEntry()->isClusterEnabled()) {
+        if (sess->getServerEntry()->isClusterEnabled() && !clusterSingle) {
           return {ErrorCodes::ERR_PARSEOPT,
                   "GET option of SORT denied in Cluster mode."};
         }
