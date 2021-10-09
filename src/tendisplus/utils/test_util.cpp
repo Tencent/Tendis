@@ -240,7 +240,7 @@ std::shared_ptr<ServerEntry> makeServerEntryOld(
   // catalog init
   auto catalog = std::make_unique<Catalog>(
     std::move(std::unique_ptr<KVStore>(
-      new RocksKVStore(CATALOG_NAME, cfg, nullptr, false))),
+      new RocksKVStore(CATALOG_NAME, cfg, nullptr, nullptr, false))),
     kvStoreCount,
     chunkSize,
     cfg->binlogUsingDefaultCF);
