@@ -1002,7 +1002,7 @@ Expected<std::string> LuaState::evalCommand(Session *sess) {
 
 Expected<std::string> LuaState::evalShaCommand(Session *sess) {
   // directly return error if sha has wrong length.
-  const std::vector<std::string>& args = sess->getArgs();
+  const auto& args = sess->getArgs();
   if (args[1].size() != 40) {
     return {ErrorCodes::ERR_LUA_NOSCRIPT, ""};
   }
@@ -1012,7 +1012,7 @@ Expected<std::string> LuaState::evalShaCommand(Session *sess) {
 Expected<std::string> LuaState::evalGenericCommand(Session *sess,
       int evalsha) {
   _sess = sess;
-  const std::vector<std::string>& args = sess->getArgs();
+  const auto& args = sess->getArgs();
   int delhook = 0;
 
   char funcname[43];
@@ -1028,14 +1028,14 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   // has_command_error = false;
 
   /* Get the number of arguments that are keys */
-  Expected<int64_t> eNumkeys = ::tendisplus::stoll(args[2]);
+  const auto& eNumkeys = ::tendisplus::stoll(args[2]);
   if (!eNumkeys.ok()) {
     return eNumkeys.status();
   }
   numkeys = eNumkeys.value();
   if (numkeys > static_cast<int>(args.size() - 3)) {
     return {ErrorCodes::ERR_LUA,
-      "Number of keys can't be greater than number of args"};
+            "Number of keys can't be greater than number of args"};
   } else if (numkeys < 0) {
     return {ErrorCodes::ERR_LUA, "Number of keys can't be negative"};
   }
