@@ -371,6 +371,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void resizeExecutorThreadNum(uint64_t newThreadNum);
   void resizeIncrExecutorThreadNum(uint64_t newThreadNum);
   void resizeDecrExecutorThreadNum(uint64_t newThreadNum);
+  Status generateHeartbeatBinlogRoutine();
 
   // NOTE(deyukong): _isRunning = true -> running
   // _isRunning = false && _isStopped = false -> stopping in progress

@@ -9,6 +9,7 @@ srcroot=`pwd`/../../../
 govendor=`pwd`/../../thirdparty/govendor/
 export GOPATH=$srcroot:$govendor
 echo $GOPATH
+go build adminHeartbeat.go common.go common_cluster.go
 go build repl.go
 go build repltest.go common.go
 go build restore.go common.go
@@ -38,8 +39,9 @@ function runOne() {
     fi
 }
 
-testNum=8
+testNum=10
 
+runOne ./adminHeartbeat
 runOne ./repl
 runOne ./repltest
 runOne ./restore

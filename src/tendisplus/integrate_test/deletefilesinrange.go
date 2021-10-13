@@ -35,7 +35,7 @@ func getL6levelstat(m *util.RedisServer, storeid int) int {
 	return -1;
 }
 
-func setupCluster() {
+func testDeleteFilesInRange() {
 	*benchtype = "set"
 	ip := "127.0.0.1"
 	kvStoreCount := 2
@@ -58,7 +58,7 @@ func setupCluster() {
 	cfgArgs["rocks.write_buffer_size"] = "1048576"
 	cfgArgs["rocks.target_file_size_base"] = "1048576"
 
-	portStart := util.FindAvailablePort(portStart)
+	portStart = util.FindAvailablePort(portStart)
 	m1.Init(ip, portStart, pwd, "m1_")
 	if err := m1.Setup(*valgrind, &cfgArgs); err != nil {
 		log.Fatalf("setup failed:%v", err)
@@ -113,9 +113,9 @@ func setupCluster() {
 	<-channel2
 	<-channel3
 
-	n1s0 := getL6levelstat(&m1, 0) // should be 11
-	n1s1 := getL6levelstat(&m1, 1) // should be 11
-	n1 := n1s0 + n1s1 // 22
+	n1s0 := getL6levelstat(&m1, 0) // should be 10
+	n1s1 := getL6levelstat(&m1, 1) // should be 10
+	n1 := n1s0 + n1s1 // 20
 
 	r, err = cli1.Cmd("deletefilesinrangeforce", "data", "0", "8372", "0").Str()
 	if err != nil || r != "OK" {
@@ -123,8 +123,8 @@ func setupCluster() {
 	}
 
 	n2s0 := getL6levelstat(&m1, 0) // should be 6
-	n2s1 := getL6levelstat(&m1, 1) // should be 11
-	n2 := n2s0 + n2s1 // 17
+	n2s1 := getL6levelstat(&m1, 1) // should be 10
+	n2 := n2s0 + n2s1 // 16
 
 	if n1s1 != n2s1 {
 		log.Fatalf("deletefilesinrangeforce deleted data on store 1 when specified store 0")
@@ -143,17 +143,21 @@ func setupCluster() {
 		log.Fatalf("deletefilesinrangeforce deleted data on store 0 when specified store 1")
 	}
 
+	// too frequent deletefilesinrange request on rocksdb will cause some requests failed to delete file actually but still return ok.
+	// todo(raffertyyu): try to locale it into rocksdb
+	time.Sleep(5 * time.Second)
+
 	r, err = cli1.Cmd("deletefilesinrangeforce", "data", "8374", "16383").Str()
 	if err != nil || r != "OK" {
 		log.Fatalf("deletefilesinrangeforce data 8374 16383 error errmsg:%v ret:%v", err, r)
 	}
 
-	n4s0 := getL6levelstat(&m1, 0) // should be 2
-	n4s1 := getL6levelstat(&m1, 1) // should be 2
-	n4 := n4s0 + n4s1 // 4
+	n4s0 := getL6levelstat(&m1, 0) // should be 3
+	n4s1 := getL6levelstat(&m1, 1) // should be 3
+	n4 := n4s0 + n4s1 // 6
 
-	// should be 18, [16-20] is ok.
-	if n1 - n4 < 16 || n1 - n4 > 20 {
+	// n1 - n4 should be 14, [10-18] is ok.
+	if n1 - n4 < 10 || n1 - n4 > 18 {
 		log.Fatalf("Wrong result! " +
 		           "total sst file size: %v %v %v " +
 				   "after deletefiles in 0-8372(0): %v %v %v " +
@@ -230,9 +234,11 @@ func setupCluster() {
 	}
 
 	log.Infof("deletefilesinrange.go passed. command : %s", *benchtype)
+
+	shutdownServer(&m1, *shutdown, *clear)
 }
 
 func main() {
 	flag.Parse()
-	setupCluster()
+	testDeleteFilesInRange()
 }

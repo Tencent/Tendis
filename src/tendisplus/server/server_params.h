@@ -538,6 +538,7 @@ class ServerParams {
   bool logError = false;
   bool directIo = false;
   bool allowCrossSlot = false;
+  uint32_t generateHeartbeatBinlogInterval = 0;  // s
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;
