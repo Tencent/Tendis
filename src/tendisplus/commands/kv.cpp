@@ -2560,8 +2560,8 @@ class BitFieldCommand : public Command {
                 "bit offset is not an integer or out of range"};
       }
 
-      ++i;
       if (opcode != FieldOpType::BITFIELDOP_GET) {
+        ++i;
         readonly = 0;
         if (highestOffset < static_cast<size_t>(offset) + bits - 1)
           highestOffset = offset + bits - 1;
@@ -2582,13 +2582,12 @@ class BitFieldCommand : public Command {
     auto server = sess->getServerEntry();
     auto pCtx = sess->getCtx();
     auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-      sess, key, mgl::LockMode::LOCK_X);
+      sess, key, readonly ? RdLock() : mgl::LockMode::LOCK_X);
     Expected<RecordValue> eRv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_KV);
     if (eRv.status().code() == ErrorCodes::ERR_EXPIRED ||
         eRv.status().code() == ErrorCodes::ERR_NOTFOUND) {
-      if (readonly)
-        return Command::fmtZeroBulkLen();
+      // do nothing
     } else if (!eRv.ok()) {
       return eRv.status();
     } else {

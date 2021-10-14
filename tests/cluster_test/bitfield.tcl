@@ -198,4 +198,12 @@ start_server {tags {"bitops"}} {
         }
         r del mystring
     }
+
+    test {BITFIELD get non-exist key} {
+        r del bits
+        set results {}
+        lappend results [r bitfield bits get u4 10]
+        lappend results [r bitfield bits get u4 10 get u4 11]
+        lappend results [r bitfield bits get u4 10 set u4 12 1 get u4 12]
+    } {0 {0 0} {0 0 1}}
 }
