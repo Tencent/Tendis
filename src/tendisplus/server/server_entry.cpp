@@ -1439,6 +1439,38 @@ Status ServerEntry::setStoreMode(PStore store, KVStore::StoreMode mode) {
   return catalog->setStoreMainMeta(*meta.value());
 }
 
+Status ServerEntry::generateHeartbeatBinlogRoutine() {
+  std::string key = "auto_generated_heartbeat";
+  std::time_t t = std::time(nullptr);
+  char buffer[20];
+  std::strftime(buffer, 20, "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+  std::string value(buffer);
+
+  for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
+    auto expdb =
+      getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IX);
+    RET_IF_ERR_EXPECTED(expdb);
+
+    auto ptxn = expdb.value().store->createTransaction(nullptr);
+    RET_IF_ERR_EXPECTED(ptxn);
+    auto txn = ptxn.value().get();
+
+    // NOTE(pecochen): record timestamp at "cas" field. TimeStamp NOT TTL!!!
+    // In order to avoid compaction-filter expire record by "ttl"
+    // field what's more? record as millisecond is enough
+    RecordKey rk(
+      ADMINCMD_CHUNKID, ADMINCMD_DBID, RecordType::RT_DATA_META, key, "");
+    RecordValue rv(value, RecordType::RT_KV, 0, 0, msSinceEpoch());
+
+    auto status = txn->setKV(rk.encode(), rv.encode());
+    RET_IF_ERR(status);
+    auto commitStatus = txn->commit();
+    RET_IF_ERR_EXPECTED(commitStatus);
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
+}
+
 #define run_with_period(_ms_) \
   if ((_ms_ <= 1000 / hz) || !(cronLoop % ((_ms_) / (1000 / hz))))
 
@@ -1510,6 +1542,14 @@ void ServerEntry::serverCron() {
     if (_cfg->jeprofAutoDump) {
       run_with_period(1000) {
         jeprofCron();
+      }
+    }
+
+    if (_cfg->generateHeartbeatBinlogInterval != 0) {
+      // second -> millisecond
+      auto interval = _cfg->generateHeartbeatBinlogInterval * 1000;
+      run_with_period(interval) {
+        generateHeartbeatBinlogRoutine();
       }
     }
 

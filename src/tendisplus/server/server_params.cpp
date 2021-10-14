@@ -553,6 +553,8 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("log-error", logError);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("direct-io", directIo);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("allow-cross-slot", allowCrossSlot);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("generate-heartbeat-binlog-interval",
+                                  generateHeartbeatBinlogInterval);
 }
 
 ServerParams::~ServerParams() {
