@@ -304,6 +304,8 @@ class ReplManager {
 
  private:
   const std::shared_ptr<ServerParams> _cfg;
+  // Variables below is protected by mutex_:
+  // _syncMeta _syncStatus _logRecycStatus
   mutable std::mutex _mutex;
   std::condition_variable _recyclCv;
   std::condition_variable _cv;
@@ -311,9 +313,11 @@ class ReplManager {
   std::shared_ptr<ServerEntry> _svr;
 
   // slave's pov, meta data.
-  std::vector<std::unique_ptr<StoreMeta>> _syncMeta;  // GUARDED_BY(_mutex)
+  // GUARDED_BY(_mutex)
+  std::vector<std::unique_ptr<StoreMeta>> _syncMeta;
 
   // slave's pov, sync status
+  // GUARDED_BY(_mutex)
   std::vector<std::unique_ptr<SPovStatus>> _syncStatus;
 
   // master's pov, living slave clients

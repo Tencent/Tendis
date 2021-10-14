@@ -25,6 +25,10 @@
 
 namespace tendisplus {
 
+bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
+                        std::shared_ptr<ServerEntry> svr2,
+                        bool testMacro = true);
+
 void testCommandArrayResult(
   std::shared_ptr<ServerEntry> svr,
   const std::vector<std::pair<std::vector<std::string>, std::string>>& arr) {
@@ -427,6 +431,74 @@ void waitMigrateTaskStop(std::shared_ptr<ServerEntry> srcNode,
             << "s";
 }
 
+// wait all nodes's cluster_known_nodes same as servers's size
+void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
+  auto start = msSinceEpoch();
+  uint32_t expectNum = servers.size();
+
+  // wait every node's cluster_known_nodes same as servers's size
+  for (auto server : servers) {
+    while (server->getClusterMgr()->getClusterState()->getNodeCount() !=
+           expectNum) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      if (msSinceEpoch() - start > 100 * 1000) {
+        // take too long time
+        INVARIANT_D(0);
+        break;
+      }
+    }
+  }
+
+  // wait every node gets a different config epoch 
+  std::set<int> epochs;
+  while (epochs.size() != servers.size()) {
+    for (auto server : servers) {
+      uint64_t epoch = server->getClusterMgr()
+                         ->getClusterState()
+                         ->getMyselfNode()
+                         ->getConfigEpoch();
+      auto res = epochs.insert(epoch);
+      if (res.second) {
+        // insert success
+      } else {
+        epochs.clear();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        break;
+      }
+    }
+
+    if (msSinceEpoch() - start > 100 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+      break;
+    }
+  }
+
+  // wait every node corresponding configure epoch same
+  auto node_1 = servers[0];
+  uint32_t succNum = 0;
+  while (succNum != servers.size()) {
+    LOG(INFO) << "wait configure epoch begin";
+    succNum = 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    if (msSinceEpoch() - start > 100 * 1000) {
+      // take too long time
+      INVARIANT_D(0);
+      break;
+    }
+
+    for (auto svr : servers) {
+      auto succ = compareClusterInfo(svr, node_1, false);
+      LOG(INFO) << "wait configure epoch end times: " << succ;
+      succNum += succ;
+    }
+    LOG(INFO) << "wait configure epoch end";
+  }
+
+  LOG(INFO) << "Cluster Meet Ok cost time:" << (msSinceEpoch() - start) / 1000
+            << "s";
+}
+
 void destroyCluster(uint32_t nodeNum) {
   for (uint32_t i = 0; i < nodeNum; ++i) {
     destroyEnv("node" + to_string(i));
@@ -797,25 +869,36 @@ TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
 
 // check meet
 bool compareClusterInfo(std::shared_ptr<ServerEntry> svr1,
-                        std::shared_ptr<ServerEntry> svr2) {
+                        std::shared_ptr<ServerEntry> svr2,
+                        bool testMacro) {
   auto cs1 = svr1->getClusterMgr()->getClusterState();
   auto cs2 = svr2->getClusterMgr()->getClusterState();
 
   auto nodelist1 = cs1->getNodesList();
   auto nodelist2 = cs2->getNodesList();
 
-  EXPECT_EQ(cs1->getNodeCount(), cs2->getNodeCount());
-  EXPECT_EQ(cs1->getCurrentEpoch(), cs2->getCurrentEpoch());
+  if (testMacro) {
+    EXPECT_EQ(cs1->getNodeCount(), cs2->getNodeCount());
+    EXPECT_EQ(cs1->getCurrentEpoch(), cs2->getCurrentEpoch());
+  }
+
 
   for (auto nodep : nodelist1) {
     auto node1 = nodep.second;
 
     auto node2 = cs2->clusterLookupNode(node1->getNodeName());
-    EXPECT_TRUE(node2 != nullptr);
-    EXPECT_EQ(node1->toString(), node2->toString());
+    if (testMacro) {
+      EXPECT_TRUE(node2 != nullptr);
+      EXPECT_EQ(node1->toString(), node2->toString());
+    }
+
+    LOG(INFO) << "ClusterInfo node: " << node1->toString();
+    if (node1->toString() != node2->toString()) {
+      return false;
+    }
   }
 
-  return false;
+  return true;
 }
 
 
@@ -937,7 +1020,7 @@ MYTEST(Cluster, Simple_MEET) {
   work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
   work1.clusterMeet(node3->getParams()->bindIp, node3->getParams()->port);
 
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
   for (auto svr : servers) {
     compareClusterInfo(svr, node1);
   }
@@ -990,7 +1073,7 @@ MYTEST(Cluster, Sequence_Meet) {
     work.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(50));
+  waitClusterMeetEnd(servers);
   for (auto svr : servers) {
     compareClusterInfo(svr, node);
   }
@@ -1060,7 +1143,7 @@ TEST(Cluster, Random_Meet) {
     work1.clusterMeet(node1->getParams()->bindIp, port);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(50));
+  waitClusterMeetEnd(servers);
   for (auto svr : servers) {
     compareClusterInfo(svr, node);
   }
@@ -1104,7 +1187,7 @@ TEST(Cluster, AddSlot) {
   work1.init();
 
   work1.clusterMeet(node2->getParams()->bindIp, node2->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {"{0..8000}", "{8001..16383}"};
 
@@ -1219,7 +1302,7 @@ TEST(Cluster, failover) {
   work1.clusterMeet(node5->getParams()->bindIp, node5->getParams()->port);
   //   work1.clusterMeet(node6->getParams()->bindIp,
   //   node6->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {
     "{0..5000}", "{9001..16383}", "{5001..9000}"};
@@ -1611,7 +1694,7 @@ TEST(Cluster, migrateChangeThread) {
   // addSlots
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
 
@@ -1937,7 +2020,7 @@ TEST(Cluster, restartMigrate) {
   work2.init();
 
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
 
@@ -2093,7 +2176,7 @@ TEST(Cluster, migrateAndImport) {
   LOG(INFO) << "begin meet";
   work1.clusterMeet(dstNode1->getParams()->bindIp, dstNode1->getParams()->port);
   work1.clusterMeet(dstNode2->getParams()->bindIp, dstNode2->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {
     "{0..4700}", "{4701..10000}", "{10001..16383}"};
@@ -2519,7 +2602,7 @@ TEST(Cluster, ErrStoreNum) {
   work1.init();
 
   work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   std::vector<std::string> slots = {"{0..9300}", "{9301..16383}"};
 
@@ -2676,7 +2759,7 @@ TEST(Cluster, ConvergenceRate) {
     work.clusterMeet(servers[i]->getParams()->bindIp,
                      servers[i]->getParams()->port);
   }
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   // addSlots
   LOG(INFO) << "begin addSlots.";
@@ -2814,7 +2897,7 @@ TEST(Cluster, MigrateTTLIndex) {
   LOG(INFO) << "begin meet.";
   work1.clusterMeet(servers[1]->getParams()->bindIp,
                     servers[1]->getParams()->port);
-  std::this_thread::sleep_for(std::chrono::seconds(10));
+  waitClusterMeetEnd(servers);
 
   // addSlots
   LOG(INFO) << "begin addSlots.";

@@ -653,12 +653,14 @@ bool ClusterNode::isMasterOk() const {
   return false;
 }
 
+// Don't contain _flags, used by 'compareClusterInfo'
 std::string ClusterNode::toString() const {
   std::lock_guard<myMutex> lk(_mutex);
   std::ostringstream oss;
   oss << "nodeName:" << _nodeName << ", configEpoch:" << _configEpoch
-      << ", Ip:" << _nodeIp << ", port:" << _nodePort
-      << ", cport:" << _nodeCport;
+      << ", ip:" << _nodeIp << ", port:" << _nodePort
+      << ", cport:" << _nodeCport << ", slots:" << bitsetStrEncode(_mySlots)
+      << ", slavesNum:" << _numSlaves;
 
   return oss.str();
 }

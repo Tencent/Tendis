@@ -1352,7 +1352,6 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
 
 std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
   stringstream ss;
-  std::lock_guard<std::mutex> lk(_mutex);
 
   for (size_t i = 0; i < _svr->getKVStoreCount(); ++i) {
     auto expdb =
@@ -1361,6 +1360,8 @@ std::string ReplManager::getRecycleBinlogStr(Session* sess) const {
       continue;
 
     PStore kvstore = expdb.value().store;
+
+    std::lock_guard<std::mutex> lk(_mutex);
     ss << "rocksdb" + kvstore->dbId() << ":"
        << "min=" << _logRecycStatus[i]->firstBinlogId
        << ",save=" << _logRecycStatus[i]->saveBinlogId

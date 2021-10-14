@@ -3,7 +3,7 @@ logfile=./redistest.log
 rm $logfile
 rm ./tests/tmp/*
 
-function lm_traverse_dir(){
+function lm_traverse_dir() {
     for file in `ls $1`
     do
         if [ -d $1"/"$file ]
@@ -13,7 +13,6 @@ function lm_traverse_dir(){
             file_name=$1"/"$file
             echo "===== $file_name ====="
             cat $file_name
-            rm -rf $file_name
         fi
     done
 }
