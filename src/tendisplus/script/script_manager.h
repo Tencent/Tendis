@@ -27,13 +27,21 @@ class ScriptManager {
   Expected<std::string> run(Session* sess, int evalsha);
   Expected<std::string> setLuaKill();
   Expected<std::string> flush(Session* sess);
-  Expected<std::string> getScriptContent(Session* sess, const std::string& sha);
+  Expected<std::string> getScriptContent(Session* sess,
+                                         const std::string& sha);
   Expected<std::string> saveLuaScript(Session* sess,
                                       const std::string& sha,
                                       const std::string& script);
   Expected<std::string> checkIfScriptExists(Session* sess);
-  bool luaKill();
-  bool stopped();
+  bool luaKill() const {
+    return _luaKill;
+  }
+  bool stopped() const {
+    return _stopped;
+  }
+
+ private:
+  std::shared_ptr<LuaState> getLuaStateBelongToThisThread();
 
  private:
   std::shared_ptr<ServerEntry> _svr;

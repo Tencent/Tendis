@@ -227,6 +227,30 @@ start_server {tags {"scripting"}} {
             [r evalsha b534286061d4b9e4026607613b95c06c06015ae8 0]
     } {b534286061d4b9e4026607613b95c06c06015ae8 loaded}
 
+    test {SCRIPT LOAD - mixed test} {
+        list \
+            [r script flush] \
+            [r script load "return 'loaded'"] \
+            [r evalsha b534286061d4b9e4026607613b95c06c06015ae8 0] \
+            [r script exists b534286061d4b9e4026607613b95c06c06015ae8] \
+            [r script load "return 'loaded'"] \
+            [r eval "return 'loaded'" 0] \
+            [r script exists b534286061d4b9e4026607613b95c06c06015ae8] \
+            [r script flush] \
+            [r script exists b534286061d4b9e4026607613b95c06c06015ae8] \
+            [r eval "return 'loaded'" 0] \
+            [r script exists b534286061d4b9e4026607613b95c06c06015ae8] \
+            [r script load "return 'loaded'"] \
+            [r evalsha b534286061d4b9e4026607613b95c06c06015ae8 0] \
+            [r eval "return 'loaded'" 0] \
+            [r script exists b534286061d4b9e4026607613b95c06c06015ae8]
+    } {OK b534286061d4b9e4026607613b95c06c06015ae8 loaded 1 b534286061d4b9e4026607613b95c06c06015ae8 loaded 1 OK 0 loaded 0 b534286061d4b9e4026607613b95c06c06015ae8 loaded loaded 1}
+
+    test {SCRIPT LOAD - should check if input script is valid before registering in the cache} {
+        catch {r script load "print hello"} e
+        set e
+    } {*ERR*Error compiling script (new function)*}
+
     test "In the context of Lua the output of random commands gets ordered" {
         r del myset
         r sadd myset a b c d e f g h i l m n o p q r s t u v z aa aaa azz
@@ -245,11 +269,11 @@ start_server {tags {"scripting"}} {
         r eval {return redis.call('sort',KEYS[1],'by','_')} 1 myset
     } {a aa aaa azz b c d e f g h i l m n o p q r s t u v z}
 
-    #test "SORT BY <constant> with GET gets ordered for scripting" {
-    #    r del myset
-    #    r sadd myset a b c
-    #    r eval {return redis.call('sort',KEYS[1],'by','_','get','#','get','_:*')} 1 myset
-    #} {a {} b {} c {}}
+    test "SORT BY <constant> with GET gets ordered for scripting" {
+        r del myset
+        r sadd myset a b c
+        r eval {return redis.call('sort',KEYS[1],'by','_','get','#','get','_:*')} 1 myset
+    } {a {} b {} c {}}
 
     test "redis.sha1hex() implementation" {
         list [r eval {return redis.sha1hex('')} 0] \

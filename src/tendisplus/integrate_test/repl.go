@@ -104,7 +104,7 @@ func testReplMatch2(kvstore_count int, m *util.RedisServer, s *util.RedisServer)
 					buf <- &Record{Pk: pk, Sk: sk, Type: tp}
 				} else if tp == SCRIPT {
 					suffix := rand.Int() % (*scriptcount)
-					pk := fmt.Sprintf("\"return KEYS[%d]\"", suffix)
+					pk := fmt.Sprintf("return KEYS[%d]", suffix)
 					sk, err := cli.Cmd("script", "load", pk).Str()
 					if err != nil {
 						log.Fatalf("load script error:%v", err)

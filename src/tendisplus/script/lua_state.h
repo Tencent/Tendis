@@ -31,38 +31,41 @@ class LuaState {
   ~LuaState();
 
   lua_State* initLua(int setup);
-  uint32_t Id() {
+  uint32_t Id() const {
     return _id;
   }
   Expected<std::string> evalCommand(Session* sess);
   Expected<std::string> evalShaCommand(Session* sess);
-  Expected<std::string> evalGenericCommand(Session *sess, int evalsha);
   void LuaClose();
-  bool luaWriteDirty() {
+  bool luaWriteDirty() const {
     return lua_write_dirty;
   }
   void setLastEndTime(uint64_t val) {
     lua_time_end = val;
   }
-  uint64_t lastEndTime() {
+  uint64_t lastEndTime() const {
     return lua_time_end;
   }
   void setRunning(bool val) {
     running = val;
   }
-  bool isRunning() {
+  bool isRunning() const {
     return running;
   }
   static std::string getShaEncode(const std::string& script);
+  Expected<std::string> tryLoadLuaScript(const std::string& script) {
+    return luaCreateFunction(_lua, script);
+  }
 
  private:
+  Expected<std::string> evalGenericCommand(Session *sess, int evalsha);
   void updateFakeClient();
   static void sha1hex(char *digest, char *script, size_t len);
   static int luaRedisSha1hexCommand(lua_State *lua);
   void luaRemoveUnsupportedFunctions(lua_State *lua);
   int luaRedisReplicateCommandsCommand(lua_State *lua);
   Expected<std::string> luaCreateFunction(lua_State *lua,
-        const std::string& body);
+                                          const std::string& body);
   Expected<std::string> luaReplyToRedisReply(lua_State *lua);
   static int luaRedisCallCommand(lua_State *lua);
   static int luaRedisPCallCommand(lua_State *lua);

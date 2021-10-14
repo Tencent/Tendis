@@ -81,7 +81,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     waitFullsync(&s2, kvstorecount)
 
     addData(&m1, *num1, "aa")
-	sha, err := clim1.Cmd("script", "load", "\"return KEYS[1]\"").Str()
+	sha, err := clim1.Cmd("script", "load", "return KEYS[1]").Str()
 	if err != nil {
 		log.Fatalf("script load on master1 err:%v", err)
 	} else if len(sha) != 40 {
@@ -139,7 +139,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
 	}
 
     addData(&m1, *num2, "bb")
-	sha1, err := clim1.Cmd("script", "load", "\"return KEYS[2]\"").Str()
+	sha1, err := clim1.Cmd("script", "load", "return KEYS[2]").Str()
 	if err != nil {
 		log.Fatalf("script load on master1 err:%v", err)
 	} else if len(sha1) != 40 {
@@ -154,7 +154,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int,
     flushBinlog(&s2)
     restoreBinlog(&s2, &m2, kvstorecount, math.MaxUint64)
     addOnekeyEveryStore(&m2, kvstorecount)
-	sha2, err := clim2.Cmd("script", "load", "\"return KEYS[2]\"").Str()
+	sha2, err := clim2.Cmd("script", "load", "return KEYS[2]").Str()
 	if err != nil {
 		log.Fatalf("script load on master2 err:%v", err)
 	} else if sha1 != sha2 {

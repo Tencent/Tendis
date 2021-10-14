@@ -39,9 +39,7 @@ class EvalGenericCommand : public Command {
   }
 
   Expected<std::string> run(Session* sess) final {
-    auto server = sess->getServerEntry();
-    auto ret = server->getScriptMgr()->run(sess, _evalsha);
-    return ret;
+    return sess->getServerEntry()->getScriptMgr()->run(sess, _evalsha);
   }
 
  private:
@@ -83,7 +81,7 @@ class ScriptCommand : public Command {
   }
 
   static std::string getHelpInfo(Session* sess) {
-    static std::string s = []() {
+    static auto s = []() {
       std::stringstream ss;
       Command::fmtMultiBulkLen(ss, 11);
       Command::fmtBulk(ss,
@@ -112,8 +110,8 @@ class ScriptCommand : public Command {
 
   Expected<std::string> run(Session* sess) final {
     auto server = sess->getServerEntry();
-    const std::vector<std::string>& args = sess->getArgs();
-    const std::string op = toLower(args[1]);
+    const auto& args = sess->getArgs();
+    const auto& op = toLower(args[1]);
     if (op == "kill" && args.size() == 2) {
       return server->getScriptMgr()->setLuaKill();
     } else if (op == "flush" && args.size() == 2) {
@@ -126,8 +124,8 @@ class ScriptCommand : public Command {
       return getHelpInfo(sess);
     } else {
       return {ErrorCodes::ERR_LUA,
-              "ERR Unknown subcommand or wrong number of arguments for '" +
-              op + "'. Try SCRIPT HELP."};
+              "ERR Unknown subcommand or wrong number of arguments for '" + op +
+              "'. Try SCRIPT HELP."};
     }
     return Command::fmtOK();
   }

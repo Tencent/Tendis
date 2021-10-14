@@ -17,23 +17,8 @@ ScriptManager::ScriptManager(std::shared_ptr<ServerEntry> svr)
     _luaKill(false),
     _stopped(false) {}
 
-Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
-  // NOTE(takenliu):
-  //   use shared_lock in every command with high frequency,
-  //   otherwise use unique_lock with low frequency.
-  if (_luaKill) {
-    std::unique_lock<std::shared_timed_mutex> lock(_mutex);
-    for (auto& iter : _mapLuaState) {
-      if (iter.second->isRunning()) {
-        LOG(WARNING) << "script kill or flush not finished:"
-          << _mapLuaState.size();
-        return {ErrorCodes::ERR_LUA, "script kill not finished."};
-      }
-    }
-    LOG(WARNING) << "script kill or flush all finished.";
-    _luaKill = false;
-  }
-  std::shared_ptr<LuaState> luaState = nullptr;
+std::shared_ptr<LuaState> ScriptManager::getLuaStateBelongToThisThread() {
+  std::shared_ptr<LuaState> luaState;
   uint64_t threadid = getCurThreadId();
   {
     std::shared_lock<std::shared_timed_mutex> lock(_mutex);
@@ -48,9 +33,29 @@ Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
     luaState->setRunning(true);
     std::unique_lock<std::shared_timed_mutex> lock(_mutex);
     _mapLuaState[threadid] = luaState;
-    LOG(INFO) << "new LuaState, threadid:" << threadid
-      << " _mapLuaState size:" << _mapLuaState.size();
+    LOG(INFO) << "new LuaState, threadid: " << threadid
+              << " _mapLuaState size: " << _mapLuaState.size();
   }
+  return luaState;
+}
+
+Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
+  // NOTE(takenliu):
+  //   use shared_lock in every command with high frequency,
+  //   otherwise use unique_lock with low frequency.
+  if (_luaKill) {
+    std::unique_lock<std::shared_timed_mutex> lock(_mutex);
+    for (const auto& iter : _mapLuaState) {
+      if (iter.second->isRunning()) {
+        LOG(WARNING) << "script kill or flush not finished: "
+                     << _mapLuaState.size();
+        return {ErrorCodes::ERR_LUA, "script kill not finished."};
+      }
+    }
+    LOG(WARNING) << "script kill or flush all finished.";
+    _luaKill = false;
+  }
+  auto luaState = getLuaStateBelongToThisThread();
   auto ret = evalsha == 0 ?
              luaState->evalCommand(sess) :
              luaState->evalShaCommand(sess);
@@ -65,7 +70,7 @@ Expected<std::string> ScriptManager::run(Session* sess, int evalsha) {
 Expected<std::string> ScriptManager::setLuaKill() {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
   bool someRunning = false;
-  for (auto& iter : _mapLuaState) {
+  for (const auto& iter : _mapLuaState) {
     if (iter.second->isRunning()) {
       someRunning = true;
       break;
@@ -84,15 +89,11 @@ Expected<std::string> ScriptManager::setLuaKill() {
   return Command::fmtOK();
 }
 
-bool ScriptManager::luaKill() {
-  return _luaKill;
-}
-
 Expected<std::string> ScriptManager::flush(Session* sess) {
   std::unique_lock<std::shared_timed_mutex> lock(_mutex);
 
   // check if there are scripts still running.
-  for (auto& iter : _mapLuaState) {
+  for (const auto& iter : _mapLuaState) {
     if (iter.second->isRunning()) {
       return {ErrorCodes::ERR_LUA,
               "-BUSY Redis is busy running a script."
@@ -129,8 +130,7 @@ Expected<std::string> ScriptManager::getScriptContent(Session* sess,
   auto expdb = _svr->getSegmentMgr()->getDb(
     sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IS);
   RET_IF_ERR_EXPECTED(expdb);
-  auto kvstore = expdb.value().store;
-  auto ptxn = kvstore->createTransaction(sess);
+  auto ptxn = expdb.value().store->createTransaction(sess);
   RET_IF_ERR_EXPECTED(ptxn);
 
   std::unique_ptr<Transaction> txn = std::move(ptxn.value());
@@ -146,6 +146,13 @@ Expected<std::string> ScriptManager::getScriptContent(Session* sess,
 Expected<std::string> ScriptManager::saveLuaScript(Session* sess,
                                                    const std::string& sha,
                                                    const std::string& script) {
+  auto luaState = getLuaStateBelongToThisThread();
+  auto expLoadState = luaState->tryLoadLuaScript(script);
+  RET_IF_ERR_EXPECTED(expLoadState);
+  {
+    std::shared_lock<std::shared_timed_mutex> lock(_mutex);
+    luaState->setRunning(false);
+  }
   auto expdb = _svr->getSegmentMgr()->getDb(
     sess, LUASCRIPT_DEFAULT_DBID, mgl::LockMode::LOCK_IX);
   RET_IF_ERR_EXPECTED(expdb);
@@ -221,10 +228,6 @@ Status ScriptManager::stopStore(uint32_t storeId) {
 void ScriptManager::stop() {
   LOG(INFO) << "ScriptManager stop.";
   _stopped = true;
-}
-
-bool ScriptManager::stopped() {
-  return _stopped;
 }
 
 }  // namespace tendisplus
