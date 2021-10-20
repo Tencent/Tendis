@@ -991,12 +991,23 @@ void testObject(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
 }
 
-TEST(Command, common) {
+class CommandCommonTest : public ::testing::Test,
+                                 public ::testing::WithParamInterface<bool> {
+ public:
+  CommandCommonTest() : binlogEnabled_(true) {}
+  void SetUp() override {
+    binlogEnabled_ = GetParam();
+  }
+  bool binlogEnabled_;
+};
+
+TEST_P(CommandCommonTest, BinlogEnabled) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
   EXPECT_TRUE(setupEnv());
   auto cfg = makeServerParam();
   auto server = makeServerEntry(cfg);
+  cfg->binlogEnabled = binlogEnabled_;
 
   testPf(server);
   testList(server);
@@ -1022,6 +1033,8 @@ TEST(Command, common) {
   EXPECT_EQ(server.use_count(), 1);
 #endif
 }
+
+INSTANTIATE_TEST_CASE_P(BinlogEnabled, CommandCommonTest, testing::Bool());
 
 TEST(Command, common_scan) {
   const auto guard = MakeGuard([] { destroyEnv(); });
@@ -2034,52 +2047,6 @@ TEST(Command, revision) {
 #endif
 }
 
-
-AllKeys initData(std::shared_ptr<ServerEntry> server,
-                 uint32_t count,
-                 const char* key_suffix) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-  auto maxEleCnt = 2500;
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
-  all_keys.emplace_back(kv_keys);
-
-  auto list_keys = work.writeWork(
-    RecordType::RT_LIST_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(list_keys);
-
-  auto hash_keys = work.writeWork(
-    RecordType::RT_HASH_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(hash_keys);
-
-  auto set_keys =
-    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(set_keys);
-
-  auto zset_keys = work.writeWork(
-    RecordType::RT_ZSET_META, count, maxEleCnt, true, key_suffix);
-  all_keys.emplace_back(zset_keys);
-
-  for (const auto& keyset : all_keys) {
-    for (const auto& key : keyset) {
-      if (std::rand() % 3 == 0) {
-        auto ttl = std::rand() % 1000 + 1000;
-        sess1->setArgs({"expire", key, std::to_string(ttl)});
-        auto expect = Command::runSessionCmd(sess1.get());
-        EXPECT_TRUE(expect.ok());
-        EXPECT_EQ(expect.value(), Command::fmtOne());
-      }
-    }
-  }
-
-  return all_keys;
-}
-
 TEST(Command, restorevalue) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -2093,7 +2060,8 @@ TEST(Command, restorevalue) {
   auto cfg2 = makeServerParam(port2, 0, "restore2");
   auto server2 = makeServerEntry(cfg2);
 
-  auto allkeys = initData(server1, 1000, "restorevalue_");
+  auto allkeys =
+    writeComplexDataWithTTLToServer(server1, 1000, 2500, "restorevalue_");
 
   for (const auto& keyset : allkeys) {
     for (const auto& key : keyset) {
@@ -2845,6 +2813,7 @@ TEST(Command, testFlushallWithRocksDBPath) {
 
 // NOTE(takenliu): renameCommand may change command's name or behavior, so put
 // it in the end
+// INSTANTIATE_TEST_CASE_P may run later TEST(Command, renameCommand)
 extern string gRenameCmdList;
 extern string gMappingCmdList;
 TEST(Command, renameCommand) {
@@ -2860,6 +2829,26 @@ TEST(Command, renameCommand) {
 
   testRenameCommand(server);
 
+  gRenameCmdList = ",set_rename set";
+  gMappingCmdList = ",emptyint dbsize,emptymultibulk keys";
+  Command::changeCommand(gRenameCmdList, "rename");
+  Command::changeCommand(gMappingCmdList, "mapping");
+
+  // reset commandMap() back
+  {
+    asio::io_context ioContext;
+    asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+    NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+    sess.setArgs({"set_rename"});
+    auto eprecheck = Command::precheck(&sess);
+    EXPECT_EQ(Command::fmtErr("unknown command 'set_rename'"),
+              eprecheck.status().toString());
+
+    sess.setArgs({"set", "a", "1"});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_EQ(Command::fmtOK(), expect.value());
+  }
   gRenameCmdList = "";
   gMappingCmdList = "";
 

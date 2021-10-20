@@ -114,6 +114,8 @@ std::string Status::getErrStr(ErrorCodes code) {
       return "-CLUSTERDOWN Hash slot not served\r\n";
     case ErrorCodes::ERR_LUA_NOSCRIPT:
       return "-NOSCRIPT No matching script. Please use EVAL.\r\n";
+    case ErrorCodes::ERR_BINLOG_DISABLED:
+      return "-ERR binlog is disabled\r\n";
 
     default:
       break;

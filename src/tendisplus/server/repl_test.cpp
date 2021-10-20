@@ -35,39 +35,6 @@ uint32_t slave1_port = 2111;
 uint32_t slave2_port = 2112;
 uint32_t single_port = 2113;
 
-AllKeys initData(std::shared_ptr<ServerEntry>& server, uint32_t count) {
-  auto ctx1 = std::make_shared<asio::io_context>();
-  auto sess1 = makeSession(server, ctx1);
-  WorkLoad work(server, sess1);
-  work.init();
-
-  AllKeys all_keys;
-
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count);
-  all_keys.emplace_back(kv_keys);
-
-  auto list_keys = work.writeWork(RecordType::RT_LIST_META, count, 50);
-  all_keys.emplace_back(list_keys);
-
-  // wait binlog dump to disk
-  std::this_thread::sleep_for(std::chrono::seconds(2));
-
-  // #ifdef _WIN32
-  work.flush();
-  // #endif
-
-  auto hash_keys = work.writeWork(RecordType::RT_HASH_META, count, 50);
-  all_keys.emplace_back(hash_keys);
-
-  auto set_keys = work.writeWork(RecordType::RT_SET_META, count, 50);
-  all_keys.emplace_back(set_keys);
-
-  auto zset_keys = work.writeWork(RecordType::RT_ZSET_META, count, 50);
-  all_keys.emplace_back(zset_keys);
-
-  return std::move(all_keys);
-}
-
 std::pair<std::shared_ptr<ServerEntry>, std::shared_ptr<ServerEntry>>
 makeReplEnv(uint32_t storeCnt) {
   EXPECT_TRUE(setupEnv(master_dir));
@@ -156,7 +123,8 @@ TEST(Repl, Common) {
     work.init();
     work.flush();
 
-    auto allKeys = initData(master, recordSize);
+    auto allKeys =
+      writeComplexDataToServer(master, recordSize, 50, nullptr, true);
 
     waitSlaveCatchup(master, slave);
     sleep(3);  // wait recycle binlog
@@ -503,6 +471,65 @@ TEST(Repl, MasterDontSaveBinlog) {
   }
 }
 
+class MasterBinlogDisabledTest : public ::testing::Test,
+                                 public ::testing::WithParamInterface<bool> {
+ public:
+  MasterBinlogDisabledTest() : binlogEnabled_(true) {}
+  void SetUp() override {
+    binlogEnabled_ = GetParam();
+  }
+  bool binlogEnabled_;
+};
+
+TEST_P(MasterBinlogDisabledTest, BinlogDisabled) {
+  size_t i = 1;
+  {
+    LOG(INFO) << ">>>>>> test store count:" << i
+              << "binlogEnabled_:" << binlogEnabled_;
+    const auto guard = MakeGuard([] {
+      destroyEnv(single_dir);
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+    });
+
+    EXPECT_TRUE(setupEnv(single_dir));
+
+    auto cfg = makeServerParam(single_port, i, single_dir, false);
+    cfg->minBinlogKeepSec = 0;
+    cfg->binlogEnabled = binlogEnabled_;
+    cfg->binlogSaveLogs = false;
+
+    auto single = std::make_shared<ServerEntry>(cfg);
+    auto s = single->startup(cfg);
+    INVARIANT(s.ok());
+
+    {
+      runCmd(single, {"set", "a", "1"});
+      runCmd(single, {"set", "a", "2"});
+    }
+    {
+      writeComplexDataToServer(single, 100, 10, nullptr, true);
+    }
+
+    // need wait enough time.
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    {
+      runCmd(single, {"binlogflush", "all"});
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+#ifndef _WIN32
+    single->stop();
+#endif
+
+    LOG(INFO) << ">>>>>> test store count:" << i << " end;";
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(BinlogDisabledTest,
+                        MasterBinlogDisabledTest,
+                        testing::Bool());
+
+
 TEST(Repl, SlaveCantModify) {
   size_t i = 1;
   {
@@ -830,8 +857,9 @@ TEST(Repl, BinlogKeepNum_Test) {
       // slaveof need about 3 seconds to transfer file.
       std::this_thread::sleep_for(std::chrono::seconds(5));
 
-      auto allKeys = initData(master, recordSize);
-      initData(single, recordSize);
+      auto allKeys =
+        writeComplexDataToServer(master, recordSize, 50, nullptr, true);
+      writeComplexDataToServer(single, recordSize, 50, nullptr, true);
 
       waitSlaveCatchup(master, slave);
       sleep(3);  // wait recycle binlog
@@ -855,7 +883,8 @@ TEST(Repl, BinlogKeepNum_Test) {
       std::this_thread::sleep_for(std::chrono::seconds(5));
 
       thread.join();
-      initData(master, recordSize);  // add data every store
+      // add data every store
+      writeComplexDataToServer(master, recordSize, 50, nullptr, true);
       waitSlaveCatchup(master, slave);
       waitSlaveCatchup(slave, slave1);
       sleep(3);  // wait recycle binlog
@@ -1008,7 +1037,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
       auto s = single->startup(cfg);
       INVARIANT(s.ok());
 
-      initData(single, recordSize);
+      writeComplexDataToServer(single, recordSize, 50, nullptr, true);
 
       single->stop();
 
@@ -1109,7 +1138,7 @@ TEST(Repl, BinlogVersion) {
   auto version1_master = std::make_shared<ServerEntry>(cfg);
   auto s = version1_master->startup(cfg);
   INVARIANT(s.ok());
-  initData(version1_master, recordSize);
+  writeComplexDataToServer(version1_master, recordSize, 50, nullptr, true);
   EXPECT_EQ(version1_master->getCatalog()->getBinlogVersion(),
             BinlogVersion::BINLOG_VERSION_1);
 
@@ -1158,7 +1187,7 @@ TEST(Repl, BinlogVersion) {
   EXPECT_EQ(version2_master->getStores()[0]->getHighestBinlogId(),
             binlogHighest);
   EXPECT_EQ(version2_master->getStores()[0]->getNextBinlogSeq(), binlogMax);
-  initData(version2_master, recordSize);
+  writeComplexDataToServer(version2_master, recordSize, 50, nullptr, true);
 
   // 3. check version2 slaveof version2
   EXPECT_TRUE(setupEnv(slave1_dir));

@@ -84,6 +84,9 @@ class ClusterCommand : public Command {
 
     if (arg1 == "setslot" && argSize >= 3) {
       Status s;
+      if (!svr->getParams()->binlogEnabled) {
+        return {ErrorCodes::ERR_BINLOG_DISABLED, ""};
+      }
       const std::string arg2 = toLower(args[2]);
       if ((arg2 == "importing" || arg2 == "restart") && argSize >= 5) {
         if (myself->nodeIsArbiter() || myself->nodeIsSlave()) {
@@ -374,6 +377,9 @@ class ClusterCommand : public Command {
       clusterState->clusterUpdateState();
       return Command::fmtOK();
     } else if (arg1 == "replicate" && argSize == 3) {
+      if (!svr->getParams()->binlogEnabled) {
+        return {ErrorCodes::ERR_BINLOG_DISABLED, ""};
+      }
       auto n = clusterState->clusterLookupNode(args[2]);
       if (!n) {
         return {ErrorCodes::ERR_CLUSTER, "Unknown node: " + args[2]};

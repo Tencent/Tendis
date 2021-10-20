@@ -59,7 +59,8 @@ class ScriptManager;
 #define STATS_METRIC_COUNT 3
 
 std::shared_ptr<ServerEntry>& getGlobalServer();
-bool checkKvstoreSlot(uint32_t kvstoreId, uint64_t slot);
+bool checkKvStoreSlot(uint32_t kvstoreId, uint32_t kvstoreCount, uint64_t slot);
+uint32_t getKvStoreID(uint32_t chunkid, uint32_t kvstoreCount);
 
 class ServerStat {
  public:

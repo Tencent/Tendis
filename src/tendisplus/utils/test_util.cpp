@@ -777,6 +777,91 @@ std::bitset<CLUSTER_SLOTS> genBitMap() {
   return bitmap;
 }
 
+AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
+                                 uint32_t count,
+                                 uint32_t maxEleCnt,
+                                 const char* key_suffix,
+                                 bool flushEnable) {
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(server, ctx1);
+  WorkLoad work(server, sess1);
+  work.init();
+
+  AllKeys all_keys;
+  LOG(INFO) << "Start write data to server";
+  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
+  all_keys.emplace_back(kv_keys);
+
+  auto list_keys = work.writeWork(
+    RecordType::RT_LIST_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(list_keys);
+
+  // work.flush was used in repl_test, we just keep same
+  if (flushEnable) {
+    // wait binlog dump to disk
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // #ifdef _WIN32
+    work.flush();
+    // #endif
+  }
+
+  auto hash_keys = work.writeWork(
+    RecordType::RT_HASH_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(hash_keys);
+
+  auto set_keys =
+    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(set_keys);
+
+  auto zset_keys = work.writeWork(
+    RecordType::RT_ZSET_META, count, maxEleCnt, true, key_suffix);
+  all_keys.emplace_back(zset_keys);
+  LOG(INFO) << "End write data to server";
+
+  return all_keys;
+}
+
+AllKeys writeComplexDataWithTTLToServer(
+  const std::shared_ptr<ServerEntry>& server,
+  uint32_t count,
+  uint32_t maxEleCnt,
+  const char* key_suffix) {
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(server, ctx1);
+  auto allKeys = writeComplexDataToServer(server, count, maxEleCnt, key_suffix);
+
+  for (const auto& keyset : allKeys) {
+    for (const auto& key : keyset) {
+      if (std::rand() % 3 == 0) {
+        auto ttl = std::rand() % 1000 + 1000;
+        sess1->setArgs({"expire", key, std::to_string(ttl)});
+        auto expect = Command::runSessionCmd(sess1.get());
+        EXPECT_TRUE(expect.ok());
+        EXPECT_EQ(expect.value(), Command::fmtOne());
+      }
+    }
+  }
+
+  return allKeys;
+}
+
+AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
+                            uint32_t count,
+                            const char* key_suffix) {
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(server, ctx1);
+  WorkLoad work(server, sess1);
+  work.init();
+
+  AllKeys all_keys;
+
+  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
+  all_keys.emplace_back(kv_keys);
+
+  return std::move(all_keys);
+}
+
 void testList(std::shared_ptr<ServerEntry> svr) {
   asio::io_context ioContext;
   asio::ip::tcp::socket socket(ioContext), socket1(ioContext);

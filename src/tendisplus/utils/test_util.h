@@ -94,6 +94,23 @@ std::string randomIp();
 std::string randomStr(size_t s, bool maybeEmpty);
 std::bitset<CLUSTER_SLOTS> genBitMap();
 
+// Write Data to server
+//  When flushEnable is true, will send 'flushalldisk' to server, was used in
+//  repl_test, we just keep same
+AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
+                                 uint32_t count,
+                                 uint32_t maxEleCnt,
+                                 const char* key_suffix,
+                                 bool flushEnable = false);
+AllKeys writeComplexDataWithTTLToServer(
+  const std::shared_ptr<ServerEntry>& server,
+  uint32_t count,
+  uint32_t maxEleCnt,
+  const char* key_suffix);
+AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
+                            uint32_t count,
+                            const char* key_suffix);
+
 void testExpireForAlreadyExpired1(std::shared_ptr<ServerEntry> svr);
 void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr);
 void testExpireForNotExpired(std::shared_ptr<ServerEntry> svr);
