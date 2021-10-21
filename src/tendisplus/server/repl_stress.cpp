@@ -42,8 +42,10 @@ static bool FLAGS_binlogSaveLogs = false;
 static int FLAGS_key_prefix = 0;
 
 static bool FLAGS_generallog = false;
-
+static bool FLAGS_checkkeytypeforsetcmd = false;
 static int FLAGS_sleepAfterBenchmark = 0;
+
+static int FLAGS_rocksTransactionMode = 1;
 
 namespace tendisplus {
 rocksdb::Env* g_env = nullptr;
@@ -373,10 +375,11 @@ std::shared_ptr<ServerParams> GenServerParams() {
   myfile << "rocks.write_buffer_size 67108864\n";
   myfile << "rocks.compress_type lz4\n";
   myfile << "rocks.max_background_compactions 8\n";
+  myfile << "rocks_transaction_mode " << FLAGS_rocksTransactionMode << "\n";
 
   myfile << "generallog " << FLAGS_generallog << "\n";
   myfile << "slowlog-flush-interval 1\n";
-  myfile << "checkkeytypeforsetcmd on\n";
+  myfile << "checkkeytypeforsetcmd " << FLAGS_checkkeytypeforsetcmd << "\n";
 
   myfile << "kvStoreCount " << FLAGS_kvStoreCount << "\n";
   myfile << "maxBinlogKeepNum 1000000\n";
@@ -525,8 +528,11 @@ void Run() {
   auto method = &DoWriteKV;
   rocksdb::Slice name("kvwrite");
   LOG(INFO) << "Start benchmark :" << name.data();
+  auto start = g_env->NowMicros();
   RunBenchmark(FLAGS_threads, name, method);
-  LOG(INFO) << "End benchmark :" << name.data();
+  auto end = g_env->NowMicros();
+  LOG(INFO) << "End benchmark :" << name.data()
+            << "QPS:" << (FLAGS_num * FLAGS_threads * 1e6) / (end - start);
   g_env->SleepForMicroseconds(FLAGS_sleepAfterBenchmark * 1000000);
 #ifndef _WIN32
   g_server->stop();
@@ -560,6 +566,8 @@ int main(int argc, char** argv) {
       FLAGS_sleepAfterBenchmark = n;
     } else if (sscanf(argv[i], "--num=%d%c", &n, &junk) == 1) {
       FLAGS_num = n;
+    } else if (sscanf(argv[i], "--rocksTransactionMode=%d%c", &n, &junk) ==1) {
+      FLAGS_rocksTransactionMode = n;
     } else {
       std::fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
       std::exit(1);

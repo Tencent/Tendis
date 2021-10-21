@@ -229,8 +229,8 @@ TEST(RocksKVStore, RocksOptions) {
   }
   EXPECT_EQ(kvstore->getUnderlayerPesDB()->GetOptions().create_if_missing,
             true);
- 
- #if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
+
+#if ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 13
   rocksdb::BlockBasedTableOptions* option =
     (rocksdb::BlockBasedTableOptions*)kvstore->getUnderlayerPesDB()
       ->GetOptions()
@@ -565,7 +565,7 @@ TEST(RocksKVStore, OptCursorVisible) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_OPT);
+                                                TxnMode::TXN_OPT);
   cursorVisibleRoutine(kvstore.get());
 }
 
@@ -585,7 +585,7 @@ TEST(RocksKVStore, PesCursorVisible) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_PES);
+                                                TxnMode::TXN_PES);
   cursorVisibleRoutine(kvstore.get());
 }
 
@@ -938,7 +938,7 @@ void commonRoutine(RocksKVStore* kvstore) {
   s = kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
                             RecordValue("txn2", RecordType::RT_KV, -1)),
                      txn2.get());
-  if (kvstore->getTxnMode() == RocksKVStore::TxnMode::TXN_OPT) {
+  if (kvstore->getTxnMode() == TxnMode::TXN_OPT) {
     EXPECT_EQ(s.code(), ErrorCodes::ERR_OK);
     Expected<uint64_t> exptCommitId = txn2->commit();
     EXPECT_EQ(exptCommitId.ok(), true);
@@ -981,7 +981,7 @@ TEST(RocksKVStore, OptCommon) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_OPT);
+                                                TxnMode::TXN_OPT);
   commonRoutine(kvstore.get());
 }
 
@@ -1002,8 +1002,47 @@ TEST(RocksKVStore, PesCommon) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_PES);
+                                                TxnMode::TXN_PES);
   commonRoutine(kvstore.get());
+}
+
+TEST(RocksKVStore, WBCommon) {
+  auto cfg = genParams();
+  EXPECT_TRUE(filesystem::create_directory("db"));
+  // EXPECT_TRUE(filesystem::create_directory("db/0"));
+  EXPECT_TRUE(filesystem::create_directory("log"));
+  const auto guard = MakeGuard([] {
+    filesystem::remove_all("./log");
+    filesystem::remove_all("./db");
+  });
+  auto blockCache =
+    rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
+  auto kvstore = std::make_unique<RocksKVStore>("0",
+                                                cfg,
+                                                blockCache,
+                                                nullptr,
+                                                true,
+                                                KVStore::StoreMode::READ_WRITE,
+                                                TxnMode::TXN_WB);
+  {
+    auto eTxn1 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn1.ok(), true);
+    std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
+    kvstore->setKV(Record(RecordKey(0, 0, RecordType::RT_KV, "a", ""),
+                       RecordValue("txn1", RecordType::RT_KV, -1)),
+                txn1.get());
+    txn1->commit();
+
+    auto eTxn2 = kvstore->createTransaction(nullptr);
+    EXPECT_EQ(eTxn2.ok(), true);
+    std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
+    Expected<RecordValue> e =
+      kvstore->getKV(RecordKey(0, 0, RecordType::RT_KV, "a", ""), txn2.get());
+    EXPECT_EQ(e.value().getValue(),
+              RecordValue("txn1", RecordType::RT_KV, -1).getValue());
+    EXPECT_EQ(e.value(), RecordValue("txn1", RecordType::RT_KV, -1));
+    txn2->commit();
+  }
 }
 
 uint64_t getBinlogCount(Transaction* txn) {
@@ -1041,7 +1080,7 @@ TEST(RocksKVStore, PesTruncateBinlog) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_PES);
+                                                TxnMode::TXN_PES);
 
   LocalSessionGuard sg(nullptr);
   uint64_t firstBinlog = 1;
@@ -1257,7 +1296,7 @@ TEST(RocksKVStore, Compaction) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_PES);
+                                                TxnMode::TXN_PES);
 
   SyncPoint::GetInstance()->EnableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
@@ -1336,7 +1375,7 @@ TEST(RocksKVStore, CompactionWithNoexpire) {
                                                 nullptr,
                                                 true,
                                                 KVStore::StoreMode::READ_WRITE,
-                                                RocksKVStore::TxnMode::TXN_PES);
+                                                TxnMode::TXN_PES);
 
   SyncPoint::GetInstance()->EnableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();

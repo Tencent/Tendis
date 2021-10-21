@@ -126,17 +126,21 @@ RocksTxn::RocksTxn(RocksKVStore* store,
                    bool replOnly,
                    std::shared_ptr<tendisplus::BinlogObserver> ob,
                    Session* sess,
+                   TxnMode txnMode,
                    uint64_t binlogId,
                    uint32_t chunkId)
   : _txnId(txnId),
     _binlogId(binlogId),
     _chunkId(chunkId),
+    _txnMode(txnMode),
     _txn(nullptr),
     _store(store),
     _done(false),
     _replOnly(replOnly),
     _logOb(ob),
-    _session(sess) {}
+    _session(sess) {
+  _writeOpts = _store->writeOptions();
+}
 
 std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
   uint64_t begin, bool ignoreReadBarrier) {
@@ -229,17 +233,14 @@ std::unique_ptr<Cursor> RocksTxn::createCursor(
     _upperBound = rocksdb::Slice(_strUpperBound);
     readOpts.iterate_upper_bound = &_upperBound;
   }
-  readOpts.snapshot = _txn->GetSnapshot();
   // create iterator corresponding to chosen column family
   rocksdb::Iterator* iter;
-  if (column_family_num == ColumnFamilyNumber::ColumnFamily_Default) {
-    iter = _txn->GetIterator(readOpts);
-  } else if (column_family_num == ColumnFamilyNumber::ColumnFamily_Binlog) {
-    iter = _txn->GetIterator(readOpts, _store->getBinlogColumnFamilyHandle());
-  } else {
-    LOG(WARNING) << "can't create iterator";
-    return nullptr;
-  }
+  rocksdb::ColumnFamilyHandle* handle =
+    _store->getColumnFamilyHandle(column_family_num);
+
+  readOpts.snapshot = getSnapshot();
+  iter = getIterator(readOpts, handle);
+
   return std::unique_ptr<Cursor>(
     new RocksKVCursor(std::move(std::unique_ptr<rocksdb::Iterator>(iter))));
 }
@@ -258,8 +259,7 @@ Expected<uint64_t> RocksTxn::commit() {
     }
     _store->markCommitted(_txnId, binlogTxnId);
   });
-
-  if (_txn == nullptr) {
+  if (_txnMode != TxnMode::TXN_WB && _txn == nullptr) {
     return {ErrorCodes::ERR_OK, ""};
   }
 
@@ -306,9 +306,8 @@ Expected<uint64_t> RocksTxn::commit() {
 
     binlogTxnId = _txnId;
     // put binlog into binlog_column_family
-    auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(),
-                       key.encode(),
-                       val.encode(_replLogValues));
+    rocksdb::ColumnFamilyHandle* handle = _store->getBinlogColumnFamilyHandle();
+    auto s = put(handle, key.encode(), val.encode(_replLogValues));
     if (!s.ok()) {
       binlogTxnId = Transaction::TXNID_UNINITED;
       return _store->handleRocksdbError(s);
@@ -321,7 +320,7 @@ Expected<uint64_t> RocksTxn::commit() {
 
   TEST_SYNC_POINT("RocksTxn::commit()::1");
   TEST_SYNC_POINT("RocksTxn::commit()::2");
-  auto s = _txn->Commit();
+  auto s = txnCommit();
   if (s.ok()) {
     return _txnId;
   } else {
@@ -388,16 +387,13 @@ Expected<std::string> RocksTxn::getKV(const std::string& key) {
   // called before Put/Get. Snapshot Isolation was used in these conditions:
   //  1) ChunkMigrateSender::initTxn()
   //  2) ReplManager::supplyFullPsyncRoutine()
-  readOpts.snapshot = _txn->GetSnapshot();
+  readOpts.snapshot = getSnapshot();
 
   RESET_PERFCONTEXT();
   rocksdb::Status s;
-  if (RecordKey::decodeType(key) == RecordType::RT_BINLOG) {
-    s = _txn->Get(readOpts, _store->getBinlogColumnFamilyHandle(), key, &value);
-  } else {
-    s = _txn->Get(readOpts, key, &value);
-  }
-
+  rocksdb::ColumnFamilyHandle* handle =
+    _store->getColumnFamilyHandleByRecordType(RecordKey::decodeType(key));
+  s = get(readOpts, handle, key, &value);
   if (s.ok()) {
     return value;
   }
@@ -416,7 +412,7 @@ Status RocksTxn::setKV(const std::string& key,
 
   RESET_PERFCONTEXT();
   // put data into default column family
-  auto s = _txn->Put(key, val);
+  auto s = put(key, val);
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -447,8 +443,9 @@ Status RocksTxn::setKV(const std::string& key,
 Status RocksTxn::setKVWithoutBinlog(const std::string& key,
                                     const std::string& val) {
   RESET_PERFCONTEXT();
+  rocksdb::Status s;
   // put data into default column family
-  auto s = _txn->Put(key, val);
+  s = put(key, val);
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -461,12 +458,9 @@ Status RocksTxn::delKV(const std::string& key, const uint64_t ts) {
   }
   RESET_PERFCONTEXT();
   rocksdb::Status s;
-  if (RecordKey::decodeType(key) == RecordType::RT_BINLOG) {
-    s = _txn->Delete(_store->getBinlogColumnFamilyHandle(), key);
-  } else {
-    s = _txn->Delete(key);
-  }
-
+  rocksdb::ColumnFamilyHandle* handle =
+    _store->getColumnFamilyHandleByRecordType(RecordKey::decodeType(key));
+  s = del(handle, key);
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -562,17 +556,19 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
   if (!_replOnly) {
     return {ErrorCodes::ERR_INTERNAL, "txn is not replOnly or migrationOnly"};
   }
+  rocksdb::Status s;
+  rocksdb::ColumnFamilyHandle* handle = _store->getDataColumnFamilyHandle();
   RESET_PERFCONTEXT();
   switch (logEntry.getOp()) {
     case ReplOp::REPL_OP_SET: {
-      auto s = _txn->Put(logEntry.getOpKey(), logEntry.getOpValue());
+      s = put(handle, logEntry.getOpKey(), logEntry.getOpValue());
       if (!s.ok()) {
         return _store->handleRocksdbError(s);
       }
       break;
     }
     case ReplOp::REPL_OP_DEL: {
-      auto s = _txn->Delete(logEntry.getOpKey());
+      s = del(handle, logEntry.getOpKey());
       if (!s.ok()) {
         return _store->handleRocksdbError(s);
       }
@@ -585,10 +581,8 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
       INVARIANT_D(0);
     }
     case ReplOp::REPL_OP_DEL_RANGE: {
-      auto s =
-        _store->deleteRangeWithoutBinlog(_store->getDataColumnFamilyHandle(),
-                                         logEntry.getOpKey(),
-                                         logEntry.getOpValue());
+      auto s = _store->deleteRangeWithoutBinlog(
+        handle, logEntry.getOpKey(), logEntry.getOpValue());
       RET_IF_ERR(s);
       break;
     }
@@ -612,9 +606,9 @@ Status RocksTxn::setBinlogKV(uint64_t binlogId,
   // BTW, the txnid of logValue is different from _txnId. But it's ok.
   _store->setNextBinlogSeq(binlogId, this);
   INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
-
+  rocksdb::ColumnFamilyHandle* handle = _store->getBinlogColumnFamilyHandle();
   RESET_PERFCONTEXT();
-  auto s = _txn->Put(_store->getBinlogColumnFamilyHandle(), logKey, logValue);
+  auto s = put(handle, logKey, logValue);
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -634,8 +628,8 @@ Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
   INVARIANT_D(_binlogId != Transaction::TXNID_UNINITED);
   logkey.value().setBinlogId(_binlogId);
 
-  auto s = _txn->Put(
-    _store->getBinlogColumnFamilyHandle(), logkey.value().encode(), value);
+  rocksdb::ColumnFamilyHandle* handle = _store->getBinlogColumnFamilyHandle();
+  auto s = put(handle, logkey.value().encode(), value);
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -644,8 +638,8 @@ Status RocksTxn::setBinlogKV(const std::string& key, const std::string& value) {
 
 Status RocksTxn::delBinlog(const ReplLogRawV2& log) {
   RESET_PERFCONTEXT();
-  auto s =
-    _txn->Delete(_store->getBinlogColumnFamilyHandle(), log.getReplLogKey());
+  rocksdb::ColumnFamilyHandle* handle = _store->getBinlogColumnFamilyHandle();
+  auto s = del(handle, log.getReplLogKey());
   if (!s.ok()) {
     return _store->handleRocksdbError(s);
   }
@@ -668,6 +662,43 @@ void RocksTxn::setBinlogTime(uint64_t timestamp) {
   _binlogTimeSpov = timestamp > _binlogTimeSpov ? timestamp : _binlogTimeSpov;
 }
 
+rocksdb::Status RocksTxn::put(rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key,
+                              const std::string& val) {
+  return _txn->Put(columnFamily, key, val);
+}
+
+rocksdb::Status RocksTxn::put(const std::string& key, const std::string& val) {
+  rocksdb::ColumnFamilyHandle* columnFamily =
+    _store->getDataColumnFamilyHandle();
+  return put(columnFamily, key, val);
+}
+
+rocksdb::Status RocksTxn::get(const rocksdb::ReadOptions& options,
+                              rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key,
+                              std::string* value) {
+  return _txn->Get(options, columnFamily, key, value);
+}
+
+rocksdb::Status RocksTxn::del(rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key) {
+  return _txn->Delete(columnFamily, key);
+}
+
+rocksdb::Status RocksTxn::txnCommit() {
+  return _txn->Commit();
+}
+
+const rocksdb::Snapshot* RocksTxn::getSnapshot() {
+  return _txn->GetSnapshot();
+}
+
+rocksdb::Iterator* RocksTxn::getIterator(
+  rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily) {
+  return _txn->GetIterator(readOpts, columnFamily);
+}
+
 RocksTxn::~RocksTxn() {
   if (_done) {
     return;
@@ -687,7 +718,7 @@ RocksOptTxn::RocksOptTxn(RocksKVStore* store,
                          bool replOnly,
                          std::shared_ptr<tendisplus::BinlogObserver> ob,
                          Session* sess)
-  : RocksTxn(store, txnId, replOnly, ob, sess) {
+  : RocksTxn(store, txnId, replOnly, ob, sess, TxnMode::TXN_OPT) {
   // NOTE(deyukong): the rocks-layer's snapshot should be opened in
   // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
   // or, we are not able to guarantee the oplog order is the same as the
@@ -703,10 +734,6 @@ void RocksOptTxn::ensureTxn() {
   if (_txn != nullptr) {
     return;
   }
-  rocksdb::WriteOptions writeOpts;
-  writeOpts.disableWAL = _store->getCfg()->rocksDisableWAL;
-  writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
-
   rocksdb::OptimisticTransactionOptions txnOpts;
 
   // NOTE(deyukong): the optimistic_txn won't save a snapshot
@@ -724,7 +751,7 @@ void RocksOptTxn::ensureTxn() {
   if (!db) {
     LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
   }
-  _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
+  _txn.reset(db->BeginTransaction(_writeOpts, txnOpts));
   INVARIANT(_txn != nullptr);
 }
 
@@ -739,7 +766,7 @@ RocksPesTxn::RocksPesTxn(RocksKVStore* store,
                          bool replOnly,
                          std::shared_ptr<BinlogObserver> ob,
                          Session* sess)
-  : RocksTxn(store, txnId, replOnly, ob, sess) {
+  : RocksTxn(store, txnId, replOnly, ob, sess, TxnMode::TXN_PES) {
   // NOTE(deyukong): the rocks-layer's snapshot should be opened in
   // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
   // or, we are not able to guarantee the oplog order is the same as the
@@ -755,10 +782,6 @@ void RocksPesTxn::ensureTxn() {
   if (_txn != nullptr) {
     return;
   }
-  rocksdb::WriteOptions writeOpts;
-  writeOpts.disableWAL = _store->getCfg()->rocksDisableWAL;
-  writeOpts.sync = _store->getCfg()->rocksFlushLogAtTrxCommit;
-
   rocksdb::TransactionOptions txnOpts;
 
   // NOTE(deyukong): the txn won't set a snapshot automaticly.
@@ -772,8 +795,97 @@ void RocksPesTxn::ensureTxn() {
   if (!db) {
     LOG(FATAL) << "BUG: rocksKVStore underLayerDB nil";
   }
-  _txn.reset(db->BeginTransaction(writeOpts, txnOpts));
+  _txn.reset(db->BeginTransaction(_writeOpts, txnOpts));
   INVARIANT(_txn != nullptr);
+}
+
+RocksWBTxn::RocksWBTxn(RocksKVStore* store,
+                       uint64_t txnId,
+                       bool replOnly,
+                       std::shared_ptr<BinlogObserver> ob,
+                       Session* sess)
+  : RocksTxn(store, txnId, replOnly, ob, sess, TxnMode::TXN_WB) {
+  // NOTE(deyukong): the rocks-layer's snapshot should be opened in
+  // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
+  // or, we are not able to guarantee the oplog order is the same as the
+  // local commit,
+  // In other words, to the same key, a txn with greater id can be committed
+  // before a txn with smaller id, and they have no conflicts, it's wrong.
+  // so ensureTxn() should be done in RocksOptTxn's constructor
+  ensureTxn();
+  _writeBatch =
+    new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0, true);
+}
+
+RocksWBTxn::~RocksWBTxn() {
+  delete _writeBatch;
+}
+
+void RocksWBTxn::ensureTxn() {
+  INVARIANT(_txn == nullptr);
+  setTxnType(TxnMode::TXN_WB);
+  return;
+}
+
+void RocksWBTxn::SetSnapshot() {
+  INVARIANT(_txn == nullptr);
+  return;
+}
+
+Status RocksWBTxn::rollback() {
+  INVARIANT_D(!_done);
+  _done = true;
+
+  const auto guard = MakeGuard([this] {
+    _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
+  });
+  INVARIANT_D(_txn == nullptr);
+  getWriteBatch()->Clear();
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+rocksdb::Status RocksWBTxn::put(rocksdb::ColumnFamilyHandle* columnFamily,
+                                const std::string& key,
+                                const std::string& val) {
+  return _writeBatch->Put(columnFamily, key, val);
+}
+
+rocksdb::Status RocksWBTxn::put(const std::string& key,
+                                const std::string& val) {
+  rocksdb::ColumnFamilyHandle* columnFamily =
+    _store->getDataColumnFamilyHandle();
+  return put(columnFamily, key, val);
+}
+
+rocksdb::Status RocksWBTxn::get(const rocksdb::ReadOptions& options,
+                              rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key,
+                              std::string* value) {
+  // TODO(jingunli): ReadUncommited or ReadCommited ?
+  // s = _store->getBaseDB()->Get(readOpts, handle, key, &value);
+  return _writeBatch->GetFromBatchAndDB(
+    _store->getBaseDB(), options, columnFamily, key, value);
+}
+
+rocksdb::Status RocksWBTxn::del(rocksdb::ColumnFamilyHandle* columnFamily,
+                              const std::string& key) {
+  return _writeBatch->Delete(columnFamily, key);
+}
+
+rocksdb::Status RocksWBTxn::txnCommit() {
+  return _store->getBaseDB()->Write(_writeOpts, _writeBatch->GetWriteBatch());
+}
+
+const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
+  return _store->getSnapshot();
+}
+
+rocksdb::Iterator* RocksWBTxn::getIterator(
+  rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily) {
+  // rocksdb::Iterator* dbIter = _store->newIterator(readOpts, handle);
+  // TODO(jingunli): ReadUncommited or ReadCommited ?
+  // _writeBatch->NewIteratorWithBase(handle, dbIter);
+  return _store->newIterator(readOpts, columnFamily);
 }
 
 Status rocksdbOptionsSet(rocksdb::Options& options,
@@ -1278,7 +1390,7 @@ Status RocksKVStore::setMode(StoreMode mode) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
-RocksKVStore::TxnMode RocksKVStore::getTxnMode() const {
+TxnMode RocksKVStore::getTxnMode() const {
   return _txnMode;
 }
 
@@ -2290,8 +2402,12 @@ Expected<std::unique_ptr<Transaction>> RocksKVStore::createTransaction(
   // TODO(vinchen): should new RocksTxn out of mutex?
   if (_txnMode == TxnMode::TXN_OPT) {
     ret.reset(new RocksOptTxn(this, txnId, replOnly, _logOb, sess));
-  } else {
+  } else if (_txnMode == TxnMode::TXN_PES) {
     ret.reset(new RocksPesTxn(this, txnId, replOnly, _logOb, sess));
+  } else if (_txnMode == TxnMode::TXN_WB) {
+    ret.reset(new RocksWBTxn(this, txnId, replOnly, _logOb, sess));
+  } else {
+    INVARIANT_D(0);
   }
   addUnCommitedTxnInLock(txnId);
   return std::move(ret);
@@ -2514,7 +2630,7 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
   auto s = db->DeleteRange(
-    rocksdb::WriteOptions(), column_family, sBegin.ToString(), sEnd.ToString());
+    writeOptions(), column_family, sBegin.ToString(), sEnd.ToString());
   if (!s.ok()) {
     LOG(ERROR) << "deleteRange failed:" << s.ToString();
     return handleRocksdbError(s);
@@ -2817,6 +2933,16 @@ Status RocksKVStore::setOption(const std::string& option, int64_t value) {
   return {ErrorCodes::ERR_OK, ""};
 }
 
+rocksdb::Iterator* RocksKVStore::newIterator(
+  const rocksdb::ReadOptions& readOptions,
+  rocksdb::ColumnFamilyHandle* columnFamily) {
+  return getBaseDB()->NewIterator(readOptions, columnFamily);
+}
+
+const rocksdb::Snapshot* RocksKVStore::getSnapshot() {
+  return getBaseDB()->GetSnapshot();
+}
+
 Status RocksKVStore::setCompactOnDeletionCollectorFactory(
   const std::string& option, const std::string& value) {
   if (option.substr(0, 25) != "rocks.compaction_deletes_") {
@@ -2887,6 +3013,13 @@ int64_t RocksKVStore::getOption(const std::string& option) {
   } else {
     return -2;
   }
+}
+
+rocksdb::WriteOptions RocksKVStore::writeOptions() {
+  rocksdb::WriteOptions writeOpts;
+  writeOpts.disableWAL = getCfg()->rocksDisableWAL;
+  writeOpts.sync = getCfg()->rocksFlushLogAtTrxCommit;
+  return writeOpts;
 }
 
 void RocksKVStore::resetStatistics() {

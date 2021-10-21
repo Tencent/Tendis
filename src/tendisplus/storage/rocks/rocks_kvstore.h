@@ -20,6 +20,7 @@
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/storage/kvstore.h"
@@ -30,6 +31,12 @@ class RocksKVStore;
 class RocksdbEnv;
 class BackgroundErrorListener;
 
+enum class TxnMode {
+  TXN_OPT = 0,
+  TXN_PES = 1,
+  TXN_WB = 2,
+};
+
 class RocksTxn : public Transaction {
  public:
   RocksTxn(RocksKVStore* store,
@@ -37,6 +44,7 @@ class RocksTxn : public Transaction {
            bool replOnly,
            std::shared_ptr<BinlogObserver> logob,
            Session* sess,
+           TxnMode txnMode = TxnMode::TXN_WB,
            uint64_t binlogId = Transaction::TXNID_UNINITED,
            uint32_t chunkId = Transaction::CHUNKID_UNINITED);
   RocksTxn(const RocksTxn&) = delete;
@@ -59,7 +67,7 @@ class RocksTxn : public Transaction {
   std::unique_ptr<BinlogCursor> createBinlogCursor() final;
 
   Expected<uint64_t> commit() final;
-  Status rollback() final;
+  virtual Status rollback();
   // getKV: get data from chosen column family
   Expected<std::string> getKV(const std::string& key) final;
   Status setKV(const std::string& key,
@@ -103,6 +111,27 @@ class RocksTxn : public Transaction {
   const std::unique_ptr<rocksdb::Transaction>& getRocksdbTxn() const {
     return _txn;
   }
+  void setTxnType(TxnMode type) {
+    _txnMode = type;
+  }
+
+
+  // Transaction API
+  // put data to default column family
+  virtual rocksdb::Status put(const std::string& key, const std::string& val);
+  virtual rocksdb::Status put(rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key,
+                      const std::string& val);
+  virtual rocksdb::Status get(const rocksdb::ReadOptions& options,
+                      rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key,
+                      std::string* value);
+  virtual rocksdb::Status del(rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key);
+  virtual rocksdb::Status txnCommit();
+  virtual const rocksdb::Snapshot* getSnapshot();
+  virtual rocksdb::Iterator* getIterator(
+    rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily);
 
  protected:
   virtual void ensureTxn() {}
@@ -112,6 +141,10 @@ class RocksTxn : public Transaction {
   uint64_t _txnId;
   uint64_t _binlogId;
   uint32_t _chunkId;
+
+  std::atomic<TxnMode> _txnMode{TxnMode::TXN_PES};
+  rocksdb::WriteOptions _writeOpts;
+
   // NOTE(deyukong): I believe rocksdb does clean job in txn's destructor
   std::unique_ptr<rocksdb::Transaction> _txn;
   string _strUpperBound;
@@ -177,6 +210,48 @@ class RocksPesTxn : public RocksTxn {
   void SetSnapshot() final;
 };
 
+class RocksWBTxn : public RocksTxn {
+ public:
+  RocksWBTxn(RocksKVStore* store,
+             uint64_t txnId,
+             bool replOnly,
+             std::shared_ptr<BinlogObserver> logob,
+             Session* sess);
+  RocksWBTxn(const RocksWBTxn&) = delete;
+  RocksWBTxn(RocksWBTxn&&) = delete;
+  virtual ~RocksWBTxn();
+
+ protected:
+  void ensureTxn() final;
+  void SetSnapshot() final;
+
+  rocksdb::WriteBatchWithIndex* getWriteBatch() {
+    return _writeBatch;
+  }
+
+  // Transaction API
+  // put data into default column family
+  rocksdb::Status put(const std::string& key, const std::string& val) final;
+  rocksdb::Status put(rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key,
+                      const std::string& val) final;
+  rocksdb::Status get(const rocksdb::ReadOptions& options,
+                      rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key,
+                      std::string* value) final;
+  rocksdb::Status del(rocksdb::ColumnFamilyHandle* columnFamily,
+                      const std::string& key) final;
+  rocksdb::Status txnCommit() final;
+  Status rollback() final;
+  const rocksdb::Snapshot* getSnapshot() final;
+  rocksdb::Iterator* getIterator(
+    rocksdb::ReadOptions readOpts,
+    rocksdb::ColumnFamilyHandle* columnFamily) final;
+
+ private:
+  rocksdb::WriteBatchWithIndex* _writeBatch;
+};
+
 class RocksKVCursor : public Cursor {
  public:
   explicit RocksKVCursor(std::unique_ptr<rocksdb::Iterator>);
@@ -201,12 +276,6 @@ typedef struct sstMetaData {
 #define ROCKS_FLAGS_BINLOGVERSION_CHANGED (1 << 0)
 
 class RocksKVStore : public KVStore {
- public:
-  enum class TxnMode {
-    TXN_OPT,
-    TXN_PES,
-  };
-
  public:
   RocksKVStore(const std::string& id,
                const std::shared_ptr<ServerParams>& cfg,
@@ -360,6 +429,9 @@ class RocksKVStore : public KVStore {
   Status setCompactOnDeletionCollectorFactory(
     const std::string& option, const std::string& value) override;
   int64_t getOption(const std::string& option) override;
+  const rocksdb::Snapshot* getSnapshot();
+  rocksdb::Iterator* newIterator(const rocksdb::ReadOptions& readOptions,
+                                 rocksdb::ColumnFamilyHandle* columnFamily);
 
   Expected<VersionMeta> getVersionMeta() override;
   Expected<VersionMeta> getVersionMeta(const std::string& name) override;
@@ -393,6 +465,15 @@ class RocksKVStore : public KVStore {
     }
   }
 
+  rocksdb::ColumnFamilyHandle* getColumnFamilyHandleByRecordType(
+    RecordType type) {
+    if (type == RecordType::RT_BINLOG) {
+      return getBinlogColumnFamilyHandle();
+    } else {
+      return getDataColumnFamilyHandle();
+    }
+  }
+
   ColumnFamilyNumber getBinlogColumnFamilyNumber() {
     if (_cfg->binlogUsingDefaultCF == true) {
       return ColumnFamilyNumber::ColumnFamily_Default;
@@ -400,9 +481,10 @@ class RocksKVStore : public KVStore {
       return ColumnFamilyNumber::ColumnFamily_Binlog;
     }
   }
+  rocksdb::DB* getBaseDB() const;
+  rocksdb::WriteOptions writeOptions();
 
  private:
-  rocksdb::DB* getBaseDB() const;
   void addUnCommitedTxnInLock(uint64_t txnId);
   void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
   rocksdb::Options options();

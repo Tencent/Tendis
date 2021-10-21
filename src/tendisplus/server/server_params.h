@@ -490,6 +490,7 @@ class ServerParams {
   uint32_t rocksCompactOnDeletionWindow = 0;
   uint32_t rocksCompactOnDeletionTrigger = 0;
   double rocksCompactOnDeletionRatio = 0;
+  uint32_t rocksTransactionMode = 2;
 
   // WriteOptions
   bool rocksDisableWAL = false;
