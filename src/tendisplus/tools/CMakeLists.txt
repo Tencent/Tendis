@@ -1,8 +1,6 @@
 add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
 
-set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/tendisplus/tools\;cp ${ROCKSDB_DIR}/rocksdb/tools/ldb* .\; git am -s 0001-fix-ldb-tools.patch")
-message("RocksDB ldb tools git patch, we apply add-property-rocksdb.levelstatsex-in-rocksdb ${patchCommand}")
-execute_process(COMMAND bash "-c" ${patchCommand})
+# When update RocksDB Version, should update fix-ldb-tools.patch
 
 add_executable(ldb_tendis ldb.cc ldb_cmd.cc ldb_cmd_tendis.cc ldb_tool.cc)
 

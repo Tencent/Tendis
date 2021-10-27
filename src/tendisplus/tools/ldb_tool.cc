@@ -6,7 +6,7 @@
 #ifndef ROCKSDB_LITE
 #include "rocksdb/ldb_tool.h"
 #include "rocksdb/utilities/ldb_cmd.h"
-#include "tools/ldb_cmd_impl.h"
+#include "./ldb_cmd_impl.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -71,6 +71,7 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
   GetCommand::Help(ret);
   BatchPutCommand::Help(ret);
   ScanCommand::Help(ret);
+  TScanCommand::Help(ret);
   DeleteCommand::Help(ret);
   DeleteRangeCommand::Help(ret);
   DBQuerierCommand::Help(ret);
