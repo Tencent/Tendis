@@ -449,7 +449,7 @@ void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
     }
   }
 
-  // wait every node gets a different config epoch 
+  // wait every node gets a different config epoch
   std::set<int> epochs;
   while (epochs.size() != servers.size()) {
     for (auto server : servers) {
