@@ -55,6 +55,8 @@ func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
         log.Fatalf("cluster countkeysinslot failed:%v %s", err, r)
         return
     }
+    // role is slave contain "fullsync_succ_times=*"
+    log.Infof("check FullsyncSuccTimes r:%s", r)
     arr:=strings.Split(r, "fullsync_succ_times=")
     arr2:=strings.Split(arr[1],",");
     f_times,err:=strconv.Atoi(arr2[0])
@@ -64,7 +66,9 @@ func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
     log.Infof("check FullsyncSuccTimes end Path:%s fullsync_succ_times:%d", m.Path, num)
 }
 
-func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
+func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
+    failoverQuickly bool) {
+    log.Infof("testCluster begin failoverQuickly:%s", failoverQuickly)
     var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum)
     //nodeInfoArray
 
@@ -73,6 +77,13 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // 100w need about 70 seconds,
     // although redis-benchmark quit about 10 seconds, predixy still need 70 seconds to add data.
     num := 1000000
+    sleepInter := 32 // more than clusterNodeTimeout*2
+    if failoverQuickly {
+        num = 10000
+        // if sleep less than clusterNodeTimeout/2, _mfMasterOffset maybe 0
+        sleepInter = 8;
+    }
+    log.Infof("failoverQuickly:%d num:%d sleepInter:%d", failoverQuickly, num, sleepInter)
     var channel chan int = make(chan int)
     go addDataInCoroutine(&predixy.RedisServer, num, "abcd", channel)
 
@@ -92,7 +103,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
     log.Infof("cluster failover sucess,port:%d Path:%v", failoverNodeSlave.Port, failoverNodeSlave.Path)
 
-    time.Sleep(32 * time.Second)
+    time.Sleep(time.Duration(sleepInter) * time.Second)
     checkFullsyncSuccTimes(&(*servers)[0], 0)
 
     // failover second time
@@ -108,7 +119,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     }
     log.Infof("cluster failover sucess,port:%d Path:%v", failoverNodeMaster.Port, failoverNodeMaster.Path)
 
-    time.Sleep(32 * time.Second)
+    time.Sleep(time.Duration(sleepInter) * time.Second)
     checkFullsyncSuccTimes(&(*servers)[clusterNodeNum], 1)
 
     // failover third time
@@ -147,26 +158,41 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
     // wait predixy add data end
     time.Sleep(50 * time.Second)
 
-    checkFullsyncSuccTimes(&(*servers)[0], 0)
+    oldMasterCurRole := "myself,slave"
+    oldSlaveCurRole := "myself,master"
+    oldMasterIncrSyncTimes := 2
+    oldSlaveIncrSyncTimes := 1
+    if !failoverQuickly {
+        // need role be slave
+        checkFullsyncSuccTimes(&(*servers)[0], 0)
+    } else {
+        // sleep less than 2*clusterNodeTimeout,so the third time failover will failed.
+        // "Failover auth denied to * can't vote about this master before * milliseconds"
+        oldMasterCurRole = "myself,master"
+        oldSlaveCurRole = "myself,slave"
+        oldMasterIncrSyncTimes = 1
+    }
+    log.Infof(`failoverQuickly:%d oldMasterCurRole:%s oldSlaveCurRole:%s
+        oldMasterIncrSyncTimes:%d oldSlaveIncrSyncTimes:%d`,
+        failoverQuickly, oldMasterCurRole, oldSlaveCurRole,
+        oldMasterIncrSyncTimes, oldSlaveIncrSyncTimes)
 
     // check role
-    // old master change to slave
     nodes := getClusterNodes(&(*servers)[0]);
-    if !strings.Contains(nodes, "myself,slave") {
+    if !strings.Contains(nodes, oldMasterCurRole) {
         log.Fatalf("check role failed, nodes:%s", nodes)
         return
     }
-    // old slave change to master
     nodes = getClusterNodes(&(*servers)[clusterNodeNum]);
-    if !strings.Contains(nodes, "myself,master") {
+    if !strings.Contains(nodes, oldSlaveCurRole) {
         log.Fatalf("check role failed, nodes:%s", nodes)
         return
     }
     log.Infof("check role end")
 
     // check incrSync LOG
-    checkBinlog(servers, 0, 2) // incrSync 2 times
-    checkBinlog(servers, clusterNodeNum, 1)  // incrSync 1 times
+    checkBinlog(servers, 0, oldMasterIncrSyncTimes)
+    checkBinlog(servers, clusterNodeNum, oldSlaveIncrSyncTimes)
     log.Infof("check incrSync log end")
 
     // check dbsize
@@ -190,6 +216,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 
 func main(){
     flag.Parse()
-    testCluster(*clusterIp, 45200, 3)
+    testCluster(*clusterIp, 45200, 3, false)
+    testCluster(*clusterIp, 45300, 3, true)
     log.Infof("clustertestFilover.go passed.")
 }
