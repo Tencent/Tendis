@@ -1,4 +1,4 @@
-#Cluster test suite. Copyright (C) 2014 Salvatore Sanfilippo antirez@gmail.com
+# Cluster test suite. Copyright (C) 2014 Salvatore Sanfilippo antirez@gmail.com
 # This software is released under the BSD License. See the COPYING file for
 # more information.
 
@@ -8,11 +8,12 @@ source ../instances.tcl
 source ../../support/cluster.tcl ; # Redis Cluster client.
 
 set ::instances_count 20 ; # How many instances we use at max.
-set ::tendis_conf ../../assets/tendisplus.conf ;
+set ::tendis_conf "../../assets/tendisplus.conf"
 
 proc main {} {
     parse_options
     spawn_instance redis $::redis_base_port $::instances_count {
+        "cluster-enabled yes"
     }
     run_tests
     cleanup

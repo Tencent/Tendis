@@ -354,6 +354,73 @@ class DbEmptyCommand : public Command {
   }
 } dbEmptyCmd;
 
+// just for test case in *.tcl
+#ifdef TENDIS_DEBUG
+class RoleCommand : public Command {
+ public:
+  RoleCommand() : Command("role", "rF") {}
+
+  ssize_t arity() const {
+    return 1;
+  }
+
+  int32_t firstkey() const {
+    return 0;
+  }
+
+  int32_t lastkey() const {
+    return 0;
+  }
+
+  int32_t keystep() const {
+    return 0;
+  }
+
+  Expected<std::string> run(Session* sess) final {
+    stringstream ss;
+    if (sess->getServerEntry()->isClusterEnabled()) {
+      auto cn = sess->getServerEntry()
+                  ->getClusterMgr()
+                  ->getClusterState()
+                  ->getMyselfNode();
+      if (cn->nodeIsMaster()) {
+        Command::fmtMultiBulkLen(ss, 3);
+        Command::fmtBulk(ss, "master");
+        Command::fmtLongLong(ss, 0);  // todo(Raffertyyu): add offset
+        const auto& pSlaves = cn->getSlaves();
+        RET_IF_ERR_EXPECTED(pSlaves);
+        auto slaves = pSlaves.value();
+        Command::fmtMultiBulkLen(ss, slaves.size());
+        for (const auto& s : slaves) {
+          Command::fmtMultiBulkLen(ss, 3);
+          Command::fmtBulk(ss, s->getNodeIp());
+          Command::fmtLongLong(ss, s->getPort());
+          Command::fmtLongLong(ss, 0);
+        }
+      } else {
+        Command::fmtMultiBulkLen(ss, 5);
+        Command::fmtBulk(ss, "slave");
+        auto master = cn->getMaster();
+        Command::fmtBulk(ss, master->getNodeIp());
+        Command::fmtLongLong(ss, master->getPort());
+        auto connectState = master->getConnectState();
+        if (connectState == ConnectState::CONNECTED) {
+          Command::fmtBulk(ss, "connected");
+        } else {
+          Command::fmtBulk(ss, "disconnect");
+        }
+        Command::fmtLongLong(ss, 0);
+      }
+    } else {
+      Command::fmtMultiBulkLen(ss, 3);
+      Command::fmtBulk(ss, "master");
+      Command::fmtLongLong(ss, 0);
+      Command::fmtMultiBulkLen(ss, 0);
+    }
+    return ss.str();
+  }
+} roleCmd;
+#endif
 
 class EchoCommand : public Command {
  public:

@@ -644,7 +644,8 @@ bool ReplManager::isSlaveFullSyncDone() {
       return false;
     }
     auto rstate = _syncMeta[i]->replState;
-    if (rstate != ReplState::REPL_CONNECTED) {
+    if (rstate != ReplState::REPL_CONNECTED &&
+        rstate != ReplState::REPL_ERR) {
       return false;
     }
   }

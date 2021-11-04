@@ -932,7 +932,7 @@ void ClusterState::clusterUpdateSlotsConfigWith(
 
   bool needReconfigure;
   bool masterNotFail;
-  bool slaveIsNotFullSync;
+  bool slaveFullSyncDone;
   {
     std::lock_guard<myMutex> lk(_mutex);
     CNodePtr myself = getMyselfNode();
@@ -971,10 +971,8 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     masterNotFail =
       (!curmaster->nodeFailed()) && myself->nodeIsSlave() ? true : false;
     /* NOTE(wayenchen) judge if the slave is on fullsync */
-    slaveIsNotFullSync = (myself->nodeIsSlave() && masterNotFail &&
-                          _server->getReplManager()->isSlaveFullSyncDone())
-      ? true
-      : false;
+    slaveFullSyncDone = (myself->nodeIsSlave() && masterNotFail &&
+                         _server->getReplManager()->isSlaveFullSyncDone());
   }
   // NOTE(takenliu) save and update once at the last.
   clusterUpdateState();
@@ -1001,22 +999,14 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     }
     /* NOTE(wayenchen) slave should not full sync when set new master*/
     if (!inMigrateTask &&
-        ((slaveIsNotFullSync || !masterNotFail) || isMyselfMaster())) {
+        ((slaveFullSyncDone || !masterNotFail) ||
+         isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
                    << "fail:" << s.toString();
       }
     }
-  } else if (dirty_slots_count && !inMigrateTask) {
-    /* NOTE(wayenchen): use gc to delete slots */
-    /*
-    auto s = _server->getGcMgr()->delGarbage();
-    if (!s.ok()) {
-      LOG(ERROR) << "delete dirty slos fail" << s.toString();
-    }
-    LOG(INFO) << "finish del key in slot, num is:" << dirty_slots_count;
-    */
   }
 }
 
@@ -2459,12 +2449,10 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
     /* Step 1: Don't migrate if the cluster state is not ok. */
     if (_state != ClusterHealth::CLUSTER_OK)
       return;
-
     /* Step 2: Don't migrate if my master will not be left with at least
      *         'migration-barrier' slaves after my migration. */
     if (mymaster == nullptr)
       return;
-
     auto expSlaveList = mymaster->getSlaves();
     if (expSlaveList.ok()) {
       slaveList = expSlaveList.value();
@@ -2474,7 +2462,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
         }
       }
     }
-
     if (okslaves <= _server->getParams()->clusterMigrationBarrier)
       return;
 
@@ -4566,7 +4553,9 @@ void ClusterState::cronCheckFailState() {
      * the orphaned masters. Note that it does not make sense to try
      * a migration if there is no master with at least *two* working
      * slaves. */
-    bool needSlaveChange = _server->getParams()->slaveMigarateEnabled;
+    // for compatibility
+    bool needSlaveChange = _server->getParams()->slaveMigarateEnabled ||
+                           _server->getParams()->clusterAllowReplicaMigration;
     if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves &&
         needSlaveChange)
       clusterHandleSlaveMigration(max_slaves);

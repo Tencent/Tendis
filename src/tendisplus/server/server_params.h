@@ -440,7 +440,7 @@ class ServerParams {
   bool binlogUsingDefaultCF = false;
 
   // If false, Tendis don't save binlog when write data. Without Binlog, Tendis
-  // write will faster.  
+  // write will faster.
   // NOT SUPPORTED Replication and Cluster Replicate.
   // Read the configuration through 'config get binlog-enabled'
   bool binlogEnabled = true;
@@ -448,7 +448,7 @@ class ServerParams {
   // If false, Tendis do not dump binlog to 'dumpPath'. binlog-save-logs
   // Read the configuration through 'config get binlog-save-logs'
   bool binlogSaveLogs = true;
-  
+
   uint32_t netIoThreadNum = 0;
   uint32_t executorThreadNum = 0;
   uint32_t executorWorkPoolSize = 0;
@@ -508,6 +508,7 @@ class ServerParams {
   bool clusterEnabled = false;
   bool domainEnabled = false;
   bool slaveMigarateEnabled = false;
+  bool clusterAllowReplicaMigration = false;
   bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;

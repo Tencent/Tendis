@@ -18,12 +18,9 @@ test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
 }
 
-
-
 test "Instance #5 synced with the master" {
-    wait_for_condition 100 500 {
+    wait_for_condition 1000 50 {
         [RI 5 master_link_status] eq {up}
-
     } else {
         fail "Instance #5 master link status is not up"
     }
@@ -35,8 +32,6 @@ test "Killing one master node" {
     kill_instance redis 0
 }
 
-set TIME_start [clock clicks -milliseconds]
-
 test "Wait for failover" {
     wait_for_condition 1000 50 {
         [CI 1 cluster_current_epoch] > $current_epoch
@@ -44,11 +39,6 @@ test "Wait for failover" {
         fail "No failover detected"
     }
 }
-
-set TIME_taken [expr [clock clicks -milliseconds] - $TIME_start]
-
-puts $TIME_taken
-
 
 test "Cluster should eventually be up again" {
     assert_cluster_state ok

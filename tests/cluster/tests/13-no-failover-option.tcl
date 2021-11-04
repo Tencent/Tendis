@@ -18,7 +18,7 @@ test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
 
     # Configure it to never failover the master
-    R 5 CONFIG SET cluster-slave-no-failover true
+    R 5 CONFIG SET cluster-slave-no-failover yes
 }
 
 test "Instance #5 synced with the master" {
