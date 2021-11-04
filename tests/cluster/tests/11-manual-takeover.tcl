@@ -16,17 +16,10 @@ test "Cluster is writable" {
 
 test "Killing majority of master nodes" {
     kill_instance redis 0
-    kill_instance redis 1
-    kill_instance redis 2
-}
-
-test "Cluster should eventually be down" {
-    assert_cluster_state fail
-}
-
-test "Use takeover to bring slaves back" {
     R 5 cluster failover takeover
+    kill_instance redis 1
     R 6 cluster failover takeover
+    kill_instance redis 2
     R 7 cluster failover takeover
 }
 
@@ -45,7 +38,6 @@ test "Instance #5, #6, #7 are now masters" {
 }
 
 test "Restarting the previously killed master nodes" {
-    after 2000
     restart_instance redis 0
     restart_instance redis 1
     restart_instance redis 2

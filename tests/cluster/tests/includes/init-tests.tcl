@@ -1,6 +1,5 @@
 # Initialization tests -- most units will start including this.
 
- 
 test "(init) Restart killed instances" {
     foreach type {redis} {
         foreach_${type}_id id {
@@ -24,28 +23,22 @@ test "Cluster nodes are reachable" {
             fail "Node #$id keeps replying '$err' to PING."
         }
     }
-
 }
-
 
 test "Cluster nodes hard reset" {
     foreach_redis_id id {
         set node_timeout 3000
         puts -nonewline "$id "
-
         catch {R $id flushall} ; # May fail for readonly slaves.
-
         R $id cluster reset hard
-   
         R $id cluster set-config-epoch [expr {$id+1}]
- 
         R $id config set cluster-node-timeout $node_timeout
         R $id config set cluster-slave-validity-factor 10
-      #  R $id config rewrite
+        # R $id config rewrite
     }
 }
 
-test "Cluster Join and auto-discovery test" {   
+test "Cluster Join and auto-discovery test" {
     # Join node 0 with 1, 1 with 2, ... and so forth.
     # If auto-discovery works all nodes will know every other node
     # eventually.

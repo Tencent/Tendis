@@ -14,28 +14,13 @@ test "Cluster is up" {
 }
 
 test "The first master has actually two slaves" {
-   # assert {[llength [lindex [R 0 role] 2]] == 2}
-    wait_for_condition 1000 50 {
-        [string match {*2*} [RI 0 connected_slaves]]
-    } else {
-        fail "Slave of node 5 is not ok"
-    }   
+    assert {[llength [lindex [R 0 role] 2]] == 2}
 }
 
 test {Slaves of #0 are instance #5 and #10 as expected} {
     set port0 [get_instance_attrib redis 0 port]
-    #assert {[lindex [R 5 role] 2] == $port0}
-    #assert {[lindex [R 10 role] 2] == $port0}
-    wait_for_condition 1000 50 {
-            [string match {*30000*} [RI 5 master_port]]
-    } else {
-            fail "Slave of node 5 is not ok"
-    }  
-    wait_for_condition 1000 50 {
-            [string match {*30000*} [RI 10 master_port]]
-    } else {
-            fail "Slave of node 10 is not ok"
-    }      
+    assert {[lindex [R 5 role] 2] == $port0}
+    assert {[lindex [R 10 role] 2] == $port0}
 }
 
 test "Instance #5 and #10 synced with the master" {
@@ -50,12 +35,10 @@ test "Instance #5 and #10 synced with the master" {
 set cluster [redis_cluster 127.0.0.1:[get_instance_attrib redis 0 port]]
 
 test "Slaves are both able to receive and acknowledge writes" {
-    wait_for_condition 1000 50 {
-        [RI 0 connected_slaves] ==2        
-    } else {
-        fail "Master #$id has no replicas"
-    }  
-  #  assert {[R 0 wait 2 60000] == 2}
+    for {set j 0} {$j < 100} {incr j} {
+        $cluster set $j $j
+    }
+    after 30000
 }
 
 test "Write data while slave #10 is paused and can't receive it" {
@@ -66,24 +49,27 @@ test "Write data while slave #10 is paused and can't receive it" {
     # R 10 client kill 127.0.0.1:$port0
     # R 10 deferred 1
     # R 10 exec
-    
     R 10 deferred 1
-    R 10 tendisadmin sleep 20
-    # R 10 client kill 127.0.0.1:$port0
+    R 10 tendisadmin sleep 80
 
+    # Write some data the slave can't receive.
     for {set j 0} {$j < 100} {incr j} {
         $cluster set $j $j
     }
-    
-    set port0 [get_instance_attrib redis 0 port]
-    exec redis-cli -p $port0 tendisadmin sleep 2000 > /dev/null 2> /dev/null & 
 
+    # Prevent the master from accepting new slaves.
+    # Use a large pause value since we'll kill it anyway.
+    # R 0 CLIENT PAUSE 60000
+    R 0 deferred 1
+    R 0 tendisadmin sleep 30
+
+    # Wait for the slave to return available again
     R 10 deferred 0
     assert {[R 10 read] eq {OK}}
 
+    # Kill the master so that a reconnection will not be possible.
     kill_instance redis 0
-}   
-
+}
 
 test "Wait for instance #5 (and not #10) to turn into a master" {
     wait_for_condition 1000 50 {
@@ -103,10 +89,10 @@ test "Cluster should eventually be up again" {
 
 test "Node #10 should eventually replicate node #5" {
     set port5 [get_instance_attrib redis 5 port]
-
     wait_for_condition 1000 50 {
-            [string match {*30005*} [RI 10 master_port]]
+        ([lindex [R 10 role] 2] == $port5) &&
+        ([lindex [R 10 role] 3] eq {connected})
     } else {
-            fail "#10 didn't became slave of #5"
-    }  
+        fail "#10 didn't became slave of #5"
+    }
 }

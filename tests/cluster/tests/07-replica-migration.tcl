@@ -18,7 +18,7 @@ test "Each master should have two replicas attached" {
     foreach_redis_id id {
         if {$id < 5} {
             wait_for_condition 1000 50 {
-                [string match {*2*} [RI 0 connected_slaves]]
+                [llength [lindex [R 0 role] 2]] == 2
             } else {
                 fail "Master #$id does not have 2 slaves as expected"
             }
@@ -31,14 +31,14 @@ test "Killing all the slaves of master #0 and #1" {
     kill_instance redis 10
     kill_instance redis 6
     kill_instance redis 11
-    after 20000
+    after 4000
 }
 
 foreach_redis_id id {
-    if {$id < 5 } {
+    if {$id < 5} {
         test "Master #$id should have at least one replica" {
-            wait_for_condition 2000 50 {
-                [RI $id connected_slaves] >= 1
+            wait_for_condition 1000 50 {
+                [llength [lindex [R $id role] 2]] >= 1
             } else {
                 fail "Master #$id has no replicas"
             }
@@ -46,7 +46,6 @@ foreach_redis_id id {
     }
 }
 
-return
 # Now test the migration to a master which used to be a slave, after
 # a failver.
 
@@ -97,7 +96,7 @@ test "Instance 12 is now a master without slaves" {
 
 test "Master #12 should get at least one migrated replica" {
     wait_for_condition 1000 50 {
-         [RI 12 connected_slaves] >= 1
+        [llength [lindex [R 12 role] 2]] >= 1
     } else {
         fail "Master #12 has no replicas"
     }

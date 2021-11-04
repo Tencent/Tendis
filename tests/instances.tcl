@@ -62,7 +62,6 @@ proc exec_instance {type dirname cfgfile} {
         } else {
             set pid [exec ../../../src/${prgname} $cfgfile 2>> $errfile &]
         }
-        
     }
     return $pid
 }
@@ -79,6 +78,7 @@ proc spawn_instance {type base_port count {conf {}} {base_conf_file ""}} {
         catch {exec rm -rf $dirname}
         file mkdir $dirname
         file mkdir $dirname/db
+        file mkdir $dirname/log
 
         # Write the instance config file.
         set cfgfile [file join $dirname tendisplus.conf]
@@ -224,14 +224,17 @@ proc stop_instance pid {
     # Node might have been stopped in the test
     catch {exec kill -SIGCONT $pid}
     if {$::valgrind} {
-        set max_wait 60000
+        set max_wait 120000
     } else {
         set max_wait 10000
     }
     while {[is_alive $pid]} {
         incr wait 10
 
-        if {$wait >= $max_wait} {
+        if {$wait == $max_wait} {
+            puts "Forcing process $pid to crash..."
+            catch {exec kill -SEGV $pid}
+        } elseif {$wait >= $max_wait * 2} {
             puts "Forcing process $pid to exit..."
             catch {exec kill -KILL $pid}
         } elseif {$wait % 1000 == 0} {
@@ -248,7 +251,7 @@ proc cleanup {} {
         puts "killing stale instance $pid"
         stop_instance $pid
     }
-    # log_crashes
+    log_crashes
     if {$::dont_clean} {
         return
     }
@@ -476,7 +479,7 @@ proc run_tests {} {
 
 # Print a message and exists with 0 / 1 according to zero or more failures.
 proc end_tests {} {
-    if {$::failed == 0} {
+    if {$::failed == 0 } {
         puts "GOOD! No errors."
         exit 0
     } else {
@@ -625,7 +628,7 @@ proc kill_instance {type id} {
 
     stop_instance $pid
     set_instance_attrib $type $id pid -1
-   # set_instance_attrib $type $id link you_tried_to_talk_with_killed_instance
+    # set_instance_attrib $type $id link you_tried_to_talk_with_killed_instance
 
     # Remove the PID from the list of pids to kill at exit.
     set ::pids [lsearch -all -inline -not -exact $::pids $pid]
@@ -652,18 +655,19 @@ proc instance_is_killed {type id} {
 
 # Restart an instance previously killed by kill_instance
 proc restart_instance {type id} {
-
     set dirname "tendisplus_${id}"
     set cfgfile [file join $dirname tendisplus.conf]
     set port [get_instance_attrib $type $id port]
 
+    # Execute the instance with its old setup and append the new pid
+    # file for cleanup.
     set pidfile $dirname/tendisplus.pid
     set prgname tendisplus
     set stdout [format "%s/%s" $dirname "stdout"]
     set stderr [format "%s/%s" $dirname "stderr"]
     exec ../../../build/bin/tendisplus $cfgfile > $stdout 2> $stderr &
     # find out the pid
-        
+
     after 1000
     wait_for_condition 100 500 {
         [file exists $pidfile] == 1

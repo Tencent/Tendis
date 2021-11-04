@@ -506,8 +506,8 @@ ServerParams::ServerParams() {
     "aof-enabled", aofEnabled, aofEnabledCheck, nullptr, 0, INT_MAX, true);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("aof-psync-num", aofPsyncNum);
 
-  //REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
-  //                                slaveMigarateEnabled);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("slave-migrate-enabled",
+                                  slaveMigarateEnabled);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("migrate-gc-enabled", enableGcInMigate);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("replicate-fix-enabled",
                                    replicateFixEnable);
@@ -540,7 +540,7 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-slave-validity-factor",
                                   clusterSlaveValidityFactor);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("cluster-allow-replica-migration",
-                                  slaveMigarateEnabled);
+                                  clusterAllowReplicaMigration);
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("force-recovery", forceRecovery);
 

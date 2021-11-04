@@ -29,12 +29,12 @@ test {Slaves of #0 are instance #1 and #2 as expected} {
             [string match *$port0* [RI 1 master_port]]
     } else {
             fail "Slave of node 1 is not ok"
-    }  
+    }
     wait_for_condition 1000 50 {
             [string match *$port0* [RI 2 master_port]]
     } else {
             fail "Slave of node 2 is not ok"
-    }      
+    }
 }
 
 test "Instance #1 #2 synced with the master" {
@@ -51,18 +51,18 @@ test "Instance #1 #2 synced with the master" {
 }
 
 test "slave can't be arbiter node" {
-    catch {R 1 cluster asarbiter} err    
+    catch {R 1 cluster asarbiter} err
     assert_equal $err {ERR:18,msg:Only master can became arbiter.}
 }
 
 set cluster [redis_cluster 127.0.0.1:[get_instance_attrib redis 0 port]]
 
 test "only empty node can be arbiter" {
-    catch {R 0 cluster asarbiter} err    
+    catch {R 0 cluster asarbiter} err
     assert_equal $err {ERR:18,msg:To set an arbiter, the node must be empty.}
 }
 
-#send importing command from #0 to #4 
+#send importing command from #0 to #4
 test {cluster setslot importing <target_id> <slot>} {
     set source [dict get [get_myself 0] id]
     catch {R 4 cluster setslot importing $source 1} err
@@ -98,7 +98,7 @@ test "Write data and kill master #0 and make sure that slave #1 switch to be new
     }
 
     # slave #2 not failover
-    R 2 CONFIG SET cluster-slave-no-failover true
+    R 2 CONFIG SET cluster-slave-no-failover yes
 
     # Kill the master so that a reconnection will not be possible.
     kill_instance redis 0
@@ -110,7 +110,7 @@ test "Wait for instance #1 (and not #2) to turn into a master" {
     } else {
         fail "No failover detected"
     }
-    R 2 CONFIG SET cluster-slave-no-failover false
+    R 2 CONFIG SET cluster-slave-no-failover no
 }
 
 test "Cluster should eventually be up again" {

@@ -47,6 +47,8 @@ proc test_slave_load_expired_keys {aof} {
         set master_id [find_non_empty_master]
         set replica_id [get_one_of_my_replica $master_id]
 
+        after 5000
+
         set master_dbsize_0 [R $master_id dbsize]
         set replica_dbsize_0 [R $replica_id dbsize]
         assert_equal $master_dbsize_0 $replica_dbsize_0
@@ -59,7 +61,7 @@ proc test_slave_load_expired_keys {aof} {
         R $replica_id config rewrite
 
         # fill with 100 keys with 3 second TTL
-        set data_ttl 3
+        set data_ttl 15
         cluster_write_keys_with_expire $master_id $data_ttl
 
         # wait for replica to be in sync with master
@@ -68,7 +70,7 @@ proc test_slave_load_expired_keys {aof} {
         } else {
             fail "replica didn't sync"
         }
-        
+
         set replica_dbsize_1 [R $replica_id dbsize]
         assert {$replica_dbsize_1 > $replica_dbsize_0}
 
@@ -77,22 +79,18 @@ proc test_slave_load_expired_keys {aof} {
             # we need to wait for the initial AOFRW to be done, otherwise
             # kill_instance (which now uses SIGTERM will fail ("Writing initial AOF, can't exit")
             wait_for_condition 100 10 {
+                [RI $replica_id aof_rewrite_scheduled] eq 0 &&
                 [RI $replica_id aof_rewrite_in_progress] eq 0
             } else {
-                fail "keys didn't expire"
+                fail "AOFRW didn't finish"
             }
-        } else {
-            R $replica_id save
         }
 
         # kill the replica (would stay down until re-started)
         kill_instance redis $replica_id
 
         # Make sure the master doesn't do active expire (sending DELs to the replica)
-        R $master_id DEBUG SET-ACTIVE-EXPIRE 0
-
-        # wait for all the keys to get logically expired
-        after [expr $data_ttl*1000]
+        # R $master_id DEBUG SET-ACTIVE-EXPIRE 0
 
         # start the replica again (loading an RDB or AOF file)
         restart_instance redis $replica_id
@@ -100,9 +98,12 @@ proc test_slave_load_expired_keys {aof} {
         # make sure the keys are still there
         set replica_dbsize_3 [R $replica_id dbsize]
         assert {$replica_dbsize_3 > $replica_dbsize_0}
-        
+
+        # wait for all the keys to get logically expired
+        after [expr $data_ttl*1000]
+
         # restore settings
-        R $master_id DEBUG SET-ACTIVE-EXPIRE 1
+        # R $master_id DEBUG SET-ACTIVE-EXPIRE 1
 
         # wait for the master to expire all keys and replica to get the DELs
         wait_for_condition 500 10 {
@@ -114,4 +115,3 @@ proc test_slave_load_expired_keys {aof} {
 }
 
 test_slave_load_expired_keys no
-test_slave_load_expired_keys yes

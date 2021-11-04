@@ -989,8 +989,6 @@ void ClusterState::clusterUpdateSlotsConfigWith(
               "Configuration change detected "
               "Reconfiguring myself as a replica of %.40s",
               sender->getNodeName().c_str());
-    LOG(INFO) << "slaveFullSyncDone: " << slaveFullSyncDone
-                    << "masterNotFail:" << masterNotFail << std::endl;
     Status s;
     if (masterNotFail) {
       s = _server->getReplManager()->replicationUnSetMaster();
@@ -1001,22 +999,14 @@ void ClusterState::clusterUpdateSlotsConfigWith(
     }
     /* NOTE(wayenchen) slave should not full sync when set new master*/
     if (!inMigrateTask &&
-        ((!slaveFullSyncDone || !masterNotFail) || isMyselfMaster())) {
+        ((slaveFullSyncDone || !masterNotFail) ||
+         isMyselfMaster())) {
       s = clusterSetMaster(newmaster);
       if (!s.ok()) {
         LOG(ERROR) << "set newmaster :" << newmaster->getNodeName()
                    << "fail:" << s.toString();
       }
     }
-  } else if (dirty_slots_count && !inMigrateTask) {
-    /* NOTE(wayenchen): use gc to delete slots */
-    /*
-    auto s = _server->getGcMgr()->delGarbage();
-    if (!s.ok()) {
-      LOG(ERROR) << "delete dirty slos fail" << s.toString();
-    }
-    LOG(INFO) << "finish del key in slot, num is:" << dirty_slots_count;
-    */
   }
 }
 
@@ -2455,8 +2445,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
 
     uint32_t okslaves = 0;
     auto mymaster = _myself->getMaster();
-    LOG(INFO) << "Migrating to orphaned master 111: " << readyMigrate
-              << std::endl;
     std::vector<std::shared_ptr<ClusterNode>> slaveList;
     /* Step 1: Don't migrate if the cluster state is not ok. */
     if (_state != ClusterHealth::CLUSTER_OK)
@@ -2465,8 +2453,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
      *         'migration-barrier' slaves after my migration. */
     if (mymaster == nullptr)
       return;
-    LOG(INFO) << "Migrating to orphaned master 222: " << readyMigrate
-              << std::endl;
     auto expSlaveList = mymaster->getSlaves();
     if (expSlaveList.ok()) {
       slaveList = expSlaveList.value();
@@ -2537,13 +2523,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
         }
       }
     }
-    if (target) {
-      LOG(INFO) << "Migrating to orphaned master 444 target: "
-                << target->getNodeName()
-                << "candidate: " << candidate->getNodeName()
-                << "_myself:" << _myself->getNodeName() << "current time"
-                << msSinceEpoch() - target->getOrphanedTime() << std::endl;
-    }
     if (target && candidate == _myself &&
         (msSinceEpoch() - target->getOrphanedTime()) >
           CLUSTER_SLAVE_MIGRATION_DELAY) {
@@ -2551,8 +2530,6 @@ void ClusterState::clusterHandleSlaveMigration(uint32_t max_slaves) {
     }
     isMasterFail = _myself->getMaster()->nodeFailed() ? true : false;
   }
-  LOG(INFO) << "Migrating to orphaned master 555: " << readyMigrate
-            << std::endl;
   /* Step 4: perform the migration if there is a target, and if I'm the
    * candidate, but only if the master is continuously orphaned for a
    * couple of seconds, so that during failovers, we give some time to
@@ -4576,8 +4553,9 @@ void ClusterState::cronCheckFailState() {
      * the orphaned masters. Note that it does not make sense to try
      * a migration if there is no master with at least *two* working
      * slaves. */
-    bool needSlaveChange = _server->getParams()->slaveMigarateEnabled;
-    LOG(INFO) << "Migrating to orphaned master begin 111" << std::endl;
+    // for compatibility
+    bool needSlaveChange = _server->getParams()->slaveMigarateEnabled ||
+                           _server->getParams()->clusterAllowReplicaMigration;
     if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves &&
         needSlaveChange)
       clusterHandleSlaveMigration(max_slaves);

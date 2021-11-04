@@ -37,7 +37,6 @@ test "Instance #5 is a slave" {
 }
 
 test "client do not break when cluster slot" {
-    # R 0 config set client-output-buffer-limit "normal 33554432 16777216 60"
     if { [catch {R 0 cluster slots}] } {
         fail "output overflow when cluster slots"
     }

@@ -4,6 +4,7 @@
 # are preserved across iterations.
 
 source "../tests/includes/init-tests.tcl"
+source "../../../tests/support/cli.tcl"
 
 test "Create a 5 nodes cluster" {
     create_cluster 5 5
@@ -12,24 +13,6 @@ test "Create a 5 nodes cluster" {
 test "Cluster is up" {
     assert_cluster_state ok
 }
-
-# test "Enable AOF in all the instances" {
-#     foreach_redis_id id {
-#         R $id config set appendonly yes
-#         # We use "appendfsync no" because it's fast but also guarantees that
-#         # write(2) is performed before replying to client.
-#         R $id config set appendfsync no
-#     }
-# 
-#     foreach_redis_id id {
-#         wait_for_condition 1000 500 {
-#             [RI $id aof_rewrite_in_progress] == 0 &&
-#             [RI $id aof_enabled] == 1
-#         } else {
-#             fail "Failed to enable AOF on instance #$id"
-#         }
-#     }
-# }
 
 # Return non-zero if the specified PID is about a process still in execution,
 # otherwise 0 is returned.
@@ -53,7 +36,8 @@ proc process_is_running {pid} {
 
 set numkeys 50000
 set numops 200000
-set cluster [redis_cluster 127.0.0.1:[get_instance_attrib redis 0 port]]
+set start_node_port [get_instance_attrib redis 0 port]
+set cluster [redis_cluster 127.0.0.1:$start_node_port]
 catch {unset content}
 array set content {}
 set tribpid {}
@@ -73,12 +57,13 @@ test "Cluster consistency during live resharding" {
             flush stdout
             set target [dict get [get_myself [randomInt 5]] id]
             set tribpid [lindex [exec \
-                ../../../src/redis-trib.rb reshard \
-                --from all \
-                --to $target \
-                --slots 100 \
-                --yes \
+                ../../../bin/redis-cli --cluster reshard \
                 127.0.0.1:[get_instance_attrib redis 0 port] \
+                --cluster-from all \
+                --cluster-to $target \
+                --cluster-slots 100 \
+                --cluster-yes \
+                {*}[rediscli_tls_config "../../../tests"] \
                 | [info nameofexecutable] \
                 ../tests/helpers/onlydots.tcl \
                 &] 0]
@@ -92,7 +77,7 @@ test "Cluster consistency during live resharding" {
         # This way we are able to stress Lua -> Redis command invocation
         # as well, that has tests to prevent Lua to write into wrong
         # hash slots.
-        if {$listid % 2} {
+        if {$listid % 2 == 0} {
             $cluster rpush $key $ele
         } else {
             $cluster eval {redis.call("rpush",KEYS[1],ARGV[1])} 1 $key $ele
@@ -122,7 +107,7 @@ test "Verify $numkeys keys for consistency with logical content" {
     }
 }
 
-test "Crash and restart all the instances" {
+test "Terminate and restart all the instances" {
     foreach_redis_id id {
         kill_instance redis $id
         restart_instance redis $id
@@ -133,7 +118,7 @@ test "Cluster should eventually be up again" {
     assert_cluster_state ok
 }
 
-test "Verify $numkeys keys after the crash & restart" {
+test "Verify $numkeys keys after the restart" {
     # Check that the Redis Cluster content matches our logical content.
     foreach {key value} [array get content] {
         if {[$cluster lrange $key 0 -1] ne $value} {
@@ -169,11 +154,4 @@ test "Verify slaves consistency" {
         }
     }
     assert {$verified_masters >= 5}
-}
-
-test "Dump sanitization was skipped for migrations" {
-    set verified_masters 0
-    foreach_redis_id id {
-        assert {[RI $id dump_payload_sanitizations] == 0}
-    }
 }
