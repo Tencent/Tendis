@@ -4,10 +4,6 @@
 # This software is released under the BSD License. See the COPYING file for
 # more information.
 
-# Track cluster configuration as created by create_cluster below
-set ::cluster_master_nodes 0
-set ::cluster_replica_nodes 0
-
 # Returns a parsed CLUSTER NODES output as a list of dictionaries.
 proc get_cluster_nodes id {
     set lines [split [R $id cluster nodes] "\r\n"]
@@ -25,7 +21,7 @@ proc get_cluster_nodes id {
             pong_recv [lindex $args 5] \
             config_epoch [lindex $args 6] \
             linkstate [lindex $args 7] \
-            slots [lrange $args 8 end] \
+            slots [lrange $args 8 -1] \
         ]
         lappend nodes $node
     }
@@ -61,20 +57,20 @@ proc CI {n field} {
     get_info_field [R $n cluster info] $field
 }
 
-# Return the value of the specified INFO field.
-proc s {n field} {
-    get_info_field [R $n info] $field
-}
-
 # Assuming nodes are reest, this function performs slots allocation.
 # Only the first 'n' nodes are used.
 proc cluster_allocate_slots {n} {
     set slot 16383
+    set avg [expr 16383/$n]
+    set node 0
     while {$slot >= 0} {
         # Allocate successive slots to random nodes.
-        set node [randomInt $n]
         lappend slots_$node $slot
         incr slot -1
+        if {[expr $slot%$avg] == 0} {
+            incr node
+            set node [expr $node%$n]
+        }
     }
     for {set j 0} {$j < $n} {incr j} {
         R $j cluster addslots {*}[set slots_${j}]
@@ -124,9 +120,6 @@ proc create_cluster {masters slaves} {
         cluster_allocate_slaves $masters $slaves
     }
     assert_cluster_state ok
-
-    set ::cluster_master_nodes $masters
-    set ::cluster_replica_nodes $slaves
 }
 
 #Create a cluster composed of the specified number of masters, arbiters and slaves.
@@ -162,29 +155,4 @@ proc cluster_write_test {id} {
         assert {[$cluster get key.$j] eq "$prefix.$j"}
     }
     $cluster close
-}
-
-# Check if cluster configuration is consistent.
-proc cluster_config_consistent {} {
-    for {set j 0} {$j < $::cluster_master_nodes + $::cluster_replica_nodes} {incr j} {
-        if {$j == 0} {
-            set base_cfg [R $j cluster slots]
-        } else {
-            set cfg [R $j cluster slots]
-            if {$cfg != $base_cfg} {
-                return 0
-            }
-        }
-    }
-
-    return 1
-}
-
-# Wait for cluster configuration to propagate and be consistent across nodes.
-proc wait_for_cluster_propagation {} {
-    wait_for_condition 50 100 {
-        [cluster_config_consistent] eq 1
-    } else {
-        fail "cluster config did not reach a consistent state"
-    }
 }

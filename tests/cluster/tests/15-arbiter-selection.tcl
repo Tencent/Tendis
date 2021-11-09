@@ -66,7 +66,7 @@ test "only empty node can be arbiter" {
 test {cluster setslot importing <target_id> <slot>} {
     set source [dict get [get_myself 0] id]
     catch {R 4 cluster setslot importing $source 1} err
-    assert_equal $err {ERR:18,msg:Can't importing slots to slave or arbiter node}
+    assert_equal $err {ERR:18,msg:Can't importing slots to arbiter node.}
 }
 
 #send importing command from #4 to #0
@@ -98,7 +98,7 @@ test "Write data and kill master #0 and make sure that slave #1 switch to be new
     }
 
     # slave #2 not failover
-    R 2 CONFIG SET cluster-slave-no-failover yes
+    R 2 CONFIG SET cluster-slave-no-failover true
 
     # Kill the master so that a reconnection will not be possible.
     kill_instance redis 0
@@ -110,7 +110,7 @@ test "Wait for instance #1 (and not #2) to turn into a master" {
     } else {
         fail "No failover detected"
     }
-    R 2 CONFIG SET cluster-slave-no-failover no
+    R 2 CONFIG SET cluster-slave-no-failover false
 }
 
 test "Cluster should eventually be up again" {

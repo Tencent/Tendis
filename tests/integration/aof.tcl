@@ -49,7 +49,7 @@ tags {"aof"} {
     }
 
     ## Need to clean up rocksdb otherwise new aof file would not be loaded
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated yes] {
         test "Short read: Server should start if load-truncated is yes" {
             assert_equal 1 [is_alive $srv]
@@ -66,7 +66,7 @@ tags {"aof"} {
         }
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     # Now the AOF file is expected to be correct
     start_server_aof [list dir $server_path aof-load-truncated yes] {
         test "Short read + command: Server should start" {
@@ -87,7 +87,7 @@ tags {"aof"} {
         append_to_aof [formatCommand set foo hello]
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated yes] {
         test "Bad format: Server should have logged an error" {
             set pattern "*Bad file format reading the append only file*"
@@ -113,7 +113,7 @@ tags {"aof"} {
         append_to_aof [formatCommand set bar world]
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated no] {
         test "Unfinished MULTI: Server should have logged an error" {
             set pattern "*Unexpected end of file reading the append only file*"
@@ -138,7 +138,7 @@ tags {"aof"} {
         append_to_aof [string range [formatCommand set bar world] 0 end-1]
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated no] {
         test "Short read: Server should have logged an error" {
             set pattern "*Unexpected end of file reading the append only file*"
@@ -171,13 +171,13 @@ tags {"aof"} {
     }
 
     ## Test that the server can be started using the truncated AOF
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated no] {
         test "Fixed AOF: Server should have been started" {
             assert_equal 1 [is_alive $srv]
         }
 
-        test "Fixed AOF: Keyspace should contain values that were parsable" {   
+        test "Fixed AOF: Keyspace should contain values that were parsable" {
             set client [redis [dict get $srv host] [dict get $srv port]]
             wait_for_condition 50 100 {
                 [catch {$client ping} e] == 0
@@ -196,7 +196,7 @@ tags {"aof"} {
         append_to_aof [formatCommand spop set]
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated no] {
         test "AOF+SPOP: Server should have been started" {
             assert_equal 1 [is_alive $srv]
@@ -224,7 +224,7 @@ tags {"aof"} {
     ##assert_equal 0 [$client llen list] to assert_equal 1 [$client llen list]
     ##test suit does not config max memory, which would lead to the expiration
     ##aof previously inserted list and a subsequent successful the rpush
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server_aof [list dir $server_path aof-load-truncated no] {
         test "AOF+EXPIRE: Server should have been started" {
             assert_equal 1 [is_alive $srv]
@@ -241,7 +241,7 @@ tags {"aof"} {
         }
     }
 
-    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]} 
+    catch {exec rm -rf {*}[glob tests/tmp/server.*/rocksdb]}
     start_server {overrides {appendonly {yes} appendfilename {appendonly.aof}}} {
         test {Redis should not try to convert DEL into EXPIREAT for EXPIRE -1} {
             r set x 10

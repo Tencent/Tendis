@@ -206,9 +206,9 @@ proc start_server {options {code undefined}} {
     set slave_dir [tmpdir slave]
 
     # start every server on a different port
-    set ::port [find_available_port [expr {$::port+1}] $::redis_port_count]
+    set ::port [find_available_port [expr {$::port+1}]]
 
-    set slave_port [find_available_port [expr {$::port+1}] $::redis_port_count]
+    set slave_port [find_available_port [expr {$::port+1}]]
 
     # apply overrides from global space and arguments
     foreach {directive arguments} [concat $::global_overrides $overrides] {
@@ -224,7 +224,7 @@ proc start_server {options {code undefined}} {
     set break 0
     if {[string compare "limits" [lindex $tags 0]]} {
         set break 1
-    } 
+    }
     if {[string compare "auth" [lindex $tags 0]]} {
         set break 1
     }
@@ -265,7 +265,7 @@ proc start_server {options {code undefined}} {
     set systemTime [clock seconds]
     set tendis_master_mem_log [tmpfile tendis_master_mem_$systemTime.log]
     set tendis_slave_mem_log [tmpfile tendis_slave_mem_$systemTime.log]
-    
+
     if {$::valgrind} {
         exec valgrind --suppressions=src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $tendis_slave_mem_log &
         #exec valgrind --log-file=./valgrind.log --show-reachable=no --show-possibly-lost=no --leak-check=full --show-leak-kinds=all --soname-synonyms=somalloc=jemalloc ./build/bin/tendisplus $config_file > $stdout 2> $tendis_slave_mem_log &
@@ -366,7 +366,7 @@ proc start_server {options {code undefined}} {
             puts "$slave_port $args"
             $scli {*}$args
         }
-       
+
         # append the server to the stack
         lappend ::servers $srv
 
@@ -438,7 +438,7 @@ proc start_server {options {code undefined}} {
                 puts "\[[colorstr green ok]\]: COMPARE $result"
             }
         }
-        
+
         kill_server $srv
     } else {
         set ::tags [lrange $::tags 0 end-[llength $tags]]

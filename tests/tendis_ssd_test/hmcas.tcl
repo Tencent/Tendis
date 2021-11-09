@@ -1,4 +1,4 @@
-start_server {tags {"hmcas"}} { 
+start_server {tags {"hmcas"}} {
     test "hmcas and hmgetvsn basic" {
     	r del hash
     	r hmcas hash 0 1000 a 0 b b 0 c 1 0 100

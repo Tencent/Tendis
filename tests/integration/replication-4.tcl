@@ -30,7 +30,7 @@ start_server {tags {"repl"}} {
             assert {[$master dbsize] > 0}
 
             #$master debug reload
-            #$slave debug reload        
+            #$slave debug reload
             after 10000
 
             if {[$master debug digest] ne [$slave debug digest]} {
@@ -107,7 +107,7 @@ start_server {tags {"repl"}} {
                 fail "Replication not started."
             }
         }
-    
+
         #$master debug reload
         #$slave debug reload
         test {Replication: commands with many arguments (issue #1221)} {

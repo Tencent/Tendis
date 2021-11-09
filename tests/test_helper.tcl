@@ -187,7 +187,7 @@ proc test_server_main {} {
     set tclsh [info nameofexecutable]
     # Open a listening socket, trying different ports in order to find a
     # non busy one.
-    set port [find_available_port 11111 $::redis_port_count]
+    set port [find_available_port 11111]
     if {!$::quiet} {
         puts "Starting test server at port $port"
     }
@@ -197,7 +197,7 @@ proc test_server_main {} {
     set ::clients_pids {}
     set start_port [expr {$::port+100}]
     for {set j 0} {$j < $::numclients} {incr j} {
-        set start_port [find_available_port $start_port $::redis_port_count]
+        set start_port [find_available_port $start_port]
         set p [exec $tclsh [info script] {*}$::argv \
             --client $port --port $start_port &]
         lappend ::clients_pids $p

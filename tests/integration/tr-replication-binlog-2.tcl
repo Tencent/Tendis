@@ -13,7 +13,7 @@ start_server {tags {"repl"}} {
 
             r debug reload
             r -1 debug reload
-            
+
             set digest1 [r debug digest]
             set digest2 [r debug digest]
             if {$digest1 ne $digest2} {

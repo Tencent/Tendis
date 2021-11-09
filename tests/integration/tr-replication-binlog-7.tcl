@@ -10,7 +10,7 @@ start_server {tags {"repl"} redis2817} {
 
         r -1 config set repl-timeout 3000
         r slaveof [srv -1 host] [srv -1 port]
-        wait_stop 180000 30000 
+        wait_stop 180000 30000
 
         start_server {} {
             test {(not empty) MASTER <-*-(rdb-dump)-*-> SLAVE <-*-(binlog)-*-> SLAVE consistency} {
