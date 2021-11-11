@@ -501,7 +501,7 @@ TEST(ClusterMsg, Common) {
     std::string gossipName = getUUid(20);
     uint32_t pingSent = genRand();
     uint32_t pongR = genRand();
-    std::string gossipIp = "192.122.22.111";
+    std::string gossipIp = "127.0.0.1";
     uint16_t gPort = 8001;
     uint16_t gCport = 18001;
     uint16_t gFlags = randomNodeFlag();
@@ -602,7 +602,7 @@ TEST(ClusterMsg, CommonMoreGossip) {
     std::string gossipName = getUUid(20);
     uint32_t pingSent = genRand();
     uint32_t pongR = genRand();
-    std::string gossipIp = "192.122.22.111";
+    std::string gossipIp = "127.0.0.1";
     uint16_t gPort = 8001;
     uint16_t gCport = 18001;
     uint16_t gFlags = randomNodeFlag();
@@ -680,7 +680,7 @@ TEST(ClusterMsg, CommonUpdate) {
     std::string sender = getUUid(20);
     std::bitset<CLUSTER_SLOTS> slots = genBitMap();
     std::string slaveof = getUUid(20);
-    std::string myIp = "192.168.1.1";
+    std::string myIp = "127.0.0.1";
 
     uint16_t cport = port + 10000;
     uint16_t flags = randomNodeFlag();
