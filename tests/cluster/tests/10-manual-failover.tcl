@@ -1,6 +1,7 @@
 # Check the manual failover
 
 source "../tests/includes/init-tests.tcl"
+source "../tests/includes/utils.tcl"
 
 test "Create a 5 nodes cluster" {
     create_cluster 5 5
@@ -28,8 +29,8 @@ test "Instance #5 synced with the master" {
 
 set current_epoch [CI 1 cluster_current_epoch]
 
-set numkeys 500000
-set numops 100000
+set numkeys 50000
+set numops 10000
 set cluster [redis_cluster 127.0.0.1:[get_instance_attrib redis 0 port]]
 catch {unset content}
 array set content {}
@@ -40,8 +41,15 @@ test "Send CLUSTER FAILOVER to #5, during load" {
         set listid [randomInt $numkeys]
         set key "key:$listid"
         set ele [randomValue]
-
-        $cluster rpush $key $ele
+        # We write both with Lua scripts and with plain commands.
+        # This way we are able to stress Lua -> Redis command invocation
+        # as well, that has tests to prevent Lua to write into wrong
+        # hash slots.
+        if {$listid % 2} {
+            $cluster rpush $key $ele
+        } else {
+           $cluster eval {redis.call("rpush",KEYS[1],ARGV[1])} 1 $key $ele
+        }
         lappend content($key) $ele
 
         if {($j % 1000) == 0} {
@@ -89,13 +97,12 @@ test "Instance #0 gets converted into a slave" {
 
 test "kill all nodes" {
     foreach_redis_id id {
-        if { $id < 11 } {
-            kill_instance redis $id
-        }
+        kill_instance redis $id
     }
 }
 
 ## Check that manual failover does not happen if we can't talk with the master.
+
 source "../tests/includes/init-tests.tcl"
 
 test "Create a 5 nodes cluster" {
@@ -110,14 +117,7 @@ test "Cluster is writable" {
     cluster_write_test 0
 }
 
-
-test "set nodes time out 11 s" {
-    foreach_redis_id id {
-        R $id config set cluster-node-timeout 12000
-    }
-    after 5000
-}
-
+config_set_all_nodes cluster-node-timeout 12000
 
 test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
@@ -132,9 +132,8 @@ test "Instance #5 synced with the master" {
 }
 
 test "Make instance #0 unreachable without killing it" {
-   R 0 deferred 1
-   R 0 tendisadmin sleep 10
-   after 2000
+    R 0 deferred 1
+    R 0 tendisadmin sleep 10
 }
 
 test "Send CLUSTER FAILOVER to instance #5" {
@@ -143,13 +142,19 @@ test "Send CLUSTER FAILOVER to instance #5" {
 
 test "Instance #5 is still a slave after some time (no failover)" {
     after 5000
+    # Tendis cluster failover will timeout after 5000
     assert {[RI 5 role] eq {slave}}
 }
-
 
 test "Wait for instance #0 to return back alive" {
     R 0 deferred 0
     assert {[R 0 read] eq {OK}}
+}
+
+test "kill all nodes" {
+    foreach_redis_id id {
+        kill_instance redis $id
+    }
 }
 
 ## Check with "force" failover happens anyway.
@@ -168,12 +173,7 @@ test "Cluster is writable" {
     cluster_write_test 0
 }
 
-test "set nodes time out 11 s" {
-    foreach_redis_id id {
-        R $id config set cluster-node-timeout 12000
-    }
-    after 5000
-}
+config_set_all_nodes cluster-node-timeout 12000
 
 test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
@@ -188,8 +188,8 @@ test "Instance #5 synced with the master" {
 }
 
 test "Make instance #0 unreachable without killing it" {
-   R 0 deferred 1
-   R 0 tendisadmin sleep 10
+    R 0 deferred 1
+    R 0 tendisadmin sleep 10
 }
 
 test "Send CLUSTER FAILOVER to instance #5" {
@@ -208,6 +208,3 @@ test "Wait for instance #0 to return back alive" {
     R 0 deferred 0
     assert {[R 0 read] eq {OK}}
 }
-
-
-

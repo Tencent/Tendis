@@ -18,7 +18,7 @@ test "Each master should have two replicas attached" {
     foreach_redis_id id {
         if {$id < 5} {
             wait_for_condition 1000 50 {
-                [string match {*2*} [RI 0 connected_slaves]]
+                [llength [lindex [R 0 role] 2]] == 2
             } else {
                 fail "Master #$id does not have 2 slaves as expected"
             }
@@ -35,10 +35,10 @@ test "Killing all the slaves of master #0 and #1" {
 }
 
 foreach_redis_id id {
-    if {$id < 5 } {
+    if {$id < 5} {
         test "Master #$id should have at least one replica" {
             wait_for_condition 1000 50 {
-                [RI $id connected_slaves] >= 1
+                [llength [lindex [R $id role] 2]] >= 1
             } else {
                 fail "Master #$id has no replicas"
             }
@@ -50,6 +50,7 @@ foreach_redis_id id {
 # a failver.
 
 source "../tests/includes/init-tests.tcl"
+source "../tests/includes/utils.tcl"
 
 # Create a cluster with 5 master and 10 slaves, so that we have 2
 # slaves for each master.
@@ -61,11 +62,15 @@ test "Cluster is up" {
     assert_cluster_state ok
 }
 
+config_set_all_nodes cluster-allow-replica-migration yes
+
 test "Kill slave #7 of master #2. Only slave left is #12 now" {
     kill_instance redis 7
 }
 
 set current_epoch [CI 1 cluster_current_epoch]
+
+after 35000
 
 test "Killing master node #2, #12 should failover" {
     kill_instance redis 2
@@ -96,7 +101,7 @@ test "Instance 12 is now a master without slaves" {
 
 test "Master #12 should get at least one migrated replica" {
     wait_for_condition 1000 50 {
-         [RI 12 connected_slaves] >= 1
+        [llength [lindex [R 12 role] 2]] >= 1
     } else {
         fail "Master #12 has no replicas"
     }

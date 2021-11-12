@@ -1,7 +1,7 @@
 # Failover stress test.
 # In this test a different node is killed in a loop for N
 # iterations. The test checks that certain properties
-# are preseved across iterations.
+# are preserved across iterations.
 
 source "../tests/includes/init-tests.tcl"
 
@@ -57,12 +57,13 @@ while {[incr iterations -1]} {
         # Wait for the write to propagate to the slave if we
         # are going to kill a master.
         if {$role eq {master}} {
-           # R $tokill wait 1 20000
-           after 20000
+            after 20000
         }
     }
 
-    test "Killing node #$tokill" {
+    test "Terminating node #$tokill" {
+        # Stop AOF so that an initial AOFRW won't prevent the instance from terminating
+        # R $tokill config set appendonly no
         kill_instance redis $tokill
     }
 
@@ -114,5 +115,3 @@ test "Post condition: current_epoch >= my_epoch everywhere" {
         assert {[CI $id cluster_current_epoch] >= [CI $id cluster_my_epoch]}
     }
 }
-
-

@@ -11,13 +11,17 @@ function runOne() {
     cat $tmplog >> $logfile
 
     errcnt=`grep -E "\[err|\[exception|49merr|49mexception" $logfile|wc -l`
-    errcnt1=$(grep main $logfile|wc -l)
+    errcnt1=$(grep \"main\" $logfile|wc -l)
     errcnt2=$(grep Jumping $logfile|wc -l)
     let errcnt=errcnt+errcnt1+errcnt2
     if [ $errcnt -ne 0 ]; then
         grep -E "\[err|\[exception|49merr|49mexception" $logfile
+        grep \"main\" $logfile
+        grep Jumping $logfile
         exit $errcnt
     fi
+
+    rm -rf tests/tmp tests/cluster/tmp && mkdir -p tests/tmp tests/cluster/tmp
 }
 
 runOne "tclsh tests/test_helper.tcl --single rr_unit/type/hash"
@@ -69,3 +73,31 @@ do
         runOne "tclsh tests/test_helper.tcl --single cluster_test/type/$i"
     fi
 done
+
+# runOne "tclsh tests/cluster/run.tcl --single 00"
+# runOne "tclsh tests/cluster/run.tcl --single 01"
+# runOne "tclsh tests/cluster/run.tcl --single 02"
+# runOne "tclsh tests/cluster/run.tcl --single 03"
+# runOne "tclsh tests/cluster/run.tcl --single 04"
+# runOne "tclsh tests/cluster/run.tcl --single 05-"
+# runOne "tclsh tests/cluster/run.tcl --single 05.1"
+# runOne "tclsh tests/cluster/run.tcl --single 06"
+# runOne "tclsh tests/cluster/run.tcl --single 07"
+# runOne "tclsh tests/cluster/run.tcl --single 08"
+# runOne "tclsh tests/cluster/run.tcl --single 09"
+# runOne "tclsh tests/cluster/run.tcl --single 10"
+# runOne "tclsh tests/cluster/run.tcl --single 11"
+# runOne "tclsh tests/cluster/run.tcl --single 12-"
+# runOne "tclsh tests/cluster/run.tcl --single 12.1"
+# runOne "tclsh tests/cluster/run.tcl --single 13"
+# runOne "tclsh tests/cluster/run.tcl --single 14"
+# runOne "tclsh tests/cluster/run.tcl --single 15"
+# runOne "tclsh tests/cluster/run.tcl --single 16"
+# runOne "tclsh tests/cluster/run.tcl --single 17"
+# runOne "tclsh tests/cluster/run.tcl --single 18"
+# runOne "tclsh tests/cluster/run.tcl --single 19"
+# runOne "tclsh tests/cluster/run.tcl --single 20"
+# runOne "tclsh tests/cluster/run.tcl --single 21"
+# runOne "tclsh tests/cluster/run.tcl --single 22"
+# runOne "tclsh tests/cluster/run.tcl --single 23"
+# runOne "tclsh tests/cluster/run.tcl --single 61"

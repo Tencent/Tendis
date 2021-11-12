@@ -1,4 +1,6 @@
 # Test PUBLISH propagation across the cluster.
+# Tendis does not support pub/sub
+if {false} {
 
 source "../tests/includes/init-tests.tcl"
 
@@ -37,4 +39,6 @@ test "Test publishing to master" {
 
 test "Test publishing to slave" {
     test_cluster_publish 5 10
+}
+
 }

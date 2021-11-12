@@ -271,11 +271,11 @@ proc run_tests {} {
 
 # Print a message and exists with 0 / 1 according to zero or more failures.
 proc end_tests {} {
-    if {$::failed == 0} {
-        puts "GOOD! No errors."
+    if {$::failed == 0 } {
+        puts [colorstr green "GOOD! No errors."]
         exit 0
     } else {
-        puts "WARNING $::failed test(s) failed."
+        puts [colorstr red "WARNING $::failed test(s) failed."]
         exit 1
     }
 }
@@ -289,6 +289,13 @@ proc end_tests {} {
 proc S {n args} {
     set s [lindex $::sentinel_instances $n]
     [dict get $s link] {*}$args
+}
+
+# Returns a Redis instance by index.
+# Example:
+#     [Rn 0] info
+proc Rn {n} {
+    return [dict get [lindex $::redis_instances $n] link]
 }
 
 # Like R but to chat with Redis instances.
@@ -458,3 +465,16 @@ proc restart_instance {type id} {
     set_instance_attrib $type $id link $link
 }
 
+proc redis_deferring_client {type id} {
+    set port [get_instance_attrib $type $id port]
+    set host [get_instance_attrib $type $id host]
+    set client [redis $host $port 1]
+    return $client
+}
+
+proc redis_client {type id} {
+    set port [get_instance_attrib $type $id port]
+    set host [get_instance_attrib $type $id host]
+    set client [redis $host $port 0]
+    return $client
+}
