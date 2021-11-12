@@ -66,7 +66,7 @@ start_server {
 
         r debug reload
 
-        for {set i 0} {$i < 100} {incr i} { 
+        for {set i 0} {$i < 100} {incr i} {
           assert_equal 1 [r sismember myhashtable $i]
         }
 

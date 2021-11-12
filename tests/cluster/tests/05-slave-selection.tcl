@@ -38,7 +38,7 @@ test "Slaves are both able to receive and acknowledge writes" {
     for {set j 0} {$j < 100} {incr j} {
         $cluster set $j $j
     }
-    after 30000
+    # assert {[R 0 wait 2 60000] == 2}
 }
 
 test "Write data while slave #10 is paused and can't receive it" {
@@ -50,7 +50,7 @@ test "Write data while slave #10 is paused and can't receive it" {
     # R 10 deferred 1
     # R 10 exec
     R 10 deferred 1
-    R 10 tendisadmin sleep 80
+    R 10 tendisadmin sleep 10
 
     # Write some data the slave can't receive.
     for {set j 0} {$j < 100} {incr j} {
@@ -61,7 +61,7 @@ test "Write data while slave #10 is paused and can't receive it" {
     # Use a large pause value since we'll kill it anyway.
     # R 0 CLIENT PAUSE 60000
     R 0 deferred 1
-    R 0 tendisadmin sleep 30
+    R 0 tendisadmin sleep 60
 
     # Wait for the slave to return available again
     R 10 deferred 0

@@ -82,7 +82,7 @@ start_server {tags {"expire"}} {
 
     test {PERSIST can undo an EXPIRE} {
         r set x foo
-        r expire x 9 
+        r expire x 9
         list [r ttl x] [r persist x] [r ttl x] [r get x]
     } {[89] 1 -1 foo}
 

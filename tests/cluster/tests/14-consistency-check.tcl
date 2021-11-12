@@ -48,7 +48,6 @@ proc test_slave_load_expired_keys {aof} {
         set replica_id [get_one_of_my_replica $master_id]
 
         after 5000
-
         set master_dbsize_0 [R $master_id dbsize]
         set replica_dbsize_0 [R $replica_id dbsize]
         assert_equal $master_dbsize_0 $replica_dbsize_0
@@ -60,7 +59,7 @@ proc test_slave_load_expired_keys {aof} {
         R $replica_id config set appendonly $aof
         R $replica_id config rewrite
 
-        # fill with 100 keys with 3 second TTL
+        # fill with 100 keys with 15 second TTL
         set data_ttl 15
         cluster_write_keys_with_expire $master_id $data_ttl
 
@@ -70,21 +69,12 @@ proc test_slave_load_expired_keys {aof} {
         } else {
             fail "replica didn't sync"
         }
-
+        
         set replica_dbsize_1 [R $replica_id dbsize]
         assert {$replica_dbsize_1 > $replica_dbsize_0}
 
         # make replica create persistence file
-        if {$aof == "yes"} {
-            # we need to wait for the initial AOFRW to be done, otherwise
-            # kill_instance (which now uses SIGTERM will fail ("Writing initial AOF, can't exit")
-            wait_for_condition 100 10 {
-                [RI $replica_id aof_rewrite_scheduled] eq 0 &&
-                [RI $replica_id aof_rewrite_in_progress] eq 0
-            } else {
-                fail "AOFRW didn't finish"
-            }
-        }
+        # R $replica_id save
 
         # kill the replica (would stay down until re-started)
         kill_instance redis $replica_id
@@ -98,12 +88,12 @@ proc test_slave_load_expired_keys {aof} {
         # make sure the keys are still there
         set replica_dbsize_3 [R $replica_id dbsize]
         assert {$replica_dbsize_3 > $replica_dbsize_0}
+        
+        # restore settings
+        # R $master_id DEBUG SET-ACTIVE-EXPIRE 1
 
         # wait for all the keys to get logically expired
         after [expr $data_ttl*1000]
-
-        # restore settings
-        # R $master_id DEBUG SET-ACTIVE-EXPIRE 1
 
         # wait for the master to expire all keys and replica to get the DELs
         wait_for_condition 500 10 {

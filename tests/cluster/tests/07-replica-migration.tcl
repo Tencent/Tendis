@@ -50,6 +50,7 @@ foreach_redis_id id {
 # a failver.
 
 source "../tests/includes/init-tests.tcl"
+source "../tests/includes/utils.tcl"
 
 # Create a cluster with 5 master and 10 slaves, so that we have 2
 # slaves for each master.
@@ -61,11 +62,15 @@ test "Cluster is up" {
     assert_cluster_state ok
 }
 
+config_set_all_nodes cluster-allow-replica-migration yes
+
 test "Kill slave #7 of master #2. Only slave left is #12 now" {
     kill_instance redis 7
 }
 
 set current_epoch [CI 1 cluster_current_epoch]
+
+after 35000
 
 test "Killing master node #2, #12 should failover" {
     kill_instance redis 2

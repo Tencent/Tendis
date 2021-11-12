@@ -13,7 +13,7 @@ start_server {tags {"repl"}} {
 
         test {MASTER and SLAVE consistency with expire} {
             createComplexDataset r $numops useexpire
-            
+
             wait_sync
             r keys *   ; # Force DEL syntesizing to slave
             r -1 keys *

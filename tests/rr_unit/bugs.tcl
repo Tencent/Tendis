@@ -3,7 +3,7 @@ start_server {tags {"basic"}} {
     #    r flushalldisk
     #    r randomkey
     # } {}
-     
+
     # test { TRedis random key # db not existed} {
     #    r flushalldisk
     #    r set a b
@@ -37,11 +37,11 @@ start_server {tags {"basic"}} {
     #    r select 9
     #    r set a b
     #    r set b c
-        
+
     #    for {set j 0} {$j < 1024} {incr j} {
     #      r lpush L hello
     #    }
-        
+
     #    r select 10
     #    set c b
     #    set d c

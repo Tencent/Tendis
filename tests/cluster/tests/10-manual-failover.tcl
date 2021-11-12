@@ -1,6 +1,7 @@
 # Check the manual failover
 
 source "../tests/includes/init-tests.tcl"
+source "../tests/includes/utils.tcl"
 
 test "Create a 5 nodes cluster" {
     create_cluster 5 5
@@ -94,6 +95,12 @@ test "Instance #0 gets converted into a slave" {
     }
 }
 
+test "kill all nodes" {
+    foreach_redis_id id {
+        kill_instance redis $id
+    }
+}
+
 ## Check that manual failover does not happen if we can't talk with the master.
 
 source "../tests/includes/init-tests.tcl"
@@ -109,6 +116,8 @@ test "Cluster is up" {
 test "Cluster is writable" {
     cluster_write_test 0
 }
+
+config_set_all_nodes cluster-node-timeout 12000
 
 test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}
@@ -133,12 +142,19 @@ test "Send CLUSTER FAILOVER to instance #5" {
 
 test "Instance #5 is still a slave after some time (no failover)" {
     after 5000
-    assert {[RI 5 role] eq {master}}
+    # Tendis cluster failover will timeout after 5000
+    assert {[RI 5 role] eq {slave}}
 }
 
 test "Wait for instance #0 to return back alive" {
     R 0 deferred 0
     assert {[R 0 read] eq {OK}}
+}
+
+test "kill all nodes" {
+    foreach_redis_id id {
+        kill_instance redis $id
+    }
 }
 
 ## Check with "force" failover happens anyway.
@@ -156,6 +172,8 @@ test "Cluster is up" {
 test "Cluster is writable" {
     cluster_write_test 0
 }
+
+config_set_all_nodes cluster-node-timeout 12000
 
 test "Instance #5 is a slave" {
     assert {[RI 5 role] eq {slave}}

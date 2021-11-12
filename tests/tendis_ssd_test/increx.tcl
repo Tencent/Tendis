@@ -1,4 +1,4 @@
-start_server {tags {"cas"}} { 
+start_server {tags {"cas"}} {
     test {INCREX against non existing key} {
         r del novar
         set res {}

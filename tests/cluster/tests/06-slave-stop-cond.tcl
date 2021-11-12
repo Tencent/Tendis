@@ -48,7 +48,6 @@ test "Break master-slave link and prevent further reconnections" {
     # R 5 exec
     R 5 deferred 1
     R 5 tendisadmin sleep 20
-    R 5 deferred 0
 
     # Prevent the master from accepting new slaves.
     # Use a large pause value since we'll kill it anyway.
@@ -57,6 +56,7 @@ test "Break master-slave link and prevent further reconnections" {
     R 0 tendisadmin sleep 60
 
     # Wait for the slave to return available again
+    R 5 deferred 0
     assert {[R 5 read] eq {OK}}
 
     # Kill the master so that a reconnection will not be possible.

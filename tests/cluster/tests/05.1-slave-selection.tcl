@@ -62,7 +62,6 @@ test "New Master down consecutively" {
             fail "no master detected, #loop $i"
         }
 
-        after 35000
         set instances [dict remove $instances $master_id]
 
         kill_instance redis $master_id
@@ -72,6 +71,8 @@ test "New Master down consecutively" {
             fail "No failover detected when master $master_id fails"
         }
 
+        # Tendis need some time for cluster state change.
+        after 35000
         assert_cluster_state ok
     }
 }

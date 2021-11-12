@@ -3,11 +3,11 @@ start_server {tags {"repl"}} {
     if {$::valgrind} {set numops 120000}
 
     createComplexDataset r $numops
-    
+
     start_server {} {
       test { test flushalldisk sync to slave } {
         set handle [start_bg_complex_data [srv -1 host] [srv -1 port] 9 $numops]
-        wait_stop 180000 30000 
+        wait_stop 180000 30000
         stop_bg_complex_data $handle
 
         r slaveof [srv -1 host] [srv -1 port]
@@ -22,7 +22,7 @@ start_server {tags {"repl"}} {
         set debug_digest1 [r debug digest]
         set debug_digest2 [r -1 debug digest]
 
-        assert_equal $debug_digest1 $debug_digest2 
+        assert_equal $debug_digest1 $debug_digest2
   }
   }
 }

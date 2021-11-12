@@ -420,7 +420,7 @@ start_server {tags {"basic"}} {
         catch {r foobaredcommand} err
         string match ERR* $err
     } {1}
-    
+
     test {RENAME basic usage} {
         r set mykey hello
         r rename mykey mykey1

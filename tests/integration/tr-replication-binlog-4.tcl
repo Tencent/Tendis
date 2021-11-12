@@ -24,10 +24,10 @@ start_server {tags {"repl"}} {
 
             r -1 slaveof no one
             wait_stop 30000 10000
-            
+
             r debug reload
             r -1 debug reload
-            
+
             set digest1 [r debug digest]
             set digest2 [r debug digest]
             if {$digest1 ne $digest2} {
@@ -42,7 +42,7 @@ start_server {tags {"repl"}} {
                 puts "Master - Slave inconsistency"
                 puts "Run diff -u against /tmp/repldump*.txt for more info"
             }
-            assert_equal $digest1 $digest2 
+            assert_equal $digest1 $digest2
         }
     }
 }

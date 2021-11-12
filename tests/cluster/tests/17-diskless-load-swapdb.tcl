@@ -1,4 +1,6 @@
-# Check replica can restore database backup correctly if fail to diskless load.
+# Check that replica keys and keys to slots map are right after failing to diskless load using SWAPDB.
+
+if {false} {
 
 source "../tests/includes/init-tests.tcl"
 
@@ -14,7 +16,7 @@ test "Cluster is writable" {
     cluster_write_test 0
 }
 
-test "Right to restore backups when fail to diskless load " {
+test "Main db not affected when fail to diskless load" {
     set master [Rn 0]
     set replica [Rn 1]
     set master_id 0
@@ -63,9 +65,9 @@ test "Right to restore backups when fail to diskless load " {
     restart_instance redis $replica_id
     $replica READONLY
 
-    # Start full sync, wait till after db is flushed (backed up)
+    # Start full sync, wait till after db started loading in background
     wait_for_condition 500 10 {
-        [s $replica_id loading] eq 1
+        [s $replica_id async_loading] eq 1
     } else {
         fail "Fail to full sync"
     }
@@ -75,7 +77,7 @@ test "Right to restore backups when fail to diskless load " {
 
     # Start full sync, wait till the replica detects the disconnection
     wait_for_condition 500 10 {
-        [s $replica_id loading] eq 0
+        [s $replica_id async_loading] eq 0
     } else {
         fail "Fail to full sync"
     }
@@ -83,4 +85,6 @@ test "Right to restore backups when fail to diskless load " {
     # Replica keys and keys to slots map still both are right
     assert_equal {1} [$replica get $slot0_key]
     assert_equal $slot0_key [$replica CLUSTER GETKEYSINSLOT 0 1]
+}
+
 }

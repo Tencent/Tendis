@@ -1,16 +1,16 @@
-proc RandomRange { min max } {  
-    set rd [expr rand()]  
-       
-    set result [expr $rd * ($max - $min) + $min]  
-      
-    return $result  
-}  
+proc RandomRange { min max } {
+    set rd [expr rand()]
 
-proc RandomRangeInt { min max } {  
-    return [expr int([RandomRange $min $max])]  
-}  
+    set result [expr $rd * ($max - $min) + $min]
 
-start_server {tags {"zscanbyscore"}} { 
+    return $result
+}
+
+proc RandomRangeInt { min max } {
+    return [expr int([RandomRange $min $max])]
+}
+
+start_server {tags {"zscanbyscore"}} {
     test {INCREX against non existing key} {
         # Create the Sorted Set
         r del zset

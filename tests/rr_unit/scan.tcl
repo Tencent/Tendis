@@ -11,7 +11,7 @@ start_server {tags {"scan"}} {
             lappend keys {*}$k
             if {$cur == 0} break
         }
-       
+
         set keys [lsort -unique $keys]
         assert_equal 1000 [llength $keys]
     }
@@ -126,13 +126,13 @@ start_server {tags {"scan"}} {
 
     test "SCAN TYPE" {
         r flushdb
-        
+
         debugPopulateKeys r 1000 string
         debugPopulateKeys r 100 list
         debugPopulateKeys r 100 hash
         debugPopulateKeys r 100 set
         debugPopulateKeys r 100 zset
- 
+
         set cur 0
         set keys {}
         while 1 {

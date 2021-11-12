@@ -8,7 +8,7 @@ proc config_set_all_nodes {keyword value} {
 
 proc fix_cluster {addr} {
     set code [catch {
-        exec ../../../src/redis-cli {*}[rediscli_tls_config "../../../tests"] --cluster fix $addr << yes
+        exec ../../../src/redis-cli --cluster fix $addr << yes
     } result]
     if {$code != 0} {
         puts "redis-cli --cluster fix returns non-zero exit code, output below:\n$result"
@@ -17,9 +17,17 @@ proc fix_cluster {addr} {
     # but we can ignore that and rely on the check below.
     assert_cluster_state ok
     wait_for_condition 100 100 {
-        [catch {exec ../../../src/redis-cli {*}[rediscli_tls_config "../../../tests"] --cluster check $addr} result] == 0
+        [catch {exec ../../../src/redis-cli --cluster check $addr} result] == 0
     } else {
         puts "redis-cli --cluster check returns non-zero exit code, output below:\n$result"
         fail "Cluster could not settle with configuration"
+    }
+}
+
+proc wait_for_ofs_sync {r1 r2} {
+    wait_for_condition 50 100 {
+        [status $r1 master_repl_offset] eq [status $r2 master_repl_offset]
+    } else {
+        fail "replica didn't sync in time"
     }
 }

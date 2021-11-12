@@ -1,4 +1,5 @@
 # Check cluster info stats
+if {false} {
 
 source "../tests/includes/init-tests.tcl"
 
@@ -22,8 +23,8 @@ proc errorstat {instance cmd} {
 }
 
 test "errorstats: rejected call due to MOVED Redirection" {
-    $primary1 config resetstat all
-    $primary2 config resetstat all
+    $primary1 config resetstat
+    $primary2 config resetstat
     assert_match {} [errorstat $primary1 MOVED]
     assert_match {} [errorstat $primary2 MOVED]
     # we know that one will have a MOVED reply and one will succeed
@@ -42,4 +43,6 @@ test "errorstats: rejected call due to MOVED Redirection" {
     assert_match {} [errorstat $pok MOVED]
     assert_match {*count=1*} [errorstat $perr MOVED]
     assert_match {*calls=0,*,rejected_calls=1,failed_calls=0} [cmdstat $perr set]
+}
+
 }
