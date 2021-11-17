@@ -780,6 +780,11 @@ Expected<RecordValue> Command::expireKeyIfNeeded(Session* sess,
 
   RecordKey mk(expdb.value().chunkId, sess->getCtx()->getDbId(), tp, key, "");
   PStore kvstore = expdb.value().store;
+
+  // NOTE(takenliu) we need setReplOnly
+  sg.getSession()->getCtx()->setReplOnly(
+          kvstore->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
+
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
     // NOTE(takenliu) expireKeyIfNeeded don't use txn from params,
     //   because it need rewrite codes too much.
