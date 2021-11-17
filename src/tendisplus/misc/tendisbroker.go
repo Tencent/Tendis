@@ -9,14 +9,16 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"github.com/mediocregopher/radix.v2/redis"
-	"github.com/ngaut/log"
 	"sync"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/ngaut/log"
 )
 
+//ip set null for codeCC
 var (
-	backend     = flag.String("backendhost", "9.24.0.133:12345", "backend twenproxy host")
+	backend     = flag.String("backendhost", "", "backend twenproxy host")
 	frontenddir = flag.String("frontenddir", "./frontend", "dir contains frontend info")
 )
 
@@ -71,8 +73,9 @@ type Binlog struct {
 }
 
 func parseFronts(dir string) ([]*Frontend, error) {
+	//ip set null for codeCC
 	tmp := &Frontend{
-		Host:    "9.24.0.133:10000",
+		Host:    "",
 		Passwd:  "tt7715TTC",
 		Runid:   "276c0be4e0de6d5760a315b2e9cc4ac4984cedde",
 		LastSeq: 0,

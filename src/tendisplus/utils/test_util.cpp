@@ -750,7 +750,7 @@ int genRand() {
 }
 
 std::string randomIp() {
-  return "192.168.1.1";
+  return "127.0.0.1";
 }
 
 std::string randomStr(size_t s, bool maybeEmpty) {
