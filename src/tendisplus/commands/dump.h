@@ -189,6 +189,16 @@ Expected<std::unique_ptr<Deserializer>> getDeserializer(
 Expected<std::string> recordList2Aof(const std::list<Record>& list);
 Expected<std::string> key2Aof(Session* sess, const std::string& key);
 
+Expected<std::string> getTBitmapString(uint32_t chunkId,
+                                       uint32_t dbid,
+                                       const TBitMapMetaValue& meta,
+                                       const std::string& key,
+                                       Transaction* txn);
+
+Expected<std::string> getBitmap(Session* sess,
+                                const std::string& key,
+                                uint64_t* maxBitAmount);
+
 }  // namespace tendisplus
 
 #endif  // SRC_TENDISPLUS_COMMANDS_DUMP_H_

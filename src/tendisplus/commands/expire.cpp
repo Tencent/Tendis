@@ -378,6 +378,7 @@ class TypeCommand : public Command {
       {RecordType::RT_HASH_META, "hash"},
       {RecordType::RT_SET_META, "set"},
       {RecordType::RT_ZSET_META, "zset"},
+      {RecordType::RT_TBITMAP_META, "tbitmap"},
     };
 
     auto server = sess->getServerEntry();

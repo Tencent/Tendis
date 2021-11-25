@@ -46,8 +46,12 @@ std::vector<std::string>* splitargs(std::vector<std::string>& result,  // (NOLIN
 int ld2string(char* buf, size_t len, long double value, int humanfriendly);
 
 size_t popCount(const void* s, long count);  // (NOLINT)
-
+size_t popCount(const std::string& value, size_t offset, size_t end);
 int64_t bitPos(const void* s, size_t count, uint32_t bit);
+int64_t bitPos(const std::string& fragment,
+               size_t start,
+               size_t end,
+               uint32_t bit);
 int random();
 
 /* Command flags. Please check the command table defined in the redis.c file

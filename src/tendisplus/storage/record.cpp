@@ -1,7 +1,6 @@
 // Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
-
 #include <type_traits>
 #include <utility>
 #include <memory>
@@ -19,9 +18,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/invariant.h"
-
 namespace tendisplus {
-
 bool isDataMetaType(RecordType t) {
   switch (t) {
     case RecordType::RT_HASH_META:
@@ -29,10 +26,8 @@ bool isDataMetaType(RecordType t) {
     case RecordType::RT_ZSET_META:
     case RecordType::RT_SET_META:
     case RecordType::RT_KV:
+    case RecordType::RT_TBITMAP_META:
       return true;
-    // case RecordType::RT_INVALID:
-    //    INVARIANT(0);
-    //    return false;
     default:
       return false;
   }
@@ -55,9 +50,11 @@ bool isRealEleType(RecordType keyType, RecordType valueType) {
     case RecordType::RT_SET_ELE:
     case RecordType::RT_ZSET_H_ELE:
     case RecordType::RT_LIST_ELE:
+    case RecordType::RT_TBITMAP_ELE:
       return true;
     case RecordType::RT_DATA_META:
-      if (valueType == RecordType::RT_KV) {
+      if (valueType == RecordType::RT_KV
+        || valueType == RecordType::RT_TBITMAP_META) {
         return true;
       }
     case RecordType::RT_ZSET_S_ELE:
@@ -98,6 +95,10 @@ uint8_t rt2Char(RecordType t) {
       return 'c';
     case RecordType::RT_ZSET_S_ELE:
       return 'z';
+    case RecordType::RT_TBITMAP_META:
+      return 'T';
+    case RecordType::RT_TBITMAP_ELE:
+      return 't';
     case RecordType::RT_TTL_INDEX:
       return std::numeric_limits<uint8_t>::max() - 1;
     // it's convinent (for seek) to have BINLOG to pos
@@ -136,6 +137,11 @@ std::string rt2Str(RecordType t) {
     case RecordType::RT_ZSET_H_ELE:
     case RecordType::RT_ZSET_S_ELE:
       return "ZSET";
+
+    case RecordType::RT_TBITMAP_META:
+    case RecordType::RT_TBITMAP_ELE:
+      return "TBITMAP";
+
     default:
       INVARIANT_D(0);
       LOG(ERROR) << "invalid recordtype:" << static_cast<uint32_t>(t);
@@ -169,6 +175,11 @@ RecordType char2Rt(uint8_t t) {
       return RecordType::RT_ZSET_S_ELE;
     case 'c':
       return RecordType::RT_ZSET_H_ELE;
+    case 'T':
+      // let 'D' is the first, so 'B' for BTIMAP2 isn't good
+      return RecordType::RT_TBITMAP_META;
+    case 't':
+      return RecordType::RT_TBITMAP_ELE;
     case std::numeric_limits<uint8_t>::max() - 1:
       return RecordType::RT_TTL_INDEX;
     case std::numeric_limits<uint8_t>::max():
@@ -572,7 +583,7 @@ bool RecordKey::operator==(const RecordKey& other) const {
     _version == other._version && _fmtVsn == other._fmtVsn;
 }
 
-bool RecordKey::operator!=(const RecordKey &other) const {
+bool RecordKey::operator!=(const RecordKey& other) const {
   return !(*this == other);
 }
 
@@ -1062,6 +1073,9 @@ RecordType RecordValue::getEleType() const {
     case tendisplus::RecordType::RT_SET_META:
       return RecordType::RT_SET_ELE;
 
+    case tendisplus::RecordType::RT_TBITMAP_META:
+      return RecordType::RT_TBITMAP_ELE;
+
     default:
       INVARIANT_D(0);
       break;
@@ -1114,6 +1128,14 @@ uint64_t RecordValue::getEleCnt() const {
       }
       INVARIANT_D(exptMeta.value().getCount() > 1);
       return exptMeta.value().getCount() - 1;
+    }
+    case tendisplus::RecordType::RT_TBITMAP_META: {
+      auto eMeta = TBitMapMetaValue::decode(_value);
+      if (!eMeta.ok()) {
+        INVARIANT_D(0);
+        return 0;
+      }
+      return eMeta.value().eleCount();
     }
     default:
       INVARIANT_D(0);
@@ -1349,6 +1371,140 @@ void SetMetaValue::setSKIndex(const std::string& sk) {
 
 std::string SetMetaValue::getSKIndex() {
   return _skIndex;
+}
+
+TBitMapMetaValue::TBitMapMetaValue(uint64_t fragmentLen)
+  : _bitAmount(0), _count(0), _eleCount(1), _fragmentLen(fragmentLen) {
+  _firstFragment = std::string();
+}
+
+TBitMapMetaValue::TBitMapMetaValue(uint64_t bitAmount,
+                                   uint64_t count,
+                                   uint64_t eleCount,
+                                   uint64_t fragmentLen)
+  : _bitAmount(bitAmount), _count(count),
+    _eleCount(eleCount), _fragmentLen(fragmentLen) {}
+
+TBitMapMetaValue::TBitMapMetaValue(TBitMapMetaValue&& v)
+  : _bitAmount(v._bitAmount),
+    _count(v._count),
+    _eleCount(v._eleCount),
+    _fragmentLen(v._fragmentLen),
+    _firstFragment(v._firstFragment) {}
+
+std::string TBitMapMetaValue::encode() const {
+  std::vector<uint8_t> value;
+  value.reserve(4 * 8 + 1 + _fragmentLen);
+  auto bitAmountBytes = varintEncode(_bitAmount);
+  value.insert(value.end(), bitAmountBytes.begin(), bitAmountBytes.end());
+  auto countBytes = varintEncode(_count);
+  value.insert(value.end(), countBytes.begin(), countBytes.end());
+  auto eleBytes = varintEncode(_eleCount);
+  value.insert(value.end(), eleBytes.begin(), eleBytes.end());
+  auto fragmentLenBytes = varintEncode(_fragmentLen);
+  value.insert(value.end(), fragmentLenBytes.begin(), fragmentLenBytes.end());
+
+  // Reversed one byte for future compatibility
+  value.push_back(0);
+
+  value.insert(value.end(), _firstFragment.begin(), _firstFragment.end());
+  return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
+
+Expected<TBitMapMetaValue> TBitMapMetaValue::decode(const std::string& val) {
+  const uint8_t* valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
+  size_t offset = 0;
+
+  auto expt = varintDecodeFwd(valCstr + offset, val.size());
+  if (!expt.ok()) {
+    return expt.status();
+  }
+  offset += expt.value().second;
+  auto bitAmount = expt.value().first;
+
+  expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+  if (!expt.ok()) {
+    return expt.status();
+  }
+  offset += expt.value().second;
+  auto count = expt.value().first;
+
+  expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+  if (!expt.ok()) {
+    return expt.status();
+  }
+  offset += expt.value().second;
+  auto eleCount = expt.value().first;
+
+  expt = varintDecodeFwd(valCstr + offset, val.size() - offset);
+  if (!expt.ok()) {
+    return expt.status();
+  }
+  offset += expt.value().second;
+  auto fragmentLen = expt.value().first;
+
+  // Reversed one byte for future compatibility
+  INVARIANT_D(valCstr[offset] == 0);
+  offset += 1;
+
+  TBitMapMetaValue meta(bitAmount, count, eleCount, fragmentLen);
+
+  meta.setFirstFragment(std::string(val.c_str() + offset, val.size() - offset));
+  return meta;
+}
+
+TBitMapMetaValue& TBitMapMetaValue::operator=(TBitMapMetaValue&& o) {
+  if (&o == this)
+    return *this;
+  _bitAmount = o._bitAmount;
+  _count = o._count;
+  _fragmentLen = o._fragmentLen;
+  _firstFragment = o._firstFragment;
+  return *this;
+}
+
+void TBitMapMetaValue::setBitAmount(uint64_t bitAmount) {
+  _bitAmount = bitAmount;
+}
+
+void TBitMapMetaValue::setCount(uint64_t count) {
+  _count = count;
+}
+
+void TBitMapMetaValue::setFirstFragment(std::string bitstr) {
+  _firstFragment = bitstr;
+}
+
+void TBitMapMetaValue::setEleCount(uint64_t eleCount) {
+  _eleCount = eleCount;
+}
+
+uint64_t TBitMapMetaValue::bitAmount() const {
+  return _bitAmount;
+}
+
+uint64_t TBitMapMetaValue::count() const {
+  return _count;
+}
+
+uint64_t TBitMapMetaValue::fragmentLen() const {
+  return _fragmentLen;
+}
+
+uint64_t TBitMapMetaValue::eleCount() const {
+  return _eleCount;
+}
+
+uint64_t TBitMapMetaValue::byteAmount() const {
+  return (_bitAmount >> 3) + ((_bitAmount & 7) ? 1 : 0);
+}
+
+uint64_t TBitMapMetaValue::fragmentAmount() const {
+  return byteAmount() / _fragmentLen + (byteAmount() % _fragmentLen ? 1 : 0);
+}
+
+std::string TBitMapMetaValue::firstFragment() const {
+  return _firstFragment;
 }
 
 uint32_t ZSlMetaValue::HEAD_ID = 1;
@@ -1811,6 +1967,13 @@ Expected<uint64_t> getSubKeyCount(const RecordKey& key,
         return v.status();
       }
       return v.value().getCount();
+    }
+    case tendisplus::RecordType::RT_TBITMAP_META: {
+      auto eMeta = TBitMapMetaValue::decode(val.getValue());
+      if (!eMeta.ok()) {
+        return eMeta.status();
+      }
+      return eMeta.value().eleCount();
     }
     default: {
       return {ErrorCodes::ERR_INTERNAL, "not support"};

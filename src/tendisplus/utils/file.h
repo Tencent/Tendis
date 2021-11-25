@@ -21,7 +21,7 @@ struct AlignedBuff {
   size_t logicalBlockSize;
 };
 
-std::shared_ptr<AlignedBuff> newAlignedBuff(std::string path,
+std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
         int32_t sizeMultiple = 16);
 
 std::unique_ptr<rocksdb::WritableFile> openWritableFile(

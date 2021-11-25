@@ -656,6 +656,7 @@ class ScanCommand : public Command {
       {"hash", RecordType::RT_HASH_META},
       {"set", RecordType::RT_SET_META},
       {"zset", RecordType::RT_ZSET_META},
+      {"tbitmap", RecordType::RT_TBITMAP_META},
       // TODO(pecochen): unsupport type stream now (since redis 5.0)
     };
   } _filter;

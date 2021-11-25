@@ -546,6 +546,8 @@ class ServerParams {
   uint32_t clusterSlaveValidityFactor = 10;
   bool clusterSingleNode = false;
 
+  uint64_t tbitmapFragmentSize = 1024;
+
   int64_t luaTimeLimit = 5000;  // ms
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;

@@ -1883,6 +1883,37 @@ void testCommandArrayResult(
   }
 }
 
+void testDiffCommandArray(
+  std::shared_ptr<ServerEntry> svr,
+  const std::vector<
+    std::pair<std::vector<std::string>, std::vector<std::string>>>& arr) {
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext), socket1(ioContext);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  for (auto& p : arr) {
+    LOG(INFO) << p.first[0];
+    sess.setArgs(p.first);
+    auto expect = Command::runSessionCmd(&sess);
+
+    sess.setArgs(p.second);
+    auto expect1 = Command::runSessionCmd(&sess);
+
+    if (expect.ok()) {
+      INVARIANT_D(expect1.ok());
+      EXPECT_TRUE(expect1.ok());
+      INVARIANT_D(expect.value() == expect1.value());
+      ASSERT_EQ(expect.value(), expect1.value());
+    } else {
+      INVARIANT_D(!expect1.ok());
+      EXPECT_FALSE(expect1.ok());
+      auto ret = expect.status().toString();
+      auto ret2 = expect.status().toString();
+      EXPECT_EQ(ret, ret2);
+    }
+  }
+}
+
 TEST(Command, syncversion) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -2562,6 +2593,136 @@ TEST(Command, LogError) {
   testCommandArrayResult(server, resultArr2);
   // log-error is on
   EXPECT_EQ(server->getInternalErrorCnt(), 2);
+
+#ifndef _WIN32
+  server->stop();
+  EXPECT_EQ(server.use_count(), 1);
+#endif
+}
+
+TEST(Command, tbitmap) {
+  const auto guard = MakeGuard([] { destroyEnv(); });
+  EXPECT_TRUE(setupEnv());
+  auto cfg = makeServerParam();
+  auto server = makeServerEntry(cfg);
+
+
+  asio::io_context ioContext;
+  asio::ip::tcp::socket socket(ioContext);
+  NetSession sess(server, std::move(socket), 1, false, nullptr, nullptr);
+
+  std::vector<std::pair<std::vector<std::string>, std::vector<std::string>>>
+    resultArr = {
+      {{"tsetbit", "tsrckey1", "8192", "1"},
+       {"setbit", "srckey1", "8192", "1"}},
+      {{"tsetbit", "tsrckey2", "8193", "1"},
+       {"setbit", "srckey2", "8193", "1"}},
+      {{"dump", "tsrckey1"}, {"dump", "srckey1"}},
+      {{"dump", "tsrckey2"}, {"dump", "srckey2"}},
+      {{"tbitop", "or", "tdestkey", "tsrckey1", "tsrckey2"},
+       {"bitop", "or", "destkey", "srckey1", "srckey2"}},
+      {{"dump", "tdestkey"}, {"dump", "destkey"}},
+
+      {{"tsetbit", "tsrckey3", "8194", "1"},
+       {"setbit", "srckey3", "8194", "1"}},
+      {{"tsetbit", "tsrckey4", "24289", "1"},
+       {"setbit", "srckey4", "24289", "1"}},
+      {{"tbitop", "or", "tdestkey", "tsrckey1", "tsrckey2", "tsrckey3", "tsrckey4"},      // NOLINT
+       {"bitop", "or", "destkey", "srckey1", "srckey2", "srckey3", "srckey4"}},
+      {{"dump", "tdestkey"}, {"dump", "destkey"}},
+
+      {{"tsetbit", "tsrckey5", "24290", "1"},
+       {"setbit", "srckey5", "24290", "1"}},
+      {{"tbitop", "and", "tdestkey", "tdestkey", "tsrckey5"},
+       {"bitop", "and", "destkey", "destkey", "srckey5"}},
+      {{"dump", "tdestkey"}, {"dump", "destkey"}},
+
+      {{"tbitcount", "tbc1"},
+       {"bitcount", "bc1"}},
+      {{"tbitpos", "tbc1", "1"},
+       {"bitpos", "bc1", "1"}},
+      {{"tbitpos", "tbc1", "0"},
+       {"bitpos", "bc1", "0"}},
+
+      {{"tsetbit", "tbc1", "7", "1"},
+       {"setbit", "bc1", "7", "1"}},
+      {{"tsetbit", "tbc1", "8", "1"},
+       {"setbit", "bc1", "8", "1"}},
+      {{"tbitcount", "tbc1"},
+       {"bitcount", "bc1"}},
+      {{"tbitcount", "tbc1", "10", "2"},
+       {"bitcount", "bc1", "10", "2"}},
+      {{"tbitcount", "tbc1", "0", "100"},
+       {"bitcount", "bc1", "0", "100"}},
+      {{"tbitcount", "tbc1", "1", "100"},
+       {"bitcount", "bc1", "1", "100"}},
+      {{"tbitcount", "tbc1", "10", "100"},
+       {"bitcount", "bc1", "10", "100"}},
+
+      {{"tsetbit", "tbc1", "50000", "1"},
+       {"setbit", "bc1", "50000", "1"}},
+      {{"tbitcount", "tbc1"},
+       {"bitcount", "bc1"}},
+      {{"tbitcount", "tbc1", "0", "100"},
+       {"bitcount", "bc1", "0", "100"}},
+      {{"tbitcount", "tbc1", "1", "100"},
+       {"bitcount", "bc1", "1", "100"}},
+      {{"tbitcount", "tbc1", "1000", "2000"},
+       {"bitcount", "bc1", "1000", "2000"}},
+      {{"tbitcount", "tbc1", "1000", "-1"},
+       {"bitcount", "bc1", "1000", "-1"}},
+      {{"tbitcount", "tbc1", "2000", "-1"},
+       {"bitcount", "bc1", "2000", "-1"}},
+      {{"dump", "tbc1"}, {"dump", "bc1"}},
+
+      {{"tbitpos", "tbc1", "1"},
+       {"bitpos", "bc1", "1"}},
+      {{"tbitpos", "tbc1", "1", "10", "2"},
+       {"bitpos", "bc1", "1", "10", "2"}},
+      {{"tbitpos", "tbc1", "0", "10", "2"},
+       {"bitpos", "bc1", "0", "10", "2"}},
+       {{"tbitpos", "tbc1", "1", "1", "2"},
+       {"bitpos", "bc1", "1", "1", "2"}},
+      {{"tbitpos", "tbc1", "1", "100", "200"},
+       {"bitpos", "bc1", "1", "100", "200"}},
+    };
+
+  auto fragArr = {8, 1024};
+  for (auto fraglen : fragArr) {
+    sess.setArgs(
+      {"config", "set", "tbitmap-fragment-size", std::to_string(fraglen)});
+    auto expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"del",
+                  "srckey1",
+                  "srckey2",
+                  "srckey3",
+                  "srckey4",
+                  "destkey",
+                  "srckey5",
+                  "bc1",
+                  "bc2",
+                  "bc3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    sess.setArgs({"del",
+                  "tsrckey1",
+                  "tsrckey2",
+                  "tsrckey3",
+                  "tsrckey4",
+                  "tdestkey",
+                  "tsrckey5",
+                  "tbc1",
+                  "tbc2",
+                  "tbc3"});
+    expect = Command::runSessionCmd(&sess);
+    EXPECT_TRUE(expect.ok());
+
+    testDiffCommandArray(server, resultArr);
+  }
+
 
 #ifndef _WIN32
   server->stop();

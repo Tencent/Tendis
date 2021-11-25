@@ -314,6 +314,11 @@ proc debugPopulateKeys {r count {type "string"} {prefix "key"} {hashtag "0"}} {
             set score "0.0"
             {*}$r zadd $zset_key $score $value
         }
+        "tsetbit" {
+            set tbitmap_key "${key}_tsetbit"
+            set bit "1"
+            {*}$r tsetbit $tbitmap_key $idx*1000 $bit
+        }
         default {
             puts "Unknown populate keys type"
         }

@@ -128,8 +128,8 @@ Status ReplManager::receiveFileDirectio(const std::string& fullFileName,
         std::shared_ptr<BlockingTcpClient> client,
         size_t remain) {
   filesystem::path dirName = filesystem::path(fullFileName).parent_path();
-  auto alignedBuf = newAlignedBuff(dirName, 16);
-  if (alignedBuf == nullptr) {
+  auto alignedBuf = newAlignedBuff(dirName.generic_string(), 16);
+  if (!alignedBuf) {
     return {ErrorCodes::ERR_INTERNAL, "newAlignedBuff failed"};
   }
 

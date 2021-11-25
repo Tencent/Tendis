@@ -898,6 +898,12 @@ void ReplManager::supplyFullPsyncRoutine(
       continue;
     }
 
+    // RT_TBITMAP_META will be processed when RT_TBITMAP_ELE,
+    // because RT_TBITMAP_META and RT_TBITMAP_ELE is not continuous
+    if (valueType == RecordType::RT_TBITMAP_META) {
+      continue;
+    }
+
     kvCount++;
     if (chunkId != prevChunkId) {
       LOG(INFO) << "full psync. begin chunkId: " << chunkId
@@ -916,6 +922,10 @@ void ReplManager::supplyFullPsyncRoutine(
         Expected<RecordValue> eValue = store->getKV(mk, txn.get());
         if (eValue.ok()) {
           targetTTL = eValue.value().getTtl();
+          if (eValue.value().getRecordType() == RecordType::RT_TBITMAP_META
+            && targetTTL != 0 && currentTs <= targetTTL) {
+            result.emplace_back(mk, eValue.value());
+          }
         } else {
           LOG(WARNING) << "Get target ttl for key " << curPrimarykey
                        << " of type: " << rt2Str(keyType) << " in db:" << dbid

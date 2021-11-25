@@ -34,6 +34,8 @@ uint8_t decodeType(RecordType type) {
       typeMask = 3 << 4;
       break;
     case RecordType::RT_KV:
+    // bitmap is kv for redis
+    case RecordType::RT_TBITMAP_META:
       typeMask = 0 << 4;
       break;
     default:
@@ -657,6 +659,43 @@ class HashSerializer : public Serializer {
   }
 };
 
+class TBitmapSerializer : public Serializer {
+ public:
+  explicit TBitmapSerializer(Session* sess,
+                             const std::string& key,
+                             RecordValue&& rv)
+    : Serializer(
+        sess, key, DumpType::RDB_TYPE_STRING, std::forward<RecordValue>(rv)) {}
+
+  Expected<size_t> dumpObject(std::vector<byte>* payload) {
+    auto server = _sess->getServerEntry();
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(_sess, _key);
+    if (!expdb.ok()) {
+      return expdb.status();
+    }
+    PStore kvstore = expdb.value().store;
+    auto ptxn = _sess->getCtx()->createTransaction(kvstore);
+    if (!ptxn.ok()) {
+      return ptxn.status();
+    }
+
+    auto eMeta = TBitMapMetaValue::decode(_rv.getValue());
+    RET_IF_ERR_EXPECTED(eMeta);
+    auto meta = std::move(eMeta.value());
+
+    auto result = getTBitmapString(expdb.value().chunkId,
+                                   _sess->getCtx()->getDbId(),
+                                   meta,
+                                   _key,
+                                   ptxn.value());
+    RET_IF_ERR_EXPECTED(result);
+
+    Serializer::saveString(payload, &_pos, result.value());
+    _begin = 0;
+    return _pos - _begin;
+  }
+};
+
 // outlier function
 Expected<std::unique_ptr<Serializer>> getSerializer(Session* sess,
                                                     const std::string& key) {
@@ -688,6 +727,10 @@ Expected<std::unique_ptr<Serializer>> getSerializer(Session* sess,
     case RecordType::RT_ZSET_META:
       ptr = std::move(std::unique_ptr<Serializer>(
         new ZsetSerializer(sess, key, std::move(rv.value()))));
+      break;
+    case RecordType::RT_TBITMAP_META:
+      ptr = std::move(std::unique_ptr<Serializer>(
+        new TBitmapSerializer(sess, key, std::move(rv.value()))));
       break;
     default:
       INVARIANT_D(0);
@@ -1520,6 +1563,10 @@ class RestoreMetaCommand : public Command {
         case RecordType::RT_KV:
           typeMask = 0 << 4;
           break;
+        case RecordType::RT_TBITMAP_META: {
+          // TODO(vinchen)
+          return {ErrorCodes::ERR_PARSEOPT, "TBitmap is not supported"};
+        }
         default:
           LOG(ERROR) << "get invalid record type"
                      << rt2Char(value.getRecordType()) << "in iteration";
@@ -1563,6 +1610,12 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
   std::stringstream ss;
   auto type = list.front().getRecordValue().getRecordType();
   auto key = list.front().getRecordKey().getPrimaryKey();
+  // for tbitmap
+  uint64_t fragmentLen = 0;
+  uint64_t nextIdForBitmap = 0;
+  uint64_t bitmapLen = 0;
+  uint64_t maxId = 0;
+  std::string bitmapStr;
   switch (type) {
     case tendisplus::RecordType::RT_KV:
       INVARIANT_D(list.size() == 1);
@@ -1594,6 +1647,22 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
       Command::fmtBulk(ss, "ZADD");
       Command::fmtBulk(ss, key);
       break;
+
+    case tendisplus::RecordType::RT_TBITMAP_META: {
+      Command::fmtMultiBulkLen(ss, 2);
+      Command::fmtBulk(ss, "SET");
+      Command::fmtBulk(ss, key);
+      auto bMeta =
+        TBitMapMetaValue::decode(list.front().getRecordValue().getValue());
+      if (!bMeta.ok()) {
+        return bMeta.status();
+      }
+      fragmentLen = bMeta.value().fragmentLen();
+      bitmapLen = bMeta.value().byteAmount();
+      maxId = bitmapLen / fragmentLen;
+      bitmapStr.reserve(bMeta.value().byteAmount());
+      break;
+    }
 
     default:
       INVARIANT_D(0);
@@ -1638,10 +1707,60 @@ Expected<std::string> recordList2Aof(const std::list<Record>& list) {
         break;
       }
 
+      case tendisplus::RecordType::RT_TBITMAP_META: {
+        auto bMeta =
+          TBitMapMetaValue::decode(rtValue.getValue());
+        if (!bMeta.ok()) {
+          return bMeta.status();
+        }
+        bitmapStr.append(bMeta.value().firstFragment());
+        INVARIANT_D(bMeta.value().firstFragment().size() <= fragmentLen);
+        if (nextIdForBitmap != maxId) {
+          bitmapStr.append(
+            std::string(fragmentLen - bMeta.value().firstFragment().size(), 0));
+          nextIdForBitmap++;
+        }
+        break;
+      }
+
+      case tendisplus::RecordType::RT_TBITMAP_ELE: {
+        auto eBitmapId = tendisplus::stoull(rtKey.getSecondaryKey());
+        if (!eBitmapId.ok()) {
+          return eBitmapId.status();
+        }
+        if (nextIdForBitmap > eBitmapId.value()) {
+          LOG(ERROR) << "nextIdForBitmap:"
+                     << nextIdForBitmap << "is bigger than bitmapid:"
+                     << eBitmapId.value();
+          return
+            {ErrorCodes::ERR_PARSEPKT,
+            "nextIdForBitmap is bigger than bitmapid"};
+        }
+        INVARIANT_D(nextIdForBitmap <= eBitmapId.value());
+        while (nextIdForBitmap != eBitmapId.value()) {
+          bitmapStr.append(std::string(fragmentLen, 0));
+          nextIdForBitmap++;
+        }
+        INVARIANT_D(rtValue.getValue().size() <= fragmentLen);
+        bitmapStr.append(rtValue.getValue());
+        if (nextIdForBitmap != maxId) {
+          bitmapStr.append(
+            std::string(fragmentLen - rtValue.getValue().size(), 0));
+          nextIdForBitmap++;
+        }
+        break;
+      }
+
       default:
         INVARIANT_D(0);
         break;
     }
+  }
+
+  if (!bitmapStr.empty()) {
+    INVARIANT_D(bitmapLen == bitmapStr.size());
+    INVARIANT_D(nextIdForBitmap == maxId);
+    Command::fmtBulk(ss, bitmapStr);
   }
 
   return ss.str();
@@ -1662,9 +1781,14 @@ Expected<std::string> key2Aof(Session* sess, const std::string& key) {
     return ptxn.status();
   }
 
+  std::list<Record> result;
   RecordKey mk(expdb.value().chunkId, dbid, RecordType::RT_DATA_META, key, "");
   auto eValue = kvstore->getKV(mk, ptxn.value());
   RET_IF_ERR_EXPECTED(eValue);
+
+  if (eValue.value().getRecordType() == RecordType::RT_TBITMAP_META) {
+    result.emplace_back(mk, eValue.value());
+  }
 
   auto type = eValue.value().getEleType();
 
@@ -1673,7 +1797,6 @@ Expected<std::string> key2Aof(Session* sess, const std::string& key) {
   auto cursor = ptxn.value()->createDataCursor();
   cursor->seek(prefix);
 
-  std::list<Record> result;
   uint64_t count = 0;
   while (true) {
     Expected<Record> exptRcd = cursor->next();
@@ -1751,6 +1874,11 @@ class RestoreValueCommand : public Command {
     Expected<RecordValue> rv =
       Command::expireKeyIfNeeded(sess, key, RecordType::RT_DATA_META);
     RET_IF_ERR_EXPECTED(rv);
+
+    if (rv.value().getRecordType() == RecordType::RT_TBITMAP_META) {
+      // TODO(vinchen): tbitmap is not supported
+      return {ErrorCodes::ERR_INTERGER, "tbitmap is not supported"};
+    }
 
     PStore kvstore = expdb.value().store;
     auto ptxn = sess->getCtx()->createTransaction(kvstore);

@@ -1123,8 +1123,6 @@ Expected<std::string> LuaState::evalGenericCommand(Session *sess,
   auto locklist = server->getSegmentMgr()->getAllKeysLocked(
           _fakeSess->getSession(), args, keyidx, mgl::LockMode::LOCK_X);
   if (!locklist.ok()) {
-    LOG(ERROR) << "evalGenericCommand getAllKeysLocked failed:"
-      << locklist.status().toString();
     lua_pop(_lua, 2); /* remove the Lua function and error handler. */
     return locklist.status();
   }

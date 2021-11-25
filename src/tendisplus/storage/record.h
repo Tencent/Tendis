@@ -63,6 +63,8 @@ enum class RecordType {
   RT_BINLOG,     /* For binlog in RecordKey and RecordValue  */
   RT_TTL_INDEX,  /* For ttl index  in RecordKey and RecordValue  */
   RT_DATA_META,  /* For key type in RecordKey */
+  RT_TBITMAP_META,
+  RT_TBITMAP_ELE,
 };
 
 uint8_t rt2Char(RecordType t);
@@ -645,6 +647,42 @@ class SetMetaValue {
   std::string _skIndex;
 };
 
+class TBitMapMetaValue {
+ public:
+  explicit TBitMapMetaValue(uint64_t fragmentLen);
+  TBitMapMetaValue(uint64_t bitAmount,
+                   uint64_t count,
+                   uint64_t eleCnt,
+                   uint64_t fragmentLen);
+  TBitMapMetaValue(TBitMapMetaValue&&);
+  TBitMapMetaValue& operator=(TBitMapMetaValue&&);
+
+  static Expected<TBitMapMetaValue> decode(const std::string&);
+  std::string encode() const;
+
+  void setBitAmount(uint64_t bitAmount);
+  void setCount(uint64_t count);
+  void setEleCount(uint64_t eleCount);
+  void setFirstFragment(std::string bitstr);
+
+  uint64_t fragmentLen() const;       // each fragment size(byte)
+  std::string firstFragment() const;  // first fragment's bit string
+  // bit '1' amount in bitmap, bitAmount - count is bit '0' amount in bitmap
+  uint64_t count() const;
+  uint64_t bitAmount()
+    const;  // whole bitmap's size(bit), byteAmount * 8 >= bitAmount
+  uint64_t byteAmount() const;  // whole bitmap's size(byte), fragmentAmount *
+                                // fragmentLen >= byteAmount
+  uint64_t fragmentAmount() const;  // whole bitmap's size(fragment)
+  uint64_t eleCount() const;    // element count of bitmap
+
+ private:
+  uint64_t _bitAmount;      // whole bitmap's size(bit)
+  uint64_t _count;          // bit '1' amount in bitmap
+  uint64_t _eleCount;       // element count of bitmap
+  uint64_t _fragmentLen;    // each fragment size(byte)
+  std::string _firstFragment;
+};
 
 /*
 

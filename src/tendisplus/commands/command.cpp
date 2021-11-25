@@ -566,6 +566,21 @@ Expected<string> Command::delSubkeysRange(Session* sess,
                    UINT64_MAX);
     prefixes.push_back(startH);
     prefixes.push_back(endH);
+  } else if (valueType == RecordType::RT_TBITMAP_META) {
+    RecordKey start(mk.getChunkId(),
+                    mk.getDbId(),
+                    RecordType::RT_TBITMAP_ELE,
+                    mk.getPrimaryKey(),
+                    "",
+                    0);
+    RecordKey end(mk.getChunkId(),
+                  mk.getDbId(),
+                  RecordType::RT_TBITMAP_ELE,
+                  mk.getPrimaryKey(),
+                  "",
+                  UINT64_MAX);
+    prefixes.push_back(start);
+    prefixes.push_back(end);
   } else {
     INVARIANT_D(0);
   }
@@ -652,6 +667,13 @@ Expected<uint32_t> Command::partialDelSubKeys(Session* sess,
                        mk.getPrimaryKey(),
                        "");
     prefixes.push_back(fakeEle1.prefixPk());
+  } else if (valueType == RecordType::RT_TBITMAP_META) {
+    RecordKey fakeEle(mk.getChunkId(),
+                      mk.getDbId(),
+                      RecordType::RT_TBITMAP_ELE,
+                      mk.getPrimaryKey(),
+                      "");
+    prefixes.push_back(fakeEle.prefixPk());
   } else {
     INVARIANT_D(0);
   }
@@ -768,6 +790,9 @@ Status Command::delKey(Session* sess,
   for (uint32_t i = 0; i < RETRY_CNT; ++i) {
     Expected<RecordValue> eValue = kvstore->getKV(mk, txn);
     if (!eValue.ok()) {
+      if (eValue.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        return {ErrorCodes::ERR_OK, ""};
+      }
       return eValue.status();
     }
     RecordType valueType = eValue.value().getRecordType();

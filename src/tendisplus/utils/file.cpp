@@ -2,24 +2,56 @@
 // Please refer to the license text that comes with this tendis open source
 // project for additional information.
 
+#ifndef _WIN32
 #include <sys/file.h>
+#include <sys/statfs.h>
+#endif
 #include <sys/stat.h>
 #include <stdlib.h>
-#include <sys/statfs.h>
 #include <utility>
 #include "glog/logging.h"
 #include "tendisplus/utils/file.h"
 
 namespace tendisplus {
 
-std::shared_ptr<AlignedBuff> newAlignedBuff(std::string path,
+#ifdef _WIN32
+static int check_align(size_t align) {
+  for (size_t i = sizeof(void*); i != 0; i *= 2)
+    if (align == i)
+      return 0;
+  return EINVAL;
+}
+
+int posix_memalign(void** ptr, size_t align, size_t size) {
+  if (check_align(align))
+    return EINVAL;
+
+  int saved_errno = errno;
+  void* p = _aligned_malloc(size, align);
+  if (p == NULL) {
+    errno = saved_errno;
+    return ENOMEM;
+  }
+
+  *ptr = p;
+  return 0;
+}
+#endif
+
+
+std::shared_ptr<AlignedBuff> newAlignedBuff(const std::string& path,
         int32_t sizeMultiple) {
+#ifdef _WIN32
+  size_t logicalBlockSize = 512;
+#else
   struct statfs s;
   if (statfs(path.c_str(), &s)) {
     LOG(ERROR) << "statfs failed:" << path << " " << strerror(errno);
     return nullptr;
   }
   size_t logicalBlockSize = s.f_bsize;
+#endif
+
   size_t bufSize = logicalBlockSize * sizeMultiple;
   char* buf;
   int ret = posix_memalign(reinterpret_cast<void **>(&buf),

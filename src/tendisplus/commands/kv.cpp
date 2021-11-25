@@ -18,6 +18,7 @@
 #include "tendisplus/utils/redis_port.h"
 #include "tendisplus/commands/command.h"
 #include "tendisplus/utils/scopeguard.h"
+#include "tendisplus/commands/dump.h"
 
 namespace tendisplus {
 
@@ -829,6 +830,20 @@ class GetCommand : public GetGenericCmd {
     if (v.status().code() == ErrorCodes::ERR_EXPIRED ||
         v.status().code() == ErrorCodes::ERR_NOTFOUND) {
       return Command::fmtNull();
+    }
+    if (v.status().code() == ErrorCodes::ERR_WRONG_TYPE) {
+      // tbitmap
+      uint64_t maxBitAmount = 0;
+      const auto& args = sess->getArgs();
+      auto tv = getBitmap(sess, args[1], &maxBitAmount);
+      if (tv.status().code() == ErrorCodes::ERR_EXPIRED ||
+          tv.status().code() == ErrorCodes::ERR_NOTFOUND) {
+        return Command::fmtNull();
+      }
+      if (!tv.ok()) {
+        return tv.status();
+      }
+      return Command::fmtBulk(tv.value());
     }
     if (!v.ok()) {
       return v.status();
@@ -1803,8 +1818,7 @@ class BitopCommand : public Command {
       }
     }
     if (maxLen == 0) {
-      auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-              sess, targetKey, mgl::LockMode::LOCK_X);
+      auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
       if (!expdb.ok()) {
         return expdb.status();
       }
@@ -1814,8 +1828,9 @@ class BitopCommand : public Command {
       if (!ptxn.ok()) {
         return ptxn.status();
       }
-      Command::delKeyChkExpire(sess, targetKey, RecordType::RT_KV,
-        ptxn.value());
+      auto s =
+        Command::delKey(sess, targetKey, RecordType::RT_KV, ptxn.value());
+      RET_IF_ERR(s);
       auto eCmt = sess->getCtx()->commitTransaction(ptxn.value());
       if (!eCmt.ok()) {
         return eCmt.status();
@@ -1847,8 +1862,7 @@ class BitopCommand : public Command {
     }
 
 
-    auto expdb = server->getSegmentMgr()->getDbWithKeyLock(
-            sess, targetKey, mgl::LockMode::LOCK_X);
+    auto expdb = server->getSegmentMgr()->getDbHasLocked(sess, targetKey);
     if (!expdb.ok()) {
       return expdb.status();
     }
@@ -2092,8 +2106,8 @@ class RenameGenericCommand : public Command {
         return Command::fmtZero();
       }
 
-      Status deleted = Command::delKey(sess, dst, RecordType::RT_DATA_META,
-        dptxn.value());
+      Status deleted =
+        Command::delKey(sess, dst, RecordType::RT_DATA_META, dptxn.value());
       if (!deleted.ok()) {
         return deleted.toString();
       }
@@ -2250,6 +2264,13 @@ class RenameGenericCommand : public Command {
                         rk.getPrimaryKey(),
                         "");
       ret.push_back(fakeRk2.prefixPk());
+    } else if (type == RecordType::RT_TBITMAP_META) {
+      RecordKey fakeRk(rk.getChunkId(),
+                       rk.getDbId(),
+                       RecordType::RT_TBITMAP_ELE,
+                       rk.getPrimaryKey(),
+                       "");
+      ret.push_back(fakeRk.prefixPk());
     }
     return ret;
   }
@@ -2676,12 +2697,15 @@ class BitFieldCommand : public Command {
         }
 
         if (op.sign) {
-          int64_t val = getSignedBitfield(
-            std::string(buf.begin(), buf.end()), op.offset-(byte*8), op.bits);
+          int64_t val = getSignedBitfield(std::string(buf.begin(), buf.end()),
+                                          op.offset - (byte * 8),
+                                          op.bits);
           Command::fmtLongLong(ss, val);
         } else {
-          uint64_t val = getUnsignedBitfield(
-            std::string(buf.begin(), buf.end()), op.offset-(byte*8), op.bits);
+          uint64_t val =
+            getUnsignedBitfield(std::string(buf.begin(), buf.end()),
+                                op.offset - (byte * 8),
+                                op.bits);
           Command::fmtLongLong(ss, val);
         }
       }

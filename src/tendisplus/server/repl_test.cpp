@@ -792,6 +792,20 @@ TEST(Repl, slaveofBenchmarkingMasterAOF) {
     thread3.join();
     std::this_thread::sleep_for(std::chrono::seconds(20));
     compareData(master, slave, false);
+
+    auto thread4 = std::thread([this, master]() { testTbitmap(master); });
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    for (uint32_t i = 0; i < 100; i++) {
+      sess.setArgs({"tsetbit", "testTbitmap", std::to_string(i), "1"});
+      auto expect = Command::runSessionCmd(&sess);
+
+      EXPECT_FALSE(expect.ok());
+      DLOG(INFO) << "write to slave should fail" << expect.status().toString();
+    }
+
+    thread4.join();
+    std::this_thread::sleep_for(std::chrono::seconds(20));
+    compareData(master, slave, false);
     LOG(INFO) << ">>>>>> compareData end.";
 
 #ifndef _WIN32

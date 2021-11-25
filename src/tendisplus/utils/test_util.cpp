@@ -3218,6 +3218,212 @@ void testSync(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(ss1.str(), expect.value());
 }
 
+void testTbitmap(std::shared_ptr<ServerEntry> svr) {
+  auto fmtSyncVerRes = [](std::stringstream& ss, uint64_t ts, uint64_t ver) {
+    ss.str("");
+    Command::fmtMultiBulkLen(ss, 2);
+    Command::fmtLongLong(ss, ts);
+    Command::fmtLongLong(ss, ver);
+  };
+
+  asio::io_context ioCtx;
+  asio::ip::tcp::socket socket(ioCtx), socket1(ioCtx);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "1"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "8192", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "999999999999999", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "-1", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "999999999999999", "2"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "2"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"del", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "8192"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"del", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "8192", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"del", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "999999999999999"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"tgetbit", "testTbitmap", "-1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(!expect.ok());
+
+  sess.setArgs({"del", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "0", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "8192", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "8192", "0"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtOne(), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"del", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "1024", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "2048", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tsetbit", "testTbitmap", "4096", "1"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtZero(), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(3), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "128"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(3), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "256"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(2), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "512"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "513"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(0), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "0", "127"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(0), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "0", "128"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(1), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "0", "256"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(2), expect.value());
+
+  sess.setArgs({"tbitcount", "testTbitmap", "0", "512"});
+  expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(Command::fmtLongLong(3), expect.value());
+}
+
 void testAll(std::shared_ptr<ServerEntry> svr) {
   testExpireForImmediately(svr);
   testExpireForAlreadyExpired1(svr);
@@ -3237,6 +3443,7 @@ void testAll(std::shared_ptr<ServerEntry> svr) {
   testHash2(svr);
   testList(svr);
   testSync(svr);
+  testTbitmap(svr);
 }
 
 void waitSlaveCatchup(const std::shared_ptr<ServerEntry>& master,

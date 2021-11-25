@@ -551,6 +551,8 @@ ServerParams::ServerParams() {
 
   REGISTER_VARS_DIFF_NAME_DYNAMIC("force-recovery", forceRecovery);
 
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("tbitmap-fragment-size", tbitmapFragmentSize);
+
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
   REGISTER_VARS(luaStateMaxIdleTime);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("jeprof-auto-dump", jeprofAutoDump);

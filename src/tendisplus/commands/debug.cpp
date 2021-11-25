@@ -813,6 +813,25 @@ class IterAllCommand : public Command {
           Command::fmtBulk(ss, tendisplus::dtos(d.value()));
           break;
         }
+        case RecordType::RT_TBITMAP_ELE: {
+          Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
+          Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+          Command::fmtBulk(ss, o.getRecordKey().getSecondaryKey());
+          Command::fmtBulk(ss, o.getRecordValue().getValue());
+          break;
+        }
+        case RecordType::RT_TBITMAP_META: {
+          Command::fmtBulk(ss, std::to_string(o.getRecordKey().getDbId()));
+          Command::fmtBulk(ss, o.getRecordKey().getPrimaryKey());
+          auto d = TBitMapMetaValue::decode(o.getRecordValue().getValue());
+          if (!d.ok()) {
+            return d.status();
+          }
+          Command::fmtBulk(ss, "0");
+          Command::fmtBulk(ss, d.value().firstFragment());
+          break;
+        }
+
         default:
           INVARIANT_D(0);
       }

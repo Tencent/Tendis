@@ -284,6 +284,47 @@ size_t popCount(const void* s, long count) {  // (NOLINT)
   return bits;
 }
 
+int64_t bitPos(const std::string& fragment,
+               size_t start,
+               size_t end,
+               uint32_t bit) {
+  if (end >= fragment.size()) {
+    end = fragment.size() - 1;
+  }
+
+  if (start >= fragment.size()) {
+    if (bit == 0) {
+      return start * 8;
+    } else {
+      return -1;
+    }
+  }
+
+  auto pos = bitPos(fragment.c_str() + start, end - start + 1, bit);
+  if (pos != -1) {
+    pos = start * 8 + pos;
+  }
+
+
+  return pos;
+}
+
+size_t popCount(const std::string& value, size_t offset, size_t end) {
+  if (offset > end) {
+    return 0;
+  }
+
+  if (offset >= value.size()) {
+    return 0;
+  }
+
+  if (end > value.size()) {
+    end = value.size();
+  }
+
+  return popCount(value.c_str() + offset, end - offset + 1);
+}
+
 /* Convert a long double into a string. If humanfriendly is non-zero
  * it does not use exponential format and trims trailing zeroes at the end,
  * however this results in loss of precision. Otherwise exp format is used
