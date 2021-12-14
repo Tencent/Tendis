@@ -861,7 +861,7 @@ rocksdb::Status RocksWBTxn::get(const rocksdb::ReadOptions& options,
                               rocksdb::ColumnFamilyHandle* columnFamily,
                               const std::string& key,
                               std::string* value) {
-  // TODO(jingunli): ReadUncommited or ReadCommited ?
+  // TODO(jingjunli): ReadUncommited or ReadCommited ?
   // s = _store->getBaseDB()->Get(readOpts, handle, key, &value);
   return _writeBatch->GetFromBatchAndDB(
     _store->getBaseDB(), options, columnFamily, key, value);
@@ -882,9 +882,9 @@ const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
 
 rocksdb::Iterator* RocksWBTxn::getIterator(
   rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily) {
-  // rocksdb::Iterator* dbIter = _store->newIterator(readOpts, handle);
-  // TODO(jingunli): ReadUncommited or ReadCommited ?
-  // _writeBatch->NewIteratorWithBase(handle, dbIter);
+  // rocksdb::Iterator* dbIter = _store->newIterator(readOpts, columnFamily);
+  // TODO(jingjunli): ReadUncommited or ReadCommited ?
+  // return _writeBatch->NewIteratorWithBase(columnFamily, dbIter);
   return _store->newIterator(readOpts, columnFamily);
 }
 

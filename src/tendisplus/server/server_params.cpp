@@ -492,7 +492,7 @@ ServerParams::ServerParams() {
                                   rocksCompactOnDeletionTrigger);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks.compaction_deletes_ratio",
                                   rocksCompactOnDeletionRatio);
-  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks_transaction_mode",
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks-transaction-mode",
                           rocksTransactionMode);
 
   REGISTER_VARS_SAME_NAME(

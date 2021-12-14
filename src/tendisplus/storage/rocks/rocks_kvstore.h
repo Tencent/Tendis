@@ -128,7 +128,6 @@ class RocksTxn : public Transaction {
                       std::string* value);
   virtual rocksdb::Status del(rocksdb::ColumnFamilyHandle* columnFamily,
                       const std::string& key);
-  virtual rocksdb::Status txnCommit();
   virtual const rocksdb::Snapshot* getSnapshot();
   virtual rocksdb::Iterator* getIterator(
     rocksdb::ReadOptions readOpts, rocksdb::ColumnFamilyHandle* columnFamily);
@@ -137,6 +136,7 @@ class RocksTxn : public Transaction {
   virtual void ensureTxn() {}
   std::unique_ptr<Cursor> createCursor(ColumnFamilyNumber cf,
       const std::string* iterate_upper_bound = NULL) final;
+  virtual rocksdb::Status txnCommit();
 
   uint64_t _txnId;
   uint64_t _binlogId;
