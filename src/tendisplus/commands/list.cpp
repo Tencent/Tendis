@@ -892,7 +892,7 @@ class LIndexCommand : public Command {
     int64_t idx = 0;
     try {
       idx = static_cast<int64_t>(std::stoll(args[2]));
-    } catch (std::exception& ex) {
+    } catch (const std::exception& ex) {
       return {ErrorCodes::ERR_PARSEOPT, ex.what()};
     }
 

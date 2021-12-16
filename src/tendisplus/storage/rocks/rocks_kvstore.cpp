@@ -1655,7 +1655,7 @@ Status RocksKVStore::clear() {
     }
     auto n = filesystem::remove_all(dbPath() + "/" + dbId());
     LOG(INFO) << "dbId:" << dbId() << " cleared " << n << " files/dirs";
-  } catch (std::exception& ex) {
+  } catch (const std::exception& ex) {
     LOG(WARNING) << "dbId:" << dbId() << " clear failed:" << ex.what();
     return {ErrorCodes::ERR_INTERNAL, ex.what()};
   }
@@ -1741,7 +1741,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
           return {ErrorCodes::ERR_INTERNAL, ss.str()};
         }
         filesystem::rename(dftBackupDir(), path);
-      } catch (std::exception& ex) {
+      } catch (const std::exception& ex) {
         LOG(WARNING) << "dbId:" << dbId() << "restore exception" << ex.what();
         return {ErrorCodes::ERR_INTERNAL, ex.what()};
       }
@@ -2263,7 +2263,7 @@ Expected<std::string> RocksKVStore::copyCkpt(const std::string& dir) {
       return {ErrorCodes::ERR_INTERNAL, ss.str()};
     }
     filesystem::copy(dir, path);
-  } catch (std::exception& ex) {
+  } catch (const std::exception& ex) {
     LOG(WARNING) << "dbId:" << dbId() << "restore exception" << ex.what();
     return {ErrorCodes::ERR_INTERNAL, ex.what()};
   }

@@ -669,12 +669,12 @@ std::ofstream* ReplManager::getCurBinlogFs(uint32_t storeId) {
     if (ts == 0) {
       ts = _svr->getStartupTimeNs() / 1000000;
     }
-    char fname[256], tbuf[256];
-    memset(fname, 0, 128);
-    memset(tbuf, 0, 128);
+    char fname[256], tbuf[128];
+    memset(fname, 0, sizeof(fname));
+    memset(tbuf, 0, sizeof(tbuf));
 
     // ms to second
-    time_t time = (time_t)(uint32_t)(ts / 1000);
+    time_t time = (time_t)(ts / 1000);
     struct tm lt;
     (void)localtime_r(&time, &lt);
     strftime(tbuf, sizeof(tbuf), "%Y%m%d%H%M%S", &lt);

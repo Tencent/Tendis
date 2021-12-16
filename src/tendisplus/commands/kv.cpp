@@ -166,7 +166,7 @@ class SetCommand : public Command {
           return {ErrorCodes::ERR_PARSEPKT, "syntax error"};
         }
       }
-    } catch (std::exception& ex) {
+    } catch (const std::exception& ex) {
       return {ErrorCodes::ERR_PARSEPKT,
               "value is not an integer or out of range"};
     }

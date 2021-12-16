@@ -1126,7 +1126,7 @@ class SlaveofCommand : public Command {
     uint32_t port;
     try {
       port = std::stoul(args[2]);
-    } catch (std::exception& ex) {
+    } catch (const std::exception& ex) {
       return {ErrorCodes::ERR_PARSEPKT, ex.what()};
     }
     if (args.size() == 3) {
@@ -1161,7 +1161,7 @@ class SlaveofCommand : public Command {
       try {
         storeId = std::stoul(args[3]);
         sourceStoreId = std::stoul(args[4]);
-      } catch (std::exception& ex) {
+      } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_PARSEPKT, ex.what()};
       }
       if (storeId >= svr->getKVStoreCount() ||
@@ -1190,7 +1190,7 @@ class SlaveofCommand : public Command {
       uint32_t storeId = 0;
       try {
         storeId = std::stoul(args[3]);
-      } catch (std::exception& ex) {
+      } catch (const std::exception& ex) {
         return {ErrorCodes::ERR_PARSEPKT, ex.what()};
       }
       if (storeId >= svr->getKVStoreCount()) {

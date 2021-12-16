@@ -167,7 +167,7 @@ class server {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
-    } catch (exception e) {
+    } catch (const exception& e) {
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif
@@ -314,7 +314,7 @@ class server2 {
     try {
       _acceptor = new asio::ip::tcp::acceptor(
         io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
-    } catch (exception e) {
+    } catch (const exception& e) {
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
       printPortRunningInfo(port);
 #endif

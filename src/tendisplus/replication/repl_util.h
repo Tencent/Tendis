@@ -16,7 +16,7 @@ namespace tendisplus {
 #define CLUSTER_SLOTS 16384
 
 #define SyncReadData(data, len, timeout)                              \
-  Expected<std::string>(data) =                                       \
+  Expected<std::string> data =                                        \
     _client->read((len), std::chrono::seconds((timeout)));            \
   if (!data.ok()) {                                                   \
     LOG(ERROR) << "SyncReadData failed:" << data.status().toString(); \

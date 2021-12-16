@@ -202,7 +202,7 @@ Status NetworkAsio::prepare(const std::string& ip,
     if (ec.value()) {
       return {ErrorCodes::ERR_NETWORK, ec.message()};
     }
-  } catch (std::exception& e) {
+  } catch (const std::exception& e) {
 #if defined(TENDIS_DEBUG) && !defined(_WIN32)
     printPortRunningInfo(port);
 #endif
