@@ -457,10 +457,10 @@ class ServerParams {
   uint32_t netBatchSize = 1024 * 1024;
   uint32_t netBatchTimeoutSec = 10;
   uint32_t timeoutSecBinlogWaitRsp = 30;
-  uint32_t incrPushThreadnum = 4;
-  uint32_t fullPushThreadnum = 4;
-  uint32_t fullReceiveThreadnum = 4;
-  uint32_t logRecycleThreadnum = 4;
+  uint32_t incrPushThreadnum = 10;
+  uint32_t fullPushThreadnum = 5;
+  uint32_t fullReceiveThreadnum = 5;
+  uint32_t logRecycleThreadnum = 5;
   uint32_t truncateBinlogIntervalMs = 1000;
   uint32_t truncateBinlogNum = 100000;
   uint32_t binlogFileSizeMB = 64;
@@ -500,8 +500,8 @@ class ServerParams {
   uint32_t binlogSendBatch = 256;
   uint32_t binlogSendBytes = 16 * 1024 * 1024;
 
-  uint32_t migrateSenderThreadnum = 4;
-  uint32_t migrateReceiveThreadnum = 4;
+  uint32_t migrateSenderThreadnum = 5;
+  uint32_t migrateReceiveThreadnum = 5;
   uint32_t garbageDeleteThreadnum = 1;
   uint32_t garbageDeleteSize = 30;
 

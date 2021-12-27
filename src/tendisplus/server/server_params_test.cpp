@@ -243,10 +243,10 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->netBatchSize, 1024 * 1024);
   EXPECT_EQ(cfg->netBatchTimeoutSec, 10);
   EXPECT_EQ(cfg->timeoutSecBinlogWaitRsp, 30);
-  EXPECT_EQ(cfg->incrPushThreadnum, 4);
-  EXPECT_EQ(cfg->fullPushThreadnum, 4);
-  EXPECT_EQ(cfg->fullReceiveThreadnum, 4);
-  EXPECT_EQ(cfg->logRecycleThreadnum, 4);
+  EXPECT_EQ(cfg->incrPushThreadnum, 10);
+  EXPECT_EQ(cfg->fullPushThreadnum, 5);
+  EXPECT_EQ(cfg->fullReceiveThreadnum, 5);
+  EXPECT_EQ(cfg->logRecycleThreadnum, 5);
   EXPECT_EQ(cfg->truncateBinlogIntervalMs, 1000);
   EXPECT_EQ(cfg->truncateBinlogNum, 100000);
   EXPECT_EQ(cfg->binlogFileSizeMB, 64);
@@ -271,8 +271,8 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->binlogSendBatch, 256);
   EXPECT_EQ(cfg->binlogSendBytes, 16 * 1024 * 1024);
 
-  EXPECT_EQ(cfg->migrateSenderThreadnum, 4);
-  EXPECT_EQ(cfg->migrateReceiveThreadnum, 4);
+  EXPECT_EQ(cfg->migrateSenderThreadnum, 5);
+  EXPECT_EQ(cfg->migrateReceiveThreadnum, 5);
   EXPECT_EQ(cfg->garbageDeleteThreadnum, 1);
   EXPECT_EQ(cfg->clusterEnabled, false);
   EXPECT_EQ(cfg->domainEnabled, false);

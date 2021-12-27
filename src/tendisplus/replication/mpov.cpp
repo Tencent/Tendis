@@ -151,7 +151,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
       nextSched = SCLOCK::now();
       lastSend = nextSched;
     } else {
-      nextSched = SCLOCK::now() + std::chrono::seconds(1);
+      nextSched = SCLOCK::now() + std::chrono::milliseconds(1);
       if (needHeartbeat) {
         lastSend = SCLOCK::now();
       }
