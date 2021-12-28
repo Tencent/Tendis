@@ -2769,6 +2769,9 @@ void testKV(std::shared_ptr<ServerEntry> svr) {
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
   EXPECT_EQ(expect.value(), Command::fmtOK());
+
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+
   sess.setArgs({"bitop", "and", "bitopdestkey", "bitopkey1", "bitopkey2"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_TRUE(expect.ok());
