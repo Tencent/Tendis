@@ -169,15 +169,7 @@ Expected<std::string> genericZadd(Session* sess,
     if (!s.ok()) {
       return s;
     }
-    Expected<RecordValue> eMeta = kvstore->getKV(mk, txn);
-    if (!eMeta.ok()) {
-      return eMeta.status();
-    }
-    auto eMetaContent = ZSlMetaValue::decode(eMeta.value().getValue());
-    if (!eMetaContent.ok()) {
-      return eMetaContent.status();
-    }
-    meta = eMetaContent.value();
+    meta = ZSlMetaValue::decode(rv.getValue()).value();
   }
 
   SkipList sl(mk.getChunkId(), mk.getDbId(), mk.getPrimaryKey(), meta, kvstore);
