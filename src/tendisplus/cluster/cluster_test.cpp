@@ -1794,7 +1794,7 @@ TEST(Cluster, stopAllMigrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 100000;
+  const uint32_t numData = 10000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     string key;
