@@ -529,9 +529,52 @@ INSTANTIATE_TEST_CASE_P(BinlogDisabledTest,
                         MasterBinlogDisabledTest,
                         testing::Bool());
 
+void testSlaveDontDeleteExpiredKey(std::shared_ptr<NetSession> sessionMaster,
+        std::shared_ptr<NetSession> sessionSlave) {
+  sessionMaster->setArgs({"setex", "a", "2", "3"});
+  auto expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_TRUE(expect.ok());
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), ":2\r\n");
+
+  sleep(4);
+  sessionSlave->setArgs({"get", "a"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_TRUE(expect.ok());
+  // expireKeyIfNeeded slave node dont delete key
+  sessionSlave->setArgs({"dbsize", "containexpire"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), ":1\r\n");
+  // expireKeyIfNeeded slave dont add binlogid
+  sessionSlave->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), ":2\r\n");
+
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), ":2\r\n");
+  // expireKeyIfNeeded master delete key and add binlogid
+  sessionMaster->setArgs({"get", "a"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), "$-1\r\n");
+  sessionMaster->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionMaster.get());
+  EXPECT_EQ(expect.value(), ":3\r\n");
+
+  sleep(1);
+  // delete binlog send to slave
+  sessionSlave->setArgs({"dbsize", "containexpire"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), ":0\r\n");
+  // expireKeyIfNeeded slave dont add binlogid
+  sessionSlave->setArgs({"binlogpos", "5"});
+  expect = Command::runSessionCmd(sessionSlave.get());
+  EXPECT_EQ(expect.value(), ":3\r\n");
+}
 
 TEST(Repl, SlaveCantModify) {
-  size_t i = 1;
+  size_t i = 10;  // kvStoreCount
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
@@ -597,6 +640,8 @@ TEST(Repl, SlaveCantModify) {
       session3->setArgs({"get", "a"});
       expect = Command::runSessionCmd(session3.get());
       EXPECT_EQ(expect.value(), "$1\r\n2\r\n");
+
+      testSlaveDontDeleteExpiredKey(session1, session2);
     }
 
 #ifndef _WIN32
