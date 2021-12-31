@@ -572,7 +572,7 @@ void ReplManager::controlRoutine() {
     if (doSth) {
       std::this_thread::yield();
     } else {
-      std::this_thread::sleep_for(10ms);
+      std::this_thread::sleep_for(1ms);
     }
   }
   LOG(INFO) << "repl controller exits";
