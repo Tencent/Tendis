@@ -45,27 +45,31 @@ void testCommandArrayResult(
   }
 }
 
-std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
-                                             uint32_t port,
-                                             uint32_t storeCnt = 10,
-                                             bool general_log = true,
-                                             bool singleNode = false,
-                                             bool needMigrateBack = false) {
+std::shared_ptr<ServerEntry> makeClusterNode(
+  const std::string& dir,
+  uint32_t port,
+  uint32_t storeCnt = 10,
+  bool general_log = true,
+  bool singleNode = false,
+  bool needMigrateBack = false,
+  const std::map<std::string, std::string>& configMap =
+    std::map<std::string, std::string>()) {
   auto mDir = dir;
   auto mport = port;
   EXPECT_TRUE(setupEnv(mDir));
 
-  auto cfg1 = makeServerParam(mport, storeCnt, mDir, general_log);
+  auto cfg1 = makeServerParam(mport, storeCnt, mDir, general_log, configMap);
   cfg1->clusterEnabled = true;
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
   cfg1->clusterSingleNode = singleNode;
   // if need migrate back from dstNode to srcNode, set needMigrateBack true
   if (needMigrateBack) {
-    cfg1->enableGcInMigate = true;
     cfg1->migrateReceiveThreadnum = 3;
     cfg1->migrateSenderThreadnum = 3;
   }
+  cfg1->waitTimeIfExistsMigrateTask = 1;
+  cfg1->deleteFilesInRangeForMigrateGc = true;
 
 #ifdef _WIN32
   cfg1->executorThreadNum = 1;
@@ -75,7 +79,6 @@ std::shared_ptr<ServerEntry> makeClusterNode(const std::string& dir,
   cfg1->fullReceiveThreadnum = 1;
   cfg1->logRecycleThreadnum = 1;
   if (needMigrateBack) {
-    cfg1->enableGcInMigate = true;
     cfg1->migrateReceiveThreadnum = 3;
     cfg1->migrateSenderThreadnum = 3;
   }
@@ -98,13 +101,19 @@ makeCluster(uint32_t startPort,
             uint32_t nodeNum = 3,
             uint32_t storeCnt = 1,
             bool withSlave = false,
-            bool needMigrateBack = false) {
+            bool needMigrateBack = false,
+            const std::vector<int>& startSlot = std::vector<int>(),
+            const std::map<std::string, std::string>& configMap =
+              std::map<std::string, std::string>()) {
 #else
 makeCluster(uint32_t startPort,
             uint32_t nodeNum = 3,
             uint32_t storeCnt = 10,
             bool withSlave = false,
-            bool needMigrateBack = false) {
+            bool needMigrateBack = false,
+            const std::vector<int>& startSlot = std::vector<int>(),
+            const std::map<std::string, std::string>& configMap =
+              std::map<std::string, std::string>()) {
 #endif
   LOG(INFO) << "Make Cluster begin.";
   std::vector<std::string> dirs;
@@ -120,11 +129,12 @@ makeCluster(uint32_t startPort,
   std::vector<std::shared_ptr<ServerEntry>> servers;
 
   uint32_t index = 0;
-  for (auto dir : dirs) {
+  for (const auto& dir : dirs) {
     // TODO(wayenchen): find a available port
     uint32_t nodePort = startPort + index++;
     servers.emplace_back(std::move(
-      makeClusterNode(dir, nodePort, storeCnt, true, false, needMigrateBack)));
+      makeClusterNode(dir, nodePort, storeCnt, true,
+                      false, needMigrateBack, configMap)));
   }
 
   auto node0 = servers[0];
@@ -150,12 +160,16 @@ makeCluster(uint32_t startPort,
     WorkLoad work(node, sess);
     work.init();
 
-    if (lastslot > 0)
-      firstslot = lastslot + 1;
-
-    lastslot = firstslot + step;
-    if (idx == nodeNum - 1) {
-      lastslot = CLUSTER_SLOTS - 1;
+    if (startSlot.empty()) {
+      if (lastslot > 0)
+        firstslot = lastslot + 1;
+      lastslot = firstslot + step;
+      if (idx == nodeNum - 1) {
+        lastslot = CLUSTER_SLOTS - 1;
+      }
+    } else {
+      firstslot = startSlot[i];
+      lastslot = i == nodeNum - 1 ? CLUSTER_SLOTS - 1 : startSlot[i+1] -1;
     }
 
     char buf[128];
@@ -464,7 +478,7 @@ TEST(ClusterMsg, Common) {
   for (size_t i = 0; i < gcount; i++) {
     std::string sig = "RCmb";
     uint32_t totlen = genRand() * genRand();
-    uint16_t port = genRand() % 55535;
+    uint16_t port = 15000;
     auto type1 = ClusterMsg::Type::PING;
     uint16_t count = 1;
     uint16_t ver = ClusterMsg::CLUSTER_PROTO_VER;
@@ -502,8 +516,8 @@ TEST(ClusterMsg, Common) {
     uint32_t pingSent = genRand();
     uint32_t pongR = genRand();
     std::string gossipIp = "127.0.0.1";
-    uint16_t gPort = 8001;
-    uint16_t gCport = 18001;
+    uint16_t gPort = 15001;
+    uint16_t gCport = 25001;
     uint16_t gFlags = randomNodeFlag();
 
     auto vs = ClusterGossip(
@@ -564,7 +578,7 @@ TEST(ClusterMsg, Common) {
 TEST(ClusterMsg, CommonMoreGossip) {
   std::string sig = "RCmb";
   uint32_t totlen = genRand() * genRand();
-  uint16_t port = genRand() % 55535;
+  uint16_t port = 15100;
   auto type1 = ClusterMsg::Type::PING;
   uint16_t count = gcount;
   uint64_t currentEpoch =
@@ -603,8 +617,8 @@ TEST(ClusterMsg, CommonMoreGossip) {
     uint32_t pingSent = genRand();
     uint32_t pongR = genRand();
     std::string gossipIp = "127.0.0.1";
-    uint16_t gPort = 8001;
-    uint16_t gCport = 18001;
+    uint16_t gPort = 15101;
+    uint16_t gCport = 25101;
     uint16_t gFlags = randomNodeFlag();
 
     auto vs = ClusterGossip(
@@ -669,7 +683,7 @@ TEST(ClusterMsg, CommonUpdate) {
   ClusterHealth s = ClusterHealth::CLUSTER_OK;
   for (size_t i = 0; i < gcount; i++) {
     uint32_t totlen = genRand();
-    uint16_t port = 8000;
+    uint16_t port = 15200;
     auto type2 = ClusterMsg::Type::UPDATE;
     uint64_t currentEpoch =
       static_cast<uint64_t>(genRand()) * static_cast<uint64_t>(genRand());
@@ -741,7 +755,7 @@ TEST(ClusterMsg, CommonUpdate) {
 }
 
 TEST(ClusterState, clusterReplyMultiBulkSlotsV2) {
-  uint32_t startPort = 16000;
+  uint32_t startPort = 15300;
   auto server = makeClusterNode("node", startPort, 10);
   auto clusterState = server->getClusterMgr()->getClusterState();
   server->getClusterMgr()->stop();
@@ -890,7 +904,7 @@ uint32_t storeCnt2 = 10;
 
 MYTEST(Cluster, Simple_MEET) {
   std::vector<std::string> dirs = {"node1", "node2", "node3"};
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16000;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -944,7 +958,7 @@ MYTEST(Cluster, Sequence_Meet) {
   // "node5",
   //                "node6", "node7", "node8", "node9", "node10" };
   std::vector<std::string> dirs;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16100;
 
   for (uint32_t i = 0; i < 10; i++) {
     dirs.push_back("node" + std::to_string(i));
@@ -997,7 +1011,7 @@ TEST(Cluster, Random_Meet) {
   // "node5",
   //                "node6", "node7", "node8", "node9", "node10" };
   std::vector<std::string> dirs;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16200;
 
   for (uint32_t i = 0; i < 10; i++) {
     dirs.push_back("node" + std::to_string(i));
@@ -1064,7 +1078,7 @@ TEST(Cluster, Random_Meet) {
 
 TEST(Cluster, AddSlot) {
   std::vector<std::string> dirs = {"node1", "node2"};
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16300;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -1170,7 +1184,7 @@ bool clusterOk(std::shared_ptr<ClusterState> state) {
 
 TEST(Cluster, failover) {
   std::vector<std::string> dirs = {"node1", "node2", "node3", "node4", "node5"};
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16400;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -1269,7 +1283,7 @@ TEST(Cluster, failover) {
 
 TEST(Cluster, fakeFailover) {
   uint32_t nodeNum = 5;
-  uint32_t startPort = 15300;
+  uint32_t startPort = 16500;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -1363,7 +1377,7 @@ void waitMigrateTaskFinish(std::shared_ptr<ServerEntry> srcNode,
       break;
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      if (msSinceEpoch() - start > 30 * 1000) {
+      if (msSinceEpoch() - start > 300 * 1000) {
         // migrate take too long time
         INVARIANT_D(0);
         break;
@@ -1371,6 +1385,22 @@ void waitMigrateTaskFinish(std::shared_ptr<ServerEntry> srcNode,
     }
   }
   LOG(INFO) << "migrate task finish cost time"
+            << (msSinceEpoch() - start) / 1000 << "s";
+  // wait for deleteRange task finish
+  start = msSinceEpoch();
+  while (true) {
+    if (srcNode->getGcMgr()->isDeletingSlot()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      if (msSinceEpoch() - start > 30 * 1000) {
+        // migrate take too long time
+        INVARIANT_D(0);
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  LOG(INFO) << "deleterange finish cost time"
             << (msSinceEpoch() - start) / 1000 << "s";
 }
 
@@ -1383,7 +1413,7 @@ std::bitset<CLUSTER_SLOTS> getBitSet(std::vector<uint32_t> vec) {
 }
 
 TEST(Cluster, migrate) {
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16600;
   uint32_t nodeNum = 2;
 
   const auto guard = MakeGuard([&nodeNum] {
@@ -1517,7 +1547,7 @@ TEST(Cluster, migrate) {
 
 TEST(Cluster, migrateChangeThread) {
   std::vector<std::string> dirs = {"node1", "node2"};
-  uint32_t startPort = 12300;
+  uint32_t startPort = 16700;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -1550,12 +1580,11 @@ TEST(Cluster, migrateChangeThread) {
     cfg1->clusterEnabled = true;
     cfg1->pauseTimeIndexMgr = 1;
     cfg1->rocksBlockcacheMB = 24;
-    // this test will migrate back
-    cfg1->enableGcInMigate = true;
     // make sender thread less than receive num
     cfg1->migrateReceiveThreadnum = 10;
     cfg1->migrateSenderThreadnum = 3;
     cfg1->migrateNetworkTimeout = 10;
+    cfg1->waitTimeIfExistsMigrateTask = 1;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -1660,7 +1689,7 @@ TEST(Cluster, migrateChangeThread) {
 
 
 TEST(Cluster, stopMigrate) {
-  uint32_t startPort = 15000;
+  uint32_t startPort = 16800;
   uint32_t nodeNum = 2;
 
   const auto guard = MakeGuard([&nodeNum] {
@@ -1760,7 +1789,7 @@ TEST(Cluster, stopMigrate) {
 }
 
 TEST(Cluster, stopAllMigrate) {
-  uint32_t startPort = 15100;
+  uint32_t startPort = 16900;
   uint32_t nodeNum = 2;
 
   const auto guard = MakeGuard([&nodeNum] {
@@ -1860,7 +1889,7 @@ TEST(Cluster, stopAllMigrate) {
 
 TEST(Cluster, restartMigrate) {
   std::vector<std::string> dirs = {"node1", "node2"};
-  uint32_t startPort = 12300;
+  uint32_t startPort = 17000;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -1880,11 +1909,10 @@ TEST(Cluster, restartMigrate) {
     cfg1->clusterEnabled = true;
     cfg1->pauseTimeIndexMgr = 1;
     cfg1->rocksBlockcacheMB = 24;
-    // this test will restart immediately
-    cfg1->enableGcInMigate = true;
     // make sender thread less than receive num
     cfg1->migrateReceiveThreadnum = 3;
     cfg1->migrateSenderThreadnum = 3;
+    cfg1->waitTimeIfExistsMigrateTask = 1;
 
     auto master = std::make_shared<ServerEntry>(cfg1);
     auto s = master->startup(cfg1);
@@ -2026,7 +2054,7 @@ TEST(Cluster, restartMigrate) {
 
 TEST(Cluster, migrateAndImport) {
   std::vector<std::string> dirs = {"node1", "node2", "node3"};
-  uint32_t startPort = 14100;
+  uint32_t startPort = 17100;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -2183,40 +2211,68 @@ TEST(Cluster, migrateAndImport) {
   servers.clear();
 }
 
-void testDeleteChunks(std::shared_ptr<ServerEntry> svr,
-                      std::vector<uint32_t> slotsList) {
+void testDeleteChunks(std::shared_ptr<ServerEntry> srcNode,
+                      std::shared_ptr<ServerEntry> dstNode,
+                      std::vector<uint32_t>&& slotsList) {
   for (size_t i = 0; i < slotsList.size(); ++i) {
-    uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
+    uint64_t c = srcNode->getClusterMgr()->countKeysInSlot(slotsList[i]);
     LOG(INFO) << "slot:" << slotsList[i] << " keys count before delete:" << c;
   }
   auto bitmap = getBitSet(slotsList);
-  svr->getGcMgr()->deleteBitMap(bitmap, 0);
-  // TODO(wayenchen) ccheck deleteTask state
-  std::this_thread::sleep_for(std::chrono::seconds(10));
-
+  auto s = migrate(srcNode, dstNode, bitmap);
+  EXPECT_TRUE(s.ok());
+  waitMigrateTaskFinish(srcNode, dstNode, bitmap);
   for (size_t i = 0; i < slotsList.size(); ++i) {
-    uint64_t c = svr->getClusterMgr()->countKeysInSlot(slotsList[i]);
+    uint64_t c = srcNode->getClusterMgr()->countKeysInSlot(slotsList[i]);
     EXPECT_EQ(c, 0);
   }
 }
 
-void testDeleteRange(std::shared_ptr<ServerEntry> svr,
+void testDeleteRange(std::shared_ptr<ServerEntry> srcNode,
+                     std::shared_ptr<ServerEntry> dstNode,
                      uint32_t storeid,
                      uint32_t start,
                      uint32_t end) {
-  svr->getGcMgr()->deleteChunks(storeid, start, end);
-  std::this_thread::sleep_for(std::chrono::seconds(8));
-  for (size_t i = start; i <= end; ++i) {
-    if (svr->getSegmentMgr()->getStoreid(i) == storeid) {
-      uint64_t c = svr->getClusterMgr()->countKeysInSlot(i);
+  SlotsBitmap sbm;
+  for (uint32_t i = start; i <= end; ++i) {
+    if (srcNode->getSegmentMgr()->getStoreid(i) == storeid) {
+      sbm.set(i);
+    }
+  }
+  auto s = migrate(srcNode, dstNode, sbm);
+  EXPECT_TRUE(s.ok());
+  waitMigrateTaskFinish(srcNode, dstNode, sbm);
+  for (uint32_t i = start; i <= end; ++i) {
+    if (srcNode->getSegmentMgr()->getStoreid(i) == storeid) {
+      uint64_t c = srcNode->getClusterMgr()->countKeysInSlot(i);
       EXPECT_EQ(c, 0);
     }
   }
 }
 
+void testGenerateDeleteRangeTask(const std::shared_ptr<ServerEntry> svr,
+                                 const std::vector<int>& slots) {
+  SlotsBitmap sbm;
+  for (const auto& slot : slots) {
+    sbm.set(slot);
+  }
+
+  SlotsBitmap generatedSlotsBitMap;
+  for (const auto& it : GCManager::generateDeleleRangeTask(svr, sbm)) {
+    for (uint32_t i = it._slotStart; i <= it._slotEnd; i++) {
+      if (svr->getSegmentMgr()->getStoreid(i) == it._storeid) {
+        generatedSlotsBitMap.set(i);
+      }
+    }
+  }
+
+  EXPECT_EQ(sbm, generatedSlotsBitMap);
+}
+
 TEST(Cluster, deleteChunks) {
-  std::vector<std::string> dirs = {"node1"};
-  uint32_t startPort = 14200;
+  std::vector<std::string> dirs = {"node1", "node2"};
+  uint32_t startPort = 17200;
+  int testNum = 10;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -2236,11 +2292,15 @@ TEST(Cluster, deleteChunks) {
   }
 
   auto& srcNode = servers[0];
+  auto& dstNode = servers[1];
 
   auto ctx1 = std::make_shared<asio::io_context>();
   auto sess1 = makeSession(srcNode, ctx1);
   WorkLoad work1(srcNode, sess1);
   work1.init();
+
+  work1.clusterMeet(dstNode->getParams()->bindIp, dstNode->getParams()->port);
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // addSlots
   LOG(INFO) << "begin addSlots.";
@@ -2256,21 +2316,17 @@ TEST(Cluster, deleteChunks) {
 
   std::this_thread::sleep_for(5s);
 
-  testDeleteChunks(srcNode, {5000});
-  testDeleteChunks(srcNode, {5200, 5210, 5220, 5280});
-  testDeleteChunks(srcNode, {5130, 5131, 5132, 5133, 5134, 5140, 5151, 5142});
+  testDeleteChunks(srcNode, dstNode, {5000});
+  testDeleteChunks(srcNode, dstNode, {5200, 5210, 5220, 5280});
+  testDeleteChunks(
+    srcNode, dstNode, {5130, 5131, 5132, 5133, 5134, 5140, 5151, 5142});
   testDeleteChunks(
     srcNode,
+    dstNode,
     {5300, 5310, 5320, 5333, 5964, 5740, 5251, 5261, 5271, 9900, 9910, 8888});
   testDeleteChunks(srcNode,
-                   {5200,
-                    5210,
-                    5220,
-                    5280,
-                    5300,
-                    5310,
-                    5320,
-                    5330,
+                   dstNode,
+                   {5330,
                     5340,
                     3000,
                     3010,
@@ -2280,11 +2336,22 @@ TEST(Cluster, deleteChunks) {
                     9000,
                     9010});
 
-  auto storeid1 = srcNode->getSegmentMgr()->getStoreid(6000);
-  auto storeid2 = srcNode->getSegmentMgr()->getStoreid(6200);
+  auto storeid1 = srcNode->getSegmentMgr()->getStoreid(6005);
+  auto storeid2 = srcNode->getSegmentMgr()->getStoreid(6205);
 
   EXPECT_TRUE(storeid1 == storeid2);
-  testDeleteRange(srcNode, storeid1, 6000, 6200);
+  testDeleteRange(srcNode, dstNode, storeid1, 6005, 6205);
+
+  for (int i = 0; i < testNum; i++) {
+    int slotNum = genRand() % CLUSTER_SLOTS;
+    std::vector<int> v;
+    // at most slotNum slots will be set, maybe some random number equal;
+    for (int j = 0; j < slotNum; j++) {
+      v.push_back(genRand() % CLUSTER_SLOTS);
+    }
+
+    testGenerateDeleteRangeTask(srcNode, v);
+  }
 
 #ifndef _WIN32
   for (auto svr : servers) {
@@ -2295,9 +2362,130 @@ TEST(Cluster, deleteChunks) {
   servers.clear();
 }
 
+TEST(Cluster, deleteFilesInRange) {
+  std::vector<std::string> dirs = {"node1", "node2", "node3", "node4"};
+  uint32_t startPort = 17300;
+  std::map<std::string, std::string> config;
+  config["wait-time-if-exists-migrate-task"] = "10";
+  config["deletefilesinrange-for-migrate-gc"] = "true";
+  auto servers = makeCluster(
+    startPort, 2, 10, true, false, std::vector<int>({0, 16382}), config);
+
+  const auto guard = MakeGuard([dirs] {
+    for (auto dir : dirs) {
+      destroyEnv(dir);
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+  });
+
+  auto& srcNode = servers[0];
+  auto& dstNode = servers[1];
+  auto& srcNodeSlave = servers[2];
+
+  auto ctx1 = std::make_shared<asio::io_context>();
+  auto sess1 = makeSession(srcNode, ctx1);
+  WorkLoad work1(srcNode, sess1);
+  work1.init();
+  auto ctx3 = std::make_shared<asio::io_context>();
+  auto sess3 = makeSession(srcNodeSlave, ctx3);
+  WorkLoad work3(srcNodeSlave, sess3);
+  work3.init();
+
+  std::this_thread::sleep_for(20s);
+
+  const uint32_t numData = 10000;
+  SlotsBitmap bitmap;
+  uint32_t startSlot = 1;
+  uint32_t endSlot = 16380;
+  // leave slot 0 and 16381 on node1
+  // check if deleteRange will effect other slots data.
+  for (uint32_t i = startSlot; i <= endSlot; i++) {
+    bitmap.set(i);
+  }
+
+  // slot 0;
+  writeKVDataToServer(srcNode, numData, "{06S}");
+  // slot 1;
+  writeKVDataToServer(srcNode, numData, "{Qi}");
+  // slot 16380
+  writeKVDataToServer(srcNode, numData, "{wu}");
+  // slot 16381
+  writeKVDataToServer(srcNode, numData, "{0TG}");
+
+  auto expdbsize0 =
+    work1.getStringResult({"cluster", "countkeysinslot", "0"});
+  auto dbsize0 = std::stoi(getBulkValue(expdbsize0, 0));
+  EXPECT_GT(dbsize0, 0);
+  auto expdbsize1 =
+    work1.getStringResult({"cluster", "countkeysinslot", "1"});
+  auto dbsize1 = std::stoi(getBulkValue(expdbsize1, 0));
+  EXPECT_GT(dbsize1, 0);
+  auto expdbsize16380 =
+    work1.getStringResult({"cluster", "countkeysinslot", "16380"});
+  auto dbsize16380 = std::stoi(getBulkValue(expdbsize16380, 0));
+  EXPECT_GT(dbsize16380, 0);
+  auto expdbsize16381 =
+    work1.getStringResult({"cluster", "countkeysinslot", "16381"});
+  auto dbsize16381 = std::stoi(getBulkValue(expdbsize16381, 0));
+  EXPECT_GT(dbsize16381, 0);
+
+  auto exptTaskid = migrate(srcNode, dstNode, bitmap);
+  EXPECT_TRUE(exptTaskid.ok());
+  waitMigrateTaskFinish(srcNode, dstNode, bitmap);
+  std::this_thread::sleep_for(std::chrono::seconds(20));
+
+  auto expdbsize0_m =
+    work1.getStringResult({"cluster", "countkeysinslot", "0"});
+  auto dbsize0_m = std::stoi(getBulkValue(expdbsize0_m, 0));
+  auto expdbsize1_m =
+    work1.getStringResult({"cluster", "countkeysinslot", "1"});
+  auto dbsize1_m = std::stoi(getBulkValue(expdbsize1_m, 0));
+  auto expdbsize16380_m =
+    work1.getStringResult({"cluster", "countkeysinslot", "16380"});
+  auto dbsize16380_m = std::stoi(getBulkValue(expdbsize16380_m, 0));
+  auto expdbsize16381_m =
+    work1.getStringResult({"cluster", "countkeysinslot", "16381"});
+  auto dbsize16381_m = std::stoi(getBulkValue(expdbsize16381_m, 0));
+
+  auto expdbsize0_s =
+    work3.getStringResult({"cluster", "countkeysinslot", "0"});
+  auto dbsize0_s = std::stoi(getBulkValue(expdbsize0_s, 0));
+  auto expdbsize1_s =
+    work3.getStringResult({"cluster", "countkeysinslot", "1"});
+  auto dbsize1_s = std::stoi(getBulkValue(expdbsize1_s, 0));
+  auto expdbsize16380_s =
+    work3.getStringResult({"cluster", "countkeysinslot", "16380"});
+  auto dbsize16380_s = std::stoi(getBulkValue(expdbsize16380_s, 0));
+  auto expdbsize16381_s =
+    work3.getStringResult({"cluster", "countkeysinslot", "16381"});
+  auto dbsize16381_s = std::stoi(getBulkValue(expdbsize16381_s, 0));
+
+  // deleteFilesInRange & deleteRange mustn't affect other keys.
+  // slot 0 keys number should be the same before migrate
+  EXPECT_EQ(dbsize0, dbsize0_m);
+  EXPECT_EQ(dbsize0, dbsize0_s);
+  // slot 16381 keys number should be the same before migrate
+  EXPECT_EQ(dbsize16381, dbsize16381_m);
+  EXPECT_EQ(dbsize16381, dbsize16381_s);
+  // migrated slot must be deleted.
+  EXPECT_EQ(dbsize1_m, dbsize1_s);
+  EXPECT_EQ(dbsize1_m, 0);
+  EXPECT_EQ(dbsize16380_m, dbsize16380_s);
+  EXPECT_EQ(dbsize16380_m, 0);
+
+#ifndef _WIN32
+  for (auto svr : servers) {
+    svr->stop();
+    LOG(INFO) << "stop " << svr->getParams()->port << " success";
+  }
+#endif
+  LOG(INFO) << "stop servers here";
+  servers.clear();
+}
+
 TEST(Cluster, ErrStoreNum) {
   std::vector<std::string> dirs = {"node1", "node2"};
-  uint32_t startPort = 17500;
+  uint32_t startPort = 17400;
 
   const auto guard = MakeGuard([dirs] {
     for (auto dir : dirs) {
@@ -2444,7 +2632,7 @@ void checkEpoch(std::vector<std::shared_ptr<ServerEntry>> servers,
 TEST(Cluster, ConvergenceRate) {
   uint32_t nodeNum = 30;
   uint32_t migrateSlot = 8373;
-  uint32_t startPort = 14300;
+  uint32_t startPort = 17500;
   uint32_t dstNodeIndex = 0;
   uint32_t srcNodeIndex = migrateSlot / (CLUSTER_SLOTS / nodeNum);
 
@@ -2589,7 +2777,7 @@ TEST(Cluster, ConvergenceRate) {
 TEST(Cluster, MigrateTTLIndex) {
   uint32_t nodeNum = 2;
   uint32_t migrateSlot = 8373;
-  uint32_t startPort = 19000;
+  uint32_t startPort = 17600;
 
   LOG(INFO) << "MigrateTTLIndex begin.";
   std::vector<std::string> dirs;
@@ -2694,7 +2882,7 @@ TEST(Cluster, MigrateTTLIndex) {
 
 TEST(Cluster, ChangeMaster) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15200;
+  uint32_t startPort = 17700;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -2769,7 +2957,7 @@ TEST(Cluster, ChangeMaster) {
 
 TEST(Cluster, FixReplication) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15200;
+  uint32_t startPort = 17800;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -2847,7 +3035,7 @@ TEST(Cluster, FixReplication) {
 
 TEST(Cluster, ManualfailoverCheck) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15200;
+  uint32_t startPort = 17900;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -2890,7 +3078,7 @@ TEST(Cluster, ManualfailoverCheck) {
 
 TEST(Cluster, lockConfict) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15300;
+  uint32_t startPort = 18000;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -2922,7 +3110,7 @@ TEST(Cluster, lockConfict) {
 
 TEST(Cluster, CrossSlot) {
   uint32_t nodeNum = 2;
-  uint32_t startPort = 15000;
+  uint32_t startPort = 18100;
   bool withSlave = true;
 
   const auto guard = MakeGuard([&nodeNum, &withSlave] {
@@ -2944,8 +3132,8 @@ TEST(Cluster, CrossSlot) {
   // {3}   1584   s1
   // {4}   14039  s2
 
-  std::string slotMovedReply("-MOVED 9842 127.0.0.1:15001\r\n");
-  std::string slotMovedReply1("-MOVED 14039 127.0.0.1:15001\r\n");
+  std::string slotMovedReply("-MOVED 9842 127.0.0.1:18101\r\n");
+  std::string slotMovedReply1("-MOVED 14039 127.0.0.1:18101\r\n");
   std::string crossSlotReply(
     "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
 
@@ -3143,13 +3331,13 @@ TEST(Cluster, CrossSlot) {
   std::this_thread::sleep_for(std::chrono::seconds(2));
   auto serverSlave = servers[3];
   std::vector<std::pair<std::vector<std::string>, std::string>> resultArr3 = {
-    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
-    {{"get", "a{1}"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
+    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:18101\r\n"},
+    {{"get", "a{1}"}, "-MOVED 9842 127.0.0.1:18101\r\n"},
     {{"readonly"}, "+OK\r\n"},
-    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
+    {{"set", "a{1}", "b"}, "-MOVED 9842 127.0.0.1:18101\r\n"},
     {{"get", "a{1}"}, "$1\r\nb\r\n"},
     {{"readwrite"}, "+OK\r\n"},
-    {{"get", "a{1}"}, "-MOVED 9842 127.0.0.1:15001\r\n"},
+    {{"get", "a{1}"}, "-MOVED 9842 127.0.0.1:18101\r\n"},
   };
   testCommandArrayResult(serverSlave, resultArr3);
 
@@ -3181,7 +3369,7 @@ TEST(ClusterMsg, bitsetEncodeSize) {
 
 TEST(Cluster, singleNode) {
   uint32_t nodeNum = 4;
-  uint32_t startPort = 15500;
+  uint32_t startPort = 18200;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -3207,8 +3395,9 @@ TEST(Cluster, singleNode) {
 
 TEST(Cluster, failoverNeedFullSyncDone) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15500;
+  uint32_t startPort = 18300;
   bool withSlave = true;
+  uint32_t storeCnt = 10;
 
   const auto guard = MakeGuard([&nodeNum, &withSlave] {
     if (withSlave) {
@@ -3219,7 +3408,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
-  auto servers = makeCluster(startPort, nodeNum, 10, withSlave);
+  auto servers = makeCluster(startPort, nodeNum, storeCnt, withSlave);
   // server[0] is master of server[3]
   auto originMaster = servers[0];
   auto originSlave = servers[3];
@@ -3263,6 +3452,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
   cfg1->pauseTimeIndexMgr = 1;
   cfg1->rocksBlockcacheMB = 24;
   cfg1->clusterSingleNode = false;
+  cfg1->waitTimeIfExistsMigrateTask = 1;
 
   originMaster = std::make_shared<ServerEntry>(cfg1);
   auto s = originMaster->startup(cfg1);
@@ -3296,7 +3486,7 @@ TEST(Cluster, failoverNeedFullSyncDone) {
 
 TEST(Cluster, bindZeroAddr) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15500;
+  uint32_t startPort = 18400;
   bool withSlave = true;
 
   const auto guard = MakeGuard([&nodeNum, &withSlave] {
@@ -3396,7 +3586,7 @@ TEST(Cluster, bindZeroAddr) {
 
 TEST(Cluster, failoverConfilct) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15200;
+  uint32_t startPort = 18500;
 
   const auto guard = MakeGuard([&nodeNum] {
     destroyCluster(nodeNum);
@@ -3495,7 +3685,7 @@ TEST(Cluster, failoverConfilct) {
 
 TEST(Cluster, failoveCheckBinlogTs) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15500;
+  uint32_t startPort = 18600;
   bool withSlave = true;
 
   const auto guard = MakeGuard([&nodeNum, &withSlave] {
@@ -3590,8 +3780,9 @@ TEST(Cluster, failoveCheckBinlogTs) {
 
 TEST(Cluster, saveNode) {
   uint32_t nodeNum = 3;
-  uint32_t startPort = 15600;
+  uint32_t startPort = 18700;
   bool withSlave = true;
+  uint32_t storeCnt = 10;
 
   const auto guard = MakeGuard([&nodeNum, &withSlave] {
     if (withSlave) {
@@ -3602,7 +3793,7 @@ TEST(Cluster, saveNode) {
     std::this_thread::sleep_for(std::chrono::seconds(5));
   });
 
-  auto servers = makeCluster(startPort, nodeNum, 10, withSlave);
+  auto servers = makeCluster(startPort, nodeNum, storeCnt, withSlave);
   auto size = servers.size();
   // save nodeid && slots info
   std::vector<std::string> startInfo = getClusterInfo(servers);
@@ -3623,6 +3814,7 @@ TEST(Cluster, saveNode) {
     cfg->pauseTimeIndexMgr = 1;
     cfg->rocksBlockcacheMB = 24;
     cfg->clusterSingleNode = false;
+    cfg->waitTimeIfExistsMigrateTask = 1;
     std::shared_ptr<ServerEntry> svr = std::make_shared<ServerEntry>(cfg);
 
     auto s = svr->startup(cfg);

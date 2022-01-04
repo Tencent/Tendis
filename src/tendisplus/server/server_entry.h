@@ -406,6 +406,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
 
   std::shared_ptr<rocksdb::Cache> _blockCache;
   std::shared_ptr<rocksdb::RateLimiter> _rateLimiter;
+  std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
   std::vector<PStore> _kvstores;
   std::unique_ptr<Catalog> _catalog;
 

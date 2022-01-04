@@ -491,6 +491,7 @@ class ServerParams {
   uint32_t rocksCompactOnDeletionTrigger = 0;
   double rocksCompactOnDeletionRatio = 0;
   uint32_t rocksTransactionMode = 2;
+  int64_t rocksDeleteBytesPerSecond = 0;
 
   // WriteOptions
   bool rocksDisableWAL = false;
@@ -545,13 +546,15 @@ class ServerParams {
   int64_t luaTimeLimit = 5000;  // ms
   int64_t luaStateMaxIdleTime = 60*60*1000;  // ms
   bool jeprofAutoDump = true;
+  bool deleteFilesInRangeForMigrateGc = false;
   bool compactRangeAfterDeleteRange = false;
   bool saveMinBinlogId = true;
-  bool deleteFilesInRangeforBinlog = true;
+  bool deleteFilesInRangeForBinlog = true;
   bool logError = false;
   bool directIo = false;
   bool allowCrossSlot = false;
   uint32_t generateHeartbeatBinlogInterval = 0;  // s
+  int64_t waitTimeIfExistsMigrateTask = 600;  // s
 };
 
 extern std::shared_ptr<tendisplus::ServerParams> gParams;

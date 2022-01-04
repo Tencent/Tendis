@@ -67,10 +67,13 @@ void destroyEnv();
 bool setupEnv(const std::string& v);
 void destroyEnv(const std::string& v);
 std::string getBulkValue(const std::string& reply, uint32_t index);
-std::shared_ptr<ServerParams> makeServerParam(uint32_t port = 8811,
-                                              uint32_t storeCnt = 0,
-                                              const std::string& dir = "",
-                                              bool general_log = true);
+std::shared_ptr<ServerParams> makeServerParam(
+  uint32_t port = 8811,
+  uint32_t storeCnt = 0,
+  const std::string& dir = "",
+  bool general_log = true,
+  const std::map<std::string, std::string>& configMap =
+    std::map<std::string, std::string>());
 std::shared_ptr<ServerEntry> makeServerEntry(
   const std::shared_ptr<ServerParams>& cfg);
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
@@ -109,7 +112,7 @@ AllKeys writeComplexDataWithTTLToServer(
   const char* key_suffix);
 AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
                             uint32_t count,
-                            const char* key_suffix);
+                            const std::string& key_suffix = "");
 
 void testExpireForAlreadyExpired1(std::shared_ptr<ServerEntry> svr);
 void testExpireForAlreadyExpired2(std::shared_ptr<ServerEntry> svr);
@@ -146,7 +149,7 @@ class WorkLoad {
                         uint32_t count,
                         uint32_t maxlen = 0,
                         bool sharename = true,
-                        const char* key_suffix = NULL);
+                        const std::string& key_suffix = "");
   void expireKeys(const AllKeys& keys, uint64_t ttl);
   void slaveof(const std::string& ip, uint32_t port);
   void flush();

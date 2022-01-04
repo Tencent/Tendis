@@ -179,7 +179,7 @@ bool truncateBinlogNumCheck(
 }
 
 
-bool deleteFilesInRangeforBinlogCheck(
+bool deleteFilesInRangeForBinlogCheck(
         const std::string& val, bool startup, string* errinfo) {
   if (startup || !gParams) {
     return true;
@@ -188,7 +188,7 @@ bool deleteFilesInRangeforBinlogCheck(
   if (!gParams->saveMinBinlogId && value) {
     if (errinfo != NULL) {
       *errinfo =
-        "set deleteFilesInRangeforBinlog=true need saveMinBinlogId==ture";
+        "set deleteFilesInRangeForBinlog=true need saveMinBinlogId==ture";
     }
     return false;
   }
@@ -494,6 +494,8 @@ ServerParams::ServerParams() {
                                   rocksCompactOnDeletionRatio);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("rocks-transaction-mode",
                           rocksTransactionMode);
+  REGISTER_VARS_DIFF_NAME("rocks.delete_bytes_per_second",
+                          rocksDeleteBytesPerSecond);
 
   REGISTER_VARS_SAME_NAME(
     migrateSenderThreadnum, nullptr, nullptr, 1, 200, true);
@@ -549,18 +551,22 @@ ServerParams::ServerParams() {
   REGISTER_VARS_DIFF_NAME_DYNAMIC("lua-time-limit", luaTimeLimit);
   REGISTER_VARS(luaStateMaxIdleTime);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("jeprof-auto-dump", jeprofAutoDump);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("deletefilesinrange-for-migrate-gc",
+                                  deleteFilesInRangeForMigrateGc);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("compactrange-after-deleterange",
                                   compactRangeAfterDeleteRange);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("save-min-binlogid",
                                   saveMinBinlogId);
   REGISTER_VARS_FULL(
-          "deletefilesinrange-for-binlog", deleteFilesInRangeforBinlog,
-          deleteFilesInRangeforBinlogCheck, nullptr, -1, -1, true);
+          "deletefilesinrange-for-binlog", deleteFilesInRangeForBinlog,
+          deleteFilesInRangeForBinlogCheck, nullptr, -1, -1, true);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("log-error", logError);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("direct-io", directIo);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("allow-cross-slot", allowCrossSlot);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("generate-heartbeat-binlog-interval",
                                   generateHeartbeatBinlogInterval);
+  REGISTER_VARS_DIFF_NAME_DYNAMIC("wait-time-if-exists-migrate-task",
+                                  waitTimeIfExistsMigrateTask);
 }
 
 ServerParams::~ServerParams() {
@@ -701,9 +707,9 @@ Status ServerParams::checkParams() {
     logRecycleThreadnum = kvStoreCount;
   }
 
-  if (!saveMinBinlogId && deleteFilesInRangeforBinlog) {
+  if (!saveMinBinlogId && deleteFilesInRangeForBinlog) {
     auto err =
-      "set deleteFilesInRangeforBinlog=true need saveMinBinlogId==ture";
+      "set deleteFilesInRangeForBinlog=true need saveMinBinlogId==ture";
     LOG(ERROR) << err;
     return {ErrorCodes::ERR_INTERNAL, err};
   }

@@ -320,6 +320,8 @@ enum class ReplOp : std::uint8_t {
   REPL_OP_STMT = 3,  // statement
   REPL_OP_SPEC = 4,  // special
   REPL_OP_DEL_RANGE = 5,
+  REPL_OP_DEL_FILES_INCLUDE_END = 6,
+  REPL_OP_DEL_FILES_EXCLUDE_END = 7,
 };
 
 class ReplLogKeyV2 {

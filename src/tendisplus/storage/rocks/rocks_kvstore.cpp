@@ -492,17 +492,35 @@ Status RocksTxn::addDeleteRangeBinlog(const std::string& begin,
   if (_replOnly) {
     return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
   }
-  RESET_PERFCONTEXT();
 
   if (_store->enableRepllog()) {
     INVARIANT_D(_store->dbId() != CATALOG_NAME);
     setChunkId(Transaction::CHUNKID_DEL_RANGE);
     if (_replLogValues.size() >= 1) {
-      LOG(WARNING) << "deleteRange too big binlog size, begin:" + begin +
-          " end:" + end;
+      LOG(WARNING) << "deleteRange too big binlog size, begin:"
+                   << begin << " end:" << end;
     }
     ReplLogValueEntryV2 logVal(
       ReplOp::REPL_OP_DEL_RANGE, msSinceEpoch(), begin, end);
+    _replLogValues.emplace_back(std::move(logVal));
+  }
+  return {ErrorCodes::ERR_OK, ""};
+}
+
+Status RocksTxn::addDeleteFilesInRangeBinlog(const std::string& begin,
+                                             const std::string& end,
+                                             bool include_end) {
+  if (_replOnly) {
+    return {ErrorCodes::ERR_INTERNAL, "txn is replOnly"};
+  }
+
+  if (_store->enableRepllog()) {
+    INVARIANT_D(_store->dbId() != CATALOG_NAME);
+    setChunkId(Transaction::CHUNKID_DEL_RANGE);
+    ReplLogValueEntryV2 logVal(
+      include_end ? ReplOp::REPL_OP_DEL_FILES_INCLUDE_END :
+                    ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END,
+      msSinceEpoch(), begin, end);
     _replLogValues.emplace_back(std::move(logVal));
   }
   return {ErrorCodes::ERR_OK, ""};
@@ -583,6 +601,22 @@ Status RocksTxn::applyBinlog(const ReplLogValueEntryV2& logEntry) {
     case ReplOp::REPL_OP_DEL_RANGE: {
       auto s = _store->deleteRangeWithoutBinlog(
         handle, logEntry.getOpKey(), logEntry.getOpValue());
+      RET_IF_ERR(s);
+      break;
+    }
+    case ReplOp::REPL_OP_DEL_FILES_INCLUDE_END: {
+      auto s =
+        _store->deleteFilesInRangeWithoutBinlog(
+          _store->getDataColumnFamilyHandle(),
+          logEntry.getOpKey(), logEntry.getOpValue(), true);
+      RET_IF_ERR(s);
+      break;
+    }
+    case ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END: {
+      auto s =
+        _store->deleteFilesInRangeWithoutBinlog(
+          _store->getDataColumnFamilyHandle(),
+          logEntry.getOpKey(), logEntry.getOpValue(), false);
       RET_IF_ERR(s);
       break;
     }
@@ -1223,6 +1257,10 @@ rocksdb::Options RocksKVStore::options() {
     options.rate_limiter = _rateLimiter;
   }
 
+  if (_sstFileManager != nullptr) {
+    options.sst_file_manager = _sstFileManager;
+  }
+
   for (const auto& iter : _cfg->getRocksdbOptions()) {
     auto status = rocksdbOptionsSet(options, iter.first, iter.second);
     if (!status.ok()) {
@@ -1697,7 +1735,6 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
                                   const std::string* end) {
   auto compactionOptions = rocksdb::CompactRangeOptions();
   auto db = getBaseDB();
-
   rocksdb::Slice* sbegin = nullptr;
   rocksdb::Slice* send = nullptr;
   const auto guard = MakeGuard([&] {
@@ -1715,12 +1752,23 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
     send = new rocksdb::Slice(*end);
   }
   rocksdb::Status status;
+  std::stringstream ss;
+  ss << "compactRange begin(hex): ";
+  for (const auto &item : *begin) {
+    ss << std::hex << int(item);
+  }
+  ss << " end(hex): ";
+  for (const auto &item : *end) {
+    ss << std::hex << int(item);
+  }
+  LOG(WARNING) << ss.str();
   if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
     status = db->CompactRange(compactionOptions, sbegin, send);
   } else if (cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
     status = db->CompactRange(
       compactionOptions, getBinlogColumnFamilyHandle(), sbegin, send);
   }
+  LOG(WARNING) << "compactRange done.";
   if (!status.ok()) {
     return handleRocksdbError(status);
   }
@@ -2065,6 +2113,8 @@ RocksKVStore::RocksKVStore(const std::string& id,
                            const std::shared_ptr<ServerParams>& cfg,
                            std::shared_ptr<rocksdb::Cache> blockCache,
                            std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
+                           std::shared_ptr<rocksdb::SstFileManager>
+                             sstFileManager,
                            bool enableRepllog,
                            KVStore::StoreMode mode,
                            TxnMode txnMode,
@@ -2083,6 +2133,7 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _stats(rocksdb::CreateDBStatistics()),
     _blockCache(blockCache),
     _rateLimiter(rateLimiter),
+    _sstFileManager(sstFileManager),
     _nextTxnSeq(0),
     _highestVisible(Transaction::TXNID_UNINITED),
     _logOb(nullptr),
@@ -2595,12 +2646,21 @@ Status RocksKVStore::delKV(const RecordKey& key, Transaction* txn) {
 }
 
 Status RocksKVStore::deleteRange(const std::string& begin,
-                                 const std::string& end) {
+                                 const std::string& end,
+                                 bool deleteFilesInRangeBeforeDeleteRange,
+                                 bool compactRangeAfterDeleteRange) {
+  // do deleteFilesInRange if required.
+  if (deleteFilesInRangeBeforeDeleteRange) {
+    // deleteFilesInRange and deleteRange are not atomic
+    // since deleteRange affect [begin, end)
+    // not set include_end for deleteFilesInRange
+    auto s = deleteFilesInRange(begin, end, false);
+    RET_IF_ERR(s);
+  }
+
   // NOTE(takenliu) be care of db::DeleteRange and add binlog are not atomic
   auto s = deleteRangeWithoutBinlog(getDataColumnFamilyHandle(), begin, end);
-  if (!s.ok()) {
-    return s;
-  }
+  RET_IF_ERR(s);
   auto txn = createTransaction(nullptr);
   if (!txn.ok()) {
     LOG(ERROR) << "deleteRange not atomic,createTransaction failed!!!";
@@ -2616,21 +2676,37 @@ Status RocksKVStore::deleteRange(const std::string& begin,
     LOG(ERROR) << "deleteRange not atomic,add binlog commit failed!!!";
     return ret2.status();
   }
-  return ret;
+
+  // do compactRange if required.
+  if (compactRangeAfterDeleteRange) {
+    s = compactRange(ColumnFamilyNumber::ColumnFamily_Default, &begin, &end);
+    RET_IF_ERR(s);
+  }
+
+  return {ErrorCodes::ERR_OK, ""};
 }
 
-// [begin, end]
+// [begin, end)
 Status RocksKVStore::deleteRangeWithoutBinlog(
   rocksdb::ColumnFamilyHandle* column_family,
   const std::string& begin,
   const std::string& end) {
-  // TODO(takenliu) rocksdb 5.13 DeleteRange cause read performance degradation,
-  //  use greater than rocksdb 5.18
   rocksdb::Slice sBegin(begin);
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
+  std::stringstream ss;
+  ss << "deleteRange begin(hex): ";
+  for (const auto &item : begin) {
+    ss << std::hex << int(item);
+  }
+  ss << " end(hex): ";
+  for (const auto &item : end) {
+    ss << std::hex << int(item);
+  }
+  LOG(WARNING) << ss.str();
   auto s = db->DeleteRange(
-    writeOptions(), column_family, sBegin.ToString(), sEnd.ToString());
+    writeOptions(), column_family, sBegin, sEnd);
+  LOG(WARNING) << "deleteRange done.";
   if (!s.ok()) {
     LOG(ERROR) << "deleteRange failed:" << s.ToString();
     return handleRocksdbError(s);
@@ -2638,32 +2714,81 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
   return {ErrorCodes::ERR_OK, ""};
 }
 
-// [begin, end]
-Status RocksKVStore::deleteFilesInRange(
-        rocksdb::ColumnFamilyHandle* column_family,
-        const std::string& begin,
-        const std::string& end) {
-  rocksdb::Slice sBegin(begin);
-  rocksdb::Slice sEnd(end);
-  rocksdb::DB* db = getBaseDB();
-  auto s = rocksdb::DeleteFilesInRange(
-          db, column_family, &sBegin, &sEnd, true);
+// [begin, end) if include_end = false
+// [begin, end] if include_end = true
+Status RocksKVStore::deleteFilesInRange(const std::string& begin,
+                                        const std::string& end,
+                                        bool include_end) {
+  auto s = deleteFilesInRangeWithoutBinlog(
+    getDataColumnFamilyHandle(), begin, end, include_end);
+  RET_IF_ERR(s);
+  auto ptxn = createTransaction(nullptr);
+    if (!ptxn.ok()) {
+    LOG(ERROR) << "deleteFilesInRange not atomic,createTransaction failed!!!";
+    return ptxn.status();
+  }
+  auto txn = std::move(ptxn.value());
+  s = txn->addDeleteFilesInRangeBinlog(begin, end, include_end);
   if (!s.ok()) {
-    LOG(ERROR) << "DeleteFilesInRange failed:" << s.ToString();
-    return handleRocksdbError(s);
+    LOG(ERROR) << "deleteFilesInRange not atomic,add binlog failed!!!";
+    return s;
+  }
+  auto ret = txn->commit();
+  if (!ret.ok()) {
+    LOG(ERROR) << "deleteFilesInRange not atomic, txn commit failed!!!";
+    return ret.status();
   }
   return {ErrorCodes::ERR_OK, ""};
 }
 
-Status RocksKVStore::deleteFilesInRange(ColumnFamilyNumber cf,
-                                        const std::string& begin,
-                                        const std::string& end) {
+Status RocksKVStore::deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+                                              bool include_end) {
+    auto beginKeyStr = ReplLogKeyV2(0).encode();  // begin always use 0
+    auto endKeyStr = ReplLogKeyV2(end).encode();
+    return deleteFilesInRangeWithoutBinlog(
+      getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr, include_end);
+}
+
+Status RocksKVStore::deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
+                                                     const std::string& begin,
+                                                     const std::string& end,
+                                                     bool include_end) {
   if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
-    return deleteFilesInRange(getDataColumnFamilyHandle(), begin, end);
+    return deleteFilesInRangeWithoutBinlog(
+      getDataColumnFamilyHandle(), begin, end, include_end);
   } else if (cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
-    return deleteFilesInRange(getBinlogColumnFamilyHandle(), begin, end);
+    return deleteFilesInRangeWithoutBinlog(
+      getBinlogColumnFamilyHandle(), begin, end, include_end);
   }
   return {ErrorCodes::ERR_INTERNAL, "Unknown columnFamily"};
+}
+
+Status RocksKVStore::deleteFilesInRangeWithoutBinlog(
+    rocksdb::ColumnFamilyHandle* column_family,
+    const std::string& begin,
+    const std::string& end,
+    bool include_end) {
+  rocksdb::Slice sBegin(begin);
+  rocksdb::Slice sEnd(end);
+  rocksdb::DB* db = getBaseDB();
+  std::stringstream ss;
+  ss << "deleteFilesInRange begin(hex): ";
+  for (const auto &item : begin) {
+    ss << std::hex << int(item);
+  }
+  ss << " end(hex): ";
+  for (const auto &item : end) {
+    ss << std::hex << int(item);
+  }
+  LOG(WARNING) << ss.str();
+  auto s = rocksdb::DeleteFilesInRange(
+    db, column_family, &sBegin, &sEnd, include_end);
+  LOG(WARNING) << "deleteFilesInRange done.";
+  if (!s.ok()) {
+    LOG(ERROR) << "deleteFilesInRange failed:" << s.ToString();
+    return handleRocksdbError(s);
+  }
+  return {ErrorCodes::ERR_OK, ""};
 }
 
 Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
@@ -2694,13 +2819,8 @@ Status RocksKVStore::saveMinBinlogId(uint64_t id, uint64_t ts,
 
 // [begin, end)
 Status RocksKVStore::deleteRangeBinlog(uint64_t begin, uint64_t end) {
-  if (_cfg->deleteFilesInRangeforBinlog) {
-    ReplLogKeyV2 beginKey(0);  // begin always use 0
-    ReplLogKeyV2 endKey(end);
-    auto beginKeyStr = beginKey.encode();
-    auto endKeyStr = endKey.encode();
-    auto s = deleteFilesInRange(
-            getBinlogColumnFamilyHandle(), beginKeyStr, endKeyStr);
+  if (_cfg->deleteFilesInRangeForBinlog) {
+    auto s = deleteFilesInRangeBinlog(begin, end, false);
     RET_IF_ERR(s);
   } else {
     ReplLogKeyV2 beginKey(0);  // begin always use 0

@@ -1986,6 +1986,12 @@ class IncrMetaCommand : public Command {
       case ReplOp::REPL_OP_DEL_RANGE: {
         break;
       }
+      case ReplOp::REPL_OP_DEL_FILES_INCLUDE_END: {
+        break;
+      }
+      case ReplOp::REPL_OP_DEL_FILES_EXCLUDE_END: {
+        break;
+      }
       default:
         INVARIANT_D(0);
         return {ErrorCodes::ERR_DECODE, "not a valid binlog"};

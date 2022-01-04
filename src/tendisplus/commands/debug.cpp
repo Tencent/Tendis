@@ -3924,7 +3924,7 @@ class deleteFilesInRangeGenericCommand : public Command {
       auto expDb =
         server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_IX);
       RET_IF_ERR_EXPECTED(expDb);
-      auto s = expDb.value().store->deleteFilesInRange(
+      auto s = expDb.value().store->deleteFilesInRangeWithoutBinlog(
         ColumnFamilyNumber::ColumnFamily_Default, rkStart, rkEnd);
       RET_IF_ERR(s);
       i++;
@@ -3984,7 +3984,7 @@ class deleteFilesInRangeGenericCommand : public Command {
     // binlog in [start, end]
     auto rlkStart = ReplLogKeyV2(start).encode();
     auto rlkEnd = ReplLogKeyV2(end).encode();
-    auto ret = kvStore->deleteFilesInRange(
+    auto ret = kvStore->deleteFilesInRangeWithoutBinlog(
       ColumnFamilyNumber::ColumnFamily_Binlog, rlkStart, rlkEnd);
     RET_IF_ERR(ret);
     return Command::fmtOK();
@@ -4074,28 +4074,12 @@ class deleteSlotsCommand : public Command {
 
     LOG(INFO) << "deleteSlots beginChunk:" << beginChunkid
               << " endChunk:" << endChunkid;
-    for (uint32_t storeid = 0; storeid < server->getKVStoreCount(); storeid++) {
-      uint32_t myBegin = UINT32_MAX;
-      uint32_t myEnd = UINT32_MAX;
-      for (uint32_t chunkid = beginChunkid; chunkid <= beginChunkid;
-           chunkid++) {
-        if (server->getSegmentMgr()->getStoreid(chunkid) == storeid) {
-          if (myBegin == UINT32_MAX) {
-            myBegin = chunkid;
-          }
-          myEnd = chunkid;
-        }
-      }
-      if (myBegin == UINT32_MAX) {
-        continue;
-      }
-      LOG(INFO) << "deleteSlots storeid:" << storeid
-                << " beginChunk:" << myBegin << " endChunk:" << myEnd;
-      auto s = server->getGcMgr()->deleteChunks(storeid, myBegin, myEnd);
-      if (!s.ok()) {
-        return s.toString();
-      }
+    SlotsBitmap deletingBitMap;
+    for (uint32_t i = beginChunkid; i <= endChunkid; i++) {
+      deletingBitMap.set(i);
     }
+    auto s = server->getGcMgr()->deleteBitMap(deletingBitMap, false);
+    RET_IF_ERR(s);
     return Command::fmtOK();
   }
 } deleteSlotsCmd;

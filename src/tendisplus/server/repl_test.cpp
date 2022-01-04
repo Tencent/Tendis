@@ -876,7 +876,7 @@ TEST(Repl, BinlogKeepNum_Test) {
         cfg2->binlogDelRange = 5000;
         cfg3->binlogDelRange = 5000;
         cfg4->binlogDelRange = 5000;
-        cfg1->deleteFilesInRangeforBinlog = true;
+        cfg1->deleteFilesInRangeForBinlog = true;
       }
 
       // NOTE(takenliu) be care of gParams set by cfg1.

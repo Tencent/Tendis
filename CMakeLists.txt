@@ -50,7 +50,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
     endif()
 else()
 	set(STDFS_LIB "")
-	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-6.0.0")
+	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
 endif()
 
 set(CMAKE_MODULE_PATH "${ROCKSDB_DIR}/cmake/modules/")
@@ -95,30 +95,26 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:
                 #     export MALLOC_CONF="prof:true,prof_prefix:jeprof.out"
-				COMMAND ./autogen.sh --enable-prof
+				COMMAND ./autogen.sh --enable-prof --disable-shared
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
-		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a"
-                "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so"
-				COMMAND ${CMAKE_MAKE_PROGRAM}
+		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
+				COMMAND ${CMAKE_MAKE_PROGRAM} -j8
 				DEPENDS "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
 				COMMENT "Making external library jemalloc")
 		add_custom_target(build_jemalloc
-				DEPENDS "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.a")
+				DEPENDS "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a")
 
-		add_library(jemalloc_SHARED SHARED IMPORTED)
 		add_library(jemalloc STATIC IMPORTED)
 		set_target_properties(jemalloc PROPERTIES IMPORTED_LOCATION "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a")
-		set_target_properties(jemalloc_SHARED PROPERTIES IMPORTED_LOCATION "${JEMALLOC_ROOT_DIR}/lib/libjemalloc.so")
 
 		list(APPEND SYS_LIBS jemalloc)
 		list(APPEND THIRDPARTY_LIBS jemalloc)
 		add_dependencies(jemalloc build_jemalloc)
-		add_dependencies(jemalloc_SHARED build_jemalloc)
 
-		link_directories(
-			${JEMALLOC_ROOT_DIR}/lib/
-		)
+		set(JeMalloc_INCLUDE_DIRS ${JEMALLOC_ROOT_DIR}/include)
+		link_directories(${JEMALLOC_ROOT_DIR}/lib/)
+		set(JeMalloc_LIBRARIES ${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a)
 	endif()
 
 	list(APPEND SYS_LIBS "dl" "pthread" "rt")

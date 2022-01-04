@@ -23,10 +23,12 @@ namespace tendisplus {
 
 Expected<std::string> key2Aof(Session* sess, const std::string& key);
 
-std::shared_ptr<ServerParams> makeServerParam(uint32_t port,
-                                              uint32_t storeCnt,
-                                              const std::string& dir,
-                                              bool general_log) {
+std::shared_ptr<ServerParams> makeServerParam(
+  uint32_t port,
+  uint32_t storeCnt,
+  const std::string& dir,
+  bool general_log,
+  const std::map<std::string, std::string>& configMap) {
   std::stringstream ss_tmp_conf_file;
   ss_tmp_conf_file << getpid() << "_";
   ss_tmp_conf_file << port << "_test.cfg";
@@ -68,6 +70,9 @@ std::shared_ptr<ServerParams> makeServerParam(uint32_t port,
 #ifdef _WIN32
   myfile << "rocks.compress_type none\n";
 #endif
+  for (const auto& it : configMap) {
+    myfile << it.first << " " << it.second << "\n";
+  }
   myfile.close();
 
   auto cfg = std::make_shared<ServerParams>();
@@ -226,66 +231,6 @@ std::shared_ptr<ServerEntry> makeServerEntry(
   INVARIANT(s.ok());
 
   return master;
-}
-
-std::shared_ptr<ServerEntry> makeServerEntryOld(
-  const std::shared_ptr<ServerParams>& cfg) {
-  auto block_cache =
-    rocksdb::NewLRUCache(cfg->rocksBlockcacheMB * 1024 * 1024LL, 4);
-  auto server = std::make_shared<ServerEntry>(cfg);
-
-  uint32_t kvStoreCount = cfg->kvStoreCount;
-  uint32_t chunkSize = cfg->chunkSize;
-
-  // catalog init
-  auto catalog = std::make_unique<Catalog>(
-    std::move(std::unique_ptr<KVStore>(
-      new RocksKVStore(CATALOG_NAME, cfg, nullptr, nullptr, false))),
-    kvStoreCount,
-    chunkSize,
-    cfg->binlogUsingDefaultCF);
-  server->installCatalog(std::move(catalog));
-
-  std::vector<PStore> tmpStores;
-  for (size_t dbId = 0; dbId < kvStoreCount; ++dbId) {
-    KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE;
-
-    auto meta = server->getCatalog()->getStoreMainMeta(dbId);
-    if (meta.ok()) {
-      mode = meta.value()->storeMode;
-    } else if (meta.status().code() == ErrorCodes::ERR_NOTFOUND) {
-      auto pMeta = std::unique_ptr<StoreMainMeta>(
-        new StoreMainMeta(dbId, KVStore::StoreMode::READ_WRITE));
-      Status s = server->getCatalog()->setStoreMainMeta(*pMeta);
-      if (!s.ok()) {
-        LOG(FATAL) << "catalog setStoreMainMeta error:" << s.toString();
-        return nullptr;
-      }
-    } else {
-      LOG(FATAL) << "catalog getStoreMainMeta error:"
-                 << meta.status().toString();
-      return nullptr;
-    }
-
-    tmpStores.emplace_back(std::unique_ptr<KVStore>(
-      new RocksKVStore(std::to_string(dbId), cfg, block_cache,
-              nullptr, true, mode)));
-  }
-  server->installStoresInLock(tmpStores);
-  auto seg_mgr =
-    std::unique_ptr<SegmentMgr>(new SegmentMgrFnvHash64(tmpStores, chunkSize));
-  server->installSegMgrInLock(std::move(seg_mgr));
-
-  auto tmpPessimisticMgr = std::make_unique<PessimisticMgr>(kvStoreCount);
-  server->installPessimisticMgrInLock(std::move(tmpPessimisticMgr));
-
-  auto tmpMGLockMgr = std::make_unique<mgl::MGLockMgr>();
-  server->installMGLockMgrInLock(std::move(tmpMGLockMgr));
-
-  // server->initSlowlog(cfg->slowlogPath);
-  server->getSlowlogStat().initSlowlogFile(cfg->slowlogPath);
-
-  return server;
 }
 
 std::shared_ptr<NetSession> makeSession(std::shared_ptr<ServerEntry> server,
@@ -477,7 +422,7 @@ KeysWritten WorkLoad::writeWork(RecordType type,
                                 uint32_t count,
                                 uint32_t maxlen,
                                 bool sharename,
-                                const char* key_suffix) {
+                                const std::string& key_suffix) {
   uint32_t total = 0;
   KeysWritten keys;
 
@@ -485,17 +430,16 @@ KeysWritten WorkLoad::writeWork(RecordType type,
     std::string key = randomKey(32) + "_" + std::to_string(i);
     key.push_back('_');
     key.push_back(static_cast<char>(rt2Char(type)));
-    if (key_suffix != NULL) {
-      key += '_' + key_suffix;
+    if (!key_suffix.empty()) {
+      key += "_";
+      key += key_suffix;
     }
 
     if (type == RecordType::RT_KV) {
       _session->setArgs({"set", key, std::to_string(i)});
       auto expect = Command::runSessionCmd(_session.get());
       EXPECT_TRUE(expect.status().ok());
-      if (expect.status().ok()) {
-        EXPECT_EQ(expect.value(), Command::fmtOK());
-      }
+      EXPECT_EQ(expect.value(), Command::fmtOK());
       total++;
     } else {
       uint32_t len = static_cast<uint32_t>(std::rand() % maxlen) + 1;
@@ -789,11 +733,15 @@ AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
 
   AllKeys all_keys;
   LOG(INFO) << "Start write data to server";
-  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, key_suffix);
+  std::string s("");
+  if (key_suffix != nullptr) {
+    s = std::string(key_suffix);
+  }
+  auto kv_keys = work.writeWork(RecordType::RT_KV, count, 0, true, s);
   all_keys.emplace_back(kv_keys);
 
   auto list_keys = work.writeWork(
-    RecordType::RT_LIST_META, count, maxEleCnt, true, key_suffix);
+    RecordType::RT_LIST_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(list_keys);
 
   // work.flush was used in repl_test, we just keep same
@@ -807,15 +755,15 @@ AllKeys writeComplexDataToServer(const std::shared_ptr<ServerEntry>& server,
   }
 
   auto hash_keys = work.writeWork(
-    RecordType::RT_HASH_META, count, maxEleCnt, true, key_suffix);
+    RecordType::RT_HASH_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(hash_keys);
 
-  auto set_keys =
-    work.writeWork(RecordType::RT_SET_META, count, maxEleCnt, true, key_suffix);
+  auto set_keys = work.writeWork(
+    RecordType::RT_SET_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(set_keys);
 
   auto zset_keys = work.writeWork(
-    RecordType::RT_ZSET_META, count, maxEleCnt, true, key_suffix);
+    RecordType::RT_ZSET_META, count, maxEleCnt, true, s);
   all_keys.emplace_back(zset_keys);
   LOG(INFO) << "End write data to server";
 
@@ -848,7 +796,7 @@ AllKeys writeComplexDataWithTTLToServer(
 
 AllKeys writeKVDataToServer(const std::shared_ptr<ServerEntry>& server,
                             uint32_t count,
-                            const char* key_suffix) {
+                            const std::string & key_suffix) {
   auto ctx1 = std::make_shared<asio::io_context>();
   auto sess1 = makeSession(server, ctx1);
   WorkLoad work(server, sess1);

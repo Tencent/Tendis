@@ -912,7 +912,7 @@ class ClusterCommand : public Command {
           continue;
         }
 
-        if (svr->getGcMgr()->slotIsDeleting(slot)) {
+        if (svr->getGcMgr()->isDeletingSlot(slot)) {
           LOG(ERROR) << "slot:" << slot
                      << " ERR being deleting before migration";
           return {ErrorCodes::ERR_CLUSTER,

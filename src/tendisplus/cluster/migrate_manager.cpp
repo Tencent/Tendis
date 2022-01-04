@@ -636,7 +636,7 @@ void MigrateSendTask::deleteSenderChunks() {
                << bitsetStrEncode(_slots);
     _state = MigrateSendState::ERR;
   } else {
-    auto s = _svr->getGcMgr()->deleteSlotsData(_slots, _storeid);
+    auto s = _svr->getGcMgr()->deleteBitMap(_slots, _storeid);
     std::lock_guard<std::mutex> lk(_mutex);
     if (!s.ok()) {
       LOG(ERROR) << "sender task delete chunk fail on store:" << _storeid
@@ -1128,7 +1128,7 @@ bool MigrateManager::receiverSchedule(const SCLOCK::time_point& now) {
       } else {
         /*NOTE(wayenchen) delete Receiver dirty data in gc*/
         auto s =
-          _svr->getGcMgr()->deleteSlotsData(taskPtr->_slots, taskPtr->_storeid);
+          _svr->getGcMgr()->deleteBitMap(taskPtr->_slots, taskPtr->_storeid);
         if (!s.ok()) {
           // no need retry, gc will do it again
           LOG(ERROR) << "receiver task delete chunk fail" << s.toString();
@@ -1988,7 +1988,7 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
       }
     }
 
-    auto s = _svr->getGcMgr()->deleteSlotsData(slotsMap, storeid);
+    auto s = _svr->getGcMgr()->deleteBitMap(slotsMap, storeid);
     if (!s.ok()) {
       LOG(ERROR) << "restoreMigrateBinlog deletechunk fail:" << s.toString();
       return s;
@@ -2000,16 +2000,11 @@ Status MigrateManager::restoreMigrateBinlog(MigrateBinlogType type,
 Status MigrateManager::onRestoreEnd(uint32_t storeId) {
   {
     std::lock_guard<myMutex> lk(_mutex);
-    for (auto iter = _restoreMigrateTask[storeId].begin();
-         iter != _restoreMigrateTask[storeId].end();
-         iter++) {
+    for (auto &it : _restoreMigrateTask[storeId]) {
       LOG(INFO) << "migrate task has receive_start and has no receive_end,"
-                << " so delete keys for slots:" << (*iter).to_string();
-      auto s = _svr->getGcMgr()->deleteSlotsData(*iter, storeId);
-      if (!s.ok()) {
-        LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
-        return s;
-      }
+                << " so delete keys for slots:" << it.to_string();
+      auto s = _svr->getGcMgr()->deleteBitMap(it, storeId);
+      RET_IF_ERR(s);
     }
   }
 
@@ -2031,7 +2026,7 @@ Status MigrateManager::onRestoreEnd(uint32_t storeId) {
   }
   LOG(INFO) << "onRestoreEnd deletechunks:" << dontContainSlots.to_string();
   // TODO(takenliu) check the logical of locking the chunks
-  auto s = _svr->getGcMgr()->deleteSlotsData(dontContainSlots, storeId);
+  auto s = _svr->getGcMgr()->deleteBitMap(dontContainSlots, storeId);
   if (!s.ok()) {
     LOG(ERROR) << "onRestoreEnd deletechunk fail:" << s.toString();
     return s;

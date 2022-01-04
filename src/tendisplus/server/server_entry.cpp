@@ -454,6 +454,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                        cfg,
                        nullptr,
                        nullptr,
+                       nullptr,
                        false,
                        KVStore::StoreMode::READ_WRITE,
                        static_cast<TxnMode>(cfg->rocksTransactionMode)))),
@@ -494,6 +495,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
                                      cfg->rocksBlockcacheNumShardBits,
                                      cfg->rocksStrictCapacityLimit);
 
+  if (cfg->rocksDeleteBytesPerSecond > 0) {
+    _sstFileManager = std::shared_ptr<rocksdb::SstFileManager>(
+      rocksdb::NewSstFileManager(
+        rocksdb::Env::Default(), nullptr, "",
+        cfg->rocksDeleteBytesPerSecond));
+  }
+
   if (cfg->rocksRateLimiterRateBytesPerSec > 0) {
     _rateLimiter = std::shared_ptr<rocksdb::RateLimiter>(
       rocksdb::NewGenericRateLimiter(
@@ -526,15 +534,16 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       return meta.status();
     }
 
-    tmpStores.emplace_back(std::unique_ptr<KVStore>(
-      new RocksKVStore(std::to_string(i),
-                       cfg,
-                       _blockCache,
-                       _rateLimiter,
-                       _cfg->binlogEnabled,
-                       mode,
-                       static_cast<TxnMode>(cfg->rocksTransactionMode),
-                       flag)));
+    tmpStores.emplace_back(
+      std::unique_ptr<KVStore>(new RocksKVStore(std::to_string(i),
+                                                cfg,
+                                                _blockCache,
+                                                _rateLimiter,
+                                                _sstFileManager,
+                                                _cfg->binlogEnabled,
+                                                mode,
+                                                TxnMode::TXN_PES,
+                                                flag)));
   }
 
   // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
@@ -1387,13 +1396,6 @@ Status ServerEntry::destroyStore(Session* sess,
   status = _replMgr->stopStore(storeId);
   if (!status.ok()) {
     LOG(ERROR) << "replMgr stopStore :" << storeId
-               << " failed:" << status.toString();
-    return status;
-  }
-
-  status = _gcMgr->stopStoreTask(storeId);
-  if (!status.ok()) {
-    LOG(ERROR) << "gcMgr stopStore :" << storeId
                << " failed:" << status.toString();
     return status;
   }

@@ -17,6 +17,7 @@
 #include <list>
 
 #include "rocksdb/db.h"
+#include "rocksdb/sst_file_manager.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/optimistic_transaction_db.h"
 #include "rocksdb/utilities/transaction_db.h"
@@ -78,6 +79,9 @@ class RocksTxn : public Transaction {
                const std::string& val) final;
   Status addDeleteRangeBinlog(const std::string& begin,
                               const std::string& end) final;
+  Status addDeleteFilesInRangeBinlog(const std::string& begin,
+                                     const std::string& end,
+                                     bool include_end = false) final;
 #ifdef BINLOG_V1
   Status applyBinlog(const std::list<ReplLog>& txnLog) final;
   Status truncateBinlog(const std::list<ReplLog>& txnLog) final;
@@ -281,6 +285,8 @@ class RocksKVStore : public KVStore {
                const std::shared_ptr<ServerParams>& cfg,
                std::shared_ptr<rocksdb::Cache> blockCache,
                std::shared_ptr<rocksdb::RateLimiter> rateLimiter = nullptr,
+               std::shared_ptr<rocksdb::SstFileManager>
+                 sstFileManager = nullptr,
                bool enableRepllog = true,
                KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
                TxnMode txnMode = TxnMode::TXN_PES,
@@ -301,20 +307,41 @@ class RocksKVStore : public KVStore {
                const std::string& val,
                Transaction* txn) final;
   Status delKV(const RecordKey& key, Transaction* txn) final;
+
   // [begin, end)
-  Status deleteRange(const std::string& begin, const std::string& end) final;
+  Status deleteRange(const std::string& begin, const std::string& end,
+                     bool deleteFilesInRangeBeforeDeleteRange = false,
+                     bool compactRangeAfterDeleteRange = false) override;
+  Status deleteRangeBinlog(uint64_t begin, uint64_t end) override;
   Status deleteRangeWithoutBinlog(rocksdb::ColumnFamilyHandle* column_family,
                                   const std::string& begin,
-                                  const std::string& end);
-  Status deleteRangeBinlog(uint64_t begin, uint64_t end);
-  Status deleteFilesInRange(rocksdb::ColumnFamilyHandle* column_family,
-                            const std::string& begin,
-                            const std::string& end);
-  Status deleteFilesInRange(ColumnFamilyNumber cf,
-                            const std::string& begin,
-                            const std::string& end) final;
-  Status saveMinBinlogId(uint64_t id, uint64_t ts, Transaction* txn = nullptr);
+                                  const std::string& end) override;
 
+  // [begin, end) if include_end = false
+  // [begin, end] if include_end = true
+  Status deleteFilesInRange(const std::string& begin,
+                            const std::string& end,
+                            bool include_end = false) override;
+  Status deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+                                  bool include_end = false) override;
+  Status deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
+                                         const std::string& begin,
+                                         const std::string& end,
+                                         bool include_end = false) override;
+  Status deleteFilesInRangeWithoutBinlog(
+    rocksdb::ColumnFamilyHandle* column_family,
+    const std::string& begin,
+    const std::string& end,
+    bool include_end = false) override;
+
+  // [begin, end]
+  // [nullptr, nullptr] -> [-inf, +inf]
+  Status compactRange(ColumnFamilyNumber cf,
+                      const std::string* begin,
+                      const std::string* end) override;
+  Status fullCompact() override;
+
+  Status saveMinBinlogId(uint64_t id, uint64_t ts, Transaction* txn = nullptr);
   Status handleRocksdbError(rocksdb::Status s) const;
 
 #ifdef BINLOG_V1
@@ -338,17 +365,13 @@ class RocksKVStore : public KVStore {
   Expected<bool> validateAllBinlog(Transaction* txn) const final;
 #endif
   Status setLogObserver(std::shared_ptr<BinlogObserver>) final;
-  Status compactRange(ColumnFamilyNumber cf,
-                      const std::string* begin,
-                      const std::string* end) final;
-  Status fullCompact() final;
   // RocksDB::DestroyDB
   Status clear() final;
   bool isRunning() const final;
   Status stop() final;
 
   Status setMode(StoreMode mode) final;
-  KVStore::StoreMode getMode() final {
+  KVStore::StoreMode getMode() const final {
     return _mode;
   }
 
@@ -518,6 +541,7 @@ class RocksKVStore : public KVStore {
   std::shared_ptr<rocksdb::Statistics> _stats;
   std::shared_ptr<rocksdb::Cache> _blockCache;
   std::shared_ptr<rocksdb::RateLimiter> _rateLimiter;
+  std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
 
   uint64_t _nextTxnSeq;
 #ifdef BINLOG_V1

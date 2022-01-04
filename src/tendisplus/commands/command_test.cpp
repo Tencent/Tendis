@@ -2335,10 +2335,6 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateSenderThreadnum, 8);
 
-  sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "8"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 8);
-
   sess.setArgs({"CONFIG", "SET", "migrateReceiveThreadnum", "8"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateReceiveThreadnum, 8);
@@ -2359,7 +2355,6 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 8);
   EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 8);
   EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 8);
-  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 8);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 8);
   EXPECT_EQ(svr->getIndexMgr()->indexScannerSize(), 8);
   EXPECT_EQ(svr->getIndexMgr()->keyDeleterSize(), 8);
@@ -2379,10 +2374,6 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   sess.setArgs({"CONFIG", "SET", "migrateSenderThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
   EXPECT_EQ(svr->getParams()->migrateSenderThreadnum, 1);
-
-  sess.setArgs({"CONFIG", "SET", "garbageDeleteThreadnum", "1"});
-  expect = Command::runSessionCmd(&sess);
-  EXPECT_EQ(svr->getParams()->garbageDeleteThreadnum, 1);
 
   sess.setArgs({"CONFIG", "SET", "incrPushThreadnum", "1"});
   expect = Command::runSessionCmd(&sess);
@@ -2408,7 +2399,6 @@ void testResizeCommand(std::shared_ptr<ServerEntry> svr) {
   EXPECT_EQ(svr->getReplManager()->fullReceiverSize(), 1);
   EXPECT_EQ(svr->getReplManager()->logRecycleSize(), 1);
   EXPECT_EQ(svr->getMigrateManager()->migrateSenderSize(), 1);
-  EXPECT_EQ(svr->getGcMgr()->garbageDeleterSize(), 1);
   EXPECT_EQ(svr->getMigrateManager()->migrateReceiverSize(), 1);
   EXPECT_EQ(svr->getIndexMgr()->indexScannerSize(), 1);
   EXPECT_EQ(svr->getIndexMgr()->keyDeleterSize(), 1);

@@ -254,6 +254,9 @@ class Transaction {
                        const std::string& val) = 0;
   virtual Status addDeleteRangeBinlog(const std::string& begin,
                                       const std::string& end) = 0;
+  virtual Status addDeleteFilesInRangeBinlog(const std::string& begin,
+                                             const std::string& end,
+                                             bool include_end = false) = 0;
   virtual uint64_t getBinlogTime() = 0;
   virtual void setBinlogTime(uint64_t timestamp) = 0;
   virtual bool isReplOnly() const = 0;
@@ -376,10 +379,41 @@ class KVStore {
                        const std::string& val,
                        Transaction* txn) = 0;
   virtual Status delKV(const RecordKey& key, Transaction* txn) = 0;
+
   // [begin, end)
-  virtual Status deleteRange(const std::string& begin,
-                             const std::string& end) = 0;
+  virtual Status deleteRange(
+    const std::string& begin, const std::string& end,
+    bool deleteFilesInRangeBeforeDeleteRange = false,
+    bool compactRangeAfterDeleteRange = false) = 0;
   virtual Status deleteRangeBinlog(uint64_t begin, uint64_t end) = 0;
+  virtual Status deleteRangeWithoutBinlog(
+    rocksdb::ColumnFamilyHandle* column_family,
+    const std::string& begin,
+    const std::string& end) = 0;
+
+  // [begin, end) if include_end = false
+  // [begin, end] if include_end = true
+  virtual Status deleteFilesInRange(const std::string& begin,
+                                    const std::string& end,
+                                    bool include_end = false) = 0;
+  virtual Status deleteFilesInRangeBinlog(uint64_t begin, uint64_t end,
+                                          bool include_end = false) = 0;
+  virtual Status deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
+                                                 const std::string& begin,
+                                                 const std::string& end,
+                                                 bool include_end = false) = 0;
+  virtual Status deleteFilesInRangeWithoutBinlog(
+    rocksdb::ColumnFamilyHandle* column_family,
+    const std::string& begin,
+    const std::string& end,
+    bool include_end = false) = 0;
+
+  // [begin, end]
+  // [nullptr, nullptr] -> [-inf, +inf]
+  virtual Status compactRange(ColumnFamilyNumber cf,
+                              const std::string* begin,
+                              const std::string* end) = 0;
+  virtual Status fullCompact() = 0;
 
   virtual Status assignBinlogIdIfNeeded(Transaction* txn) = 0;
   virtual void setNextBinlogSeq(uint64_t binlogId, Transaction* txn) = 0;
@@ -397,13 +431,6 @@ class KVStore {
   virtual Expected<bool> validateAllBinlog(Transaction* txn) const = 0;
 
   virtual Status setLogObserver(std::shared_ptr<BinlogObserver>) = 0;
-  virtual Status compactRange(ColumnFamilyNumber cf,
-                              const std::string* begin,
-                              const std::string* end) = 0;
-  virtual Status deleteFilesInRange(ColumnFamilyNumber cf,
-                                    const std::string& begin,
-                                    const std::string& end) = 0;
-  virtual Status fullCompact() = 0;
 
   // remove all data in db
   virtual Status clear() = 0;
@@ -437,7 +464,7 @@ class KVStore {
                                 uint64_t version) = 0;
 
   virtual Status setMode(StoreMode mode) = 0;
-  virtual KVStore::StoreMode getMode() = 0;
+  virtual KVStore::StoreMode getMode() const = 0;
   virtual uint64_t getHighestBinlogId() const = 0;
 
   // return the greatest commitId
