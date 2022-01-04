@@ -1445,11 +1445,17 @@ Status ServerEntry::generateHeartbeatBinlogRoutine() {
   char buffer[20];
   std::strftime(buffer, 20, "%Y-%m-%d %H:%M:%S", std::localtime(&t));
   std::string value(buffer);
+  auto rm = getReplManager();
 
   for (uint32_t i = 0; i < getKVStoreCount(); ++i) {
     auto expdb =
       getSegmentMgr()->getDb(nullptr, i, mgl::LockMode::LOCK_IX);
     RET_IF_ERR_EXPECTED(expdb);
+
+    if (rm->isSlaveOfSomeone(i)) {
+      // slave shouldn't generate binlog avoid binlog id conflict.
+      continue;
+    }
 
     auto ptxn = expdb.value().store->createTransaction(nullptr);
     RET_IF_ERR_EXPECTED(ptxn);
