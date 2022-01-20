@@ -187,6 +187,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   // underlying socket and let itself trigger the whole path.
   void endSession(uint64_t connId);
   size_t getSessionCount();
+  size_t getSessionCount(Session::Type);
 
   Status cancelSession(uint64_t connId);
 
