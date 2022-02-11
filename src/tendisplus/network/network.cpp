@@ -100,6 +100,7 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
                          std::shared_ptr<NetworkMatrix> netMatrix,
                          std::shared_ptr<RequestMatrix> reqMatrix,
                          std::shared_ptr<ServerParams> cfg,
+                         bool sendDelay,
                          const std::string& name)
   : _connCreated(0),
     _server(server),
@@ -110,6 +111,7 @@ NetworkAsio::NetworkAsio(std::shared_ptr<ServerEntry> server,
     _netMatrix(netMatrix),
     _reqMatrix(reqMatrix),
     _cfg(cfg),
+    _sendDelay(sendDelay),
     _name(name) {}
 
 #ifdef _WIN32
@@ -263,7 +265,8 @@ void NetworkAsio::doAccept() {
 
     uint64_t newConnId = _connCreated.fetch_add(1, std::memory_order_relaxed);
     auto sess = std::make_shared<T>(
-      _server, std::move(socket), newConnId, true, _netMatrix, _reqMatrix);
+      _server, std::move(socket), newConnId,
+      true, _netMatrix, _reqMatrix, _sendDelay);
     DLOG(INFO) << "new net session, id:" << sess->id()
                << ",connId:" << newConnId << ",from:" << sess->getRemoteRepr()
                << " created";
@@ -337,7 +340,72 @@ Status NetworkAsio::startThread() {
     });
     _rwThreads.emplace_back(std::move(thd));
   }
+  _sessions.resize(_netIoThreadNum);
+  if (_sendDelay) {
+    _timers.reserve(_netIoThreadNum);
+    for (size_t i = 0; i < _netIoThreadNum; i++) {
+      _timers.emplace_back(*(_rwCtxList[i]), std::chrono::milliseconds(1));
+      timeoutProcess(i);
+      LOG(INFO) << "NetworkAsio::start timer:" << i;
+    }
+  }
   return {ErrorCodes::ERR_OK, ""};
+}
+
+void NetworkAsio::timeoutProcess(size_t index) {
+  auto cb = [this, index](const std::error_code& ec) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    if (!_isRunning.load(std::memory_order_relaxed)) {
+      LOG(INFO) << "timeoutCb, server is shuting down";
+      return;
+    }
+    if (ec.value()) {
+      LOG(WARNING) << "timeoutCb errorcode:" << ec.message();
+      // we log this error, but dont return
+    }
+
+    for (auto& sess : _sessions[index]) {
+      // NOTE(tanninzhu): session type must be NET or CLUSTER,
+      // so we use static_pointer_cast
+      INVARIANT(sess.second->getType() == Session::Type::NET ||
+        sess.second->getType() == Session::Type::CLUSTER);
+      auto s = static_pointer_cast<NetSession>(sess.second);
+      if (s->isSendDelay()) {
+        s->drainRsp();
+      }
+    }
+
+    timeoutProcess(index);
+  };
+  _timers[index].expires_at(
+    _timers[index].expires_at() + std::chrono::milliseconds(1));
+  _timers[index].async_wait(cb);
+}
+
+void NetworkAsio::addSession(std::shared_ptr<Session> sess) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  INVARIANT(sess->getType() == Session::Type::NET ||
+    sess->getType() == Session::Type::CLUSTER);
+  std::shared_ptr<NetSession> s = static_pointer_cast<NetSession>(sess);
+  for (uint64_t i = 0; i < _rwCtxList.size(); i++) {
+    if (&(s->getSock()->get_io_context()) == _rwCtxList[i].get()) {
+      _sessions[i][sess->id()] = sess;
+      return;
+    }
+  }
+  LOG(WARNING) << "session id:" << sess->id()
+    << " can't find io context";
+  return;
+}
+
+void NetworkAsio::endSession(uint64_t id) {
+  std::lock_guard<std::mutex> lk(_mutex);
+  for (auto& sessMap : _sessions) {
+    if (sessMap.find(id) != sessMap.end()) {
+      sessMap.erase(id);
+      return;
+    }
+  }
 }
 
 Status NetworkAsio::run(bool forGossip) {
@@ -358,6 +426,7 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
                        bool initSock,
                        std::shared_ptr<NetworkMatrix> netMatrix,
                        std::shared_ptr<RequestMatrix> reqMatrix,
+                       bool sendDelay,
                        Session::Type type)
   : Session(server, type),
     _connId(connid),
@@ -371,8 +440,10 @@ NetSession::NetSession(std::shared_ptr<ServerEntry> server,
     _bulkLen(-1),
     _isSendRunning(false),
     _isEnded(false),
+    _closeResponse(false),
     _netMatrix(netMatrix),
-    _reqMatrix(reqMatrix) {
+    _reqMatrix(reqMatrix),
+    _sendDelay(sendDelay) {
   if (initSock) {
     std::error_code ec;
     _sock.non_blocking(true, ec);
@@ -486,6 +557,14 @@ asio::ip::tcp::socket NetSession::borrowConn() {
   return std::move(_sock);
 }
 
+asio::ip::tcp::socket* NetSession::getSock() {
+  return &_sock;
+}
+
+bool NetSession::isSendDelay() {
+  return _sendDelay;
+}
+
 Status NetSession::setResponse(const std::string& s) {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isEnded) {
@@ -493,14 +572,30 @@ Status NetSession::setResponse(const std::string& s) {
     return {ErrorCodes::ERR_NETWORK, "connection is ended"};
   }
 
-  auto v = std::make_shared<SendBuffer>();
-  std::copy(s.begin(), s.end(), std::back_inserter(v->buffer));
-  v->closeAfterThis = _closeAfterRsp;
+  if (s.empty()) {
+    LOG(ERROR) << "response is empty";
+    return {ErrorCodes::ERR_OK, ""};
+  }
+
+  // Session closing,Already send the last response,needn't sent again
+  if (_closeAfterRsp) {
+    if (_closeResponse) {
+      return {ErrorCodes::ERR_OK, ""};
+    } else {
+      _closeResponse = true;
+    }
+  }
+
+  uint32_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_isSendRunning) {
-    _sendBuffer.push_back(v);
+      std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
-    _isSendRunning = true;
-    drainRsp(v);
+      std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
+      if (netSendBatchSize <= 0 || !_sendDelay ||
+          (netSendBatchSize > 0 && _sendDelay &&
+            _sendBuffer.size() > netSendBatchSize)) {
+        drainRspWithoutLock();
+      }
   }
 
   return {ErrorCodes::ERR_OK, ""};
@@ -883,50 +978,73 @@ void NetSession::processReq() {
   }
 }
 
-void NetSession::drainRsp(std::shared_ptr<SendBuffer> buf) {
-  auto self(shared_from_this());
+void NetSession::drainRsp() {
+  std::lock_guard<std::mutex> lk(_mutex);
+  if (_isSendRunning) {
+    LOG(WARNING) << "NetSession is send running";
+    return;
+  }
+  drainRspWithoutLock();
+}
+
+void NetSession::drainRspWithoutLock() {
+  if (_sendBuffer.size() == 0) {
+    return;
+  }
   uint64_t now = nsSinceEpoch();
+  _isSendRunning = true;
+  auto self(shared_from_this());
   asio::async_write(
     _sock,
-    asio::buffer(buf->buffer.data(), buf->buffer.size()),  // NOLINT
-    [this, self, buf, now](const std::error_code& ec, size_t actualLen) {
+    asio::buffer(_sendBuffer.data(), _sendBuffer.size()),
+    [this, self, now](const std::error_code& ec, size_t actualLen) {
       _reqMatrix->sendPacketCost += nsSinceEpoch() - now;
-      drainRspCallback(ec, actualLen, buf);
+      drainRspCallback(ec, actualLen);
     });
 }
 
 void NetSession::drainRspCallback(const std::error_code& ec,
-                                  size_t actualLen,
-                                  std::shared_ptr<SendBuffer> buf) {
+                                  size_t actualLen) {
   if (ec) {
     LOG(WARNING) << "drainRspCallback:" << ec.message();
     endSession();
     return;
   }
-  if (actualLen != buf->buffer.size()) {
-    LOG(FATAL) << "conn:" << _connId << ",data:" << buf->buffer.data()
+  if (actualLen != _sendBuffer.size()) {
+    LOG(FATAL) << "conn:" << _connId
                << ",actualLen:" << actualLen
-               << ",bufsize:" << buf->buffer.size() << ",invalid drainRsp len";
+               << ",bufsize:" << _sendBuffer.size()
+               << ",invalid drainRsp len";
   }
-
+  uint64_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_server) {
     // TODO(vinchen): Is it right when cluster = true
-    _server->getServerStat().netOutputBytes += actualLen;
+    _server->getServerStat().netOutputBytes += _sendBuffer.size();
   }
 
-  if (buf->closeAfterThis) {
+  {
+    std::lock_guard<std::mutex> lk(_mutex);
+    INVARIANT(_isSendRunning);
+    _sendBuffer.clear();
+    _sendBuffer.swap(_sendBufferBack);
+    if (netSendBatchSize && _sendDelay) {
+      if (_sendBuffer.size() > netSendBatchSize) {
+        drainRspWithoutLock();
+      } else {
+        _isSendRunning = false;
+      }
+    } else {
+      INVARIANT(!_sendDelay);
+      if (!_sendBuffer.empty()) {
+        drainRspWithoutLock();
+      } else {
+        _isSendRunning = false;
+      }
+    }
+  }
+
+  if (_closeResponse && _sendBuffer.empty()) {
     endSession();
-    return;
-  }
-
-  std::lock_guard<std::mutex> lk(_mutex);
-  INVARIANT(_isSendRunning);
-  if (_sendBuffer.size() > 0) {
-    auto it = _sendBuffer.front();
-    _sendBuffer.pop_front();
-    drainRsp(it);
-  } else {
-    _isSendRunning = false;
   }
 }
 

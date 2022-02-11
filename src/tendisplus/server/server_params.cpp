@@ -567,6 +567,7 @@ ServerParams::ServerParams() {
                                   generateHeartbeatBinlogInterval);
   REGISTER_VARS_DIFF_NAME_DYNAMIC("wait-time-if-exists-migrate-task",
                                   waitTimeIfExistsMigrateTask);
+  REGISTER_VARS_DIFF_NAME("net-send-batch-size", netSendBatchSize);
 }
 
 ServerParams::~ServerParams() {

@@ -2047,82 +2047,85 @@ TEST(Command, revision) {
 #endif
 }
 
-TEST(Command, restorevalue) {
-  const auto guard = MakeGuard([] { destroyEnv(); });
+// NOTE(tanninzhu) restorevalue command will return multi response,
+// it's only for redis-sync, we fix sendbuffer structure, cant support it,
+// so we dont use this test
+// TEST(Command, restorevalue) {
+//   const auto guard = MakeGuard([] { destroyEnv(); });
 
-  EXPECT_TRUE(setupEnv("restore1"));
-  auto port1 = 5438;
-  auto cfg1 = makeServerParam(port1, 0, "restore1");
-  auto server1 = makeServerEntry(cfg1);
+//   EXPECT_TRUE(setupEnv("restore1"));
+//   auto port1 = 5438;
+//   auto cfg1 = makeServerParam(port1, 0, "restore1");
+//   auto server1 = makeServerEntry(cfg1);
 
-  EXPECT_TRUE(setupEnv("restore2"));
-  auto port2 = 5439;
-  auto cfg2 = makeServerParam(port2, 0, "restore2");
-  auto server2 = makeServerEntry(cfg2);
+//   EXPECT_TRUE(setupEnv("restore2"));
+//   auto port2 = 5439;
+//   auto cfg2 = makeServerParam(port2, 0, "restore2");
+//   auto server2 = makeServerEntry(cfg2);
 
-  auto allkeys =
-    writeComplexDataWithTTLToServer(server1, 1000, 2500, "restorevalue_");
+//   auto allkeys =
+//     writeComplexDataWithTTLToServer(server1, 1000, 2500, "restorevalue_");
 
-  for (const auto& keyset : allkeys) {
-    for (const auto& key : keyset) {
-      asio::io_context ioContext;
-      asio::ip::tcp::socket socket(ioContext);
-      NoSchedNetSession sess(
-        server1, std::move(socket), 1, false, nullptr, nullptr);
+//   for (const auto& keyset : allkeys) {
+//     for (const auto& key : keyset) {
+//       asio::io_context ioContext;
+//       asio::ip::tcp::socket socket(ioContext);
+//       NoSchedNetSession sess(
+//         server1, std::move(socket), 1, false, nullptr, nullptr);
 
-      sess.setArgs({"restorevalue", key});
-      auto expect = Command::runSessionCmd(&sess);
-      EXPECT_TRUE(expect.ok());
-      auto cmdvec = sess.getResponse();
-      cmdvec.emplace_back(expect.value());
+//       sess.setArgs({"restorevalue", key});
+//       auto expect = Command::runSessionCmd(&sess);
+//       EXPECT_TRUE(expect.ok());
+//       auto cmdvec = sess.getResponse();
+//       cmdvec.emplace_back(expect.value());
 
-      asio::io_context ioContext2;
-      asio::ip::tcp::socket socket2(ioContext2);
-      NoSchedNetSession sess2(
-        server2, std::move(socket2), 1, false, nullptr, nullptr);
+//       asio::io_context ioContext2;
+//       asio::ip::tcp::socket socket2(ioContext2);
+//       NoSchedNetSession sess2(
+//         server2, std::move(socket2), 1, false, nullptr, nullptr);
 
-      // skip the first and last cmd
-      for (uint32_t i = 1; i < cmdvec.size() - 1; i++) {
-        auto cmd = cmdvec[i];
-        sess2.setArgsFromAof(cmd);
+//       // skip the first and last cmd
+//       for (uint32_t i = 1; i < cmdvec.size() - 1; i++) {
+//         auto cmd = cmdvec[i];
+//         sess2.setArgsFromAof(cmd);
 
-        auto expect = Command::runSessionCmd(&sess2);
-        EXPECT_TRUE(expect.ok());
-      }
-    }
-  }
+//         auto expect = Command::runSessionCmd(&sess2);
+//         EXPECT_TRUE(expect.ok());
+//       }
+//     }
+//   }
 
-  // compare data
-  for (const auto& keyset : allkeys) {
-    for (const auto& key : keyset) {
-      asio::io_context ioContext;
-      asio::ip::tcp::socket socket(ioContext);
-      NoSchedNetSession sess(
-        server1, std::move(socket), 1, false, nullptr, nullptr);
+//   // compare data
+//   for (const auto& keyset : allkeys) {
+//     for (const auto& key : keyset) {
+//       asio::io_context ioContext;
+//       asio::ip::tcp::socket socket(ioContext);
+//       NoSchedNetSession sess(
+//         server1, std::move(socket), 1, false, nullptr, nullptr);
 
-      auto keystr1 = key2Aof(&sess, key);
-      INVARIANT_D(keystr1.ok());
+//       auto keystr1 = key2Aof(&sess, key);
+//       INVARIANT_D(keystr1.ok());
 
-      asio::io_context ioContext2;
-      asio::ip::tcp::socket socket2(ioContext2);
-      NoSchedNetSession sess2(
-        server2, std::move(socket2), 1, false, nullptr, nullptr);
+//       asio::io_context ioContext2;
+//       asio::ip::tcp::socket socket2(ioContext2);
+//       NoSchedNetSession sess2(
+//         server2, std::move(socket2), 1, false, nullptr, nullptr);
 
-      auto keystr2 = key2Aof(&sess2, key);
-      INVARIANT_D(keystr2.ok());
+//       auto keystr2 = key2Aof(&sess2, key);
+//       INVARIANT_D(keystr2.ok());
 
-      EXPECT_EQ(keystr1.value(), keystr2.value());
-    }
-  }
+//       EXPECT_EQ(keystr1.value(), keystr2.value());
+//     }
+//   }
 
-#ifndef _WIN32
-  server1->stop();
-  EXPECT_EQ(server1.use_count(), 1);
+// #ifndef _WIN32
+//   server1->stop();
+//   EXPECT_EQ(server1.use_count(), 1);
 
-  server2->stop();
-  EXPECT_EQ(server2.use_count(), 1);
-#endif
-}
+//   server2->stop();
+//   EXPECT_EQ(server2.use_count(), 1);
+// #endif
+// }
 
 TEST(Command, dexec) {
   const auto guard = MakeGuard([] { destroyEnv(); });

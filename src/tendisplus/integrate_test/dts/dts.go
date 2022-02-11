@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"flag"
-	"github.com/mediocregopher/radix.v2/redis"
-	"github.com/ngaut/log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -13,6 +11,9 @@ import (
 	"strings"
 	"tendisplus/integrate_test/util"
 	"time"
+
+	"github.com/mediocregopher/radix.v2/redis"
+	"github.com/ngaut/log"
 )
 
 var (
@@ -348,6 +349,7 @@ func main() {
 	}
 
 	configSet(s, "noexpire", "false")
+	time.Sleep(time.Second * 5)
 	cmdComp = exec.Command("compare_instances", "-addr1", t.Addr(), "-addr2", s.Addr(), "-storeNum", "1")
 	cmdComp.Stdout = &stdoutComp
 	cmdComp.Stderr = &stderrComp

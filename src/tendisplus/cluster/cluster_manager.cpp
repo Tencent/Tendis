@@ -4008,7 +4008,8 @@ void ClusterManager::stop() {
 Status ClusterManager::initNetWork() {
   shared_ptr<ServerParams> cfg = _svr->getParams();
   _clusterNetwork =
-    std::make_unique<NetworkAsio>(_svr, _netMatrix, _reqMatrix, cfg, "cluster");
+    std::make_unique<NetworkAsio>(_svr, _netMatrix, _reqMatrix, cfg,
+      false, "cluster");
 
   Status s =
     _clusterNetwork->prepare(cfg->bindIp, cfg->port + CLUSTER_PORT_INCR, 1);
@@ -4996,13 +4997,15 @@ ClusterSession::ClusterSession(std::shared_ptr<ServerEntry> server,
                                uint64_t connid,
                                bool initSock,
                                std::shared_ptr<NetworkMatrix> netMatrix,
-                               std::shared_ptr<RequestMatrix> reqMatrix)
+                               std::shared_ptr<RequestMatrix> reqMatrix,
+                               bool sendDelay)
   : NetSession(server,
                std::move(sock),
                connid,
                initSock,
                netMatrix,
                reqMatrix,
+               sendDelay,
                Session::Type::CLUSTER),
     _pkgSize(-1) {
   DLOG(INFO) << "cluster session, id:" << id() << " created";

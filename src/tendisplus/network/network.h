@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <map>
 
 #include "asio.hpp"
 #include "gtest/gtest.h"
@@ -30,6 +31,7 @@ void printShellResult(std::string cmd);
 void printPortRunningInfo(uint32_t port);
 
 class ServerEntry;
+class NetSession;
 
 enum class RedisReqMode : std::uint8_t {
   REDIS_REQ_UNKNOWN = 0,
@@ -66,6 +68,7 @@ class NetworkAsio {
               std::shared_ptr<NetworkMatrix> netMatrix,
               std::shared_ptr<RequestMatrix> reqMatrix,
               std::shared_ptr<ServerParams> cfg,
+              bool sendDelay,
               const std::string& name = "tx-io");
   NetworkAsio(const NetworkAsio&) = delete;
   NetworkAsio(NetworkAsio&&) = delete;
@@ -95,6 +98,9 @@ class NetworkAsio {
   uint16_t getPort() {
     return _port;
   }
+  void timeoutProcess(size_t index);
+  void addSession(std::shared_ptr<Session> sess);
+  void endSession(uint64_t id);
 #ifdef _WIN32
   void releaseForWin();
 #endif
@@ -114,6 +120,8 @@ class NetworkAsio {
   std::unique_ptr<asio::ip::tcp::acceptor> _acceptor;
   std::unique_ptr<std::thread> _acceptThd;
   std::vector<std::thread> _rwThreads;
+  std::vector<asio::steady_timer> _timers;
+  std::mutex _mutex;
   std::atomic<bool> _isRunning;
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
@@ -121,7 +129,9 @@ class NetworkAsio {
   uint16_t _port;
   uint32_t _netIoThreadNum;
   std::shared_ptr<ServerParams> _cfg;
+  bool _sendDelay;
   std::string _name;
+  std::vector<std::map<uint64_t, std::shared_ptr<Session>>> _sessions;
 };
 
 struct SendBuffer {
@@ -138,6 +148,7 @@ class NetSession : public Session {
              bool initSock,
              std::shared_ptr<NetworkMatrix> netMatrix,
              std::shared_ptr<RequestMatrix> reqMatrix,
+             bool sendDelay = false,
              Session::Type type = Session::Type::NET);
   NetSession(const NetSession&) = delete;
   NetSession(NetSession&&) = delete;
@@ -145,6 +156,8 @@ class NetSession : public Session {
   virtual std::string getRemoteRepr() const;
   virtual std::string getLocalRepr() const;
   asio::ip::tcp::socket borrowConn();
+  asio::ip::tcp::socket* getSock();
+  bool isSendDelay();
   virtual Status setResponse(const std::string& s);
   void setCloseAfterRsp();
   virtual void start();
@@ -161,8 +174,11 @@ class NetSession : public Session {
   // close session, and the socket(by raii)
   virtual void endSession();
 
+  virtual void drainRsp();
+
   const std::vector<std::string>& getArgs() const;
   void setArgs(const std::vector<std::string>&);
+
   enum class State {
     Created,
     DrainReqNet,
@@ -182,10 +198,9 @@ class NetSession : public Session {
   virtual void drainReqCallback(const std::error_code& ec, size_t actualLen);
 
   // send data to tcpbuff
-  virtual void drainRsp(std::shared_ptr<SendBuffer>);
   virtual void drainRspCallback(const std::error_code& ec,
-                                size_t actualLen,
-                                std::shared_ptr<SendBuffer> buf);
+                                size_t actualLen);
+  virtual void drainRspWithoutLock();
 
   // handle msg parsed from drainReqCallback
   virtual void processReq();
@@ -226,11 +241,14 @@ class NetSession : public Session {
   bool _isSendRunning;
   bool _isEnded;
   bool _first;
-  std::list<std::shared_ptr<SendBuffer>> _sendBuffer;
+  std::vector<char> _sendBuffer;
+  std::vector<char> _sendBufferBack;
+  bool _closeResponse;
 
   std::shared_ptr<NetworkMatrix> _netMatrix;
   std::shared_ptr<RequestMatrix> _reqMatrix;
   uint32_t _ioCtxId = UINT32_MAX;
+  bool _sendDelay;
 };
 
 }  // namespace tendisplus

@@ -3314,9 +3314,8 @@ void NoSchedNetSession::setArgsFromAof(const std::string& cmd) {
 std::vector<std::string> NoSchedNetSession::getResponse() {
   std::lock_guard<std::mutex> lk(_mutex);
   std::vector<std::string> ret;
-  for (auto sb : _sendBuffer) {
-    ret.emplace_back(std::string(sb->buffer.data(), sb->buffer.size()));
-  }
+  // be careful, mulit response will return a string
+  ret.emplace_back(std::string(_sendBufferBack.data(), _sendBufferBack.size()));
 
   return std::move(ret);
 }

@@ -173,6 +173,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
     return _cfg;
   }
   bool addSession(std::shared_ptr<Session> sess);
+  bool addSessionInSvr(std::shared_ptr<Session> sess);
   std::shared_ptr<Session> getSession(uint64_t id) const;
 
   // NOTE(deyukong): be careful, currently, the callpath of
@@ -186,6 +187,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   // Instead, you should call NetSession.cancel to close NetSession's
   // underlying socket and let itself trigger the whole path.
   void endSession(uint64_t connId);
+  void endSessionInSvr(uint64_t connId);
   size_t getSessionCount();
 
   Status cancelSession(uint64_t connId);
