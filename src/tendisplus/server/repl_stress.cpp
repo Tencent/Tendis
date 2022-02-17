@@ -375,7 +375,7 @@ std::shared_ptr<ServerParams> GenServerParams() {
   myfile << "rocks.write_buffer_size 67108864\n";
   myfile << "rocks.compress_type lz4\n";
   myfile << "rocks.max_background_compactions 8\n";
-  myfile << "rocks_transaction_mode " << FLAGS_rocksTransactionMode << "\n";
+  myfile << "rocks-transaction-mode " << FLAGS_rocksTransactionMode << "\n";
 
   myfile << "generallog " << FLAGS_generallog << "\n";
   myfile << "slowlog-flush-interval 1\n";
@@ -392,6 +392,9 @@ std::shared_ptr<ServerParams> GenServerParams() {
   auto cfg = std::make_shared<ServerParams>();
   auto s = cfg->parseFile(tmp_conf_file);
   LOG(INFO) << "params:" << endl << cfg->showAll();
+  if (!s.ok()) {
+    LOG(FATAL) << "conf parseFile ret:" << s.toString();
+  }
   EXPECT_EQ(s.ok(), true);
 
   return cfg;
