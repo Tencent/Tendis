@@ -289,7 +289,7 @@ class RocksKVStore : public KVStore {
                  sstFileManager = nullptr,
                bool enableRepllog = true,
                KVStore::StoreMode mode = KVStore::StoreMode::READ_WRITE,
-               TxnMode txnMode = TxnMode::TXN_PES,
+               TxnMode txnMode = TxnMode::TXN_WB,
                uint32_t flag = 0);
   virtual ~RocksKVStore() {
     stop();

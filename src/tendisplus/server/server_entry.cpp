@@ -534,16 +534,16 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       return meta.status();
     }
 
-    tmpStores.emplace_back(
-      std::unique_ptr<KVStore>(new RocksKVStore(std::to_string(i),
-                                                cfg,
-                                                _blockCache,
-                                                _rateLimiter,
-                                                _sstFileManager,
-                                                _cfg->binlogEnabled,
-                                                mode,
-                                                TxnMode::TXN_PES,
-                                                flag)));
+    tmpStores.emplace_back(std::unique_ptr<KVStore>(
+      new RocksKVStore(std::to_string(i),
+                       cfg,
+                       _blockCache,
+                       _rateLimiter,
+                       _sstFileManager,
+                       _cfg->binlogEnabled,
+                       mode,
+                       static_cast<TxnMode>(cfg->rocksTransactionMode),
+                       flag)));
   }
 
   // if binlogUsingDefaultCF is flase and binlog version is 1, we end up
