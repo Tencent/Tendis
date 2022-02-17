@@ -456,7 +456,7 @@ class ServerParams {
   uint32_t binlogRateLimitMB = 64;
   uint32_t netBatchSize = 1024 * 1024;
   uint32_t netBatchTimeoutSec = 10;
-  uint32_t timeoutSecBinlogWaitRsp = 30;
+  uint32_t timeoutSecBinlogWaitRsp = 3;
   uint32_t incrPushThreadnum = 10;
   uint32_t fullPushThreadnum = 5;
   uint32_t fullReceiveThreadnum = 5;

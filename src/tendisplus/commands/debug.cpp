@@ -4388,8 +4388,8 @@ class TendisadminCommand : public Command {
       std::list<std::unique_ptr<DbWithLock>> result;
       const auto server = sess->getServerEntry();
       for (ssize_t i = 0; i < server->getKVStoreCount(); i++) {
-        auto expdb =
-          server->getSegmentMgr()->getDb(sess, i, mgl::LockMode::LOCK_X);
+        auto expdb = server->getSegmentMgr()->getDb(
+          sess, i, mgl::LockMode::LOCK_X, false, 5);
         RET_IF_ERR_EXPECTED(expdb);
 
         result.emplace_back(

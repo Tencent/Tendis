@@ -242,7 +242,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->binlogRateLimitMB, 64);
   EXPECT_EQ(cfg->netBatchSize, 1024 * 1024);
   EXPECT_EQ(cfg->netBatchTimeoutSec, 10);
-  EXPECT_EQ(cfg->timeoutSecBinlogWaitRsp, 30);
+  EXPECT_EQ(cfg->timeoutSecBinlogWaitRsp, 3);
   EXPECT_EQ(cfg->incrPushThreadnum, 10);
   EXPECT_EQ(cfg->fullPushThreadnum, 5);
   EXPECT_EQ(cfg->fullReceiveThreadnum, 5);
