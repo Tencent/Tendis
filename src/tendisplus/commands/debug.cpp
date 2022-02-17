@@ -2067,7 +2067,14 @@ class InfoCommand : public Command {
       auto server = sess->getServerEntry();
       std::stringstream ss;
       ss << "# Clients\r\n"
-         << "connected_clients:" << server->getSessionCount() << "\r\n";
+         << "connected_clients:"
+         << server->getSessionCount() << "\r\n"
+         << "net_clients:"
+         << server->getSessionCount(Session::Type::NET) << "\r\n"
+         << "local_clients:"
+         << server->getSessionCount(Session::Type::LOCAL) << "\r\n"
+         << "cluster_clients:"
+         << server->getSessionCount(Session::Type::CLUSTER) << "\r\n";;
       ss << "\r\n";
       result << ss.str();
     }

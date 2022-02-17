@@ -821,6 +821,17 @@ size_t ServerEntry::getSessionCount() {
   return _sessions.size();
 }
 
+size_t ServerEntry::getSessionCount(Session::Type t) {
+  std::lock_guard<std::mutex> lk(_mutex_session);
+  size_t num = 0;
+  for (auto& it : _sessions) {
+    if (it.second->getType() == t) {
+      num++;
+    }
+  }
+  return num;
+}
+
 Status ServerEntry::cancelSession(uint64_t connId) {
   std::lock_guard<std::mutex> lk(_mutex_session);
   if (!_isRunning.load(std::memory_order_relaxed)) {

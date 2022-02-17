@@ -189,6 +189,7 @@ class ServerEntry : public std::enable_shared_from_this<ServerEntry> {
   void endSession(uint64_t connId);
   void endSessionInSvr(uint64_t connId);
   size_t getSessionCount();
+  size_t getSessionCount(Session::Type);
 
   Status cancelSession(uint64_t connId);
 
