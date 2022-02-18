@@ -26,6 +26,7 @@ uint64_t redisBuildId(void) {
 
 std::string getTendisPlusVersion() {
   std::stringstream tendisver;
+
   tendisver << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "."
      << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__;
   return tendisver.str();
