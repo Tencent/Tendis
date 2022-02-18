@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
     return 0;
   }
   if (strcmp(argv[1], "-v") == 0) {
-    std::cout << "Tendisplus v=" << TENDISPLUS_VERSION
+    std::cout << "Tendisplus v=" << getTendisPlusVersion()
               << " sha=" << TENDISPLUS_GIT_SHA1
               << " dirty=" << TENDISPLUS_GIT_DIRTY
               << " build=" << TENDISPLUS_BUILD_ID << std::endl;
