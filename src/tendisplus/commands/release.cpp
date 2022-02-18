@@ -15,7 +15,7 @@
 
 uint64_t redisBuildId(void) {
   std::stringstream buildidstr;
-  buildidstr << TENDISPLUS_VERSION_PRE << "." << __ROCKSDB_MAJOR__ << "." 
+  buildidstr << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "." 
     << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__ << TENDISPLUS_BUILD_ID 
     << TENDISPLUS_GIT_DIRTY << TENDISPLUS_GIT_SHA1;
 
@@ -26,7 +26,7 @@ uint64_t redisBuildId(void) {
 
 std::string getTendisPlusVersion() {
   std::stringstream tendisver;
-  tendisver << TENDISPLUS_VERSION_PRE << "." << __ROCKSDB_MAJOR__ << "."
+  tendisver << TENDISPLUS_VERSION_PRE << __ROCKSDB_MAJOR__ << "."
      << __ROCKSDB_MINOR__ << "." << __ROCKSDB_PATCH__;
   return tendisver.str();
 }
