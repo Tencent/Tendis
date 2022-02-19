@@ -1,6 +1,8 @@
 gcc_version=5.5.0
 root_dir=../
-version=`grep TENDISPLUS_VERSION ${root_dir}/src/tendisplus/commands/version.h |awk '{print $3}'|awk -F '\"' '{print $2}'`
+
+version=`./${root_dir}/build/bin/tendisplus -v | awk '{print $2}'|awk -F '=' '{print $2}'`
+echo ${version}
 
 # use packname from shell.
 packname=$1
