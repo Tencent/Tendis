@@ -30,3 +30,7 @@
 	path = src/thirdparty/gflag
 	url = https://github.com/gflags/gflags.git
 	tag = v2.2.2
+[submodule "src/thirdparty/rocksdb/rocksdb"]
+	path = src/thirdparty/rocksdb/rocksdb
+	url = https://github.com/facebook/rocksdb.git
+	tag = v6.14.5
