@@ -1642,7 +1642,7 @@ void ReplManager::getReplInfoSimple(std::stringstream& ss) const {
   if (pstatus.size() > 0) {
     int i = 0;
     for (auto& iter : pstatus) {
-      ss << "slave" << i << ":ip=" << iter.second.slave_listen_ip
+      ss << "slave" << i++ << ":ip=" << iter.second.slave_listen_ip
          << ",port=" << iter.second.slave_listen_port
          << ",state=" << iter.second.state
          << ",offset=" << iter.second.binlogpos
