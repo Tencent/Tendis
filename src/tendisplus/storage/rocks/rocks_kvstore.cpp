@@ -142,6 +142,20 @@ RocksTxn::RocksTxn(RocksKVStore* store,
   _writeOpts = _store->writeOptions();
 }
 
+RocksTxn::~RocksTxn() {
+  if (_done) {
+    return;
+  }
+
+  // NOTE(vinchen): make sure whether is there any command
+  // forget to commit or rollback
+  INVARIANT_D(_replLogValues.size() == 0);
+
+  // _txn.get()->ClearSnapshot();
+  _txn.reset();
+  _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
+}
+
 std::unique_ptr<RepllogCursorV2> RocksTxn::createRepllogCursorV2(
   uint64_t begin, bool ignoreReadBarrier) {
   uint64_t hv = 0;
@@ -733,20 +747,6 @@ rocksdb::Iterator* RocksTxn::getIterator(
   return _txn->GetIterator(readOpts, columnFamily);
 }
 
-RocksTxn::~RocksTxn() {
-  if (_done) {
-    return;
-  }
-
-  // NOTE(vinchen): make sure whether is there any command
-  // forget to commit or rollback
-  INVARIANT_D(_replLogValues.size() == 0);
-
-  // _txn.get()->ClearSnapshot();
-  _txn.reset();
-  _store->markCommitted(_txnId, Transaction::TXNID_UNINITED);
-}
-
 RocksOptTxn::RocksOptTxn(RocksKVStore* store,
                          uint64_t txnId,
                          bool replOnly,
@@ -833,12 +833,18 @@ void RocksPesTxn::ensureTxn() {
   INVARIANT(_txn != nullptr);
 }
 
+void RocksPesTxn::SetSnapshot() {
+  INVARIANT(_txn != nullptr);
+  _txn->SetSnapshot();
+}
+
 RocksWBTxn::RocksWBTxn(RocksKVStore* store,
                        uint64_t txnId,
                        bool replOnly,
                        std::shared_ptr<BinlogObserver> ob,
                        Session* sess)
-  : RocksTxn(store, txnId, replOnly, ob, sess, TxnMode::TXN_WB) {
+  : RocksTxn(store, txnId, replOnly, ob, sess, TxnMode::TXN_WB),
+    _snapshot(nullptr) {
   // NOTE(deyukong): the rocks-layer's snapshot should be opened in
   // RocksKVStore::createTransaction, with the guard of RocksKVStore::_mutex,
   // or, we are not able to guarantee the oplog order is the same as the
@@ -853,17 +859,24 @@ RocksWBTxn::RocksWBTxn(RocksKVStore* store,
 
 RocksWBTxn::~RocksWBTxn() {
   delete _writeBatch;
+  if (_snapshot) {
+    _store->getBaseDB()->ReleaseSnapshot(_snapshot);
+  }
 }
 
 void RocksWBTxn::ensureTxn() {
   INVARIANT(_txn == nullptr);
   setTxnType(TxnMode::TXN_WB);
-  return;
 }
 
 void RocksWBTxn::SetSnapshot() {
   INVARIANT(_txn == nullptr);
-  return;
+  if (!_snapshot) {
+    _snapshot = const_cast<rocksdb::Snapshot*>(_store->getSnapshot());
+    INVARIANT_D(_snapshot != nullptr);
+  } else {
+    INVARIANT_D(0);
+  }
 }
 
 Status RocksWBTxn::rollback() {
@@ -911,7 +924,7 @@ rocksdb::Status RocksWBTxn::txnCommit() {
 }
 
 const rocksdb::Snapshot* RocksWBTxn::getSnapshot() {
-  return _store->getSnapshot();
+  return _snapshot;
 }
 
 rocksdb::Iterator* RocksWBTxn::getIterator(
@@ -1200,11 +1213,45 @@ rocksdb::CompressionType rocksGetCompressType(const std::string& typeStr) {
     return rocksdb::CompressionType::kNoCompression;
   }
 }
-void RocksPesTxn::SetSnapshot() {
-  INVARIANT(_txn != nullptr);
-  _txn->SetSnapshot();
-}
 
+RocksKVStore::RocksKVStore(const std::string& id,
+                           const std::shared_ptr<ServerParams>& cfg,
+                           std::shared_ptr<rocksdb::Cache> blockCache,
+                           std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
+                           std::shared_ptr<rocksdb::SstFileManager>
+                             sstFileManager,
+                           bool enableRepllog,
+                           KVStore::StoreMode mode,
+                           TxnMode txnMode,
+                           uint32_t flag)
+  : KVStore(id, cfg->dbPath),
+    _cfg(cfg),
+    _isRunning(false),
+    _isPaused(false),
+    _hasBackup(false),
+    _enableRepllog(enableRepllog),
+    _ignoreRocksError(false),
+    _mode(mode),
+    _txnMode(txnMode),
+    _optdb(nullptr),
+    _pesdb(nullptr),
+    _stats(rocksdb::CreateDBStatistics()),
+    _blockCache(blockCache),
+    _rateLimiter(rateLimiter),
+    _sstFileManager(sstFileManager),
+    _nextTxnSeq(0),
+    _highestVisible(Transaction::TXNID_UNINITED),
+    _logOb(nullptr),
+    _env(std::make_shared<RocksdbEnv>()) {
+  Expected<uint64_t> s =
+    restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
+  if (!s.ok()) {
+    LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
+               << ", failed info:" << s.status().toString();
+  }
+
+  initRocksProperties();
+}
 
 rocksdb::Options RocksKVStore::options() {
   rocksdb::Options options;
@@ -2107,45 +2154,6 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
     }
   }
   return maxCommitId;
-}
-
-RocksKVStore::RocksKVStore(const std::string& id,
-                           const std::shared_ptr<ServerParams>& cfg,
-                           std::shared_ptr<rocksdb::Cache> blockCache,
-                           std::shared_ptr<rocksdb::RateLimiter> rateLimiter,
-                           std::shared_ptr<rocksdb::SstFileManager>
-                             sstFileManager,
-                           bool enableRepllog,
-                           KVStore::StoreMode mode,
-                           TxnMode txnMode,
-                           uint32_t flag)
-  : KVStore(id, cfg->dbPath),
-    _cfg(cfg),
-    _isRunning(false),
-    _isPaused(false),
-    _hasBackup(false),
-    _enableRepllog(enableRepllog),
-    _ignoreRocksError(false),
-    _mode(mode),
-    _txnMode(txnMode),
-    _optdb(nullptr),
-    _pesdb(nullptr),
-    _stats(rocksdb::CreateDBStatistics()),
-    _blockCache(blockCache),
-    _rateLimiter(rateLimiter),
-    _sstFileManager(sstFileManager),
-    _nextTxnSeq(0),
-    _highestVisible(Transaction::TXNID_UNINITED),
-    _logOb(nullptr),
-    _env(std::make_shared<RocksdbEnv>()) {
-  Expected<uint64_t> s =
-    restart(false, Transaction::MIN_VALID_TXNID, UINT64_MAX, flag);
-  if (!s.ok()) {
-    LOG(FATAL) << "opendb:" << _cfg->dbPath << "/" << id
-               << ", failed info:" << s.status().toString();
-  }
-
-  initRocksProperties();
 }
 
 Status RocksKVStore::releaseBackup() {

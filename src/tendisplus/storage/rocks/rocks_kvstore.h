@@ -254,6 +254,7 @@ class RocksWBTxn : public RocksTxn {
 
  private:
   rocksdb::WriteBatchWithIndex* _writeBatch;
+  rocksdb::Snapshot* _snapshot;
 };
 
 class RocksKVCursor : public Cursor {
