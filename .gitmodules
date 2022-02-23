@@ -33,4 +33,4 @@
 [submodule "src/thirdparty/rocksdb/rocksdb"]
 	path = src/thirdparty/rocksdb/rocksdb
 	url = https://github.com/facebook/rocksdb.git
-	tag = v6.14.5
+	tag = v6.14.5   #no use, tag of rocksdb is not controlled by this

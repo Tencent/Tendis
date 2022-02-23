@@ -4,7 +4,11 @@
 
 #ifndef SRC_TENDISPLUS_COMMANDS_VERSION_H_
 #define SRC_TENDISPLUS_COMMANDS_VERSION_H_
-#define TENDISPLUS_VERSION "2.4.3-rocksdb-v5.13.4"
+
+#include <string>
+#define TENDISPLUS_VERSION_PRE "2.4.3-rocksdb-v"
+
+std::string getTendisPlusVersion();
 
 #endif  // SRC_TENDISPLUS_COMMANDS_VERSION_H_
 

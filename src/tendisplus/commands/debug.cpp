@@ -2018,7 +2018,7 @@ class InfoCommand : public Command {
       }
 #endif
       ss << "# Server\r\n"
-         << "redis_version:" << TENDISPLUS_VERSION << "\r\n"
+         << "redis_version:" << getTendisPlusVersion() << "\r\n"
          << "redis_git_sha1:" << TENDISPLUS_GIT_SHA1 << "\r\n"
          << "redis_git_dirty:" << TENDISPLUS_GIT_DIRTY << "\r\n"
          << "redis_build_id:" << redisBuildId() << "\r\n"
