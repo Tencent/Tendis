@@ -9,6 +9,8 @@
 #include <set>
 #include <algorithm>
 #include <limits>
+#include <iostream>
+#include <climits>
 #include "tendisplus/storage/record.h"
 #include "tendisplus/utils/invariant.h"
 #include "tendisplus/utils/string.h"
@@ -413,6 +415,58 @@ TEST(VersionMeta, Compare) {
   EXPECT_LT(meta2, meta1);
   EXPECT_LT(meta3, meta1);
   EXPECT_LT(meta1, meta4);
+}
+
+TEST(SetMetaValue, encode) {
+  uint64_t count1(10);
+  std::string sk1("sk_test11111");
+
+  auto sm1 = SetMetaValue(count1, sk1);
+  auto strEncode = sm1.encode();
+  auto sm2 = SetMetaValue::decode(strEncode).value();
+  auto count2 = sm2.getCount();
+  auto sk2 = sm2.getSKIndex();
+  EXPECT_EQ(count1, count2);
+  EXPECT_EQ(sk1, sk2);
+
+  uint64_t count3(0);
+  std::string sk3("");
+  auto sm3 = SetMetaValue(count3, sk3);
+  auto strEncode1 = sm3.encode();
+  auto sm4 = SetMetaValue::decode(strEncode1).value();
+  auto count4 = sm4.getCount();
+  auto sk4 = sm4.getSKIndex();
+  EXPECT_EQ(count3, count4);
+  EXPECT_EQ(sk3, sk4);
+
+  uint64_t count5(0);
+  std::string sk5("1");
+  auto sm5 = SetMetaValue(count5, sk5);
+  auto strEncode2 = sm5.encode();
+  auto sm6 = SetMetaValue::decode(strEncode2).value();
+  auto count6 = sm6.getCount();
+  auto sk6 = sm6.getSKIndex();
+  EXPECT_EQ(count5, count6);
+  EXPECT_EQ(sk6, sk6);
+
+  uint64_t count7(5);
+  std::string sk7("");
+  auto sm7 = SetMetaValue(count7, sk7);
+  auto strEncode3 = sm7.encode();
+
+  uint64_t count8(5);
+  auto sm8 = SetMetaValue(count8);
+  auto strEncode4 = sm8.encode();
+
+  uint64_t count9(5);
+  auto sm9 = SetMetaValue(count9);
+  sm9.setSKIndex("");
+  auto strEncode5 = sm9.encode();
+
+  EXPECT_EQ(strEncode3.size(), strEncode4.size());
+  EXPECT_EQ(strEncode3, strEncode4);
+  EXPECT_EQ(strEncode3.size(), strEncode5.size());
+  EXPECT_EQ(strEncode3, strEncode5);
 }
 
 }  // namespace tendisplus

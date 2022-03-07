@@ -414,6 +414,39 @@ Expected<std::pair<std::string, std::list<Record>>> Command::scan(
     std::pair<std::string, std::list<Record>>(nextCursor, std::move(result)));
 }
 
+Expected<std::list<Record>> Command::scanSimple(
+  const std::string& pk,
+  const std::string& from,
+  uint64_t cnt,
+  Transaction* txn) {
+  auto cursor = txn->createDataCursor();
+    if (from == "0") {
+    cursor->seek(pk);
+  } else {
+    cursor->seek(from);
+  }
+  std::list<Record> result;
+  while (true) {
+    if (result.size() >= cnt) {
+      break;
+    }
+    Expected<Record> exptRcd = cursor->next();
+    if (exptRcd.status().code() == ErrorCodes::ERR_EXHAUST) {
+      break;
+    }
+    if (!exptRcd.ok()) {
+      return exptRcd.status();
+    }
+    Record& rcd = exptRcd.value();
+    const RecordKey& rcdKey = rcd.getRecordKey();
+    if (rcdKey.prefixPk() != pk) {
+      break;
+    }
+    result.emplace_back(std::move(exptRcd.value()));
+  }
+  return std::move(result);
+}
+
 // requirement: intentionlock held
 Status Command::delKeyOptimismInLock(Session* sess,
                                      uint32_t storeId,

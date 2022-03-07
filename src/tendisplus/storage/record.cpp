@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 #include <limits>
+#include <iostream>
 #include "glog/logging.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/document.h"
@@ -1302,6 +1303,9 @@ SetMetaValue::SetMetaValue() : _count(0) {}
 
 SetMetaValue::SetMetaValue(uint64_t count) : _count(count) {}
 
+SetMetaValue::SetMetaValue(uint64_t count, const std::string& sk)
+  : _count(count), _skIndex(sk) {}
+
 Expected<SetMetaValue> SetMetaValue::decode(const std::string& val) {
   const uint8_t* valCstr = reinterpret_cast<const uint8_t*>(val.c_str());
   size_t offset = 0;
@@ -1311,14 +1315,23 @@ Expected<SetMetaValue> SetMetaValue::decode(const std::string& val) {
   }
   offset += expt.value().second;
   uint64_t count = expt.value().first;
-  return SetMetaValue(count);
+  if (offset < val.size()) {
+    std::string sk;
+    sk = std::move(std::string(val.c_str() + offset, val.size() - offset));
+    return SetMetaValue(count, sk);
+  } else {
+    return SetMetaValue(count);
+  }
 }
 
 std::string SetMetaValue::encode() const {
   std::vector<uint8_t> value;
-  value.reserve(8);
+  value.reserve(8 + _skIndex.size());
   auto countBytes = varintEncode(_count);
   value.insert(value.end(), countBytes.begin(), countBytes.end());
+  if (_skIndex.size() > 0) {
+    value.insert(value.end(), _skIndex.begin(), _skIndex.end());
+  }
   return std::string(reinterpret_cast<const char*>(value.data()), value.size());
 }
 
@@ -1328,6 +1341,14 @@ void SetMetaValue::setCount(uint64_t count) {
 
 uint64_t SetMetaValue::getCount() const {
   return _count;
+}
+
+void SetMetaValue::setSKIndex(const std::string& sk) {
+  _skIndex = sk;
+}
+
+std::string SetMetaValue::getSKIndex() {
+  return _skIndex;
 }
 
 uint32_t ZSlMetaValue::HEAD_ID = 1;

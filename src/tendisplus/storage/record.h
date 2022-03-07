@@ -632,13 +632,17 @@ class SetMetaValue {
  public:
   SetMetaValue();
   explicit SetMetaValue(uint64_t count);
+  explicit SetMetaValue(uint64_t count, const std::string& sk);
   static Expected<SetMetaValue> decode(const std::string&);
   std::string encode() const;
   void setCount(uint64_t count);
   uint64_t getCount() const;
+  void setSKIndex(const std::string&);
+  std::string getSKIndex();
 
  private:
   uint64_t _count;
+  std::string _skIndex;
 };
 
 

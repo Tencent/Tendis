@@ -80,6 +80,14 @@ class Command {
     uint64_t cnt,
     Transaction* txn);
 
+  // NOTE[zakzheng] scanSimple will seek to from,
+  // and will return cnt number of element if enough
+  static Expected<std::list<Record>> scanSimple(
+    const std::string& pk,
+    const std::string& from,
+    uint64_t cnt,
+    Transaction* txn);
+
   static Status delKeyAndTTL(Session* sess,
                              const RecordKey& mk,
                              const RecordValue& val,

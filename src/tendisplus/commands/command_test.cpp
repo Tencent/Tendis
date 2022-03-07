@@ -142,6 +142,65 @@ void testDel(std::shared_ptr<ServerEntry> svr) {
   EXPECT_TRUE(expect.ok());
 }
 
+void testSpopOptimize(std::shared_ptr<ServerEntry> svr) {
+  asio::io_context ioContext, ioContext2;
+  asio::ip::tcp::socket socket(ioContext), socket2(ioContext2);
+  NetSession sess(svr, std::move(socket), 1, false, nullptr, nullptr);
+
+  sess.setArgs({"sadd", "kv_2", "val_0", "val_1", "val_2"});
+  auto expect = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+
+  sess.setArgs({"sadd", "kv_2", "val_3", "val_4", "val_5", "val_6"});
+  auto expectAdd = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expectAdd.ok());
+
+  sess.setArgs({"scard", "kv_2"});
+  auto expectScard = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expectScard.ok());
+  EXPECT_EQ(expectScard.value(), ":7\r\n");
+
+  sess.setArgs({"spop", "kv_2", "2"});
+  auto expect1 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect.ok());
+  EXPECT_EQ(expect1.value(), "*2\r\n$5\r\nval_0\r\n$5\r\nval_1\r\n");
+
+  sess.setArgs({"srem", "kv_2", "val_2"});
+  auto expect2 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect2.ok());
+  EXPECT_EQ(expect2.value(), ":1\r\n");
+
+  sess.setArgs({"spop", "kv_2", "2"});
+  auto expect3 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect3.ok());
+  EXPECT_EQ(expect3.value(), "*2\r\n$5\r\nval_3\r\n$5\r\nval_4\r\n");
+
+  sess.setArgs({"sadd", "kv_2", "val_0"});
+  auto expect4 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect4.ok());
+  EXPECT_EQ(expect4.value(), ":1\r\n");
+
+  sess.setArgs({"sadd", "kv_2", "val_1"});
+  auto expect5 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect5.ok());
+  EXPECT_EQ(expect5.value(), ":1\r\n");
+
+  sess.setArgs({"spop", "kv_2", "2"});
+  auto expect6 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect6.ok());
+  EXPECT_EQ(expect6.value(), "*2\r\n$5\r\nval_0\r\n$5\r\nval_1\r\n");
+
+  sess.setArgs({"spop", "kv_2", "2"});
+  auto expect7 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect7.ok());
+  EXPECT_EQ(expect7.value(), "*2\r\n$5\r\nval_5\r\n$5\r\nval_6\r\n");
+
+  sess.setArgs({"scard", "kv_2"});
+  auto expect8 = Command::runSessionCmd(&sess);
+  EXPECT_TRUE(expect8.ok());
+  EXPECT_EQ(expect8.value(), ":0\r\n");
+}
+
 TEST(Command, del) {
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -150,6 +209,7 @@ TEST(Command, del) {
   auto server = makeServerEntry(cfg);
 
   testDel(server);
+  testSpopOptimize(server);
 
 #ifndef _WIN32
   server->stop();

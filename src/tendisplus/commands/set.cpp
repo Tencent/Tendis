@@ -45,6 +45,7 @@ Expected<std::string> genericSRem(Session* sess,
     return rv.status();
   }
 
+  bool resetSKIndex(false);
   uint64_t cnt = 0;
   for (size_t i = 0; i < args.size(); ++i) {
     RecordKey subRk(metaRk.getChunkId(),
@@ -64,6 +65,9 @@ Expected<std::string> genericSRem(Session* sess,
     if (!s.ok()) {
       return s;
     }
+    if (sm.getSKIndex().size() > 0 && 0 == sm.getSKIndex().compare(args[i])) {
+      resetSKIndex = true;
+    }
   }
   INVARIANT_D(sm.getCount() >= cnt);
   Status s;
@@ -78,6 +82,9 @@ Expected<std::string> genericSRem(Session* sess,
     s = Command::delKeyAndTTL(sess, metaRk, rv.value(), txn);
   } else {
     sm.setCount(sm.getCount() - cnt);
+    if (resetSKIndex) {
+      sm.setSKIndex("");
+    }
     s = kvstore->setKV(metaRk,
                        RecordValue(sm.encode(),
                                    RecordType::RT_SET_META,
@@ -118,6 +125,7 @@ Expected<std::string> genericSAdd(Session* sess,
     return rv.status();
   }
 
+  bool resetSKIndex(false);
   uint64_t cnt = 0;
   for (size_t i = 2; i < args.size(); ++i) {
     RecordKey subRk(metaRk.getChunkId(),
@@ -140,8 +148,14 @@ Expected<std::string> genericSAdd(Session* sess,
     if (!s.ok()) {
       return s;
     }
+    if (sm.getSKIndex().size() > 0 && sm.getSKIndex().compare(args[i]) > 0) {
+      resetSKIndex = true;
+    }
   }
   sm.setCount(sm.getCount() + cnt);
+  if (resetSKIndex) {
+    sm.setSKIndex("");
+  }
   Status s = kvstore->setKV(metaRk,
                             RecordValue(sm.encode(),
                                         RecordType::RT_SET_META,
@@ -550,11 +564,34 @@ class SpopCommand : public Command {
     }
     RecordKey fake = {
       expdb.value().chunkId, pCtx->getDbId(), RecordType::RT_SET_ELE, key, ""};
-    auto batch = Command::scan(fake.prefixPk(), "0", count, ptxn.value());
+    // NOTE(zakzheng) get index of last scan.
+    std::string spopFrom;
+    if (sm.getSKIndex().size() > 0) {
+      RecordKey indexKey(expdb.value().chunkId, pCtx->getDbId(),
+        RecordType::RT_SET_ELE, key, sm.getSKIndex());
+      spopFrom = indexKey.encode();
+    } else {
+      spopFrom = "0";
+    }
+
+    // NOTE(zakzheng) scan one more, the last one is cached
+    // for the index of the next scan.
+    uint32_t countAddNext = count + 1;
+    auto batch = Command::scanSimple(
+      fake.prefixPk(), spopFrom, countAddNext, ptxn.value());
     if (!batch.ok()) {
       return batch.status();
     }
-    const auto& rcds = batch.value().second;
+
+    std::string skIndex;
+    // NOTE(zakzheng) the flag note that the result of scan
+    // include the index of the next scan.
+    if (batch.value().size() == countAddNext) {
+      skIndex = batch.value().back().getRecordKey().getSecondaryKey();
+      batch.value().pop_back();
+    }
+
+    const auto& rcds = batch.value();
     if (rcds.size() == 0) {
       return Command::fmtNull();
     }
@@ -594,6 +631,9 @@ class SpopCommand : public Command {
         }
       } else {
         sm.setCount(sm.getCount() - rcds.size());
+        if (skIndex.size() > 0) {
+          sm.setSKIndex(skIndex);
+        }
         s = kvstore->setKV(metaRk,
                            RecordValue(sm.encode(),
                                        RecordType::RT_SET_META,
