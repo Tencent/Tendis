@@ -563,7 +563,7 @@ void ReplManager::supplyFullSyncRoutine(
         LOG(ERROR) << "write bulk to client failed:" << s.toString();
         return;
       }
-      secs = _cfg->timeoutSecBinlogWaitRsp;  // 10
+      secs = _cfg->timeoutSecBinlogWaitRsp;
       auto rpl = client->readLine(std::chrono::seconds(secs));
       if (!rpl.ok() || rpl.value() != "+OK") {
         LOG(ERROR) << "send client:" << client->getRemoteRepr()
@@ -576,7 +576,7 @@ void ReplManager::supplyFullSyncRoutine(
     }
     LOG(INFO) << "fulsync send file success:" << fname;
   }
-  secs = _cfg->timeoutSecBinlogWaitRsp;  // 10
+  secs = _cfg->timeoutSecBinlogWaitRsp;
   Expected<std::string> reply = client->readLine(std::chrono::seconds(secs));
   if (!reply.ok()) {
     LOG(ERROR) << "fullsync done read " << client->getRemoteRepr()
