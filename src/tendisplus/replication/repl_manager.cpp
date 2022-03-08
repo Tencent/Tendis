@@ -613,6 +613,15 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
             << v->toString();
 }
 
+#ifdef TENDIS_DEBUG
+// NOTE(takenliu): be careful, this interface is only for test case.
+void ReplManager::updateBinlogTs(uint32_t storeId, uint64_t ts) {
+    std::lock_guard<std::mutex> lk(_mutex);
+    auto& v = _syncStatus[storeId];
+    v->lastBinlogTs = ts;
+}
+#endif
+
 bool ReplManager::hasSomeSlave(uint32_t storeId) {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_pushStatus[storeId].size() != 0) {
