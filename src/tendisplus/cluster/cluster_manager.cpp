@@ -2622,6 +2622,7 @@ void ClusterState::clusterSendFailoverAuth(CNodePtr node) {
 /* Send a MFSTART message to the specified node. */
 void ClusterState::clusterSendMFStart(CNodePtr node, uint64_t offset) {
   if (!node->getSession()) {
+    LOG(ERROR) << "node has no session";
     return;
   }
   ClusterMsg msg(
@@ -5686,8 +5687,16 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
   } else if (type == ClusterMsg::Type::MFSTART) {
     /* This message is acceptable only if I'm a master and the sender
      * is one of my slaves. */
-    if (!sender || sender->getMaster() != _myself)
+    if (!sender) {
+      LOG(ERROR) << "We don't know the sender:" << hdr->_sender
+        << " " << hdr->_myIp << ":" << hdr->_cport;
       return {ErrorCodes::ERR_OK, ""};
+    }
+    if (sender->getMaster() != _myself) {
+      LOG(ERROR) << "sender master:" << sender->getMaster() ?
+        sender->getMaster()->getNodeName() : "no master";
+      return {ErrorCodes::ERR_OK, ""};
+    }
     /* Manual failover requested from slaves. Initialize the state
      * accordingly. */
     resetManualFailover();
