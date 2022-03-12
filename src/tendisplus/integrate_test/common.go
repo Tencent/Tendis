@@ -417,6 +417,19 @@ func createClient(m *util.RedisServer) *redis.Client {
 	return cli
 }
 
+func createClientWithTimeout(m *util.RedisServer, timeout int) *redis.Client {
+	cli, err := redis.DialTimeout("tcp", fmt.Sprintf("%s:%d", m.Ip, m.Port), time.Duration(timeout)*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %s:%d err:%v", m.Ip, m.Port, err)
+	}
+	if *auth != "" {
+		if v, err := cli.Cmd("AUTH", *auth).Str(); err != nil || v != "OK" {
+			log.Fatalf("auth result:%s failed:%v. %s:%d auth:%s", v, err, m.Ip, m.Port, *auth)
+		}
+	}
+	return cli
+}
+
 func addOnekeyEveryStore(m *util.RedisServer, kvstorecount int) {
 	cli := createClient(m)
 

@@ -113,7 +113,8 @@ func testDeleteFilesInRange() {
 	<-channel2
 	<-channel3
 
-	r, err = cli1.Cmd("compactrange", "data", "0", "16384").Str()
+	cli1LongTimeout := createClientWithTimeout(&m1, 60) // timeout need be longger
+	r, err = cli1LongTimeout.Cmd("compactrange", "data", "0", "16384").Str()
 	if err != nil || r != "OK" {
 		log.Fatalf("reshape error errmsg:%v ret:%v", err, r)
 	}
