@@ -1460,7 +1460,7 @@ void waitMigrateTaskFinish(std::shared_ptr<ServerEntry> srcNode,
     if (!srcContainSlots && dstContainSlots) {
       break;
     } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       if (msSinceEpoch() - start > 300 * 1000) {
         // migrate take too long time
         INVARIANT_D(0);

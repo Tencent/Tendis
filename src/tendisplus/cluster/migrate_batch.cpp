@@ -41,6 +41,10 @@ Status MigrateBatch::send() {
     SyncWriteData(
       string(reinterpret_cast<char*>(&_addBytes), sizeof(uint32_t)));
     SyncWriteData(string(_buffer.begin(), _buffer.end()));
+#ifdef TENDIS_DEBUG
+    // TODO(takenliu): delete this log
+    LOG(INFO) << "send \"5\" sucess, dataLen:" << _addBytes;
+#endif
     uint32_t sendBytes = _buffer.size() + 1 + sizeof(uint32_t);
 
     // Rate limit for migration
