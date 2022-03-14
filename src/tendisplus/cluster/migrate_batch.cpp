@@ -17,7 +17,8 @@
 namespace tendisplus {
 
 MigrateBatch::~MigrateBatch() {
-  INVARIANT_D(_buffer.size() == 0);
+  // NOTE(takenliu): if sender task is break, _buffer will have some data
+  // INVARIANT_D(_buffer.size() == 0);
 }
 
 Status MigrateBatch::add(const std::string& key, const std::string& value) {
