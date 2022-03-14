@@ -62,7 +62,7 @@ Status MigrateBatch::send() {
 }
 
 bool MigrateBatch::isFull() const {
-  return _addBytes < _maxBytes;
+  return _addBytes >= _maxBytes;
 }
 
 bool MigrateBatch::isEmpty() const {
