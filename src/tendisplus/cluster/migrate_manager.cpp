@@ -358,7 +358,8 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
       taskPtr->_nextSchedTime = nextSched + std::chrono::milliseconds(100);
       /* NOTE(wayenchen) if dst node fail, stop the sender tasks to it*/
       if (_cluster->clusterNodeFailed(taskPtr->_pTask->_nodeid)) {
-        taskPtr->_state = MigrateSendState::ERR;
+        //taskPtr->_state = MigrateSendState::ERR;
+        taskPtr->setState(MigrateSendState::ERR);
         LOG(ERROR) << "receiver node failed, give up the task,"
                    << " taskid:" << taskPtr->_taskid;
       }
@@ -377,7 +378,8 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
         taskPtr->_sender->stop();
         taskPtr->_nextSchedTime =
           SCLOCK::now() + std::chrono::milliseconds(100);
-        taskPtr->_state = MigrateSendState::WAIT;
+        //taskPtr->_state = MigrateSendState::WAIT;
+        taskPtr->setState(MigrateSendState::WAIT);
       }
       ++it;
     } else if (taskPtr->_state == MigrateSendState::CLEAR) {
@@ -437,11 +439,13 @@ bool MigrateManager::senderSchedule(const SCLOCK::time_point& now) {
       if (taskPtr->_sender->checkSlotsBlongDst()) {
         taskPtr->_sender->setSenderStatus(MigrateSenderStatus::METACHANGE_DONE);
         taskPtr->_sender->unlockChunks();
-        taskPtr->_state = MigrateSendState::CLEAR;
+        //taskPtr->_state = MigrateSendState::CLEAR;
+        taskPtr->setState(MigrateSendState::CLEAR);
       } else {
         // if not change after node timeout, mark fail
         taskPtr->_sender->unlockChunks();
-        taskPtr->_state = MigrateSendState::ERR;
+        //taskPtr->_state = MigrateSendState::ERR;
+        taskPtr->setState(MigrateSendState::ERR);
       }
       ++it;
     }
@@ -605,18 +609,21 @@ void MigrateSendTask::sendSlots() {
     if (_sender->needToWaitMetaChanged()) {
       /* middle state, wait for  half node timeout to change */
       // TODO(wayenchen) check it for 1s one time
-      _state = MigrateSendState::HALF;
+      //_state = MigrateSendState::HALF;
+      setState(MigrateSendState::HALF);
       auto delayTime = _svr->getParams()->clusterNodeTimeout / 2 + 1000;
       nextSched = SCLOCK::now() + std::chrono::milliseconds(delayTime);
     } else if (_sender->getSnapshotNum() == 0 && _sender->isRunning()) {
       LOG(ERROR) << "send snap shot num zero, need retry"
                  << bitsetStrEncode(_sender->getSlots()) << "taskid:" << _taskid
                  << "error str:" << s.toString();
-      _state = MigrateSendState::WAIT;
+      //_state = MigrateSendState::WAIT;
+      setState(MigrateSendState::WAIT);
       _sender->stop();
       nextSched = SCLOCK::now() + std::chrono::milliseconds(100);
     } else {
-      _state = MigrateSendState::ERR;
+      //_state = MigrateSendState::ERR;
+      setState(MigrateSendState::ERR);
       nextSched = SCLOCK::now();
       LOG(ERROR) << "Send slots failed, bitmap is:"
                  << bitsetStrEncode(_sender->getSlots()) << _taskid << _taskid
@@ -624,7 +631,8 @@ void MigrateSendTask::sendSlots() {
     }
   } else {
     nextSched = SCLOCK::now();
-    _state = MigrateSendState::CLEAR;
+    //_state = MigrateSendState::CLEAR;
+    setState(MigrateSendState::CLEAR);
   }
   _nextSchedTime = nextSched;
   _isRunning = false;
@@ -636,7 +644,8 @@ void MigrateSendTask::deleteSenderChunks() {
   if (!_sender->checkSlotsBlongDst()) {
     LOG(ERROR) << "slots not belongs to dstNodes on task:"
                << bitsetStrEncode(_slots);
-    _state = MigrateSendState::ERR;
+    //_state = MigrateSendState::ERR;
+    setState(MigrateSendState::ERR);
   } else {
     auto s = _svr->getGcMgr()->deleteBitMap(_slots, _storeid);
     std::lock_guard<std::mutex> lk(_mutex);
@@ -645,14 +654,20 @@ void MigrateSendTask::deleteSenderChunks() {
                  << "slots:" << bitsetStrEncode(_slots) << s.toString();
       /* NOTE(wayenchen) if delete fail, no need retry,
        * gcMgr will delete at last*/
-      _state = MigrateSendState::ERR;
+      //_state = MigrateSendState::ERR;
+      setState(MigrateSendState::ERR);
     } else {
       _sender->setSenderStatus(MigrateSenderStatus::DEL_DONE);
-      _state = MigrateSendState::SUCC;
+      //_state = MigrateSendState::SUCC;
+      setState(MigrateSendState::SUCC);
     }
   }
   _nextSchedTime = SCLOCK::now();
   _isRunning = false;
+}
+
+void MigrateSendTask::setState(MigrateSendState newState) {
+  _state.store(newState, std::memory_order_relaxed);
 }
 
 Status MigrateManager::migrating(const SlotsBitmap& slots,
@@ -1068,7 +1083,8 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
     _migrateSendTaskMap[taskidArg]->_sender->setDstNode(nodeidArg);
     _migrateSendTaskMap[taskidArg]->_sender->setDstStoreid(dstStoreid);
     _migrateSendTaskMap[taskidArg]->_sender->start();
-    _migrateSendTaskMap[taskidArg]->_state = MigrateSendState::START;
+    //_migrateSendTaskMap[taskidArg]->_state = MigrateSendState::START;
+    _migrateSendTaskMap[taskidArg]->setState(MigrateSendState::START);
     LOG(INFO) << "sender task marked start on taskid:" << taskidArg;
   } else {
     LOG(ERROR) << "findJob failed, taskid:" << taskidArg
@@ -1277,7 +1293,8 @@ void MigrateReceiveTask::checkMigrateStatus() {
     LOG(ERROR) << "receiver task receive binlog timeout"
                << " on slots:" << bitsetStrEncode(_slots);
     _receiver->freeDbLock();
-    _state = MigrateReceiveState::ERR;
+    //_state = MigrateReceiveState::ERR;
+    setState(MigrateReceiveState::ERR);
   }
   return;
 }
@@ -1306,7 +1323,8 @@ void MigrateReceiveTask::fullReceive() {
       LOG(ERROR) << "fullReceive with: " << _srcIp << ":" << _srcPort
                  << "taskid:" << _taskid << " failed, no valid client";
       _nextSchedTime = SCLOCK::now();
-      _state = MigrateReceiveState::ERR;
+      //_state = MigrateReceiveState::ERR;
+      setState(MigrateReceiveState::ERR);
     }
     _isRunning = false;
     _receiver->stop();
@@ -1327,7 +1345,8 @@ void MigrateReceiveTask::fullReceive() {
                << " taskid:" << _taskid << "slots:" << bitsetStrEncode(_slots);
     _nextSchedTime = SCLOCK::now();
     _isRunning = false;
-    _state = MigrateReceiveState::ERR;
+    //_state = MigrateReceiveState::ERR;
+    setState(MigrateReceiveState::ERR);
     _receiver->stop();
     return;
   }
@@ -1350,7 +1369,8 @@ void MigrateReceiveTask::fullReceive() {
       // If the error code isn't ErrorCodes::ERR_READY_MIGRATE, it should retry
       auto delayTime = 1000 + redis_port::random() % 5000;
       _nextSchedTime = SCLOCK::now() + std::chrono::milliseconds(delayTime);
-      _state = MigrateReceiveState::RECEIVE_SNAPSHOT;
+      //_state = MigrateReceiveState::RECEIVE_SNAPSHOT;
+      setState(MigrateReceiveState::RECEIVE_SNAPSHOT);
       _retryTime.fetch_add(1, memory_order_relaxed);
       LOG(ERROR) << "receiveSnapshot need retry" << bitsetStrEncode(_slots)
                  << "taskid:" << _taskid << "error str:" << s.toString();
@@ -1359,7 +1379,8 @@ void MigrateReceiveTask::fullReceive() {
                  << "taskid:" << _taskid << "error str:" << s.toString();
       // TODO(takenliu) : clear task, and delete the kv of the chunk.
       _nextSchedTime = SCLOCK::now();
-      _state = MigrateReceiveState::ERR;
+      //_state = MigrateReceiveState::ERR;
+      setState(MigrateReceiveState::ERR);
     }
     _isRunning = false;
     _receiver->freeDbLock();
@@ -1370,7 +1391,8 @@ void MigrateReceiveTask::fullReceive() {
   {
     _receiver->setClient(nullptr);
     SCLOCK::time_point nextSched = SCLOCK::now();
-    _state = MigrateReceiveState::RECEIVE_BINLOG;
+    //_state = MigrateReceiveState::RECEIVE_BINLOG;
+    setState(MigrateReceiveState::RECEIVE_BINLOG);
     _nextSchedTime = nextSched;
     _lastSyncTime = sinceEpoch();
     _isRunning = false;
@@ -1386,6 +1408,10 @@ void MigrateReceiveTask::fullReceive() {
     LOG(ERROR) << "client2Session failed:" << expSessionId.status().toString();
     return;
   }
+}
+
+void MigrateReceiveTask::setState(MigrateReceiveState newState) {
+  _state.store(newState, std::memory_order_relaxed);
 }
 
 Status MigrateManager::applyRepllog(Session* sess,
@@ -1444,11 +1470,13 @@ Status MigrateManager::supplyMigrateEnd(const std::string& taskid,
       iter->second->_isRunning = false;
       iter->second->_receiver->stop();
       if (!binlogDone) {
-        iter->second->_state = MigrateReceiveState::ERR;
+        //iter->second->_state = MigrateReceiveState::ERR;
+        iter->second->setState(MigrateReceiveState::ERR);
         return {ErrorCodes::ERR_OK, ""};
       }
       iter->second->_receiver->setBinlogEndTime(msSinceEpoch());
-      iter->second->_state = MigrateReceiveState::SUCC;
+      //iter->second->_state = MigrateReceiveState::SUCC;
+      iter->second->setState(MigrateReceiveState::SUCC);
       LOG(INFO) << "supplyMigrateEnd finished on slots:"
                 << bitsetStrEncode(slots) << " taskid: " << taskid
                 << " task result is:" << taskResult;
@@ -2059,7 +2087,8 @@ void MigrateSendTask::stopTask() {
   if (_state == MigrateSendState::START) {
     _sender->stop();
   } else if (_state == MigrateSendState::WAIT) {
-    _state = MigrateSendState::ERR;
+    //_state = MigrateSendState::ERR;
+    setState(MigrateSendState::ERR);
     _nextSchedTime = SCLOCK::now();
     _isRunning = false;
   }
