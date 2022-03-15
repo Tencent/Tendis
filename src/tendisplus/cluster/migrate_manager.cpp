@@ -1072,7 +1072,6 @@ void MigrateManager::dstReadyMigrate(asio::ip::tcp::socket sock,
     _migrateSendTaskMap[taskidArg]->_sender->setDstNode(nodeidArg);
     _migrateSendTaskMap[taskidArg]->_sender->setDstStoreid(dstStoreid);
     _migrateSendTaskMap[taskidArg]->_sender->start();
-    //_migrateSendTaskMap[taskidArg]->_state = MigrateSendState::START;
     _migrateSendTaskMap[taskidArg]->setState(MigrateSendState::START);
     LOG(INFO) << "sender task marked start on taskid:" << taskidArg;
   } else {
