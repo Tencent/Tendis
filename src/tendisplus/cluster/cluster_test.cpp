@@ -3005,7 +3005,8 @@ TEST(Cluster, ChangeMaster) {
   work2.lockDb(10);
 
   work3.manualFailover();
-  std::this_thread::sleep_for(3s);
+  // NOTE(takenliu): tsan manual failover need more than 3s
+  std::this_thread::sleep_for(5s);
   // expect node2 to be new master
   auto state = node1->getClusterMgr()->getClusterState();
   auto nodeName2 = node2->getClusterMgr()->getClusterState()->getMyselfName();
