@@ -284,8 +284,8 @@ Expected<uint64_t> RocksTxn::commit() {
             LOG(ERROR) << "error dbid:" << _store->dbId();
             return;
         }
-        _session->getServerEntry()->getReplManager()->updateBinlogTs(
-                storeId.value(), msSinceEpoch());
+        _session->getServerEntry()->getReplManager()->updateSyncTime(
+                storeId.value());
     }
 #endif
   });

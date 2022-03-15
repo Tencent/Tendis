@@ -615,10 +615,10 @@ void ReplManager::onFlush(uint32_t storeId, uint64_t binlogid) {
 
 #ifdef TENDIS_DEBUG
 // NOTE(takenliu): be careful, this interface is only for test case.
-void ReplManager::updateBinlogTs(uint32_t storeId, uint64_t ts) {
+void ReplManager::updateSyncTime(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(_mutex);
     auto& v = _syncStatus[storeId];
-    v->lastBinlogTs = ts;
+    v->lastSyncTime = SCLOCK::now();
 }
 #endif
 
