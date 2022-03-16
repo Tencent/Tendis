@@ -2072,8 +2072,8 @@ TEST(Cluster, restartMigrate) {
     }
   }
 
-  auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid);
-  auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid);
+  auto taskNum1 = srcNode->getMigrateManager()->getTaskNum(taskid, false);
+  auto taskNum2 = dstNode->getMigrateManager()->getTaskNum(taskid, false);
   LOG(INFO) << "srcNode tasknum:" << taskNum1 << "dst tasknum:" << taskNum2;
   EXPECT_GT(taskNum1, 0);
   EXPECT_GT(taskNum2, 0);
