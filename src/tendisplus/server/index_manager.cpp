@@ -189,14 +189,16 @@ Status IndexManager::scanExpiredKeysJob(uint32_t storeId) {
   // Here, it's safe to use msSinceEpoch(), because it can't be a
   // slave here. In fact, it maybe more safe to use
   // store->getCurrentTime()
-  auto cursor = txn->createTTLIndexCursor(store->getCurrentTime());
+  std::unique_ptr<TTLIndexCursor> cursor;
   INVARIANT(_scanPoints.find(storeId) != _scanPoints.end());
   // seek to the place where we left NOTE: skip the entry
   // already push into list
   std::string prefix;
   {
     std::lock_guard<std::mutex> lk(_mutex);
+    auto indexCusor = txn->createTTLIndexCursor(store->getCurrentTime());
     prefix = _scanPoints[storeId];
+    cursor = std::move(indexCusor);
   }
 
   if (prefix.size() > 0) {

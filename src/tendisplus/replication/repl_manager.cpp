@@ -1079,9 +1079,9 @@ Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
                                            bool incrSync) {
   uint64_t oldTimeout = _connectMasterTimeoutMs;
   if (ip != "") {
-    _connectMasterTimeoutMs = 1000;
+    _connectMasterTimeoutMs.store(1000, std::memory_order_relaxed);
   } else {
-    _connectMasterTimeoutMs = 1;
+    _connectMasterTimeoutMs.store(1, std::memory_order_relaxed);
   }
 
   // NOTE(deyukong): we must wait for the target to stop before change meta,
@@ -1118,7 +1118,7 @@ Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
       return {ErrorCodes::ERR_BUSY,
               "explicit set sync source empty before change it"};
     }
-    _connectMasterTimeoutMs = 1000;
+    _connectMasterTimeoutMs.store(1000, std::memory_order_relaxed);
 
     Status s = _svr->setStoreMode(kvstore, KVStore::StoreMode::REPLICATE_ONLY);
     if (!s.ok()) {
@@ -1147,7 +1147,7 @@ Status ReplManager::changeReplSourceInDBLock(uint32_t storeId,
     }
     LOG(INFO) << "change store:" << storeId
               << " syncSrc:" << newMeta->syncFromHost << " to no one";
-    _connectMasterTimeoutMs = 1;
+    _connectMasterTimeoutMs.store(1, std::memory_order_relaxed);
 
     Status closeStatus = _svr->cancelSession(_syncStatus[storeId]->sessionId);
     if (!closeStatus.ok()) {

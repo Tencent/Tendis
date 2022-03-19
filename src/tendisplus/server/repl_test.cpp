@@ -91,7 +91,7 @@ std::shared_ptr<ServerEntry> makeAnotherSlave(const std::string& name,
 #ifdef _WIN32
 size_t recordSize = 10;
 #else
-size_t recordSize = 100;
+size_t recordSize = 1000;
 #endif
 
 TEST(Repl, Common) {

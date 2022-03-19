@@ -374,7 +374,7 @@ class ReplManager {
   std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
   std::shared_ptr<PoolMatrix> _incrCheckMatrix;
   std::shared_ptr<PoolMatrix> _logRecycleMatrix;
-  uint64_t _connectMasterTimeoutMs;
+  std::atomic<uint64_t> _connectMasterTimeoutMs;
 };
 
 }  // namespace tendisplus

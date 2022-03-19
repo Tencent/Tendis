@@ -49,7 +49,7 @@ void testCommandArrayResult(
   }
 }
 
-std::shared_ptr<ServerEntry> makeClusterNode(
+TSAN_SUPPRESSION std::shared_ptr<ServerEntry> makeClusterNode(
   const std::string& dir,
   uint32_t port,
   uint32_t storeCnt = 10,
@@ -3719,16 +3719,12 @@ TEST(Cluster, failoverConfilct) {
   }
 
   // do croncheckReplicate on slave
-  auto _checkThread = std::make_unique<std::thread>(
-    [](std::shared_ptr<ServerEntry>&& server) {
-      auto state = server->getClusterMgr()->getClusterState();
-      uint32_t retry_time = 5;
-      while (retry_time--) {
-        state->cronCheckReplicate();
-        std::this_thread::sleep_for(1s);
-      }
-    },
-    node1);
+  auto state1 = node1->getClusterMgr()->getClusterState();
+  uint32_t retry_time = 5;
+  while (retry_time--) {
+    state1->cronCheckReplicate();
+    std::this_thread::sleep_for(1s);
+  }
 
   _checkThread->detach();
   _checkThread.reset();
@@ -3887,6 +3883,7 @@ TEST(Cluster, saveNode) {
   for (auto& node : servers) {
     node->stop();
     LOG(INFO) << "stop " << node->getParams()->port << " success";
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
   LOG(INFO) << "server size:" << servers.size();
   servers.clear();

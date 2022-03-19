@@ -814,6 +814,9 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
   _slotsKeysCount.fill(0);
   _statsMessagesReceived.fill(0);
   _statsMessagesSent.fill(0);
+  if (TSAN_SWITCH) {
+    _mfNotifyEnd = false;
+  }
 }
 
 bool ClusterState::clusterHandshakeInProgress(const std::string& host,
@@ -1638,7 +1641,12 @@ Status ClusterState::clusterSaveNodes() {
 
 
 void ClusterState::setClientUnBlock() {
-  _cv.notify_one();
+  // only used for tsan examination
+  if (TSAN_SWITCH) {
+    _mfNotifyEnd.store(true, std::memory_order_relaxed);
+  } else {
+    _cv.notify_one();
+  }
   _isCliBlocked.store(false, std::memory_order_relaxed);
 }
 
@@ -4775,19 +4783,36 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     return exptLockList.status();
   }
 
-  _manualLockThead = std::make_unique<std::thread>(
-    [this](uint64_t time, std::list<std::unique_ptr<ChunkLock>>&& locklist) {
-      std::unique_lock<std::mutex> lk(_failMutex);
-      _cv.wait_for(lk, std::chrono::milliseconds(time));
-      LOG(INFO) << "mflock end:" << msSinceEpoch();
-    },
+  auto manualLockThead = std::make_unique<std::thread>(
+    ClusterState::WaitMFEnd,
+    this,
     locktime,
     std::move(exptLockList.value()));
 
   /*NOTE(wayenchen) thread should be detach */
-  _manualLockThead->detach();
-  _manualLockThead.reset();
+  manualLockThead->detach();
+  manualLockThead.reset();
   return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
+}
+
+void ClusterState::WaitMFEnd(ClusterState* cs, uint64_t time,
+  std::list<std::unique_ptr<ChunkLock>>&& locklist) {
+  if (TSAN_SWITCH) {
+    uint64_t perMillisecond = 50;
+    uint64_t totalMillisecond = 0;
+    for (; totalMillisecond < time; ) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(perMillisecond));
+      totalMillisecond += perMillisecond;
+      if (cs->_mfNotifyEnd.load(std::memory_order_relaxed)) {
+        // LOG(INFO) << "mflock end:" << msSinceEpoch();
+        break;
+      }
+    }
+  } else {
+    std::unique_lock<std::mutex> lk(cs->_failMutex);
+    cs->_cv.wait_for(lk, std::chrono::milliseconds(time));
+    LOG(INFO) << "mflock end:" << msSinceEpoch();
+  }
 }
 
 Expected<std::list<std::unique_ptr<ChunkLock>>>
