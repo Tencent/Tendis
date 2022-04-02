@@ -35,6 +35,7 @@
 
 #include "tendisplus/storage/rocks/rocks_kvstore.h"
 #include "tendisplus/storage/rocks/rocks_kvttlcompactfilter.h"
+#include "tendisplus/utils/base64.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/invariant.h"
@@ -1791,27 +1792,30 @@ Status RocksKVStore::compactRange(ColumnFamilyNumber cf,
   if (end != nullptr) {
     send = new rocksdb::Slice(*end);
   }
+  std::string s;
+  if (begin != nullptr) {
+    s.append("compactRange begin(base64): ");
+    s += Base64::Encode((const unsigned char*)begin->data(), begin->size());
+  }
+  if (end != nullptr) {
+    s.append(" end(base64): ");
+    s += Base64::Encode((const unsigned char*)end->data(), end->size());
+  }
+  if (!s.empty()) {
+    LOG(WARNING) << s;
+  }
   rocksdb::Status status;
-  std::stringstream ss;
-  ss << "compactRange begin(hex): ";
-  for (const auto &item : *begin) {
-    ss << std::hex << int(item);
-  }
-  ss << " end(hex): ";
-  for (const auto &item : *end) {
-    ss << std::hex << int(item);
-  }
-  LOG(WARNING) << ss.str();
   if (cf == ColumnFamilyNumber::ColumnFamily_Default) {
     status = db->CompactRange(compactionOptions, sbegin, send);
   } else if (cf == ColumnFamilyNumber::ColumnFamily_Binlog) {
     status = db->CompactRange(
       compactionOptions, getBinlogColumnFamilyHandle(), sbegin, send);
   }
-  LOG(WARNING) << "compactRange done.";
   if (!status.ok()) {
+    LOG(ERROR) << "compactRange failed:" << status.ToString();
     return handleRocksdbError(status);
   }
+  LOG(WARNING) << "compactRange done.";
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -2694,23 +2698,18 @@ Status RocksKVStore::deleteRangeWithoutBinlog(
   rocksdb::Slice sBegin(begin);
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
-  std::stringstream ss;
-  ss << "deleteRange begin(hex): ";
-  for (const auto &item : begin) {
-    ss << std::hex << int(item);
+  std::string s;
+  s.append("deleteRange begin(base64): ");
+  s += Base64::Encode((const unsigned char*)begin.data(), begin.size());
+  s.append(" end(base64): ");
+  s += Base64::Encode((const unsigned char*)end.data(), end.size());
+  LOG(WARNING) << s;
+  auto status = db->DeleteRange(writeOptions(), column_family, sBegin, sEnd);
+  if (!status.ok()) {
+    LOG(ERROR) << "deleteRange failed:" << status.ToString();
+    return handleRocksdbError(status);
   }
-  ss << " end(hex): ";
-  for (const auto &item : end) {
-    ss << std::hex << int(item);
-  }
-  LOG(WARNING) << ss.str();
-  auto s = db->DeleteRange(
-    writeOptions(), column_family, sBegin, sEnd);
   LOG(WARNING) << "deleteRange done.";
-  if (!s.ok()) {
-    LOG(ERROR) << "deleteRange failed:" << s.ToString();
-    return handleRocksdbError(s);
-  }
   return {ErrorCodes::ERR_OK, ""};
 }
 
@@ -2764,30 +2763,26 @@ Status RocksKVStore::deleteFilesInRangeWithoutBinlog(ColumnFamilyNumber cf,
 }
 
 Status RocksKVStore::deleteFilesInRangeWithoutBinlog(
-    rocksdb::ColumnFamilyHandle* column_family,
-    const std::string& begin,
-    const std::string& end,
-    bool include_end) {
+  rocksdb::ColumnFamilyHandle* column_family,
+  const std::string& begin,
+  const std::string& end,
+  bool include_end) {
   rocksdb::Slice sBegin(begin);
   rocksdb::Slice sEnd(end);
   rocksdb::DB* db = getBaseDB();
-  std::stringstream ss;
-  ss << "deleteFilesInRange begin(hex): ";
-  for (const auto &item : begin) {
-    ss << std::hex << int(item);
+  std::string s;
+  s.append("deleteFilesInRange begin(base64): ");
+  s += Base64::Encode((const unsigned char*)begin.data(), begin.size());
+  s.append(" end(base64): ");
+  s += Base64::Encode((const unsigned char*)end.data(), end.size());
+  LOG(WARNING) << s;
+  auto status =
+    rocksdb::DeleteFilesInRange(db, column_family, &sBegin, &sEnd, include_end);
+  if (!status.ok()) {
+    LOG(ERROR) << "deleteFilesInRange failed:" << status.ToString();
+    return handleRocksdbError(status);
   }
-  ss << " end(hex): ";
-  for (const auto &item : end) {
-    ss << std::hex << int(item);
-  }
-  LOG(WARNING) << ss.str();
-  auto s = rocksdb::DeleteFilesInRange(
-    db, column_family, &sBegin, &sEnd, include_end);
   LOG(WARNING) << "deleteFilesInRange done.";
-  if (!s.ok()) {
-    LOG(ERROR) << "deleteFilesInRange failed:" << s.ToString();
-    return handleRocksdbError(s);
-  }
   return {ErrorCodes::ERR_OK, ""};
 }
 

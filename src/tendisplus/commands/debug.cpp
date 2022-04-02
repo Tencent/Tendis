@@ -3985,7 +3985,8 @@ class deleteFilesInRangeGenericCommand : public Command {
     if (end >= expMinBinlogID.value()) {
       return {ErrorCodes::ERR_PARSEOPT,
               "endpos: " + std::to_string(end) +
-              " shouldn't greater than or equal to min binlogid"};
+              " shouldn't greater than or equal to min binlogid: " +
+              std::to_string(expMinBinlogID.value())};
     }
 
     // binlog in [start, end]
