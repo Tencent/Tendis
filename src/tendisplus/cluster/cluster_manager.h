@@ -264,6 +264,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
 };
 
 using CNodePtr = std::shared_ptr<ClusterNode>;
+using CNodeWeakPtr = std::weak_ptr<ClusterNode>;
 using CReportPtr = std::shared_ptr<ClusterNodeFailReport>;
 
 
@@ -516,7 +517,7 @@ class ClusterSession : public NetSession {
 
   void setNode(const CNodePtr& node);
   CNodePtr getNode() const {
-    return _node;
+    return _node.lock();
   }
   std::string nodeIp2String(const std::string& announcedIp) const;
 
@@ -537,7 +538,7 @@ class ClusterSession : public NetSession {
   virtual void schedule();
 
   uint64_t _pkgSize;
-  CNodePtr _node;
+  CNodeWeakPtr _node;
 };
 
 class ClusterMeta;
