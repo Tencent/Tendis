@@ -3999,8 +3999,6 @@ void ClusterManager::stop() {
   _controller->join();
 
   _clusterNetwork->stop();
-  _clusterNetwork.reset();
-  _clusterState.reset();
 
   LOG(WARNING) << "cluster manager stops success";
 }
