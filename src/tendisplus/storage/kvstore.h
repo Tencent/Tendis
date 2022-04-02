@@ -501,7 +501,7 @@ class KVStore {
   const std::string _id;
   const std::string _dbPath;
   const std::string _backupDir;
-  std::atomic<uint64_t> _binlogTimeSpov;
+  std::atomic<uint64_t> _binlogTimeSpov{0};
 };
 
 }  // namespace tendisplus

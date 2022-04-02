@@ -85,8 +85,8 @@ class LuaState {
   std::unique_ptr<LocalSessionGuard> _fakeSess;
   std::atomic<bool> running{false};
   int inuse = 0;   /* Recursive calls detection. */
-  uint64_t lua_time_start;  // ms
-  uint64_t lua_time_end;  // ms
+  uint64_t lua_time_start{0};  // ms
+  uint64_t lua_time_end{0};  // ms
   int lua_timedout;  // True if we reached the time limit for script execution.
   std::atomic<int> lua_write_dirty;  // True if a write command was called
                           // during the execution of the current script.

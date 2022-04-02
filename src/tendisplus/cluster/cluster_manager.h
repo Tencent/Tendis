@@ -812,7 +812,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   std::atomic<uint64_t> _failoverAuthEpoch;
   std::atomic<bool> _isVoteFailByDataAge;
   // TODO(wayenchen) cluster Flag
-  uint16_t _todoFlag;
+  uint16_t _todoFlag{0};
 
   Status clusterSaveMeta(
     const std::vector<std::unique_ptr<ClusterMeta>>& metaList,
