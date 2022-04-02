@@ -411,6 +411,21 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
   // long time
   resetRecycleState(metaSnapshot.id);
   rollback = false;
+  // get last binlog timestamp
+  // if exists, just set store binlogtime.
+  // if not, seems master doesn't have binlog now, it's ok.
+  auto ptxn = store->createTransaction(nullptr);
+  if (ptxn.ok()) {
+    auto bcursor = ptxn.value()->createRepllogCursorV2(
+      Transaction::MIN_VALID_TXNID);
+    auto ss = bcursor->seekToLast();
+    if (ss.ok()) {
+      auto eReplLog = bcursor->nextV2();
+      if (eReplLog.ok()) {
+        store->setBinlogTime(eReplLog.value().getTimestamp());
+      }
+    }
+  }
 
   LOG(INFO) << "store:" << metaSnapshot.id
             << ",fullsync Done, files:" << finishedFiles.size()
