@@ -148,7 +148,7 @@
 #endif
 
 #ifndef LZF_USE_OFFSETS
-#if defined(WIN32)
+#if defined(_WIN32)
 #define LZF_USE_OFFSETS defined(_M_X64)
 #else
 #if __cplusplus > 199711L

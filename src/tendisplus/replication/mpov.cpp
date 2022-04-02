@@ -138,7 +138,7 @@ void ReplManager::masterPushRoutine(uint32_t storeId, uint64_t clientId) {
     LOG(WARNING) << "masterSendBinlog to client:" << client->getRemoteRepr()
                  << " failed:" << ret.status().toString();
     std::lock_guard<std::mutex> lk(_mutex);
-#if defined(WIN32) && _MSC_VER > 1900
+#if defined(_WIN32) && _MSC_VER > 1900
     if (_pushStatus[storeId][clientId] != nullptr) {
       delete _pushStatus[storeId][clientId];
     }
