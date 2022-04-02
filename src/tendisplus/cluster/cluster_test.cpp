@@ -3726,8 +3726,6 @@ TEST(Cluster, failoverConfilct) {
     std::this_thread::sleep_for(1s);
   }
 
-  _checkThread->detach();
-  _checkThread.reset();
   std::this_thread::sleep_for(10s);
   // expect node2 to be new master
   auto state = node1->getClusterMgr()->getClusterState();

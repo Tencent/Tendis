@@ -11,14 +11,6 @@
 // because we have required gcc5.5 in cmake
 #define TSAN_SUPPRESSION __attribute__((no_sanitize_thread))
 
-// NOTE(zakzheng): only used for tsan examination when some warning
-// case need special treatment 
-#ifdef WITH_TSAN
-#define TSAN_SWITCH 1
-#else
-#define TSAN_SWITCH 0
-#endif
-
 #if __has_include(<experimental/optional>)
 #include <experimental/optional>
 namespace tendisplus {

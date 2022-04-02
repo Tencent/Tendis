@@ -774,9 +774,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
  private:
   mutable myMutex _mutex;
-  // only used for tsan examination, it hsa the same effect
-  // as _failMutex and _cv
-  std::atomic<bool> _mfNotifyEnd;
   mutable std::mutex _failMutex;
   std::condition_variable _cv;
   CNodePtr _myself;  // This node
@@ -830,8 +827,6 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
 
   uint32_t clusterMastersHaveSlavesNoLock();
   TSAN_SUPPRESSION Status clusterBlockMyself(uint64_t time);
-  TSAN_SUPPRESSION static void WaitMFEnd(ClusterState*, uint64_t,
-    std::list<std::unique_ptr<ChunkLock>>&&);
 
   void unsetTodoFlag(uint16_t flag);
   bool hasTodoFlag(uint16_t flag) const;
