@@ -704,12 +704,6 @@ void RocksTxn::setBinlogId(uint64_t binlogId) {
   _binlogId = binlogId;
 }
 
-void RocksTxn::setBinlogTime(uint64_t timestamp) {
-  INVARIANT_D(_store->getMode() == KVStore::StoreMode::REPLICATE_ONLY);
-
-  _binlogTimeSpov = timestamp > _binlogTimeSpov ? timestamp : _binlogTimeSpov;
-}
-
 rocksdb::Status RocksTxn::put(rocksdb::ColumnFamilyHandle* columnFamily,
                               const std::string& key,
                               const std::string& val) {
@@ -1230,7 +1224,6 @@ RocksKVStore::RocksKVStore(const std::string& id,
     _isPaused(false),
     _hasBackup(false),
     _enableRepllog(enableRepllog),
-    _ignoreRocksError(false),
     _mode(mode),
     _txnMode(txnMode),
     _optdb(nullptr),
@@ -2635,7 +2628,6 @@ Status RocksKVStore::handleRocksdbError(rocksdb::Status s) const {
     }
   }
 
-  INVARIANT_D(_ignoreRocksError);
   LOG(ERROR) << "Get unexpected error from rocksdb:" << s.ToString();
   return {ErrorCodes::ERR_INTERNAL, s.ToString()};
 }

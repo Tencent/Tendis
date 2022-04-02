@@ -257,8 +257,6 @@ class Transaction {
   virtual Status addDeleteFilesInRangeBinlog(const std::string& begin,
                                              const std::string& end,
                                              bool include_end = false) = 0;
-  virtual uint64_t getBinlogTime() = 0;
-  virtual void setBinlogTime(uint64_t timestamp) = 0;
   virtual bool isReplOnly() const = 0;
   virtual uint64_t getTxnId() const = 0;
 
