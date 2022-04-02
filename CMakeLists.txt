@@ -45,7 +45,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		execute_process(COMMAND bash "-c" ${patchCommand})
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
     else()
-        message("using rocksdb-5.3.14")
+        message("using rocksdb-5.13.4")
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
     endif()
 else()
@@ -61,15 +61,19 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(WITH_ASAN "build with ASAN" OFF)
+option(ENABLE_JEMALLOC "enable jemalloc" ON)
+option(BUILD_TENDIS_STATIC "build tendis staticly" OFF)
 if(WITH_ASAN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
-  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address  -static-libasan")
-  list(APPEND SYS_LIBS "-fsanitize=address  -static-libasan")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
+  set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
+  list(APPEND SYS_LIBS "-fsanitize=address -fno-omit-frame-pointer -fno-common -static-libasan")
   add_definitions(-DWITH_ASAN)
   set(ENABLE_JEMALLOC OFF)
   message("ASAN would disabled JeMalloc")
+  set(BUILD_TENDIS_STATIC OFF)
+  message("ASAN would disabled staticly compile, too")
 endif()
 
 
@@ -78,13 +82,12 @@ if(WITH_COVER)
    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")	
    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
    add_definitions(-DWITH_COVER)
-   message("ASAN would disabled JeMalloc")
 endif()		 
 
 if(CMAKE_COMPILER_IS_GNUCC)
-	option(ENABLE_JEMALLOC "enable jemalloc" ON)
 	if(ENABLE_JEMALLOC)
 		set(JEMALLOC_ROOT_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc")
+		add_definitions(-DTENDIS_JEMALLOC)
 
 		set(patchCommand "cd ${PROJECT_SOURCE_DIR}/src/thirdparty/jemalloc\; git apply ../patch/jemalloc_patch.diff")
 		message("jemalloc git patch, we force set jemalloc  prof:true")
@@ -98,7 +101,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 				COMMAND ./autogen.sh --enable-prof --disable-shared
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR})
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/lib/libjemalloc_pic.a"
-				COMMAND ${CMAKE_MAKE_PROGRAM} -j8
+				COMMAND make -j16
 				DEPENDS "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
 				WORKING_DIRECTORY ${JEMALLOC_ROOT_DIR}
 				COMMENT "Making external library jemalloc")

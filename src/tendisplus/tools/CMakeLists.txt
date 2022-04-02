@@ -1,5 +1,3 @@
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DROCKSDB_SUPPORT_THREAD_LOCAL)
-
 # When update RocksDB Version, should update fix-ldb-tools.patch
 
 add_executable(ldb_tendis ldb.cc ldb_cmd.cc ldb_cmd_tendis.cc ldb_tool.cc)

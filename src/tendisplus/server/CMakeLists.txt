@@ -47,7 +47,6 @@ endif()
 add_executable(server_params_test server_params_test.cpp)
 target_link_libraries(server_params_test server_params status glog utils_common ${SYS_LIBS})
 
-option(BUILD_TENDIS_STATIC "build tendis staticly" OFF)
 add_executable(tendisplus main.cpp)
 if(NOT WITH_ASAN)
     if (BUILD_TENDIS_STATIC)
