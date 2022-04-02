@@ -546,4 +546,46 @@ TEST(file, PosixWritableFile) {
   rocksdb::Env::Default()->GetFileSize(fileName, &fileSize);
   EXPECT_EQ(fileSize, (2*alignedBuf->logicalBlockSize - 1));
 }
+
+TEST(string, trimString) {
+  EXPECT_TRUE(trim("").empty());
+  EXPECT_TRUE(trim("          ").empty());
+  EXPECT_TRUE(trim("\t\t\t\t\t").empty());
+  EXPECT_TRUE(trim("\n\n\n\n\n").empty());
+  EXPECT_TRUE(trim("\f\f\f\f\f").empty());
+  EXPECT_TRUE(trim("\r\r\r\r\r").empty());
+  EXPECT_TRUE(trim("\v\v\v\v\v").empty());
+  EXPECT_TRUE(trim("\f\r\v\t\n ").empty());
+
+  EXPECT_TRUE(trim_left("").empty());
+  EXPECT_TRUE(trim_left("          ").empty());
+  EXPECT_TRUE(trim_left("\t\t\t\t\t").empty());
+  EXPECT_TRUE(trim_left("\n\n\n\n\n").empty());
+  EXPECT_TRUE(trim_left("\f\f\f\f\f").empty());
+  EXPECT_TRUE(trim_left("\r\r\r\r\r").empty());
+  EXPECT_TRUE(trim_left("\v\v\v\v\v").empty());
+  EXPECT_TRUE(trim_left("\f\r\v\t\n ").empty());
+
+  EXPECT_TRUE(trim_right("").empty());
+  EXPECT_TRUE(trim_right("          ").empty());
+  EXPECT_TRUE(trim_right("\t\t\t\t\t").empty());
+  EXPECT_TRUE(trim_right("\n\n\n\n\n").empty());
+  EXPECT_TRUE(trim_right("\f\f\f\f\f").empty());
+  EXPECT_TRUE(trim_right("\r\r\r\r\r").empty());
+  EXPECT_TRUE(trim_right("\v\v\v\v\v").empty());
+  EXPECT_TRUE(trim_right("\f\r\v\t\n ").empty());
+
+  EXPECT_EQ(trim("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim("   asdaweqwqewqeqw   "), std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim("\r\tasdaweqwqewqeqw\f\n   "), std::string("asdaweqwqewqeqw"));
+
+  EXPECT_EQ(trim_left("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_left("   asdaweqwqewqeqw   "), std::string("asdaweqwqewqeqw   "));
+  EXPECT_EQ(trim_left("\r\tasdaweqwqewqeqw\f\n   "), std::string("asdaweqwqewqeqw\f\n   "));
+
+  EXPECT_EQ(trim_right("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("   asdaweqwqewqeqw   "), std::string("   asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("\r\tasdaweqwqewqeqw\f\n   "), std::string("\r\tasdaweqwqewqeqw"));
+}
+
 }  // namespace tendisplus

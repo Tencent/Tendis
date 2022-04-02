@@ -255,13 +255,13 @@ void sdstrim(std::string& s, const char* cset) {  // NOLINT
 std::string trim_left(const std::string& str) {
   const std::string pattern = " \f\n\r\t\v";
   auto iter = str.find_first_not_of(pattern);
-  return str.substr(iter == std::string::npos ? 0 : iter);
+  return iter == std::string::npos ? "" : str.substr(iter);
 }
 
 std::string trim_right(const std::string& str) {
   const std::string pattern = " \f\n\r\t\v";
   auto iter = str.find_last_not_of(pattern);
-  return str.substr(0, iter == std::string::npos ? 0 : iter + 1);
+  return iter == std::string::npos ? "" : str.substr(0, iter + 1);
 }
 
 std::string trim(const std::string& str) {
