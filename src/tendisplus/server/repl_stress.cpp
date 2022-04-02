@@ -416,7 +416,7 @@ void Open() {
 class KeyBuffer {
  public:
   KeyBuffer() {
-    assert(FLAGS_key_prefix < sizeof(buffer_));
+    assert(std::size_t(FLAGS_key_prefix) < sizeof(buffer_));
     memset(buffer_, 'a', FLAGS_key_prefix);
   }
   KeyBuffer& operator=(KeyBuffer& other) = delete;

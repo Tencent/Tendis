@@ -1271,6 +1271,7 @@ TEST(Cluster, failover) {
   // cluster work ok after vote sucessful
   ASSERT_EQ(clusterOk(state), true);
 
+  state.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3799,10 +3800,12 @@ TEST(Cluster, saveNode) {
   std::vector<std::string> startInfo = getClusterInfo(servers);
 
   // stop nodes
-  for (const auto& node : servers) {
+  for (auto& node : servers) {
     node->stop();
+    LOG(INFO) << "stop " << node->getParams()->port << " success";
   }
   LOG(INFO) << "server size:" << servers.size();
+  servers.clear();
   std::this_thread::sleep_for(std::chrono::seconds(10));
   // restart nodes
   std::vector<std::shared_ptr<ServerEntry>> restartServers;
@@ -3857,18 +3860,12 @@ TEST(Cluster, saveNode) {
     EXPECT_EQ(startInfo[i].compare(restartInfo[i]), 0);
   }
 
-
 #ifndef _WIN32
-  for (auto svr : servers) {
-    svr->stop();
-    LOG(INFO) << "stop " << svr->getParams()->port << " success";
-  }
   for (auto svr : restartServers) {
     svr->stop();
     LOG(INFO) << "stop " << svr->getParams()->port << " success";
   }
 #endif
-  servers.clear();
   restartServers.clear();
 }
 

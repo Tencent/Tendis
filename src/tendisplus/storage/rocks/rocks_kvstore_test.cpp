@@ -251,9 +251,11 @@ TEST(RocksKVStore, RocksOptions) {
   EXPECT_EQ(eTxn1.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
-  RocksTxn* rtxn = dynamic_cast<RocksTxn*>(txn1.get());
-  EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, true);
-  EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
+  if (kvstore->getTxnMode() != TxnMode::TXN_WB) {
+    RocksTxn* rtxn = dynamic_cast<RocksTxn*>(txn1.get());
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, true);
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
+  }
 
   RecordKey rk(0, 1, RecordType::RT_KV, "a", "");
   RecordValue rv("txn1", RecordType::RT_KV, -1);
@@ -307,9 +309,11 @@ TEST(RocksKVStore, BinlogRightMost) {
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
 
   // default value for transaction
-  RocksTxn* rtxn = dynamic_cast<RocksTxn*>(txn1.get());
-  EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, false);
-  EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
+  if (kvstore->getTxnMode() != TxnMode::TXN_WB) {
+    RocksTxn* rtxn = dynamic_cast<RocksTxn*>(txn1.get());
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->disableWAL, false);
+    EXPECT_EQ(rtxn->getRocksdbTxn()->GetWriteOptions()->sync, false);
+  }
 
   {
     auto expMin = RepllogCursorV2::getMinBinlogId(txn1.get());
@@ -913,11 +917,6 @@ void commonRoutine(RocksKVStore* kvstore) {
   EXPECT_EQ(eTxn2.ok(), true);
   std::unique_ptr<Transaction> txn1 = std::move(eTxn1.value());
   std::unique_ptr<Transaction> txn2 = std::move(eTxn2.value());
-
-#ifdef TENDIS_DEBUG
-  // ignore INVARIANT for rocksdb error
-  kvstore->setIgnoreRocksError();
-#endif
 
   std::set<uint64_t> uncommitted = kvstore->getUncommittedTxns();
   EXPECT_NE(uncommitted.find(dynamic_cast<RocksTxn*>(txn1.get())->getTxnId()),

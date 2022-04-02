@@ -10,9 +10,9 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include "glog/logging.h"
-#ifndef _WIN32
+#ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
-#endif
+#endif  // !TENDIS_JEMALLOC
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
@@ -1593,7 +1593,7 @@ void ServerEntry::serverCron() {
 }
 
 void ServerEntry::jeprofCron() {
-#ifndef _WIN32
+#ifdef TENDIS_JEMALLOC
   size_t rss_human_size = 0;
   ifstream file;
   file.open("/proc/self/status");
@@ -1623,7 +1623,7 @@ void ServerEntry::jeprofCron() {
 
     mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
-#endif  // !_WIN32
+#endif  // !TENDIS_JEMALLOC
 }
 
 void ServerEntry::waitStopComplete() {

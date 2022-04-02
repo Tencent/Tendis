@@ -104,10 +104,6 @@ class RocksTxn : public Transaction {
   void setChunkId(uint32_t chunkId) final;
 #endif
   uint64_t getTxnId() const final;
-  uint64_t getBinlogTime() {
-    return _binlogTimeSpov;
-  }
-  void setBinlogTime(uint64_t timestamp);
   bool isReplOnly() const {
     return _replOnly;
   }
@@ -171,10 +167,6 @@ class RocksTxn : public Transaction {
 
   std::shared_ptr<BinlogObserver> _logOb;
   Session* _session;
-
- private:
-  // 0 for master, otherwise it's the latest commit binlog timestamp
-  uint64_t _binlogTimeSpov = 0;
 };
 
 // TODO(deyukong): donot modify store's unCommittedTxn list if
@@ -380,13 +372,6 @@ class RocksKVStore : public KVStore {
     return _mode != KVStore::StoreMode::STORE_NONE;
   }
 
-#ifdef TENDIS_DEBUG
-  // for unit test
-  void setIgnoreRocksError() {
-    _ignoreRocksError = true;
-  }
-#endif
-
   // check whether there is any data in the store
   bool isEmpty(bool ignoreBinlog = false) const final;
   // check whether the store get do get/set operations
@@ -530,7 +515,6 @@ class RocksKVStore : public KVStore {
   bool _isPaused;
   bool _hasBackup;
   bool _enableRepllog;
-  bool _ignoreRocksError;
 
   KVStore::StoreMode _mode;
 

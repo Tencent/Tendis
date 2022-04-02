@@ -257,8 +257,6 @@ class Transaction {
   virtual Status addDeleteFilesInRangeBinlog(const std::string& begin,
                                              const std::string& end,
                                              bool include_end = false) = 0;
-  virtual uint64_t getBinlogTime() = 0;
-  virtual void setBinlogTime(uint64_t timestamp) = 0;
   virtual bool isReplOnly() const = 0;
   virtual uint64_t getTxnId() const = 0;
 
@@ -501,7 +499,7 @@ class KVStore {
   const std::string _id;
   const std::string _dbPath;
   const std::string _backupDir;
-  std::atomic<uint64_t> _binlogTimeSpov;
+  std::atomic<uint64_t> _binlogTimeSpov{0};
 };
 
 }  // namespace tendisplus

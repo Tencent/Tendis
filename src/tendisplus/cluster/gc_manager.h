@@ -61,7 +61,6 @@ class GCManager {
 
  private:
   std::shared_ptr<ServerEntry> _svr;
-  std::shared_ptr<ClusterState> _cstate;
   std::atomic<bool> _isRunning;
   mutable std::mutex _mutex;
   std::unique_ptr<std::thread> _controller;

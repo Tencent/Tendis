@@ -37,10 +37,13 @@ void testVarint(uint64_t val, std::vector<uint8_t> bytes) {
   std::reverse(bytes.begin(), bytes.end());
   // varint64 has a maxsize of 10
   uint8_t buf[10];
-  memcpy(buf, bytes.data(), 10);
+  EXPECT_GE(std::size_t(10), bytes.size());
+  memcpy(buf, bytes.data(), bytes.size());
   uint8_t fills[] = {0, 0x7f, 0x80, 0xff};
-  for (auto& v : fills) {
-    memset(buf + bytes.size(), v, 10 - bytes.size());
+  for (const auto& v : fills) {
+    if (bytes.size() < 10) {
+      memset(buf + bytes.size(), v, 10 - bytes.size());
+    }
     std::vector<uint8_t> tmp(buf, buf + 10);
     expt = varintDecodeFwd(tmp.data(), tmp.size());
     EXPECT_TRUE(expt.ok());

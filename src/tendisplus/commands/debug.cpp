@@ -22,9 +22,9 @@
 #include <thread>  // NOLINT
 #include <chrono>  // NOLINT
 #include "glog/logging.h"
-#ifndef WIN32
+#ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
-#endif  // !WIN32
+#endif  // !TENDIS_JEMALLOC
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -3985,7 +3985,8 @@ class deleteFilesInRangeGenericCommand : public Command {
     if (end >= expMinBinlogID.value()) {
       return {ErrorCodes::ERR_PARSEOPT,
               "endpos: " + std::to_string(end) +
-              " shouldn't greater than or equal to min binlogid"};
+              " shouldn't greater than or equal to min binlogid: " +
+              std::to_string(expMinBinlogID.value())};
     }
 
     // binlog in [start, end]
@@ -4886,7 +4887,6 @@ class adminDelCommand : public Command {
   }
 } admindelCmd;
 
-#ifndef WIN32
 class JeprofCommand : public Command {
  public:
   JeprofCommand() : Command("jeprof", "as") {}
@@ -4907,6 +4907,7 @@ class JeprofCommand : public Command {
     return 0;
   }
   Expected<std::string> run(Session* sess) final {
+#ifdef TENDIS_JEMALLOC
     const std::vector<std::string>& args = sess->getArgs();
     auto action = toLower(args[1]);
     if (action == "on") {
@@ -4922,8 +4923,12 @@ class JeprofCommand : public Command {
               "args wrong, only support: jeprof [on/off/dump]"};
     }
     return Command::fmtOK();
+#else
+    return {ErrorCodes::ERR_INTERNAL,
+            "Jeprof cmd is disabled for this instance."
+            "Try to rebuild tendis with correct params."};
+#endif  // !TENDIS_JEMALLOC
   }
 } jeprofCommand;
-#endif
 
 }  // namespace tendisplus

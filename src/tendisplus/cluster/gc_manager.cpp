@@ -10,7 +10,6 @@ namespace tendisplus {
 
 GCManager::GCManager(std::shared_ptr<ServerEntry> svr)
   : _svr(svr),
-    _cstate(svr->getClusterMgr()->getClusterState()),
     _isRunning(false),
     _waitTimeAfterMigrate(0) {}
 
@@ -238,7 +237,8 @@ Status GCManager::deleteBitMap(
 SlotsBitmap GCManager::getCheckList() const {
   SlotsBitmap checklist;
   checklist.set();
-  const auto& myslots = _cstate->getMyselfNode()->getSlots();
+  const auto& myslots =
+    _svr->getClusterMgr()->getClusterState()->getMyselfNode()->getSlots();
   /* NOTE(wayenchen) garbage list should not be migrating,
    * should not belong to me and is not empty. */
   for (std::size_t idx = 0; idx < CLUSTER_SLOTS; idx++) {
@@ -258,15 +258,16 @@ SlotsBitmap GCManager::getCheckList() const {
  */
 Status GCManager::delGarbage() {
   /* only master node should be check */
-  if (!_cstate->isMyselfMaster()) {
+  auto cstate = _svr->getClusterMgr()->getClusterState();
+  if (!cstate->isMyselfMaster()) {
     return {ErrorCodes::ERR_CLUSTER, "not master"};
   }
-  if (!_cstate->clusterIsOK()) {
+  if (!cstate->clusterIsOK()) {
     return {ErrorCodes::ERR_CLUSTER, "cluster error state"};
   }
   const auto& garbageList = getCheckList();
   if (garbageList.none()) {
-    LOG(WARNING) << "no dirty data find in " << _cstate->getMyselfName();
+    LOG(WARNING) << "no dirty data find in " << cstate->getMyselfName();
     return {ErrorCodes::ERR_NOTFOUND, "no dirty data to delete"};
   }
   std::stringstream ss;

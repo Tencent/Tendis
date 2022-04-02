@@ -59,6 +59,8 @@ Expected<LenStrDecodeResult> lenStrDecode(const char* ptr, size_t max_size);
 std::vector<std::string> stringSplit(const std::string& s,
                                      const std::string& delim);
 
+std::string trim_left(const std::string& str);
+std::string trim_right(const std::string& str);
 std::string trim(const std::string& str);
 
 Expected<std::pair<uint32_t, uint32_t>> getSlotRange(const std::string& s);

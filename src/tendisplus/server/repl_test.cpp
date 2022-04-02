@@ -1076,6 +1076,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
     cfg->maxBinlogKeepNum = masterBinlogNum;
     cfg->minBinlogKeepSec = 0;
     cfg->binlogDelRange = 5000;
+    gParams = cfg;
 
     {
       auto single = std::make_shared<ServerEntry>(cfg);

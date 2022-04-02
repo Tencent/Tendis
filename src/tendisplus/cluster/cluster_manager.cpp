@@ -3999,8 +3999,6 @@ void ClusterManager::stop() {
   _controller->join();
 
   _clusterNetwork->stop();
-  _clusterNetwork.reset();
-  _clusterState.reset();
 
   LOG(WARNING) << "cluster manager stops success";
 }
@@ -5097,10 +5095,11 @@ void ClusterSession::processReq() {
 
   _queryBufPos = 0;
   if (!status.ok()) {
-    if (_node) {
+    CNodePtr node = _node.lock();
+    if (node) {
       LOG(ERROR) << "clusterProcessPacket failed, freeClusterSession ip:"
-                 << _node->getNodeIp() << " Cport:" << _node->getCport();
-      _node->freeClusterSession();
+                 << node->getNodeIp() << " Cport:" << node->getCport();
+      node->freeClusterSession();
     } else {
       setCloseAfterRsp();
       endSession();
