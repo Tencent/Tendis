@@ -16,9 +16,9 @@ function runOne() {
     cat $tmplog
     cat $tmplog >> $logfile
 
-    errcnt=`grep -E "Expected|FAILED|Check failure stack trace|core dumped" $logfile|wc -l`
+    errcnt=`grep -E "Expected|FAILED|Check failure stack trace|core dumped|Failure|INVARIANT|heap-use-after-free|heap-buffer-overflow|stack-buffer-overflow|global-buffer-overflow|stack-use-after-return|stack-use-after-scope|initialization-order-fiasco" $logfile|wc -l`
     if [ $errcnt -ne 0 ]; then
-        grep -E "Expected|FAILED" $logfile
+        grep -E "Expected|FAILED|Check failure stack trace|core dumped|Failure|INVARIANT|heap-use-after-free|heap-buffer-overflow|stack-buffer-overflow|global-buffer-overflow|stack-use-after-return|stack-use-after-scope|initialization-order-fiasco" $logfile
         exit $errcnt
     fi
     #passcnt=`grep -E "\[  PASSED  \]" $tmplog|wc -l`
