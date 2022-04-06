@@ -580,12 +580,17 @@ TEST(string, trimString) {
   EXPECT_EQ(trim("\r\tasdaweqwqewqeqw\f\n   "), std::string("asdaweqwqewqeqw"));
 
   EXPECT_EQ(trim_left("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
-  EXPECT_EQ(trim_left("   asdaweqwqewqeqw   "), std::string("asdaweqwqewqeqw   "));
-  EXPECT_EQ(trim_left("\r\tasdaweqwqewqeqw\f\n   "), std::string("asdaweqwqewqeqw\f\n   "));
+  EXPECT_EQ(trim_left("   asdaweqwqewqeqw   "),
+    std::string("asdaweqwqewqeqw   "));
+  EXPECT_EQ(trim_left("\r\tasdaweqwqewqeqw\f\n   "),
+    std::string("asdaweqwqewqeqw\f\n   "));
 
-  EXPECT_EQ(trim_right("asdaweqwqewqeqw"), std::string("asdaweqwqewqeqw"));
-  EXPECT_EQ(trim_right("   asdaweqwqewqeqw   "), std::string("   asdaweqwqewqeqw"));
-  EXPECT_EQ(trim_right("\r\tasdaweqwqewqeqw\f\n   "), std::string("\r\tasdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("asdaweqwqewqeqw"),
+    std::string("asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("   asdaweqwqewqeqw   "),
+    std::string("   asdaweqwqewqeqw"));
+  EXPECT_EQ(trim_right("\r\tasdaweqwqewqeqw\f\n   "),
+    std::string("\r\tasdaweqwqewqeqw"));
 }
 
 }  // namespace tendisplus
