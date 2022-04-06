@@ -639,6 +639,7 @@ Status ReplManager::applyRepllogV2(Session* sess,
         _syncStatus[storeId]->lastBinlogTs = binlogTs;
       }
     }
+    _cv.notify_all();
   });
 
   if (!idMatch) {

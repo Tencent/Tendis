@@ -130,6 +130,7 @@ bool setupEnv(const std::string& v) {
 }
 
 void destroyEnv(const std::string& v) {
+  LOG(INFO) << "destroyEnv dir:" << v;
   std::error_code ec;
   std::stringstream ss;
   ss << "./" << v << "/log";

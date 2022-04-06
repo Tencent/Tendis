@@ -1182,6 +1182,7 @@ Status ReplManager::replicationSetMaster(std::string ip,
     for (auto& id : storeVec) {
       _syncStatus[id]->isRunning = false;
     }
+    _cv.notify_all();
   });
 
   for (uint32_t id = 0; id < _svr->getKVStoreCount(); ++id) {
@@ -1237,6 +1238,7 @@ Status ReplManager::replicationSetMaster(std::string ip,
     std::lock_guard<std::mutex> lk(_mutex);
     if (isStoreDone) {
       _syncStatus[storeId]->isRunning = false;
+      _cv.notify_all();
     }
   });
 
@@ -1277,6 +1279,7 @@ Status ReplManager::replicationUnSetMaster() {
     for (auto& id : storeVec) {
       _syncStatus[id]->isRunning = false;
     }
+    _cv.notify_all();
   });
 
   // NOTE(wayenchen): avoid dead lock in applyRepllogV2 or controlRoutine
@@ -1323,6 +1326,7 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
     std::lock_guard<std::mutex> lk(_mutex);
     if (isStoreDone) {
       _syncStatus[storeId]->isRunning = false;
+      _cv.notify_all();
     }
   });
   // NOTE(wayenchen): avoid dead lock in applyRepllogV2 or controlRoutine
