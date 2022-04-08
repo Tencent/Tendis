@@ -1907,7 +1907,7 @@ TEST(Cluster, stopAllMigrate) {
 
   auto bitmap = getBitSet(slotsList);
 
-  const uint32_t numData = 10000;
+  const uint32_t numData = 100000;
   std::string taskid;
   for (size_t j = 0; j < numData; ++j) {
     string key;
@@ -1929,7 +1929,7 @@ TEST(Cluster, stopAllMigrate) {
    * stopall), the working task num of this taskid should be 0, than use
    * (cluster setslot restartall) to continue jobs
    * finally all the tasks should be done */
-  std::this_thread::sleep_for(500ms);
+  std::this_thread::sleep_for(100ms);
   work2.stopAllMigTasks();
   std::this_thread::sleep_for(1s);
   work1.stopAllMigTasks();
