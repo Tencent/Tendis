@@ -952,8 +952,8 @@ class ClusterManager {
   std::shared_ptr<ServerEntry> _svr;
   std::atomic<bool> _isRunning;
   std::shared_ptr<ClusterNode> _clusterNode;
-  std::shared_ptr<ClusterState> _clusterState;
   std::unique_ptr<NetworkAsio> _clusterNetwork;
+  std::shared_ptr<ClusterState> _clusterState;
   uint16_t _megPoolSize;
 
   // controller

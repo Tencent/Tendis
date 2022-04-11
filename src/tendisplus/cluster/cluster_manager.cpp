@@ -754,6 +754,15 @@ void ClusterNode::setSession(std::shared_ptr<ClusterSession> sess) {
   std::lock_guard<myMutex> lk(_mutex);
   INVARIANT_D(!_nodeSession);
   _nodeSession = sess;
+  if (sess) {
+    LOG(INFO) << "ClusterNode setSession,"
+      << " node name:" << _nodeName
+      << " node addr:" << sess->getRemoteRepr()
+      << " session id:" << sess->id();
+  } else {
+    LOG(INFO) << "ClusterNode setSession to null,"
+      << " node name:" << _nodeName;
+  }
 }
 
 std::shared_ptr<ClusterSession> ClusterNode::getSession() const {
@@ -769,7 +778,8 @@ void ClusterNode::freeClusterSession() {
     if (!_nodeSession) {
       return;
     }
-    LOG(INFO) << "free session:" << _nodeSession->getRemoteRepr();
+    LOG(INFO) << "ClusterNode freeClusterSession, node:" << getNodeName()
+      << " " << getNodeIp() << ":" << getPort() <<" id:" << _nodeSession->id();
     tmpSession = std::move(_nodeSession);
     _nodeSession = nullptr;
   }
@@ -2616,6 +2626,8 @@ void ClusterState::clusterSendFailoverAuth(CNodePtr node) {
                  _server,
                  offset,
                  node);
+  LOG(INFO) << "send FAILOVER_AUTH_ACK to " << node->getNodeName()
+    << " " << node->getSession()->getRemoteRepr();
   node->getSession()->clusterSendMessage(msg);
 }
 
@@ -2633,6 +2645,9 @@ void ClusterState::clusterSendMFStart(CNodePtr node, uint64_t offset) {
 /* Vote for the node asking for our vote if there are the conditions. */
 void ClusterState::clusterSendFailoverAuthIfNeeded(CNodePtr node,
                                                    const ClusterMsg& request) {
+  serverLog(LL_WARNING,
+            "received FAILOVER_AUTH_REQUEST from %s, myself port:%lu",
+            node->getNodeName().c_str(), _myself->getPort());
   std::lock_guard<myMutex> lk(_mutex);
   auto master = node->getMaster();
 
@@ -3874,8 +3889,8 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr,
   : _svr(svr),
     _isRunning(false),
     _clusterNode(node),
-    _clusterState(state),
     _clusterNetwork(nullptr),
+    _clusterState(state),
     _megPoolSize(0),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()) {}
@@ -3884,8 +3899,8 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr)
   : _svr(svr),
     _isRunning(false),
     _clusterNode(nullptr),
-    _clusterState(nullptr),
     _clusterNetwork(nullptr),
+    _clusterState(nullptr),
     _megPoolSize(0),
     _netMatrix(std::make_shared<NetworkMatrix>()),
     _reqMatrix(std::make_shared<RequestMatrix>()) {}
@@ -4316,8 +4331,18 @@ void ClusterState::cronRestoreSessionIfNeeded() {
         iter = _nodes.begin();
         continue;
       }
-
+      if (node->getSession() && node->getSession()->isEnded()) {
+        LOG(WARNING) << "node clusterSession isEnded, need free it."
+          << " node:" << node->getNodeName()
+          << " " << node->getNodeIp() << ":" << node->getPort()
+          << " my port:" << _server->getParams()->port;
+        node->freeClusterSession();
+      }
       if (!node->getSession()) {
+        // NOTE(takenliu) we should wait serverEntry startup finished.
+        //     for example: cluster create session for one node,
+        //     we call addSessionInSvr, and the session will be ignored.
+        INVARIANT_D(_server->isRunning());
         bool error = false;
         std::string errmsg;
 
@@ -4374,6 +4399,7 @@ void ClusterState::cronRestoreSessionIfNeeded() {
           LOG(WARNING) << "Unable to connect to Cluster Node:"
                        << node->getNodeName() << ", IP: " << node->getNodeIp()
                        << ", Port: " << node->getCport()
+                       << ", my Port:" << _server->getParams()->port
                        << ", Error:" << errmsg;
           continue;
         }
@@ -4507,8 +4533,13 @@ void ClusterState::cronCheckFailState() {
           /* and we are waiting for the pong more than timeout/2 */
           now - node->getSentTime() > nodeTimeout / 2) {
         /* Disconnect the link, it will be reconnected automatically. */
-        LOG(WARNING) << "takenliutest ip:"
-          << node->getNodeIp() << node->getPort();
+        LOG(WARNING) << "node clusterSession timeout, need free it."
+          << " timestamp lag:" << now - node->getSession()->getCtime()
+          << " ping send time lag:" << now - node->getSentTime()
+          << " pong receive time lag:" << now - node->getReceivedTime()
+          << " node:" << node->getNodeName()
+          << " " << node->getNodeIp() << ":" << node->getPort()
+          << " my port:" << _server->getParams()->port;
         node->freeClusterSession();
       }
 
@@ -4544,8 +4575,9 @@ void ClusterState::cronCheckFailState() {
          * not already in this state. */
         if (!(node->getFlags() & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL))) {
           serverLog(LL_NOTICE,
-                    "*** NODE %.40s possibly failing",
-                    node->getNodeName().c_str());
+            "*** NODE %.40s possibly failing, myself:%s, _pingSent delay:%u",
+            node->getNodeName().c_str(), _myself->getNodeName().c_str(),
+            (uint32_t)delay);
           node->setNodePfail();
           updateState = true;
         }
@@ -4836,10 +4868,11 @@ ClusterState::clusterLockMySlots() {
       }
     }
   }
-  _isCliBlocked.store(true, std::memory_order_relaxed);
   LOG(INFO) << "finish myself lock on:" << bitsetStrEncode(slotsDone)
             << ", Lock num:" << lockNum
             << ", take time:" << msSinceEpoch() - locktime << "ms";
+  std::lock_guard<myMutex> lock(_mutex);
+  _isCliBlocked.store(true, std::memory_order_relaxed);
   if (lockNum == 0) {
     return {ErrorCodes::ERR_INTERNAL, "no lock finish"};
   }
@@ -4850,6 +4883,13 @@ ClusterState::clusterLockMySlots() {
 void ClusterManager::controlRoutine() {
   uint64_t iteration = 0;
   while (_isRunning.load(std::memory_order_relaxed)) {
+    // NOTE(takenliu) we should wait serverEntry startup finished.
+    //     for example: cluster create session for one node,
+    //     we call addSessionInSvr, and the session will be ignored.
+    if (!_svr->isRunning()) {
+      std::this_thread::sleep_for(100ms);
+      continue;
+    }
     /* Update myself flags. */
     _clusterState->clusterUpdateMyselfFlags();
 
@@ -5084,8 +5124,9 @@ void ClusterSession::drainReqCallback(const std::error_code& ec,
                                       size_t actualLen) {
   if (ec) {
     /* I/O error... */
-    LOG(WARNING) << "I/O error reading from node link(" << getRemoteRepr()
-                 << "): " << ec.message();
+    LOG(WARNING) << "I/O error reading from node link:" << getRemoteRepr()
+                 << "): " << ec.message()
+                 << ", my port:" << _server->getParams()->port;
     endSession();
     return;
   }
@@ -5678,6 +5719,8 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
     /* We consider this vote only if the sender is a master serving
      * a non zero number of slots or an arbiter, and its currentEpoch is
      * greater or equal to epoch where this node started the election. */
+    LOG(INFO) << "receive FAILOVER_AUTH_ACK from:" << sender->getNodeName()
+      << " epoch:" << senderCurrentEpoch;
     if (sender->nodeIsMaster() &&
         (sender->getSlotNum() > 0 || sender->nodeIsArbiter()) &&
         senderCurrentEpoch >= getFailAuthEpoch()) {
@@ -5893,6 +5936,13 @@ Status ClusterState::clusterSendPingNoLock(std::shared_ptr<ClusterSession> sess,
     sessNode->setSentTime(msSinceEpoch());
   }
   ClusterMsg msg(type, shared_from_this(), _server, offset);
+  if (msg.getMflags() & CLUSTERMSG_FLAG0_PAUSED
+    && sessNode && sessNode->getMaster()
+    && sessNode->getMaster() == getMyselfNode()) {
+    LOG(INFO) << "CLUSTERMSG_FLAG0_PAUSED send to slave:"
+      << sess->getRemoteRepr()
+      << ", my port " << getMyselfNode()->getPort();
+  }
   /* Populate the gossip fields */
   uint32_t maxiterations = wanted * 3;
   while (freshnodes > 0 && gossipcount < wanted && maxiterations--) {

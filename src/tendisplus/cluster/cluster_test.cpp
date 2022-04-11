@@ -501,6 +501,7 @@ void waitClusterMeetEnd(std::vector<std::shared_ptr<ServerEntry>> servers) {
 
 void destroyCluster(uint32_t nodeNum) {
   for (uint32_t i = 0; i < nodeNum; ++i) {
+    LOG(INFO) << "destroyCluster node i:" << i;
     destroyEnv("node" + to_string(i));
   }
 }
@@ -1229,9 +1230,9 @@ bool nodeIsMySlave(std::shared_ptr<ServerEntry> svr1,
     CNodePtr myself = svr1->getClusterMgr()->getClusterState()->getMyselfNode();
     CNodePtr node2 = svr2->getClusterMgr()->getClusterState()->getMyselfNode();
 
-    LOG(INFO) << "myself name:" << myself->getNodeName()
-              << "node2 master name:" << node2->getMaster()->getNodeName();
     auto masterName = node2->getMaster()->getNodeName();
+    LOG(INFO) << "check nodeIsMySlave, myself name:" << myself->getNodeName()
+      << ", node2's master name:" << masterName;
     if (masterName == myself->getNodeName()) {
       return true;
     }
@@ -3598,6 +3599,8 @@ TEST(Cluster, bindZeroAddr) {
   // kill master & slave , and restart it ust bind 0.0.0.0
   master->stop();
   slave->stop();
+  LOG(INFO) << "master node and slave node stopped.";
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   // restart  master
   auto cfg1 = makeServerParam(startPort, 10, "node" + to_string(0), true);
@@ -3609,6 +3612,7 @@ TEST(Cluster, bindZeroAddr) {
   master = std::make_shared<ServerEntry>(cfg1);
   auto s1 = master->startup(cfg1);
   INVARIANT(s1.ok());
+  LOG(INFO) << "master restart ok.";
   std::this_thread::sleep_for(std::chrono::seconds(5));
   // restart slave
   auto cfg2 = makeServerParam(startPort + 3, 10, "node" + to_string(3), true);
@@ -3620,6 +3624,7 @@ TEST(Cluster, bindZeroAddr) {
   slave = std::make_shared<ServerEntry>(cfg2);
   auto s2 = slave->startup(cfg2);
   INVARIANT(s2.ok());
+  LOG(INFO) << "slave restart ok.";
   std::this_thread::sleep_for(std::chrono::seconds(5));
   EXPECT_TRUE(nodeIsMySlave(master, slave));
 
