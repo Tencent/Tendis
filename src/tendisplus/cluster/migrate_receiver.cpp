@@ -90,10 +90,7 @@ Status ChunkMigrateReceiver::receiveSnapshot() {
     if (!exptData.ok()) {
       return {ErrorCodes::ERR_TIMEOUT, "receive data fail"};
     }
-#ifdef TENDIS_DEBUG
-    // TODO(takenliu): delete this log
-    LOG(INFO) << "receive protocal type sucess:" << exptData.value()[0];
-#endif
+
     // DEPRECATED previous single migrate
     if (exptData.value()[0] == '0') {
       SyncReadData(keylenData, 4, timeoutSec);

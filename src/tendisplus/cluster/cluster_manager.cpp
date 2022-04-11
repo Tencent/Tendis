@@ -724,8 +724,8 @@ bool ClusterState::updateAddressIfNeeded(CNodePtr node,
     node->setNodeIp(ip);
     node->setNodePort(port);
     node->setNodeCport(cport);
-    LOG(WARNING) << "takenliutest ip:"
-      << node->getNodeIp() << node->getPort();
+    LOG(WARNING) << "Address updated, free clusterSession, new ip:"
+      << node->getNodeIp() << " port:" << node->getPort();
     node->freeClusterSession();
     node->unsetFlag(CLUSTER_NODE_NOADDR);
   }
@@ -2106,8 +2106,8 @@ Status ClusterState::freeClusterNode(CNodePtr delnode) {
   if (delNum < 1) {
     LOG(ERROR) << "delete this node from nodelist fail ";
   }
-  LOG(WARNING) << "takenliutest ip:"
-    << delnode->getNodeIp() << delnode->getPort();
+  LOG(WARNING) << "freeClusterNode, free clusterSession, ip:"
+    << delnode->getNodeIp() << " port:" << delnode->getPort();
   delnode->freeClusterSession();
 
   return {ErrorCodes::ERR_OK, ""};
@@ -3180,10 +3180,11 @@ ClusterMsg::ClusterMsg(const ClusterMsg::Type type,
     _header(std::make_shared<ClusterMsgHeader>(cstate, svr, offset)),
     _msgData(nullptr) {
   if (cstate->getMyselfNode()->nodeIsMaster() && cstate->getMfEnd()) {
-    LOG(INFO) << "Cluster Message with offset " << offset << " when mfend.";
+    LOG(INFO) << "Cluster Message with CLUSTERMSG_FLAG0_PAUSED offset:"
+      << offset;
     if (node) {
-      LOG(INFO) << " node ip:" << node->getNodeIp()
-        << " port:" << node->getPort();
+      LOG(INFO) << "ClusterMsg with CLUSTERMSG_FLAG0_PAUSED, node ip:"
+        << node->getNodeIp() << " port:" << node->getPort();
     }
     _mflags |= CLUSTERMSG_FLAG0_PAUSED;
   }
@@ -5345,15 +5346,6 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
                 sender->getReplOffset(),
                 _server->getReplManager()->replicationGetOffset());
     }
-  } else if (!sender) {
-      serverLog(LL_NOTICE, "takenliutest node:%s", hdr->_sender.c_str());
-  } else if (sender->nodeInHandshake()) {
-      uint32_t flags = msg.getMflags();
-      serverLog(LL_NOTICE, "takenliutest node:%s %s:%lu %d %u %d",
-                sender->getNodeName().c_str(), sender->getNodeIp().c_str(),
-                sender->getPort(), sender->getFlags(),
-                flags,
-                setMfMasterOffsetIfNecessary(sender));
   }
   auto typeStr = ClusterMsg::clusterGetMessageTypeString(type);
   if (type == ClusterMsg::Type::PING || type == ClusterMsg::Type::MEET) {
@@ -5481,16 +5473,16 @@ Status ClusterState::clusterProcessPacket(std::shared_ptr<ClusterSession> sess,
          * address. */
         serverLog(LL_VERBOSE,
                   "PONG contains mismatching sender ID. "
-                  "About node %.40s added %d ms ago, having flags %d",
+                  "About node %.40s added %d ms ago, having flags %d,"
+                  " addr %s:%lu",
                   sessNode->getNodeName().c_str(),
                   (uint32_t)(msSinceEpoch() - sessNode->getCtime()),
-                  sessNode->getFlags());
+                  sessNode->getFlags(),
+                  sessNode->getNodeIp().c_str(), sessNode->getPort());
         sessNode->setFlag(CLUSTER_NODE_NOADDR);
         sessNode->setNodeIp("");
         sessNode->setNodePort(0);
         sessNode->setNodeCport(0);
-        LOG(WARNING) << "takenliutest ip:"
-          << sessNode->getNodeIp() << sessNode->getPort();
         sessNode->freeClusterSession();
         setTodoFlag(CLUSTER_TODO_FLAG_SAVE);
         //  std::string nodeName = hdr->_sender;

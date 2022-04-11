@@ -334,10 +334,6 @@ Status ChunkMigrateSender::sendRangeByBatch(Transaction* txn,
             << end << ", total num: " << *totalNum;
   // Send over of one slot
   SyncWriteData("2");
-#ifdef TENDIS_DEBUG
-  // TODO(takenliu): delete this log
-  LOG(INFO) << "send \"2\" sucess";
-#endif
   SyncReadData(exptData, _OKSTR.length(), timeoutSec);
 
   if (exptData.value() != _OKSTR) {
