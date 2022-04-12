@@ -529,7 +529,7 @@ class ServerParams {
 
   // The Batch Size when sending snapshot during migration.
   // Dynamically changeable through 'config set cluster-migration-batch-size'
-  uint32_t migrateSnapshotBatchSizeKB = 10240;
+  uint32_t migrateSnapshotBatchSizeKB = 16;
 
   // The network timeout during migration, it used in following scenarios:
   // 1) The source node send data timeout

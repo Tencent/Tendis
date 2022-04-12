@@ -64,6 +64,7 @@ func testDeleteFilesInRange() {
 		log.Fatalf("setup failed:%v", err)
 	}
 
+	time.Sleep(5 * time.Second)
 	// addslots
 	log.Infof("cluster addslots begin")
 	cluster_addslots(&m1, 0, 16383)
