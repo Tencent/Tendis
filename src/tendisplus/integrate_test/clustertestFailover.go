@@ -68,7 +68,7 @@ func checkFullsyncSuccTimes(m *util.RedisServer, num int) {
 
 func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
     failoverQuickly bool) {
-    log.Infof("testCluster begin failoverQuickly:%s", failoverQuickly)
+    log.Infof("testCluster begin failoverQuickly:%t", failoverQuickly)
     var servers, predixy, _ = startCluster(clusterIp, clusterPortStart, clusterNodeNum)
     //nodeInfoArray
 
@@ -83,7 +83,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
         // if sleep less than clusterNodeTimeout/2, _mfMasterOffset maybe 0
         sleepInter = 8;
     }
-    log.Infof("failoverQuickly:%d num:%d sleepInter:%d", failoverQuickly, num, sleepInter)
+    log.Infof("failoverQuickly:%t num:%d sleepInter:%d", failoverQuickly, num, sleepInter)
     var channel chan int = make(chan int)
     go addDataInCoroutine(&predixy.RedisServer, num, "abcd", channel)
 

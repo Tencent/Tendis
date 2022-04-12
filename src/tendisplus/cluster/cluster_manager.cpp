@@ -826,6 +826,16 @@ ClusterState::ClusterState(std::shared_ptr<ServerEntry> server)
   _statsMessagesSent.fill(0);
 }
 
+ClusterState::~ClusterState() {
+  if (_manualLockThead) {
+    _cv.notify_all();
+    LOG(INFO) << "setClientUnBlock _cv notify_all.";
+    _manualLockThead->join();
+    _manualLockThead.reset();
+    LOG(INFO) << "setClientUnBlock wait thread exit sucess.";
+  }
+}
+
 bool ClusterState::clusterHandshakeInProgress(const std::string& host,
                                               uint32_t port,
                                               uint32_t cport) {
@@ -1648,8 +1658,16 @@ Status ClusterState::clusterSaveNodes() {
 
 
 void ClusterState::setClientUnBlock() {
-  _cv.notify_one();
+  _cv.notify_all();
   _isCliBlocked.store(false, std::memory_order_relaxed);
+  if (_manualLockThead) {
+    LOG(INFO) << "setClientUnBlock _cv notify_all.";
+    _manualLockThead->join();
+    _manualLockThead.reset();
+    LOG(INFO) << "setClientUnBlock wait thread exit sucess.";
+  } else {
+    LOG(INFO) << "setClientUnBlock _manualLockThead is null.";
+  }
 }
 
 bool ClusterState::isReplicateDone() const {
@@ -1789,7 +1807,7 @@ Status ClusterState::clusterSetMaster(CNodePtr node, bool ignoreRepl) {
                  << "as my master failed";
       return s;
     }
-    LOG(INFO) << "set node meta:" << node->getNodeName() << "as my master";
+    LOG(INFO) << "set node meta:" << node->getNodeName() << " as my master";
     if (isClientBlock()) {
       setClientUnBlock();
       INVARIANT_D(!_isCliBlocked.load(std::memory_order_relaxed));
@@ -4343,7 +4361,8 @@ void ClusterState::cronRestoreSessionIfNeeded() {
         // NOTE(takenliu) we should wait serverEntry startup finished.
         //     for example: cluster create session for one node,
         //     we call addSessionInSvr, and the session will be ignored.
-        INVARIANT_D(_server->isRunning());
+        // maybe ServerEntry::stop() has been called.
+        // INVARIANT_D(_server->isRunning());
         bool error = false;
         std::string errmsg;
 
@@ -4608,7 +4627,7 @@ void ClusterState::cronCheckFailState() {
     auto s1 = clusterHandleSlaveFailover();
     if (s1.ok()) {
       /* Take responsability for the cluster slots. */
-      LOG(INFO) << "node" << getMyselfName() << "vote success:";
+      LOG(INFO) << "node " << getMyselfName() << " vote success:";
       _isVoteFailByDataAge.store(false, std::memory_order_relaxed);
       auto s2 = clusterFailoverReplaceYourMaster();
       if (!s2.ok()) {
@@ -4808,18 +4827,22 @@ Status ClusterState::clusterBlockMyself(uint64_t locktime) {
     return exptLockList.status();
   }
 
-  auto manualLockThead = std::make_unique<std::thread>(
-    [this](uint64_t time, std::list<std::unique_ptr<ChunkLock>>&& locklist) {
-      std::unique_lock<std::mutex> lk(_failMutex);
-      _cv.wait_for(lk, std::chrono::milliseconds(time));
-      LOG(INFO) << "mflock end:" << msSinceEpoch();
-    },
-    locktime,
-    std::move(exptLockList.value()));
+  INVARIANT_D(_manualLockThead == nullptr);
+  if (!_manualLockThead) {
+    _manualLockThead = std::make_unique<std::thread>(
+      [this](uint64_t time, std::list<std::unique_ptr<ChunkLock>>&& locklist) {
+        std::unique_lock<std::mutex> lk(_failMutex);
+        LOG(INFO) << "mflock begin:" << msSinceEpoch();
+        _cv.wait_for(lk, std::chrono::milliseconds(time));
+        LOG(INFO) << "mflock end:" << msSinceEpoch();
+      },
+      locktime,
+      std::move(exptLockList.value()));
+  } else {
+    LOG(WARNING) << "clusterBlockMyself _manualLockThead already exist.";
+  }
 
-  /*NOTE(wayenchen) thread should be detach */
-  manualLockThead->detach();
-  manualLockThead.reset();
+  /*NOTE(takenliu) _manualLockThead detach maybe has some error*/
   return {ErrorCodes::ERR_OK, "finish lock chunk on node"};
 }
 

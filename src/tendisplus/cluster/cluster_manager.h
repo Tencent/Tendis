@@ -548,6 +548,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   explicit ClusterState(std::shared_ptr<ServerEntry> server);
   ClusterState(const ClusterState&) = delete;
   ClusterState(ClusterState&&) = delete;
+  ~ClusterState();
   // get epoch
   uint64_t getCurrentEpoch() const;
   uint64_t getLastVoteEpoch() const;
@@ -799,6 +800,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   uint32_t _mfCanStart;
   // Number of nodes in PFAIL status
   uint64_t _statsPfailNodes;
+  std::unique_ptr<std::thread> _manualLockThead;
   std::atomic<bool> _isCliBlocked;
   std::unordered_map<std::string, CNodePtr> _nodes;
   mstime_t _failoverAuthTime;
