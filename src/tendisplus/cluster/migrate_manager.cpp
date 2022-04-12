@@ -92,6 +92,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
                                const std::shared_ptr<ServerParams> cfg)
   : _cfg(cfg),
     _svr(svr),
+    _cluster(_svr->getClusterMgr()->getClusterState()),
     _isRunning(false),
     _taskIdGen(0),
     _pTaskIdGen(0),
@@ -100,8 +101,6 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
     _workload(0),
     _rateLimiter(
       std::make_unique<RateLimiter>(_cfg->migrateRateLimitMB * 1024 * 1024)) {
-  _cluster = _svr->getClusterMgr()->getClusterState();
-
   _cfg->serverParamsVar("migrateSenderThreadnum")->setUpdate([this]() {
     migrateSenderResize(_cfg->migrateSenderThreadnum);
   });
@@ -153,6 +152,10 @@ void MigrateManager::stop() {
   _migrateReceiver->stop();
 
   LOG(INFO) << "MigrateManager stops succ";
+}
+
+bool MigrateManager::isRunning() const {
+  return _isRunning.load(std::memory_order_relaxed);
 }
 
 Status MigrateManager::stopStoreTask(uint32_t storeid) {

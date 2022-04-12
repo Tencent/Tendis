@@ -106,6 +106,7 @@ TEST(Repl, Common) {
       destroyReplEnv();
       destroyEnv(slave1_dir);
       destroyEnv(slave2_dir);
+      destroyEnv(slave_slave_dir);
       std::this_thread::sleep_for(std::chrono::seconds(5));
     });
 
@@ -1068,7 +1069,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
     bool clear = false;  // dont clear if failed
-    const auto guard = MakeGuard([clear] {
+    const auto guard = MakeGuard([&clear] {
       if (clear) {
         destroyEnv(single_dir2);
       }

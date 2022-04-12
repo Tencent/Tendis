@@ -806,7 +806,9 @@ void ReplManager::recycleBinlog(uint32_t storeId) {
     }
   }
 
-  if (_svr->isClusterEnabled() && _svr->getMigrateManager() != nullptr) {
+  if (_svr->isClusterEnabled() &&
+      _svr->getMigrateManager() &&
+      _svr->getMigrateManager()->isRunning()) {
     end = std::min(end, _svr->getMigrateManager()->getProtectBinlogid(storeId));
   }
   // DLOG(INFO) << "recycleBinlog port:" << _svr->getParams()->port

@@ -626,11 +626,21 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   LOG(INFO) << "_network->prepare ok. ip :" << cfg->bindIp
             << " port:" << cfg->port;
 
-  // cluster init
-  /* IndexMgr need get task map size from migrateMgr, so init it first.
-   * ReplManager->startup using MigrateManager, so we put cluster init
-   * before replication */
+
+  // replication
+  // replication relys on blocking-client
+  // must startup after network prepares ok
   _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
+  s = _replMgr->startup();
+  if (!s.ok()) {
+    LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:"
+               << s.toString();
+    return s;
+  }
+
+  // cluster init
+  /*(NOTE) wayenchen indexMgr need get task map size from migrateMgr, so init it
+   * first */
   if (_enableCluster) {
     _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
 
@@ -653,16 +663,6 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
       LOG(WARNING) << "start up gc manager failed";
       return s;
     }
-  }
-
-  // replication
-  // replication relys on blocking-client
-  // must startup after network prepares ok
-  s = _replMgr->startup();
-  if (!s.ok()) {
-    LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:"
-               << s.toString();
-    return s;
   }
 
   _scriptMgr = std::make_unique<ScriptManager>(shared_from_this());
