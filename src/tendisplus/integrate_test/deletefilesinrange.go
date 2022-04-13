@@ -69,7 +69,8 @@ func testDeleteFilesInRange() {
 	log.Infof("cluster addslots begin")
 	cluster_addslots(&m1, 0, 16383)
 
-	time.Sleep(5 * time.Second)
+	// cluster state change to ok need delay 5 seconds
+	time.Sleep(7 * time.Second)
 
 	// 127.0.0.1:51002> cluster keyslot {12}
 	// "8373"

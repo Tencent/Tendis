@@ -25,7 +25,7 @@
 #ifndef WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
-#endif
+#endif  // !TENDIS_JEMALLOC
 #endif  // !WIN32
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"

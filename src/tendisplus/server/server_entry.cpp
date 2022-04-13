@@ -1634,7 +1634,7 @@ void ServerEntry::jeprofCron() {
 
     mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
-#endif
+#endif  // !TENDIS_JEMALLOC
 #endif  // !_WIN32
 }
 
