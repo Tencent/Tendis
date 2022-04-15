@@ -26,8 +26,14 @@ mgl::LockMode Command::_expRdLk = mgl::LockMode::LOCK_X;
 
 std::map<std::string, uint64_t> Command::_unSeenCmds = {};
 
-std::map<std::string, Command*>& commandMap() {
-  static std::map<std::string, Command*> map = {};
+std::unordered_map<std::string, Command*>& commandMap() {
+  static std::unordered_map<std::string, Command*> map = {};
+  return map;
+}
+
+// The command which has 'a' flag
+std::unordered_map<std::string, Command*>& adminCommandMap() {
+  static std::unordered_map<std::string, Command*> map = {};
   return map;
 }
 
@@ -36,6 +42,9 @@ Command::Command(const std::string& name, const char* sflags)
     _sflags(sflags),
     _flags(redis_port::getCommandFlags(sflags)) {
   commandMap()[_name] = this;
+  if (_flags & CMD_ADMIN) {
+    adminCommandMap()[_name] = this;
+  }
   if (_flags & CMD_ADMIN && !(_flags & CMD_NOSCRIPT)) {
     std::cerr << name << " command with a flags and dont contain s flags"
               << std::endl;
@@ -989,17 +998,7 @@ std::vector<int> Command::getKeysFromCommand(
 }
 
 bool Command::isAdminCmd(const std::string& cmd) {
-  static const auto sAdmin = []() {
-    std::unordered_set<std::string> tmp;
-    for (auto iter = commandMap().begin(); iter != commandMap().end(); iter++) {
-      if (iter->second->isAdmin()) {
-        tmp.emplace(iter->first);
-      }
-    }
-    return tmp;
-  }();
-
-  return sAdmin.count(cmd);
+  return adminCommandMap().count(cmd);
 }
 
 }  // namespace tendisplus

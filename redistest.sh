@@ -1,6 +1,21 @@
 #!/bin/bash
 logfile=./redistest.log
 rm $logfile
+rm ./tests/tmp/*
+
+function lm_traverse_dir() {
+    for file in `ls $1`
+    do
+        if [ -d $1"/"$file ]
+        then
+            lm_traverse_dir $1"/"$file
+        else  
+            file_name=$1"/"$file
+            echo "===== $file_name ====="
+            cat $file_name
+        fi
+    done
+}
 
 function runOne() {
     tmplog=./redistest_tmp.log
@@ -9,6 +24,8 @@ function runOne() {
     $cmd >> $tmplog 2>&1
     cat $tmplog
     cat $tmplog >> $logfile
+
+    lm_traverse_dir ./tests/tmp/
 
     errcnt=`grep -E "\[err|\[exception|49merr|49mexception" $logfile|wc -l`
     errcnt1=$(grep \"main\" $logfile|wc -l)

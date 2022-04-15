@@ -64,8 +64,8 @@ class IndexManager {
   std::shared_ptr<PoolMatrix> _scannerMatrix;
   std::shared_ptr<PoolMatrix> _deleterMatrix;
 
-  uint64_t _totalDequeue;
-  uint64_t _totalEnqueue;
+  std::atomic<uint64_t> _totalDequeue;
+  std::atomic<uint64_t> _totalEnqueue;
 };
 
 }  // namespace tendisplus

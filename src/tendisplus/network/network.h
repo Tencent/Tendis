@@ -185,6 +185,10 @@ class NetSession : public Session {
     DrainReqBuf,
     Process,
   };
+  bool isEnded() {
+    std::lock_guard<std::mutex> lk(_mutex);
+    return _isEnded;
+  }
 
  protected:
   // schedule related functions

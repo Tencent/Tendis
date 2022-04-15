@@ -13,6 +13,7 @@
 #include "tendisplus/server/session.h"
 #include "tendisplus/network/session_ctx.h"
 #include "tendisplus/lock/mgl/mgl_mgr.h"
+#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 
@@ -21,7 +22,7 @@ class Session;
 class ILock {
  public:
   ILock(ILock* parent, mgl::MGLock* lk, Session* sess);
-  virtual ~ILock();
+  virtual ~ILock() TSAN_SUPPRESSION;
   mgl::LockMode getMode() const;
   mgl::LockRes getLockResult() const;
   virtual uint32_t getStoreId() const;

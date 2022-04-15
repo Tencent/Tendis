@@ -37,7 +37,7 @@ class ScriptManager {
     return _luaKill;
   }
   bool stopped() const {
-    return _stopped;
+    return _stopped.load(std::memory_order_relaxed);
   }
 
  private:

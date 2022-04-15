@@ -242,8 +242,8 @@ Expected<std::shared_ptr<ClusterSession>> NetworkAsio::client2ClusterSession(
   uint64_t connId = _connCreated.fetch_add(1, std::memory_order_relaxed);
   auto sess = std::make_shared<ClusterSession>(
     _server, std::move(c->borrowConn()), connId, true, _netMatrix, _reqMatrix);
-  LOG(INFO) << "new cluster session, id:" << sess->id() << ",connId:" << connId
-            << ",from:" << sess->getRemoteRepr() << " client2ClusterSession";
+  LOG(INFO) << "client2ClusterSession, id:" << sess->id()
+    << ",connId:" << connId << ",remoteAddr:" << sess->getRemoteRepr();
   sess->getCtx()->setAuthed();
   _server->addSession(sess);
   ++_netMatrix->connCreated;
@@ -569,17 +569,22 @@ Status NetSession::setResponse(const std::string& s) {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isEnded) {
     _closeAfterRsp = true;
+    LOG(WARNING) << "setResponse _isEnded, id:" << id()
+      << " addr:" << getRemoteRepr();
     return {ErrorCodes::ERR_NETWORK, "connection is ended"};
   }
 
   if (s.empty()) {
-    LOG(ERROR) << "response is empty";
+    LOG(WARNING) << "setResponse response is empty, id:" << id()
+      << " addr:" << getRemoteRepr();
     return {ErrorCodes::ERR_OK, ""};
   }
 
   // Session closing,Already send the last response,needn't sent again
   if (_closeAfterRsp) {
     if (_closeResponse) {
+      LOG(WARNING) << "setResponse _closeAfterRsp _closeResponse, id:" << id()
+        << " addr:" << getRemoteRepr();
       return {ErrorCodes::ERR_OK, ""};
     } else {
       _closeResponse = true;
@@ -597,7 +602,6 @@ Status NetSession::setResponse(const std::string& s) {
         drainRspWithoutLock();
       }
   }
-
   return {ErrorCodes::ERR_OK, ""};
 }
 

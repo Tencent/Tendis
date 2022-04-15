@@ -189,6 +189,7 @@ void SessionCtx::setWaitLock(uint32_t storeId,
                              uint32_t chunkId,
                              const std::string& key,
                              mgl::LockMode mode) {
+  std::lock_guard<std::mutex> lk(_mutex);
   _waitlockStore = storeId;
   _waitlockChunk = chunkId;
   _waitlockMode = mode;
@@ -196,6 +197,7 @@ void SessionCtx::setWaitLock(uint32_t storeId,
 }
 
 SLSP SessionCtx::getWaitlock() const {
+  std::lock_guard<std::mutex> lk(_mutex);
   return std::tuple<uint32_t, uint32_t, std::string, mgl::LockMode>(
     _waitlockStore, _waitlockChunk, _waitlockKey, _waitlockMode);
 }

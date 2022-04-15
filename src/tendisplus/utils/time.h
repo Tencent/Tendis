@@ -8,6 +8,8 @@
 #include <chrono>  // NOLINT
 #include <string>
 
+#include "tendisplus/utils/portable.h"
+
 namespace tendisplus {
 
 uint64_t nsSinceEpoch();

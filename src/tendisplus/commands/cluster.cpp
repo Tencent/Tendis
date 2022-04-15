@@ -278,6 +278,7 @@ class ClusterCommand : public Command {
       }
     } else if (arg1 == "meet" && (argSize == 4 || argSize == 5)) {
       /* CLUSTER MEET <ip> <port> [cport] */
+      LOG(INFO) << "cluster " << arg1 << " " << args[2] << " " << args[3];
       uint64_t port, cport;
       auto& host = args[2];
       auto eport = ::tendisplus::stoul(args[3]);

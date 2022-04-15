@@ -99,13 +99,14 @@ TEST(Repl, Common) {
   size_t i = 0;
   {
 #else
-  for (size_t i = 0; i < 3; i++) {
+  for (size_t i = 0; i < 2; i++) {
 #endif
     LOG(INFO) << ">>>>>> test store count:" << i;
     const auto guard = MakeGuard([] {
       destroyReplEnv();
       destroyEnv(slave1_dir);
       destroyEnv(slave2_dir);
+      destroyEnv(slave_slave_dir);
       std::this_thread::sleep_for(std::chrono::seconds(5));
     });
 
@@ -113,7 +114,7 @@ TEST(Repl, Common) {
 
     auto& master = hosts.first;
     auto& slave = hosts.second;
-    bool running = true;
+    std::atomic<bool> running{true};
 
     // make sure slaveof is ok
     std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -125,10 +126,12 @@ TEST(Repl, Common) {
 
     auto allKeys =
       writeComplexDataToServer(master, recordSize, 50, nullptr, true);
+    LOG(INFO) << "writeComplexDataToServer success:" << allKeys.size();
 
     waitSlaveCatchup(master, slave);
     sleep(3);  // wait recycle binlog
     compareData(master, slave);
+    LOG(INFO) << "compareData success.";
 
     auto slave1 = makeAnotherSlave(slave1_dir, i, slave1_port, master_port);
     // chain slave
@@ -165,6 +168,7 @@ TEST(Repl, Common) {
     std::thread thd1([&master]() {
 #ifndef _WIN32
       testAll(master);
+      LOG(INFO) << "testAll success.";
 #endif
     });
 
@@ -179,10 +183,12 @@ TEST(Repl, Common) {
 #endif
     });
 
+    LOG(INFO) << "compactrange begin.";
     runCommand(master,
                {"compactrange", "default", "3000", "9000", std::to_string(0)});
     runCommand(master,
                {"compactrange", "binlog", "0", "10000000", std::to_string(0)});
+    LOG(INFO) << "compactrange success.";
 
     std::this_thread::sleep_for(std::chrono::seconds(genRand() % 10 + 5));
     auto slave2 = makeAnotherSlave(slave2_dir, i, slave2_port, master_port);
@@ -190,11 +196,12 @@ TEST(Repl, Common) {
     // check direct IO
     slave2->getParams()->directIo = true;
 
-    LOG(INFO) << "waiting thd1 to exited";
+    LOG(INFO) << "waiting threads to exited";
     running = false;
     thd0.join();
     thd1.join();
     thd2.join();
+    LOG(INFO) << "waiting threads exited success.";
 
     sleep(2);  // wait recycle binlog
 
@@ -1062,7 +1069,7 @@ TEST(Repl, coreDumpWhenSaveBinlog) {
   {
     LOG(INFO) << ">>>>>> test store count:" << i;
     bool clear = false;  // dont clear if failed
-    const auto guard = MakeGuard([clear] {
+    const auto guard = MakeGuard([&clear] {
       if (clear) {
         destroyEnv(single_dir2);
       }

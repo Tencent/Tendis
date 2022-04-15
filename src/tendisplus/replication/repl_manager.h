@@ -153,7 +153,7 @@ class ReplManager {
                           std::string ip,
                           uint32_t port,
                           uint32_t sourceStoreId);
-  Status changeReplSourceInLock(uint32_t storeId,
+  Status changeReplSourceInDBLock(uint32_t storeId,
                                 std::string ip,
                                 uint32_t port,
                                 uint32_t sourceStoreId,
@@ -205,6 +205,9 @@ class ReplManager {
   void appendJSONStat(rapidjson::PrettyWriter<rapidjson::StringBuffer>&) const;
   void getReplInfo(std::stringstream& ss) const;
   void onFlush(uint32_t storeId, uint64_t binlogid);
+#ifdef TENDIS_DEBUG
+  void updateSyncTime(uint32_t storeId);
+#endif
   bool hasSomeSlave(uint32_t storeId);
   bool isSlaveOfSomeone(uint32_t storeId);
   bool isSlaveOfSomeone();
@@ -304,6 +307,8 @@ class ReplManager {
 
  private:
   const std::shared_ptr<ServerParams> _cfg;
+  // Variables below is protected by mutex_:
+  // _syncMeta _syncStatus _logRecycStatus
   mutable std::mutex _mutex;
   std::condition_variable _recyclCv;
   std::condition_variable _cv;
@@ -311,9 +316,11 @@ class ReplManager {
   std::shared_ptr<ServerEntry> _svr;
 
   // slave's pov, meta data.
+  // GUARDED_BY(_mutex)
   std::vector<std::unique_ptr<StoreMeta>> _syncMeta;
 
   // slave's pov, sync status
+  // GUARDED_BY(_mutex)
   std::vector<std::unique_ptr<SPovStatus>> _syncStatus;
 
   // master's pov, living slave clients
@@ -325,12 +332,14 @@ class ReplManager {
   std::vector<std::map<uint64_t, MPovStatus*>> _pushStatus;
   std::vector<std::map<string, MPovFullPushStatus*>> _fullPushStatus;
 #else
+  // GUARDED_BY(_mutex)
   std::vector<std::map<uint64_t, std::unique_ptr<MPovStatus>>> _pushStatus;
   std::vector<std::map<string, std::unique_ptr<MPovFullPushStatus>>>
     _fullPushStatus;
 #endif
 
-  // master and slave's pov, smallest binlogId, moves on when truncated
+  // master and slave's pov, smallest binlogId, moves on when truncated;
+  // GUARDED_BY(_mutex)
   std::vector<std::unique_ptr<RecycleBinlogStatus>> _logRecycStatus;
 
   // master's pov, workerpool of pushing full backup
@@ -365,7 +374,7 @@ class ReplManager {
   std::shared_ptr<PoolMatrix> _fullReceiveMatrix;
   std::shared_ptr<PoolMatrix> _incrCheckMatrix;
   std::shared_ptr<PoolMatrix> _logRecycleMatrix;
-  uint64_t _connectMasterTimeoutMs;
+  std::atomic<uint64_t> _connectMasterTimeoutMs;
 };
 
 }  // namespace tendisplus

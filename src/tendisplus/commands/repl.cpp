@@ -1149,7 +1149,7 @@ class SlaveofCommand : public Command {
         expdbList.push_back(std::move(expdb));
       }
       for (uint32_t i = 0; i < svr->getKVStoreCount(); ++i) {
-        Status s = replMgr->changeReplSourceInLock(i, ip, port, i);
+        Status s = replMgr->changeReplSourceInDBLock(i, ip, port, i);
         if (!s.ok()) {
           return s;
         }

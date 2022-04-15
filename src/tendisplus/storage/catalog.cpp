@@ -626,8 +626,8 @@ Catalog::getAllClusterMeta() {
     }
 
     LOG(INFO) << "Get ClusterMeta Node name is" << result->nodeName
-              << "ip address is " << result->ip << "node Flag is"
-              << result->nodeFlag;
+      << ",ip address is " << result->ip << ":" << result->port
+      << ",node Flag is " << result->nodeFlag;
 
     resultList.emplace_back(std::move(result));
   }

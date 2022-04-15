@@ -50,7 +50,6 @@ class pTask {
   explicit pTask(const std::string& taskid, const std::string& nodeid)
     : _taskid(taskid), _nodeid(nodeid), _taskNum(0) {}
   std::string _taskid;
-  std::string _startTime;
   std::string getTaskid() {
     return _taskid;
   }
@@ -93,9 +92,9 @@ class MigrateSendTask {
   std::string _taskid;
   SlotsBitmap _slots;
   std::shared_ptr<ServerEntry> _svr;
-  bool _isRunning;
+  std::atomic<bool> _isRunning;
   SCLOCK::time_point _nextSchedTime;
-  MigrateSendState _state;
+  std::atomic<MigrateSendState> _state;
   bool _isFake;
   std::unique_ptr<ChunkMigrateSender> _sender;
   std::shared_ptr<pTask> _pTask;
@@ -103,6 +102,7 @@ class MigrateSendTask {
   void stopTask();
   void sendSlots();
   void deleteSenderChunks();
+  void setState(MigrateSendState newState);
   std::string toString();
 };
 
@@ -148,10 +148,10 @@ class MigrateReceiveTask {
   string _srcIp;
   uint16_t _srcPort;
   std::shared_ptr<ServerEntry> _svr;
-  bool _isRunning;
+  std::atomic<bool> _isRunning;
   SCLOCK::time_point _nextSchedTime;
   uint64_t _lastSyncTime;
-  MigrateReceiveState _state;
+  std::atomic<MigrateReceiveState> _state;
   std::unique_ptr<ChunkMigrateReceiver> _receiver;
   std::shared_ptr<pTask> _pTask;
   mutable std::mutex _mutex;
@@ -160,6 +160,7 @@ class MigrateReceiveTask {
   void stopTask();
   void checkMigrateStatus();
   void fullReceive();
+  void setState(MigrateReceiveState newState);
   uint32_t getRetryCount() {
     return _retryTime.load(std::memory_order_relaxed);
   }
@@ -285,6 +286,7 @@ class MigrateManager {
 
   uint32_t getMigratingCount() const;
   uint32_t getImportingCount() const;
+  bool isRunning() const;
 
  private:
   std::unordered_map<uint32_t, std::unique_ptr<ChunkLock>> _lockMap;

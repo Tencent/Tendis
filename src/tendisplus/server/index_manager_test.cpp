@@ -120,17 +120,19 @@ void testScanIndex(std::shared_ptr<ServerEntry> server,
                    uint32_t count,
                    uint64_t ttl,
                    bool sharename,
-                   uint64_t* totalEnqueue,
-                   uint64_t* totalDequeue) {
+                   std::atomic<uint64_t>* totalEnqueue,
+                   std::atomic<uint64_t>* totalDequeue) {
   SyncPoint::GetInstance()->SetCallBack(
     "InspectTotalEnqueue", [&](void* arg) mutable {
-      uint64_t* tmp = reinterpret_cast<uint64_t*>(arg);
-      *totalEnqueue = *tmp;
+      std::atomic<uint64_t>* tmp =
+        reinterpret_cast<std::atomic<uint64_t>*>(arg);
+      totalEnqueue->store(*tmp);
     });
   SyncPoint::GetInstance()->SetCallBack(
     "InspectTotalDequeue", [&](void* arg) mutable {
-      uint64_t* tmp = reinterpret_cast<uint64_t*>(arg);
-      *totalDequeue = *tmp;
+      std::atomic<uint64_t>* tmp =
+        reinterpret_cast<std::atomic<uint64_t>*>(arg);
+      totalDequeue->store(*tmp);
     });
   SyncPoint::GetInstance()->EnableProcessing();
 
@@ -257,8 +259,8 @@ TEST(IndexManager, scanJobRunning) {
 }
 
 TEST(IndexManager, scanIndexAfterExpire) {
-  uint64_t totalDequeue = 0;
-  uint64_t totalEnqueue = 0;
+  std::atomic<uint64_t> totalDequeue{0};
+  std::atomic<uint64_t> totalEnqueue{0};
 
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -286,8 +288,8 @@ TEST(IndexManager, scanIndexAfterExpire) {
 }
 
 TEST(IndexManager, scanIndexWhileExpire) {
-  uint64_t totalDequeue = 0;
-  uint64_t totalEnqueue = 0;
+  std::atomic<uint64_t> totalDequeue{0};
+  std::atomic<uint64_t> totalEnqueue{0};
 
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -314,8 +316,8 @@ TEST(IndexManager, scanIndexWhileExpire) {
 }
 
 TEST(IndexManager, singleJobRunning) {
-  uint64_t totalDequeue = 0;
-  uint64_t totalEnqueue = 0;
+  std::atomic<uint64_t> totalDequeue{0};
+  std::atomic<uint64_t> totalEnqueue{0};
 
   const auto guard = MakeGuard([] { destroyEnv(); });
 
@@ -342,7 +344,7 @@ TEST(IndexManager, singleJobRunning) {
   cfg->delCntIndexMgr = 2000;
   cfg->delJobCntIndexMgr = 8;
   cfg->pauseTimeIndexMgr = 1;
-  bool running = true;
+  std::atomic<bool> running{true};
 
 
   auto server = std::make_shared<ServerEntry>(cfg);

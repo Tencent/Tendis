@@ -80,12 +80,6 @@ class ChunkMigrateReceiver {
   void setBinlogEndTime(uint64_t t);
   void setSnapShotStartTime(uint64_t t);
   void setSnapShotEndTime(uint64_t t);
-  void setStartTime(const std::string& str);
-
-  std::string getStartTime() const {
-    std::lock_guard<std::mutex> lk(_mutex);
-    return _startTime;
-  }
 
   void stop();
   void start();
@@ -108,7 +102,6 @@ class ChunkMigrateReceiver {
   std::atomic<uint64_t> _snapshotEndTime;
   std::atomic<uint64_t> _binlogEndTime;
   std::atomic<uint64_t> _taskStartTime;
-  std::string _startTime;
 };
 
 }  // namespace tendisplus

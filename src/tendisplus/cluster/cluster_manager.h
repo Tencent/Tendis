@@ -220,6 +220,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   void unsetFlag(uint16_t flag);
   void changeFlags(uint16_t setFlag, uint16_t unsetFlag);
   bool hasFlag(uint16_t flag) const;
+  std::string toString() const;
 
  protected:
   bool setSlotBit(uint32_t slot, uint32_t masterSlavesCount);
@@ -547,6 +548,7 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   explicit ClusterState(std::shared_ptr<ServerEntry> server);
   ClusterState(const ClusterState&) = delete;
   ClusterState(ClusterState&&) = delete;
+  ~ClusterState();
   // get epoch
   uint64_t getCurrentEpoch() const;
   uint64_t getLastVoteEpoch() const;
@@ -826,13 +828,13 @@ class ClusterState : public std::enable_shared_from_this<ClusterState> {
   void clusterBlacklistCleanupNoLock();
 
   uint32_t clusterMastersHaveSlavesNoLock();
-  Status clusterBlockMyself(uint64_t time);
+  TSAN_SUPPRESSION Status clusterBlockMyself(uint64_t time);
 
   void unsetTodoFlag(uint16_t flag);
   bool hasTodoFlag(uint16_t flag) const;
 
  public:
-  ClusterHealth _state;
+  std::atomic<ClusterHealth> _state;
   uint16_t _size;
   std::unordered_map<std::string, uint64_t> _nodesBlackList;
   std::array<CNodePtr, CLUSTER_SLOTS> _allSlots;
@@ -952,8 +954,8 @@ class ClusterManager {
   std::shared_ptr<ServerEntry> _svr;
   std::atomic<bool> _isRunning;
   std::shared_ptr<ClusterNode> _clusterNode;
-  std::shared_ptr<ClusterState> _clusterState;
   std::unique_ptr<NetworkAsio> _clusterNetwork;
+  std::shared_ptr<ClusterState> _clusterState;
   uint16_t _megPoolSize;
 
   // controller

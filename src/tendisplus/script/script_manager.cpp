@@ -227,7 +227,7 @@ Status ScriptManager::stopStore(uint32_t storeId) {
 
 void ScriptManager::stop() {
   LOG(INFO) << "ScriptManager stop.";
-  _stopped = true;
+  _stopped.store(true, std::memory_order_relaxed);
 }
 
 }  // namespace tendisplus

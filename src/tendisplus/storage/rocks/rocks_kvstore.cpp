@@ -273,6 +273,21 @@ Expected<uint64_t> RocksTxn::commit() {
                   binlogTxnId == Transaction::TXNID_UNINITED);
     }
     _store->markCommitted(_txnId, binlogTxnId);
+
+#ifdef TENDIS_DEBUG
+    // NOTE(takenliu) for test case psyncEnabled,
+    //   we need update the slave binlogtime
+    if (_store->getCfg()->psyncEnabled
+        && _session && _session->getCtx()->isMaster()) {
+        auto storeId = tendisplus::stoul(_store->dbId());
+        if (!storeId.ok()) {
+            LOG(ERROR) << "error dbid:" << _store->dbId();
+            return;
+        }
+        _session->getServerEntry()->getReplManager()->updateSyncTime(
+                storeId.value());
+    }
+#endif
   });
   if (_txnMode != TxnMode::TXN_WB && _txn == nullptr) {
     return {ErrorCodes::ERR_OK, ""};
@@ -1462,7 +1477,8 @@ Status RocksKVStore::setMode(StoreMode mode) {
       INVARIANT_D(0);
   }
 
-  LOG(INFO) << "store:" << dbId() << ",mode:" << static_cast<uint32_t>(_mode)
+  LOG(INFO) << "store:" << dbId()
+            << ",mode:" << static_cast<uint32_t>(_mode.load())
             << ",changes to:" << static_cast<uint32_t>(mode)
             << ",_nextTxnSeq:" << oldSeq << ",changes to:" << _nextTxnSeq;
   _mode = mode;

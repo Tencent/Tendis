@@ -10,9 +10,11 @@
 #include <list>
 #include <mutex>  // NOLINT
 #include "glog/logging.h"
+#ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
-#endif  // !TENDIS_JEMALLOC
+#endif
+#endif
 #include "tendisplus/server/server_entry.h"
 #include "tendisplus/server/server_params.h"
 #include "tendisplus/utils/redis_port.h"
@@ -575,6 +577,13 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
 
   auto tmpMGLockMgr = std::make_unique<mgl::MGLockMgr>();
   installMGLockMgrInLock(std::move(tmpMGLockMgr));
+  // inited single instance
+  mgl::MGLockMgr::getInstance();
+
+  // FIXME: we may should move these function's static variable to global
+  RecordKey::prefixTTLIndex();
+  RecordKey::prefixReplLogV2();
+  RecordKey::prefixVersionMeta();
 
   for (uint32_t i = 0; i < _cfg->executorThreadNum;
        i += _cfg->executorWorkPoolSize) {
@@ -616,6 +625,7 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   }
   LOG(INFO) << "_network->prepare ok. ip :" << cfg->bindIp
             << " port:" << cfg->port;
+
 
   // replication
   // replication relys on blocking-client
@@ -1593,6 +1603,7 @@ void ServerEntry::serverCron() {
 }
 
 void ServerEntry::jeprofCron() {
+#ifndef _WIN32
 #ifdef TENDIS_JEMALLOC
   size_t rss_human_size = 0;
   ifstream file;
@@ -1624,6 +1635,7 @@ void ServerEntry::jeprofCron() {
     mallctl("prof.dump", NULL, NULL, NULL, 0);
   }
 #endif  // !TENDIS_JEMALLOC
+#endif  // !_WIN32
 }
 
 void ServerEntry::waitStopComplete() {

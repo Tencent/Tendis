@@ -508,15 +508,16 @@ class RocksKVStore : public KVStore {
   mutable std::mutex _mutex;
 
   const std::shared_ptr<ServerParams> _cfg;
-  bool _isRunning;
+  // Protected by _mutex
+  std::atomic<bool> _isRunning;
   // _isPaused = true, it means that the rocksdb can't do any
   // get/set operations. But the rocksdb is running. It can be
   // reopen again.
-  bool _isPaused;
-  bool _hasBackup;
+  std::atomic<bool> _isPaused;
+  std::atomic<bool> _hasBackup;
   bool _enableRepllog;
 
-  KVStore::StoreMode _mode;
+  std::atomic<KVStore::StoreMode> _mode;
 
   const TxnMode _txnMode;
 
@@ -529,6 +530,7 @@ class RocksKVStore : public KVStore {
   std::shared_ptr<rocksdb::SstFileManager> _sstFileManager;
 
   uint64_t _nextTxnSeq;
+// Protected by _mutex
 #ifdef BINLOG_V1
   // NOTE(deyukong): sorted data-structure is required here.
   // we rely on the data order to maintain active txns' watermark.

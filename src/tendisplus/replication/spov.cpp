@@ -267,7 +267,8 @@ void ReplManager::slaveStartFullsync(const StoreMeta& metaSnapshot) {
 
   // 3) require a blocking-client
   client = std::move(
-    createClient(metaSnapshot, _connectMasterTimeoutMs, CLIENT_MASTER));
+    createClient(metaSnapshot,
+      _connectMasterTimeoutMs.load(std::memory_order_relaxed), CLIENT_MASTER));
   if (client == nullptr) {
     LOG(WARNING) << "startFullSync storeid:" << metaSnapshot.id
                  << " with: " << metaSnapshot.syncFromHost << ":"
@@ -638,6 +639,7 @@ Status ReplManager::applyRepllogV2(Session* sess,
         _syncStatus[storeId]->lastBinlogTs = binlogTs;
       }
     }
+    _cv.notify_all();
   });
 
   if (!idMatch) {

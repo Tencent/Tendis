@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func getL6levelstat(m *util.RedisServer, storeid int) int {
+func getDataCFLevel6FileNum(m *util.RedisServer, storeid int) int {
 	c := createClient(m)
 	r, err := c.Cmd("info", "levelstats").Str()
 	if err != nil {
@@ -64,27 +64,29 @@ func testDeleteFilesInRange() {
 		log.Fatalf("setup failed:%v", err)
 	}
 
+	time.Sleep(5 * time.Second)
 	// addslots
 	log.Infof("cluster addslots begin")
 	cluster_addslots(&m1, 0, 16383)
 
-	time.Sleep(5 * time.Second)
+	// cluster state change to ok need delay 5 seconds
+	time.Sleep(7 * time.Second)
 
 	// 127.0.0.1:51002> cluster keyslot {12}
 	// "8373"
 	// 127.0.0.1:51002> cluster keyslot {23}
-	// "9671" > 8373 odd
+	// "9671"
 	// 127.0.0.1:51002> cluster keyslot {13}
-	// "12436" > 8373 even
+	// "12436"
 	// 127.0.0.1:51002> cluster keyslot {14}
-	// "115" < 8373 odd
+	// "115"
 	// 127.0.0.1:51002> cluster keyslot {15}
-	// "4178" < 8373 even
+	// "4178"
 
 	// add data and call:
-	// deletefilesinrange data 0 8372 0    to delete {15}
-	// deletefilesinrange data 0 8372 1    to delete {14}
-	// deletefilesinrange data 8374 16383  to delete {13} & {23}
+	// step 1: deletefilesinrange data 0 8372 0    to delete tag{15}(slot 4178 on store0)
+	// step 2: deletefilesinrange data 0 8372 1    to delete tag{14}(slot 115 on store1)
+	// step 3: deletefilesinrange data 8374 16383  to delete tag{13}(slot 12436 on store0) tag{23}(slot 9671 on store1)
 	// and check if deletefilesinrange will delete data in wrong store and wrong slot
 
 	// add data
@@ -113,21 +115,29 @@ func testDeleteFilesInRange() {
 	<-channel2
 	<-channel3
 
-	n1s0 := getL6levelstat(&m1, 0) // should be 10
-	n1s1 := getL6levelstat(&m1, 1) // should be 10
-	n1 := n1s0 + n1s1 // 20
+	cli1LongTimeout := createClientWithTimeout(&m1, 60) // timeout need be longger
+	r, err = cli1LongTimeout.Cmd("compactrange", "data", "0", "16384").Str()
+	if err != nil || r != "OK" {
+		log.Fatalf("reshape error errmsg:%v ret:%v", err, r)
+	}
+
+	beforeStep1Store0L6FileNum := getDataCFLevel6FileNum(&m1, 0) // should be 11
+	beforeStep1Store1L6FileNum := getDataCFLevel6FileNum(&m1, 1) // should be 11
+	beforeStep1AllL6FileNum := beforeStep1Store0L6FileNum + beforeStep1Store1L6FileNum // 22
 
 	r, err = cli1.Cmd("deletefilesinrangeforce", "data", "0", "8372", "0").Str()
 	if err != nil || r != "OK" {
 		log.Fatalf("deletefilesinrangeforce data 0 8372 0 error errmsg:%v ret:%v", err, r)
 	}
 
-	n2s0 := getL6levelstat(&m1, 0) // should be 6
-	n2s1 := getL6levelstat(&m1, 1) // should be 10
-	n2 := n2s0 + n2s1 // 16
+	afterStep1Store0L6FileNum := getDataCFLevel6FileNum(&m1, 0) // should be 6
+	afterStep1Store1L6FileNum := getDataCFLevel6FileNum(&m1, 1) // should be 11
+	afterStep1AllL6FileNum := afterStep1Store0L6FileNum + afterStep1Store1L6FileNum // 17
 
-	if n1s1 != n2s1 {
-		log.Fatalf("deletefilesinrangeforce deleted data on store 1 when specified store 0")
+	if beforeStep1Store1L6FileNum != afterStep1Store1L6FileNum {
+		log.Fatalf("L6 file number(store1): before:%v after:%v " +
+		"deletefilesinrangeforce deleted data on store 1 when specified store 0",
+	    beforeStep1Store1L6FileNum, afterStep1Store1L6FileNum)
 	}
 
 	r, err = cli1.Cmd("deletefilesinrangeforce", "default", "0", "8372", "1").Str()
@@ -135,16 +145,18 @@ func testDeleteFilesInRange() {
 		log.Fatalf("deletefilesinrangeforce default 0 8372 1 error errmsg:%v ret:%v", err, r)
 	}
 
-	n3s0 := getL6levelstat(&m1, 0) // should be 6
-	n3s1 := getL6levelstat(&m1, 1) // should be 6
-	n3 := n3s0 + n3s1 // 12
+	afterStep2Store0L6FileNum := getDataCFLevel6FileNum(&m1, 0) // should be 6
+	afterStep2Store1L6FileNum := getDataCFLevel6FileNum(&m1, 1) // should be 6
+	afterStep2AllL6FileNum := afterStep2Store0L6FileNum + afterStep2Store1L6FileNum // 12
 
-	if n2s0 != n3s0 {
-		log.Fatalf("deletefilesinrangeforce deleted data on store 0 when specified store 1")
+	if afterStep1Store0L6FileNum != afterStep2Store0L6FileNum {
+		log.Fatalf("L6 file number(store0): before:%v after:%v" +
+		"deletefilesinrangeforce deleted data on store 0 when specified store 1",
+	    afterStep1Store0L6FileNum, afterStep2Store0L6FileNum)
 	}
 
+	// todo(raffertyyu): try to find out
 	// too frequent deletefilesinrange request on rocksdb will cause some requests failed to delete file actually but still return ok.
-	// todo(raffertyyu): try to locale it into rocksdb
 	time.Sleep(5 * time.Second)
 
 	r, err = cli1.Cmd("deletefilesinrangeforce", "data", "8374", "16383").Str()
@@ -152,18 +164,23 @@ func testDeleteFilesInRange() {
 		log.Fatalf("deletefilesinrangeforce data 8374 16383 error errmsg:%v ret:%v", err, r)
 	}
 
-	n4s0 := getL6levelstat(&m1, 0) // should be 3
-	n4s1 := getL6levelstat(&m1, 1) // should be 3
-	n4 := n4s0 + n4s1 // 6
+	afterStep3Store0L6FileNum := getDataCFLevel6FileNum(&m1, 0) // should be 2
+	afterStep3Store1L6FileNum := getDataCFLevel6FileNum(&m1, 1) // should be 2
+	afterStep3AllL6FileNum := afterStep3Store0L6FileNum + afterStep3Store1L6FileNum // 4
 
-	// n1 - n4 should be 14, [10-18] is ok.
-	if n1 - n4 < 10 || n1 - n4 > 18 {
+	// after step1,2,3 it should remove at least 16-20 sst files.
+	if beforeStep1AllL6FileNum - afterStep3AllL6FileNum < 16 ||
+	   beforeStep1AllL6FileNum - afterStep3AllL6FileNum > 20 {
 		log.Fatalf("Wrong result! " +
-		           "total sst file size: %v %v %v " +
-				   "after deletefiles in 0-8372(0): %v %v %v " +
-				   "after deletefiles in 0-8372(1): %v %v %v " +
-				   "after deletefiles in 8374-16383 %v %v %v",
-				   n1s0, n1s1, n1, n2s0, n2s1, n2, n3s0, n3s1, n3, n4s0, n4s1, n4)
+		           "every step: (num on store0) (num on store1) (num on two stores) " +
+		           "before step1(delete on store0): %v %v %v " +
+				   "after step1(delete on store0): %v %v %v " +
+				   "after step2(delete on store1): %v %v %v " +
+				   "after step3(delete on store0 and 1): %v %v %v",
+				   beforeStep1Store0L6FileNum, beforeStep1Store1L6FileNum, beforeStep1AllL6FileNum,
+				   afterStep1Store0L6FileNum, afterStep1Store1L6FileNum, afterStep1AllL6FileNum,
+				   afterStep2Store0L6FileNum, afterStep2Store1L6FileNum, afterStep2AllL6FileNum,
+				   afterStep3Store0L6FileNum, afterStep3Store1L6FileNum, afterStep3AllL6FileNum)
 	}
 
 	// shouldn't delete data in slot 8373

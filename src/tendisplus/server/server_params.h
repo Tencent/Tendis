@@ -22,6 +22,7 @@
 #include "tendisplus/utils/status.h"
 #include "tendisplus/utils/string.h"
 #include "tendisplus/utils/redis_port.h"
+#include "tendisplus/utils/portable.h"
 
 namespace tendisplus {
 using namespace std;  // NOLINT
@@ -149,7 +150,7 @@ class IntVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -198,7 +199,7 @@ class Int64Var : public BaseVar {
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -242,7 +243,7 @@ class FloatVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -316,7 +317,7 @@ class BoolVar : public BaseVar {
   }
 
  private:
-  Status set(const string& val, bool startup) {
+  TSAN_SUPPRESSION Status set(const string& val, bool startup) {
     auto v = preProcessFun ? preProcessFun(val) : val;
     std::string errinfo;
     if (!check(v, startup, &errinfo)) {
@@ -426,7 +427,7 @@ class ServerParams {
   uint32_t dbNum = CONFIG_DEFAULT_DBNUM;
 
   bool noexpire = false;
-  uint64_t maxBinlogKeepNum = 1;
+  uint64_t maxBinlogKeepNum{1};
   uint32_t minBinlogKeepSec = 3600;
   uint64_t slaveBinlogKeepNum = 1;
 
@@ -528,7 +529,7 @@ class ServerParams {
 
   // The Batch Size when sending snapshot during migration.
   // Dynamically changeable through 'config set cluster-migration-batch-size'
-  uint32_t migrateSnapshotBatchSizeKB = 10240;
+  uint32_t migrateSnapshotBatchSizeKB = 16;
 
   // The network timeout during migration, it used in following scenarios:
   // 1) The source node send data timeout

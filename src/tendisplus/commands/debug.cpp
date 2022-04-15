@@ -22,9 +22,11 @@
 #include <thread>  // NOLINT
 #include <chrono>  // NOLINT
 #include "glog/logging.h"
+#ifndef WIN32
 #ifdef TENDIS_JEMALLOC
 #include "jemalloc/jemalloc.h"
 #endif  // !TENDIS_JEMALLOC
+#endif  // !WIN32
 #include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
@@ -4910,6 +4912,7 @@ class JeprofCommand : public Command {
 #ifdef TENDIS_JEMALLOC
     const std::vector<std::string>& args = sess->getArgs();
     auto action = toLower(args[1]);
+#ifdef TENDIS_JEMALLOC
     if (action == "on") {
       bool active = true;
       mallctl("prof.active", NULL, NULL, &active, sizeof(active));
@@ -4922,6 +4925,7 @@ class JeprofCommand : public Command {
       return {ErrorCodes::ERR_UNKNOWN,
               "args wrong, only support: jeprof [on/off/dump]"};
     }
+#endif
     return Command::fmtOK();
 #else
     return {ErrorCodes::ERR_INTERNAL,

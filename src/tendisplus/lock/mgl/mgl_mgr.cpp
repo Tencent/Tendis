@@ -12,6 +12,26 @@
 namespace tendisplus {
 namespace mgl {
 
+/**
+ * Map of conflicts. 'conflictTable[newMode] & existingMode != 0' means that a new request
+ * with the given 'newMode' conflicts with an existing request with mode 'existingMode'.
+ */
+#define ENUM2INT(m) \
+  static_cast<typename std::underlying_type<LockMode>::type>(m)
+static const int conflictTable[] = {
+    // MODE_NONE
+    0,
+    // MODE_IS
+    (1 << ENUM2INT(LockMode::LOCK_X)),
+    // MODE_IX
+    (1 << ENUM2INT(LockMode::LOCK_S)) | (1 << ENUM2INT(LockMode::LOCK_X)),
+    // MODE_S
+    (1 << ENUM2INT(LockMode::LOCK_IX)) | (1 << ENUM2INT(LockMode::LOCK_X)),
+    // MODE_X
+    (1 << ENUM2INT(LockMode::LOCK_IS)) | (1 << ENUM2INT(LockMode::LOCK_IX)) |
+      (1 << ENUM2INT(LockMode::LOCK_S)) | (1 << ENUM2INT(LockMode::LOCK_X)),
+};
+
 const char* lockModeRepr(LockMode mode) {
   switch (mode) {
     case LockMode::LOCK_X:
@@ -28,17 +48,6 @@ const char* lockModeRepr(LockMode mode) {
 }
 
 bool isConflict(uint16_t modes, LockMode mode) {
-  static uint16_t x = 1 << enum2Int(LockMode::LOCK_X);
-  static uint16_t s = 1 << enum2Int(LockMode::LOCK_S);
-  static uint16_t ix = 1 << enum2Int(LockMode::LOCK_IX);
-  static uint16_t is = 1 << enum2Int(LockMode::LOCK_IS);
-  static uint16_t conflictTable[enum2Int(LockMode::LOCK_MODE_NUM)] = {
-    0,                                       // NONE
-    static_cast<uint16_t>(x),                // IS
-    static_cast<uint16_t>(s | x),            // IX
-    static_cast<uint16_t>(ix | x),           // S
-    static_cast<uint16_t>(is | ix | s | x),  // x
-  };
   uint16_t modeInt = enum2Int(mode);
   return (conflictTable[modeInt] & modes) != 0;
 }

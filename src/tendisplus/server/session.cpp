@@ -64,6 +64,7 @@ std::string Session::getTypeStr() const {
 }
 
 std::string Session::getCmdStr() const {
+  std::lock_guard<std::mutex> lk(_baseMutex);
   std::stringstream ss;
   size_t i = 0;
   if (_args[0] == "applybinlogsv2" || _args[0] == "migratebinlogs") {
