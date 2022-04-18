@@ -652,11 +652,13 @@ TEST(Repl, SlaveCantModify) {
     }
 
 #ifndef _WIN32
-    master->stop();
-    slave->stop();
     slave1->stop();
+    slave->stop();
+    master->stop();
 
+    ASSERT_EQ(slave1.use_count(), 1);
     ASSERT_EQ(slave.use_count(), 1);
+    ASSERT_EQ(master.use_count(), 1);
 #endif
 
     LOG(INFO) << ">>>>>> test store count:" << i << " end;";

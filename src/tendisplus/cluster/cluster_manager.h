@@ -233,6 +233,7 @@ class ClusterNode : public std::enable_shared_from_this<ClusterNode> {
   Expected<std::vector<std::shared_ptr<ClusterNode>>> getSlaves() const;
   Status addSlot(uint32_t slot, uint32_t masterSlavesCount);
   bool clearSlotBit(uint32_t slot);
+  void clearSlaves();
 
  private:
   mutable myMutex _mutex;
@@ -925,7 +926,6 @@ class ClusterManager {
   void stop();
   Status initNetWork();
   Status initMetaData();
-  void installClusterNode(std::shared_ptr<ClusterNode>);
   void installClusterState(std::shared_ptr<ClusterState>);
 
   Expected<std::shared_ptr<ClusterSession>> clusterCreateSession(
@@ -953,7 +953,6 @@ class ClusterManager {
   std::mutex _mutex;
   std::shared_ptr<ServerEntry> _svr;
   std::atomic<bool> _isRunning;
-  std::shared_ptr<ClusterNode> _clusterNode;
   std::unique_ptr<NetworkAsio> _clusterNetwork;
   std::shared_ptr<ClusterState> _clusterState;
   uint16_t _megPoolSize;
