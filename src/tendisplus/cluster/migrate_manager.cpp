@@ -92,7 +92,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
                                const std::shared_ptr<ServerParams> cfg)
   : _cfg(cfg),
     _svr(svr),
-    _cluster(_svr->getClusterMgr()->getClusterState()),
+    _cluster(nullptr),
     _isRunning(false),
     _taskIdGen(0),
     _pTaskIdGen(0),
@@ -113,6 +113,7 @@ MigrateManager::MigrateManager(std::shared_ptr<ServerEntry> svr,
 Status MigrateManager::startup() {
   std::lock_guard<myMutex> lk(_mutex);
 
+  _cluster = _svr->getClusterMgr()->getClusterState();
   // sender's pov
   _migrateSender =
     std::make_unique<WorkerPool>("tx-mgrt-snd", _migrateSenderMatrix);

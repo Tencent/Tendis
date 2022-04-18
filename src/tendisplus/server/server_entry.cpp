@@ -631,6 +631,10 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   // replication relys on blocking-client
   // must startup after network prepares ok
   _replMgr = std::make_unique<ReplManager>(shared_from_this(), cfg);
+  if (_enableCluster) {
+    _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
+    _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
+  }
   s = _replMgr->startup();
   if (!s.ok()) {
     LOG(ERROR) << "ServerEntry::startup failed, _replMgr->startup:"
@@ -642,15 +646,12 @@ Status ServerEntry::startup(const std::shared_ptr<ServerParams>& cfg) {
   /*(NOTE) wayenchen indexMgr need get task map size from migrateMgr, so init it
    * first */
   if (_enableCluster) {
-    _clusterMgr = std::make_unique<ClusterManager>(shared_from_this());
-
     Status s = _clusterMgr->startup();
     if (!s.ok()) {
       LOG(WARNING) << "start up cluster manager failed!";
       return s;
     }
 
-    _migrateMgr = std::make_unique<MigrateManager>(shared_from_this(), cfg);
     s = _migrateMgr->startup();
     if (!s.ok()) {
       LOG(WARNING) << "start up migrate manager failed!";
