@@ -104,8 +104,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
 		message("jemalloc git patch, we force set jemalloc  prof:true")
 		execute_process(COMMAND bash "-c" ${patchCommand} OUTPUT_VARIABLE FOO)
 
-		option(WITH_JEMALLOC "enable jemalloc of rocksdb" ON)
-		add_definitions(-DTENDIS_JEMALLOC)
+		set(WITH_JEMALLOC ON)
 
 		add_custom_command(OUTPUT "${JEMALLOC_ROOT_DIR}/include/jemalloc/jemalloc.h"
                 # NOTE(takenliu) support jemalloc profile, before start tendisplus need export as below:

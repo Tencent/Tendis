@@ -6,11 +6,11 @@
 #define SRC_TENDISPLUS_UTILS_PORTABLE_H_
 
 #ifndef _WIN32
+#define TSAN_SUPPRESSION __attribute__((no_sanitize_thread))
+
 // NOTE(deyukong): __has_include is supported since gcc-5 series
 // no need to check the existence of macro __has_include
 // because we have required gcc5.5 in cmake
-#define TSAN_SUPPRESSION __attribute__((no_sanitize_thread))
-
 #if __has_include(<experimental/optional>)
 #include <experimental/optional>
 namespace tendisplus {
