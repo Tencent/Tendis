@@ -63,7 +63,7 @@ bool MigrateBatch::isFull() const {
 }
 
 bool MigrateBatch::isEmpty() const {
-  return _addBytes > 0;
+  return _addBytes == 0;
 }
 
 uint32_t MigrateBatch::sendBytes() const {

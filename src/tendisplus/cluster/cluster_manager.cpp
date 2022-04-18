@@ -293,6 +293,11 @@ bool ClusterNode::clearSlotBit(uint32_t slot) {
   return old;
 }
 
+void ClusterNode::clearSlaves() {
+  std::lock_guard<myMutex> lk(_mutex);
+  _slaves.clear();
+}
+
 bool ClusterNode::getSlotBit(uint32_t slot) const {
   std::lock_guard<myMutex> lk(_mutex);
   return _mySlots.test(slot);
@@ -833,6 +838,10 @@ ClusterState::~ClusterState() {
     _manualLockThead->join();
     _manualLockThead.reset();
     LOG(INFO) << "setClientUnBlock wait thread exit sucess.";
+  }
+  for (auto &n : _nodes) {
+    n.second->clearSlaves();
+    n.second->setMaster(nullptr);
   }
 }
 
@@ -3907,7 +3916,6 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr,
                                const std::shared_ptr<ClusterState>& state)
   : _svr(svr),
     _isRunning(false),
-    _clusterNode(node),
     _clusterNetwork(nullptr),
     _clusterState(state),
     _megPoolSize(0),
@@ -3917,7 +3925,6 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr,
 ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr)
   : _svr(svr),
     _isRunning(false),
-    _clusterNode(nullptr),
     _clusterNetwork(nullptr),
     _clusterState(nullptr),
     _megPoolSize(0),
@@ -3927,11 +3934,6 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr)
 void ClusterManager::installClusterState(std::shared_ptr<ClusterState> o) {
   _clusterState = std::move(o);
 }
-
-void ClusterManager::installClusterNode(std::shared_ptr<ClusterNode> o) {
-  _clusterNode = std::move(o);
-}
-
 
 std::shared_ptr<ClusterState> ClusterManager::getClusterState() const {
   return _clusterState;
@@ -4152,7 +4154,6 @@ Status ClusterManager::initMetaData() {
         node->setNodeCport(nodeCport);
 
         _clusterState->setMyselfNode(node);
-        installClusterNode(node);
       }
     }
 
@@ -4185,11 +4186,10 @@ Status ClusterManager::initMetaData() {
     std::shared_ptr<ClusterNode> gNode = std::make_shared<ClusterNode>(
       getUUid(20), flagName, _clusterState, nodeIp, nodePort, nodeCport);
 
-    installClusterNode(gNode);
     _clusterState->clusterAddNode(gNode);
     _clusterState->setMyselfNode(gNode);
 
-    auto nodename = _clusterNode->getNodeName();
+    auto nodename = _clusterState->getMyselfNode()->getNodeName();
     LOG(INFO) << "No cluster configuration found, I'm " << nodename;
     // store clusterMeta
     std::vector<uint16_t> slotInfo = {};
@@ -4250,7 +4250,7 @@ Status ClusterManager::startup() {
       return s_Net;
     }
   } else {
-    auto name = _clusterNode->getNodeName();
+    auto name = _clusterState->getMyselfNode()->getNodeName();
     auto state = _clusterState->getClusterState();
     std::string clusterState = (unsigned(state) > 0) ? "OK" : "FAIL";
     LOG(INFO) << "cluster init success:"

@@ -3030,6 +3030,9 @@ TEST(Cluster, ChangeMaster) {
     node7->getReplManager()->checkMasterHost(masterHost, masterPort);
   EXPECT_EQ(vecCheck.size(), 0);
 
+  state.reset();
+  node2Ptr.reset();
+  node7Ptr.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3108,6 +3111,9 @@ TEST(Cluster, FixReplication) {
     node2->getReplManager()->checkMasterHost(masterHost, masterPort);
   EXPECT_EQ(vecCheck.size(), 0);
 
+  state.reset();
+  node1Ptr.reset();
+  node7Ptr.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3558,6 +3564,10 @@ TEST(Cluster, failoverNeedFullSyncDone) {
     originMaster->getClusterMgr()->getClusterState()->isDataAgeTooLarge(),
     true);
   ASSERT_EQ(clusterOk(state), false);
+
+  state.reset();
+  nodePtr1.reset();
+  nodePtr2.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3660,6 +3670,7 @@ TEST(Cluster, bindZeroAddr) {
   // slave become master
   EXPECT_TRUE(ret2.find("role:master") != string::npos);
 
+  state.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3757,6 +3768,9 @@ TEST(Cluster, failoverConfilct) {
   auto fullSyncTime = node1->getReplManager()->getfullsyncSuccTime();
   EXPECT_EQ(fullSyncTime, 0);
 
+  state1.reset();
+  state.reset();
+  node2Ptr.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
@@ -3852,6 +3866,8 @@ TEST(Cluster, failoveCheckBinlogTs) {
   ASSERT_EQ(clusterOk(state), true);
 
 
+  state.reset();
+  nodePtr2.reset();
 #ifndef _WIN32
   for (auto svr : servers) {
     svr->stop();
