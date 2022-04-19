@@ -3929,7 +3929,11 @@ ClusterManager::ClusterManager(const std::shared_ptr<ServerEntry>& svr)
     _clusterState(nullptr),
     _megPoolSize(0),
     _netMatrix(std::make_shared<NetworkMatrix>()),
-    _reqMatrix(std::make_shared<RequestMatrix>()) {}
+    _reqMatrix(std::make_shared<RequestMatrix>()) {
+  std::shared_ptr<ClusterState> state =
+    std::make_shared<tendisplus::ClusterState>(_svr);
+  installClusterState(state);
+}
 
 void ClusterManager::installClusterState(std::shared_ptr<ClusterState> o) {
   _clusterState = std::move(o);
@@ -4096,10 +4100,6 @@ Status ClusterManager::initMetaData() {
     nodeIp = params->bindIp;
   }
   uint16_t nodeCport = nodePort + CLUSTER_PORT_INCR;
-
-  std::shared_ptr<ClusterState> gState =
-    std::make_shared<tendisplus::ClusterState>(_svr);
-  installClusterState(gState);
 
   auto vs = catalog->getAllClusterMeta();
   if (!vs.ok()) {
