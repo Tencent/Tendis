@@ -493,6 +493,15 @@ class ServerParams {
   double rocksCompactOnDeletionRatio = 0;
   uint32_t rocksTransactionMode = 2;
   int64_t rocksDeleteBytesPerSecond = 0;
+  // NOTE(raffertyyu):
+  // parameter for RocksDB's Blob
+  // Uncomment next line macro will cause link error
+  // #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  bool rocksEnableBlobFiles = false;
+  uint32_t rocksMinBlobSize = 2048;
+  uint64_t rocksBlobFileSize = 1ULL << 28;
+  bool rocksEnableBlobGarbageCollection = true;
+  // #endif
 
   // WriteOptions
   bool rocksDisableWAL = false;

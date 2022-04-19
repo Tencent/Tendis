@@ -1335,6 +1335,21 @@ rocksdb::Options RocksKVStore::options() {
     options.write_buffer_size /= 2;
   }
 
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  // TODO(jingjunli):
+  // configurable: blob_compression_type blob_garbage_collection_age_cutoff
+  // maybe not nesscessary
+  options.enable_blob_files = _cfg->rocksEnableBlobFiles;
+  options.min_blob_size = _cfg->rocksMinBlobSize;
+  options.blob_file_size = _cfg->rocksBlobFileSize;
+  options.enable_blob_garbage_collection =
+    _cfg->rocksEnableBlobGarbageCollection;
+
+  // These param is NOT SUPPORTED ANYMORE in RocksDB
+  options.max_background_compactions = -1;
+  options.max_background_flushes = -1;
+#endif
+
   options.table_factory.reset(
     rocksdb::NewBlockBasedTableFactory(table_options));
 

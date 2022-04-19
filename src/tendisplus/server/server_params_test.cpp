@@ -172,6 +172,12 @@ TEST(ServerParams, RocksOption) {
   myfile << "rocks.max_write_buffer_number 1\n";
   myfile << "rocks.cache_index_and_filter_blocks 1\n";
   myfile << "rocks.wal_dir \"/Abc/tlg\"\n";
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  myfile << "rocks.enable_blob_files 1\n";
+  myfile << "rocks.min_blob_size 4096\n";
+  myfile << "rocks.blob_file_size 16000000\n";
+  myfile << "rocks.enable_blob_garbage_collection 0\n";
+#endif
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   myfile << "rocks.skip_concurrency_control 1\n";
 #endif
@@ -189,6 +195,12 @@ TEST(ServerParams, RocksOption) {
   EXPECT_EQ(cfg->rocksStrictCapacityLimit, 1);
   EXPECT_EQ(cfg->rocksCompressType, "lz4");
   EXPECT_EQ(cfg->rocksWALDir, "/Abc/tlg");
+#if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 18)
+  EXPECT_EQ(cfg->rocksEnableBlobFiles, 1);
+  EXPECT_EQ(cfg->rocksMinBlobSize, 4096);
+  EXPECT_EQ(cfg->rocksBlobFileSize, 16000000);
+  EXPECT_EQ(cfg->rocksEnableBlobGarbageCollection, 0);
+#endif
 #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
   EXPECT_EQ(cfg->skipConcurrencyControl, 1);
 #endif
