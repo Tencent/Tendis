@@ -497,6 +497,8 @@ class RocksKVStore : public KVStore {
   void addUnCommitedTxnInLock(uint64_t txnId);
   void markCommittedInLock(uint64_t txnId, uint64_t binlogTxnId);
   rocksdb::Options options();
+  rocksdb::Options binlogColumnOptions();
+  rocksdb::Options defaultColumnOptions();
   Expected<bool> deleteBinlog(uint64_t start);
   void initRocksProperties();
   Expected<std::string> saveBackupMeta(const std::string& dir,

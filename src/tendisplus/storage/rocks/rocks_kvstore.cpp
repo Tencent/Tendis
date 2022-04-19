@@ -1349,6 +1349,20 @@ rocksdb::Options RocksKVStore::options() {
   return options;
 }
 
+rocksdb::Options RocksKVStore::defaultColumnOptions() {
+  return options();
+}
+
+// Binlog Column different from default
+rocksdb::Options RocksKVStore::binlogColumnOptions() {
+  auto columOpts = defaultColumnOptions();
+  for (int i = 0; i < ROCKSDB_NUM_LEVELS; ++i) {
+    columOpts.compression_per_level[i] =
+      rocksGetCompressType(_cfg->rocksCompressType);
+  }
+  return columOpts;
+}
+
 bool RocksKVStore::isRunning() const {
   std::lock_guard<std::mutex> lk(_mutex);
   return _isRunning;
@@ -1977,7 +1991,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
       return {ErrorCodes::ERR_INTERNAL, ex.what()};
     }
 
-    rocksdb::Options defaultColumnFamilyOpts = options();
+    rocksdb::Options defaultColumnFamilyOpts = defaultColumnOptions();
     // enable CompactOnDeletionCollectorFactory:
 #if ROCKSDB_MAJOR > 6 || (ROCKSDB_MAJOR == 6 && ROCKSDB_MINOR > 11)
     defaultColumnFamilyOpts.table_properties_collector_factories.emplace_back(
@@ -2005,7 +2019,7 @@ Expected<uint64_t> RocksKVStore::restart(bool restore,
     _cfDescs.push_back(rocksdb::ColumnFamilyDescriptor(
       rocksdb::kDefaultColumnFamilyName, defaultColumnFamilyOpts));
     if (!_cfg->binlogUsingDefaultCF) {
-      rocksdb::Options binlogColumnFamilyOpts = options();
+      rocksdb::Options binlogColumnFamilyOpts = binlogColumnOptions();
       _cfDescs.push_back(
         rocksdb::ColumnFamilyDescriptor("binlog_cf", binlogColumnFamilyOpts));
     }
