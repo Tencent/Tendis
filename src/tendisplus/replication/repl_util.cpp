@@ -253,7 +253,7 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
   }
   if (cmdNum == 0) {
     br.binlogId = binlogPos;
-    br.binlogTs = 0;
+    br.binlogTs = msSinceEpoch();
     if (!needHeartBeart) {
       return br;
     }
