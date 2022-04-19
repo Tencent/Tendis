@@ -834,6 +834,9 @@ void RocksPesTxn::ensureTxn() {
   // due to server-layer's keylock, RC-level can satisfy our
   // requirements. so here set_snapshot = false
   txnOpts.set_snapshot = false;
+#if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
+  txnOpts.skip_concurrency_control = _store->getCfg()->skipConcurrencyControl;
+#endif
 
   auto db = _store->getUnderlayerPesDB();
   if (!db) {

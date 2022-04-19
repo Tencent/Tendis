@@ -500,6 +500,11 @@ class ServerParams {
   bool level0Compress = false;
   bool level1Compress = false;
 
+  // TxnOptions
+  // #if ROCKSDB_MAJOR > 5 || (ROCKSDB_MAJOR == 5 && ROCKSDB_MINOR > 17)
+  bool skipConcurrencyControl = false;
+  // #endif
+
   uint32_t binlogSendBatch = 256;
   uint32_t binlogSendBytes = 16 * 1024 * 1024;
 
