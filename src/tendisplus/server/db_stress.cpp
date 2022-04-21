@@ -16,6 +16,8 @@
 #include "tendisplus/utils/scopeguard.h"
 #include "tendisplus/utils/sync_point.h"
 #include "tendisplus/utils/invariant.h"
+#include "tendisplus/commands/version.h"
+#include "tendisplus/commands/release.h"
 
 // Number of key/values to place in database
 static int FLAGS_num = 100000;
@@ -545,6 +547,69 @@ void Run() {
 
 }  // namespace tendisplus
 
+void printVersionInfo() {
+  // db_stress tool, Tendisplus v=2.4.3-rocksdb-v6.23.3
+  //   sha=f4600de9 dirty=23 build=tlinux-1650438040
+  std::cout << "db_stress tool, Tendisplus v=" << getTendisPlusVersion()
+            << " sha=" << TENDISPLUS_GIT_SHA1
+            << " dirty=" << TENDISPLUS_GIT_DIRTY
+            << " build=" << TENDISPLUS_BUILD_ID << std::endl;
+}
+
+void printHelpInfo() {
+  /*
+  db_stress -- Benchmark Tool for Tendisplus
+  usage: db_stress [options]
+    Options:
+      --binlogEnabled=n             enable binlog for benchmark. 0 = off / 1 = on
+      --binlogSaveLogs=n            save binlog for benchmark. 0 = off / 1 = on
+      --db=path                     set path used in benchmark.
+      --kvStoreCount=n              set kvstorecount used in benchmark.
+      --generallog=n                enable log general for benchmark. 0 = off / 1 = on
+      --sleepAfterBenchmark=seconds sleepping time after test.
+      --num=n                       kvwrite options number
+      --thread=n                    work thread number
+      --rocksTransactionMode=mode   txn mode for Tendisplus.
+                                      0 for Optimistic Transaction.
+                                      1 for Pessimistic Transaction.
+                                      2 for WriteBatch
+      -h/--help                     print help info
+      -v/--version                  print version info
+  */
+  std::cout << "db_stress -- Benchmark Tool for Tendisplus" << std::endl;
+  std::cout << "usage: db_stress [options]" << std::endl;
+  std::cout << "  Options:" << std::endl;
+  std::cout << "    --binlogEnabled=n             "
+            << "enable binlog for benchmark. 0 = off / 1 = on" << std::endl;
+  std::cout << "    --binlogSaveLogs=n            "
+            << "save binlog for benchmark. 0 = off / 1 = on" << std::endl;
+  std::cout << "    --db=path                     "
+            << "set path used in benchmark." << std::endl;
+  std::cout << "    --kvStoreCount=n              "
+            << "set kvstorecount used in benchmark." << std::endl;
+  std::cout << "    --generallog=n                "
+            << "enable log general for benchmark. "
+            << "0 = off / 1 = on" << std::endl;
+  std::cout << "    --sleepAfterBenchmark=seconds "
+            << "sleepping time after test." << std::endl;
+  std::cout << "    --num=n                       "
+            << "kvwrite options number" << std::endl;
+  std::cout << "    --thread=n                    "
+            << "work thread number" << std::endl;
+  std::cout << "    --rocksTransactionMode=mode   "
+            << "txn mode for Tendisplus." << std::endl;
+  std::cout << "                                  "
+            << "  0 for Optimistic Transaction." << std::endl;
+  std::cout << "                                  "
+            << "  1 for Pessimistic Transaction." << std::endl;
+  std::cout << "                                  "
+            << "  2 for WriteBatch" << std::endl;
+  std::cout << "    -h/--help                     "
+            << "print help info" << std::endl;
+  std::cout << "    -v/--version                  "
+            << "print version info" << std::endl;
+}
+
 int main(int argc, char** argv) {
   std::string default_db_path;
 
@@ -558,7 +623,7 @@ int main(int argc, char** argv) {
     } else if (sscanf(argv[i], "--binlogSaveLogs=%d%c", &n, &junk) &&
                (n == 0 || n == 1)) {
       FLAGS_binlogSaveLogs = n;
-    } else if (strncmp(argv[i], "--db=", 5) == 0) {
+    } else if (strncmp(argv[i], "--db=", strlen("--db=")) == 0) {
       FLAGS_db = argv[i] + 5;
     } else if (sscanf(argv[i], "--kvStoreCount=%d%c", &n, &junk) == 1) {
       FLAGS_kvStoreCount = n;
@@ -569,10 +634,25 @@ int main(int argc, char** argv) {
       FLAGS_sleepAfterBenchmark = n;
     } else if (sscanf(argv[i], "--num=%d%c", &n, &junk) == 1) {
       FLAGS_num = n;
+    } else if (sscanf(argv[i], "--thread=%d%c", &n, &junk) == 1) {
+      FLAGS_threads = n;
+    } else if (strncmp(argv[i], "-v", strlen("-v")) == 0) {
+      printVersionInfo();
+      std::exit(0);
+    } else if (strncmp(argv[i], "--version", strlen("--version")) == 0) {
+      printVersionInfo();
+      std::exit(0);
+    } else if (strncmp(argv[i], "-h", strlen("-h")) == 0) {
+      printHelpInfo();
+      std::exit(0);
+    } else if (strncmp(argv[i], "--help", strlen("--help")) == 0) {
+      printHelpInfo();
+      std::exit(0);
     } else if (sscanf(argv[i], "--rocksTransactionMode=%d%c", &n, &junk) ==1) {
       FLAGS_rocksTransactionMode = n;
     } else {
       std::fprintf(stderr, "Invalid flag '%s'\n", argv[i]);
+      printHelpInfo();
       std::exit(1);
     }
   }
