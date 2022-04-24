@@ -593,14 +593,14 @@ Status NetSession::setResponse(const std::string& s) {
 
   uint32_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_isSendRunning) {
-      std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
+    std::copy(s.begin(), s.end(), std::back_inserter(_sendBufferBack));
   } else {
-      std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
-      if (netSendBatchSize <= 0 || !_sendDelay ||
-          (netSendBatchSize > 0 && _sendDelay &&
-            _sendBuffer.size() > netSendBatchSize)) {
-        drainRspWithoutLock();
-      }
+    std::copy(s.begin(), s.end(), std::back_inserter(_sendBuffer));
+    if (netSendBatchSize <= 0 || !_sendDelay ||
+        (netSendBatchSize > 0 && _sendDelay &&
+          _sendBuffer.size() > netSendBatchSize)) {
+      drainRspWithoutLock();
+    }
   }
   return {ErrorCodes::ERR_OK, ""};
 }
@@ -985,7 +985,6 @@ void NetSession::processReq() {
 void NetSession::drainRsp() {
   std::lock_guard<std::mutex> lk(_mutex);
   if (_isSendRunning) {
-    LOG(WARNING) << "NetSession is send running";
     return;
   }
   drainRspWithoutLock();
@@ -1015,10 +1014,13 @@ void NetSession::drainRspCallback(const std::error_code& ec,
     return;
   }
   if (actualLen != _sendBuffer.size()) {
-    LOG(FATAL) << "conn:" << _connId
+    LOG(ERROR) << "conn:" << _connId
                << ",actualLen:" << actualLen
                << ",bufsize:" << _sendBuffer.size()
                << ",invalid drainRsp len";
+    endSession();
+    _sendBuffer.clear();
+    return;
   }
   uint64_t netSendBatchSize = _server->getParams()->netSendBatchSize;
   if (_server) {
