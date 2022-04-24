@@ -83,6 +83,7 @@ int main(int argc, char* argv[]) {
 
   INVARIANT(sizeof(double) == 8);
 #ifndef WITH_ASAN
+#ifndef WITH_TSAN
 #ifndef _WIN32
   if (params->daemon) {
     if (daemon(1 /*nochdir*/, 0 /*noclose*/) < 0) {
@@ -92,8 +93,9 @@ int main(int argc, char* argv[]) {
       LOG(FATAL) << "daemonlize failed:" << errno;
     }
   }
-#endif
-#endif
+#endif  // !_WIN32
+#endif  // !WITH_TSAN
+#endif  // !WITH_ASAN
 
   FLAGS_minloglevel = 0;
   if (params->logLevel == "debug" || params->logLevel == "verbose") {
