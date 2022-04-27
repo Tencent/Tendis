@@ -72,6 +72,7 @@ func testRestore(m1_ip string, m1_port int, s1_ip string, s1_port int, kvstoreco
 }
 
 func main(){
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
     flag.Parse()
     //rand.Seed(time.Now().UTC().UnixNano())
     testRestore(*m1ip, *m1port, *s1ip, *s1port, *kvstorecount)

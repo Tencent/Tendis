@@ -215,6 +215,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int,
 }
 
 func main(){
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
     flag.Parse()
     testCluster(*clusterIp, 45200, 3, false)
     testCluster(*clusterIp, 45300, 3, true)

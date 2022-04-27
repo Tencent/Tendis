@@ -709,6 +709,7 @@ func testCluster(clusterIp string, clusterPortStart int, clusterNodeNum int) {
 }
 
 func main(){
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
     flag.Parse()
     // rand.Seed(time.Now().UTC().UnixNano())
     testCluster(*clusterIp, *clusterPortStart, 1)

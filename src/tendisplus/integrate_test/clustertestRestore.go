@@ -346,6 +346,7 @@ func testRestore(portStart int, num int, testFun int, commandType string) {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	testRestore(47000, 100000, 1, "set")
 	testRestore(47100, 100000, 2, "set")

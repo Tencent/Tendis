@@ -73,6 +73,7 @@ func testRestore(m1_ip string, m1_port int, m2_ip string, m2_port int, kvstoreco
 }
 
 func main(){
+    log.SetFlags(log.LstdFlags | log.Lmicroseconds)
     flag.Parse()
     testRestore(*m1ip, *m1port, *m2ip, *m2port, *kvstorecount, "copy")
     // port+100 to avoid TIME_WAIT

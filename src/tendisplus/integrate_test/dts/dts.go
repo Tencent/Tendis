@@ -255,6 +255,7 @@ func getCurrentDirectory() string {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
 

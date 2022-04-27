@@ -337,6 +337,7 @@ func testRepl(m_port int, s_port int, kvstore_count int) {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	rand.Seed(time.Now().UTC().UnixNano())
 	testRepl(*mport, *sport, *kvstorecount)
