@@ -223,8 +223,10 @@ Expected<Command*> Command::precheck(Session* sess) {
       } else {
         _unSeenCmds[commandName] += 1;
       }
+#ifdef TENDIS_DEBUG
       LOG(ERROR) << "Command::precheck unseenCmd:" << args[0]
                  << ", unseenCmdNum:" << _unSeenCmds.size();
+#endif
     }
     std::stringstream ss;
     ss << "unknown command '" << args[0] << "'";

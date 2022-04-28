@@ -1293,6 +1293,8 @@ Status ReplManager::replicationUnSetMaster() {
       return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
     }
     _syncStatus[id]->isRunning = true;
+    LOG(INFO) << "reset sessionId while UnSetMaster, store:" << id
+              << ",sess:" << _syncStatus[id]->sessionId;
     _syncStatus[id]->sessionId = std::numeric_limits<uint64_t>::max();
     storeVec.push_back(id);
   }
@@ -1340,6 +1342,8 @@ Status ReplManager::replicationUnSetMaster(uint32_t storeId) {
       return {ErrorCodes::ERR_TIMEOUT, "wait for yeild failed"};
     }
     _syncStatus[storeId]->isRunning = true;
+    LOG(INFO) << "reset sessionId while UnSetMaster, store:" << storeId
+              << ",sess:" << _syncStatus[storeId]->sessionId;
     _syncStatus[storeId]->sessionId = std::numeric_limits<uint64_t>::max();
     isStoreDone = true;
   }
