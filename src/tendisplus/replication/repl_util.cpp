@@ -38,11 +38,11 @@ std::shared_ptr<BlockingTcpClient> createClient(const string& ip,
     client->writeLine(ss.str());
     Expected<std::string> s = client->readLine(std::chrono::seconds(10));
     if (!s.ok()) {
-      LOG(WARNING) << "fullSync auth error:" << s.status().toString();
+      LOG(WARNING) << "auth error:" << s.status().toString();
       return nullptr;
     }
     if (s.value().size() == 0 || s.value()[0] == '-') {
-      LOG(INFO) << "fullSync auth failed:" << s.value();
+      LOG(INFO) << "auth failed:" << s.value();
       return nullptr;
     }
   }

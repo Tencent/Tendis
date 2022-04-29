@@ -286,7 +286,7 @@ void NetworkAsio::stop() {
   LOG(INFO) << "network-asio begin stops...";
   _isRunning.store(false, std::memory_order_relaxed);
   _acceptCtx->stop();
-  for (auto rwCtx : _rwCtxList) {
+  for (auto& rwCtx : _rwCtxList) {
     rwCtx->stop();
   }
   _acceptThd->join();
@@ -295,7 +295,6 @@ void NetworkAsio::stop() {
   }
   LOG(INFO) << "network-asio stops complete...";
 }
-
 
 Status NetworkAsio::startThread() {
   _isRunning.store(true, std::memory_order_relaxed);
