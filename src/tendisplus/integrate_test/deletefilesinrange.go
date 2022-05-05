@@ -256,6 +256,7 @@ func testDeleteFilesInRange() {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	testDeleteFilesInRange()
 }

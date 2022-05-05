@@ -152,6 +152,7 @@ func testAutoGenerateHeartbeatTimestamp() {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	flag.Parse()
 	testAutoGenerateHeartbeatTimestamp()
 }

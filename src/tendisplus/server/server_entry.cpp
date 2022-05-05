@@ -1678,7 +1678,6 @@ void ServerEntry::stop() {
   LOG(INFO) << "server begins to stop...";
   _isRunning.store(false, std::memory_order_relaxed);
   _eventCV.notify_all();
-  _network->stop();
 
   // NOTE(takenliu): _scriptMgr need stop earlier than _executorList
   _scriptMgr->stop();
@@ -1694,6 +1693,12 @@ void ServerEntry::stop() {
     _migrateMgr->stop();
   if (_indexMgr)
     _indexMgr->stop();
+  if (_gcMgr) {
+    _gcMgr->stop();
+  }
+
+  // 1 second is considered to be enough for all packages sended back to client
+  std::this_thread::sleep_for(std::chrono::seconds(1));
   {
     std::lock_guard<std::mutex> lk(_mutex_session);
     _sessions.clear();
@@ -1701,9 +1706,7 @@ void ServerEntry::stop() {
   if (_clusterMgr) {
     _clusterMgr->stop();
   }
-  if (_gcMgr) {
-    _gcMgr->stop();
-  }
+  _network->stop();
 
   if (!_isShutdowned.load(std::memory_order_relaxed)) {
     // NOTE(vinchen): if it's not the shutdown command, it should reset the

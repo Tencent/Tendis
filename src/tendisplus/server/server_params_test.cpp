@@ -220,7 +220,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->scanJobCntIndexMgr, 1);
   EXPECT_EQ(cfg->delCntIndexMgr, 10000);
   EXPECT_EQ(cfg->delJobCntIndexMgr, 1);
-  EXPECT_EQ(cfg->pauseTimeIndexMgr, 10);
+  EXPECT_EQ(cfg->pauseTimeIndexMgr, 1);
 
   EXPECT_EQ(cfg->protoMaxBulkLen, CONFIG_DEFAULT_PROTO_MAX_BULK_LEN);
   EXPECT_EQ(cfg->dbNum, CONFIG_DEFAULT_DBNUM);
