@@ -444,6 +444,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     }
     if (lastSyncTime + std::chrono::seconds(gBinlogHeartbeatTimeout) <=
         SCLOCK::now()) {
+      LOG(INFO) << "store:" << metaSnapshot.id
+                << " incrSync timeout";
       return true;
     }
     return false;
@@ -489,6 +491,15 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
       auto newMeta = metaSnapshot.copy();
       newMeta->replState = ReplState::REPL_ERR;
       newMeta->replErr = errStr;
+      auto oldSessId = _syncStatus[metaSnapshot.id]->sessionId;
+      _syncStatus[metaSnapshot.id]->sessionId =
+        std::numeric_limits<uint64_t>::max();
+      if (oldSessId != std::numeric_limits<uint64_t>::max()) {
+        Status s = _svr->cancelSession(oldSessId);
+        LOG(INFO) << "cansel session while has_err, store:"
+                  << metaSnapshot.id << ",sess:" << oldSessId
+                  << ",discard status:" << (s.ok() ? "ok" : s.toString());
+      }
       LOG(WARNING) << errStr;
       changeReplState(*newMeta, false);
     }
@@ -553,6 +564,8 @@ void ReplManager::slaveChkSyncStatus(const StoreMeta& metaSnapshot) {
     std::lock_guard<std::mutex> lk(_mutex);
     currSessId = _syncStatus[metaSnapshot.id]->sessionId;
     _syncStatus[metaSnapshot.id]->sessionId = sessionId;
+    LOG(INFO) << "create new session for incrSync, store:"
+              << metaSnapshot.id << ", sess:" << sessionId;
   }
 
   if (currSessId != std::numeric_limits<uint64_t>::max()) {
