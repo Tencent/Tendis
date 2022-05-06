@@ -49,6 +49,7 @@ if(CMAKE_COMPILER_IS_GNUCC)
         set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb-5.13.4")
     endif()
 else()
+    set(NEW_ROCKSDB on)
 	set(STDFS_LIB "")
 	set(ROCKSDB_DIR "${PROJECT_SOURCE_DIR}/src/thirdparty/rocksdb")
 endif()
@@ -191,7 +192,6 @@ set(WARN_C_CXX
 -Wno-unused-local-typedefs \
 -Wno-missing-field-initializers \
 -Wno-implicit-fallthrough \
--Wno-float-equal \
 -Wendif-labels \
 -Wfloat-equal \
 -Wformat=2 \

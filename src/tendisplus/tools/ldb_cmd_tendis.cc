@@ -1,10 +1,10 @@
-
 //  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 //
 #ifndef ROCKSDB_LITE
+
 #include "rocksdb/utilities/ldb_cmd.h"
 
 #include <cinttypes>
@@ -72,7 +72,7 @@ TScanCommand::TScanCommand(const std::vector<std::string>& /*params*/,
     start_key_specified_(false),
     end_key_specified_(false),
     max_keys_scanned_(-1),
-    no_value_(true),
+    no_value_(false),
     print_log_(false) {
   std::map<std::string, std::string>::const_iterator itr =
     options.find(ARG_FROM);
@@ -133,6 +133,74 @@ void TScanCommand::Help(std::string& ret) {
   ret.append(" [--" + ARG_NO_VALUE + "]");
   ret.append(" [--printlog]");
   ret.append("\n");
+}
+
+void TScanCommand::AdditionalHelp(std::string& ret) {
+  ret.append("\
+  tscan usage:\n\
+    ldb_tendis --db=path --column_family=cfName tscan [options]\n\
+  tscan command line options:\n\
+    general options:\n\
+      --db=path\n\
+            rocksdb db dir path\n\
+      --column_family=cfName\n\
+            cf name, 'default' for normal data, 'binlog_cf' for binlog\n\
+      --key_hex\n\
+            if key is hex\n\
+      --value_hex\n\
+            if value is hex\n\
+      --hex\n\
+            if key/value all hex\n\
+    special options:\n\
+      --from=startKey\n\
+      --to=endKey\n\
+            find keys in [startKey, endKey)\n\
+            set --from='' --to='' for binlog cf\n\
+      --max_keys=keyNum\n\
+            return at most key value number\n\
+      --printlog\n\
+            print binlog content if cfName = binlog_cf\n\n\
+      --ttl (not used)\n\
+      --timestamp (not used)\n\
+      --start_time (not used)\n\
+      --end_time (not used)\n\
+      --no_value (not used)\n\n\
+  tscan output format:\n\
+    type dbid primaryKey ttl valueLen fieldLen\n\n\
+      type:\n\
+        a for normal kv\n\
+        H for hash\n\
+        S for set\n\
+        Z for zset\n\
+        L for list\n\
+        B for binlog\n\
+      dbid:\n\
+        selectable Redis dbid\n\
+        dbid for binlog is 4294967041\n\
+      primaryKey:\n\
+        normal key or struct name\n\
+      ttl:\n\
+        key/value time to live\n\
+        0 if not set ttl\n\
+      valueLen:\n\
+        value length for normal kv or 0 for other data structs\n\
+      fieldLen:\n\
+        element number in data structs or 0 for normal key\n\
+        binlog size for binlog\n\n\
+    example:\n\
+      (normal kv: set a b)\n\
+        a 0 a 0 1 0\n\
+      (list: lpush l1 a)\n\
+        L 0 l1 0 0 1\n\
+      (list: lpush l1 b)\n\
+        L 0 l1 0 0 2\n\
+      (list: lpush l1 x)\n\
+        L 0 l1 0 0 3\n\n\
+      (binlog for [set a b])\n\
+        txnid:12 chunkid:15495 ts:1651829068877 cmdstr:set\n\
+          op:1 fkey:a skey: opvalue:b\n\
+        B 4294967041 1 0 0 72\n\
+");
 }
 
 void TScanCommand::printLog(const std::string& value) {
@@ -264,7 +332,7 @@ void TScanCommand::DoCommand() {
     auto keyType = record.getRecordKey().getRecordType();
     /* NOTE(wayenchen) ignore if not primary key */
     if (keyType != RecordType::RT_DATA_META &&
-        keyType != RecordType::RT_BINLOG && no_value_) {
+        keyType != RecordType::RT_BINLOG) {
       continue;
     }
     // value length of string
@@ -326,6 +394,11 @@ void TScanCommand::DoCommand() {
     }
 
     std::string pKey = record.getRecordKey().getPrimaryKey();
+    if (keyType == RecordType::RT_BINLOG) {
+      // binlog pk is binlogid and reversed bit
+      auto pt = reinterpret_cast<uint64_t*>(const_cast<char*>(pKey.data()));
+      pKey = std::to_string(htobe64(*pt));
+    }
     // type dbid PrimaryKey ttl value(kv) subKeysCount(list/set/zset/hash)
     fprintf(stdout,
             "%.*s %" PRIu32 " %.*s %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
