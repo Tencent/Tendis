@@ -1064,6 +1064,22 @@ void NetSession::endSession() {
     ++_netMatrix->connReleased;
     DLOG(INFO) << "net session, id:" << id() << ",connId:" << _connId
                << " destroyed";
+    // NOTE(tanninzhu): When we want to call endSession,
+    // we actually want to release the Session object and
+    // release the socket connection through RAII.
+    // But when the socket is executing async_read_some,
+    // its Session shared_ptr is held by ASIO, reading process is a deadloop,
+    // and the loop cannot be ended by means other than the connection closing,
+    // and the object cannot be released. So when we endSession,
+    // we call shutdown to actively close his read connection,
+    // end the deadloop and release the connection.
+    try {
+      if (_sock.is_open()) {
+        _sock.shutdown(asio::ip::tcp::socket::shutdown_receive);
+      }
+    } catch (const std::exception& ex) {
+      LOG(ERROR) << "shutdown socket failed." << ex.what();
+    }
   }
   _server->endSession(id());
 }
