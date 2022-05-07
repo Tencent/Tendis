@@ -57,7 +57,7 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient*,
                                      uint64_t binlogPos,
                                      bool needHeartBeart,
                                      std::shared_ptr<ServerEntry> svr,
-                                     const std::shared_ptr<ServerParams> cfg);
+                                     std::shared_ptr<ServerParams> cfg);
 
 Expected<BinlogResult> applySingleTxnV2(Session* sess,
                                         uint32_t storeId,

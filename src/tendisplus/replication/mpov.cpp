@@ -659,7 +659,9 @@ void ReplManager::DelFakeFullPushStatus(
 }
 
 bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
-                                  const std::string& storeIdArg) {
+                                  const std::string& storeIdArg,
+                                  const std::string& listenIpArg,
+                                  const std::string& listenPortArg) {
   std::shared_ptr<BlockingTcpClient> client =
     std::move(_svr->getNetwork()->
               createBlockingClient(std::move(sock),
@@ -690,7 +692,8 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
     return false;
   }
 
-  _fullPusher->schedule([this, storeId, client(std::move(client))]() mutable {
+  _fullPusher->schedule([this, storeId, listenIpArg,
+                         listenPortArg, client(std::move(client))]() mutable {
     supplyFullPsyncRoutine(std::move(client), storeId);
   });
 
@@ -698,10 +701,13 @@ bool ReplManager::supplyFullPsync(asio::ip::tcp::socket sock,
 }
 
 void ReplManager::supplyFullPsyncRoutine(
-  std::shared_ptr<BlockingTcpClient> client, uint32_t storeId) {
+  std::shared_ptr<BlockingTcpClient> client, uint32_t storeId,
+  const std::string& slave_listen_ip, const std::string& slave_port) {
   char runId[CONFIG_RUN_ID_SIZE + 1];
   redis_port::getRandomHexChars(runId, CONFIG_RUN_ID_SIZE);
-  client->writeData("+FULLRESYNC " + string(runId) + " 0\r\n");
+  client->writeData("+FULLRESYNC " +
+                    string(runId, CONFIG_RUN_ID_SIZE) +
+                    " 0\r\n");
 
   // send no keys rdb to client
   unsigned char rdbData[] = {
@@ -770,8 +776,13 @@ void ReplManager::supplyFullPsyncRoutine(
 
   // save full status
   uint64_t clientId = _clientIdGen.fetch_add(1);
-  string remoteIP;  // always empty
-  auto remotePort = client->getRemotePort();
+  string remoteIP = slave_listen_ip.empty() ?
+          client->getRemoteAddress() :
+          slave_listen_ip;
+  auto remotePort = slave_port.empty() ?
+          client->getRemotePort() :
+          static_cast<uint16_t>(tendisplus::strtoul(
+                  slave_port.c_str(), nullptr, 10));
   {
     std::lock_guard<std::mutex> lk(_mutex);
     string slaveNode = remoteIP + ":" + to_string(remotePort);
@@ -996,6 +1007,18 @@ void ReplManager::supplyFullPsyncRoutine(
         break;
       }
       sendBuf.clear();
+    }
+  }
+
+  // send FULL-SYNC done notice when fullsyncNoticeEnable set.
+  if (_svr->getParams()->fullPsyncNoticeEnable) {
+    std::stringstream msg;
+    Command::fmtMultiBulkLen(msg, 2);
+    Command::fmtBulk(msg, "FULLPSYNC");
+    Command::fmtBulk(msg, "ok");
+    s = client->writeData(msg.str());
+    if (!s.ok()) {
+      LOG(ERROR) << "full sync notice write data error." << s.toString();
     }
   }
 

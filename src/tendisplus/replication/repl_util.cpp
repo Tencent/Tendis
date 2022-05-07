@@ -192,7 +192,7 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
                                      uint64_t binlogPos,
                                      bool needHeartBeart,
                                      std::shared_ptr<ServerEntry> svr,
-                                     const std::shared_ptr<ServerParams> cfg) {
+                                     std::shared_ptr<ServerParams> cfg) {
   LocalSessionGuard sg(svr.get());
 
   sg.getSession()->setArgs({"mastersendlog",
@@ -236,8 +236,31 @@ Expected<BinlogResult> masterSendAof(BlockingTcpClient* client,
         LOG(ERROR) << "decode logvalue failed." << logValue.status().toString();
         return logValue.status();
       }
-      cmdStr = logValue.value().getCmd();
 
+      // filter binlog NOT belong to data
+      // binlog-id maybe as following:
+      // - normal-chunk-id: 0-16384, specific ID(ADMINSET, TTL_INDEX, etc),
+      //              especially, only if single binlog can set as its own id
+      // - MULTI: when commit multi commands in single transaction, the binlog
+      //        id will set as CHUNK_MULTI
+      // - FLUSH: for impl flushdb/flushall command in binlog operation
+      // - MIGRATE: for clear dirty data after migrate
+      // - DEL_RANGE: for delete-range optimize in binlog
+      // in Master send AOF situation, we only need:
+      // normal-chunk-id(0-16384, TTL_INDEX) + CHUNKID_MULTI is ok
+      auto binlogChunkId = logValue.value().getChunkId();
+      if (!((binlogChunkId <= CLUSTER_SLOTS) ||
+            binlogChunkId == LUASCRIPT_CHUNKID ||
+            binlogChunkId == TTLINDEX_CHUNKID ||
+            binlogChunkId == Transaction::CHUNKID_MULTI)) {
+        // avoid br.binlogId overwrite
+        if (++cmdNum > aofPsyncNum) {
+          break;
+        }
+        continue;
+      }
+
+      cmdStr = logValue.value().getCmd();
       ss << cmdStr;
       if ((++cmdNum) > aofPsyncNum) {
         break;

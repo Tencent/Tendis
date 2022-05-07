@@ -1,17 +1,20 @@
 package util
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/ngaut/log"
 )
 
@@ -407,4 +410,265 @@ func (s *Predixy) Setup(valgrind bool, cfgArgs *map[string]string) error {
 		panic(err)
 	}
 	return err
+}
+
+func ShutdownServer(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	if err := cli.Cmd("shutdown").Err; err != nil {
+		log.Infof("can't connect to %d: %v", m.Port, err)
+	}
+
+	m.Destroy()
+}
+
+func SlaveOf(m *RedisServer, s *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", s.Port, err)
+	}
+
+	defer cli.Close()
+
+	r, err := cli.Cmd("slaveof", m.Ip, strconv.Itoa(m.Port)).Str()
+	if err != nil {
+		log.Fatalf("do slaveof failed:%v", err)
+	}
+
+	if r != "OK" {
+		log.Fatalf("do slaveof error:%s", r)
+	}
+}
+
+func ConfigSet(s *RedisServer, k string, v string) {
+	cli, err := redis.DialTimeout("tcp", s.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", s.Port, err)
+	}
+
+	defer cli.Close()
+
+	r, err := cli.Cmd("config", "set", k, v).Str()
+	if err != nil {
+		log.Fatalf("do configset failed:%v", err)
+	}
+
+	if r != "OK" {
+		log.Fatalf("do configset error:%s", r)
+	}
+}
+
+func SetData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("set", "mystr:"+RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("set failed. %v", err)
+		}
+	}
+}
+
+func ZaddData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("zadd", "mysortedset:"+RandStrAlpha(30),
+			float64(rand.Int()), RandStrAlpha(30),
+			float64(rand.Int()), RandStrAlpha(30),
+			float64(rand.Int()), RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("zadd failed. %v", err)
+		}
+	}
+}
+
+func SaddData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("sadd", "myset:"+RandStrAlpha(30),
+			RandStrAlpha(30),
+			RandStrAlpha(30),
+			RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("zadd failed. %v", err)
+		}
+	}
+}
+
+func LpushData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("lpush", "mylist:"+strconv.Itoa(i),
+			RandStrAlpha(30),
+			RandStrAlpha(30),
+			RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("lpush failed. %v", err)
+		}
+	}
+}
+
+func RpushData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("rpush", "mylist:"+strconv.Itoa(i),
+			RandStrAlpha(30),
+			RandStrAlpha(30),
+			RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("lpush failed. %v", err)
+		}
+	}
+}
+
+func HmsetData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 100; i++ {
+		if err := cli.Cmd("hmset", "myhash:"+RandStrAlpha(30),
+			RandStrAlpha(30), RandStrAlpha(30),
+			RandStrAlpha(30), RandStrAlpha(30),
+			RandStrAlpha(30), RandStrAlpha(30),
+			RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("mset failed. %v", err)
+		}
+	}
+}
+
+func OtherData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	for i := 0; i < 10000; i++ {
+		if err := cli.Cmd("hset", "", RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
+			log.Fatalf("insert data failed. %v", err)
+		}
+	}
+
+	for i := 0; i < 10000; i++ {
+		if err := cli.Cmd("set", RandStrAlpha(30), RandStrAlpha(30), "PX", rand.Int31n(1000)+1).Err; err != nil {
+			log.Fatalf("insert data failed. %v", err)
+		}
+	}
+
+}
+
+func SpecifHashData(m *RedisServer) {
+	cli, err := redis.DialTimeout("tcp", m.Addr(), 10*time.Second)
+	if err != nil {
+		log.Fatalf("can't connect to %d: %v", m.Port, err)
+	}
+
+	defer cli.Close()
+
+	f := func(keyCount int, expiredTime int) {
+		key := "myhash" + strconv.Itoa(keyCount) + "Expired" + strconv.Itoa(expiredTime) + RandStrAlpha(30)
+		for i := 0; i < keyCount; i++ {
+			if err := cli.Cmd("hset", key, RandStrAlpha(30), RandStrAlpha(30)).Err; err != nil {
+				log.Fatalf("insert data failed. %v", err)
+			}
+		}
+
+		if err := cli.Cmd("pexpire", key, expiredTime+1).Err; err != nil {
+			log.Fatalf("insert data failed. %v", err)
+		}
+
+		if rand.Intn(10) < 7 {
+			if err := cli.Cmd("del", key).Err; err != nil {
+				log.Fatalf("del specific hash failed: %v", err)
+			}
+		}
+	}
+
+	f(1000, 1)
+	f(1000, 60*1000)
+	f(1000, int(rand.Int31n(1000)))
+
+	f(999, 1)
+	f(999, 60*1000)
+	f(999, int(rand.Int31n(1000)))
+
+	f(1001, 1)
+	f(1001, 60*1000*1000)
+	f(1001, int(rand.Int31n(1000)))
+
+	f(3000, 1)
+	f(3000, 60*1000)
+	f(3000, 400000)
+}
+
+func WriteData(m *RedisServer) {
+	SetData(m)
+	ZaddData(m)
+	SaddData(m)
+	LpushData(m)
+	RpushData(m)
+	HmsetData(m)
+	SpecifHashData(m)
+	OtherData(m)
+}
+
+func GetCurrentDirectory() string {
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return strings.Replace(dir, "\\", "/", -1)
+}
+
+func ComapreData(addr1 string, addr2 string, storeNum int) {
+	var stdoutComp bytes.Buffer
+	var stderrComp bytes.Buffer
+
+	// compare slave and target node
+	cmdComp := exec.Command("compare_instances", "-addr1", addr1, "-addr2", addr2, "-storeNum", strconv.FormatInt(int64(storeNum), 10))
+	cmdComp.Stdout = &stdoutComp
+	cmdComp.Stderr = &stderrComp
+	err := cmdComp.Run()
+	log.Info(stdoutComp.String())
+	log.Info(stderrComp.String())
+	if err != nil {
+		log.Fatal(err)
+	}
+	if strings.Contains(stdoutComp.String(), "error") {
+		log.Fatal(stdoutComp.String())
+	}
 }

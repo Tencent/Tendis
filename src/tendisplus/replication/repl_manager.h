@@ -171,7 +171,10 @@ class ReplManager {
                         const std::string& listenIpArg,
                         const std::string& listenPortArg);
 
-  bool supplyFullPsync(asio::ip::tcp::socket sock, const string& storeIdArg);
+  bool supplyFullPsync(asio::ip::tcp::socket sock,
+                       const string& storeIdArg,
+                       const std::string& listenIpArg = {},
+                       const std::string& listenPortArg = {});
 
   void AddFakeFullPushStatus(
           uint64_t offset, const std::string& ip, uint64_t port);
@@ -250,7 +253,9 @@ class ReplManager {
                              uint16_t slave_listen_port);
 
   void supplyFullPsyncRoutine(std::shared_ptr<BlockingTcpClient> client,
-                              uint32_t storeId);
+                              uint32_t storeId,
+                              const std::string& slave_listen_ip = {},
+                              const std::string& slave_listen_port = {});
 
   bool registerIncrSyncStatus(uint32_t storeId,
                               uint32_t dstStoreId,

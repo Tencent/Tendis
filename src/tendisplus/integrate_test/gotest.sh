@@ -19,6 +19,7 @@ go build clustertestRestore.go common.go common_cluster.go
 go build clustertestFailover.go common.go common_cluster.go
 go build deletefilesinrange.go common.go common_cluster.go
 go build -o dts/dts dts/dts.go
+go build -o dts/dts_sync dts/dts_sync.go
 
 function lm_traverse_dir(){
     for file in `ls $1`
@@ -56,7 +57,7 @@ function runOne() {
     fi
 }
 
-testNum=10
+testNum=11
 
 runOne ./adminHeartbeat
 runOne ./repl
@@ -71,6 +72,7 @@ runOne './clustertest -benchtype=set -clusterNodeNum=5 -num1=10000'
 runOne './clustertestRestore -benchtype=set'
 runOne './clustertestFailover -benchtype=set'
 runOne './dts/dts'
+runOne './dts/dts_sync'
 runOne './deletefilesinrange -benchtype=set'
 
 grep "go passed" $logfile

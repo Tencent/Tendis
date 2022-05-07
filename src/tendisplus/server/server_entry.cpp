@@ -1129,6 +1129,11 @@ bool ServerEntry::processRequest(Session* sess) {
       }
 
       std::vector<std::string> args = ns->getArgs();
+      if (args.size() < 3) {
+        ns->setResponse(Command::fmtErr("wrong arguments count"));
+        return true;
+      }
+
       if (args[1] != "?" || args[2] != "-1") {
         ns->setResponse(Command::fmtErr("just support ? -1"));
         return true;
@@ -1139,6 +1144,22 @@ bool ServerEntry::processRequest(Session* sess) {
         return true;
       }
 
+      auto val = tendisplus::stoul(args[3]);
+      LOG(INFO) << "PSYNC kvstoreid:"
+                << (val.ok() ? std::to_string(val.value()) : "ERR convert");
+      if (!val.ok()) {
+        ns->setResponse(Command::fmtErr("kvstore invalid"));
+        return true;
+      }
+      auto store = val.value();
+      if (store >= getParams()->kvStoreCount) {
+        char err[100];
+        snprintf(err, sizeof(err),
+                 "kvstore %ld invalid, [0, %d]",
+                 store, getParams()->kvStoreCount);
+        ns->setResponse(Command::fmtErr(err));
+        return true;
+      }
       _replMgr->supplyFullPsync(ns->borrowConn(), args[3]);
       return false;
     }

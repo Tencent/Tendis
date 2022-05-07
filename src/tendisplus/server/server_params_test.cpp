@@ -271,6 +271,7 @@ TEST(ServerParams, DefaultValue) {
   EXPECT_EQ(cfg->binlogSendBatch, 256);
   EXPECT_EQ(cfg->binlogSendBytes, 16 * 1024 * 1024);
 
+  EXPECT_EQ(cfg->fullPsyncNoticeEnable, false);
   EXPECT_EQ(cfg->migrateSenderThreadnum, 5);
   EXPECT_EQ(cfg->migrateReceiveThreadnum, 5);
   EXPECT_EQ(cfg->garbageDeleteThreadnum, 1);

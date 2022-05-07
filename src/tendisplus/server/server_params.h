@@ -515,6 +515,7 @@ class ServerParams {
   bool enableGcInMigate = false;
   bool aofEnabled = false;
   bool psyncEnabled = false;
+  bool fullPsyncNoticeEnable = false;
   bool replicateFixEnable = true;
   uint32_t forceRecovery = 0;
 

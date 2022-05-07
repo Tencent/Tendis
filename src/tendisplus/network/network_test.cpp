@@ -222,6 +222,8 @@ TEST(BlockingTcpClient, Common) {
   auto cli1 = std::make_shared<BlockingTcpClient>(ioCtx1, 128, 1024 * 1024, 10);
   Status s = cli1->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
+  EXPECT_EQ(cli1->getRemoteAddress(), "127.0.0.1");
+  EXPECT_EQ(cli1->getRemotePort(), port);
 
   s = cli1->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_FALSE(s.ok());
@@ -256,6 +258,8 @@ TEST(BlockingTcpClient, Common) {
   auto cli2 = std::make_shared<BlockingTcpClient>(ioCtx1, 4, 1024 * 1024, 10);
   s = cli2->connect("127.0.0.1", port, std::chrono::seconds(1));
   EXPECT_TRUE(s.ok());
+  EXPECT_EQ(cli2->getRemoteAddress(), "127.0.0.1");
+  EXPECT_EQ(cli2->getRemotePort(), port);
 
   // read() support more than max buf size
   s = cli2->writeData("hello world");

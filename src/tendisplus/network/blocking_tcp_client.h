@@ -59,6 +59,19 @@ class BlockingTcpClient
     }
   }
 
+  std::string getRemoteAddress() const {
+    try {
+      if (_socket.is_open()) {
+        return _socket.remote_endpoint().address().to_string();
+      }
+      return {};
+    } catch (const std::exception& e) {
+      LOG(ERROR) << "BlockingTcpClient::getRemoteAddress() exception : "
+                 << e.what();
+      return {};
+    }
+  }
+
   uint16_t getRemotePort() const {
     try {
       if (_socket.is_open()) {
@@ -79,6 +92,17 @@ class BlockingTcpClient
       }
       return "closed conn";
     }  catch (const std::exception& e) {
+      return e.what();
+    }
+  }
+
+  std::string getLocalAddress() const {
+    try {
+      if (_socket.is_open()) {
+        return _socket.local_endpoint().address().to_string();
+      }
+      return {};
+    } catch (const std::exception& e) {
       return e.what();
     }
   }
