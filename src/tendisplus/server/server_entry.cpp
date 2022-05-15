@@ -1709,14 +1709,7 @@ void ServerEntry::stop() {
   for (auto& executor : _executorRecycleSet) {
     executor->stop();
   }
-  _replMgr->stop();
-  if (_migrateMgr)
-    _migrateMgr->stop();
-  if (_indexMgr)
-    _indexMgr->stop();
-  if (_gcMgr) {
-    _gcMgr->stop();
-  }
+  _indexMgr->stop();
 
   // 1 second is considered to be enough for all packages sended back to client
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -1724,28 +1717,34 @@ void ServerEntry::stop() {
     std::lock_guard<std::mutex> lk(_mutex_session);
     _sessions.clear();
   }
+  if (_gcMgr) {
+    _gcMgr->stop();
+  }
+  if (_migrateMgr) {
+    _migrateMgr->stop();
+  }
   if (_clusterMgr) {
     _clusterMgr->stop();
   }
+  _replMgr->stop();
   _network->stop();
 
   if (!_isShutdowned.load(std::memory_order_relaxed)) {
     // NOTE(vinchen): if it's not the shutdown command, it should reset the
     // workerpool to decr the referent count of share_ptr<server>
-    _network.reset();
+    _scriptMgr.reset();
     for (auto& executor : _executorList) {
       executor.reset();
     }
-    _replMgr.reset();
-    _migrateMgr.reset();
-    if (_indexMgr)
-      _indexMgr.reset();
-    _pessimisticMgr.reset();
-    _mgLockMgr.reset();
-    _segmentMgr.reset();
-    _clusterMgr.reset();
+    _indexMgr.reset();
     _gcMgr.reset();
-    _scriptMgr.reset();
+    _migrateMgr.reset();
+    _clusterMgr.reset();
+    _replMgr.reset();
+    _network.reset();
+    _mgLockMgr.reset();
+    _pessimisticMgr.reset();
+    _segmentMgr.reset();
   }
 
   // stop the rocksdb
