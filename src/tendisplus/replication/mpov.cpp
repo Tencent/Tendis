@@ -965,7 +965,7 @@ void ReplManager::supplyFullPsyncRoutine(
 
     } else if (curPrimarykey == prevPrimaryKey) {
       result.emplace_back(std::move(exptRcd.value()));
-      if (result.size() >= 1000) {
+      if (result.size() >= _svr->getParams()->supplyFullPsyncKeyBatchNum) {
         auto aofStr = recordList2Aof(result);
         if (!aofStr.ok()) {
           LOG(WARNING) << aofStr.status().toString();
