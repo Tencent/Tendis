@@ -527,6 +527,7 @@ class ServerParams {
   uint32_t migrateBinlogIter = 10;
   uint32_t migrateRateLimitMB = 32;
   uint32_t migrateSnapshotKeyNum = 100000;
+  uint32_t supplyFullPsyncKeyBatchNum = 100;
 
   // The Batch Size when sending snapshot during migration.
   // Dynamically changeable through 'config set cluster-migration-batch-size'
