@@ -184,7 +184,9 @@ class ReplManager {
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
                               bool checkEmpty = true,
-                              bool incrSync = false);
+                              bool incrSync = false,
+                              bool isReplGroup = false,
+                              uint64_t senderOffset = 0);
   Status replicationSetMaster(std::string ip,
                               uint32_t port,
                               uint32_t storeid,

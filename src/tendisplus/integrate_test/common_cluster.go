@@ -15,6 +15,7 @@ import (
 
 func cluster_meet(m *util.RedisServer, s *util.RedisServer) {
     cli := createClient(m)
+    defer cli.Close()
 
     if r, err := cli.Cmd("cluster", "meet", s.Ip, s.Port).Str(); err != nil {
         log.Fatalf("do meet failed:%v", err)
@@ -24,6 +25,107 @@ func cluster_meet(m *util.RedisServer, s *util.RedisServer) {
         return
     }
     log.Infof("meet sucess,mport:%d sport:%d" , m.Port, s.Port)
+}
+
+func cluster_set_node_arbiter(m *util.RedisServer) {
+    cli := createClient(m)
+    defer cli.Close()
+
+    if r, err := cli.Cmd("cluster", "asarbiter").Str(); err != nil {
+        log.Fatalf("cluster set arbiter failed:%v", err)
+    } else if r != "OK" {
+        log.Fatalf("cluster set arbiter error:%s", r)
+    }
+
+    log.Infof("cluster set arbiter[%s] ok", m.Addr())
+}
+
+func cluster_manual_failover(m *util.RedisServer) {
+    cli := createClient(m)
+    defer cli.Close()
+
+    if r, err := cli.Cmd("cluster", "failover").Str(); err != nil {
+        log.Fatalf("execute manual failover failed:%v", err)
+    } else if r != "OK" {
+        log.Fatalf("execute manual failover error:%s", r)
+    }
+}
+
+func cluster_extra_field(reply string, prefix string, delimiter string) string {
+    rest := strings.Split(reply, prefix)
+    tmp := strings.Split(rest[1], delimiter)
+
+    return tmp[0]
+}
+
+func cluster_check_state(m *util.RedisServer) bool {
+    cli := createClient(m)
+    defer cli.Close()
+
+    reply, err := cli.Cmd("cluster", "info").Str()
+    if err != nil {
+        log.Fatalf("cluster info failed:%v", err)
+    }
+
+    state := cluster_extra_field(reply, "cluster_state:", "\r\n")
+    log.Infof("check cluster state, state[%s]", state)
+
+    return state == "ok"
+}
+
+func cluster_check_is_master(m *util.RedisServer) bool {
+    cli := createClient(m)
+    defer cli.Close()
+
+    reply, err := cli.Cmd("info", "replication").Str()
+    if err != nil {
+        log.Fatalf("info replication failed:%v", err)
+    }
+
+    role := cluster_extra_field(reply, "role:", "\r\n")
+    log.Infof("check node role, role[%s]", role)
+
+    return role == "master"
+}
+
+func cluster_check_sync_full(m *util.RedisServer, times int) bool {
+    cli := createClient(m)
+    defer cli.Close()
+
+    reply, err := cli.Cmd("info", "stats").Str()
+    if err != nil {
+        log.Fatalf("info stats failed:%v", err)
+    }
+
+    data := cluster_extra_field(reply, "sync_full:", "\r\n")
+    sync_full, _ := strconv.Atoi(data)
+    log.Infof("check node[%s] sync_full[%d] <==> times[%d]", 
+            m.Addr(), sync_full, times)
+    if sync_full == times {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+func cluster_check_sync_partial_ok(m *util.RedisServer, times int) bool {
+    cli := createClient(m)
+    defer cli.Close()
+
+    reply, err := cli.Cmd("info", "stats").Str()
+    if err != nil {
+        log.Fatalf("info stats failed:%v", err)
+    }
+
+    data := cluster_extra_field(reply, "sync_partial_ok:", "\r\n")
+    sync_partial_ok, _ := strconv.Atoi(data)
+    log.Infof("check node[%s] sync_partial_ok[%d] <==> times[%d]", 
+            m.Addr(), sync_partial_ok, times)
+    if sync_partial_ok == times {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 func getNodeName(m *util.RedisServer) string {

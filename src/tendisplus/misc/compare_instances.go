@@ -28,6 +28,7 @@ var (
 	password1 = flag.String("password1", "", "password1")
 	password2 = flag.String("password2", "", "password2")
 	storeNum = flag.Int("storeNum", 10, "store number")
+	readonly = flag.Bool("readonly", false, "readonly")
 )
 
 func main() {
@@ -53,6 +54,12 @@ func procCoroutinue(procid int, addr2 string, jobs <-chan []*redis.Resp,
 	if *password2 != "" {
 		if v, err := fe.Cmd("AUTH", *password2).Str(); err != nil || v != "OK" {
 			log.Fatalf("auth %s failed", addr2)
+		}
+	}
+
+	if *readonly {
+		if v, err := fe.Cmd("READONLY").Str(); err != nil || v != "OK" {
+			log.Fatalf("set client readonly failed:%s, error:%v", v, err)
 		}
 	}
 
