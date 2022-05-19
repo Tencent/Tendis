@@ -104,6 +104,10 @@ void LDBCommandRunner::PrintHelp(const LDBOptions& ldb_options,
   IngestExternalSstFilesCommand::Help(ret);
   UnsafeRemoveSstFileCommand::Help(ret);
 
+  ret.append("\n\n");
+  ret.append("Additional help info for tscan:\n");
+  TScanCommand::AdditionalHelp(ret);
+
   fprintf(to_stderr ? stderr : stdout, "%s\n", ret.c_str());
 }
 

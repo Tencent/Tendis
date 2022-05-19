@@ -441,8 +441,10 @@ class TScanCommand : public LDBCommand {
 
   static void Help(std::string& ret);
 
+  static void AdditionalHelp(std::string& ret);
+
  private:
-  void printLog(const std::string& value);
+  static void printLog(const std::string& value);
 
  private:
   std::string start_key_;
