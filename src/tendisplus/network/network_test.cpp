@@ -293,6 +293,10 @@ class session2 : public std::enable_shared_from_this<session2> {
     do_read();
   }
 
+  asio::ip::tcp::socket* getSock() {
+    return &_socket;
+  }
+
  private:
   void do_read() {
     auto self(shared_from_this());
@@ -300,7 +304,7 @@ class session2 : public std::enable_shared_from_this<session2> {
     _socket.async_read_some(asio::buffer(_data, max_length),
                             [this, self](std::error_code ec, size_t length) {
                               if (ec) {
-                                // LOG(ERROR) << ec.message();
+                                return;
                               }
                               do_read();
                             });
@@ -335,17 +339,24 @@ class server2 {
     }
   }
 
+  std::weak_ptr<session2> getSession() {
+    return sess;
+  }
+
  private:
   void do_accept() {
     _acceptor->async_accept(
       [this](std::error_code ec, asio::ip::tcp::socket socket) {
         if (!ec) {
-          std::make_shared<session2>(std::move(socket))->start();
+          auto psess = std::make_shared<session2>(std::move(socket));
+          psess->start();
+          sess = psess;
         }
         do_accept();
       });
   }
   asio::ip::tcp::acceptor* _acceptor;
+  std::weak_ptr<session2> sess;
 };
 
 void rateLimit(uint64_t ratelimit,
@@ -404,6 +415,56 @@ TEST(BlockingTcpClient, RateLimit) {
   ioCtx1->stop();
   thd.join();
   thd1.join();
+}
+
+TEST(NetSession, SocketShutdownRead) {
+  auto ioCtx = std::make_shared<asio::io_context>();
+  uint32_t port = 54011;
+
+  server2 svr(*ioCtx, port);
+
+  std::thread thd([&ioCtx] {
+    asio::io_context::work work(*ioCtx);
+    ioCtx->run();
+  });
+
+  asio::ip::tcp::socket conn(*ioCtx);
+  asio::ip::tcp::endpoint end_point(
+    asio::ip::address::from_string("127.0.0.1"), port);
+  conn.connect(end_point);
+  std::this_thread::sleep_for(2s);
+
+  std::shared_ptr<session2> sess(svr.getSession());
+  // session have two ref count.one is held by sess,
+  // another is held by asio async_read_some.
+  EXPECT_EQ(sess.use_count(), 2);
+  std::thread thd2([sess] {
+    sess->getSock()->shutdown(asio::ip::tcp::socket::shutdown_receive);
+  });
+  thd2.join();
+  std::this_thread::sleep_for(2s);
+  // we call shutdown. async_read_some will callback
+  // and release session shared_ptr. so session only
+  // have a ref count.
+  EXPECT_EQ(sess.use_count(), 1);
+  asio::async_write(
+    *sess->getSock(),
+    asio::buffer("hello world", 11),
+    [sess](const std::error_code& ec, size_t actualLen) {
+      LOG(INFO) << "write success";
+      // shutdown close read channel. but can't close write channel.
+      // so we can successfully send data.
+      EXPECT_TRUE(!ec);
+      EXPECT_EQ(actualLen, 11);
+      EXPECT_EQ(sess.use_count(), 2);
+    });
+  std::this_thread::sleep_for(2s);
+  // after 2 seconds, async_write callback and release session,
+  // session only have a ref count.
+  EXPECT_EQ(sess.use_count(), 1);
+  ioCtx->stop();
+  sess.reset();
+  thd.join();
 }
 
 }  // namespace tendisplus
